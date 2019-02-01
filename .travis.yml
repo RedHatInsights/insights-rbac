@@ -1,0 +1,33 @@
+language: python
+
+python:
+  - "3.6"
+
+cache: pip
+
+services:
+  - postgresql
+
+addons:
+  postgresql: '9.6'
+
+env:
+  DATABASE_SERVICE_NAME=POSTGRES_SQL
+  DATABASE_ENGINE=postgresql
+  DATABASE_NAME=rbac_test
+  POSTGRES_SQL_SERVICE_HOST=localhost
+  POSTGRES_SQL_SERVICE_PORT=5432
+  DATABASE_USER=postgres
+  DATABASE_PASSWORD=''
+
+install:
+  - pip install tox codecov
+
+before_script:
+  - psql -c "create database ${DATABASE_NAME};" -U postgres
+
+script:
+  - tox
+
+after_success:
+  - codecov

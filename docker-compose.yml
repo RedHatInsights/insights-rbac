@@ -1,0 +1,46 @@
+version: '3'
+
+services:
+  server:
+      build:
+          context: .
+          dockerfile: Dockerfile-env
+      working_dir: /rbac
+      entrypoint:
+        - /rbac/run_server.sh
+      environment:
+        - DATABASE_SERVICE_NAME=POSTGRES_SQL
+        - DATABASE_ENGINE=postgresql
+        - DATABASE_NAME=postgres
+        - POSTGRES_SQL_SERVICE_HOST=db
+        - POSTGRES_SQL_SERVICE_PORT=5432
+        - DATABASE_USER=postgres
+        - DATABASE_PASSWORD=postgres
+        - DJANGO_READ_DOT_ENV_FILE=True
+        - DEVELOPMENT=True
+        - DJANGO_DEBUG=True
+      privileged: true        
+      ports:
+          - 8000:8000
+      volumes:
+        - '.:/rbac/'
+      links:
+        - db
+      depends_on:
+        - db
+
+  db:
+    image: postgres:9.6
+    environment:
+    - POSTGRES_DB=postgres
+    - POSTGRES_USER=postgres
+    - POSTGRES_PASSWORD=postgres
+    ports:
+      - "15432:5432"
+    volumes:
+      - ./pg_data:/var/lib/pgsql/data
+
+networks:
+  default:
+    external:
+      name: rbac-network
