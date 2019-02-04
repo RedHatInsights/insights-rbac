@@ -4,7 +4,7 @@ metadata:
   name: rbac-template
   annotations:
     openshift.io/display-name: "RBAC"
-    description: "Role Based Access Controle powered by Django+PostgreSQL"
+    description: "Role Based Access Control powered by Django+PostgreSQL"
     tags: "quickstart,python,django,postgresql"
     iconClass: "icon-python"
     openshift.io/long-description: "This template defines resources needed to run the RBAC application, including a build configuration, application deployment configuration, and database deployment configuration."
@@ -73,11 +73,6 @@ objects:
     name: ${NAME}-secret
   stringData:
     django-secret-key: ${DJANGO_SECRET_KEY}
-    service-admin-user: ${SERVICE_ADMIN_USER}
-    service-admin-email: ${SERVICE_ADMIN_EMAIL}
-    service-admin-password: ${SERVICE_ADMIN_PASSWORD}
-    aws-access-key-id: ${AWS_ACCESS_KEY_ID}
-    aws-secret-access-key: ${AWS_SECRET_ACCESS_KEY}
 - apiVersion: v1
   kind: ConfigMap
   metadata:
@@ -90,8 +85,6 @@ objects:
     database-service-name: POSTGRES_SQL
     postgres-sql-service-host: ${NAME}-pgsql.${NAMESPACE}.svc
     postgres-sql-service-port: "5432"
-    masu-service-host: ${MASU}.${NAMESPACE}.svc
-    masu-service-port: "8080"
     app-config: ${APP_CONFIG}
     app-home: ${APP_HOME}
     app-module: ${APP_MODULE}
