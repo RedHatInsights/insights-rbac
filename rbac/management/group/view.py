@@ -232,19 +232,21 @@ class GroupViewSet(mixins.CreateModelMixin,
 
         @apiParam (Request Body) {String} username Principal username
         @apiParamExample {json} Request Body:
-            [
-                {
-                    "username": "jsmith"
-                },
-                {
-                    "username": "ksmith"
-                }
-            ]
+            {
+                "principals": [
+                    {
+                        "username": "jsmith"
+                    },
+                    {
+                        "username": "ksmith"
+                    }
+                ]
+            }
 
         @apiSuccess {String} uuid Group unique identifier
         @apiSuccess {String} name Group name
         @apiSuccess {Array} principals Array of principals
-        @apiSuccessExample {json} Success-Response:
+        @apiSuccessExample {json} POST Success-Response:
             HTTP/1.1 200 OK
             {
                 "uuid": "16fd2706-8baf-433b-82eb-8c7fada847da",
@@ -253,6 +255,8 @@ class GroupViewSet(mixins.CreateModelMixin,
                     { "username": "jsmith" }
                 ]
             }
+        @apiSuccessExample {json} DELETE Success-Response:
+            HTTP/1.1 204 NO CONTENT
         """
         group = self.get_object()
         serializer = GroupPrincipalInputSerializer(data=request.data)
