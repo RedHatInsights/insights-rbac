@@ -234,9 +234,7 @@ paths:
         description: Principal to add to a group
         required: true
         schema:
-          type: array
-          items:
-            $ref: '#/definitions/PrincipalIn'
+          $ref: '#/definitions/GroupPrincipalIn'
       responses:
         '200':
           description: Group updated
@@ -277,12 +275,10 @@ paths:
         description: Principal to add to a group
         required: true
         schema:
-          type: array
-          items:
-            $ref: '#/definitions/PrincipalIn'
+          $ref: '#/definitions/GroupPrincipalIn'
       responses:
         '204':
-          description: Group updated
+          description: Principals removed from group
         '401':
           description: Unauthorized
         '400':
@@ -722,6 +718,14 @@ definitions:
         type: string
         format: uuid
         example: 57e60f90-8c0c-4bd1-87a0-2143759aae1c
+  GroupPrincipalIn:
+    required:
+      - principals
+    properties:
+      principals:
+        type: array
+        items:
+          $ref: '#/definitions/PrincipalIn'
   GroupWithPrincipals:
     allOf:
       - $ref: '#/definitions/GroupOut'

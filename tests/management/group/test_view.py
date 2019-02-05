@@ -172,7 +172,7 @@ class GroupViewsetTests(IdentityRequest):
         url = reverse('group-principals', kwargs={'uuid': self.group.uuid})
         client = APIClient()
         new_username = uuid4()
-        test_data = [{'username': self.principal.username}, {'username': new_username}]
+        test_data = {'principals': [{'username': self.principal.username}, {'username': new_username}]}
         response = client.post(url, test_data, format='json', **self.headers)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
@@ -181,7 +181,7 @@ class GroupViewsetTests(IdentityRequest):
         url = reverse('group-principals', kwargs={'uuid': self.group.uuid})
         client = APIClient()
         new_username = uuid4()
-        test_data = [{'username': self.principal.username}, {'username': new_username}]
+        test_data = {'principals':[{'username': self.principal.username}, {'username': new_username}]}
         response = client.delete(url, test_data, format='json', **self.headers)
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
 

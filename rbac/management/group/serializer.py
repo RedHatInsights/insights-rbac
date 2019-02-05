@@ -17,7 +17,7 @@
 
 """Serializer for group management."""
 from management.group.model import Group
-from management.principal.serializer import PrincpalSerializer
+from management.principal.serializer import PrincpalInputSerializer, PrincpalSerializer
 from rest_framework import serializers
 
 
@@ -41,3 +41,14 @@ class GroupSerializer(serializers.ModelSerializer):
 
         model = Group
         fields = ('uuid', 'name', 'principals')
+
+
+class GroupPrincipalInputSerializer(serializers.Serializer):
+    """Serializer for adding principals to a group."""
+
+    principals = PrincpalInputSerializer(many=True)
+
+    class Meta:
+        """Metadata for the serializer."""
+
+        fields = ('principals',)

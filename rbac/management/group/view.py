@@ -17,9 +17,10 @@
 
 """View for group management."""
 from management.group.model import Group
-from management.group.serializer import GroupInputSerializer, GroupSerializer
+from management.group.serializer import (GroupInputSerializer,
+                                         GroupPrincipalInputSerializer,
+                                         GroupSerializer)
 from management.principal.model import Principal
-from management.principal.serializer import PrincpalInputSerializer
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import AllowAny
@@ -46,7 +47,7 @@ class GroupViewSet(mixins.CreateModelMixin,
     def get_serializer_class(self):
         """Get serializer based on route."""
         if 'principals' in self.request.path:
-            return PrincpalInputSerializer
+            return GroupPrincipalInputSerializer
         if self.request.method == 'POST' or self.request.method == 'PUT':
             return GroupInputSerializer
         return GroupSerializer
@@ -254,10 +255,10 @@ class GroupViewSet(mixins.CreateModelMixin,
             }
         """
         group = self.get_object()
-        serializer = PrincpalInputSerializer(data=request.data, many=True)
+        serializer = GroupPrincipalInputSerializer(data=request.data)
         principals = None
         if serializer.is_valid():
-            principals = serializer.data[:]
+            principals = serializer.data.pop('principals')
         else:
             return Response(serializer.errors,
                             status=status.HTTP_400_BAD_REQUEST)
