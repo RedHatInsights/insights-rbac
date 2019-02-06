@@ -592,9 +592,9 @@ paths:
       produces:
       - 'application/json'
       parameters:
-      - name: 'principal'
+      - name: 'username'
         in: 'query'
-        description: 'Unique principal to obtain access for'
+        description: 'Unique username of the principal to obtain access for'
         required: true
         type: 'string'
       - name: 'application'
