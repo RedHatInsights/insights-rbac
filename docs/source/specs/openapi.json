@@ -9,6 +9,14 @@
             "url": "https://opensource.org/licenses/AGPL-3.0"
         }
     },
+    "security": [
+        {
+            "basic_auth": []
+        },
+        {
+            "api_key": []
+        }
+    ],
     "tags": [{
             "name": "Principal",
             "description": "Operations about principals"
@@ -107,10 +115,7 @@
                             }
                         }
                     }
-                },
-                "security": [{
-                    "api_key": []
-                }]
+                }
             }
         },
         "/principals/{username}/": {
@@ -163,10 +168,7 @@
                             }
                         }
                     }
-                },
-                "security": [{
-                    "api_key": []
-                }]
+                }
             }
         },
         "/groups/": {
@@ -211,10 +213,7 @@
                             }
                         }
                     }
-                },
-                "security": [{
-                    "api_key": []
-                }]
+                }
             },
             "get": {
                 "tags": [
@@ -246,10 +245,7 @@
                             }
                         }
                     }
-                },
-                "security": [{
-                    "api_key": []
-                }]
+                }
             }
         },
         "/groups/{uuid}/": {
@@ -303,10 +299,7 @@
                             }
                         }
                     }
-                },
-                "security": [{
-                    "api_key": []
-                }]
+                }
             },
             "delete": {
                 "tags": [
@@ -361,10 +354,7 @@
                             }
                         }
                     }
-                },
-                "security": [{
-                    "api_key": []
-                }]
+                }
             }
         },
         "/groups/{uuid}/principals/": {
@@ -424,10 +414,7 @@
                             }
                         }
                     }
-                },
-                "security": [{
-                    "api_key": []
-                }]
+                }
             },
             "delete": {
                 "tags": [
@@ -485,10 +472,7 @@
                             }
                         }
                     }
-                },
-                "security": [{
-                    "api_key": []
-                }]
+                }
             }
         },
         "/roles/": {
@@ -533,10 +517,7 @@
                             }
                         }
                     }
-                },
-                "security": [{
-                    "api_key": []
-                }]
+                }
             },
             "get": {
                 "tags": [
@@ -568,10 +549,7 @@
                             }
                         }
                     }
-                },
-                "security": [{
-                    "api_key": []
-                }]
+                }
             }
         },
         "/roles/{uuid}/": {
@@ -625,10 +603,7 @@
                             }
                         }
                     }
-                },
-                "security": [{
-                    "api_key": []
-                }]
+                }
             },
             "delete": {
                 "tags": [
@@ -673,10 +648,7 @@
                             }
                         }
                     }
-                },
-                "security": [{
-                    "api_key": []
-                }]
+                }
             },
             "put": {
                 "tags": [
@@ -732,10 +704,7 @@
                             }
                         }
                     }
-                },
-                "security": [{
-                    "api_key": []
-                }]
+                }
             }
         },
         "/policies/": {
@@ -780,10 +749,7 @@
                             }
                         }
                     }
-                },
-                "security": [{
-                    "api_key": []
-                }]
+                }
             },
             "get": {
                 "tags": [
@@ -815,10 +781,7 @@
                             }
                         }
                     }
-                },
-                "security": [{
-                    "api_key": []
-                }]
+                }
             }
         },
         "/policies/{uuid}/": {
@@ -872,10 +835,7 @@
                             }
                         }
                     }
-                },
-                "security": [{
-                    "api_key": []
-                }]
+                }
             },
             "put": {
                 "tags": [
@@ -927,10 +887,7 @@
                             }
                         }
                     }
-                },
-                "security": [{
-                    "api_key": []
-                }]
+                }
             },
             "delete": {
                 "tags": [
@@ -975,10 +932,7 @@
                             }
                         }
                     }
-                },
-                "security": [{
-                    "api_key": []
-                }]
+                }
             }
         },
         "/access/": {
@@ -1041,10 +995,7 @@
                             }
                         }
                     }
-                },
-                "security": [{
-                    "api_key": []
-                }]
+                }
             }
         }
     },
@@ -1070,7 +1021,13 @@
                 "type": "apiKey",
                 "name": "Authorization",
                 "in": "header"
+            },
+	    "basic_auth": {
+                "type": "http",
+                "description": "The userid/password is needed when accessing this API externally",
+                "scheme": "basic"
             }
+
         },
         "schemas": {
             "Error": {
