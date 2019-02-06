@@ -94,8 +94,8 @@ class PolicyViewSet(mixins.CreateModelMixin,
         """Obtain the list of policies for the tenant.
 
         @api {get} /api/v1/policies/   Obtain a list of policies
-        @apiName getGroups
-        @apiGroup Group
+        @apiName getPolicies
+        @apiGroup Policy
         @apiVersion 1.0.0
         @apiDescription Obtain a list of policies
 

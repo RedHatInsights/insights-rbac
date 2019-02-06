@@ -1075,11 +1075,18 @@
         "schemas": {
             "Error": {
                 "required": [
-                    "error_key"
+                    "errors"
                 ],
                 "properties": {
-                    "error_key": {
-                        "type": "string"
+                    "errors": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "example": {
+                                "detail": "Not Found.",
+                                "status": 404
+                            }
+                        }
                     }
                 }
             },
