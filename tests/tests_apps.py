@@ -48,7 +48,7 @@ class AppsModelTest(TestCase):
 
     def test_startup_status(self):
         """Test the server status startup."""
-        with self.assertLogs('api.status.models', level='INFO') as logger:
+        with self.assertLogs('api.status.model', level='INFO') as logger:
             api_config = apps.get_app_config('api')
             api_config.startup_status()
             self.assertNotEqual(logger.output, [])

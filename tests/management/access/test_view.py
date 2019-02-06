@@ -139,4 +139,4 @@ class AccessViewTests(IdentityRequest):
                                                      uuid4())
         client = APIClient()
         response = client.get(url, **self.headers)
-        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)

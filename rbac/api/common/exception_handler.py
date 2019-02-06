@@ -15,8 +15,23 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 
-"""API views for import organization"""
-# flake8: noqa
-# pylint: disable=unused-import
-from api.status.view import status
-from api.openapi.view import openapi
+"""Common exception handler class."""
+import copy
+
+from rest_framework.views import exception_handler
+
+
+def custom_exception_handler(exc, context):
+    """Create custom response for exceptions."""
+    response = exception_handler(exc, context)
+
+    # Now add the HTTP status code to the response.
+    if response is not None:
+        data = copy.deepcopy(response.data)
+        data['status'] = response.status_code
+        error_response = {
+            'errors': [data]
+        }
+        response.data = error_response
+
+    return response

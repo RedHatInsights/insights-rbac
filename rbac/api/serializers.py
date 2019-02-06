@@ -24,7 +24,7 @@ from rest_framework import serializers
 
 from api.common import RH_IDENTITY_HEADER
 from api.models import Tenant, User
-from api.status.serializers import StatusSerializer  # noqa: F401
+from api.status.serializer import StatusSerializer  # noqa: F401
 
 
 def error_obj(key, message):
@@ -93,7 +93,7 @@ class UserSerializer(serializers.ModelSerializer):
                     tenant.save()
                     tenant = Tenant.objects.get(schema_name=schema_name)
             else:
-                key = 'tenant'
+                key = 'detail'
                 message = 'Tenant for requesting user could not be found.'
                 raise serializers.ValidationError(error_obj(key, message))
 

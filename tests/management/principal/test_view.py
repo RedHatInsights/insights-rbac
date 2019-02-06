@@ -79,11 +79,11 @@ class PrincipalViewsetTests(IdentityRequest):
         response = client.get(url, **self.headers)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        for keyname in ['count', 'next', 'previous', 'results']:
+        for keyname in ['meta', 'links', 'data']:
             self.assertIn(keyname, response.data)
-        self.assertIsInstance(response.data.get('results'), list)
-        self.assertEqual(len(response.data.get('results')), 1)
+        self.assertIsInstance(response.data.get('data'), list)
+        self.assertEqual(len(response.data.get('data')), 1)
 
-        principal = response.data.get('results')[0]
+        principal = response.data.get('data')[0]
         self.assertIsNotNone(principal.get('username'))
         self.assertEqual(principal.get('username'), self.principal.username)

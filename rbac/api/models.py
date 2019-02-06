@@ -20,7 +20,7 @@ from uuid import uuid4
 from django.db import models
 from tenant_schemas.models import TenantMixin
 
-from api.status.models import Status  # noqa: F401
+from api.status.model import Status  # noqa: F401
 
 
 class Tenant(TenantMixin):

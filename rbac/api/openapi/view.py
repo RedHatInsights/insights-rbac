@@ -15,8 +15,24 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 
-"""API views for import organization"""
-# flake8: noqa
-# pylint: disable=unused-import
-from api.status.view import status
-from api.openapi.view import openapi
+"""View for openapi documentation."""
+import json
+
+from rest_framework import permissions, status
+from rest_framework.decorators import api_view, permission_classes, renderer_classes
+from rest_framework.renderers import JSONRenderer
+from rest_framework.response import Response
+
+
+OPENAPI_FILE_PATH = 'rbac/staticfiles/openapi.json'
+
+
+@api_view(['GET'])
+@permission_classes((permissions.AllowAny,))
+@renderer_classes((JSONRenderer,))
+def openapi(request):
+    """Provide the openapi information."""
+    with open(OPENAPI_FILE_PATH) as api_file:
+        data = json.load(api_file)
+        return Response(data)
+    return Response(status=status.HTTP_404_NOT_FOUND)

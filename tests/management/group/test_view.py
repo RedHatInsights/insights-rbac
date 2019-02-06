@@ -112,12 +112,12 @@ class GroupViewsetTests(IdentityRequest):
         response = client.get(url, **self.headers)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        for keyname in ['count', 'next', 'previous', 'results']:
+        for keyname in ['meta', 'links', 'data']:
             self.assertIn(keyname, response.data)
-        self.assertIsInstance(response.data.get('results'), list)
-        self.assertEqual(len(response.data.get('results')), 1)
+        self.assertIsInstance(response.data.get('data'), list)
+        self.assertEqual(len(response.data.get('data')), 1)
 
-        group = response.data.get('results')[0]
+        group = response.data.get('data')[0]
         self.assertIsNotNone(group.get('name'))
         self.assertEqual(group.get('name'), self.group.name)
 
@@ -180,15 +180,13 @@ class GroupViewsetTests(IdentityRequest):
         """Test that removing a principal to a group returns successfully."""
         url = reverse('group-principals', kwargs={'uuid': self.group.uuid})
         client = APIClient()
-        new_username = uuid4()
-        test_data = {'principals':[{'username': self.principal.username}, {'username': new_username}]}
-        response = client.delete(url, test_data, format='json', **self.headers)
+        url = '{}?username={}'.format(url, self.principal.username)
+        response = client.delete(url, format='json', **self.headers)
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
 
     def test_remove_group_principals_invalid(self):
         """Test that removing a principal returns an error with invalid data format."""
         url = reverse('group-principals', kwargs={'uuid': self.group.uuid})
         client = APIClient()
-        test_data = {'username': self.principal.username}
-        response = client.delete(url, test_data, format='json', **self.headers)
+        response = client.delete(url, format='json', **self.headers)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)

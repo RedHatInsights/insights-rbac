@@ -19,7 +19,7 @@
 from django.utils.translation import gettext as _
 from management.models import Principal
 from management.role.serializer import AccessSerializer
-from rest_framework import status
+from rest_framework import serializers, status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
@@ -99,8 +99,9 @@ def access(request):
     have_parameters = all(param in request.query_params for param in required_parameters)
 
     if not have_parameters:
+        key = 'detail'
         message = 'Query parameters [{}] are required.'.format(', '.join(required_parameters))
-        return Response({'query_params': _(message)}, status=status.HTTP_400_BAD_REQUEST)
+        raise serializers.ValidationError({key: _(message)})
 
     username = request.query_params.get(USERNAME_KEY)
     app = request.query_params.get(APPLICATION_KEY)
@@ -108,11 +109,11 @@ def access(request):
     try:
         principal = Principal.objects.get(username=username)
     except Principal.DoesNotExist:
+        key = 'detail'
         message = 'No access found for principal with username {}.'.format(username)
-        return Response({USERNAME_KEY: _(message)}, status=status.HTTP_404_NOT_FOUND)
+        raise serializers.ValidationError({key: _(message)})
 
     groups = set(principal.group.all())
-    print(groups)
     policies = _policies_for_groups(groups)
     roles = _roles_for_policies(policies)
     access = _access_for_roles(roles, app)

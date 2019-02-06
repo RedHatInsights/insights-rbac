@@ -51,7 +51,7 @@ class PolicyInputSerializer(serializers.ModelSerializer):
             group = Group.objects.get(uuid=group_uuid)
         except Group.DoesNotExist:
             msg = 'Group with uuid {} could not be found.'
-            error = {'group': msg.format(group_uuid)}
+            error = {'detail': msg.format(group_uuid)}
             raise serializers.ValidationError(error)
 
         policy = Policy(name=name, group=group)
@@ -62,7 +62,7 @@ class PolicyInputSerializer(serializers.ModelSerializer):
                 roles.append(role)
             except Role.DoesNotExist:
                 msg = 'Role with uuid {} could not be found.'
-                error = {'roles': msg.format(group_uuid)}
+                error = {'detail': msg.format(group_uuid)}
                 raise serializers.ValidationError(error)
 
         policy.save()
@@ -82,7 +82,7 @@ class PolicyInputSerializer(serializers.ModelSerializer):
                 instance.save()
             except Group.DoesNotExist:
                 msg = 'Group with uuid {} could not be found.'
-                error = {'group': msg.format(group_uuid)}
+                error = {'detail': msg.format(group_uuid)}
                 raise serializers.ValidationError(error)
 
         role_uuids = validated_data.pop('roles')
@@ -93,7 +93,7 @@ class PolicyInputSerializer(serializers.ModelSerializer):
                 roles.append(role)
             except Role.DoesNotExist:
                 msg = 'Role with uuid {} could not be found.'
-                error = {'roles': msg.format(group_uuid)}
+                error = {'detail': msg.format(group_uuid)}
                 raise serializers.ValidationError(error)
 
         instance.roles.clear()

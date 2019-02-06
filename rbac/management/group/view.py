@@ -16,15 +16,19 @@
 #
 
 """View for group management."""
+from django.utils.translation import gettext as _
 from management.group.model import Group
 from management.group.serializer import (GroupInputSerializer,
                                          GroupPrincipalInputSerializer,
                                          GroupSerializer)
 from management.principal.model import Principal
-from rest_framework import mixins, status, viewsets
+from rest_framework import mixins, serializers, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
+
+
+USERNAME_KEY = 'username'
 
 
 class GroupViewSet(mixins.CreateModelMixin,
@@ -192,8 +196,8 @@ class GroupViewSet(mixins.CreateModelMixin,
 
     def add_principals(self, group, principals):
         """Process list of principals and add them to the group."""
-        for input in principals:
-            username = input['username']
+        for item in principals:
+            username = item['username']
             try:
                 principal = Principal.objects.get(username=username)
             except Principal.DoesNotExist:
@@ -205,8 +209,7 @@ class GroupViewSet(mixins.CreateModelMixin,
 
     def remove_principals(self, group, principals):
         """Process list of principals and remove them from the group."""
-        for input in principals:
-            username = input['username']
+        for username in principals:
             try:
                 principal = Principal.objects.get(username=username)
             except Principal.DoesNotExist:
@@ -220,11 +223,11 @@ class GroupViewSet(mixins.CreateModelMixin,
     def principals(self, request, uuid=None):
         """Add or remove principals from a group.
 
-        @api {post | delete} /api/v1/groups/:uuid/princpals/   Add or remove a princpal
-        @apiName addOrRemovePrincipals
+        @api {post} /api/v1/groups/:uuid/princpals/   Add princpals to a group
+        @apiName addPrincipals
         @apiGroup Group
         @apiVersion 1.0.0
-        @apiDescription Add or remove principals from a group
+        @apiDescription Add principals to a group
 
         @apiHeader {String} token User authorization token
 
@@ -246,7 +249,7 @@ class GroupViewSet(mixins.CreateModelMixin,
         @apiSuccess {String} uuid Group unique identifier
         @apiSuccess {String} name Group name
         @apiSuccess {Array} principals Array of principals
-        @apiSuccessExample {json} POST Success-Response:
+        @apiSuccessExample {json} Success-Response:
             HTTP/1.1 200 OK
             {
                 "uuid": "16fd2706-8baf-433b-82eb-8c7fada847da",
@@ -255,21 +258,38 @@ class GroupViewSet(mixins.CreateModelMixin,
                     { "username": "jsmith" }
                 ]
             }
-        @apiSuccessExample {json} DELETE Success-Response:
+        """
+        """
+        @api {delete} /api/v1/groups/:uuid/princpals/   Remove princpals from group
+        @apiName removePrincipals
+        @apiGroup Group
+        @apiVersion 1.0.0
+        @apiDescription Remove principals from a group
+
+        @apiHeader {String} token User authorization token
+
+        @apiParam (Path) {String} id Group unique identifier
+
+        @apiParam (Query) {String} username List of comma separated principal usernames
+
+        @apiSuccessExample {json} Success-Response:
             HTTP/1.1 204 NO CONTENT
         """
+        principals = []
         group = self.get_object()
-        serializer = GroupPrincipalInputSerializer(data=request.data)
-        principals = None
-        if serializer.is_valid():
-            principals = serializer.data.pop('principals')
-        else:
-            return Response(serializer.errors,
-                            status=status.HTTP_400_BAD_REQUEST)
         if request.method == 'POST':
+            serializer = GroupPrincipalInputSerializer(data=request.data)
+            if serializer.is_valid(raise_exception=True):
+                principals = serializer.data.pop('principals')
             group = self.add_principals(group, principals)
             output = GroupSerializer(group)
             return Response(status=status.HTTP_200_OK, data=output.data)
         else:
+            if USERNAME_KEY not in request.query_params:
+                key = 'detail'
+                message = 'Query parameter {} is required.'.format(USERNAME_KEY)
+                raise serializers.ValidationError({key: _(message)})
+            username = request.query_params.get(USERNAME_KEY, '')
+            principals = [name.strip() for name in username.split(',')]
             self.remove_principals(group, principals)
             return Response(status=status.HTTP_204_NO_CONTENT)

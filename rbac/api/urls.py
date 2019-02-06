@@ -17,12 +17,13 @@
 from django.conf.urls import include, url
 from rest_framework.routers import DefaultRouter
 
-from api.views import (status,)
+from api.views import (openapi, status)
 
 ROUTER = DefaultRouter()
 
 # pylint: disable=invalid-name
 urlpatterns = [
     url(r'^status/$', status, name='server-status'),
+    url(r'^openapi.json', openapi, name='openapi'),
     url(r'^', include(ROUTER.urls)),
 ]
