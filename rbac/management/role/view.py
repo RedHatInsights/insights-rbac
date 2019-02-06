@@ -119,19 +119,25 @@ class RoleViewSet(mixins.CreateModelMixin,
         @apiSuccessExample {json} Success-Response:
             HTTP/1.1 200 OK
             {
-                'count': 2,
-                'next': None,
-                'previous': None,
+                'meta': {
+                    'count': 2
+                }
+                'links': {
+                    'first': /api/v1/roles/?page=1,
+                    'next': None,
+                    'previous': None,
+                    'last': /api/v1/roles/?page=1
+                },
                 'data': [
-                                {
-                                    "uuid": "16fd2706-8baf-433b-82eb-8c7fada847da",
-                                    "name": "RoleA"
-                                },
-                                {
-                                    "uuid": "20ecdcd0-397c-4ede-8940-f3439bf40212",
-                                    "name": "RoleB"
-                                }
-                            ]
+                            {
+                                "uuid": "16fd2706-8baf-433b-82eb-8c7fada847da",
+                                "name": "RoleA"
+                            },
+                            {
+                                "uuid": "20ecdcd0-397c-4ede-8940-f3439bf40212",
+                                "name": "RoleB"
+                            }
+                        ]
             }
 
         """

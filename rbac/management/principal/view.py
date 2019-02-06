@@ -57,9 +57,15 @@ class PrincipalViewSet(mixins.ListModelMixin,
         @apiSuccessExample {json} Success-Response:
             HTTP/1.1 200 OK
             {
-                'count': 2,
-                'next': None,
-                'previous': None,
+                'meta': {
+                    'count': 2
+                }
+                'links': {
+                    'first': /api/v1/principals/?page=1,
+                    'next': None,
+                    'previous': None,
+                    'last': /api/v1/principals/?page=1
+                },
                 'data': [
                                 {
                                     "username": "jsmith",

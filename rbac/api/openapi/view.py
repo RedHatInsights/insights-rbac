@@ -16,6 +16,7 @@
 #
 
 """View for openapi documentation."""
+import gzip
 import json
 
 from rest_framework import permissions, status
@@ -24,7 +25,7 @@ from rest_framework.renderers import JSONRenderer
 from rest_framework.response import Response
 
 
-OPENAPI_FILE_PATH = 'rbac/staticfiles/openapi.json'
+OPENAPI_FILE_PATH = 'rbac/staticfiles/openapi.json.gz'
 
 
 @api_view(['GET'])
@@ -32,7 +33,7 @@ OPENAPI_FILE_PATH = 'rbac/staticfiles/openapi.json'
 @renderer_classes((JSONRenderer,))
 def openapi(request):
     """Provide the openapi information."""
-    with open(OPENAPI_FILE_PATH) as api_file:
+    with gzip.open(OPENAPI_FILE_PATH) as api_file:
         data = json.load(api_file)
         return Response(data)
     return Response(status=status.HTTP_404_NOT_FOUND)
