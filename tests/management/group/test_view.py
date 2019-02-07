@@ -180,7 +180,7 @@ class GroupViewsetTests(IdentityRequest):
         """Test that removing a principal to a group returns successfully."""
         url = reverse('group-principals', kwargs={'uuid': self.group.uuid})
         client = APIClient()
-        url = '{}?username={}'.format(url, self.principal.username)
+        url = '{}?usernames={}'.format(url, self.principal.username)
         response = client.delete(url, format='json', **self.headers)
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
 
