@@ -39,20 +39,19 @@ class PrincipalViewSet(mixins.ListModelMixin,
     lookup_field = 'username'
 
     def list(self, request, *args, **kwargs):
-        """Obtain the list of principal for the tenant.
+        """Obtain the list of principals for the tenant.
 
-        @api {get} /api/v1/principal/   Obtain a list of principal
+        @api {get} /api/v1/principals/   Obtain a list of principals
         @apiName getPrincipals
         @apiGroup Principal
         @apiVersion 1.0.0
-        @apiDescription Obtain a list of principal
+        @apiDescription Obtain a list of principals
 
         @apiHeader {String} token User authorization token
 
-        @apiSuccess {Number} count The number of principal.
-        @apiSuccess {String} previous  The uri of the previous page of results.
-        @apiSuccess {String} next  The uri of the next page of results.
-        @apiSuccess {Object[]} data  The array of pricipal results.
+        @apiSuccess {Object} meta The metadata for pagination.
+        @apiSuccess {Object} links  The object containing links of results.
+        @apiSuccess {Object[]} data  The array of results.
 
         @apiSuccessExample {json} Success-Response:
             HTTP/1.1 200 OK

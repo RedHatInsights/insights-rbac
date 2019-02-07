@@ -12,9 +12,6 @@
     "security": [
         {
             "basic_auth": []
-        },
-        {
-            "api_key": []
         }
     ],
     "tags": [{
@@ -81,16 +78,6 @@
                 ],
                 "summary": "List the principals for a tenant",
                 "operationId": "listPrincipals",
-                "parameters": [{
-                    "name": "uuid",
-                    "in": "path",
-                    "description": "ID of princpal to get",
-                    "required": true,
-                    "schema": {
-                        "type": "string",
-                        "format": "uuid"
-                    }
-                }],
                 "responses": {
                     "200": {
                         "description": "A paginated list of principals",
@@ -1017,11 +1004,6 @@
             }
         },
         "securitySchemes": {
-            "api_key": {
-                "type": "apiKey",
-                "name": "Authorization",
-                "in": "header"
-            },
 	    "basic_auth": {
                 "type": "http",
                 "description": "The userid/password is needed when accessing this API externally",
