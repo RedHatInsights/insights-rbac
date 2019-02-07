@@ -28,7 +28,7 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
 
-USERNAME_KEY = 'username'
+USERNAMES_KEY = 'usernames'
 
 
 class GroupViewSet(mixins.CreateModelMixin,
@@ -275,7 +275,7 @@ class GroupViewSet(mixins.CreateModelMixin,
 
         @apiParam (Path) {String} id Group unique identifier
 
-        @apiParam (Query) {String} username List of comma separated principal usernames
+        @apiParam (Query) {String} usernames List of comma separated principal usernames
 
         @apiSuccessExample {json} Success-Response:
             HTTP/1.1 204 NO CONTENT
@@ -290,11 +290,11 @@ class GroupViewSet(mixins.CreateModelMixin,
             output = GroupSerializer(group)
             return Response(status=status.HTTP_200_OK, data=output.data)
         else:
-            if USERNAME_KEY not in request.query_params:
+            if USERNAMES_KEY not in request.query_params:
                 key = 'detail'
-                message = 'Query parameter {} is required.'.format(USERNAME_KEY)
+                message = 'Query parameter {} is required.'.format(USERNAMES_KEY)
                 raise serializers.ValidationError({key: _(message)})
-            username = request.query_params.get(USERNAME_KEY, '')
+            username = request.query_params.get(USERNAMES_KEY, '')
             principals = [name.strip() for name in username.split(',')]
             self.remove_principals(group, principals)
             return Response(status=status.HTTP_204_NO_CONTENT)
