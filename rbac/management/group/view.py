@@ -98,10 +98,9 @@ class GroupViewSet(mixins.CreateModelMixin,
 
         @apiParam (Query) {String} name Filter by group name.
 
-        @apiSuccess {Number} count The number of groups.
-        @apiSuccess {String} previous  The uri of the previous page of results.
-        @apiSuccess {String} next  The uri of the next page of results.
-        @apiSuccess {Object[]} data  The array of group results.
+        @apiSuccess {Object} meta The metadata for pagination.
+        @apiSuccess {Object} links  The object containing links of results.
+        @apiSuccess {Object[]} data  The array of results.
 
         @apiSuccessExample {json} Success-Response:
             HTTP/1.1 200 OK
