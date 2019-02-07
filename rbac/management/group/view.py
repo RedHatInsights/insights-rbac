@@ -229,7 +229,7 @@ class GroupViewSet(mixins.CreateModelMixin,
     def principals(self, request, uuid=None):
         """Add or remove principals from a group.
 
-        @api {post} /api/v1/groups/:uuid/princpals/   Add princpals to a group
+        @api {post} /api/v1/groups/:uuid/principals/   Add principals to a group
         @apiName addPrincipals
         @apiGroup Group
         @apiVersion 1.0.0
@@ -266,7 +266,7 @@ class GroupViewSet(mixins.CreateModelMixin,
             }
         """
         """
-        @api {delete} /api/v1/groups/:uuid/princpals/   Remove princpals from group
+        @api {delete} /api/v1/groups/:uuid/principals/   Remove principals from group
         @apiName removePrincipals
         @apiGroup Group
         @apiVersion 1.0.0
