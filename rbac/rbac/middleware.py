@@ -25,10 +25,12 @@ from django.http import HttpResponse
 from django.utils.deprecation import MiddlewareMixin
 from rest_framework.exceptions import ValidationError
 from tenant_schemas.middleware import BaseTenantMiddleware
+from tenant_schemas.utils import tenant_context
 
 from api.common import RH_IDENTITY_HEADER
 from api.models import Tenant, User
 from api.serializers import UserSerializer, create_schema_name, extract_header
+from management.models import Principal  # noqa: I100, I201
 
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
@@ -183,6 +185,19 @@ class IdentityHeaderMiddleware(MiddlewareMixin):  # pylint: disable=R0903
                                                              tenant,
                                                              request)
             request.user = user
+
+            # Temporarily add principals based on API interaction
+            with tenant_context(tenant):
+                try:
+                    Principal.objects.get(username=username)
+                except Principal.DoesNotExist:
+                    try:
+                        with transaction.atomic():
+                            principal = Principal(username=username, email=email)
+                            principal.save()
+                            logger.info('Created new principal for account_id %s.', account)
+                    except IntegrityError:
+                        pass
 
 
 class DisableCSRF(MiddlewareMixin):  # pylint: disable=too-few-public-methods
