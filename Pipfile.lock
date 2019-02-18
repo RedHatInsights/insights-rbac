@@ -531,6 +531,7 @@
                 "sha256:00cf895504a7895ee433807c62094cf1e95f065843bf3acd17037c3e9a2becd4",
                 "sha256:728607e34d60456d736cc7991fd236afb828b21b82f956c5ea75f94c8414040a"
             ],
+            "index": "pypi",
             "version": "==0.4.3"
         },
         "sphinxcontrib-websupport": {
