@@ -120,14 +120,14 @@ class AccessViewTests(IdentityRequest):
         client = APIClient()
         response = client.get(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertIsNotNone(response.data.get('access'))
-        self.assertIsInstance(response.data.get('access'), list)
-        self.assertEqual(len(response.data.get('access')), 1)
-        self.assertEqual(self.access_data, response.data.get('access')[0])
+        self.assertIsNotNone(response.data.get('data'))
+        self.assertIsInstance(response.data.get('data'), list)
+        self.assertEqual(len(response.data.get('data')), 1)
+        self.assertEqual(self.access_data, response.data.get('data')[0])
 
     def test_missing_query_params(self):
         """Test that we get expected failure when missing required query params."""
-        url = '{}?application={}'.format(reverse('access'), 'app')
+        url = '{}?page={}'.format(reverse('access'), '3')
         client = APIClient()
         response = client.get(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)

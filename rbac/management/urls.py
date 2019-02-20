@@ -15,11 +15,11 @@
 #
 """Describes the urls and patterns for the management application."""
 from django.conf.urls import include, url
-from management.views import (GroupViewSet,
+from management.views import (AccessView,
+                              GroupViewSet,
                               PolicyViewSet,
                               PrincipalViewSet,
-                              RoleViewSet,
-                              access)
+                              RoleViewSet)
 from rest_framework.routers import DefaultRouter
 
 
@@ -31,6 +31,6 @@ ROUTER.register(r'policies', PolicyViewSet)
 
 # pylint: disable=invalid-name
 urlpatterns = [
-    url(r'^access/$', access, name='access'),
+    url(r'^access/$', AccessView.as_view(), name='access'),
     url(r'^', include(ROUTER.urls)),
 ]
