@@ -76,6 +76,25 @@
         ],
         "summary": "List the principals for a tenant",
         "operationId": "listPrincipals",
+        "parameters": [{
+            "name": "page",
+            "in": "query",
+            "description": "Parameter for selecting the page of data (default is 1).",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "description": "Parameter for selecting the amount of data in a page (default is 10).",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "A paginated list of principals",
@@ -206,6 +225,25 @@
         ],
         "summary": "List the groups for a tenant",
         "operationId": "listGroups",
+        "parameters": [{
+            "name": "page",
+            "in": "query",
+            "description": "Parameter for selecting the page of data (default is 1).",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "description": "Parameter for selecting the amount of data in a page (default is 10).",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "A paginated list of group objects",
@@ -510,6 +548,25 @@
         ],
         "summary": "List the roles for a tenant",
         "operationId": "listRoles",
+        "parameters": [{
+            "name": "page",
+            "in": "query",
+            "description": "Parameter for selecting the page of data (default is 1).",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "description": "Parameter for selecting the amount of data in a page (default is 10).",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "A paginated list of role objects",
@@ -742,6 +799,25 @@
         ],
         "summary": "List the policies in the tenant",
         "operationId": "listPolicies",
+        "parameters": [{
+            "name": "page",
+            "in": "query",
+            "description": "Parameter for selecting the page of data (default is 1).",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "description": "Parameter for selecting the amount of data in a page (default is 10).",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "A paginated list of policy objects",
@@ -928,21 +1004,39 @@
         "summary": "Get the permitted access for a principal in the tenant",
         "operationId": "getPrincipalAccess",
         "parameters": [{
-            "name": "username",
-            "in": "query",
-            "description": "Unique username of the principal to obtain access for",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
             "name": "application",
             "in": "query",
             "description": "The application name to obtain access for the principal",
             "required": true,
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "name": "username",
+            "in": "query",
+            "description": "Unique username of the principal to obtain access for",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "description": "Parameter for selecting the page of data (default is 1).",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "description": "Parameter for selecting the amount of data in a page (default is 10).",
+            "required": false,
+            "schema": {
+              "type": "integer"
             }
           }
         ],
