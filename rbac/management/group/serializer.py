@@ -24,23 +24,30 @@ from rest_framework import serializers
 class GroupInputSerializer(serializers.ModelSerializer):
     """Serializer for Group input model."""
 
+    uuid = serializers.UUIDField(read_only=True)
+    name = serializers.CharField(required=True, max_length=150)
+    description = serializers.CharField(allow_null=True, required=False)
+
     class Meta:
         """Metadata for the serializer."""
 
         model = Group
-        fields = ('uuid', 'name')
+        fields = ('uuid', 'name', 'description')
 
 
 class GroupSerializer(serializers.ModelSerializer):
     """Serializer for the Group model."""
 
+    uuid = serializers.UUIDField(read_only=True)
+    name = serializers.CharField(required=True, max_length=150)
+    description = serializers.CharField(allow_null=True, required=False)
     principals = PrincpalSerializer(read_only=True, many=True)
 
     class Meta:
         """Metadata for the serializer."""
 
         model = Group
-        fields = ('uuid', 'name', 'principals')
+        fields = ('uuid', 'name', 'description', 'principals')
 
 
 class GroupPrincipalInputSerializer(serializers.Serializer):
