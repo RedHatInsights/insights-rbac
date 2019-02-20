@@ -46,19 +46,23 @@ class AccessSerializer(serializers.ModelSerializer):
 class RoleSerializer(serializers.ModelSerializer):
     """Serializer for the Role model."""
 
+    uuid = serializers.UUIDField(read_only=True)
+    name = serializers.CharField(required=True, max_length=150)
+    description = serializers.CharField(allow_null=True, required=False)
     access = AccessSerializer(many=True)
 
     class Meta:
         """Metadata for the serializer."""
 
         model = Role
-        fields = ('uuid', 'name', 'access')
+        fields = ('uuid', 'name', 'description', 'access')
 
     def create(self, validated_data):
         """Create the role object in the database."""
         name = validated_data.pop('name')
+        description = validated_data.pop('description', None)
         access_list = validated_data.pop('access')
-        role = Role.objects.create(name=name)
+        role = Role.objects.create(name=name, description=description)
         role.save()
         for access_item in access_list:
             resource_def_list = access_item.pop('resourceDefinition')
@@ -72,8 +76,8 @@ class RoleSerializer(serializers.ModelSerializer):
     def update(self, instance, validated_data):
         """Update the role object in the database."""
         access_list = validated_data.pop('access')
-
         instance.name = validated_data.get('name', instance.name)
+        instance.description = validated_data.get('description', instance.description)
         instance.save()
         instance.access.all().delete()
 

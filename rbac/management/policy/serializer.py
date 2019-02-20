@@ -33,6 +33,9 @@ class UUIDListField(serializers.ListField):
 class PolicyInputSerializer(serializers.ModelSerializer):
     """Serializer for the policy model."""
 
+    uuid = serializers.UUIDField(read_only=True)
+    name = serializers.CharField(required=True, max_length=150)
+    description = serializers.CharField(allow_null=True, required=False)
     group = serializers.UUIDField(required=True)
     roles = UUIDListField(required=True)
 
@@ -40,11 +43,12 @@ class PolicyInputSerializer(serializers.ModelSerializer):
         """Metadata for the serializer."""
 
         model = Policy
-        fields = ('uuid', 'name', 'group', 'roles')
+        fields = ('uuid', 'name', 'description', 'group', 'roles')
 
     def create(self, validated_data):
         """Create the policy object in the database."""
         name = validated_data.pop('name')
+        description = validated_data.pop('description', None)
         group_uuid = validated_data.pop('group')
         role_uuids = validated_data.pop('roles')
         try:
@@ -54,7 +58,7 @@ class PolicyInputSerializer(serializers.ModelSerializer):
             error = {'detail': msg.format(group_uuid)}
             raise serializers.ValidationError(error)
 
-        policy = Policy(name=name, group=group)
+        policy = Policy(name=name, description=description, group=group)
         roles = []
         for role_uuid in role_uuids:
             try:
@@ -74,6 +78,8 @@ class PolicyInputSerializer(serializers.ModelSerializer):
     def update(self, instance, validated_data):
         """Update the policy object in the database."""
         instance.name = validated_data.get('name', instance.name)
+        instance.description = validated_data.get('description',
+                                                  instance.description)
         group_uuid = validated_data.pop('group')
         if instance.group.uuid != group_uuid:
             try:
@@ -112,6 +118,7 @@ class PolicyInputSerializer(serializers.ModelSerializer):
         return {
             'uuid': obj.uuid,
             'name': obj.name,
+            'description': obj.description,
             'group': group.data,
             'roles': roles
         }
@@ -120,6 +127,9 @@ class PolicyInputSerializer(serializers.ModelSerializer):
 class PolicySerializer(serializers.ModelSerializer):
     """Serializer for the policy model."""
 
+    uuid = serializers.UUIDField(read_only=True)
+    name = serializers.CharField(required=True, max_length=150)
+    description = serializers.CharField(allow_null=True, required=False)
     group = GroupSerializer(required=True)
     roles = RoleSerializer(many=True, required=True)
 
@@ -127,7 +137,7 @@ class PolicySerializer(serializers.ModelSerializer):
         """Metadata for the serializer."""
 
         model = Policy
-        fields = ('uuid', 'name', 'group', 'roles')
+        fields = ('uuid', 'name', 'description', 'group', 'roles')
 
     def to_representation(self, obj):
         """Convert representation to dictionary object."""
@@ -139,6 +149,7 @@ class PolicySerializer(serializers.ModelSerializer):
         return {
             'uuid': obj.uuid,
             'name': obj.name,
+            'description': obj.description,
             'group': group.data,
             'roles': roles
         }

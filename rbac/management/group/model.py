@@ -28,6 +28,7 @@ class Group(models.Model):
     uuid = models.UUIDField(default=uuid4, editable=False,
                             unique=True, null=False)
     name = models.CharField(max_length=150, unique=True)
+    description = models.TextField(null=True)
     principals = models.ManyToManyField(Principal, related_name='group')
 
     class Meta:
