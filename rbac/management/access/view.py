@@ -17,12 +17,13 @@
 
 """View for principal access."""
 from django.utils.translation import gettext as _
-from management.models import Principal
+from management.models import Access, Principal
 from management.role.serializer import AccessSerializer
 from rest_framework import serializers, status
-from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
+from rest_framework.settings import api_settings
+from rest_framework.views import APIView
 
 APPLICATION_KEY = 'application'
 USERNAME_KEY = 'username'
@@ -53,14 +54,11 @@ def _access_for_roles(roles, application):
         role_access = set(role.access.all())
         for access_item in role_access:
             if application in access_item.permission:
-                serializer = AccessSerializer(access_item)
-                access.append(serializer.data)
+                access.append(access_item)
     return access
 
 
-@api_view(['GET'])
-@permission_classes([AllowAny])
-def access(request):
+class AccessView(APIView):
     """Obtain principal access list.
 
     @api {get} /api/v1/access/   Obtain principal access list
@@ -72,13 +70,21 @@ def access(request):
     @apiHeader {String} token User authorization token
 
     @apiParam (Query) {String} application Application name
-    @apiParam (Query) {String} username Principal username
 
     @apiSuccess {Array} access Array of principal access objects
     @apiSuccessExample {json} Success-Response:
         HTTP/1.1 20O OK
         {
-            "access": [
+            'meta': {
+                'count': 1
+            }
+            'links': {
+                'first': /api/v1/access/?page=1&application=app,
+                'next': None,
+                'previous': None,
+                'last': /api/v1/groups/?page=1&application=app
+            },
+            "data": [
                 {
                     "permission": "app:*:read",
                     "resourceDefinition": [
@@ -94,28 +100,65 @@ def access(request):
             ]
         }
     """
-    principal = None
-    required_parameters = [APPLICATION_KEY, USERNAME_KEY]
-    have_parameters = all(param in request.query_params for param in required_parameters)
 
-    if not have_parameters:
-        key = 'detail'
-        message = 'Query parameters [{}] are required.'.format(', '.join(required_parameters))
-        raise serializers.ValidationError({key: _(message)})
+    serializer_class = AccessSerializer
+    pagination_class = api_settings.DEFAULT_PAGINATION_CLASS
+    permission_classes = (AllowAny,)
 
-    username = request.query_params.get(USERNAME_KEY)
-    app = request.query_params.get(APPLICATION_KEY)
+    def get_queryset(self):
+        """Define the query set."""
+        principal = None
+        required_parameters = [APPLICATION_KEY]
+        have_parameters = all(param in self.request.query_params for param in required_parameters)
 
-    try:
-        principal = Principal.objects.get(username=username)
-    except Principal.DoesNotExist:
-        key = 'detail'
-        message = 'No access found for principal with username {}.'.format(username)
-        raise serializers.ValidationError({key: _(message)})
+        if not have_parameters:
+            key = 'detail'
+            message = 'Query parameters [{}] are required.'.format(', '.join(required_parameters))
+            raise serializers.ValidationError({key: _(message)})
 
-    groups = set(principal.group.all())
-    policies = _policies_for_groups(groups)
-    roles = _roles_for_policies(policies)
-    access = _access_for_roles(roles, app)
+        current_user = self.request.user.username
+        username = self.request.query_params.get(USERNAME_KEY, current_user)
+        app = self.request.query_params.get(APPLICATION_KEY)
 
-    return Response({'access': access}, status=status.HTTP_200_OK)
+        try:
+            principal = Principal.objects.get(username=username)
+        except Principal.DoesNotExist:
+            key = 'detail'
+            message = 'No access found for principal with username {}.'.format(username)
+            raise serializers.ValidationError({key: _(message)})
+
+        groups = set(principal.group.all())
+        policies = _policies_for_groups(groups)
+        roles = _roles_for_policies(policies)
+        access = _access_for_roles(roles, app)
+        wanted_ids = [obj.id for obj in access]
+        return Access.objects.filter(id__in=wanted_ids)
+
+    def get(self, request):
+        """Provide access data for prinicpal."""
+        page = self.paginate_queryset(self.get_queryset())
+        if page is not None:
+            serializer = self.serializer_class(page, many=True)
+            return self.get_paginated_response(serializer.data)
+        return Response(status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    @property
+    def paginator(self):
+        """Return the paginator instance associated with the view, or `None`."""
+        if not hasattr(self, '_paginator'):
+            if self.pagination_class is None:
+                self._paginator = None
+            else:
+                self._paginator = self.pagination_class()
+        return self._paginator
+
+    def paginate_queryset(self, queryset):
+        """Return a single page of results, or `None` if pagination is disabled."""
+        if self.paginator is None:
+            return None
+        return self.paginator.paginate_queryset(queryset, self.request, view=self)
+
+    def get_paginated_response(self, data):
+        """Return a paginated style `Response` object for the given output data."""
+        assert self.paginator is not None
+        return self.paginator.get_paginated_response(data)

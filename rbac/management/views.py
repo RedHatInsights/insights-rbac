@@ -22,4 +22,4 @@ from management.principal.view import PrincipalViewSet
 from management.group.view import GroupViewSet
 from management.role.view import RoleViewSet
 from management.policy.view import PolicyViewSet
-from management.access.view import access
+from management.access.view import AccessView
