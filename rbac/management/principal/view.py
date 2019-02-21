@@ -49,6 +49,9 @@ class PrincipalViewSet(mixins.ListModelMixin,
 
         @apiHeader {String} token User authorization token
 
+        @apiParam (Query) {Number} page Parameter for selecting the page of data (default is 1).
+        @apiParam (Query) {Number} page_size Parameter for selecting the amount of data in a page (default is 10).
+
         @apiSuccess {Object} meta The metadata for pagination.
         @apiSuccess {Object} links  The object containing links of results.
         @apiSuccess {Object[]} data  The array of results.

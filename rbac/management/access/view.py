@@ -70,8 +70,12 @@ class AccessView(APIView):
     @apiHeader {String} token User authorization token
 
     @apiParam (Query) {String} application Application name
+    @apiParam (Query) {Number} page Parameter for selecting the page of data (default is 1)
+    @apiParam (Query) {Number} page_size Parameter for selecting the amount of data in a page (default is 10)
 
-    @apiSuccess {Array} access Array of principal access objects
+    @apiSuccess {Object} meta The metadata for pagination.
+    @apiSuccess {Object} links  The object containing links of results.
+    @apiSuccess {Object[]} data  The array of results.
     @apiSuccessExample {json} Success-Response:
         HTTP/1.1 20O OK
         {
