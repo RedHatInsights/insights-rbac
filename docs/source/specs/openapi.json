@@ -77,22 +77,10 @@
         "summary": "List the principals for a tenant",
         "operationId": "listPrincipals",
         "parameters": [{
-            "name": "page",
-            "in": "query",
-            "description": "Parameter for selecting the page of data (default is 1).",
-            "required": false,
-            "schema": {
-              "type": "integer"
-            }
+            "$ref": "#/components/parameters/QueryPageSize"
           },
           {
-            "name": "page_size",
-            "in": "query",
-            "description": "Parameter for selecting the amount of data in a page (default is 10).",
-            "required": false,
-            "schema": {
-              "type": "integer"
-            }
+            "$ref": "#/components/parameters/QueryPageNumber"
           }
         ],
         "responses": {
@@ -226,22 +214,10 @@
         "summary": "List the groups for a tenant",
         "operationId": "listGroups",
         "parameters": [{
-            "name": "page",
-            "in": "query",
-            "description": "Parameter for selecting the page of data (default is 1).",
-            "required": false,
-            "schema": {
-              "type": "integer"
-            }
+            "$ref": "#/components/parameters/QueryPageSize"
           },
           {
-            "name": "page_size",
-            "in": "query",
-            "description": "Parameter for selecting the amount of data in a page (default is 10).",
-            "required": false,
-            "schema": {
-              "type": "integer"
-            }
+            "$ref": "#/components/parameters/QueryPageNumber"
           }
         ],
         "responses": {
@@ -549,22 +525,10 @@
         "summary": "List the roles for a tenant",
         "operationId": "listRoles",
         "parameters": [{
-            "name": "page",
-            "in": "query",
-            "description": "Parameter for selecting the page of data (default is 1).",
-            "required": false,
-            "schema": {
-              "type": "integer"
-            }
+            "$ref": "#/components/parameters/QueryPageSize"
           },
           {
-            "name": "page_size",
-            "in": "query",
-            "description": "Parameter for selecting the amount of data in a page (default is 10).",
-            "required": false,
-            "schema": {
-              "type": "integer"
-            }
+            "$ref": "#/components/parameters/QueryPageNumber"
           }
         ],
         "responses": {
@@ -800,22 +764,10 @@
         "summary": "List the policies in the tenant",
         "operationId": "listPolicies",
         "parameters": [{
-            "name": "page",
-            "in": "query",
-            "description": "Parameter for selecting the page of data (default is 1).",
-            "required": false,
-            "schema": {
-              "type": "integer"
-            }
+            "$ref": "#/components/parameters/QueryPageSize"
           },
           {
-            "name": "page_size",
-            "in": "query",
-            "description": "Parameter for selecting the amount of data in a page (default is 10).",
-            "required": false,
-            "schema": {
-              "type": "integer"
-            }
+            "$ref": "#/components/parameters/QueryPageNumber"
           }
         ],
         "responses": {
@@ -1022,22 +974,10 @@
             }
           },
           {
-            "name": "page",
-            "in": "query",
-            "description": "Parameter for selecting the page of data (default is 1).",
-            "required": false,
-            "schema": {
-              "type": "integer"
-            }
+            "$ref": "#/components/parameters/QueryPageSize"
           },
           {
-            "name": "page_size",
-            "in": "query",
-            "description": "Parameter for selecting the amount of data in a page (default is 10).",
-            "required": false,
-            "schema": {
-              "type": "integer"
-            }
+            "$ref": "#/components/parameters/QueryPageNumber"
           }
         ],
         "responses": {
@@ -1082,6 +1022,31 @@
     "url": "/r/insights/platform/rbac/api/v1"
   }],
   "components": {
+    "parameters": {
+      "QueryPageNumber": {
+        "in": "query",
+        "name": "page",
+        "required": false,
+        "description": "Parameter for selecting the page of data.",
+        "schema": {
+          "type": "integer",
+          "default": 1,
+          "minimum": 1
+        }
+      },
+      "QueryPageSize": {
+        "in": "query",
+        "name": "page_size",
+        "required": false,
+        "description": "Parameter for selecting the amount of data in a page.",
+        "schema": {
+          "type": "integer",
+          "default": 10,
+          "minimum": 1,
+          "maximum": 1000
+        }
+      }
+    },
     "requestBodies": {
       "GroupPrincipalIn": {
         "content": {
