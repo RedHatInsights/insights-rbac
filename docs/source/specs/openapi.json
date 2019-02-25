@@ -1019,7 +1019,7 @@
     }
   },
   "servers": [{
-    "url": "/r/insights/platform/rbac/api/v1"
+    "url": "/r/insights/platform/rbac/v1"
   }],
   "components": {
     "parameters": {

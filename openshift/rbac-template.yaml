@@ -336,7 +336,7 @@ objects:
           livenessProbe:
             failureThreshold: 3
             httpGet:
-              path: ${API_PATH_PREFIX}/api/v1/status/
+              path: ${API_PATH_PREFIX}/v1/status/
               port: 8080
               scheme: HTTP
             initialDelaySeconds: 30
@@ -348,7 +348,7 @@ objects:
               protocol: TCP
           readinessProbe:
             httpGet:
-              path: ${API_PATH_PREFIX}/api/v1/status/
+              path: ${API_PATH_PREFIX}/v1/status/
               port: 8080
               scheme: HTTP
             initialDelaySeconds: 3
@@ -628,5 +628,5 @@ parameters:
   value: 'False'
   name: DJANGO_DEBUG
 - displayName: API path prefix
-  value: ''
+  value: 'api'
   name: API_PATH_PREFIX
