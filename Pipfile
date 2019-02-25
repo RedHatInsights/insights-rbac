@@ -20,7 +20,7 @@ django-cors-headers = "==2.4.0"
 djangorestframework-csv = "==2.1.0"
 pytz = "==2018.9"
 django-prometheus = "==1.0.15"
-prometheus-client = "==0.5.0"
+prometheus-client = "==0.6.0"
 
 
 [dev-packages]

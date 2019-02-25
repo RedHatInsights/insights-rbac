@@ -11,7 +11,7 @@ djangorestframework-csv==2.1.0
 djangorestframework==3.9.1
 gunicorn==19.9.0
 idna==2.8
-prometheus-client==0.5.0
+prometheus-client==0.6.0
 psycopg2-binary==2.7.7
 psycopg2==2.7.7
 pytz==2018.9
