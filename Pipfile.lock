@@ -1,7 +1,7 @@
 {
     "_meta": {
         "hash": {
-            "sha256": "cdb911f09f9793406ae2f3c3a425f251abd17b9fb1405325faf6e77cce9ef2d4"
+            "sha256": "67086db9cc154687ec619d92a86e0bac490671aa4e465a0d12aef5d6c499872f"
         },
         "pipfile-spec": 6,
         "requires": {
@@ -111,6 +111,7 @@
             "hashes": [
                 "sha256:1b38b958750f66f208bcd9ab92a633c0c994d8859c831f7abc1f46724fcee490"
             ],
+            "index": "pypi",
             "version": "==0.6.0"
         },
         "psycopg2": {
