@@ -27,10 +27,26 @@ def custom_exception_handler(exc, context):
 
     # Now add the HTTP status code to the response.
     if response is not None:
+        errors = []
         data = copy.deepcopy(response.data)
-        data['status'] = response.status_code
+        for key, value in data.items():
+            if isinstance(value, list):
+                for val in value:
+                    new_error = {
+                        'detail': val,
+                        'source': key,
+                        'status': response.status_code
+                    }
+                errors.append(new_error)
+            else:
+                new_error = {
+                    'detail': value,
+                    'source': key,
+                    'status': response.status_code
+                }
+                errors.append(new_error)
         error_response = {
-            'errors': [data]
+            'errors': errors
         }
         response.data = error_response
 
