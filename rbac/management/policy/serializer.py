@@ -66,9 +66,12 @@ class PolicyInputSerializer(serializers.ModelSerializer):
                 roles.append(role)
             except Role.DoesNotExist:
                 msg = 'Role with uuid {} could not be found.'
-                error = {'detail': msg.format(group_uuid)}
+                error = {'detail': msg.format(role_uuid)}
                 raise serializers.ValidationError(error)
-
+        if len(roles) == 0:
+            msg = 'Policy must have at least one role.'
+            error = {'detail': msg}
+            raise serializers.ValidationError(error)
         policy.save()
         for role in roles:
             policy.roles.add(role)
@@ -99,8 +102,13 @@ class PolicyInputSerializer(serializers.ModelSerializer):
                 roles.append(role)
             except Role.DoesNotExist:
                 msg = 'Role with uuid {} could not be found.'
-                error = {'detail': msg.format(group_uuid)}
+                error = {'detail': msg.format(role_uuid)}
                 raise serializers.ValidationError(error)
+
+        if len(roles) == 0:
+            msg = 'Policy must have at least one role.'
+            error = {'detail': msg}
+            raise serializers.ValidationError(error)
 
         instance.roles.clear()
         for role in roles:
