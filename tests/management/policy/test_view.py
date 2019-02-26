@@ -123,7 +123,7 @@ class PolicyViewsetTests(IdentityRequest):
         self.assertEqual(str(self.group.uuid), response.data.get('group').get('uuid'))
 
     def test_create_policy_invalid_group(self):
-        """Test that we can create a policy."""
+        """Test that we cannot create a policy with invalid group."""
         role_name = 'roleA'
         response = self.create_role(role_name)
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
@@ -135,11 +135,19 @@ class PolicyViewsetTests(IdentityRequest):
                                       status.HTTP_400_BAD_REQUEST)
 
     def test_create_policy_invalid_role(self):
-        """Test that we can create a policy."""
+        """Test that we cannot create a policy with an invalid role."""
         policy_name = 'policyA'
         response = self.create_policy(policy_name,
                                       self.group.uuid,
                                       [uuid4()],
+                                      status.HTTP_400_BAD_REQUEST)
+
+    def test_create_policy_no_role(self):
+        """Test that we cannot create a policy without roles."""
+        policy_name = 'policyA'
+        response = self.create_policy(policy_name,
+                                      self.group.uuid,
+                                      [],
                                       status.HTTP_400_BAD_REQUEST)
 
     def test_create_policy_invalid(self):
@@ -207,7 +215,7 @@ class PolicyViewsetTests(IdentityRequest):
         self.assertEqual(updated_name, response.data.get('name'))
 
     def test_update_policy_bad_group(self):
-        """Test that we can update an existing policy."""
+        """Test that we cannot update an existing policy with a bad group."""
         role_name = 'roleA'
         response = self.create_role(role_name)
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
@@ -228,7 +236,7 @@ class PolicyViewsetTests(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
     def test_update_policy_bad_role(self):
-        """Test that we can update an existing policy."""
+        """Test that we cannot update an existing policy with a bad role."""
         role_name = 'roleA'
         response = self.create_role(role_name)
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
@@ -242,6 +250,27 @@ class PolicyViewsetTests(IdentityRequest):
         test_data['name'] = updated_name
         test_data['group'] = self.group.uuid
         test_data['roles'] = [uuid4()]
+        del test_data['uuid']
+        url = reverse('policy-detail', kwargs={'uuid': policy_uuid})
+        client = APIClient()
+        response = client.put(url, test_data, format='json', **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_update_policy_no_role(self):
+        """Test that we can update an existing policy to have no roles."""
+        role_name = 'roleA'
+        response = self.create_role(role_name)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+        role_uuid = response.data.get('uuid')
+        policy_name = 'policyA'
+        response = self.create_policy(policy_name, self.group.uuid, [role_uuid])
+        updated_name = policy_name + '_update'
+        policy_uuid = response.data.get('uuid')
+        test_data = response.data
+        test_data['name'] = updated_name
+        test_data['group'] = self.group.uuid
+        test_data['roles'] = []
         del test_data['uuid']
         url = reverse('policy-detail', kwargs={'uuid': policy_uuid})
         client = APIClient()
@@ -278,3 +307,69 @@ class PolicyViewsetTests(IdentityRequest):
         client = APIClient()
         response = client.delete(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_policy_removed_on_group_deletion(self):
+        """Test that we can an existing policy is cleaned up when the group is deleted."""
+        role_name = 'roleA'
+        response = self.create_role(role_name)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+        role_uuid = response.data.get('uuid')
+        policy_name = 'policyA'
+        response = self.create_policy(policy_name, self.group.uuid, [role_uuid])
+        policy_uuid = response.data.get('uuid')
+
+        url = reverse('group-detail', kwargs={'uuid': self.group.uuid})
+        client = APIClient()
+        response = client.delete(url, **self.headers)
+
+        url = reverse('policy-detail', kwargs={'uuid': policy_uuid})
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_policy_removed_on_all_role_deletion(self):
+        """Test that we can an existing policy is cleaned up when the all roles are deleted."""
+        role_name = 'roleA'
+        response = self.create_role(role_name)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+        role_uuid = response.data.get('uuid')
+        policy_name = 'policyA'
+        response = self.create_policy(policy_name, self.group.uuid, [role_uuid])
+        policy_uuid = response.data.get('uuid')
+
+        url = reverse('role-detail', kwargs={'uuid': role_uuid})
+        client = APIClient()
+        response = client.delete(url, **self.headers)
+
+        url = reverse('policy-detail', kwargs={'uuid': policy_uuid})
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_policy_removed_on_one_role_deletion(self):
+        """Test that we can an existing policy remains when not all roles are deleted."""
+        roles = []
+        role_name = 'roleA'
+        response = self.create_role(role_name)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        roles.append(response.data.get('uuid'))
+
+        role_name = 'roleB'
+        response = self.create_role(role_name)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        roles.append(response.data.get('uuid'))
+
+        policy_name = 'policyA'
+        response = self.create_policy(policy_name, self.group.uuid, roles)
+        policy_uuid = response.data.get('uuid')
+
+        url = reverse('role-detail', kwargs={'uuid': roles[0]})
+        client = APIClient()
+        response = client.delete(url, **self.headers)
+
+        url = reverse('policy-detail', kwargs={'uuid': policy_uuid})
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)

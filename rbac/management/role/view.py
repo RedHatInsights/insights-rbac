@@ -16,6 +16,8 @@
 #
 
 """View for role management."""
+from django.db import transaction
+from django.shortcuts import get_object_or_404
 from rest_framework import mixins, viewsets
 from rest_framework.permissions import AllowAny
 
@@ -198,7 +200,13 @@ class RoleViewSet(mixins.CreateModelMixin,
         @apiSuccessExample {json} Success-Response:
             HTTP/1.1 204 NO CONTENT
         """
-        return super().destroy(request=request, args=args, kwargs=kwargs)
+        role = get_object_or_404(Role, uuid=kwargs.get('uuid'))
+        with transaction.atomic():
+            policies = role.policies.all()
+            for policy in policies:
+                if policy.roles.count() == 1:
+                    policy.delete()
+            return super().destroy(request=request, args=args, kwargs=kwargs)
 
     def update(self, request, *args, **kwargs):
         """Update a group.
