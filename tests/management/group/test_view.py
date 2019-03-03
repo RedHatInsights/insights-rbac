@@ -190,3 +190,24 @@ class GroupViewsetTests(IdentityRequest):
         client = APIClient()
         response = client.delete(url, format='json', **self.headers)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_get_group_by_username(self):
+        """Test that getting groups for a principalreturns successfully."""
+        url = reverse('group-principals', kwargs={'uuid': self.group.uuid})
+        client = APIClient()
+        new_username = uuid4()
+        test_data = {'principals': [{'username': self.principal.username}, {'username': new_username}]}
+        response = client.post(url, test_data, format='json', **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        url = reverse('group-list')
+        url = '{}?username={}'.format(url, self.principal.username)
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        self.assertEqual(response.data.get('meta').get('count'), 1)
+
+        url = reverse('group-list')
+        url = '{}?username={}'.format(url, uuid4())
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        self.assertEqual(response.data.get('meta').get('count'), 0)
