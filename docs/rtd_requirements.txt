@@ -8,7 +8,7 @@ django-prometheus==1.0.15
 django-tenant-schemas==1.9.0
 django==2.1.7
 djangorestframework-csv==2.1.0
-djangorestframework==3.9.1
+djangorestframework==3.9.2
 gunicorn==19.9.0
 idna==2.8
 prometheus-client==0.6.0
