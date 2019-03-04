@@ -17,6 +17,7 @@
 
 """View for group management."""
 from django.utils.translation import gettext as _
+from django_filters import rest_framework as filters
 from management.group.model import Group
 from management.group.serializer import (GroupInputSerializer,
                                          GroupPrincipalInputSerializer,
@@ -29,6 +30,17 @@ from rest_framework.response import Response
 
 
 USERNAMES_KEY = 'usernames'
+
+
+class UsernameFilter(filters.FilterSet):
+    """Filter for groups by username."""
+
+    name = filters.CharFilter(field_name='name', lookup_expr='icontains')
+    username = filters.CharFilter(field_name='principals', lookup_expr='username__icontains')
+
+    class Meta:
+        model = Group
+        fields = ['name', 'principals']
 
 
 class GroupViewSet(mixins.CreateModelMixin,
@@ -47,12 +59,16 @@ class GroupViewSet(mixins.CreateModelMixin,
     queryset = Group.objects.all()
     permission_classes = (AllowAny,)
     lookup_field = 'uuid'
+    filter_backends = (filters.DjangoFilterBackend,)
+    filterset_class = UsernameFilter
 
     def get_serializer_class(self):
         """Get serializer based on route."""
         if 'principals' in self.request.path:
             return GroupPrincipalInputSerializer
         if self.request.method == 'POST' or self.request.method == 'PUT':
+            return GroupInputSerializer
+        if self.request.path.endswith('groups/') and self.request.method == 'GET':
             return GroupInputSerializer
         return GroupSerializer
 

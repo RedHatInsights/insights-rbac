@@ -218,6 +218,15 @@
           },
           {
             "$ref": "#/components/parameters/QueryPageNumber"
+          },
+          {
+            "name": "username",
+            "in": "query",
+            "description": "A username for a principal to filter for groups",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
