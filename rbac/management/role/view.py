@@ -126,10 +126,10 @@ class RoleViewSet(mixins.CreateModelMixin,
                     'count': 2
                 }
                 'links': {
-                    'first': /api/v1/roles/?page=1,
+                    'first': /api/v1/roles/?offset=0&limit=10,
                     'next': None,
                     'previous': None,
-                    'last': /api/v1/roles/?page=1
+                    'last': /api/v1/roles/?offset=0&limit=10
                 },
                 'data': [
                             {

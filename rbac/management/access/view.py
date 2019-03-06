@@ -83,10 +83,10 @@ class AccessView(APIView):
                 'count': 1
             }
             'links': {
-                'first': /api/v1/access/?page=1&application=app,
+                'first': /api/v1/access/?offset=0&limit=10&application=app,
                 'next': None,
                 'previous': None,
-                'last': /api/v1/groups/?page=1&application=app
+                'last': /api/v1/groups/?offset=0&limit=10&application=app
             },
             "data": [
                 {

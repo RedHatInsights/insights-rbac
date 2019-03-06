@@ -116,10 +116,10 @@ class PolicyViewSet(mixins.CreateModelMixin,
                     'count': 2
                 }
                 'links': {
-                    'first': /api/v1/policies/?page=1,
+                    'first': /api/v1/policies/?offset=0&limit=10,
                     'next': None,
                     'previous': None,
-                    'last': /api/v1/policies/?page=1
+                    'last': /api/v1/policies/?offset=0&limit=10
                 },
                 'data': [
                                 {

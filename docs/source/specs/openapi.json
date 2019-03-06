@@ -77,10 +77,10 @@
         "summary": "List the principals for a tenant",
         "operationId": "listPrincipals",
         "parameters": [{
-            "$ref": "#/components/parameters/QueryPageSize"
+            "$ref": "#/components/parameters/QueryLimit"
           },
           {
-            "$ref": "#/components/parameters/QueryPageNumber"
+            "$ref": "#/components/parameters/QueryOffset"
           }
         ],
         "responses": {
@@ -214,10 +214,10 @@
         "summary": "List the groups for a tenant",
         "operationId": "listGroups",
         "parameters": [{
-            "$ref": "#/components/parameters/QueryPageSize"
+            "$ref": "#/components/parameters/QueryLimit"
           },
           {
-            "$ref": "#/components/parameters/QueryPageNumber"
+            "$ref": "#/components/parameters/QueryOffset"
           },
           {
             "name": "username",
@@ -607,10 +607,10 @@
         "summary": "List the roles for a tenant",
         "operationId": "listRoles",
         "parameters": [{
-            "$ref": "#/components/parameters/QueryPageSize"
+            "$ref": "#/components/parameters/QueryLimit"
           },
           {
-            "$ref": "#/components/parameters/QueryPageNumber"
+            "$ref": "#/components/parameters/QueryOffset"
           }
         ],
         "responses": {
@@ -846,10 +846,10 @@
         "summary": "List the policies in the tenant",
         "operationId": "listPolicies",
         "parameters": [{
-            "$ref": "#/components/parameters/QueryPageSize"
+            "$ref": "#/components/parameters/QueryLimit"
           },
           {
-            "$ref": "#/components/parameters/QueryPageNumber"
+            "$ref": "#/components/parameters/QueryOffset"
           }
         ],
         "responses": {
@@ -1056,10 +1056,10 @@
             }
           },
           {
-            "$ref": "#/components/parameters/QueryPageSize"
+            "$ref": "#/components/parameters/QueryLimit"
           },
           {
-            "$ref": "#/components/parameters/QueryPageNumber"
+            "$ref": "#/components/parameters/QueryOffset"
           }
         ],
         "responses": {
@@ -1105,22 +1105,22 @@
   }],
   "components": {
     "parameters": {
-      "QueryPageNumber": {
+      "QueryOffset": {
         "in": "query",
-        "name": "page",
+        "name": "offset",
         "required": false,
-        "description": "Parameter for selecting the page of data.",
+        "description": "Parameter for selecting the offset of data.",
         "schema": {
           "type": "integer",
-          "default": 1,
-          "minimum": 1
+          "default": 0,
+          "minimum": 0
         }
       },
-      "QueryPageSize": {
+      "QueryLimit": {
         "in": "query",
-        "name": "page_size",
+        "name": "limit",
         "required": false,
-        "description": "Parameter for selecting the amount of data in a page.",
+        "description": "Parameter for selecting the amount of data returned.",
         "schema": {
           "type": "integer",
           "default": 10,
@@ -1194,22 +1194,22 @@
           "first": {
             "type": "string",
             "format": "uri",
-            "example": "/api/v1/(resources)/?page=1"
+            "example": "/api/v1/(resources)/?offset=0&limit=10"
           },
           "previous": {
             "type": "string",
             "format": "uri",
-            "example": "/api/v1/(resources)/?page=2"
+            "example": "/api/v1/(resources)/?offset=20&limit=10"
           },
           "next": {
             "type": "string",
             "format": "uri",
-            "example": "/api/v1/(resources)/?page=4"
+            "example": "/api/v1/(resources)/?offset=40&limit=10"
           },
           "last": {
             "type": "string",
             "format": "uri",
-            "example": "/api/v1/(resources)/?page=10"
+            "example": "/api/v1/(resources)/?offset=90&limit=10"
           }
         }
       },
