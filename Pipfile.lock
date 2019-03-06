@@ -1,7 +1,7 @@
 {
     "_meta": {
         "hash": {
-            "sha256": "67086db9cc154687ec619d92a86e0bac490671aa4e465a0d12aef5d6c499872f"
+            "sha256": "3ee08d3e98efc5abd417668ddf1d24934e52c391accf35edf4645776ee30c6dd"
         },
         "pipfile-spec": 6,
         "requires": {
@@ -43,6 +43,7 @@
                 "sha256:8f94f96d2cdfa46360c62b892daae42477591997686ebf36c4f1cd9015528d22",
                 "sha256:ff46a244965bddd71070bb71c2f0e27ceae2d73c52db5d4ffa09ecc51d47548e"
             ],
+            "index": "pypi",
             "version": "==2.4.1"
         },
         "django-environ": {
@@ -81,6 +82,7 @@
                 "sha256:8a435df9007c8b7d8e69a21ef06650e3c0cbe0d4b09e55dd1bd74c89a75a9fcd",
                 "sha256:f7a266260d656e1cf4ca54d7a7349609dc8af4fe2590edd0ecd7d7643ea94a17"
             ],
+            "index": "pypi",
             "version": "==3.9.2"
         },
         "djangorestframework-csv": {
@@ -238,10 +240,11 @@
         },
         "astroid": {
             "hashes": [
-                "sha256:8a8d8f610ab3646f89f4c1b89385446e2675c3b7139a577116fa966d33a81d6d",
-                "sha256:91f52b4e4645ee610a82841aacc7ecd0202f695375cc7b34bae43ab4ab359099"
+                "sha256:35b032003d6a863f5dcd7ec11abd5cd5893428beaa31ab164982403bcb311f22",
+                "sha256:6a5d668d7dc69110de01cdf7aeec69a679ef486862a0850cc0fd5571505b6b7e"
             ],
-            "version": "==2.2.3"
+            "index": "pypi",
+            "version": "==2.1.0"
         },
         "babel": {
             "hashes": [
@@ -464,10 +467,11 @@
         },
         "pylint": {
             "hashes": [
-                "sha256:5d77031694a5fb97ea95e828c8d10fc770a1df6eb3906067aaed42201a8a6a09",
-                "sha256:723e3db49555abaf9bf79dc474c6b9e2935ad82230b10c1138a71ea41ac0fff1"
+                "sha256:689de29ae747642ab230c6d37be2b969bf75663176658851f456619aacf27492",
+                "sha256:771467c434d0d9f081741fec1d64dfb011ed26e65e12a28fe06ca2f61c4d556c"
             ],
-            "version": "==2.3.1"
+            "index": "pypi",
+            "version": "==2.2.2"
         },
         "pyparsing": {
             "hashes": [
