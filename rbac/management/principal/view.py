@@ -63,10 +63,10 @@ class PrincipalViewSet(mixins.ListModelMixin,
                     'count': 2
                 }
                 'links': {
-                    'first': /api/v1/principals/?page=1,
+                    'first': /api/v1/principals/?offset=0&limit=10,
                     'next': None,
                     'previous': None,
-                    'last': /api/v1/principals/?page=1
+                    'last': /api/v1/principals/?offset=0&limit=10
                 },
                 'data': [
                                 {

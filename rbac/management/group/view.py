@@ -127,10 +127,10 @@ class GroupViewSet(mixins.CreateModelMixin,
                     'count': 2
                 }
                 'links': {
-                    'first': /api/v1/groups/?page=1,
+                    'first': /api/v1/groups/?offset=0&limit=10,
                     'next': None,
                     'previous': None,
-                    'last': /api/v1/groups/?page=1
+                    'last': /api/v1/groups/?offset=0&limit=10
                 },
                 'data': [
                                 {
