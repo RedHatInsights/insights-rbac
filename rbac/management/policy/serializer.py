@@ -17,10 +17,10 @@
 
 """Serializer for policy management."""
 from management.group.model import Group
-from management.group.serializer import GroupSerializer
+from management.group.serializer import GroupInputSerializer
 from management.policy.model import Policy
 from management.role.model import Role
-from management.role.serializer import RoleSerializer
+from management.role.serializer import RoleMinimumSerializer
 from rest_framework import serializers
 
 
@@ -118,10 +118,10 @@ class PolicyInputSerializer(serializers.ModelSerializer):
 
     def to_representation(self, obj):
         """Convert representation to dictionary object."""
-        group = GroupSerializer(obj.group)
+        group = GroupInputSerializer(obj.group)
         roles = []
         for role in obj.roles.all():
-            serializer = RoleSerializer(role)
+            serializer = RoleMinimumSerializer(role)
             roles.append(serializer.data)
         return {
             'uuid': obj.uuid,
@@ -138,8 +138,8 @@ class PolicySerializer(serializers.ModelSerializer):
     uuid = serializers.UUIDField(read_only=True)
     name = serializers.CharField(required=True, max_length=150)
     description = serializers.CharField(allow_null=True, required=False)
-    group = GroupSerializer(required=True)
-    roles = RoleSerializer(many=True, required=True)
+    group = GroupInputSerializer(required=True)
+    roles = RoleMinimumSerializer(many=True, required=True)
 
     class Meta:
         """Metadata for the serializer."""
@@ -149,10 +149,10 @@ class PolicySerializer(serializers.ModelSerializer):
 
     def to_representation(self, obj):
         """Convert representation to dictionary object."""
-        group = GroupSerializer(obj.group)
+        group = GroupInputSerializer(obj.group)
         roles = []
         for role in obj.roles.all():
-            serializer = RoleSerializer(role)
+            serializer = RoleMinimumSerializer(role)
             roles.append(serializer.data)
         return {
             'uuid': obj.uuid,

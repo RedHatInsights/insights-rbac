@@ -10,6 +10,8 @@ OC_DATA_DIR	= ${HOME}/.oc/openshift.local.data
 
 PGSQL_VERSION   = 9.6
 
+PORT=8000
+
 OS := $(shell uname)
 ifeq ($(OS),Darwin)
 	PREFIX	=
@@ -118,7 +120,7 @@ requirements:
 	pipenv lock -r > docs/rtd_requirements.txt
 
 serve:
-	DJANGO_READ_DOT_ENV_FILE=True $(PYTHON) $(PYDIR)/manage.py runserver
+	DJANGO_READ_DOT_ENV_FILE=True $(PYTHON) $(PYDIR)/manage.py runserver $(PORT)
 
 serve-with-oc: oc-forward-ports
 	sleep 3

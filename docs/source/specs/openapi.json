@@ -948,6 +948,17 @@
             "format": "uuid"
           }
         }],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PolicyIn"
+              }
+            }
+          },
+          "description": "Policy to update",
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "A Policy object",
@@ -1599,7 +1610,7 @@
               "data": {
                 "type": "array",
                 "items": {
-                  "$ref": "#/components/schemas/PolicyOut"
+                  "$ref": "#/components/schemas/PolicyExtended"
                 }
               }
             }

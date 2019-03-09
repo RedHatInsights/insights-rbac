@@ -91,3 +91,17 @@ class RoleSerializer(serializers.ModelSerializer):
 
         instance.save()
         return instance
+
+
+class RoleMinimumSerializer(serializers.ModelSerializer):
+    """Serializer for the Role model that doesn't return access info."""
+
+    uuid = serializers.UUIDField(read_only=True)
+    name = serializers.CharField(required=True, max_length=150)
+    description = serializers.CharField(allow_null=True, required=False)
+
+    class Meta:
+        """Metadata for the serializer."""
+
+        model = Role
+        fields = ('uuid', 'name', 'description')
