@@ -89,6 +89,10 @@ To run a local dev Django server you can use ::
 
     make serve
 
+To run the local dev Django on a specific port use::
+
+    make PORT=8111 serve
+
 API Documentation Generation
 ----------------------------
 
