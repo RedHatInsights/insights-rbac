@@ -1398,7 +1398,7 @@
             "type": "string",
             "enum": [
               "equal",
-              "includes"
+              "in"
             ]
           },
           "value": {
