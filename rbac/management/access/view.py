@@ -91,7 +91,7 @@ class AccessView(APIView):
             "data": [
                 {
                     "permission": "app:*:read",
-                    "resourceDefinition": [
+                    "resourceDefinitions": [
                         {
                             "attributeFilter": {
                                 "key": "app.attribute.condition",

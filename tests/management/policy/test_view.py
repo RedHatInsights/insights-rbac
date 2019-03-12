@@ -65,7 +65,7 @@ class PolicyViewsetTests(IdentityRequest):
         """Create a role."""
         access_data = {
             'permission': 'app:*:*',
-            'resourceDefinition': [
+            'resourceDefinitions': [
                 {
                     'attributeFilter': {
                         'key': 'key1',

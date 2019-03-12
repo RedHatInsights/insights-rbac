@@ -1420,14 +1420,14 @@
       "Access": {
         "required": [
           "permission",
-          "resourceDefinition"
+          "resourceDefinitions"
         ],
         "properties": {
           "permission": {
             "type": "string",
             "example": "cost-management:*:read"
           },
-          "resourceDefinition": {
+          "resourceDefinitions": {
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/ResourceDefinition"
