@@ -45,7 +45,7 @@ class AccessViewTests(IdentityRequest):
 
         self.access_data = {
             'permission': 'app:*:*',
-            'resourceDefinition': [
+            'resourceDefinitions': [
                 {
                     'attributeFilter': {
                         'key': 'key1',

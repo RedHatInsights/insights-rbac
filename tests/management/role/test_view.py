@@ -64,7 +64,7 @@ class RoleViewsetTests(IdentityRequest):
         """Create a role."""
         access_data = {
             'permission': 'app:*:*',
-            'resourceDefinition': [
+            'resourceDefinitions': [
                 {
                     'attributeFilter': {
                         'key': 'key1',
@@ -93,7 +93,7 @@ class RoleViewsetTests(IdentityRequest):
         role_name = 'roleA'
         access_data = {
             'permission': 'app:*:*',
-            'resourceDefinition': [
+            'resourceDefinitions': [
                 {
                     'attributeFilter': {
                           'key': 'keyA',
