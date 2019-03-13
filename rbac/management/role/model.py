@@ -46,4 +46,4 @@ class ResourceDefinition(models.Model):
 
     attributeFilter = JSONField(default=dict)
     access = models.ForeignKey(Access, null=True, on_delete=models.CASCADE,
-                               related_name='resourceDefinition')
+                               related_name='resourceDefinitions')

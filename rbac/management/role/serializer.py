@@ -34,13 +34,13 @@ class ResourceDefinitionSerializer(serializers.ModelSerializer):
 class AccessSerializer(serializers.ModelSerializer):
     """Serializer for the Access model."""
 
-    resourceDefinition = ResourceDefinitionSerializer(many=True)
+    resourceDefinitions = ResourceDefinitionSerializer(many=True)
 
     class Meta:
         """Metadata for the serializer."""
 
         model = Access
-        fields = ('permission', 'resourceDefinition')
+        fields = ('permission', 'resourceDefinitions')
 
 
 class RoleSerializer(serializers.ModelSerializer):
@@ -65,7 +65,7 @@ class RoleSerializer(serializers.ModelSerializer):
         role = Role.objects.create(name=name, description=description)
         role.save()
         for access_item in access_list:
-            resource_def_list = access_item.pop('resourceDefinition')
+            resource_def_list = access_item.pop('resourceDefinitions')
             access_obj = Access.objects.create(**access_item, role=role)
             access_obj.save()
             for resource_def_item in resource_def_list:
@@ -82,7 +82,7 @@ class RoleSerializer(serializers.ModelSerializer):
         instance.access.all().delete()
 
         for access_item in access_list:
-            resource_def_list = access_item.pop('resourceDefinition')
+            resource_def_list = access_item.pop('resourceDefinitions')
             access_obj = Access.objects.create(**access_item, role=instance)
             access_obj.save()
             for resource_def_item in resource_def_list:

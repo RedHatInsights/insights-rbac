@@ -62,7 +62,7 @@ class RoleViewSet(mixins.CreateModelMixin,
                 "access": [
                     {
                     "permission": "app:*:read",
-                    "resourceDefinition": [
+                    "resourceDefinitions": [
                         {
                             "attributeFilter": {
                                 "key": "app.attribute.case",
@@ -85,7 +85,7 @@ class RoleViewSet(mixins.CreateModelMixin,
                 "access": [
                     {
                     "permission": "app:*:read",
-                    "resourceDefinition": [
+                    "resourceDefinitions": [
                         {
                             "attributeFilter": {
                                 "key": "app.attribute.case",
@@ -169,7 +169,7 @@ class RoleViewSet(mixins.CreateModelMixin,
                 "access": [
                     {
                     "permission": "app:*:read",
-                    "resourceDefinition": [
+                    "resourceDefinitions": [
                         {
                             "attributeFilter": {
                                 "key": "app.attribute.case",
@@ -229,7 +229,7 @@ class RoleViewSet(mixins.CreateModelMixin,
                 "access": [
                     {
                     "permission": "app:*:read",
-                    "resourceDefinition": [
+                    "resourceDefinitions": [
                         {
                             "attributeFilter": {
                                 "key": "app.attribute.case",
@@ -252,7 +252,7 @@ class RoleViewSet(mixins.CreateModelMixin,
                 "access": [
                     {
                     "permission": "app:*:read",
-                    "resourceDefinition": [
+                    "resourceDefinitions": [
                         {
                             "attributeFilter": {
                                 "key": "app.attribute.case",
