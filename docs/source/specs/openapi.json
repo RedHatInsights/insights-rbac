@@ -220,6 +220,9 @@
             "$ref": "#/components/parameters/QueryOffset"
           },
           {
+            "$ref": "#/components/parameters/NameFilter"
+          },
+          {
             "name": "username",
             "in": "query",
             "description": "A username for a principal to filter for groups",
@@ -227,6 +230,9 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "$ref": "#/components/parameters/OrderByFilter"
           }
         ],
         "responses": {
@@ -611,6 +617,12 @@
           },
           {
             "$ref": "#/components/parameters/QueryOffset"
+          },
+          {
+            "$ref": "#/components/parameters/NameFilter"
+          },
+          {
+            "$ref": "#/components/parameters/OrderByFilter"
           }
         ],
         "responses": {
@@ -850,6 +862,12 @@
           },
           {
             "$ref": "#/components/parameters/QueryOffset"
+          },
+          {
+            "$ref": "#/components/parameters/NameFilter"
+          },
+          {
+            "$ref": "#/components/parameters/OrderByFilter"
           }
         ],
         "responses": {
@@ -1112,7 +1130,7 @@
     }
   },
   "servers": [{
-    "url": "/r/insights/platform/rbac/v1"
+    "url": "/api/rbac/v1"
   }],
   "components": {
     "parameters": {
@@ -1137,6 +1155,24 @@
           "default": 10,
           "minimum": 1,
           "maximum": 1000
+        }
+      },
+      "NameFilter": {
+        "in": "query",
+        "name": "name",
+        "required": false,
+        "description": "Parameter for filtering resource by name using string contains search.",
+        "schema": {
+          "type": "string"
+        }
+      },
+      "OrderByFilter": {
+        "in": "query",
+        "name": "order_by",
+        "required": false,
+        "description": "Parameter for ordering resource by value.",
+        "schema": {
+          "type": "string"
         }
       }
     },
@@ -1188,6 +1224,25 @@
             "type": "string",
             "format": "uuid",
             "example": "57e60f90-8c0c-4bd1-87a0-2143759aae1c"
+          }
+        }
+      },
+      "Timestamped": {
+        "type": "object",
+        "required": [
+          "created",
+          "modified"
+        ],
+        "properties": {
+          "created": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2019-01-21T17:32:28Z"
+          },
+          "modified": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2019-03-04T07:25:58Z"
           }
         }
       },
@@ -1324,8 +1379,21 @@
           },
           {
             "$ref": "#/components/schemas/UUID"
+          },
+          {
+            "$ref": "#/components/schemas/Timestamped"
           }
-        ]
+        ],
+        "properties": {
+          "principalCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "policyCount": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
       },
       "GroupPrincipalIn": {
         "required": [
@@ -1342,10 +1410,13 @@
       },
       "GroupWithPrincipals": {
         "allOf": [{
-            "$ref": "#/components/schemas/GroupOut"
+            "$ref": "#/components/schemas/Group"
           },
           {
             "$ref": "#/components/schemas/UUID"
+          },
+          {
+            "$ref": "#/components/schemas/Timestamped"
           },
           {
             "type": "object",
@@ -1496,12 +1567,27 @@
           },
           {
             "$ref": "#/components/schemas/UUID"
+          },
+          {
+            "$ref": "#/components/schemas/Timestamped"
           }
-        ]
+        ],
+        "properties": {
+          "policyCount": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
       },
       "RoleWithAccess": {
         "allOf": [{
-            "$ref": "#/components/schemas/RoleOut"
+            "$ref": "#/components/schemas/Role"
+          },
+          {
+            "$ref": "#/components/schemas/UUID"
+          },
+          {
+            "$ref": "#/components/schemas/Timestamped"
           },
           {
             "type": "object",
@@ -1562,21 +1648,15 @@
           }
         ]
       },
-      "PolicyOut": {
-        "allOf": [{
-            "$ref": "#/components/schemas/PolicyIn"
-          },
-          {
-            "$ref": "#/components/schemas/UUID"
-          }
-        ]
-      },
       "PolicyExtended": {
         "allOf": [{
             "$ref": "#/components/schemas/Policy"
           },
           {
             "$ref": "#/components/schemas/UUID"
+          },
+          {
+            "$ref": "#/components/schemas/Timestamped"
           },
           {
             "type": "object",

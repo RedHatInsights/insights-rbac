@@ -22,6 +22,7 @@ from management.policy.model import Policy
 from management.role.model import Role
 from management.role.serializer import RoleMinimumSerializer
 from rest_framework import serializers
+from rest_framework.validators import UniqueValidator
 
 
 class UUIDListField(serializers.ListField):
@@ -34,7 +35,9 @@ class PolicyInputSerializer(serializers.ModelSerializer):
     """Serializer for the policy model."""
 
     uuid = serializers.UUIDField(read_only=True)
-    name = serializers.CharField(required=True, max_length=150)
+    name = serializers.CharField(required=True,
+                                 max_length=150,
+                                 validators=[UniqueValidator(queryset=Policy.objects.all())])
     description = serializers.CharField(allow_null=True, required=False)
     group = serializers.UUIDField(required=True)
     roles = UUIDListField(required=True)
@@ -140,12 +143,15 @@ class PolicySerializer(serializers.ModelSerializer):
     description = serializers.CharField(allow_null=True, required=False)
     group = GroupInputSerializer(required=True)
     roles = RoleMinimumSerializer(many=True, required=True)
+    created = serializers.DateTimeField(read_only=True)
+    modified = serializers.DateTimeField(read_only=True)
 
     class Meta:
         """Metadata for the serializer."""
 
         model = Policy
-        fields = ('uuid', 'name', 'description', 'group', 'roles')
+        fields = ('uuid', 'name', 'description',
+                  'group', 'roles', 'created', 'modified')
 
     def to_representation(self, obj):
         """Convert representation to dictionary object."""
@@ -159,5 +165,7 @@ class PolicySerializer(serializers.ModelSerializer):
             'name': obj.name,
             'description': obj.description,
             'group': group.data,
-            'roles': roles
+            'roles': roles,
+            'created': obj.created,
+            'modified': obj.modified
         }

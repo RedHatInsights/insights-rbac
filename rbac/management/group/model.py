@@ -19,7 +19,9 @@
 from uuid import uuid4
 
 from django.db import models
+from django.utils import timezone
 from management.principal.model import Principal
+from management.utils import AutoDateTimeField
 
 
 class Group(models.Model):
@@ -30,6 +32,8 @@ class Group(models.Model):
     name = models.CharField(max_length=150, unique=True)
     description = models.TextField(null=True)
     principals = models.ManyToManyField(Principal, related_name='group')
+    created = models.DateTimeField(default=timezone.now)
+    modified = AutoDateTimeField(default=timezone.now)
 
     class Meta:
-        ordering = ['name']
+        ordering = ['name', 'modified']

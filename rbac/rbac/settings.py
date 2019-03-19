@@ -223,7 +223,8 @@ REST_FRAMEWORK = {
         'rest_framework.renderers.JSONRenderer',
         'rest_framework.renderers.BrowsableAPIRenderer',
     ),
-    'EXCEPTION_HANDLER': DEFAULT_EXCEPTION_HANDLER
+    'EXCEPTION_HANDLER': DEFAULT_EXCEPTION_HANDLER,
+    'ORDERING_PARAM': 'order_by'
 }
 
 LOGGING_FORMATTER = os.getenv('DJANGO_LOG_FORMATTER', 'simple')
