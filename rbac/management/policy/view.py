@@ -16,11 +16,23 @@
 #
 
 """View for policy management."""
+from django_filters import rest_framework as filters
 from rest_framework import mixins, viewsets
+from rest_framework.filters import OrderingFilter
 from rest_framework.permissions import AllowAny
 
 from .model import Policy
 from .serializer import PolicyInputSerializer, PolicySerializer
+
+
+class PolicyFilter(filters.FilterSet):
+    """Filter for policy."""
+
+    name = filters.CharFilter(field_name='name', lookup_expr='icontains')
+
+    class Meta:
+        model = Policy
+        fields = ['name']
 
 
 class PolicyViewSet(mixins.CreateModelMixin,
@@ -39,6 +51,10 @@ class PolicyViewSet(mixins.CreateModelMixin,
     queryset = Policy.objects.all()
     permission_classes = (AllowAny,)
     lookup_field = 'uuid'
+    filter_backends = (filters.DjangoFilterBackend, OrderingFilter)
+    filterset_class = PolicyFilter
+    ordering_fields = ('name', 'modified')
+    ordering = ('name',)
 
     def get_serializer_class(self):
         """Get serializer based on route."""

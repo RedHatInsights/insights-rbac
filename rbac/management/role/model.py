@@ -20,6 +20,8 @@ from uuid import uuid4
 
 from django.contrib.postgres.fields import JSONField
 from django.db import models
+from django.utils import timezone
+from management.utils import AutoDateTimeField
 
 
 class Role(models.Model):
@@ -29,9 +31,11 @@ class Role(models.Model):
                             unique=True, null=False)
     name = models.CharField(max_length=150, unique=True)
     description = models.TextField(null=True)
+    created = models.DateTimeField(default=timezone.now)
+    modified = AutoDateTimeField(default=timezone.now)
 
     class Meta:
-        ordering = ['name']
+        ordering = ['name', 'modified']
 
 
 class Access(models.Model):

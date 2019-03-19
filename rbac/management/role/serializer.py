@@ -17,6 +17,7 @@
 
 """Serializer for role management."""
 from rest_framework import serializers
+from rest_framework.validators import UniqueValidator
 
 from .model import Access, ResourceDefinition, Role
 
@@ -47,15 +48,22 @@ class RoleSerializer(serializers.ModelSerializer):
     """Serializer for the Role model."""
 
     uuid = serializers.UUIDField(read_only=True)
-    name = serializers.CharField(required=True, max_length=150)
+    name = serializers.CharField(required=True,
+                                 max_length=150,
+                                 validators=[UniqueValidator(queryset=Role.objects.all())])
     description = serializers.CharField(allow_null=True, required=False)
     access = AccessSerializer(many=True)
+    policyCount = serializers.IntegerField(read_only=True)
+    created = serializers.DateTimeField(read_only=True)
+    modified = serializers.DateTimeField(read_only=True)
 
     class Meta:
         """Metadata for the serializer."""
 
         model = Role
-        fields = ('uuid', 'name', 'description', 'access')
+        fields = ('uuid', 'name', 'description',
+                  'access', 'policyCount',
+                  'created', 'modified')
 
     def create(self, validated_data):
         """Create the role object in the database."""

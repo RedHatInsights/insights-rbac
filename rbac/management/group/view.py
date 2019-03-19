@@ -16,6 +16,7 @@
 #
 
 """View for group management."""
+from django.db.models.aggregates import Count
 from django.utils.translation import gettext as _
 from django_filters import rest_framework as filters
 from management.group.model import Group
@@ -25,6 +26,7 @@ from management.group.serializer import (GroupInputSerializer,
 from management.principal.model import Principal
 from rest_framework import mixins, serializers, status, viewsets
 from rest_framework.decorators import action
+from rest_framework.filters import OrderingFilter
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
@@ -32,8 +34,8 @@ from rest_framework.response import Response
 USERNAMES_KEY = 'usernames'
 
 
-class UsernameFilter(filters.FilterSet):
-    """Filter for groups by username."""
+class GroupFilter(filters.FilterSet):
+    """Filter for group."""
 
     name = filters.CharFilter(field_name='name', lookup_expr='icontains')
     username = filters.CharFilter(field_name='principals', lookup_expr='username__icontains')
@@ -56,11 +58,14 @@ class GroupViewSet(mixins.CreateModelMixin,
 
     """
 
-    queryset = Group.objects.all()
+    queryset = Group.objects.annotate(principalCount=Count('principals'),
+                                      policyCount=Count('policies'))
     permission_classes = (AllowAny,)
     lookup_field = 'uuid'
-    filter_backends = (filters.DjangoFilterBackend,)
-    filterset_class = UsernameFilter
+    filter_backends = (filters.DjangoFilterBackend, OrderingFilter)
+    filterset_class = GroupFilter
+    ordering_fields = ('name', 'modified', 'principalCount', 'policyCount')
+    ordering = ('name',)
 
     def get_serializer_class(self):
         """Get serializer based on route."""
