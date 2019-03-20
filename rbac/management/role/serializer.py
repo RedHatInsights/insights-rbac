@@ -54,6 +54,7 @@ class RoleSerializer(serializers.ModelSerializer):
     description = serializers.CharField(allow_null=True, required=False)
     access = AccessSerializer(many=True)
     policyCount = serializers.IntegerField(read_only=True)
+    applications = serializers.SerializerMethodField()
     created = serializers.DateTimeField(read_only=True)
     modified = serializers.DateTimeField(read_only=True)
 
@@ -63,7 +64,18 @@ class RoleSerializer(serializers.ModelSerializer):
         model = Role
         fields = ('uuid', 'name', 'description',
                   'access', 'policyCount',
+                  'applications',
                   'created', 'modified')
+
+    def get_applications(self, obj):
+        """Get the list of applications in the role."""
+        apps = []
+        for access_item in obj.access.all():
+            perm_list = access_item.permission.split(':')
+            perm_len = len(perm_list)
+            if perm_len == 3:
+                apps.append(perm_list[0])
+        return apps
 
     def create(self, validated_data):
         """Create the role object in the database."""

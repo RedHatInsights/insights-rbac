@@ -14,10 +14,10 @@
 #    You should have received a copy of the GNU Affero General Public License
 #    along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
-"""API models for import organization."""
+"""Permissions for import organization."""
 # flake8: noqa
 # pylint: disable=unused-import
-from management.principal.model import Principal
-from management.group.model import Group
-from management.role.model import Access, ResourceDefinition, Role
-from management.policy.model import Policy
+from management.permissions.admin_access import AdminAccessPermission
+from management.permissions.group_access import GroupAccessPermission
+from management.permissions.policy_access import PolicyAccessPermission
+from management.permissions.role_access import RoleAccessPermission

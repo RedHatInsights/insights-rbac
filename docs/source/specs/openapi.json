@@ -1576,6 +1576,13 @@
           "policyCount": {
             "type": "integer",
             "minimum": 0
+          },
+          "applications": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "example": "catalog"
+            }
           }
         }
       },

@@ -17,6 +17,9 @@
 """Test the project middleware."""
 from unittest.mock import Mock
 
+from django.db import connection
+from django.test import TestCase
+
 from api.models import Tenant, User
 from api.serializers import (UserSerializer,
                                  create_schema_name)
@@ -24,9 +27,15 @@ from tests.identity_request import IdentityRequest
 from rbac.middleware import (HttpResponseUnauthorizedRequest,
                              IdentityHeaderMiddleware,
                              RolesTenantMiddleware)
+from management.models import (Access,
+                               Group,
+                               Principal,
+                               Policy,
+                               ResourceDefinition,
+                               Role)
 
 
-class RolesTenantMiddlewareTest(IdentityRequest):
+class RbacTenantMiddlewareTest(IdentityRequest):
     """Tests against the rbac tenant middleware."""
 
     def setUp(self):
@@ -142,3 +151,118 @@ class IdentityHeaderMiddlewareTest(IdentityRequest):
                                               email=self.user_data['email'],
                                               tenant=tenant,
                                               request=mock_request)
+
+
+class AccessHandlingTest(TestCase):
+    """Tests against getting user access in the IdentityHeaderMiddleware."""
+
+    @classmethod
+    def setUpClass(cls):
+        try:
+            cls.tenant = Tenant.objects.get(schema_name='test')
+        except:
+            cls.tenant = Tenant(schema_name='test')
+            cls.tenant.save(verbosity=0)
+
+        connection.set_tenant(cls.tenant)
+
+    @classmethod
+    def tearDownClass(cls):
+        connection.set_schema_to_public()
+        cls.tenant.delete()
+
+    def test_no_principal_found(self):
+        expected = {
+            'group': {
+                'read': [],
+                'write': []
+            },
+            'role': {
+                'read': [],
+                'write': []
+            },
+            'policy': {
+                'read': [],
+                'write': []
+            }
+        }
+        access = IdentityHeaderMiddleware._get_access_for_user('test_user', self.tenant)
+        self.assertEqual(expected, access)
+
+    def test_principal_no_access(self):
+        """Test access for existing principal with no access definitions."""
+        Principal.objects.create(username='test_user')
+        expected = {
+            'group': {
+                'read': [],
+                'write': []
+            },
+            'role': {
+                'read': [],
+                'write': []
+            },
+            'policy': {
+                'read': [],
+                'write': []
+            }
+        }
+        access = IdentityHeaderMiddleware._get_access_for_user('test_user', self.tenant)
+        self.assertEqual(expected, access)
+
+    def test_principal_with_access_no_res_defs(self):
+        """Test a user with definded access without any resource definitions."""
+        principal = Principal.objects.create(username='test_user')
+        group = Group.objects.create(name='group1')
+        group.principals.add(principal)
+        group.save()
+        role = Role.objects.create(name='role1')
+        access = Access.objects.create(permission='rbac:group:write', role=role)
+        # ResourceDefinition.objects.create(access=access)
+        policy = Policy.objects.create(name='policy1', group=group)
+        policy.roles.add(role)
+        policy.save()
+        access = IdentityHeaderMiddleware._get_access_for_user('test_user', self.tenant)
+        expected = {
+            'group': {'read': ['*'], 'write': ['*']},
+            'role': {'read': [], 'write': []},
+            'policy': {'read': [], 'write': []}
+            }
+        self.assertEqual(expected, access)
+
+    def test_principal_with_access_with_res_defs(self):
+        """Test a user with definded access with any resource definitions."""
+        principal = Principal.objects.create(username='test_user')
+        group = Group.objects.create(name='group1')
+        group.principals.add(principal)
+        group.save()
+        role = Role.objects.create(name='role1')
+        Access.objects.create(permission='rbac:group:foo:bar', role=role)
+        access = Access.objects.create(permission='rbac:group:write', role=role)
+        ResourceDefinition.objects.create(access=access,
+                                          attributeFilter={
+                                              'key': 'group',
+                                              'operation': 'equal',
+                                              'value': '1'
+                                            })
+        ResourceDefinition.objects.create(access=access,
+                                          attributeFilter={
+                                              'key': 'group',
+                                              'operation': 'in',
+                                              'value': '3,5'
+                                          })
+        ResourceDefinition.objects.create(access=access,
+                                          attributeFilter={
+                                              'key': 'group',
+                                              'operation': 'equal',
+                                              'value': '*'
+                                          })
+        policy = Policy.objects.create(name='policy1', group=group)
+        policy.roles.add(role)
+        policy.save()
+        access = IdentityHeaderMiddleware._get_access_for_user('test_user', self.tenant)
+        expected = {
+            'group': {'read': ['*'], 'write': ['*']},
+            'role': {'read': [], 'write': []},
+            'policy': {'read': [], 'write': []}
+        }
+        self.assertEqual(expected, access)

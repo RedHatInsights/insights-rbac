@@ -7,6 +7,7 @@ RBAC, accessed through the application program interface (API), is a role based 
    :maxdepth: 2
    :caption: Contents:
 
+   management
    development
    install
 
