@@ -14,7 +14,7 @@
 #    You should have received a copy of the GNU Affero General Public License
 #    along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
-"""Helper utilitis for management module."""
+"""Helper utilities for management module."""
 from django.db import models
 from django.utils import timezone
 

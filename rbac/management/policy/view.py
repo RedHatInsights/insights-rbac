@@ -18,6 +18,7 @@
 """View for policy management."""
 from django_filters import rest_framework as filters
 from management.permissions import PolicyAccessPermission
+from management.querysets import get_policy_queryset
 from rest_framework import mixins, viewsets
 from rest_framework.filters import OrderingFilter
 
@@ -58,18 +59,7 @@ class PolicyViewSet(mixins.CreateModelMixin,
 
     def get_queryset(self):
         """Obtain queryset for requesting user based on access."""
-        if self.request.user.admin:
-            return Policy.objects.all()
-        access = self.request.user.access
-        access_op = 'read'
-        if self.request.method in ('POST', 'PUT'):
-            access_op = 'write'
-        res_list = access.get('policy', {}).get(access_op, [])
-        if not res_list:
-            return Policy.objects.none()
-        if '*' in res_list:
-            return Policy.objects.all()
-        return Policy.objects.filter(uuid__in=res_list)
+        return get_policy_queryset(self.request)
 
     def get_serializer_class(self):
         """Get serializer based on route."""

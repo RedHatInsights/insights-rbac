@@ -25,6 +25,7 @@ from management.group.serializer import (GroupInputSerializer,
                                          GroupSerializer)
 from management.permissions import GroupAccessPermission
 from management.principal.model import Principal
+from management.querysets import get_group_queryset
 from rest_framework import mixins, serializers, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.filters import OrderingFilter
@@ -68,21 +69,7 @@ class GroupViewSet(mixins.CreateModelMixin,
 
     def get_queryset(self):
         """Obtain queryset for requesting user based on access."""
-        if self.request.user.admin:
-            return Group.objects.annotate(principalCount=Count('principals'),
-                                          policyCount=Count('policies'))
-        access = self.request.user.access
-        access_op = 'read'
-        if self.request.method in ('POST', 'PUT'):
-            access_op = 'write'
-        res_list = access.get('group', {}).get(access_op, [])
-        if not res_list:
-            return Group.objects.none()
-        if '*' in res_list:
-            return Group.objects.annotate(principalCount=Count('principals'),
-                                          policyCount=Count('policies'))
-        return Group.objects.filter(uuid__in=res_list).annotate(principalCount=Count('principals'),
-                                                                policyCount=Count('policies'))
+        return get_group_queryset(self.request)
 
     def get_serializer_class(self):
         """Get serializer based on route."""

@@ -21,6 +21,7 @@ from django.db.models.aggregates import Count
 from django.shortcuts import get_object_or_404
 from django_filters import rest_framework as filters
 from management.permissions import RoleAccessPermission
+from management.querysets import get_role_queryset
 from rest_framework import mixins, viewsets
 from rest_framework.filters import OrderingFilter
 
@@ -62,18 +63,7 @@ class RoleViewSet(mixins.CreateModelMixin,
 
     def get_queryset(self):
         """Obtain queryset for requesting user based on access."""
-        if self.request.user.admin:
-            return Role.objects.annotate(policyCount=Count('policies'))
-        access = self.request.user.access
-        access_op = 'read'
-        if self.request.method in ('POST', 'PUT'):
-            access_op = 'write'
-        res_list = access.get('policy', {}).get(access_op, [])
-        if not res_list:
-            return Role.objects.none()
-        if '*' in res_list:
-            return Role.objects.annotate(policyCount=Count('policies'))
-        return Role.objects.filter(uuid__in=res_list).annotate(policyCount=Count('policies'))
+        return get_role_queryset(self.request)
 
     def create(self, request, *args, **kwargs):
         """Create a roles.
