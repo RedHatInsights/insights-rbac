@@ -15,8 +15,9 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Defines the Admin Access Permissions class."""
-
 from rest_framework import permissions
+
+from rbac.env import ENVIRONMENT
 
 
 class AdminAccessPermission(permissions.BasePermission):
@@ -24,4 +25,6 @@ class AdminAccessPermission(permissions.BasePermission):
 
     def has_permission(self, request, view):
         """Check permission based on Account Admin property."""
+        if ENVIRONMENT.get_value('ALLOW_ANY', default=False, cast=bool):
+            return True
         return request.user.admin

@@ -15,8 +15,9 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Defines the Group Access Permissions class."""
-
 from rest_framework import permissions
+
+from rbac.env import ENVIRONMENT
 
 
 class GroupAccessPermission(permissions.BasePermission):
@@ -24,6 +25,8 @@ class GroupAccessPermission(permissions.BasePermission):
 
     def has_permission(self, request, view):
         """Check permission based on the defined access."""
+        if ENVIRONMENT.get_value('ALLOW_ANY', default=False, cast=bool):
+            return True
         if request.user.admin:
             return True
         if request.method in permissions.SAFE_METHODS:
