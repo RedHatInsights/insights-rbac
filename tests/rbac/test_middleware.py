@@ -217,7 +217,6 @@ class AccessHandlingTest(TestCase):
         group.save()
         role = Role.objects.create(name='role1')
         access = Access.objects.create(permission='rbac:group:write', role=role)
-        # ResourceDefinition.objects.create(access=access)
         policy = Policy.objects.create(name='policy1', group=group)
         policy.roles.add(role)
         policy.save()
@@ -264,5 +263,61 @@ class AccessHandlingTest(TestCase):
             'group': {'read': ['*'], 'write': ['*']},
             'role': {'read': [], 'write': []},
             'policy': {'read': [], 'write': []}
+        }
+        self.assertEqual(expected, access)
+
+    def test_principal_with_access_with_wildcard_op(self):
+        """Test a user with definded access with wildcard operation."""
+        principal = Principal.objects.create(username='test_user')
+        group = Group.objects.create(name='group1')
+        group.principals.add(principal)
+        group.save()
+        role = Role.objects.create(name='role1')
+        access = Access.objects.create(permission='rbac:group:*', role=role)
+        ResourceDefinition.objects.create(access=access,
+                                          attributeFilter={
+                                              'key': 'group',
+                                              'operation': 'equal',
+                                              'value': '1'
+                                          })
+        ResourceDefinition.objects.create(access=access,
+                                          attributeFilter={
+                                              'key': 'group',
+                                              'operation': 'in',
+                                              'value': '3,5'
+                                          })
+        ResourceDefinition.objects.create(access=access,
+                                          attributeFilter={
+                                              'key': 'group',
+                                              'operation': 'equal',
+                                              'value': '*'
+                                          })
+        policy = Policy.objects.create(name='policy1', group=group)
+        policy.roles.add(role)
+        policy.save()
+        access = IdentityHeaderMiddleware._get_access_for_user('test_user', self.tenant)
+        expected = {
+            'group': {'read': ['*'], 'write': ['*']},
+            'role': {'read': [], 'write': []},
+            'policy': {'read': [], 'write': []}
+        }
+        self.assertEqual(expected, access)
+
+    def test_principal_with_access_with_wildcard_access(self):
+        """Test a user with definded access with wildcard access."""
+        principal = Principal.objects.create(username='test_user')
+        group = Group.objects.create(name='group1')
+        group.principals.add(principal)
+        group.save()
+        role = Role.objects.create(name='role1')
+        access = Access.objects.create(permission='rbac:*:*', role=role)
+        policy = Policy.objects.create(name='policy1', group=group)
+        policy.roles.add(role)
+        policy.save()
+        access = IdentityHeaderMiddleware._get_access_for_user('test_user', self.tenant)
+        expected = {
+            'group': {'read': ['*'], 'write': ['*']},
+            'role': {'read': ['*'], 'write': ['*']},
+            'policy': {'read': ['*'], 'write': ['*']}
         }
         self.assertEqual(expected, access)

@@ -173,7 +173,7 @@ class IdentityHeaderMiddleware(MiddlewareMixin):  # pylint: disable=R0903
             except Principal.DoesNotExist:
                 return access
 
-        for access_item in access_list:
+        for access_item in access_list:  # pylint: disable=too-many-nested-blocks
             perm_list = access_item.permission.split(':')
             perm_len = len(perm_list)
             if perm_len != 3:
@@ -183,6 +183,8 @@ class IdentityHeaderMiddleware(MiddlewareMixin):  # pylint: disable=R0903
                 operation = perm_list[2]
                 res_list = []
                 res_defs = access_item.resourceDefinitions
+                if operation == '*':
+                    operation = 'write'
                 for res_def in res_defs.all():
                     attr_filter = res_def.attributeFilter
                     if attr_filter.get('operation') == 'equal' and attr_filter.get('value'):
@@ -191,9 +193,18 @@ class IdentityHeaderMiddleware(MiddlewareMixin):  # pylint: disable=R0903
                         res_list += attr_filter.get('value').split(',')
                 if not res_defs or not res_defs.values():
                     res_list = ['*']
-                if (resource_type in access.keys() and  # noqa: W504
-                        operation in access.get(resource_type, {}).keys() and  # noqa: W504
-                        isinstance(access.get(resource_type, {}).get(operation), list)):
+                if resource_type == '*':
+                    for resource in ('group', 'role', 'policy'):
+                        if (resource in access.keys() and  # noqa: W504
+                                operation in access.get(resource, {}).keys() and  # noqa: W504
+                                isinstance(access.get(resource,
+                                                      {}).get(operation), list)):
+                            access[resource][operation] += res_list
+                            if operation == 'write':
+                                access[resource]['read'] += res_list
+                elif (resource_type in access.keys() and  # noqa: W504
+                      operation in access.get(resource_type, {}).keys() and  # noqa: W504
+                      isinstance(access.get(resource_type, {}).get(operation), list)):
                     access[resource_type][operation] += res_list
                     if operation == 'write':
                         access[resource_type]['read'] += res_list

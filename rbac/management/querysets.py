@@ -20,9 +20,14 @@ from management.group.model import Group
 from management.policy.model import Policy
 from management.role.model import Role
 
+from rbac.env import ENVIRONMENT
+
 
 def get_group_queryset(request):
     """Obtain the queryset for groups."""
+    if ENVIRONMENT.get_value('ALLOW_ANY', default=False, cast=bool):
+        return Group.objects.annotate(principalCount=Count('principals'),
+                                      policyCount=Count('policies'))
     if request.user.admin:
         return Group.objects.annotate(principalCount=Count('principals'),
                                       policyCount=Count('policies'))
@@ -51,6 +56,8 @@ def get_group_queryset(request):
 
 def get_role_queryset(request):
     """Obtain the queryset for roles."""
+    if ENVIRONMENT.get_value('ALLOW_ANY', default=False, cast=bool):
+        return Role.objects.annotate(policyCount=Count('policies'))
     if request.user.admin:
         return Role.objects.annotate(policyCount=Count('policies'))
     access = request.user.access
@@ -67,6 +74,8 @@ def get_role_queryset(request):
 
 def get_policy_queryset(request):
     """Obtain the queryset for policies."""
+    if ENVIRONMENT.get_value('ALLOW_ANY', default=False, cast=bool):
+        return Policy.objects.all()
     if request.user.admin:
         return Policy.objects.all()
     access = request.user.access
