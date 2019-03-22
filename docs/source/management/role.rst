@@ -25,7 +25,6 @@ Operation defines the application logic action, for example::
 
 - read
 - write
-- execute
 - order
 
 
