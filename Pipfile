@@ -25,14 +25,15 @@ prometheus-client = "==0.6.0"
 
 [dev-packages]
 
-astroid = "==2.1.0"
-pylint = "==2.2.2"
+astroid = "==2.2.5"
+pylint = "==2.3.1"
 sphinx-rtd-theme = ">=0.3.0"
 sphinx = ">=1.7.0"
 tox = ">=3.0.0"
 coverage = ">=4.5.0"
 codecov = ">=2.0.0"
 faker = ">=0.8.14"
+pylint-django = "==2.0.6"
 
 
 [requires]
