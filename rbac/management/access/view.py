@@ -16,8 +16,9 @@
 #
 
 """View for principal access."""
+from django.core.exceptions import PermissionDenied
 from django.utils.translation import gettext as _
-from management.models import Access, Principal
+from management.models import Principal
 from management.role.serializer import AccessSerializer
 from rest_framework import serializers, status
 from rest_framework.permissions import AllowAny
@@ -25,37 +26,10 @@ from rest_framework.response import Response
 from rest_framework.settings import api_settings
 from rest_framework.views import APIView
 
+from management.access.utils import access_for_principal  # noqa: I100, I202
+
 APPLICATION_KEY = 'application'
 USERNAME_KEY = 'username'
-
-
-def _policies_for_groups(groups):
-    """Gathers all policies for the given groups."""
-    policies = []
-    for group in set(groups):
-        group_policies = set(group.policies.all())
-        policies += group_policies
-    return policies
-
-
-def _roles_for_policies(policies):
-    """Gathers all roles for the given policies."""
-    roles = []
-    for policy in set(policies):
-        policy_roles = set(policy.roles.all())
-        roles += policy_roles
-    return roles
-
-
-def _access_for_roles(roles, application):
-    """Gathers all access for the given roles and application."""
-    access = []
-    for role in set(roles):
-        role_access = set(role.access.all())
-        for access_item in role_access:
-            if application in access_item.permission:
-                access.append(access_item)
-    return access
 
 
 class AccessView(APIView):
@@ -121,8 +95,13 @@ class AccessView(APIView):
             raise serializers.ValidationError({key: _(message)})
 
         current_user = self.request.user.username
-        username = self.request.query_params.get(USERNAME_KEY, current_user)
+        username = self.request.query_params.get(USERNAME_KEY)
         app = self.request.query_params.get(APPLICATION_KEY)
+
+        if username and not self.request.user.admin:
+            raise PermissionDenied()
+        if not username:
+            username = current_user
 
         try:
             principal = Principal.objects.get(username=username)
@@ -131,12 +110,7 @@ class AccessView(APIView):
             message = 'No access found for principal with username {}.'.format(username)
             raise serializers.ValidationError({key: _(message)})
 
-        groups = set(principal.group.all())
-        policies = _policies_for_groups(groups)
-        roles = _roles_for_policies(policies)
-        access = _access_for_roles(roles, app)
-        wanted_ids = [obj.id for obj in access]
-        return Access.objects.filter(id__in=wanted_ids)
+        return access_for_principal(principal, app)
 
     def get(self, request):
         """Provide access data for prinicpal."""

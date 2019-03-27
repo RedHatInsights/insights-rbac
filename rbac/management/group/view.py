@@ -23,11 +23,12 @@ from management.group.model import Group
 from management.group.serializer import (GroupInputSerializer,
                                          GroupPrincipalInputSerializer,
                                          GroupSerializer)
+from management.permissions import GroupAccessPermission
 from management.principal.model import Principal
+from management.querysets import get_group_queryset
 from rest_framework import mixins, serializers, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.filters import OrderingFilter
-from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
 
@@ -58,20 +59,23 @@ class GroupViewSet(mixins.CreateModelMixin,
 
     """
 
-    queryset = Group.objects.annotate(principalCount=Count('principals'),
-                                      policyCount=Count('policies'))
-    permission_classes = (AllowAny,)
+    queryset = Group.objects.annotate(principalCount=Count('principals'), policyCount=Count('policies'))
+    permission_classes = (GroupAccessPermission,)
     lookup_field = 'uuid'
     filter_backends = (filters.DjangoFilterBackend, OrderingFilter)
     filterset_class = GroupFilter
     ordering_fields = ('name', 'modified', 'principalCount', 'policyCount')
     ordering = ('name',)
 
+    def get_queryset(self):
+        """Obtain queryset for requesting user based on access."""
+        return get_group_queryset(self.request)
+
     def get_serializer_class(self):
         """Get serializer based on route."""
         if 'principals' in self.request.path:
             return GroupPrincipalInputSerializer
-        if self.request.method == 'POST' or self.request.method == 'PUT':
+        if self.request.method in ('POST', 'PUT'):
             return GroupInputSerializer
         if self.request.path.endswith('groups/') and self.request.method == 'GET':
             return GroupInputSerializer

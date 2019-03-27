@@ -43,5 +43,12 @@ class User(models.Model):
     is_active = models.NullBooleanField(default=True)
     tenant = models.ForeignKey('Tenant', null=True, on_delete=models.CASCADE)
 
+    def __init__(self, *args, **kwargs):
+        """Initialize non-persisted user properties."""
+        super().__init__(*args, **kwargs)
+        self.admin = False
+        self.access = None
+        self.identity_header = None
+
     class Meta:
         ordering = ['username']

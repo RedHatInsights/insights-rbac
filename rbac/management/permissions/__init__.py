@@ -14,14 +14,10 @@
 #    You should have received a copy of the GNU Affero General Public License
 #    along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
-"""Helper utilities for management module."""
-from django.db import models
-from django.utils import timezone
-
-
-class AutoDateTimeField(models.DateTimeField):
-    """Class that defines is pre_save value."""
-
-    def pre_save(self, model_instance, add):
-        """Save its time as now."""
-        return timezone.now()
+"""Permissions for import organization."""
+# flake8: noqa
+# pylint: disable=unused-import
+from management.permissions.admin_access import AdminAccessPermission
+from management.permissions.group_access import GroupAccessPermission
+from management.permissions.policy_access import PolicyAccessPermission
+from management.permissions.role_access import RoleAccessPermission

@@ -30,6 +30,7 @@ from tenant_schemas.utils import tenant_context
 from api.common import RH_IDENTITY_HEADER
 from api.models import Tenant, User
 from api.serializers import UserSerializer, create_schema_name, extract_header
+from management.access.utils import access_for_principal  # noqa: I100, I201
 from management.models import Principal  # noqa: I100, I201
 
 
@@ -146,6 +147,73 @@ class IdentityHeaderMiddleware(MiddlewareMixin):  # pylint: disable=R0903
             new_user = User.objects.get(username=username)
         return new_user
 
+    @staticmethod  # noqa: C901
+    def _get_access_for_user(username, tenant):  # pylint: disable=too-many-locals,too-many-branches
+        """Obtain access data for given username."""
+        principal = None
+        access_list = None
+        access = {
+            'group': {
+                'read': [],
+                'write': []
+            },
+            'role': {
+                'read': [],
+                'write': []
+            },
+            'policy': {
+                'read': [],
+                'write': []
+            }
+        }
+        with tenant_context(tenant):
+            try:
+                principal = Principal.objects.get(username=username)
+                access_list = access_for_principal(principal, 'rbac')
+            except Principal.DoesNotExist:
+                return access
+
+        for access_item in access_list:  # pylint: disable=too-many-nested-blocks
+            perm_list = access_item.permission.split(':')
+            perm_len = len(perm_list)
+            if perm_len != 3:
+                logger.warning('Skipping invalid permission %s', access_item.permission)
+            else:
+                resource_type = perm_list[1]
+                operation = perm_list[2]
+                res_list = []
+                res_defs = access_item.resourceDefinitions
+                if operation == '*':
+                    operation = 'write'
+                for res_def in res_defs.all():
+                    attr_filter = res_def.attributeFilter
+                    if attr_filter.get('operation') == 'equal' and attr_filter.get('value'):
+                        res_list.append(attr_filter.get('value'))
+                    if attr_filter.get('operation') == 'in' and attr_filter.get('value'):
+                        res_list += attr_filter.get('value').split(',')
+                if not res_defs or not res_defs.values():
+                    res_list = ['*']
+                if resource_type == '*':
+                    for resource in ('group', 'role', 'policy'):
+                        if (resource in access.keys() and  # noqa: W504
+                                operation in access.get(resource, {}).keys() and  # noqa: W504
+                                isinstance(access.get(resource,
+                                                      {}).get(operation), list)):
+                            access[resource][operation] += res_list
+                            if operation == 'write':
+                                access[resource]['read'] += res_list
+                elif (resource_type in access.keys() and  # noqa: W504
+                      operation in access.get(resource_type, {}).keys() and  # noqa: W504
+                      isinstance(access.get(resource_type, {}).get(operation), list)):
+                    access[resource_type][operation] += res_list
+                    if operation == 'write':
+                        access[resource_type]['read'] += res_list
+            for res_type, res_ops_obj in access.items():
+                for op_type, op_list in res_ops_obj.items():
+                    if '*' in op_list:
+                        access[res_type][op_type] = ['*']
+        return access
+
     def process_request(self, request):  # noqa: C901
         """Process request for csrf checks.
 
@@ -157,10 +225,11 @@ class IdentityHeaderMiddleware(MiddlewareMixin):  # pylint: disable=R0903
             request.user = User('', '')
             return
         try:
-            json_rh_auth = extract_header(request, self.header)
-            username = json_rh_auth['identity']['user']['username']
-            email = json_rh_auth['identity']['user']['email']
-            account = json_rh_auth['identity']['account_number']
+            rh_auth_header, json_rh_auth = extract_header(request, self.header)
+            username = json_rh_auth.get('identity', {}).get('user', {}).get('username')
+            email = json_rh_auth.get('identity', {}).get('user', {}).get('email')
+            account = json_rh_auth.get('identity', {}).get('account_number')
+            is_admin = json_rh_auth.get('identity', {}).get('user', {}).get('is_org_admin')
         except (KeyError, JSONDecodeError):
             logger.warning('Could not obtain identity on request.')
             return
@@ -184,7 +253,6 @@ class IdentityHeaderMiddleware(MiddlewareMixin):  # pylint: disable=R0903
                                                              email,
                                                              tenant,
                                                              request)
-            request.user = user
 
             # Temporarily add principals based on API interaction
             with tenant_context(tenant):
@@ -198,6 +266,15 @@ class IdentityHeaderMiddleware(MiddlewareMixin):  # pylint: disable=R0903
                             logger.info('Created new principal for account_id %s.', account)
                     except IntegrityError:
                         pass
+
+            user.identity_header = {
+                'encoded': rh_auth_header,
+                'decoded': json_rh_auth
+            }
+            user.admin = is_admin
+            if not is_admin:
+                user.access = IdentityHeaderMiddleware._get_access_for_user(username, tenant)
+            request.user = user
 
 
 class DisableCSRF(MiddlewareMixin):  # pylint: disable=too-few-public-methods

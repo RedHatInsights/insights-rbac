@@ -15,7 +15,7 @@
 #    along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """
-WSGI config for roles project.
+WSGI config for rbac project.
 
 It exposes the WSGI callable as a module-level variable named ``application``.
 
