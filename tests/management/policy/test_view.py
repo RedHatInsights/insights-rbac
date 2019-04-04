@@ -38,14 +38,12 @@ class PolicyViewsetTests(IdentityRequest):
         super().setUp()
         request = self.request_context['request']
         user = User(username=self.user_data['username'],
-                    email=self.user_data['email'],
                     tenant=self.tenant)
         user.save()
         request.user = user
 
         with tenant_context(self.tenant):
-            self.principal = Principal(username=self.user_data['username'],
-                                       email=self.user_data['email'])
+            self.principal = Principal(username=self.user_data['username'])
             self.principal.save()
             self.group = Group(name='groupA')
             self.group.save()

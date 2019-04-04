@@ -119,12 +119,11 @@ class IdentityHeaderMiddleware(MiddlewareMixin):  # pylint: disable=R0903
         return tenant
 
     @staticmethod
-    def _create_user(username, email, tenant, request):
+    def _create_user(username, tenant, request):
         """Create a user for a tenant.
 
         Args:
             username (str): The username
-            email (str): The email for the user
             tenant (Tenant): The tenant the user is associated with
             request (object): The incoming request
 
@@ -135,7 +134,7 @@ class IdentityHeaderMiddleware(MiddlewareMixin):  # pylint: disable=R0903
         new_user = None
         try:
             with transaction.atomic():
-                user_data = {'username': username, 'email': email}
+                user_data = {'username': username}
                 context = {'request': request}
                 serializer = UserSerializer(data=user_data, context=context)
                 if serializer.is_valid(raise_exception=True):
@@ -227,19 +226,19 @@ class IdentityHeaderMiddleware(MiddlewareMixin):  # pylint: disable=R0903
         try:
             rh_auth_header, json_rh_auth = extract_header(request, self.header)
             username = json_rh_auth.get('identity', {}).get('user', {}).get('username')
-            email = json_rh_auth.get('identity', {}).get('user', {}).get('email')
             account = json_rh_auth.get('identity', {}).get('account_number')
             is_admin = json_rh_auth.get('identity', {}).get('user', {}).get('is_org_admin')
         except (KeyError, JSONDecodeError):
             logger.warning('Could not obtain identity on request.')
             return
-        if (username and email and account):
+        if (username and account):
             # Check for customer creation & user creation
             query_string = ''
             if request.META['QUERY_STRING']:
                 query_string = '?{}'.format(request.META['QUERY_STRING'])
             logger.info(f'API: {request.path}{query_string}'  # pylint: disable=W1203
-                        f' -- ACCOUNT: {account} USER: {username}')
+                        f' -- ACCOUNT: {account} USER: {username}'
+                        f' ADMIN: {is_admin}')
             try:
                 schema_name = create_schema_name(account)
                 tenant = Tenant.objects.filter(schema_name=schema_name).get()
@@ -250,28 +249,20 @@ class IdentityHeaderMiddleware(MiddlewareMixin):  # pylint: disable=R0903
                 user = User.objects.get(username=username)
             except User.DoesNotExist:
                 user = IdentityHeaderMiddleware._create_user(username,
-                                                             email,
                                                              tenant,
                                                              request)
 
-            # Temporarily add principals based on API interaction
             with tenant_context(tenant):
-                try:
-                    Principal.objects.get(username=username)
-                except Principal.DoesNotExist:
-                    try:
-                        with transaction.atomic():
-                            principal = Principal(username=username, email=email)
-                            principal.save()
-                            logger.info('Created new principal for account_id %s.', account)
-                    except IntegrityError:
-                        pass
+                _, created = Principal.objects.update_or_create(username=username)
+                if created:
+                    logger.info('Created new principal for account_id %s.', account)
 
             user.identity_header = {
                 'encoded': rh_auth_header,
                 'decoded': json_rh_auth
             }
             user.admin = is_admin
+            user.account = account
             if not is_admin:
                 user.access = IdentityHeaderMiddleware._get_access_for_user(username, tenant)
             request.user = user

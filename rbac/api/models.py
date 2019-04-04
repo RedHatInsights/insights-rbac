@@ -39,13 +39,13 @@ class User(models.Model):
     uuid = models.UUIDField(default=uuid4, editable=False,
                             unique=True, null=False)
     username = models.CharField(max_length=150, unique=True)
-    email = models.EmailField(blank=True)
     is_active = models.NullBooleanField(default=True)
     tenant = models.ForeignKey('Tenant', null=True, on_delete=models.CASCADE)
 
     def __init__(self, *args, **kwargs):
         """Initialize non-persisted user properties."""
         super().__init__(*args, **kwargs)
+        self.account = None
         self.admin = False
         self.access = None
         self.identity_header = None

@@ -18,7 +18,7 @@
 """API views for import organization"""
 # flake8: noqa
 # pylint: disable=unused-import
-from management.principal.view import PrincipalViewSet
+from management.principal.view import PrincipalView
 from management.group.view import GroupViewSet
 from management.role.view import RoleViewSet
 from management.policy.view import PolicyViewSet

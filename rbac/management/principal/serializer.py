@@ -28,7 +28,7 @@ class PrincpalSerializer(serializers.ModelSerializer):
         """Metadata for the serializer."""
 
         model = Principal
-        fields = ('username', 'email')
+        fields = ('username',)
 
 
 class PrincpalInputSerializer(serializers.Serializer):

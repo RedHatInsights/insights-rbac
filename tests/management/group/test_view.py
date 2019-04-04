@@ -15,9 +15,9 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Test the group viewset."""
-
 import random
 from decimal import Decimal
+from unittest.mock import patch
 from uuid import uuid4
 
 from django.urls import reverse
@@ -38,14 +38,12 @@ class GroupViewsetTests(IdentityRequest):
         super().setUp()
         request = self.request_context['request']
         user = User(username=self.user_data['username'],
-                    email=self.user_data['email'],
                     tenant=self.tenant)
         user.save()
         request.user = user
 
         with tenant_context(self.tenant):
-            self.principal = Principal(username=self.user_data['username'],
-                                       email=self.user_data['email'])
+            self.principal = Principal(username=self.user_data['username'])
             self.principal.save()
             self.group = Group(name='groupA')
             self.group.save()
@@ -59,7 +57,9 @@ class GroupViewsetTests(IdentityRequest):
             Group.objects.all().delete()
             Principal.objects.all().delete()
 
-    def test_create_group_success(self):
+    @patch('management.principal.proxy.PrincipalProxy.request_filtered_principals',
+           return_value={'status_code': 200, 'data': []})
+    def test_create_group_success(self, mock_request):
         """Test that we can create a group."""
         group_name = 'groupB'
         test_data = {
@@ -88,7 +88,9 @@ class GroupViewsetTests(IdentityRequest):
         response = client.post(url, test_data, format='json', **self.headers)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
-    def test_read_group_success(self):
+    @patch('management.principal.proxy.PrincipalProxy.request_filtered_principals',
+           return_value={'status_code': 200, 'data': []})
+    def test_read_group_success(self, mock_request):
         """Test that we can read a group."""
         url = reverse('group-detail', kwargs={'uuid': self.group.uuid})
         client = APIClient()
@@ -121,7 +123,9 @@ class GroupViewsetTests(IdentityRequest):
         self.assertIsNotNone(group.get('name'))
         self.assertEqual(group.get('name'), self.group.name)
 
-    def test_update_group_success(self):
+    @patch('management.principal.proxy.PrincipalProxy.request_filtered_principals',
+           return_value={'status_code': 200, 'data': []})
+    def test_update_group_success(self, mock_request):
         """Test that we can update an existing group."""
         group = Group.objects.first()
         updated_name = group.name + '_update'
@@ -167,7 +171,9 @@ class GroupViewsetTests(IdentityRequest):
         response = client.put(url, {}, format='json', **self.headers)
         self.assertEqual(response.status_code, status.HTTP_405_METHOD_NOT_ALLOWED)
 
-    def test_add_group_principals_success(self):
+    @patch('management.principal.proxy.PrincipalProxy.request_filtered_principals',
+           return_value={'status_code': 200, 'data': []})
+    def test_add_group_principals_success(self, mock_request):
         """Test that adding a principal to a group returns successfully."""
         url = reverse('group-principals', kwargs={'uuid': self.group.uuid})
         client = APIClient()
@@ -191,7 +197,9 @@ class GroupViewsetTests(IdentityRequest):
         response = client.delete(url, format='json', **self.headers)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
-    def test_get_group_by_username(self):
+    @patch('management.principal.proxy.PrincipalProxy.request_filtered_principals',
+           return_value={'status_code': 200, 'data': []})
+    def test_get_group_by_username(self, mock_request):
         """Test that getting groups for a principalreturns successfully."""
         url = reverse('group-principals', kwargs={'uuid': self.group.uuid})
         client = APIClient()
