@@ -15,7 +15,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Test the project middleware."""
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from django.db import connection
 from django.test import TestCase
@@ -47,7 +47,7 @@ class RbacTenantMiddlewareTest(IdentityRequest):
         self.request_context = self._create_request_context(self.customer,
                                                             self.user_data)
         request = self.request_context['request']
-        request.path = '/api/v1/providers/'
+        request.path = '/api/v1/access/'
         serializer = UserSerializer(data=self.user_data, context=self.request_context)
         if serializer.is_valid(raise_exception=True):
             user = serializer.save()
@@ -62,7 +62,7 @@ class RbacTenantMiddlewareTest(IdentityRequest):
 
     def test_get_tenant_with_no_user(self):
         """Test that a 401 is returned."""
-        mock_request = Mock(path='/api/v1/providers/', user=None)
+        mock_request = Mock(path='/api/v1/access/', user=None)
         middleware = RolesTenantMiddleware()
         result = middleware.process_request(mock_request)
         self.assertIsInstance(result, HttpResponseUnauthorizedRequest)
@@ -70,7 +70,7 @@ class RbacTenantMiddlewareTest(IdentityRequest):
     def test_get_tenant_user_not_found(self):
         """Test that a 401 is returned."""
         mock_user = Mock(username='mockuser')
-        mock_request = Mock(path='/api/v1/providers/', user=mock_user)
+        mock_request = Mock(path='/api/v1/access/', user=mock_user)
         middleware = RolesTenantMiddleware()
         result = middleware.process_request(mock_request)
         self.assertIsInstance(result, HttpResponseUnauthorizedRequest)
@@ -89,7 +89,7 @@ class IdentityHeaderMiddlewareTest(IdentityRequest):
                                                             self.user_data,
                                                             create_customer=False)
         self.request = self.request_context['request']
-        self.request.path = '/api/v1/providers/'
+        self.request.path = '/api/v1/access/'
         self.request.META['QUERY_STRING'] = ''
 
     def test_process_status(self):
@@ -119,7 +119,7 @@ class IdentityHeaderMiddlewareTest(IdentityRequest):
                                                        self.user_data,
                                                        create_customer=False)
         mock_request = request_context['request']
-        mock_request.path = '/api/v1/providers/'
+        mock_request.path = '/api/v1/access/'
         middleware = IdentityHeaderMiddleware()
         middleware.process_request(mock_request)
         self.assertTrue(hasattr(mock_request, 'user'))
@@ -150,6 +150,21 @@ class IdentityHeaderMiddlewareTest(IdentityRequest):
         IdentityHeaderMiddleware._create_user(username=self.user_data['username'],  # pylint: disable=W0212
                                               tenant=tenant,
                                               request=mock_request)
+
+    @patch('rbac.middleware.IdentityHeaderMiddleware._get_access_for_user')
+    def test_process_non_admin(self, get_access_mock):
+        """Test case for process_request as a non-admin user, verify that _get_access_for_user is called."""
+        user_data = self._create_user_data()
+        customer = self._create_customer_data()
+        request_context = self._create_request_context(customer, user_data, create_customer=True,
+                                                       create_tenant=True, is_admin=False)
+        mock_request = request_context['request']
+        mock_request.path = '/api/v1/access/'
+        mock_request.META['QUERY_STRING'] = ''
+
+        middleware = IdentityHeaderMiddleware()
+        middleware.process_request(mock_request)
+        get_access_mock.assert_called()
 
 
 class AccessHandlingTest(TestCase):

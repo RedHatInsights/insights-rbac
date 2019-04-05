@@ -227,7 +227,11 @@ class IdentityHeaderMiddleware(MiddlewareMixin):  # pylint: disable=R0903
             rh_auth_header, json_rh_auth = extract_header(request, self.header)
             username = json_rh_auth.get('identity', {}).get('user', {}).get('username')
             account = json_rh_auth.get('identity', {}).get('account_number')
-            is_admin = json_rh_auth.get('identity', {}).get('user', {}).get('is_org_admin')
+            is_admin_string = json_rh_auth.\
+                get('identity', {}).\
+                get('user', {}).\
+                get('is_org_admin', 'False')
+            is_admin = (is_admin_string.lower() in ('t', 'true'))
         except (KeyError, JSONDecodeError):
             logger.warning('Could not obtain identity on request.')
             return
