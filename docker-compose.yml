@@ -1,7 +1,7 @@
 version: '3'
 
 services:
-  server:
+  rbac-server:
       build:
           context: .
           dockerfile: Dockerfile-env
@@ -17,11 +17,11 @@ services:
         - DATABASE_USER=postgres
         - DATABASE_PASSWORD=postgres
         - DJANGO_READ_DOT_ENV_FILE=True
-        - DEVELOPMENT=True
-        - DJANGO_DEBUG=True
+        - DEVELOPMENT=${DEVELOPMENT-False}
+        - DJANGO_DEBUG=${DJANGO_DEBUG-True}
       privileged: true        
       ports:
-          - 8000:8000
+          - 9000:8000
       volumes:
         - '.:/rbac/'
       links:
