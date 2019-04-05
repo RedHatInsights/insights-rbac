@@ -148,7 +148,6 @@ class IdentityHeaderMiddlewareTest(IdentityRequest):
         user = User.objects.get(username=self.user_data['username'])
         self.assertIsNotNone(user)
         IdentityHeaderMiddleware._create_user(username=self.user_data['username'],  # pylint: disable=W0212
-                                              email=self.user_data['email'],
                                               tenant=tenant,
                                               request=mock_request)
 

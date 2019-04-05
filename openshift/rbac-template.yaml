@@ -68,11 +68,23 @@ objects:
       template: rbac-template
     annotations:
       template.openshift.io/expose-django_secret_key: "{.data['django-secret-key']}"
-      template.openshift.io/expose-aws_access_key_id: "{.data['aws-access-key-id']}"
-      template.openshift.io/expose-aws_secret_access_key: "{.data['aws-secret-access-key']}"
+      template.openshift.io/expose-principal_proxy_protocol: "{.data['principal-proxy-protocol']}"
+      template.openshift.io/expose-principal_proxy_host: "{.data['principal-proxy-host']}"
+      template.openshift.io/expose-principal_proxy_port: "{.data['principal-proxy-port']}"
+      template.openshift.io/expose-principal_proxy_path: "{.data['principal-proxy-path']}"
+      template.openshift.io/expose-principal_proxy_env: "{.data['principal-proxy-env']}"
+      template.openshift.io/expose-principal_proxy_client_id: "{.data['principal-proxy-client-id']}"
+      template.openshift.io/expose-principal_proxy_api_token: "{.data['principal-proxy-api-token']}"
     name: ${NAME}-secret
   stringData:
     django-secret-key: ${DJANGO_SECRET_KEY}
+    principal-proxy-protocol: ${PRINCIPAL_PROXY_SERVICE_PROTOCOL}
+    principal-proxy-host: ${PRINCIPAL_PROXY_SERVICE_HOST}
+    principal-proxy-port: ${PRINCIPAL_PROXY_SERVICE_PORT}
+    principal-proxy-path: ${PRINCIPAL_PROXY_SERVICE_PATH}
+    principal-proxy-env: ${PRINCIPAL_PROXY_USER_ENV}
+    principal-proxy-client-id: ${PRINCIPAL_PROXY_CLIENT_ID}
+    principal-proxy-api-token: ${PRINCIPAL_PROXY_API_TOKEN}
 - apiVersion: v1
   kind: ConfigMap
   metadata:
@@ -241,6 +253,48 @@ objects:
               valueFrom:
                 secretKeyRef:
                   key: django-secret-key
+                  name: ${NAME}-secret
+                  optional: false
+            - name: PRINCIPAL_PROXY_SERVICE_PROTOCOL
+              valueFrom:
+                secretKeyRef:
+                  key: principal-proxy-protocol
+                  name: ${NAME}-secret
+                  optional: false
+            - name: PRINCIPAL_PROXY_SERVICE_HOST
+              valueFrom:
+                secretKeyRef:
+                  key: principal-proxy-host
+                  name: ${NAME}-secret
+                  optional: false
+            - name: PRINCIPAL_PROXY_SERVICE_PORT
+              valueFrom:
+                secretKeyRef:
+                  key: principal-proxy-port
+                  name: ${NAME}-secret
+                  optional: false
+            - name: PRINCIPAL_PROXY_SERVICE_PATH
+              valueFrom:
+                secretKeyRef:
+                  key: principal-proxy-path
+                  name: ${NAME}-secret
+                  optional: false
+            - name: PRINCIPAL_PROXY_USER_ENV
+              valueFrom:
+                secretKeyRef:
+                  key: principal-proxy-env
+                  name: ${NAME}-secret
+                  optional: false
+            - name: PRINCIPAL_PROXY_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  key: principal-proxy-client-id
+                  name: ${NAME}-secret
+                  optional: false
+            - name: PRINCIPAL_PROXY_API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  key: principal-proxy-api-token
                   name: ${NAME}-secret
                   optional: false
             - name: DATABASE_ENGINE
@@ -630,3 +684,24 @@ parameters:
 - displayName: API path prefix
   value: 'api'
   name: API_PATH_PREFIX
+- displayName: Protocol for principal proxy interaction
+  value: 'https'
+  name: PRINCIPAL_PROXY_SERVICE_PROTOCOL
+- displayName: Host for principal proxy interaction
+  value: 'localhost'
+  name: PRINCIPAL_PROXY_SERVICE_HOST
+- displayName: Port for principal proxy interaction
+  value: '443'
+  name: PRINCIPAL_PROXY_SERVICE_PORT
+- displayName: Path for principal proxy interaction
+  value: '/r/insights-services'
+  name: PRINCIPAL_PROXY_SERVICE_PATH
+- displayName: User environment for principal proxy interaction
+  value: 'env'
+  name: PRINCIPAL_PROXY_USER_ENV
+- displayName: Client ID for principal proxy interaction
+  value: 'client_id'
+  name: PRINCIPAL_PROXY_CLIENT_ID
+- displayName: Token for principal proxy interaction
+  value: 'token'
+  name: PRINCIPAL_PROXY_API_TOKEN

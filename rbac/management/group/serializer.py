@@ -17,8 +17,9 @@
 
 """Serializer for group management."""
 from management.group.model import Group
+from management.principal.proxy import PrincipalProxy
 from management.principal.serializer import PrincpalInputSerializer, PrincpalSerializer
-from rest_framework import serializers
+from rest_framework import serializers, status
 from rest_framework.validators import UniqueValidator
 
 
@@ -59,6 +60,18 @@ class GroupSerializer(serializers.ModelSerializer):
 
         model = Group
         fields = ('uuid', 'name', 'description', 'principals', 'created', 'modified')
+
+    def to_representation(self, obj):
+        """Convert representation to dictionary object."""
+        proxy = PrincipalProxy()
+        formatted = super().to_representation(obj)
+        principals = formatted.pop('principals')
+        users = [principal.get('username') for principal in principals]
+        resp = proxy.request_filtered_principals(users, limit=len(users))
+        if resp.get('status_code') == status.HTTP_200_OK:
+            principals = resp.get('data')
+        formatted['principals'] = principals
+        return formatted
 
 
 class GroupPrincipalInputSerializer(serializers.Serializer):

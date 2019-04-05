@@ -56,10 +56,9 @@ def create_schema_name(account):
     return f'acct{account}'
 
 
-def _create_user(username, email, tenant):
+def _create_user(username, tenant):
     """Create a user."""
     user = User(username=username,
-                email=email,
                 tenant=tenant)
     user.save()
     return user
@@ -72,7 +71,7 @@ class UserSerializer(serializers.ModelSerializer):
         """Metadata for the serializer."""
 
         model = User
-        fields = ('uuid', 'username', 'email')
+        fields = ('uuid', 'username')
 
     @transaction.atomic
     def create(self, validated_data):
@@ -100,7 +99,6 @@ class UserSerializer(serializers.ModelSerializer):
 
         user = _create_user(
             username=validated_data.get('username'),
-            email=validated_data.get('email'),
             tenant=tenant)
 
         return user

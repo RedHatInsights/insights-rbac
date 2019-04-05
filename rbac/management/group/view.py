@@ -25,6 +25,7 @@ from management.group.serializer import (GroupInputSerializer,
                                          GroupSerializer)
 from management.permissions import GroupAccessPermission
 from management.principal.model import Principal
+from management.principal.proxy import PrincipalProxy
 from management.querysets import get_group_queryset
 from rest_framework import mixins, serializers, status, viewsets
 from rest_framework.decorators import action
@@ -66,6 +67,7 @@ class GroupViewSet(mixins.CreateModelMixin,
     filterset_class = GroupFilter
     ordering_fields = ('name', 'modified', 'principalCount', 'policyCount')
     ordering = ('name',)
+    proxy = PrincipalProxy()
 
     def get_queryset(self):
         """Obtain queryset for requesting user based on access."""
@@ -122,8 +124,8 @@ class GroupViewSet(mixins.CreateModelMixin,
         @apiHeader {String} token User authorization token
 
         @apiParam (Query) {String} name Filter by group name.
-        @apiParam (Query) {Number} page Parameter for selecting the page of data (default is 1).
-        @apiParam (Query) {Number} page_size Parameter for selecting the amount of data in a page (default is 10).
+        @apiParam (Query) {Number} offset Parameter for selecting the start of data (default is 0).
+        @apiParam (Query) {Number} limit Parameter for selecting the amount of data (default is 10).
 
         @apiSuccess {Object} meta The metadata for pagination.
         @apiSuccess {Object} links  The object containing links of results.
@@ -228,7 +230,9 @@ class GroupViewSet(mixins.CreateModelMixin,
 
     def add_principals(self, group, principals):
         """Process list of principals and add them to the group."""
-        for item in principals:
+        users = [principal.get('username') for principal in principals]
+        resp = self.proxy.request_filtered_principals(users, limit=len(users))
+        for item in resp.get('data', []):
             username = item['username']
             try:
                 principal = Principal.objects.get(username=username)
