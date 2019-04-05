@@ -27,7 +27,6 @@ class Principal(models.Model):
     uuid = models.UUIDField(default=uuid4, editable=False,
                             unique=True, null=False)
     username = models.CharField(max_length=150, unique=True)
-    email = models.EmailField(blank=True)
 
     class Meta:
         ordering = ['username']

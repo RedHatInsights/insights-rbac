@@ -18,6 +18,7 @@
 
 import random
 from decimal import Decimal
+from unittest.mock import patch
 from uuid import uuid4
 
 from django.urls import reverse
@@ -38,14 +39,12 @@ class PrincipalViewsetTests(IdentityRequest):
         super().setUp()
         request = self.request_context['request']
         user = User(username=self.user_data['username'],
-                    email=self.user_data['email'],
                     tenant=self.tenant)
         user.save()
         request.user = user
 
         with tenant_context(self.tenant):
-            self.principal = Principal(username=self.user_data['username'],
-                                       email=self.user_data['email'])
+            self.principal = Principal(username='test_user')
             self.principal.save()
 
     def tearDown(self):
@@ -54,27 +53,11 @@ class PrincipalViewsetTests(IdentityRequest):
         with tenant_context(self.tenant):
             Principal.objects.all().delete()
 
-    def test_read_principal_success(self):
-        """Test that we can read a principal."""
-        url = reverse('principal-detail', kwargs={'username': self.principal.username})
-        client = APIClient()
-        response = client.get(url, **self.headers)
-
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertIsNotNone(response.data.get('username'))
-        self.assertEqual(self.principal.username, response.data.get('username'))
-
-    def test_read_principal_invalid(self):
-        """Test that reading an invalid principal returns an error."""
-        url = reverse('principal-detail', kwargs={'username': uuid4()})
-        client = APIClient()
-        response = client.get(url, **self.headers)
-        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
-
-
-    def test_read_principal_list_success(self):
+    @patch('management.principal.proxy.PrincipalProxy.request_principals',
+           return_value={'status_code': 200, 'data': [{'username': 'test_user'}]})
+    def test_read_principal_list_success(self, mock_request):
         """Test that we can read a list of principals."""
-        url = reverse('principal-list')
+        url = reverse('principals')
         client = APIClient()
         response = client.get(url, **self.headers)
 
@@ -87,3 +70,42 @@ class PrincipalViewsetTests(IdentityRequest):
         principal = response.data.get('data')[0]
         self.assertIsNotNone(principal.get('username'))
         self.assertEqual(principal.get('username'), self.principal.username)
+
+    @patch('management.principal.proxy.PrincipalProxy.request_filtered_principals',
+           return_value={'status_code': 200, 'data': [{'username': 'test_user'}]})
+    def test_read_principal_filtered_list_success(self, mock_request):
+        """Test that we can read a filtered list of principals."""
+        url = f'{reverse("principals")}?usernames=test_user&offset=30'
+        client = APIClient()
+        response = client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        for keyname in ['meta', 'links', 'data']:
+            self.assertIn(keyname, response.data)
+        self.assertIsInstance(response.data.get('data'), list)
+        self.assertEqual(len(response.data.get('data')), 1)
+
+        principal = response.data.get('data')[0]
+        self.assertIsNotNone(principal.get('username'))
+        self.assertEqual(principal.get('username'), 'test_user')
+
+    def test_bad_query_param(self):
+        """Test handling of bad query params."""
+        url = f'{reverse("principals")}?limit=foo'
+        client = APIClient()
+        response = client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    @patch('management.principal.proxy.PrincipalProxy.request_principals',
+           return_value={'status_code': status.HTTP_500_INTERNAL_SERVER_ERROR,
+                         'errors': [{'detail': 'error'}]})
+    def test_read_principal_list_fail(self, mock_request):
+        """Test that we can handle a failure with listing principals."""
+        url = reverse('principals')
+        client = APIClient()
+        response = client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
+        error = response.data.get('errors')[0]
+        self.assertIsNotNone(error.get('detail'))

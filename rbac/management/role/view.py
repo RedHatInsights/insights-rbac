@@ -134,8 +134,8 @@ class RoleViewSet(mixins.CreateModelMixin,
         @apiHeader {String} token User authorization token
 
         @apiParam (Query) {String} name Filter by role name.
-        @apiParam (Query) {Number} page Parameter for selecting the page of data (default is 1).
-        @apiParam (Query) {Number} page_size Parameter for selecting the amount of data in a page (default is 10).
+        @apiParam (Query) {Number} offset Parameter for selecting the start of data (default is 0).
+        @apiParam (Query) {Number} limit Parameter for selecting the amount of data (default is 10).
 
         @apiSuccess {Object} meta The metadata for pagination.
         @apiSuccess {Object} links  The object containing links of results.

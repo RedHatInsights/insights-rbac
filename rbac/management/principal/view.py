@@ -16,93 +16,116 @@
 #
 
 """View for principal management."""
-from rest_framework import mixins, viewsets
-from rest_framework.permissions import AllowAny
+from rest_framework import status
+from rest_framework.response import Response
+from rest_framework.views import APIView
 
-from .model import Principal
-from .serializer import PrincpalSerializer
+from api.common.pagination import StandardResultsSetPagination
+from .proxy import PrincipalProxy
+from ..permissions.admin_access import AdminAccessPermission
+
+USERNAMES_KEY = 'usernames'
 
 
-class PrincipalViewSet(mixins.ListModelMixin,
-                       mixins.RetrieveModelMixin,
-                       viewsets.GenericViewSet):
-    """Principal View.
+class PrincipalView(APIView):
+    """Obtain the list of principals for the tenant.
 
-    A viewset that provides default `retrieve()`,
-    and `list()` actions.
+    @api {get} /api/v1/principals/   Obtain a list of principals
+    @apiName getPrincipals
+    @apiGroup Principal
+    @apiVersion 1.0.0
+    @apiDescription Obtain a list of principals
+
+    @apiHeader {String} token User authorization token
+
+    @apiParam (Query) {Number} offset Parameter for selecting the start of data (default is 0).
+    @apiParam (Query) {Number} limit Parameter for selecting the amount of data (default is 10).
+
+    @apiSuccess {Object} meta The metadata for pagination.
+    @apiSuccess {Object} links  The object containing links of results.
+    @apiSuccess {Object[]} data  The array of results.
+
+    @apiSuccessExample {json} Success-Response:
+        HTTP/1.1 200 OK
+        {
+            'meta': {
+                'count': 2
+            }
+            'links': {
+                'first': /api/v1/principals/?offset=0&limit=10,
+                'next': None,
+                'previous': None,
+                'last': None
+            },
+            'data': [
+                            {
+                                "username": "jsmith",
+                                "email": "jsmith@company.com"
+                            },
+                            {
+                                "username": "ksmith",
+                                "email": "ksmith@company.com"
+                            }
+                        ]
+        }
 
     """
 
-    queryset = Principal.objects.all()
-    serializer_class = PrincpalSerializer
-    permission_classes = (AllowAny,)
-    lookup_field = 'username'
+    permission_classes = (AdminAccessPermission,)
 
-    def list(self, request, *args, **kwargs):
-        """Obtain the list of principals for the tenant.
-
-        @api {get} /api/v1/principals/   Obtain a list of principals
-        @apiName getPrincipals
-        @apiGroup Principal
-        @apiVersion 1.0.0
-        @apiDescription Obtain a list of principals
-
-        @apiHeader {String} token User authorization token
-
-        @apiParam (Query) {Number} page Parameter for selecting the page of data (default is 1).
-        @apiParam (Query) {Number} page_size Parameter for selecting the amount of data in a page (default is 10).
-
-        @apiSuccess {Object} meta The metadata for pagination.
-        @apiSuccess {Object} links  The object containing links of results.
-        @apiSuccess {Object[]} data  The array of results.
-
-        @apiSuccessExample {json} Success-Response:
-            HTTP/1.1 200 OK
-            {
-                'meta': {
-                    'count': 2
-                }
-                'links': {
-                    'first': /api/v1/principals/?offset=0&limit=10,
-                    'next': None,
-                    'previous': None,
-                    'last': /api/v1/principals/?offset=0&limit=10
-                },
-                'data': [
-                                {
-                                    "username": "jsmith",
-                                    "email": "jsmith@company.com"
-                                },
-                                {
-                                    "username": "ksmith",
-                                    "email": "ksmith@company.com"
-                                }
-                            ]
+    def get(self, request):
+        """List prinicpals for account."""
+        proxy = PrincipalProxy()
+        user = self.request.user
+        path = self.request.path
+        query_params = self.request.query_params
+        default_limit = StandardResultsSetPagination.default_limit
+        usernames = None
+        usernames_filter = ''
+        try:
+            limit = int(query_params.get('limit', default_limit))
+            offset = int(query_params.get('offset', 0))
+            usernames = query_params.get(USERNAMES_KEY)
+        except ValueError:
+            error = {
+                'detail': 'Values for limit and offset must be positive numbers.',
+                'source': 'principals',
+                'status': status.HTTP_400_BAD_REQUEST
             }
-
-        """
-        return super().list(request=request, args=args, kwargs=kwargs)
-
-    def retrieve(self, request, *args, **kwargs):
-        """Get a principal.
-
-        @api {get} /api/v1/principal/:username   Get a principal
-        @apiName getPrincipal
-        @apiGroup Principal
-        @apiVersion 1.0.0
-        @apiDescription Get a principal
-
-        @apiHeader {String} token User authorization token
-
-        @apiParam (Query) {String} id Principal username.
-
-        @apiSuccess {String} username Principal username
-        @apiSuccess {String} email Pricipal email
-        @apiSuccessExample {json} Success-Response:
-            HTTP/1.1 200 OK
-            {
-                "username": "ksmith",
-                "email": "ksmith@company.com"
+            errors = {
+                'errors': [error]
             }
-        """
-        return super().retrieve(request=request, args=args, kwargs=kwargs)
+            return Response(status=status.HTTP_400_BAD_REQUEST, data=errors)
+
+        previous_offset = 0
+        if offset - limit > 0:
+            previous_offset = offset - limit
+        if usernames:
+            principals = usernames.split(',')
+            resp = proxy.request_filtered_principals(principals,
+                                                     limit=limit,
+                                                     offset=offset)
+            usernames_filter = f'&usernames={usernames}'
+        else:
+            resp = proxy.request_principals(user.account,
+                                            limit=limit,
+                                            offset=offset)
+        status_code = resp.get('status_code')
+        response_data = {}
+        if status_code == status.HTTP_200_OK:
+            data = resp.get('data', [])
+            response_data['meta'] = {
+                'count': None
+            }
+            response_data['links'] = {
+                'first': f'{path}?limit={limit}&offset=0{usernames_filter}',
+                'next': f'{path}?limit={limit}&offset={offset + limit}{usernames_filter}',
+                'previous': f'{path}?limit={limit}&offset={previous_offset}{usernames_filter}',
+                'last': None,
+            }
+            response_data['data'] = data
+        else:
+            response_data = resp
+            del response_data['status_code']
+
+        return Response(status=status_code, data=response_data)

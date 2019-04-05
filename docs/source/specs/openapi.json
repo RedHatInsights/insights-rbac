@@ -81,6 +81,15 @@
           },
           {
             "$ref": "#/components/parameters/QueryOffset"
+          },
+          {
+            "name": "usernames",
+            "in": "query",
+            "description": "Usernames of principals to get",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -96,59 +105,6 @@
           },
           "401": {
             "description": "Unauthorized"
-          },
-          "500": {
-            "description": "Unexpected Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/principals/{username}/": {
-      "get": {
-        "tags": [
-          "Principal"
-        ],
-        "summary": "Get a principal in the tenant",
-        "operationId": "getPrincipal",
-        "parameters": [{
-          "name": "username",
-          "in": "path",
-          "description": "Username of principal to get",
-          "required": true,
-          "schema": {
-            "type": "string"
-          }
-        }],
-        "responses": {
-          "200": {
-            "description": "A Principal object",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Principal"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthorized"
-          },
-          "404": {
-            "description": "Not Found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
           },
           "500": {
             "description": "Unexpected Error",
@@ -1311,10 +1267,6 @@
           "last_name": {
             "type": "string",
             "example": "Smith"
-          },
-          "is_org_admin": {
-            "type": "boolean",
-            "example": true
           }
         }
       },
@@ -1427,7 +1379,7 @@
               "principals": {
                 "type": "array",
                 "items": {
-                  "$ref": "#/components/schemas/PrincipalOut"
+                  "$ref": "#/components/schemas/Principal"
                 }
               }
             }
