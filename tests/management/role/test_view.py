@@ -123,6 +123,22 @@ class RoleViewsetTests(IdentityRequest):
         response = client.post(url, test_data, format='json', **self.headers)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
+    def test_create_role_invalid_permission(self):
+        """Test that creating an invalid role returns an error."""
+        test_data = {
+            'name': 'role1',
+            'access': [
+                {
+                    'permission': 'foo:bar',
+                    'resourceDefinitions': []
+                }
+            ]
+        }
+        url = reverse('role-list')
+        client = APIClient()
+        response = client.post(url, test_data, format='json', **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
     def test_read_role_invalid(self):
         """Test that reading an invalid role returns an error."""
         url = reverse('role-detail', kwargs={'uuid': uuid4()})
