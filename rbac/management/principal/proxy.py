@@ -147,6 +147,8 @@ class PrincipalProxy:  # pylint: disable=too-few-public-methods
 
     def request_filtered_principals(self, principals, limit=None, offset=None):
         """Request specific principals for an account."""
+        if not principals:
+            return {'status_code': status.HTTP_200_OK, 'data': []}
         filtered_principals_path = '/v1/users'
         params = self._create_params(limit=limit, offset=offset)
         payload = {
