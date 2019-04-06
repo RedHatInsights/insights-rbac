@@ -16,6 +16,7 @@
 #
 
 """Serializer for role management."""
+from django.utils.translation import gettext as _
 from rest_framework import serializers
 from rest_framework.validators import UniqueValidator
 
@@ -36,6 +37,19 @@ class AccessSerializer(serializers.ModelSerializer):
     """Serializer for the Access model."""
 
     resourceDefinitions = ResourceDefinitionSerializer(many=True)
+
+    def validate_permission(self, value):
+        """Validate the permissions input."""
+        split_value = value.split(':')
+        split_value_len = len(split_value)
+        if split_value_len != 3:
+            key = 'format'
+            message = 'Permission must be of the format "application:resource_type:operation".'
+            error = {
+                key: [_(message)]
+            }
+            raise serializers.ValidationError(error)
+        return value
 
     class Meta:
         """Metadata for the serializer."""
