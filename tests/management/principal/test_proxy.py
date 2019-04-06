@@ -96,6 +96,13 @@ class PrincipalProxyTest(TestCase):
         expected = {'status_code': status.HTTP_200_OK, 'data': []}
         self.assertEqual(expected, result)
 
+    def test_request_filtered_principals_empty(self):
+        """Test the call to request filtered principals."""
+        proxy = PrincipalProxy()
+        result = proxy.request_filtered_principals(principals=[])
+        expected = {'status_code': status.HTTP_200_OK, 'data': []}
+        self.assertEqual(expected, result)
+
     def test__request_principals_404(self):
         """Test request with expected 404."""
         proxy = PrincipalProxy()
