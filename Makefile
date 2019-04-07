@@ -11,6 +11,10 @@ OC_DATA_DIR	= ${HOME}/.oc/openshift.local.data
 PGSQL_VERSION   = 9.6
 
 PORT=8000
+APP_HOME=$(shell pwd)/$(PYDIR)
+APP_MODULE=rbac.wsgi
+APP_CONFIG=$(TOPDIR)/$(PYDIR)/gunicorn.py
+
 
 OS := $(shell uname)
 ifeq ($(OS),Darwin)
@@ -121,6 +125,9 @@ requirements:
 
 serve:
 	DJANGO_READ_DOT_ENV_FILE=True $(PYTHON) $(PYDIR)/manage.py runserver $(PORT)
+
+gunicorn-serve:
+	DJANGO_READ_DOT_ENV_FILE=True gunicorn "$(APP_MODULE)" --chdir=$(APP_HOME) --bind=0.0.0.0:8080 --access-logfile=- --config "$(APP_CONFIG)" --preload
 
 serve-with-oc: oc-forward-ports
 	sleep 3

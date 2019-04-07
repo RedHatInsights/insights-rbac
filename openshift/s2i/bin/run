@@ -97,7 +97,7 @@ if is_gunicorn_installed; then
     export WEB_CONCURRENCY=${WEB_CONCURRENCY:-$(get_default_web_concurrency)}
 
     echo "---> Serving application with gunicorn ($APP_MODULE) ..."
-    exec gunicorn "$APP_MODULE" --chdir=$APP_HOME --bind=0.0.0.0:8080 --access-logfile=- --config "$APP_CONFIG"
+    exec gunicorn "$APP_MODULE" --chdir=$APP_HOME --bind=0.0.0.0:8080 --access-logfile=- --config "$APP_CONFIG" --preload
   fi
 fi
 
