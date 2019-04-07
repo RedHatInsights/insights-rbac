@@ -1535,6 +1535,10 @@
               "type": "string",
               "example": "catalog"
             }
+          },
+          "system": {
+            "type": "boolean",
+            "default": false
           }
         }
       },

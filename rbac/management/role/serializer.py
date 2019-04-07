@@ -26,6 +26,8 @@ from .model import Access, ResourceDefinition, Role
 class ResourceDefinitionSerializer(serializers.ModelSerializer):
     """Serializer for the ResourceDefinition model."""
 
+    attributeFilter = serializers.JSONField()
+
     class Meta:
         """Metadata for the serializer."""
 
@@ -69,6 +71,7 @@ class RoleSerializer(serializers.ModelSerializer):
     access = AccessSerializer(many=True)
     policyCount = serializers.IntegerField(read_only=True)
     applications = serializers.SerializerMethodField()
+    system = serializers.BooleanField(read_only=True)
     created = serializers.DateTimeField(read_only=True)
     modified = serializers.DateTimeField(read_only=True)
 
@@ -78,7 +81,7 @@ class RoleSerializer(serializers.ModelSerializer):
         model = Role
         fields = ('uuid', 'name', 'description',
                   'access', 'policyCount',
-                  'applications',
+                  'applications', 'system',
                   'created', 'modified')
 
     def get_applications(self, obj):
@@ -89,7 +92,7 @@ class RoleSerializer(serializers.ModelSerializer):
             perm_len = len(perm_list)
             if perm_len == 3:
                 apps.append(perm_list[0])
-        return apps
+        return list(set(apps))
 
     def create(self, validated_data):
         """Create the role object in the database."""
@@ -109,6 +112,13 @@ class RoleSerializer(serializers.ModelSerializer):
 
     def update(self, instance, validated_data):
         """Update the role object in the database."""
+        if instance.system:
+            key = 'role.update'
+            message = 'System roles may not be updated.'
+            error = {
+                key: [_(message)]
+            }
+            raise serializers.ValidationError(error)
         access_list = validated_data.pop('access')
         instance.name = validated_data.get('name', instance.name)
         instance.description = validated_data.get('description', instance.description)
