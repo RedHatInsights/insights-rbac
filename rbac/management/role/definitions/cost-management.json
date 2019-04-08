@@ -1,0 +1,35 @@
+{
+    "roles": [{
+        "name": "Cost Administrator",
+        "description": "A cost management administrator role that grants read and write permissions.",
+        "system": true,
+        "version": 2,
+        "access": [{
+            "permission": "cost-management:*:*"
+        }]
+    }, {
+        "name": "Cost Price List Administrator",
+        "description": "A cost management role that grants read and write permissions on price list rates.",
+        "system": true,
+        "version": 2,
+        "access": [{
+            "permission": "cost-management:rate:*"
+        }]
+    }, {
+        "name": "Cost Cloud Viewer",
+        "description": "A cost management role that grants read permissions on cost reports related to cloud sources.",
+        "system": true,
+        "version": 2,
+        "access": [{
+            "permission": "cost-management:aws.account:*"
+        }]
+    }, {
+        "name": "Cost OpenShift Viewer",
+        "description": "A cost management role that grants read permissions on cost reports related to OpenShift sources.",
+        "system": true,
+        "version": 2,
+        "access": [{
+            "permission": "cost-management:openshift.cluster:*"
+        }]
+    }]
+}

@@ -1,7 +1,7 @@
 {
     "roles": [{
         "name": "Catalog Administrator",
-        "description": "A catalog administrator roles grants read, write and order permissions",
+        "description": "A catalog administrator roles grants read, write and order permissions.",
         "system": true,
         "version": 2,
         "access": [{
@@ -151,7 +151,7 @@
         }]
     }, {
         "name": "Catalog User",
-        "description": "A catalog user roles grants read and order permissions",
+        "description": "A catalog user roles grants read and order permissions.",
         "system": true,
         "version": 2,
         "access": [{
