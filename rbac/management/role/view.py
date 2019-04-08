@@ -19,10 +19,11 @@
 from django.db import transaction
 from django.db.models.aggregates import Count
 from django.shortcuts import get_object_or_404
+from django.utils.translation import gettext as _
 from django_filters import rest_framework as filters
 from management.permissions import RoleAccessPermission
 from management.querysets import get_role_queryset
-from rest_framework import mixins, viewsets
+from rest_framework import mixins, serializers, viewsets
 from rest_framework.filters import OrderingFilter
 
 from .model import Role
@@ -223,6 +224,13 @@ class RoleViewSet(mixins.CreateModelMixin,
             HTTP/1.1 204 NO CONTENT
         """
         role = get_object_or_404(Role, uuid=kwargs.get('uuid'))
+        if role.system:
+            key = 'role'
+            message = 'System roles cannot be deleted.'
+            error = {
+                key: [_(message)]
+            }
+            raise serializers.ValidationError(error)
         with transaction.atomic():
             policies = role.policies.all()
             for policy in policies:
