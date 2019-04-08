@@ -12,7 +12,7 @@ djangorestframework==3.9.2
 gunicorn==19.9.0
 idna==2.8
 prometheus-client==0.6.0
-psycopg2-binary==2.7.7
+psycopg2-binary==2.8.1
 psycopg2==2.7.7
 pytz==2018.9
 requests==2.21.0
