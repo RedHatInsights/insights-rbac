@@ -15,7 +15,7 @@
 #    along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Management application configuration module."""
-
+import concurrent.futures
 import logging
 import sys
 
@@ -51,6 +51,12 @@ class ManagementConfig(AppConfig):
         from api.models import Tenant
         from management.role.definer import seed_roles
         logger.info('Start role seed changes check.')
-        for tenant in Tenant.objects.all():
-            logger.info('Checking for role seed changes for tenant %s.', tenant.schema_name)
-            seed_roles(tenant, update=True)
+        try:
+            with concurrent.futures.ProcessPoolExecutor() as executor:
+                for tenant in list(Tenant.objects.all()):
+                    if tenant.schema_name != 'public':
+                        logger.info('Checking for role seed changes for tenant %s.', tenant.schema_name)
+                        future = executor.submit(seed_roles, tenant, update=True)
+                        logger.info('Completed role seed changes for tenant %s.', future.result().schema_name)
+        except Exception as exc:
+            logger.error('Error encountered during role seeding %s.', exc)
