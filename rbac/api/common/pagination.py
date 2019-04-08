@@ -86,6 +86,8 @@ class StandardResultsSetPagination(LimitOffsetPagination):
         return Response({
             'meta': {
                 'count': self.count,
+                'limit': self.limit,
+                'offset': self.offset
             },
             'links': {
                 'first': self.get_first_link(),
