@@ -1,0 +1,11 @@
+{
+    "roles": [{
+        "name": "RBAC Administrator",
+        "description": "A administrator role that grants read and write permissions for groups, roles and policies.",
+        "system": true,
+        "version": 2,
+        "access": [{
+            "permission": "rbac:*:*"
+        }]
+    }]
+}
