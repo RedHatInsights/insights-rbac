@@ -17,8 +17,10 @@
 
 """Proxy for principal management."""
 import logging
+import os
 
 import requests
+from django.conf import settings
 from rest_framework import status
 
 from rbac.env import ENVIRONMENT
@@ -29,6 +31,8 @@ PROTOCOL = 'protocol'
 HOST = 'host'
 PORT = 'port'
 PATH = 'path'
+SSL_VERIFY = 'ssl_verify'
+SOURCE_CERT = 'source_cert'
 USER_ENV = 'env'
 CLIENT_ID = 'clientid'
 API_TOKEN = 'apitoken'
@@ -47,9 +51,12 @@ class PrincipalProxy:  # pylint: disable=too-few-public-methods
         self.host = proxy_conn_info.get(HOST)
         self.port = proxy_conn_info.get(PORT)
         self.path = proxy_conn_info.get(PATH)
+        self.ssl_verify = proxy_conn_info.get(SSL_VERIFY)
+        self.source_cert = proxy_conn_info.get(SOURCE_CERT)
         self.user_env = proxy_conn_info.get(USER_ENV)
         self.client_id = proxy_conn_info.get(CLIENT_ID)
         self.api_token = proxy_conn_info.get(API_TOKEN)
+        self.client_cert = os.path.join(settings.BASE_DIR, 'management', 'principal', 'certs', 'client.pem')
 
     @staticmethod
     def _create_params(limit=None, offset=None):
@@ -84,6 +91,8 @@ class PrincipalProxy:  # pylint: disable=too-few-public-methods
             PORT: ENVIRONMENT.get_value('PRINCIPAL_PROXY_SERVICE_PORT', default='443'),
             PATH: ENVIRONMENT.get_value('PRINCIPAL_PROXY_SERVICE_PATH',
                                         default='/r/insights-services'),
+            SOURCE_CERT: ENVIRONMENT.bool('PRINCIPAL_PROXY_SERVICE_SOURCE_CERT', default=False),
+            SSL_VERIFY: ENVIRONMENT.bool('PRINCIPAL_PROXY_SERVICE_SSL_VERIFY', default=True),
             USER_ENV: ENVIRONMENT.get_value('PRINCIPAL_PROXY_USER_ENV', default='env'),
             CLIENT_ID: ENVIRONMENT.get_value('PRINCIPAL_PROXY_CLIENT_ID', default='client_id'),
             API_TOKEN: ENVIRONMENT.get_value('PRINCIPAL_PROXY_API_TOKEN', default='token')
@@ -103,8 +112,17 @@ class PrincipalProxy:  # pylint: disable=too-few-public-methods
             'source': 'principals'
         }
         try:
-            response = method(url, headers=headers, params=params, json=data)
-        except requests.exceptions.ConnectionError:
+            kwargs = {
+                'headers': headers,
+                'params': params,
+                'json': data,
+                'verify': self.ssl_verify
+            }
+            if self.source_cert:
+                kwargs['verify'] = self.client_cert
+            response = method(url, **kwargs)
+        except requests.exceptions.ConnectionError as conn:
+            LOGGER.error('Unable to connect for URL %s with error: %s', url, conn)
             resp = {
                 'status_code': status.HTTP_500_INTERNAL_SERVER_ERROR,
                 'errors': [unexpected_error]
@@ -128,6 +146,7 @@ class PrincipalProxy:  # pylint: disable=too-few-public-methods
                 'source': 'principals'
             }
         else:
+            LOGGER.error('Error calling URL %s -- status=%d', url, response.status_code)
             error = unexpected_error
             error['status'] = response.status_code
         if error:

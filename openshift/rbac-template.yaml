@@ -75,6 +75,8 @@ objects:
       template.openshift.io/expose-principal_proxy_env: "{.data['principal-proxy-env']}"
       template.openshift.io/expose-principal_proxy_client_id: "{.data['principal-proxy-client-id']}"
       template.openshift.io/expose-principal_proxy_api_token: "{.data['principal-proxy-api-token']}"
+      template.openshift.io/expose-principal_proxy_ssl_verify: "{.data['principal-proxy-ssl-verify']}"
+      template.openshift.io/expose-principal_proxy_source_cert: "{.data['principal-proxy-source-cert']}"
     name: ${NAME}-secret
   stringData:
     django-secret-key: ${DJANGO_SECRET_KEY}
@@ -85,6 +87,8 @@ objects:
     principal-proxy-env: ${PRINCIPAL_PROXY_USER_ENV}
     principal-proxy-client-id: ${PRINCIPAL_PROXY_CLIENT_ID}
     principal-proxy-api-token: ${PRINCIPAL_PROXY_API_TOKEN}
+    principal-proxy-ssl-verify: ${PRINCIPAL_PROXY_SERVICE_SSL_VERIFY}
+    principal-proxy-source-cert: ${PRINCIPAL_PROXY_SERVICE_SOURCE_CERT}
 - apiVersion: v1
   kind: ConfigMap
   metadata:
@@ -297,6 +301,18 @@ objects:
                   key: principal-proxy-api-token
                   name: ${NAME}-secret
                   optional: false
+            - name: PRINCIPAL_PROXY_SERVICE_SSL_VERIFY
+              valueFrom:
+                secretKeyRef:
+                  key: principal-proxy-ssl-verify
+                  name: ${NAME}-secret
+                  optional: true
+            - name: PRINCIPAL_PROXY_SERVICE_SOURCE_CERT
+              valueFrom:
+                secretKeyRef:
+                  key: principal-proxy-source-cert
+                  name: ${NAME}-secret
+                  optional: true
             - name: DATABASE_ENGINE
               valueFrom:
                 configMapKeyRef:
@@ -705,3 +721,9 @@ parameters:
 - displayName: Token for principal proxy interaction
   value: 'token'
   name: PRINCIPAL_PROXY_API_TOKEN
+- displayName: SSL verify for principal proxy interaction
+  value: 'True'
+  name: PRINCIPAL_PROXY_SERVICE_SSL_VERIFY
+- displayName: Use source certifcate for principal proxy interaction
+  value: 'False'
+  name: PRINCIPAL_PROXY_SERVICE_SOURCE_CERT
