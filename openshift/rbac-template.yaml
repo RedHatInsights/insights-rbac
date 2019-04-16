@@ -253,6 +253,12 @@ objects:
                   key: database-password
                   name: ${DATABASE_SERVICE_NAME}
                   optional: false
+            - name: DATABASE_SERVICE_CERT
+              valueFrom:
+                secretKeyRef:
+                  key: rds-cacert
+                  name: rds-client-ca
+                  optional: true
             - name: DJANGO_SECRET_KEY
               valueFrom:
                 secretKeyRef:
