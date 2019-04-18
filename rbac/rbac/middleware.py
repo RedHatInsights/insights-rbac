@@ -169,7 +169,7 @@ class IdentityHeaderMiddleware(MiddlewareMixin):  # pylint: disable=R0903
         }
         with tenant_context(tenant):
             try:  # pylint: disable=R1702
-                principal = Principal.objects.get(username=username)
+                principal = Principal.objects.get(username__iexact=username)
                 access_list = access_for_principal(principal, 'rbac')
                 for access_item in access_list:  # pylint: disable=too-many-nested-blocks
                     perm_list = access_item.permission.split(':')
@@ -248,16 +248,18 @@ class IdentityHeaderMiddleware(MiddlewareMixin):  # pylint: disable=R0903
                 tenant = IdentityHeaderMiddleware._create_tenant(account)
 
             try:
-                user = User.objects.get(username=username)
+                user = User.objects.get(username__iexact=username)
             except User.DoesNotExist:
                 user = IdentityHeaderMiddleware._create_user(username,
                                                              tenant,
                                                              request)
 
             with tenant_context(tenant):
-                _, created = Principal.objects.update_or_create(username=username)
-                if created:
-                    logger.info('Created new principal for account_id %s.', account)
+                try:
+                    Principal.objects.get(username__iexact=username)
+                except Principal.DoesNotExist:
+                    Principal.objects.create(username=username)
+                    logger.info('Created new principal %s for account %s.', username, account)
 
             user.identity_header = {
                 'encoded': rh_auth_header,

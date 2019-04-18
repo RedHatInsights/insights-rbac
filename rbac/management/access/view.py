@@ -104,7 +104,7 @@ class AccessView(APIView):
             username = current_user
 
         try:
-            principal = Principal.objects.get(username=username)
+            principal = Principal.objects.get(username__iexact=username)
         except Principal.DoesNotExist:
             key = 'detail'
             message = 'No access found for principal with username {}.'.format(username)

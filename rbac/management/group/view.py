@@ -16,6 +16,8 @@
 #
 
 """View for group management."""
+import logging
+
 from django.db.models.aggregates import Count
 from django.utils.translation import gettext as _
 from django_filters import rest_framework as filters
@@ -34,6 +36,7 @@ from rest_framework.response import Response
 
 
 USERNAMES_KEY = 'usernames'
+logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 
 class GroupFilter(filters.FilterSet):
@@ -228,30 +231,30 @@ class GroupViewSet(mixins.CreateModelMixin,
         """
         return super().update(request=request, args=args, kwargs=kwargs)
 
-    def add_principals(self, group, principals):
+    def add_principals(self, group, principals, account):
         """Process list of principals and add them to the group."""
         users = [principal.get('username') for principal in principals]
         resp = self.proxy.request_filtered_principals(users, limit=len(users))
         for item in resp.get('data', []):
             username = item['username']
             try:
-                principal = Principal.objects.get(username=username)
+                principal = Principal.objects.get(username__iexact=username)
             except Principal.DoesNotExist:
-                principal = Principal(username=username)
-                principal.save()
+                principal = Principal.objects.create(username=username)
+                logger.info('Created new principal %s for account_id %s.', username, account)
             group.principals.add(principal)
         group.save()
         return group
 
-    def remove_principals(self, group, principals):
+    def remove_principals(self, group, principals, account):
         """Process list of principals and remove them from the group."""
         for username in principals:
             try:
-                principal = Principal.objects.get(username=username)
+                principal = Principal.objects.get(username__iexact=username)
             except Principal.DoesNotExist:
-                principal = Principal(username=username)
-                principal.save()
-            group.principals.remove(principal)
+                logger.info('No principal %s found for account %s.', username, account)
+            if principal:
+                group.principals.remove(principal)
         group.save()
         return group
 
@@ -313,11 +316,12 @@ class GroupViewSet(mixins.CreateModelMixin,
         """
         principals = []
         group = self.get_object()
+        account = self.request.user.account
         if request.method == 'POST':
             serializer = GroupPrincipalInputSerializer(data=request.data)
             if serializer.is_valid(raise_exception=True):
                 principals = serializer.data.pop('principals')
-            group = self.add_principals(group, principals)
+            group = self.add_principals(group, principals, account)
             output = GroupSerializer(group)
             return Response(status=status.HTTP_200_OK, data=output.data)
         else:
@@ -327,5 +331,5 @@ class GroupViewSet(mixins.CreateModelMixin,
                 raise serializers.ValidationError({key: _(message)})
             username = request.query_params.get(USERNAMES_KEY, '')
             principals = [name.strip() for name in username.split(',')]
-            self.remove_principals(group, principals)
+            self.remove_principals(group, principals, account)
             return Response(status=status.HTTP_204_NO_CONTENT)
