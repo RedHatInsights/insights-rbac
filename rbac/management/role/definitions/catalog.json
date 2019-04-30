@@ -8,9 +8,9 @@
       "access": [
         {
           "permission": "catalog:portfolios:read",
-          "resource_definitions": [
+          "resourceDefinitions": [
             {
-              "attribute_filter": {
+              "attributeFilter": {
                 "value": "*",
                 "key": "id",
                 "operation": "equal"
@@ -20,9 +20,9 @@
         },
         {
           "permission": "catalog:portfolios:write",
-          "resource_definitions": [
+          "resourceDefinitions": [
             {
-              "attribute_filter": {
+              "attributeFilter": {
                 "value": "*",
                 "key": "id",
                 "operation": "equal"
@@ -32,9 +32,9 @@
         },
         {
           "permission": "catalog:portfolios:order",
-          "resource_definitions": [
+          "resourceDefinitions": [
             {
-              "attribute_filter": {
+              "attributeFilter": {
                 "value": "*",
                 "key": "id",
                 "operation": "equal"
@@ -44,9 +44,9 @@
         },
         {
           "permission": "catalog:portfolio_items:read",
-          "resource_definitions": [
+          "resourceDefinitions": [
             {
-              "attribute_filter": {
+              "attributeFilter": {
                 "value": "*",
                 "key": "id",
                 "operation": "equal"
@@ -56,9 +56,9 @@
         },
         {
           "permission": "catalog:portfolio_items:write",
-          "resource_definitions": [
+          "resourceDefinitions": [
             {
-              "attribute_filter": {
+              "attributeFilter": {
                 "value": "*",
                 "key": "id",
                 "operation": "equal"
@@ -68,9 +68,9 @@
         },
         {
           "permission": "catalog:portfolio_items:order",
-          "resource_definitions": [
+          "resourceDefinitions": [
             {
-              "attribute_filter": {
+              "attributeFilter": {
                 "value": "*",
                 "key": "id",
                 "operation": "equal"
@@ -80,9 +80,9 @@
         },
         {
           "permission": "catalog:orders:read",
-          "resource_definitions": [
+          "resourceDefinitions": [
             {
-              "attribute_filter": {
+              "attributeFilter": {
                 "value": "*",
                 "key": "id",
                 "operation": "equal"
@@ -92,9 +92,9 @@
         },
         {
           "permission": "catalog:orders:write",
-          "resource_definitions": [
+          "resourceDefinitions": [
             {
-              "attribute_filter": {
+              "attributeFilter": {
                 "value": "*",
                 "key": "id",
                 "operation": "equal"
@@ -104,9 +104,9 @@
         },
         {
           "permission": "catalog:orders:order",
-          "resource_definitions": [
+          "resourceDefinitions": [
             {
-              "attribute_filter": {
+              "attributeFilter": {
                 "value": "*",
                 "key": "id",
                 "operation": "equal"
@@ -116,9 +116,9 @@
         },
         {
           "permission": "catalog:order_items:read",
-          "resource_definitions": [
+          "resourceDefinitions": [
             {
-              "attribute_filter": {
+              "attributeFilter": {
                 "value": "*",
                 "key": "id",
                 "operation": "equal"
@@ -128,9 +128,9 @@
         },
         {
           "permission": "catalog:order_items:write",
-          "resource_definitions": [
+          "resourceDefinitions": [
             {
-              "attribute_filter": {
+              "attributeFilter": {
                 "value": "*",
                 "key": "id",
                 "operation": "equal"
@@ -140,9 +140,9 @@
         },
         {
           "permission": "catalog:order_items:order",
-          "resource_definitions": [
+          "resourceDefinitions": [
             {
-              "attribute_filter": {
+              "attributeFilter": {
                 "value": "*",
                 "key": "id",
                 "operation": "equal"
@@ -152,9 +152,9 @@
         },
         {
           "permission": "catalog:progress_messages:read",
-          "resource_definitions": [
+          "resourceDefinitions": [
             {
-              "attribute_filter": {
+              "attributeFilter": {
                 "value": "*",
                 "key": "id",
                 "operation": "equal"
@@ -164,9 +164,9 @@
         },
         {
           "permission": "catalog:progress_messages:write",
-          "resource_definitions": [
+          "resourceDefinitions": [
             {
-              "attribute_filter": {
+              "attributeFilter": {
                 "value": "*",
                 "key": "id",
                 "operation": "equal"
@@ -176,9 +176,9 @@
         },
         {
           "permission": "catalog:approval_requests:read",
-          "resource_definitions": [
+          "resourceDefinitions": [
             {
-              "attribute_filter": {
+              "attributeFilter": {
                 "value": "*",
                 "key": "id",
                 "operation": "equal"
@@ -188,9 +188,9 @@
         },
         {
           "permission": "catalog:approval_requests:write",
-          "resource_definitions": [
+          "resourceDefinitions": [
             {
-              "attribute_filter": {
+              "attributeFilter": {
                 "value": "*",
                 "key": "id",
                 "operation": "equal"
@@ -220,9 +220,9 @@
         },
         {
           "permission": "catalog:orders:read",
-          "resource_definitions": [
+          "resourceDefinitions": [
             {
-              "attribute_filter": {
+              "attributeFilter": {
                 "value": "{{username}}",
                 "key": "owner",
                 "operation": "equal"
@@ -235,9 +235,9 @@
         },
         {
           "permission": "catalog:order_items:read",
-          "resource_definitions": [
+          "resourceDefinitions": [
             {
-              "attribute_filter": {
+              "attributeFilter": {
                 "value": "{{username}}",
                 "key": "owner",
                 "operation": "equal"
@@ -250,9 +250,9 @@
         },
         {
           "permission": "catalog:progress_messages:read",
-          "resource_definitions": [
+          "resourceDefinitions": [
             {
-              "attribute_filter": {
+              "attributeFilter": {
                 "value": "{{username}}",
                 "key": "owner",
                 "operation": "equal"
@@ -262,9 +262,9 @@
         },
         {
           "permission": "catalog:approval_requests:read",
-          "resource_definitions": [
+          "resourceDefinitions": [
             {
-              "attribute_filter": {
+              "attributeFilter": {
                 "value": "{{username}}",
                 "key": "owner",
                 "operation": "equal"
