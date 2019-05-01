@@ -52,7 +52,7 @@ class ManagementConfig(AppConfig):
         from management.role.definer import seed_roles
         logger.info('Start role seed changes check.')
         try:
-            with concurrent.futures.ProcessPoolExecutor() as executor:
+            with concurrent.futures.ThreadPoolExecutor() as executor:
                 for tenant in list(Tenant.objects.all()):
                     if tenant.schema_name != 'public':
                         logger.info('Checking for role seed changes for tenant %s.', tenant.schema_name)
