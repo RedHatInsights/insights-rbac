@@ -1,7 +1,7 @@
 -i https://pypi.python.org/simple
 certifi==2019.3.9
 chardet==3.0.4
-django-cors-headers==2.5.2
+django-cors-headers==2.5.3
 django-environ==0.4.5
 django-filter==2.1.0
 django-prometheus==1.0.15
