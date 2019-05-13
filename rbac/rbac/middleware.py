@@ -272,6 +272,21 @@ class IdentityHeaderMiddleware(MiddlewareMixin):  # pylint: disable=R0903
             setattr(local, 'is_admin', is_admin)
             setattr(local, 'req_id', req_id)
 
+    def process_response(self, request, response):
+        """Process response for identity middleware.
+
+        Args:
+            request (object): The request object
+            response (object): The response object
+
+        """
+        query_string = ''
+        if request.META['QUERY_STRING']:
+            query_string = '?{}'.format(request.META['QUERY_STRING'])
+        logger.info(f'{request.method} {request.path}{query_string}'
+                    f' {response.status_code}')
+        return response
+
 
 class DisableCSRF(MiddlewareMixin):  # pylint: disable=too-few-public-methods
     """Middleware to disable CSRF for 3scale usecase."""
