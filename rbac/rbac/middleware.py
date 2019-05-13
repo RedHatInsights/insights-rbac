@@ -272,7 +272,7 @@ class IdentityHeaderMiddleware(MiddlewareMixin):  # pylint: disable=R0903
             setattr(local, 'is_admin', is_admin)
             setattr(local, 'req_id', req_id)
 
-    def process_response(self, request, response):
+    def process_response(self, request, response):  # pylint: disable=no-self-use
         """Process response for identity middleware.
 
         Args:
@@ -283,7 +283,7 @@ class IdentityHeaderMiddleware(MiddlewareMixin):  # pylint: disable=R0903
         query_string = ''
         if request.META['QUERY_STRING']:
             query_string = '?{}'.format(request.META['QUERY_STRING'])
-        logger.info(f'{request.method} {request.path}{query_string}'
+        logger.info(f'{request.method} {request.path}{query_string}'  # pylint: disable=W1203
                     f' {response.status_code}')
         return response
 
