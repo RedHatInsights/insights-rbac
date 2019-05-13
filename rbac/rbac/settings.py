@@ -232,8 +232,9 @@ DJANGO_LOGGING_LEVEL = os.getenv('DJANGO_LOG_LEVEL', 'INFO')
 RBAC_LOGGING_LEVEL = os.getenv('RBAC_LOG_LEVEL', 'INFO')
 LOGGING_HANDLERS = os.getenv('DJANGO_LOG_HANDLERS', 'console').split(',')
 VERBOSE_FORMATTING = '%(levelname)s %(asctime)s %(module)s ' \
-    '%(process)d %(thread)d %(message)s'
-
+    '%(process)d %(thread)d %(req_id)s, %(account_id)s, %(username)s, %(is_admin)s %(message)s'
+SIMPLE_FORMATTING = '[%(asctime)s] %(levelname)s -' \
+    ' [%(req_id)s, %(account_id)s, %(username)s, %(is_admin)s]: %(message)s'
 LOG_DIRECTORY = os.getenv('LOG_DIRECTORY', BASE_DIR)
 DEFAULT_LOG_FILE = os.path.join(LOG_DIRECTORY, 'app.log')
 LOGGING_FILE = os.getenv('DJANGO_LOG_FILE', DEFAULT_LOG_FILE)
@@ -242,17 +243,23 @@ LOGGING_FILE = os.getenv('DJANGO_LOG_FILE', DEFAULT_LOG_FILE)
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
+    'filters': {
+        'request_context': {
+            '()': 'rbac.filters.ContextFilter'
+        },
+    },
     'formatters': {
         'verbose': {
             'format': VERBOSE_FORMATTING
         },
         'simple': {
-            'format': '[%(asctime)s] %(levelname)s: %(message)s'
+            'format': SIMPLE_FORMATTING
         },
     },
     'handlers': {
         'console': {
             'class': 'logging.StreamHandler',
+            'filters': ['request_context', ],
             'formatter': LOGGING_FORMATTER
         },
         'file': {

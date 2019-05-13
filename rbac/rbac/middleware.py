@@ -15,7 +15,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 
-"""Custom Roles Middleware."""
+"""Custom RBAC Middleware."""
 import logging
 from json.decoder import JSONDecodeError
 
@@ -27,13 +27,14 @@ from rest_framework.exceptions import ValidationError
 from tenant_schemas.middleware import BaseTenantMiddleware
 from tenant_schemas.utils import tenant_context
 
-from api.common import RH_IDENTITY_HEADER
+from api.common import RH_IDENTITY_HEADER, RH_INSIGHTS_REQUEST_ID
 from api.models import Tenant, User
 from api.serializers import UserSerializer, create_schema_name, extract_header
 from management.access.utils import access_for_principal  # noqa: I100, I201
 from management.models import Principal  # noqa: I100, I201
 from management.role.definer import seed_roles
 
+from rbac.filters import local
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
@@ -216,7 +217,7 @@ class IdentityHeaderMiddleware(MiddlewareMixin):  # pylint: disable=R0903
         return access
 
     def process_request(self, request):  # noqa: C901
-        """Process request for csrf checks.
+        """Process request for identity middleware.
 
         Args:
             request (object): The request object
@@ -234,13 +235,9 @@ class IdentityHeaderMiddleware(MiddlewareMixin):  # pylint: disable=R0903
             logger.warning('Could not obtain identity on request.')
             return
         if (username and account):
+            # Get request ID
+            req_id = request.META.get(RH_INSIGHTS_REQUEST_ID)
             # Check for customer creation & user creation
-            query_string = ''
-            if request.META['QUERY_STRING']:
-                query_string = '?{}'.format(request.META['QUERY_STRING'])
-            logger.info(f'API: {request.path}{query_string}'  # pylint: disable=W1203
-                        f' -- ACCOUNT: {account} USER: {username}'
-                        f' ADMIN: {is_admin}')
             try:
                 schema_name = create_schema_name(account)
                 tenant = Tenant.objects.filter(schema_name=schema_name).get()
@@ -270,6 +267,10 @@ class IdentityHeaderMiddleware(MiddlewareMixin):  # pylint: disable=R0903
             if not is_admin:
                 user.access = IdentityHeaderMiddleware._get_access_for_user(username, tenant)
             request.user = user
+            setattr(local, 'account', account)
+            setattr(local, 'username', username)
+            setattr(local, 'is_admin', is_admin)
+            setattr(local, 'req_id', req_id)
 
 
 class DisableCSRF(MiddlewareMixin):  # pylint: disable=too-few-public-methods
