@@ -289,6 +289,7 @@ class IdentityHeaderMiddleware(MiddlewareMixin):  # pylint: disable=R0903
             account = request.user.account
             username = request.user.username
             req_id = request.user.req_id
+        if account:
             context = f' -- {req_id} {account} {username} {is_admin}'
         logger.info(f'{request.method} {request.path}{query_string}'  # pylint: disable=W1203
                     f' {response.status_code}{context}')
