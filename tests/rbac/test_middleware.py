@@ -99,6 +99,14 @@ class IdentityHeaderMiddlewareTest(IdentityRequest):
         middleware.process_request(mock_request)
         self.assertTrue(hasattr(mock_request, 'user'))
 
+    def test_process_response(self):
+        """Test that the process response functions correctly."""
+        mock_request = Mock(path='/api/v1/status/')
+        mock_response = Mock(status_code=200)
+        middleware = IdentityHeaderMiddleware()
+        response = middleware.process_response(mock_request, mock_response)
+        self.assertEqual(response, mock_response)
+
     def test_process_not_status(self):
         """Test that the customer, tenant and user are created."""
         mock_request = self.request
