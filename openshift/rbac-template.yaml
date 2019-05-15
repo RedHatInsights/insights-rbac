@@ -90,6 +90,23 @@ objects:
     principal-proxy-ssl-verify: ${PRINCIPAL_PROXY_SERVICE_SSL_VERIFY}
     principal-proxy-source-cert: ${PRINCIPAL_PROXY_SERVICE_SOURCE_CERT}
 - apiVersion: v1
+  kind: Secret
+  metadata:
+    labels:
+      app: rbac
+      template: rbac-template
+    annotations:
+      template.openshift.io/expose-access_key: "{.data['cw-aws-access-key-id']}"
+      template.openshift.io/expose-secret: "{.data['cw-aws-secret-access-key']}"
+      template.openshift.io/expose-region: "{.data['cw-aws-region']}"
+      template.openshift.io/expose-log_group: "{.data['cw-log-group']}"
+    name: cloudwatch
+  stringData:
+    cw-aws-access-key-id: ${CW_AWS_ACCESS_KEY_ID}
+    cw-aws-secret-access-key: ${CW_AWS_SECRET_ACCESS_KEY}
+    cw-aws-region: ${CW_AWS_REGION}
+    cw-log-group: ${CW_LOG_GROUP}
+- apiVersion: v1
   kind: ConfigMap
   metadata:
     name: rbac-env
@@ -318,6 +335,30 @@ objects:
                 secretKeyRef:
                   key: principal-proxy-source-cert
                   name: ${NAME}-secret
+                  optional: true
+            - name: CW_AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  key: cw-aws-access-key-id
+                  name: cloudwatch
+                  optional: true
+            - name: CW_AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  key: cw-aws-secret-access-key
+                  name: cloudwatch
+                  optional: true
+            - name: CW_AWS_REGION
+              valueFrom:
+                secretKeyRef:
+                  key: cw-aws-region
+                  name: cloudwatch
+                  optional: true
+            - name: CW_LOG_GROUP
+              valueFrom:
+                secretKeyRef:
+                  key: cw-log-group
+                  name: cloudwatch
                   optional: true
             - name: DATABASE_ENGINE
               valueFrom:
@@ -745,4 +786,16 @@ parameters:
   name: PRINCIPAL_PROXY_SERVICE_SSL_VERIFY
 - displayName: Use source certifcate for principal proxy interaction
   value: 'False'
-  name: PRINCIPAL_PROXY_SERVICE_SOURCE_CERT
+  name: PRINCIPAL_PROXY_SERVICE_SOURCE_CERT  
+- displayName: Cloud Watch Amazon Web Services Access ID
+  required: false
+  name: CW_AWS_ACCESS_KEY_ID
+- displayName: Cloud Watch Amazon Web Services Secret Access Key
+  required: false
+  name: CW_AWS_SECRET_ACCESS_KEY
+- displayName: Cloud Watch Amazon Web Services Region
+  value: 'us-east-1'
+  name: CW_AWS_REGION
+- displayName: Cloud Watch Log Group
+  value: 'platform-dev'
+  name: CW_LOG_GROUP
