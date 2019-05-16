@@ -143,9 +143,11 @@ class RoleMinimumSerializer(serializers.ModelSerializer):
     uuid = serializers.UUIDField(read_only=True)
     name = serializers.CharField(required=True, max_length=150)
     description = serializers.CharField(allow_null=True, required=False)
+    created = serializers.DateTimeField(read_only=True)
+    modified = serializers.DateTimeField(read_only=True)
 
     class Meta:
         """Metadata for the serializer."""
 
         model = Role
-        fields = ('uuid', 'name', 'description')
+        fields = ('uuid', 'name', 'description', 'created', 'modified')

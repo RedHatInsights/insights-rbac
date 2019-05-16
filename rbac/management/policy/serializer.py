@@ -41,12 +41,14 @@ class PolicyInputSerializer(serializers.ModelSerializer):
     description = serializers.CharField(allow_null=True, required=False)
     group = serializers.UUIDField(required=True)
     roles = UUIDListField(required=True)
+    created = serializers.DateTimeField(read_only=True)
+    modified = serializers.DateTimeField(read_only=True)
 
     class Meta:
         """Metadata for the serializer."""
 
         model = Policy
-        fields = ('uuid', 'name', 'description', 'group', 'roles')
+        fields = ('uuid', 'name', 'description', 'group', 'roles', 'created', 'modified')
 
     def create(self, validated_data):
         """Create the policy object in the database."""
@@ -131,7 +133,9 @@ class PolicyInputSerializer(serializers.ModelSerializer):
             'name': obj.name,
             'description': obj.description,
             'group': group.data,
-            'roles': roles
+            'roles': roles,
+            'created': obj.created,
+            'modified': obj.modified,
         }
 
 
