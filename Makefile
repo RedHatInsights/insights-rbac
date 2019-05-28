@@ -162,10 +162,31 @@ oc-create-db:
 		-p DATABASE_SERVICE_NAME=rbac-pgsql \
 	| oc create -f -
 
-oc-create-all: oc-create-tags oc-create-rbac
+oc-create-all: oc-create-tags oc-create-rbac oc-create-worker oc-create-scheduler
 
 oc-create-rbac:
 	openshift/init-app.sh -n myproject -b `git rev-parse --abbrev-ref HEAD`
+
+oc-create-worker:
+	oc get bc/rbac-worker dc/rbac-worker || \
+	oc process -f $(TOPDIR)/openshift/worker.yaml \
+		--param-file=$(TOPDIR)/openshift/worker.env \
+		-p SOURCE_REPOSITORY_REF=$(shell git rev-parse --abbrev-ref HEAD) \
+	| oc create -f -
+
+oc-create-scheduler:
+	oc get bc/rbac-scheduler dc/rbac-scheduler || \
+	oc process -f $(TOPDIR)/openshift/scheduler.yaml \
+		--param-file=$(TOPDIR)/openshift/scheduler.env \
+		-p SOURCE_REPOSITORY_REF=$(shell git rev-parse --abbrev-ref HEAD) \
+	| oc create -f -
+
+oc-create-redis:
+	oc get bc/rbac-redis dc/rbac-redis || \
+	oc process -f $(TOPDIR)/openshift/redis.yaml \
+		--param-file=$(TOPDIR)/openshift/redis.env \
+		-p SOURCE_REPOSITORY_REF=$(shell git rev-parse --abbrev-ref HEAD) \
+	| oc create -f -
 
 oc-create-test-db-file: oc-run-migrations
 	sleep 1
@@ -177,6 +198,21 @@ oc-create-test-db-file: oc-run-migrations
 	pg_dump -d $(DATABASE_NAME) -h $(POSTGRES_SQL_SERVICE_HOST) -p $(POSTGRES_SQL_SERVICE_PORT) -U $(DATABASE_USER) > test.sql
 	kill -HUP $$(ps -eo pid,command | grep "manage.py runserver" | grep -v grep | awk '{print $$1}')
 	make oc-stop-forwarding-ports
+
+oc-delete-scheduler:
+	oc delete deploymentconfigs/rbac-scheduler  \
+		buildconfigs/rbac-scheduler \
+		imagestreams/rbac-scheduler \
+
+oc-delete-worker:
+	oc delete deploymentconfigs/rbac-worker  \
+		buildconfigs/rbac-worker \
+		imagestreams/rbac-worker \
+
+oc-delete-redis:
+	oc delete deploymentconfigs/rbac-redis  \
+		buildconfigs/rbac-redis \
+		imagestreams/rbac-redis \
 
 oc-delete-all:
 	oc delete is --all && \

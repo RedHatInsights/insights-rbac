@@ -321,6 +321,18 @@ CORS_ALLOW_HEADERS = default_headers + (
 
 APPEND_SLASH = False
 
+# Celery settings
+
+REDIS_HOST = ENVIRONMENT.get_value('REDIS_HOST',
+                                          default='localhost')
+REDIS_PORT = ENVIRONMENT.get_value('REDIS_PORT',
+                                   default='6379')
+DEFAULT_REDIS_URL = f'redis://{REDIS_HOST}:{REDIS_PORT}/0'
+
+CELERY_BROKER_URL = ENVIRONMENT.get_value('CELERY_BROKER_URL',
+                                          default=DEFAULT_REDIS_URL)
+
+
 # disable log messages less than CRITICAL when running unit tests.
 if len(sys.argv) > 1 and sys.argv[1] == 'test':
     logging.disable(logging.CRITICAL)

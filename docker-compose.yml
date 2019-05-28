@@ -21,13 +21,45 @@ services:
         - DJANGO_DEBUG=${DJANGO_DEBUG-True}
       privileged: true        
       ports:
-          - 9000:8000
+          - 9080:8000
       volumes:
         - '.:/rbac/'
       links:
         - db
       depends_on:
         - db
+
+  rbac-worker:
+      container_name: rbac_worker
+      build:
+          context: .
+          dockerfile: Dockerfile-env
+      working_dir: /rbac
+      entrypoint: ['celery', 'worker', '-A', 'rbac.celery', '--broker=redis://localhost:6379/0', '--loglevel=INFO']
+      privileged: true
+      links:
+          - redis
+      depends_on:
+          - redis
+  
+  rbac-scheduler:
+      container_name: rbac_scheduler
+      build:
+          context: .
+          dockerfile: Dockerfile-env
+      working_dir: /rbac
+      entrypoint: ['celery', 'beat', '-A', 'rbac.celery', '--broker=redis://localhost:6379/0', '--loglevel=INFO']
+      privileged: true
+      links:
+          - redis
+      depends_on:
+          - redis
+
+  redis:
+    container_name: rbac_redis
+    image: redis:5.0.4
+    ports:
+      - "6379:6379"
 
   db:
     image: postgres:9.6

@@ -1,0 +1,275 @@
+kind: Template
+apiVersion: v1
+metadata:
+  name: rbac-worker-template
+  annotations:
+    openshift.io/display-name: "RBAC"
+    description:  "Scheduler for Role Based Access Control powered by Django+PostgreSQL+Celery"
+    tags: "python,flask"
+    iconClass: "icon-python"
+    openshift.io/long-description: "This template defines resources needed to run the RBAC application, including a build configuration, application deployment configuration, and database deployment configuration."
+    openshift.io/provider-display-name: "Red Hat, Inc."
+    openshift.io/documentation-url: "https://insight-rbac.readthedocs.io/en/latest/"
+labels:
+  app: ${NAME}
+  template: ${NAME}-worker-template
+objects:
+- kind: BuildConfig
+  apiVersion: v1
+  metadata:
+    annotations:
+      description: Defines how to build the application
+      template.alpha.openshift.io/wait-for-ready: "true"
+    name: ${NAME}-worker
+    labels:
+      app: ${NAME}
+  spec:
+    failedBuildsHistoryLimit: 1
+    successfulBuildsHistoryLimit: 2
+    output:
+      to:
+        kind: ImageStreamTag
+        name: ${NAME}-worker:latest
+    resources:
+      requests:
+        memory: ${BUILD_MEMORY_REQUEST}
+      limits:
+        memory: ${BUILD_MEMORY_LIMIT}
+    source:
+      contextDir: ${CONTEXT_DIR}
+      git:
+        ref: ${SOURCE_REPOSITORY_REF}
+        uri: ${SOURCE_REPOSITORY_URL}
+      type: Git
+    strategy:
+      sourceStrategy:
+        env:
+          - name: PIP_INDEX_URL
+            value: ${PIP_INDEX_URL}
+          - name: PIPENV_PYPI_MIRROR
+            value: ${PIPENV_PYPI_MIRROR}
+          - name: ENABLE_PIPENV
+            value: "true"
+          - name: UPGRADE_PIP_TO_LATEST
+            value: ""
+          - name: APP_CONFIG
+            valueFrom:
+              configMapKeyRef:
+                name: rbac-env
+                key: app-config
+                optional: false
+          - name: APP_HOME
+            valueFrom:
+              configMapKeyRef:
+                name: rbac-env
+                key: app-home
+          - name: APP_MODULE
+            valueFrom:
+              configMapKeyRef:
+                name: rbac-env
+                key: app-module
+          - name: APP_NAMESPACE
+            valueFrom:
+              configMapKeyRef:
+                name: rbac-env
+                key: app-namespace
+        from:
+          kind: ImageStreamTag
+          name: python-36-centos7:latest
+          namespace: ${NAMESPACE}
+    triggers:
+    - type: ConfigChange
+    - imageChange: {}
+      type: ImageChange
+    - github:
+        secret: ${GITHUB_WEBHOOK_SECRET}
+      type: GitHub
+- kind: DeploymentConfig
+  apiVersion: v1
+  metadata:
+    annotations:
+      description: Defines how to deploy the celery worker
+      template.alpha.openshift.io/wait-for-ready: "true"
+    name: ${NAME}-worker
+    labels:
+      app: ${NAME}
+  spec:
+    replicas: 1
+    selector:
+      name: ${NAME}-worker
+    resources:
+      requests:
+        cpu: ${CELERY_WORKER_CPU_REQUEST}
+        memory: ${CELERY_WORKER_MEMORY_REQUEST}
+      limits:
+        cpu: ${CELERY_WORKER_CPU_LIMIT}
+        memory: ${CELERY_WORKER_MEMORY_LIMIT}
+    strategy:
+      type: Recreate
+    template:
+      metadata:
+        labels:
+          name: ${NAME}-worker
+        name: ${NAME}-worker
+      spec:
+        containers:
+        - name: ${NAME}-worker
+          image: ${NAME}-worker
+          command:
+            - /bin/bash
+            - -c
+            - >
+              PYTHONPATH=. scl enable rh-python36 --
+              celery -A rbac.celery worker -l $LOG_LEVEL
+          env:
+            - name: REDIS_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: redis-config
+                  key: redis-service-host
+                  optional: false
+            - name: REDIS_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: redis-config
+                  key: redis-service-port
+                  optional: false
+            - name: LOG_LEVEL
+              valueFrom:
+                configMapKeyRef:
+                  name: rbac-env
+                  key: log-level
+                  optional: false
+            - name: prometheus_multiproc_dir
+              valueFrom:
+                configMapKeyRef:
+                  name: rbac-env
+                  key: prometheus-dir
+                  optional: false
+            - name: DEBUG
+              valueFrom:
+                configMapKeyRef:
+                  name: rbac-env
+                  key: debug
+                  optional: true
+            - name: NAMESPACE
+              valueFrom:
+                configMapKeyRef:
+                  name: rbac-env
+                  key: app-namespace
+                  optional: true
+            - name: CW_AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  key: cw-aws-access-key-id
+                  name: cloudwatch
+                  optional: true
+            - name: CW_AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  key: cw-aws-secret-access-key
+                  name: cloudwatch
+                  optional: true
+            - name: CW_AWS_REGION
+              valueFrom:
+                secretKeyRef:
+                  key: cw-aws-region
+                  name: cloudwatch
+                  optional: true
+            - name: CW_LOG_GROUP
+              valueFrom:
+                secretKeyRef:
+                  key: cw-log-group
+                  name: cloudwatch
+                  optional: true
+          resources:
+            requests:
+              cpu: ${CELERY_WORKER_CPU_REQUEST}
+              memory: ${CELERY_WORKER_MEMORY_REQUEST}
+            limits:
+              cpu: ${CELERY_WORKER_CPU_LIMIT}
+              memory: ${CELERY_WORKER_MEMORY_LIMIT}
+    triggers:
+    - type: ConfigChange
+    - imageChangeParams:
+        automatic: true
+        containerNames:
+          - ${NAME}-worker
+        from:
+          kind: ImageStreamTag
+          name: ${NAME}-worker:latest
+      type: ImageChange
+- kind: ImageStream
+  apiVersion: v1
+  metadata:
+    name: ${NAME}-worker
+    annotations:
+      description: "Keeps track of changes in the application image"
+    labels:
+      app: ${NAME}
+parameters:
+- description: The name assigned to all frontend objects defined in this template.
+  displayName: Name
+  name: NAME
+  required: true
+  value: masu
+- description: The OpenShift Namespace where the ImageStream resides.
+  displayName: Namespace
+  name: NAMESPACE
+  required: true
+  value: myproject
+- description: Initial amount of CPU the worker container will request.
+  displayName: Celery worker CPU Resource Request
+  name: CELERY_WORKER_CPU_REQUEST
+  required: true
+  value: 100m
+- description: Maximum amount of CPU the worker container can use.
+  displayName: CPU Limit
+  name: CELERY_WORKER_CPU_LIMIT
+  required: true
+  value: 300m
+- description: Initial amount of memory the worker container will request.
+  displayName: Celery worker Memory Resource Request
+  name: CELERY_WORKER_MEMORY_REQUEST
+  required: true
+  value: 256Mi
+- description: Maximum amount of memory the worker container can use.
+  displayName: Memory Limit
+  name: CELERY_WORKER_MEMORY_LIMIT
+  required: true
+  value: 512Mi
+- description: Initial amount of memory the build container will request.
+  displayName: Build Memory Resource Request
+  name: BUILD_MEMORY_REQUEST
+  required: true
+  value: 512Mi
+- description: Maximum amount of memory the build container can use.
+  displayName: Build Memory Limit
+  name: BUILD_MEMORY_LIMIT
+  required: true
+  value: 1Gi
+- description: The custom PyPi index URL
+  displayName: Custom PyPi Index URL
+  name: PIP_INDEX_URL
+- description: The custom PipEnv PyPi index URL
+  displayName: Custom PipEnv PyPi Index URL
+  name: PIPENV_PYPI_MIRROR
+- description: Github trigger secret.  A difficult to guess string encoded as part
+    of the webhook URL.  Not encrypted.
+  displayName: GitHub Webhook Secret
+  from: '[a-zA-Z0-9]{40}'
+  generate: expression
+  name: GITHUB_WEBHOOK_SECRET
+- description: The URL of the repository with your application source code.
+  displayName: Git Repository URL
+  name: SOURCE_REPOSITORY_URL
+  required: true
+  value: https://github.com/RedHatInsights/insights-rbac.git
+- description: Set this to a branch name, tag or other ref of your repository if you
+    are not using the default branch.
+  displayName: Git Reference
+  name: SOURCE_REPOSITORY_REF
+- description: Set this to the relative path to your project if it is not in the root
+    of your repository.
+  displayName: Context Directory
+  name: CONTEXT_DIR
