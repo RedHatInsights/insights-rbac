@@ -324,7 +324,7 @@ APPEND_SLASH = False
 # Celery settings
 
 REDIS_HOST = ENVIRONMENT.get_value('REDIS_HOST',
-                                          default='localhost')
+                                   default='localhost')
 REDIS_PORT = ENVIRONMENT.get_value('REDIS_PORT',
                                    default='6379')
 DEFAULT_REDIS_URL = f'redis://{REDIS_HOST}:{REDIS_PORT}/0'
