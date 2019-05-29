@@ -48,7 +48,7 @@ services:
           context: .
           dockerfile: Dockerfile-env
       working_dir: /rbac
-      entrypoint: ['celery', 'beat', '-A', 'rbac.celery', '--broker=redis://localhost:6379/0', '--loglevel=INFO']
+      entrypoint: ['celery', 'beat', '-A', 'rbac.celery', '--broker=redis://redis:6379/0', '--loglevel=INFO']
       privileged: true
       links:
           - redis
