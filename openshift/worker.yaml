@@ -4,7 +4,7 @@ metadata:
   name: rbac-worker-template
   annotations:
     openshift.io/display-name: "RBAC"
-    description:  "Scheduler for Role Based Access Control powered by Django+PostgreSQL+Celery"
+    description:  "Celery worker for Role Based Access Control powered by Django+PostgreSQL+Celery"
     tags: "python,flask"
     iconClass: "icon-python"
     openshift.io/long-description: "This template defines resources needed to run the RBAC application, including a build configuration, application deployment configuration, and database deployment configuration."
@@ -119,8 +119,8 @@ objects:
             - /bin/bash
             - -c
             - >
-              PYTHONPATH=. scl enable rh-python36 --
-              celery -A rbac.celery worker -l $LOG_LEVEL
+              PYTHONPATH=${PWD}/rbac/ scl enable rh-python36 -- celery -A
+              rbac.celery worker -l $DJANGO_LOG_LEVEL
           env:
             - name: REDIS_HOST
               valueFrom:
@@ -134,25 +134,19 @@ objects:
                   name: redis-config
                   key: redis-service-port
                   optional: false
-            - name: LOG_LEVEL
+            - name: DJANGO_LOG_LEVEL
               valueFrom:
                 configMapKeyRef:
                   name: rbac-env
-                  key: log-level
+                  key: django-log-level
                   optional: false
-            - name: prometheus_multiproc_dir
+            - name: DJANGO_DEBUG
               valueFrom:
                 configMapKeyRef:
                   name: rbac-env
-                  key: prometheus-dir
-                  optional: false
-            - name: DEBUG
-              valueFrom:
-                configMapKeyRef:
-                  name: rbac-env
-                  key: debug
+                  key: django-debug
                   optional: true
-            - name: NAMESPACE
+            - name: APP_NAMESPACE
               valueFrom:
                 configMapKeyRef:
                   name: rbac-env
@@ -182,6 +176,8 @@ objects:
                   key: cw-log-group
                   name: cloudwatch
                   optional: true
+            - name: ROLE_SEEDING_ENABLED
+              value: "False"
           resources:
             requests:
               cpu: ${CELERY_WORKER_CPU_REQUEST}

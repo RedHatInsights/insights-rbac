@@ -162,7 +162,7 @@ oc-create-db:
 		-p DATABASE_SERVICE_NAME=rbac-pgsql \
 	| oc create -f -
 
-oc-create-all: oc-create-tags oc-create-rbac oc-create-worker oc-create-scheduler
+oc-create-all: oc-create-tags oc-create-rbac oc-create-redis oc-create-worker oc-create-scheduler
 
 oc-create-rbac:
 	openshift/init-app.sh -n myproject -b `git rev-parse --abbrev-ref HEAD`

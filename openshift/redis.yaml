@@ -1,3 +1,19 @@
+kind: Template
+apiVersion: v1
+metadata:
+  name: rbac-redis-template
+  annotations:
+    openshift.io/display-name: "RBAC"
+    description:  "Redis for Role Based Access Control powered by Django+PostgreSQL+Celery"
+    tags: "python,flask"
+    iconClass: "icon-python"
+    openshift.io/long-description: "This template defines resources needed to run the RBAC application, including a build configuration, application deployment configuration, and database deployment configuration."
+    openshift.io/provider-display-name: "Red Hat, Inc."
+    openshift.io/documentation-url: "https://insight-rbac.readthedocs.io/en/latest/"
+labels:
+  app: ${NAME}
+  template: ${NAME}-redis-template
+objects:
 - apiVersion: v1
   kind: ImageStream
   metadata:
@@ -102,6 +118,19 @@
       targetPort: 6379
     selector:
       name: ${NAME}-redis
+- apiVersion: v1
+  kind: PersistentVolumeClaim
+  metadata:
+    labels:
+      app: koku
+      template: koku-template
+    name: ${NAME}-redis
+  spec:
+    accessModes:
+    - ReadWriteOnce
+    resources:
+      requests:
+        storage: ${VOLUME_CAPACITY}
 parameters:
 - description: The name assigned to all frontend objects defined in this template.
   displayName: Name
@@ -121,5 +150,10 @@ parameters:
 - description: Maximum amount of memory the container can use.
   displayName: Memory Limit
   name: MEMORY_LIMIT
+  required: true
+  value: 1Gi
+- description: Volume space available for data, e.g. 512Mi, 2Gi
+  displayName: Volume Capacity
+  name: VOLUME_CAPACITY
   required: true
   value: 1Gi

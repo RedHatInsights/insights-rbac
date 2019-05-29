@@ -291,15 +291,10 @@ LOGGING = {
 }
 
 if CW_AWS_ACCESS_KEY_ID:
-    NAMESPACE = 'unknown'
+    NAMESPACE = ENVIRONMENT.get_value('APP_NAMESPACE', default='unknown')
     BOTO3_SESSION = Session(aws_access_key_id=CW_AWS_ACCESS_KEY_ID,
                             aws_secret_access_key=CW_AWS_SECRET_ACCESS_KEY,
                             region_name=CW_AWS_REGION)
-    try:
-        with open("/var/run/secrets/kubernetes.io/serviceaccount/namespace", "r") as f:
-            NAMESPACE = f.read()
-    except Exception:  # pylint: disable=W0703
-        pass
     WATCHTOWER_HANDLER = {
         'level': RBAC_LOGGING_LEVEL,
         'class': 'watchtower.CloudWatchLogHandler',
@@ -332,6 +327,8 @@ DEFAULT_REDIS_URL = f'redis://{REDIS_HOST}:{REDIS_PORT}/0'
 CELERY_BROKER_URL = ENVIRONMENT.get_value('CELERY_BROKER_URL',
                                           default=DEFAULT_REDIS_URL)
 
+# Role Seeding Setup
+ROLE_SEEDING_ENABLED = ENVIRONMENT.bool('ROLE_SEEDING_ENABLED', default=True)
 
 # disable log messages less than CRITICAL when running unit tests.
 if len(sys.argv) > 1 and sys.argv[1] == 'test':
