@@ -178,6 +178,114 @@ objects:
                   optional: true
             - name: ROLE_SEEDING_ENABLED
               value: "False"
+            - name: DATABASE_USER
+              valueFrom:
+                secretKeyRef:
+                  key: database-user
+                  name: ${DATABASE_SERVICE_NAME}
+                  optional: false
+            - name: DATABASE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  key: database-password
+                  name: ${DATABASE_SERVICE_NAME}
+                  optional: false
+            - name: DATABASE_SERVICE_CERT
+              valueFrom:
+                secretKeyRef:
+                  key: rds-cacert
+                  name: rds-client-ca
+                  optional: true
+            - name: DJANGO_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  key: django-secret-key
+                  name: ${NAME}-secret
+                  optional: false
+            - name: PRINCIPAL_PROXY_SERVICE_PROTOCOL
+              valueFrom:
+                secretKeyRef:
+                  key: principal-proxy-protocol
+                  name: ${NAME}-secret
+                  optional: false
+            - name: PRINCIPAL_PROXY_SERVICE_HOST
+              valueFrom:
+                secretKeyRef:
+                  key: principal-proxy-host
+                  name: ${NAME}-secret
+                  optional: false
+            - name: PRINCIPAL_PROXY_SERVICE_PORT
+              valueFrom:
+                secretKeyRef:
+                  key: principal-proxy-port
+                  name: ${NAME}-secret
+                  optional: false
+            - name: PRINCIPAL_PROXY_SERVICE_PATH
+              valueFrom:
+                secretKeyRef:
+                  key: principal-proxy-path
+                  name: ${NAME}-secret
+                  optional: false
+            - name: PRINCIPAL_PROXY_USER_ENV
+              valueFrom:
+                secretKeyRef:
+                  key: principal-proxy-env
+                  name: ${NAME}-secret
+                  optional: false
+            - name: PRINCIPAL_PROXY_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  key: principal-proxy-client-id
+                  name: ${NAME}-secret
+                  optional: false
+            - name: PRINCIPAL_PROXY_API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  key: principal-proxy-api-token
+                  name: ${NAME}-secret
+                  optional: false
+            - name: PRINCIPAL_PROXY_SERVICE_SSL_VERIFY
+              valueFrom:
+                secretKeyRef:
+                  key: principal-proxy-ssl-verify
+                  name: ${NAME}-secret
+                  optional: true
+            - name: PRINCIPAL_PROXY_SERVICE_SOURCE_CERT
+              valueFrom:
+                secretKeyRef:
+                  key: principal-proxy-source-cert
+                  name: ${NAME}-secret
+                  optional: true
+            - name: DATABASE_ENGINE
+              valueFrom:
+                configMapKeyRef:
+                  name: rbac-env
+                  key: database-engine
+                  optional: false
+            - name: DATABASE_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: rbac-env
+                  key: database-name
+                  optional: false
+            - name: DATABASE_SERVICE_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: rbac-env
+                  key: database-service-name
+                  optional: false
+            - name: POSTGRES_SQL_SERVICE_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: rbac-env
+                  key: postgres-sql-service-host
+                  optional: false
+            - name: POSTGRES_SQL_SERVICE_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: rbac-env
+                  key: postgres-sql-service-port
+                  optional: false
           resources:
             requests:
               cpu: ${CELERY_WORKER_CPU_REQUEST}

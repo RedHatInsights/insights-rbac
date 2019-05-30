@@ -41,10 +41,12 @@ def clean_tenant_principals(tenant):
             logger.debug('Checking for username %s for tenant %s.',
                          principal.username, tenant.schema_name)
             resp = proxy.request_filtered_principals([principal.username])
-            if resp.get('status_code') == status.HTTP_200_OK:
+            status_code = resp.get('status_code')
+            data = resp.get('data')
+            if status_code == status.HTTP_200_OK and data:
                 logger.debug('Username %s found for tenant %s, no change needed.',
                              principal.username, tenant.schema_name)
-            elif resp.get('status_code') == status.HTTP_404_NOT_FOUND:
+            elif status_code == status.HTTP_200_OK and not data:
                 removed_principals.append(principal.username)
                 principal.delete()
                 logger.info('Username %s not found for tenant %s, principal removed.',
@@ -52,7 +54,7 @@ def clean_tenant_principals(tenant):
             else:
                 logger.warn('Unknown status %d when checking username %s'
                             ' for tenant %s, no change needed.',
-                            resp.get('status_code'), principal.username, tenant.schema_name)
+                            status_code, principal.username, tenant.schema_name)
         logger.info('Completed clean up of %d principals for tenant %s, %d removed.',
                     len(principals), tenant.schema_name, len(removed_principals))
 
