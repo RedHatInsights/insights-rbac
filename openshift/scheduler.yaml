@@ -208,7 +208,7 @@ parameters:
   displayName: Name
   name: NAME
   required: true
-  value: masu
+  value: rbac
 - description: The OpenShift Namespace where the ImageStream resides.
   displayName: Namespace
   name: NAMESPACE
