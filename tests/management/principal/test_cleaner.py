@@ -46,7 +46,7 @@ class PrincipalCleanerTests(IdentityRequest):
             self.assertEqual(Principal.objects.count(), 0)
 
     @patch('management.principal.proxy.PrincipalProxy._request_principals',
-           return_value={'status_code': status.HTTP_404_NOT_FOUND})
+           return_value={'status_code': status.HTTP_200_OK, 'data': []})
     def test_principal_cleanup_princpal_in_group(self, mock_request):
         """Test that we can run a principal clean up on a tenant with a principal in a group."""
         with tenant_context(self.tenant):
@@ -62,7 +62,7 @@ class PrincipalCleanerTests(IdentityRequest):
             self.assertEqual(Principal.objects.count(), 0)
 
     @patch('management.principal.proxy.PrincipalProxy._request_principals',
-           return_value={'status_code': status.HTTP_404_NOT_FOUND})
+           return_value={'status_code': status.HTTP_200_OK, 'data': []})
     def test_principal_cleanup_princpal_not_in_group(self, mock_request):
         """Test that we can run a principal clean up on a tenant with a principal not in a group."""
         with tenant_context(self.tenant):
@@ -76,7 +76,7 @@ class PrincipalCleanerTests(IdentityRequest):
             self.assertEqual(Principal.objects.count(), 0)
 
     @patch('management.principal.proxy.PrincipalProxy._request_principals',
-           return_value={'status_code': status.HTTP_200_OK})
+           return_value={'status_code': status.HTTP_200_OK, 'data': [{'username': 'user1'}]})
     def test_principal_cleanup_princpal_exists(self, mock_request):
         """Test that we can run a principal clean up on a tenant with an existing principal."""
         with tenant_context(self.tenant):
