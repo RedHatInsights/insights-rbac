@@ -33,7 +33,7 @@ Please use \`make <target>' where <target> is one of:
   lint                     run linting against the project
 
 --- Commands using local services ---
-  create-test-db-file      create a Postgres DB dump file for Masu
+  create-test-db-file      create a Postgres DB dump file for RBAC
   collect-static           collect static files to host
   gen-apidoc               create api documentation
   make-migrations          make migrations for the database
@@ -60,7 +60,7 @@ Please use \`make <target>' where <target> is one of:
   oc-create-db             create a Postgres DB in an initialized openshift cluster
   oc-create-rbac           create the RBAC app in an initialized openshift cluster
   oc-create-tags           create image stream tags
-  oc-create-test-db-file   create a Postgres DB dump file for Masu
+  oc-create-test-db-file   create a Postgres DB dump file for RBAC
   oc-delete-all            delete Openshift objects without a cluster restart
   oc-down                  stop app & openshift cluster
   oc-forward-ports         port forward the DB to localhost

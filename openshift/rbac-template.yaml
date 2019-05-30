@@ -638,11 +638,6 @@ parameters:
   name: NAMESPACE
   required: true
   value: project-rbac
-- description: The name for the masu service
-  displayName: Masu
-  name: MASU
-  required: true
-  value: masu
 - description: Initial amount of memory the build container will request.
   displayName: Build Memory Request
   name: BUILD_MEMORY_REQUEST

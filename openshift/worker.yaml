@@ -316,7 +316,7 @@ parameters:
   displayName: Name
   name: NAME
   required: true
-  value: masu
+  value: rbac
 - description: The OpenShift Namespace where the ImageStream resides.
   displayName: Namespace
   name: NAMESPACE
@@ -377,3 +377,7 @@ parameters:
     of your repository.
   displayName: Context Directory
   name: CONTEXT_DIR
+- displayName: Database Service Name
+  name: DATABASE_SERVICE_NAME
+  required: true
+  value: rbac-pgsql
