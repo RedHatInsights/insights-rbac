@@ -14,12 +14,14 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
-"""RBAC project module."""
-
+"""Celery tasks."""
 from __future__ import absolute_import, unicode_literals
 
-# This will make sure the app is always imported when
-# Django starts so that shared_task will use this app.
-from .celery import app as celery_app
+from celery import shared_task
+from management.principal.cleaner import clean_tenants_principals
 
-__all__ = ('celery_app',)
+
+@shared_task
+def principal_cleanup():
+    """Celery task to clean up principals no longer existing."""
+    clean_tenants_principals()

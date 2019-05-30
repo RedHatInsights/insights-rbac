@@ -50,6 +50,11 @@ class ManagementConfig(AppConfig):
         # noqa: E402 pylint: disable=C0413
         from api.models import Tenant
         from management.role.definer import seed_roles
+        from rbac.settings import ROLE_SEEDING_ENABLED
+
+        if not ROLE_SEEDING_ENABLED:
+            return
+
         logger.info('Start role seed changes check.')
         try:
             with concurrent.futures.ThreadPoolExecutor() as executor:

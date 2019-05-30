@@ -1,0 +1,271 @@
+kind: Template
+apiVersion: v1
+metadata:
+  name: rbac-scheduler-template
+  annotations:
+    openshift.io/display-name: "RBAC"
+    description:  "Scheduler for Role Based Access Control powered by Django+PostgreSQL+Celery"
+    tags: "python,flask"
+    iconClass: "icon-python"
+    openshift.io/long-description: "This template defines resources needed to run the RBAC application, including a build configuration, application deployment configuration, and database deployment configuration."
+    openshift.io/provider-display-name: "Red Hat, Inc."
+    openshift.io/documentation-url: "https://insight-rbac.readthedocs.io/en/latest/"
+labels:
+  app: ${NAME}
+  template: ${NAME}-scheduler-template
+objects:
+- kind: BuildConfig
+  apiVersion: v1
+  metadata:
+    annotations:
+      description: Defines how to build the application
+      template.alpha.openshift.io/wait-for-ready: "true"
+    name: ${NAME}-scheduler
+    labels:
+      app: ${NAME}
+  spec:
+    failedBuildsHistoryLimit: 1
+    successfulBuildsHistoryLimit: 2
+    output:
+      to:
+        kind: ImageStreamTag
+        name: ${NAME}-scheduler:latest
+    resources:
+      requests:
+        memory: ${BUILD_MEMORY_REQUEST}
+      limits:
+        memory: ${BUILD_MEMORY_LIMIT}
+    source:
+      contextDir: ${CONTEXT_DIR}
+      git:
+        ref: ${SOURCE_REPOSITORY_REF}
+        uri: ${SOURCE_REPOSITORY_URL}
+      type: Git
+    strategy:
+      sourceStrategy:
+        env:
+          - name: PIP_INDEX_URL
+            value: ${PIP_INDEX_URL}
+          - name: PIPENV_PYPI_MIRROR
+            value: ${PIPENV_PYPI_MIRROR}
+          - name: ENABLE_PIPENV
+            value: "true"
+          - name: UPGRADE_PIP_TO_LATEST
+            value: ""
+          - name: APP_CONFIG
+            valueFrom:
+              configMapKeyRef:
+                name: rbac-env
+                key: app-config
+                optional: false
+          - name: APP_HOME
+            valueFrom:
+              configMapKeyRef:
+                name: rbac-env
+                key: app-home
+          - name: APP_MODULE
+            valueFrom:
+              configMapKeyRef:
+                name: rbac-env
+                key: app-module
+          - name: APP_NAMESPACE
+            valueFrom:
+              configMapKeyRef:
+                name: rbac-env
+                key: app-namespace
+        from:
+          kind: ImageStreamTag
+          name: python-36-centos7:latest
+          namespace: ${NAMESPACE}
+    triggers:
+    - type: ConfigChange
+    - imageChange: {}
+      type: ImageChange
+    - github:
+        secret: ${GITHUB_WEBHOOK_SECRET}
+      type: GitHub
+- kind: DeploymentConfig
+  apiVersion: v1
+  metadata:
+    annotations:
+      description: Defines how to deploy the celery scheduler
+      template.alpha.openshift.io/wait-for-ready: "true"
+    name: ${NAME}-scheduler
+    labels:
+      app: ${NAME}
+  spec:
+    replicas: 1
+    selector:
+      name: ${NAME}-scheduler
+    resources:
+      requests:
+        cpu: ${CELERY_SCHEDULER_CPU_REQUEST}
+        memory: ${CELERY_SCHEDULER_MEMORY_REQUEST}
+      limits:
+        cpu: ${CELERY_SCHEDULER_CPU_LIMIT}
+        memory: ${CELERY_SCHEDULER_MEMORY_LIMIT}
+    strategy:
+      type: Recreate
+    template:
+      metadata:
+        labels:
+          name: ${NAME}-scheduler
+        name: ${NAME}-scheduler
+      spec:
+        containers:
+        - name: ${NAME}-scheduler
+          image: ${NAME}-scheduler
+          command:
+            - /bin/bash
+            - -c
+            - >
+              PYTHONPATH=${PWD}/rbac/ scl enable rh-python36 -- celery -A
+              rbac.celery beat -l $DJANGO_LOG_LEVEL
+          env:
+            - name: REDIS_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: redis-config
+                  key: redis-service-host
+                  optional: false
+            - name: REDIS_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: redis-config
+                  key: redis-service-port
+                  optional: false
+            - name: DJANGO_LOG_LEVEL
+              valueFrom:
+                configMapKeyRef:
+                  name: rbac-env
+                  key: django-log-level
+                  optional: false
+            - name: DJANGO_DEBUG
+              valueFrom:
+                configMapKeyRef:
+                  name: rbac-env
+                  key: django-debug
+                  optional: true
+            - name: APP_NAMESPACE
+              valueFrom:
+                configMapKeyRef:
+                  name: rbac-env
+                  key: app-namespace
+                  optional: true
+            - name: CW_AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  key: cw-aws-access-key-id
+                  name: cloudwatch
+                  optional: true
+            - name: CW_AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  key: cw-aws-secret-access-key
+                  name: cloudwatch
+                  optional: true
+            - name: CW_AWS_REGION
+              valueFrom:
+                secretKeyRef:
+                  key: cw-aws-region
+                  name: cloudwatch
+                  optional: true
+            - name: CW_LOG_GROUP
+              valueFrom:
+                secretKeyRef:
+                  key: cw-log-group
+                  name: cloudwatch
+                  optional: true
+            - name: ROLE_SEEDING_ENABLED
+              value: "False"
+          resources:
+            requests:
+              cpu: ${CELERY_SCHEDULER_CPU_REQUEST}
+              memory: ${CELERY_SCHEDULER_MEMORY_REQUEST}
+            limits:
+              cpu: ${CELERY_SCHEDULER_CPU_LIMIT}
+              memory: ${CELERY_SCHEDULER_MEMORY_LIMIT}
+    triggers:
+    - type: ConfigChange
+    - imageChangeParams:
+        automatic: true
+        containerNames:
+          - ${NAME}-scheduler
+        from:
+          kind: ImageStreamTag
+          name: ${NAME}-scheduler:latest
+      type: ImageChange
+- kind: ImageStream
+  apiVersion: v1
+  metadata:
+    name: ${NAME}-scheduler
+    annotations:
+      description: "Keeps track of changes in the application image"
+    labels:
+      app: ${NAME}
+parameters:
+- description: The name assigned to all frontend objects defined in this template.
+  displayName: Name
+  name: NAME
+  required: true
+  value: masu
+- description: The OpenShift Namespace where the ImageStream resides.
+  displayName: Namespace
+  name: NAMESPACE
+  required: true
+  value: myproject
+- description: Initial amount of CPU the Flower container will request.
+  displayName: Celery scheduler CPU Resource Request
+  name: CELERY_SCHEDULER_CPU_REQUEST
+  required: true
+  value: 100m
+- description: Maximum amount of CPU the scheduler container can use.
+  displayName: CPU Limit
+  name: CELERY_SCHEDULER_CPU_LIMIT
+  required: true
+  value: 300m
+- description: Initial amount of memory the scheduler container will request.
+  displayName: Celery scheduler Memory Resource Request
+  name: CELERY_SCHEDULER_MEMORY_REQUEST
+  required: true
+  value: 256Mi
+- description: Maximum amount of memory the scheduler container can use.
+  displayName: Memory Limit
+  name: CELERY_SCHEDULER_MEMORY_LIMIT
+  required: true
+  value: 512Mi
+- description: Initial amount of memory the build container will request.
+  displayName: Build Memory Resource Request
+  name: BUILD_MEMORY_REQUEST
+  required: true
+  value: 512Mi
+- description: Maximum amount of memory the build container can use.
+  displayName: Build Memory Limit
+  name: BUILD_MEMORY_LIMIT
+  required: true
+  value: 1Gi
+- description: The custom PyPi index URL
+  displayName: Custom PyPi Index URL
+  name: PIP_INDEX_URL
+- description: The custom PipEnv PyPi index URL
+  displayName: Custom PipEnv PyPi Index URL
+  name: PIPENV_PYPI_MIRROR
+- description: Github trigger secret.  A difficult to guess string encoded as part
+    of the webhook URL.  Not encrypted.
+  displayName: GitHub Webhook Secret
+  from: '[a-zA-Z0-9]{40}'
+  generate: expression
+  name: GITHUB_WEBHOOK_SECRET
+- description: The URL of the repository with your application source code.
+  displayName: Git Repository URL
+  name: SOURCE_REPOSITORY_URL
+  required: true
+  value: https://github.com/RedHatInsights/insights-rbac.git
+- description: Set this to a branch name, tag or other ref of your repository if you
+    are not using the default branch.
+  displayName: Git Reference
+  name: SOURCE_REPOSITORY_REF
+- description: Set this to the relative path to your project if it is not in the root
+    of your repository.
+  displayName: Context Directory
+  name: CONTEXT_DIR
