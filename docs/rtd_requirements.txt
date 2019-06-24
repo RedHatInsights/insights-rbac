@@ -14,7 +14,7 @@ idna==2.8
 jinja2==2.10.1
 markupsafe==1.1.1
 prometheus-client==0.7.1
-psycopg2-binary==2.8.2
+psycopg2-binary==2.8.3
 psycopg2==2.8.2
 pytz==2018.9
 requests==2.21.0
