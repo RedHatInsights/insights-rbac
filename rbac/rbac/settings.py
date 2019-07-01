@@ -66,7 +66,7 @@ ALLOWED_HOSTS = ['*']
 INSTALLED_APPS = [
     'tenant_schemas',
     # django
-    'django.contrib.admin',
+    # 'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
     'django.contrib.sessions',
@@ -88,7 +88,7 @@ SHARED_APPS = (
     'tenant_schemas',
     'api',
     'django.contrib.contenttypes',
-    'django.contrib.admin',
+    # 'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.sessions',
     'django.contrib.messages',
