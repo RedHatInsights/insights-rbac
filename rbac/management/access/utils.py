@@ -55,4 +55,4 @@ def access_for_principal(principal, application):
     roles = roles_for_policies(policies)
     access = access_for_roles(roles, application)
     wanted_ids = [obj.id for obj in access]
-    return Access.objects.filter(id__in=wanted_ids.sort())
+    return Access.objects.filter(id__in=wanted_ids).order_by('id')
