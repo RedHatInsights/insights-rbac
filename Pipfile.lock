@@ -1,7 +1,7 @@
 {
     "_meta": {
         "hash": {
-            "sha256": "3ce6d8993e7c1f1add6d1699b1609e96c21d2d8d46b49356f1776fae4a076ccf"
+            "sha256": "cc4e744ab40f6357a1c37d18da297b5f329235eb05d4f63431b7caf76f10df5f"
         },
         "pipfile-spec": 6,
         "requires": {
@@ -34,14 +34,15 @@
                 "sha256:7fa7431115be7bdbebf207f34fd010553d0e3ccf30ad977cf38ea80ea47e68bf",
                 "sha256:99e5d071332f176c32ced41902349fe760add1f02cc86de1d5ae4cf05ff7a6e7"
             ],
+            "index": "pypi",
             "version": "==1.9.180"
         },
         "botocore": {
             "hashes": [
-                "sha256:a2ceaa00724228a961ef6f97da60ab09f3161a76e2f3ae82a49be396ca1083fc",
-                "sha256:f049dbfe83423f5cf350a861861e7f904967dea5e142ec1a17c70c07f9fdb117"
+                "sha256:1a1594258b503adeb3d54b77c0b79151e546d76e8ebc62aa9258693e6cdd0f9b",
+                "sha256:6dc20c4766cb0a4ff8b0993effe2550e3b4e4606265da37bcf8949610980da40"
             ],
-            "version": "==1.12.180"
+            "version": "==1.12.181"
         },
         "celery": {
             "hashes": [
@@ -70,6 +71,7 @@
                 "sha256:4d23f61b26892bac785f07401bc38cbf8fa4cec993f400e9cd9ddf28fd51c0ea",
                 "sha256:6e974d4b57e3b29e4882b244d40171d6a75202ab8d2402b8e8adbd182e25cf0c"
             ],
+            "index": "pypi",
             "version": "==2.2.3"
         },
         "django-cors-headers": {
@@ -725,11 +727,11 @@
         },
         "tox": {
             "hashes": [
-                "sha256:45a265e953368fb372cca3eac33b69fdb1b1453e5b114be231c84fc3dfadceed",
-                "sha256:f5cb0b5b8d14f2100982b0981c750d840228180a348e6bad355aa38e949fbc3f"
+                "sha256:dab0b0160dd187b654fc33d690ee1d7bf328bd5b8dc6ef3bb3cc468969c659ba",
+                "sha256:ee35ffce74933a6c6ac10c9a0182e41763140a5a5070e21b114feca56eaccdcd"
             ],
             "index": "pypi",
-            "version": "==3.13.1"
+            "version": "==3.13.2"
         },
         "typed-ast": {
             "hashes": [
