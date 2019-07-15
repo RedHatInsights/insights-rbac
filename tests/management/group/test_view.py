@@ -181,6 +181,12 @@ class GroupViewsetTests(IdentityRequest):
         test_data = {'principals': [{'username': self.principal.username}, {'username': new_username}]}
         response = client.post(url, test_data, format='json', **self.headers)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
+        url = reverse('group-list')
+        response = client.get(url, **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data.get('meta').get('count'), 1)
+        self.assertEqual(response.data.get('data')[0].get('principalCount'), 1)
+        self.assertEqual(response.data.get('data')[0].get('policyCount'), 0)
 
     def test_remove_group_principals_success(self):
         """Test that removing a principal to a group returns successfully."""
