@@ -63,7 +63,8 @@ class GroupViewSet(mixins.CreateModelMixin,
 
     """
 
-    queryset = Group.objects.annotate(principalCount=Count('principals'), policyCount=Count('policies'))
+    queryset = Group.objects.annotate(principalCount=Count('principals', distinct=True),
+                                      policyCount=Count('policies', distinct=True))
     permission_classes = (GroupAccessPermission,)
     lookup_field = 'uuid'
     filter_backends = (filters.DjangoFilterBackend, OrderingFilter)

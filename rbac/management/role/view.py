@@ -53,7 +53,7 @@ class RoleViewSet(mixins.CreateModelMixin,
 
     """
 
-    queryset = Role.objects.annotate(policyCount=Count('policies'))
+    queryset = Role.objects.annotate(policyCount=Count('policies', distinct=True))
     serializer_class = RoleSerializer
     permission_classes = (RoleAccessPermission,)
     lookup_field = 'uuid'

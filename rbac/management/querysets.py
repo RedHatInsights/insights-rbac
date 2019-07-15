@@ -26,11 +26,11 @@ from rbac.env import ENVIRONMENT
 def get_group_queryset(request):
     """Obtain the queryset for groups."""
     if ENVIRONMENT.get_value('ALLOW_ANY', default=False, cast=bool):
-        return Group.objects.annotate(principalCount=Count('principals'),
-                                      policyCount=Count('policies'))
+        return Group.objects.annotate(principalCount=Count('principals', distinct=True),
+                                      policyCount=Count('policies', distinct=True))
     if request.user.admin:
-        return Group.objects.annotate(principalCount=Count('principals'),
-                                      policyCount=Count('policies'))
+        return Group.objects.annotate(principalCount=Count('principals', distinct=True),
+                                      policyCount=Count('policies', distinct=True))
 
     username = request.query_params.get('username')
     if username:
@@ -48,18 +48,18 @@ def get_group_queryset(request):
     if not res_list:
         return Group.objects.none()
     if '*' in res_list:
-        return Group.objects.annotate(principalCount=Count('principals'),
-                                      policyCount=Count('policies'))
-    return Group.objects.filter(uuid__in=res_list).annotate(principalCount=Count('principals'),
-                                                            policyCount=Count('policies'))
+        return Group.objects.annotate(principalCount=Count('principals', distinct=True),
+                                      policyCount=Count('policies', distinct=True))
+    return Group.objects.filter(uuid__in=res_list).annotate(principalCount=Count('principals', distinct=True),
+                                                            policyCount=Count('policies', distinct=True))
 
 
 def get_role_queryset(request):
     """Obtain the queryset for roles."""
     if ENVIRONMENT.get_value('ALLOW_ANY', default=False, cast=bool):
-        return Role.objects.annotate(policyCount=Count('policies'))
+        return Role.objects.annotate(policyCount=Count('policies', distinct=True))
     if request.user.admin:
-        return Role.objects.annotate(policyCount=Count('policies'))
+        return Role.objects.annotate(policyCount=Count('policies', distinct=True))
     access = request.user.access
     access_op = 'read'
     if request.method in ('POST', 'PUT'):
@@ -68,8 +68,8 @@ def get_role_queryset(request):
     if not res_list:
         return Role.objects.none()
     if '*' in res_list:
-        return Role.objects.annotate(policyCount=Count('policies'))
-    return Role.objects.filter(uuid__in=res_list).annotate(policyCount=Count('policies'))
+        return Role.objects.annotate(policyCount=Count('policies', distinct=True))
+    return Role.objects.filter(uuid__in=res_list).annotate(policyCount=Count('policies', distinct=True))
 
 
 def get_policy_queryset(request):
