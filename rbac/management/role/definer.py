@@ -38,7 +38,7 @@ def _make_role(tenant, data, update=False):
         if update:
             role, created = Role.objects.filter(name=name).get_or_create(name=name)
             version_diff = version != role.version
-            if not created and version_diff:
+            if created or (not created and version_diff):
                 logger.info('Updating role %s for tenant %s.', name, tenant.schema_name)
                 role.description = description
                 role.system = True
