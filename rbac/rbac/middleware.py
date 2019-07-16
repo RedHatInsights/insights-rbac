@@ -284,7 +284,7 @@ class IdentityHeaderMiddleware(MiddlewareMixin):  # pylint: disable=R0903
         if request.META.get('QUERY_STRING'):
             query_string = '?{}'.format(request.META['QUERY_STRING'])
 
-        if hasattr(request,'user') and request.user:
+        if hasattr(request, 'user') and request.user:
             is_admin = request.user.admin
             account = request.user.account
             username = request.user.username
