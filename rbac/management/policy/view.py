@@ -30,10 +30,12 @@ class PolicyFilter(filters.FilterSet):
     """Filter for policy."""
 
     name = filters.CharFilter(field_name='name', lookup_expr='icontains')
+    group_name = filters.CharFilter(field_name='group', lookup_expr='name__icontains')
+    group_uuid = filters.UUIDFilter(field_name='group', lookup_expr='uuid__exact')
 
     class Meta:
         model = Policy
-        fields = ['name']
+        fields = ['name', 'group_name', 'group_uuid']
 
 
 class PolicyViewSet(mixins.CreateModelMixin,

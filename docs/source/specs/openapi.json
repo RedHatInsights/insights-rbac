@@ -823,6 +823,12 @@
             "$ref": "#/components/parameters/NameFilter"
           },
           {
+            "$ref": "#/components/parameters/GroupNameFilter"
+          },
+          {
+            "$ref": "#/components/parameters/GroupUUIDFilter"
+          },
+          {
             "$ref": "#/components/parameters/OrderByFilter"
           }
         ],
@@ -1120,6 +1126,25 @@
         "description": "Parameter for filtering resource by name using string contains search.",
         "schema": {
           "type": "string"
+        }
+      },
+      "GroupNameFilter": {
+        "in": "query",
+        "name": "group_name",
+        "required": false,
+        "description": "Parameter for filtering resource by group name using string contains search.",
+        "schema": {
+          "type": "string"
+        }
+      },
+      "GroupUUIDFilter": {
+        "in": "query",
+        "name": "group_uuid",
+        "required": false,
+        "description": "Parameter for filtering resource by group uuid using UUID exact match.",
+        "schema": {
+          "type": "string",
+          "format": "uuid"
         }
       },
       "OrderByFilter": {
