@@ -1047,6 +1047,9 @@
             }
           },
           {
+            "$ref": "#/components/parameters/TypeFilter"
+          },
+          {
             "$ref": "#/components/parameters/QueryLimit"
           },
           {
@@ -1154,6 +1157,20 @@
         "description": "Parameter for ordering resource by value.",
         "schema": {
           "type": "string"
+        }
+      },
+      "TypeFilter": {
+        "in": "query",
+        "name": "type",
+        "required": false,
+        "description": "Parameter for obtaining access by type.",
+        "schema": {
+          "type": "string",
+          "enum": [
+            "permission",
+            "role"
+          ],
+          "default": "permission"
         }
       }
     },
@@ -1699,7 +1716,13 @@
               "data": {
                 "type": "array",
                 "items": {
-                  "$ref": "#/components/schemas/Access"
+                  "oneOf": [{
+                      "$ref": "#/components/schemas/Access"
+                    },
+                    {
+                      "$ref": "#/components/schemas/RoleOut"
+                    }
+                  ]
                 }
               }
             }

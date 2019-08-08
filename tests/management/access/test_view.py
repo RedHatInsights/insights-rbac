@@ -15,6 +15,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Test the access view."""
+import json
 
 import random
 from decimal import Decimal
@@ -135,6 +136,38 @@ class AccessViewTests(IdentityRequest):
         url = '{}?application={}&username={}'.format(reverse('access'),
                                                      'app',
                                                      uuid4())
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_get_access_by_type_success(self):
+        """Test that we can obtain the expected access."""
+        role_name = 'roleA'
+        response = self.create_role(role_name)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        role_uuid = response.data.get('uuid')
+        policy_name = 'policyA'
+        response = self.create_policy(policy_name, self.group.uuid, [role_uuid])
+
+        # test that we can retrieve the principal access
+        url = '{}?application={}&username={}&type={}'.format(reverse('access'),
+                                                             'app',
+                                                             self.principal.username,
+                                                             'role')
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIsNotNone(response.data.get('data'))
+        self.assertIsInstance(response.data.get('data'), list)
+        self.assertEqual(len(response.data.get('data')), 1)
+        out_role = response.data.get('data')[0]
+        self.assertEqual(role_name, out_role.get('name'))
+
+    def test_get_access_by_type_fail(self):
+        url = '{}?application={}&username={}&type={}'.format(reverse('access'),
+                                                             'app',
+                                                             self.principal.username,
+                                                             'bad')
         client = APIClient()
         response = client.get(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)

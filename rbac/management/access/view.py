@@ -19,17 +19,19 @@
 from django.core.exceptions import PermissionDenied
 from django.utils.translation import gettext as _
 from management.models import Principal
-from management.role.serializer import AccessSerializer
+from management.role.serializer import AccessSerializer, RoleSerializer
 from rest_framework import serializers, status
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.settings import api_settings
 from rest_framework.views import APIView
 
-from management.access.utils import access_for_principal  # noqa: I100, I202
+from management.access.utils import PERMISSION_TYPE, ROLE_TYPE, access_for_principal  # noqa: I100, I202
 
 APPLICATION_KEY = 'application'
 USERNAME_KEY = 'username'
+TYPE_KEY = 'type'
+VALID_TYPES = [ROLE_TYPE, PERMISSION_TYPE]
 
 
 class AccessView(APIView):
@@ -79,20 +81,33 @@ class AccessView(APIView):
         }
     """
 
-    serializer_class = AccessSerializer
     pagination_class = api_settings.DEFAULT_PAGINATION_CLASS
     permission_classes = (AllowAny,)
+
+    def get_serializer_class(self):
+        """Define the serializer to use based on type query."""
+        object_type = self.request.query_params.get(TYPE_KEY, PERMISSION_TYPE)
+        if object_type.lower() == ROLE_TYPE:
+            return RoleSerializer
+        return AccessSerializer
 
     def get_queryset(self):
         """Define the query set."""
         principal = None
-        required_parameters = [APPLICATION_KEY]
-        have_parameters = all(param in self.request.query_params for param in required_parameters)
-
-        if not have_parameters:
+        object_type = self.request.query_params.get(TYPE_KEY, PERMISSION_TYPE)
+        if object_type not in VALID_TYPES:
             key = 'detail'
-            message = 'Query parameters [{}] are required.'.format(', '.join(required_parameters))
+            message = 'Invalid value for {} parameter. Valid values are [{}].'.format(TYPE_KEY,
+                                                                                      ','.join(VALID_TYPES))
             raise serializers.ValidationError({key: _(message)})
+
+        if object_type == PERMISSION_TYPE:
+            required_parameters = [APPLICATION_KEY]
+            have_parameters = all(param in self.request.query_params for param in required_parameters)
+            if not have_parameters:
+                key = 'detail'
+                message = 'Query parameters [{}] are required.'.format(', '.join(required_parameters))
+                raise serializers.ValidationError({key: _(message)})
 
         current_user = self.request.user.username
         username = self.request.query_params.get(USERNAME_KEY)
@@ -110,13 +125,13 @@ class AccessView(APIView):
             message = 'No access found for principal with username {}.'.format(username)
             raise serializers.ValidationError({key: _(message)})
 
-        return access_for_principal(principal, app)
+        return access_for_principal(principal, app, object_type)
 
     def get(self, request):
         """Provide access data for prinicpal."""
         page = self.paginate_queryset(self.get_queryset())
         if page is not None:
-            serializer = self.serializer_class(page, many=True)
+            serializer = self.get_serializer_class()(page, many=True)
             return self.get_paginated_response(serializer.data)
         return Response(status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 

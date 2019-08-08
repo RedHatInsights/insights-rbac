@@ -16,7 +16,11 @@
 #
 
 """Utilities for principal access."""
-from management.models import Access
+from management.models import Access, Role
+
+
+ROLE_TYPE = 'role'
+PERMISSION_TYPE = 'permission'
 
 
 def policies_for_groups(groups):
@@ -48,11 +52,14 @@ def access_for_roles(roles, application):
     return access
 
 
-def access_for_principal(principal, application):
+def access_for_principal(principal, application, object_type=PERMISSION_TYPE):
     """Gathers all access for a principal for an application."""
     groups = set(principal.group.all())
     policies = policies_for_groups(groups)
     roles = roles_for_policies(policies)
+    if object_type == ROLE_TYPE:
+        wanted_ids = [obj.id for obj in roles]
+        return Role.objects.filter(id__in=wanted_ids).order_by('id')
     access = access_for_roles(roles, application)
     wanted_ids = [obj.id for obj in access]
     return Access.objects.filter(id__in=wanted_ids).order_by('id')
