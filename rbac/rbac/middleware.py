@@ -30,7 +30,7 @@ from tenant_schemas.utils import tenant_context
 from api.common import RH_IDENTITY_HEADER, RH_INSIGHTS_REQUEST_ID
 from api.models import Tenant, User
 from api.serializers import UserSerializer, create_schema_name, extract_header
-from management.access.utils import access_for_principal  # noqa: I100, I201
+from management.utils import APPLICATION_KEY, access_for_principal  # noqa: I100, I201
 from management.models import Principal  # noqa: I100, I201
 from management.role.definer import seed_roles
 
@@ -170,7 +170,8 @@ class IdentityHeaderMiddleware(MiddlewareMixin):  # pylint: disable=R0903
         with tenant_context(tenant):
             try:  # pylint: disable=R1702
                 principal = Principal.objects.get(username__iexact=username)
-                access_list = access_for_principal(principal, 'rbac')
+                kwargs = {APPLICATION_KEY: 'rbac'}
+                access_list = access_for_principal(principal, **kwargs)
                 for access_item in access_list:  # pylint: disable=too-many-nested-blocks
                     perm_list = access_item.permission.split(':')
                     perm_len = len(perm_list)
