@@ -16,20 +16,13 @@
 #
 
 """View for principal access."""
-from django.core.exceptions import PermissionDenied
-from django.utils.translation import gettext as _
-from management.models import Principal
+from management.querysets import get_access_queryset
 from management.role.serializer import AccessSerializer
-from rest_framework import serializers, status
+from rest_framework import status
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.settings import api_settings
 from rest_framework.views import APIView
-
-from management.access.utils import access_for_principal  # noqa: I100, I202
-
-APPLICATION_KEY = 'application'
-USERNAME_KEY = 'username'
 
 
 class AccessView(APIView):
@@ -85,32 +78,7 @@ class AccessView(APIView):
 
     def get_queryset(self):
         """Define the query set."""
-        principal = None
-        required_parameters = [APPLICATION_KEY]
-        have_parameters = all(param in self.request.query_params for param in required_parameters)
-
-        if not have_parameters:
-            key = 'detail'
-            message = 'Query parameters [{}] are required.'.format(', '.join(required_parameters))
-            raise serializers.ValidationError({key: _(message)})
-
-        current_user = self.request.user.username
-        username = self.request.query_params.get(USERNAME_KEY)
-        app = self.request.query_params.get(APPLICATION_KEY)
-
-        if username and not self.request.user.admin:
-            raise PermissionDenied()
-        if not username:
-            username = current_user
-
-        try:
-            principal = Principal.objects.get(username__iexact=username)
-        except Principal.DoesNotExist:
-            key = 'detail'
-            message = 'No access found for principal with username {}.'.format(username)
-            raise serializers.ValidationError({key: _(message)})
-
-        return access_for_principal(principal, app)
+        return get_access_queryset(self.request)
 
     def get(self, request):
         """Provide access data for prinicpal."""

@@ -179,6 +179,9 @@
             "$ref": "#/components/parameters/NameFilter"
           },
           {
+            "$ref": "#/components/parameters/ScopeFilter"
+          },
+          {
             "name": "username",
             "in": "query",
             "description": "A username for a principal to filter for groups",
@@ -578,6 +581,9 @@
             "$ref": "#/components/parameters/NameFilter"
           },
           {
+            "$ref": "#/components/parameters/ScopeFilter"
+          },
+          {
             "$ref": "#/components/parameters/OrderByFilter"
           }
         ],
@@ -821,6 +827,9 @@
           },
           {
             "$ref": "#/components/parameters/NameFilter"
+          },
+          {
+            "$ref": "#/components/parameters/ScopeFilter"
           },
           {
             "$ref": "#/components/parameters/GroupNameFilter"
@@ -1154,6 +1163,20 @@
         "description": "Parameter for ordering resource by value.",
         "schema": {
           "type": "string"
+        }
+      },
+      "ScopeFilter": {
+        "in": "query",
+        "name": "scope",
+        "required": false,
+        "description": "Parameter for filtering resource by scope.",
+        "schema": {
+          "type": "string",
+          "enum": [
+            "account",
+            "principal"
+          ],
+          "default": "account"
         }
       }
     },
