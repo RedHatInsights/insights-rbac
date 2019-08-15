@@ -15,6 +15,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Defines the Group Access Permissions class."""
+from management.permissions.utils import is_scope_principal
 from rest_framework import permissions
 
 from rbac.env import ENVIRONMENT
@@ -30,6 +31,8 @@ class GroupAccessPermission(permissions.BasePermission):
         if request.user.admin:
             return True
         if request.method in permissions.SAFE_METHODS:
+            if is_scope_principal(request):
+                return True
             username = request.query_params.get('username')
             if username:
                 decoded = request.user.identity_header.get('decoded', {})
