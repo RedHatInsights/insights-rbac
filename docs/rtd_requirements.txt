@@ -1,5 +1,5 @@
 -i https://pypi.python.org/simple
-amqp==2.5.0
+amqp==2.5.1
 billiard==3.6.0.0
 boto3==1.9.206
 botocore==1.12.206
