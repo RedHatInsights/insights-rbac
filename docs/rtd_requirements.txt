@@ -19,7 +19,7 @@ gunicorn==19.9.0
 idna==2.8
 jinja2==2.10.1
 jmespath==0.9.4
-kombu==4.6.3
+kombu==4.6.4
 markupsafe==1.1.1
 prometheus-client==0.7.1
 psycopg2-binary==2.8.3
