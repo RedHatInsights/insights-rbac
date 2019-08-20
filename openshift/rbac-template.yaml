@@ -456,6 +456,11 @@ objects:
                   name: rbac-env
                   key: django-logging-file
                   optional: true
+            - name: POD_CPU_LIMIT
+              valueFrom:
+                resourceFieldRef:
+                  containerName: ${NAME}
+                  resource: limits.cpu
           livenessProbe:
             failureThreshold: 3
             httpGet:
