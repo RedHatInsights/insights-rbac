@@ -10,6 +10,6 @@ if (env.CHANGE_ID) {
         ocDeployerComponentPath: "rbac/rbac",
         ocDeployerServiceSets: "rbac",
         iqePlugins: ["iqe-rbac-plugin"],
-        pytestMarker: "smoke",
+        pytestMarker: "rbac_smoke",
     )
 }
