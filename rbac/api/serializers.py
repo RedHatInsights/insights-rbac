@@ -15,7 +15,9 @@
 #    along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """API models for import organization."""
-from base64 import b64decode
+import binascii
+import logging
+from base64 import b64decode, urlsafe_b64decode
 from json import loads as json_loads
 
 from django.db import transaction
@@ -25,6 +27,8 @@ from rest_framework import serializers
 from api.common import RH_IDENTITY_HEADER
 from api.models import Tenant, User
 from api.status.serializer import StatusSerializer  # noqa: F401
+
+logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 
 def error_obj(key, message):
@@ -46,7 +50,14 @@ def extract_header(request, header):
         Decoded(dict): Identity dictionary
     """
     rh_auth_header = request.META[header]
-    decoded_rh_auth = b64decode(rh_auth_header)
+    decoded_rh_auth = None
+    try:
+        decoded_rh_auth = b64decode(rh_auth_header)
+    except binascii.Error as err:
+        logger.warning('Could not decode header: %s.', err)
+        logger.warning(rh_auth_header)
+        logger.warning('Trying urlsafe_b64decode next ...')
+        decoded_rh_auth = urlsafe_b64decode(rh_auth_header)
     json_rh_auth = json_loads(decoded_rh_auth)
     return (rh_auth_header, json_rh_auth)
 
