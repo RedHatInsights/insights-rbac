@@ -16,6 +16,7 @@
 #
 
 """Custom RBAC Middleware."""
+import binascii
 import logging
 from json.decoder import JSONDecodeError
 
@@ -231,9 +232,13 @@ class IdentityHeaderMiddleware(MiddlewareMixin):  # pylint: disable=R0903
             username = json_rh_auth.get('identity', {}).get('user', {}).get('username')
             account = json_rh_auth.get('identity', {}).get('account_number')
             is_admin = json_rh_auth.get('identity', {}).get('user', {}).get('is_org_admin')
-        except (KeyError, JSONDecodeError):
-            logger.warning('Could not obtain identity on request.')
-            return
+        except (KeyError, JSONDecodeError) as decode_err:
+            logger.error('Could not obtain identity on request.')
+            raise decode_err
+        except binascii.Error as error:
+            logger.error('Could not decode header: %s.', error)
+            logger.error(rh_auth_header)
+            raise error
         if (username and account):
             # Get request ID
             req_id = request.META.get(RH_INSIGHTS_REQUEST_ID)
