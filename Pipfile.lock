@@ -1,7 +1,7 @@
 {
     "_meta": {
         "hash": {
-            "sha256": "3143abea34ae1bcd95d7e8936f10053885b15d50385277b340d5e75277b487c0"
+            "sha256": "1f5a028ce41052e7c5be91e809269b8052164cb288218be354afa6f3a92ce5ad"
         },
         "pipfile-spec": 6,
         "requires": {
@@ -35,6 +35,7 @@
                 "sha256:3701eb13dbee1de3ecc6ed3c725929993933aa2ffdbb6fe8a4985d5c94d6a67a",
                 "sha256:d32a19f1e373cfe7f1fbd22137489f69e08e61a904a09bd7235fbadcfc647789"
             ],
+            "index": "pypi",
             "version": "==1.9.216"
         },
         "botocore": {
@@ -213,6 +214,13 @@
             ],
             "version": "==1.1.1"
         },
+        "more-itertools": {
+            "hashes": [
+                "sha256:409cd48d4db7052af495b09dec721011634af3753ae1ef92d2b32f73a745f832",
+                "sha256:92b8c4b06dac4f0611c0729b2f2ede52b2e1bac1ab48f089c7ddc12e26bb60c4"
+            ],
+            "version": "==7.2.0"
+        },
         "prometheus-client": {
             "hashes": [
                 "sha256:71cd24a2b3eb335cb800c7159f423df1bd4dcd5171b234be15e3f31ec9f622da"
@@ -291,6 +299,7 @@
                 "sha256:98a22fb750c9b9bb46e75e945dc3f61d0ab30d06117cbb21ff9cd1d315fedd3b",
                 "sha256:c504251769031b0dd7dd5cf786050a6050197c6de0d37778c80c08cb04ae8275"
             ],
+            "index": "pypi",
             "version": "==3.3.8"
         },
         "requests": {
@@ -346,10 +355,11 @@
         },
         "watchtower": {
             "hashes": [
-                "sha256:5e2aede24654d46fcbed46a44beb3b9c9acc34acd311fa6afc3f083f3212f34d",
-                "sha256:75d83cae5e98771f4c680f9f84ae4a10d67eaf76bf521e0ad672938b132e2c8a"
+                "sha256:71959c065026c5da93adb0a9043872165fa6be487a76fecbb67a3670a5c11aa5",
+                "sha256:e205f1752a925994c53895e06150c44235abab4a623412b5e5372b07a3d38b9a"
             ],
-            "version": "==0.7.2"
+            "index": "pypi",
+            "version": "==0.6.0"
         },
         "whitenoise": {
             "hashes": [
@@ -578,6 +588,13 @@
                 "sha256:dd8d182285a0fe56bace7f45b5e7d1a6ebcbf524e8f3bd87eb0f125271b8831f"
             ],
             "version": "==0.6.1"
+        },
+        "more-itertools": {
+            "hashes": [
+                "sha256:409cd48d4db7052af495b09dec721011634af3753ae1ef92d2b32f73a745f832",
+                "sha256:92b8c4b06dac4f0611c0729b2f2ede52b2e1bac1ab48f089c7ddc12e26bb60c4"
+            ],
+            "version": "==7.2.0"
         },
         "packaging": {
             "hashes": [
