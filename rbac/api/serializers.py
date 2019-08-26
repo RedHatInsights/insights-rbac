@@ -17,7 +17,7 @@
 """API models for import organization."""
 import binascii
 import logging
-from base64 import b64decode, urlsafe_b64decode
+from base64 import b64decode
 from json import loads as json_loads
 
 from django.db import transaction
@@ -39,6 +39,17 @@ def error_obj(key, message):
     return error
 
 
+def add_padding(encoded_header):
+    """Calculate and add padding to header.
+
+    Args:
+        header(str): The header to decode
+    Returns:
+        Encoded(str): Base64 header with padding
+    """
+    return encoded_header + '=' * (-len(encoded_header) % 4)
+
+
 def extract_header(request, header):
     """Extract and decode json header.
 
@@ -56,8 +67,9 @@ def extract_header(request, header):
     except binascii.Error as err:
         logger.warning('Could not decode header: %s.', err)
         logger.warning(rh_auth_header)
-        logger.warning('Trying urlsafe_b64decode next ...')
-        decoded_rh_auth = urlsafe_b64decode(rh_auth_header)
+        logger.warning('Trying adding padding to header for decode ...')
+        rh_auth_header = add_padding(rh_auth_header)
+        decoded_rh_auth = b64decode(rh_auth_header)
     json_rh_auth = json_loads(decoded_rh_auth)
     return (rh_auth_header, json_rh_auth)
 

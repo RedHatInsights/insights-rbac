@@ -237,7 +237,6 @@ class IdentityHeaderMiddleware(MiddlewareMixin):  # pylint: disable=R0903
             raise decode_err
         except binascii.Error as error:
             logger.error('Could not decode header: %s.', error)
-            logger.error(rh_auth_header)
             raise error
         if (username and account):
             # Get request ID
