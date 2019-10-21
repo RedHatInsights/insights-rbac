@@ -26,7 +26,7 @@ Jinja2 = "==2.10.3"
 watchtower = "==0.6.0"
 boto3 = "==1.9.253"
 celery = "==4.3.0"
-redis = "==3.3.8"
+redis = "==3.3.11"
 sqlparse = "==0.3.0"
 
 
