@@ -1,0 +1,18 @@
+{
+  "roles": [
+    {
+      "name": "Drift Access",
+      "description": "An all access role which grants read and write permissions.",
+      "system": true,
+      "version": 2,
+      "access": [
+        {
+          "permission": "drift:*:*"
+        },
+        {
+          "permission": "inventory:*:*"
+        }
+      ]
+    }
+  ]
+}

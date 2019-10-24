@@ -1,0 +1,18 @@
+{
+  "roles": [
+    {
+      "name": "Compliance Access",
+      "description": "An all access role which grants read and write permissions.",
+      "system": true,
+      "version": 2,
+      "access": [
+        {
+          "permission": "compliance:*:*"
+        },
+        {
+          "permission": "inventory:*:*"
+        }
+      ]
+    }
+  ]
+}
