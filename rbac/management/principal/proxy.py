@@ -69,17 +69,18 @@ class PrincipalProxy:  # pylint: disable=too-few-public-methods
         return params
 
     @staticmethod
-    def _process_data(data):
+    def _process_data(data, account):
         """Process data for uniform output."""
         processed_data = []
         for item in data:
-            processed_item = {
-                'username': item.get('username'),
-                'email': item.get('email'),
-                'first_name': item.get('first_name'),
-                'last_name': item.get('last_name')
-            }
-            processed_data.append(processed_item)
+            if account == item.get('account_number'):
+                processed_item = {
+                    'username': item.get('username'),
+                    'email': item.get('email'),
+                    'first_name': item.get('first_name'),
+                    'last_name': item.get('last_name')
+                }
+                processed_data.append(processed_item)
 
         return processed_data
 
@@ -99,7 +100,7 @@ class PrincipalProxy:  # pylint: disable=too-few-public-methods
         }
         return proxy_conn_info
 
-    def _request_principals(self, url, method=requests.get, params=None, data=None):
+    def _request_principals(self, url, account=None, method=requests.get, params=None, data=None):
         """Send request to proxy service."""
         headers = {
             USER_ENV_HEADER: self.user_env,
@@ -134,8 +135,9 @@ class PrincipalProxy:  # pylint: disable=too-few-public-methods
             'status_code': response.status_code
         }
         if response.status_code == status.HTTP_200_OK:
+            """ Testing if account numbers match """
             try:
-                resp['data'] = self._process_data(response.json())
+                resp['data'] = self._process_data(response.json(), account)
             except ValueError:
                 resp['status_code'] = status.HTTP_500_INTERNAL_SERVER_ERROR
                 error = unexpected_error
@@ -164,7 +166,7 @@ class PrincipalProxy:  # pylint: disable=too-few-public-methods
                                       account_principals_path)
         return self._request_principals(url, params=params)
 
-    def request_filtered_principals(self, principals, limit=None, offset=None):
+    def request_filtered_principals(self, principals, account=None, limit=None, offset=None):
         """Request specific principals for an account."""
         if not principals:
             return {'status_code': status.HTTP_200_OK, 'data': []}
@@ -179,4 +181,4 @@ class PrincipalProxy:  # pylint: disable=too-few-public-methods
                                       self.port,
                                       self.path,
                                       filtered_principals_path)
-        return self._request_principals(url, method=requests.post, params=params, data=payload)
+        return self._request_principals(url, account=account, method=requests.post, params=params, data=payload)
