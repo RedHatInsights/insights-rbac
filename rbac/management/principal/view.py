@@ -103,6 +103,7 @@ class PrincipalView(APIView):
         if usernames:
             principals = usernames.split(',')
             resp = proxy.request_filtered_principals(principals,
+                                                     user.account,
                                                      limit=limit,
                                                      offset=offset)
             usernames_filter = f'&usernames={usernames}'
