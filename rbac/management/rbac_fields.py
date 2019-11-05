@@ -15,6 +15,7 @@
 #    along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 
+"""Module for specialized fields used by RBAC."""
 from django.db import models
 from django.utils import timezone
 

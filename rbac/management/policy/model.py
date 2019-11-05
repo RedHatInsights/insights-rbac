@@ -21,8 +21,8 @@ from uuid import uuid4
 from django.db import models
 from django.utils import timezone
 from management.group.model import Group
-from management.role.model import Role
 from management.rbac_fields import AutoDateTimeField
+from management.role.model import Role
 
 
 class Policy(models.Model):

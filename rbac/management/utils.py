@@ -16,8 +16,6 @@
 #
 """Helper utilities for management module."""
 from django.core.exceptions import PermissionDenied
-from django.db import models
-from django.utils import timezone
 from django.utils.translation import gettext as _
 from management.models import Principal
 from rest_framework import serializers
