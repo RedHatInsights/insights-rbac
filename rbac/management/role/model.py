@@ -21,7 +21,7 @@ from uuid import uuid4
 from django.contrib.postgres.fields import JSONField
 from django.db import models
 from django.utils import timezone
-from management.utils import AutoDateTimeField
+from management.rbac_fields import AutoDateTimeField
 
 
 class Role(models.Model):
