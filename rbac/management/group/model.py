@@ -22,7 +22,7 @@ from django.db import models
 from django.utils import timezone
 from management.principal.model import Principal
 from management.role.model import Role
-from management.utils import AutoDateTimeField
+from management.rbac_fields import AutoDateTimeField
 
 
 class Group(models.Model):

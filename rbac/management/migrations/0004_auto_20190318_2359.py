@@ -32,7 +32,7 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name='group',
             name='modified',
-            field=management.utils.AutoDateTimeField(default=django.utils.timezone.now),
+            field=management.rbac_fields.AutoDateTimeField(default=django.utils.timezone.now),
         ),
         migrations.AddField(
             model_name='policy',
@@ -42,7 +42,7 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name='policy',
             name='modified',
-            field=management.utils.AutoDateTimeField(default=django.utils.timezone.now),
+            field=management.rbac_fields.AutoDateTimeField(default=django.utils.timezone.now),
         ),
         migrations.AddField(
             model_name='role',
@@ -52,6 +52,6 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name='role',
             name='modified',
-            field=management.utils.AutoDateTimeField(default=django.utils.timezone.now),
+            field=management.rbac_fields.AutoDateTimeField(default=django.utils.timezone.now),
         ),
     ]
