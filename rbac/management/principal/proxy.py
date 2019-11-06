@@ -68,21 +68,27 @@ class PrincipalProxy:  # pylint: disable=too-few-public-methods
             params['offset'] = offset
         return params
 
-    @staticmethod
-    def _process_data(data, account):
+    def _process_data(self, data, account, account_filter):
         """Process data for uniform output."""
         processed_data = []
         for item in data:
-            if account == item.get('account_number'):
-                processed_item = {
-                    'username': item.get('username'),
-                    'email': item.get('email'),
-                    'first_name': item.get('first_name'),
-                    'last_name': item.get('last_name')
-                }
-                processed_data.append(processed_item)
+            if account_filter:
+                if account == item.get('account_number'):
+                    processed_data.append(self._call_item(item))
+            else:
+                processed_data.append(self._call_item(item))
 
         return processed_data
+
+    @staticmethod
+    def _call_item(item):
+        processed_item = {
+            'username': item.get('username'),
+            'email': item.get('email'),
+            'first_name': item.get('first_name'),
+            'last_name': item.get('last_name')
+        }
+        return processed_item
 
     def _get_proxy_service(self):  # pylint: disable=no-self-use
         """Get proxy service host and port info from environment."""
@@ -100,7 +106,7 @@ class PrincipalProxy:  # pylint: disable=too-few-public-methods
         }
         return proxy_conn_info
 
-    def _request_principals(self, url, account=None, method=requests.get, params=None, data=None):
+    def _request_principals(self, url, account=None, account_filter=False, method=requests.get, params=None, data=None):
         """Send request to proxy service."""
         headers = {
             USER_ENV_HEADER: self.user_env,
@@ -137,7 +143,7 @@ class PrincipalProxy:  # pylint: disable=too-few-public-methods
         if response.status_code == status.HTTP_200_OK:
             """ Testing if account numbers match """
             try:
-                resp['data'] = self._process_data(response.json(), account)
+                resp['data'] = self._process_data(response.json(), account, account_filter)
             except ValueError:
                 resp['status_code'] = status.HTTP_500_INTERNAL_SERVER_ERROR
                 error = unexpected_error
@@ -164,10 +170,16 @@ class PrincipalProxy:  # pylint: disable=too-few-public-methods
                                       self.port,
                                       self.path,
                                       account_principals_path)
-        return self._request_principals(url, params=params)
+
+        # For v1 account users endpoints are already filtered by account
+        return self._request_principals(url, params=params, account_filter=False)
 
     def request_filtered_principals(self, principals, account=None, limit=None, offset=None):
         """Request specific principals for an account."""
+        if account is None:
+            account_filter = False
+        else:
+            account_filter = True
         if not principals:
             return {'status_code': status.HTTP_200_OK, 'data': []}
         filtered_principals_path = '/v1/users'
@@ -181,4 +193,9 @@ class PrincipalProxy:  # pylint: disable=too-few-public-methods
                                       self.port,
                                       self.path,
                                       filtered_principals_path)
-        return self._request_principals(url, account=account, method=requests.post, params=params, data=payload)
+        return self._request_principals(url,
+                                        account=account,
+                                        account_filter=account_filter,
+                                        method=requests.post,
+                                        params=params,
+                                        data=payload)
