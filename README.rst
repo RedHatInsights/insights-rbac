@@ -128,7 +128,21 @@ To lint the code base ::
 Contributing
 =============
 
-Please refer to Contributing_.
+This repository uses [pre-commit](https://pre-commit.com) to check and enforce code style. It uses
+[Black](https://github.com/psf/black) to reformat the Python code and [Flake8](http://flake8.pycqa.org) to check it
+afterwards. Other formats and text files are linted as well.
+
+Install pre-commit hooks to your local repository by running:
+
+```bash
+$ pre-commit install
+```
+
+After that, all your commited files will be linted. If the checks don’t succeed, the commit will be rejected. Please
+make sure all checks pass before submitting a pull request. Thanks!
+
+
+For additional information please refer to Contributing_.
 
 .. _readthedocs: http://insights-rbac.readthedocs.io/en/latest/
 .. _tutorial: https://www.postgresql.org/docs/10/static/tutorial-start.html
