@@ -14,7 +14,6 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
-
 """View for group management."""
 import logging
 
@@ -22,40 +21,45 @@ from django.db.models.aggregates import Count
 from django.utils.translation import gettext as _
 from django_filters import rest_framework as filters
 from management.group.model import Group
-from management.group.serializer import (GroupInputSerializer,
-                                         GroupPrincipalInputSerializer,
-                                         GroupSerializer)
+from management.group.serializer import GroupInputSerializer
+from management.group.serializer import GroupPrincipalInputSerializer
+from management.group.serializer import GroupSerializer
 from management.permissions import GroupAccessPermission
 from management.principal.model import Principal
 from management.principal.proxy import PrincipalProxy
 from management.querysets import get_group_queryset
-from rest_framework import mixins, serializers, status, viewsets
+from rest_framework import mixins
+from rest_framework import serializers
+from rest_framework import status
+from rest_framework import viewsets
 from rest_framework.decorators import action
 from rest_framework.filters import OrderingFilter
 from rest_framework.response import Response
 
 
-USERNAMES_KEY = 'usernames'
+USERNAMES_KEY = "usernames"
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 
 class GroupFilter(filters.FilterSet):
     """Filter for group."""
 
-    name = filters.CharFilter(field_name='name', lookup_expr='icontains')
-    username = filters.CharFilter(field_name='principals', lookup_expr='username__icontains')
+    name = filters.CharFilter(field_name="name", lookup_expr="icontains")
+    username = filters.CharFilter(field_name="principals", lookup_expr="username__icontains")
 
     class Meta:
         model = Group
-        fields = ['name', 'principals']
+        fields = ["name", "principals"]
 
 
-class GroupViewSet(mixins.CreateModelMixin,
-                   mixins.DestroyModelMixin,
-                   mixins.ListModelMixin,
-                   mixins.RetrieveModelMixin,
-                   mixins.UpdateModelMixin,
-                   viewsets.GenericViewSet):
+class GroupViewSet(
+    mixins.CreateModelMixin,
+    mixins.DestroyModelMixin,
+    mixins.ListModelMixin,
+    mixins.RetrieveModelMixin,
+    mixins.UpdateModelMixin,
+    viewsets.GenericViewSet,
+):
     """Group View.
 
     A viewset that provides default `create()`, `destroy`, `retrieve()`,
@@ -63,14 +67,15 @@ class GroupViewSet(mixins.CreateModelMixin,
 
     """
 
-    queryset = Group.objects.annotate(principalCount=Count('principals', distinct=True),
-                                      policyCount=Count('policies', distinct=True))
+    queryset = Group.objects.annotate(
+        principalCount=Count("principals", distinct=True), policyCount=Count("policies", distinct=True)
+    )
     permission_classes = (GroupAccessPermission,)
-    lookup_field = 'uuid'
+    lookup_field = "uuid"
     filter_backends = (filters.DjangoFilterBackend, OrderingFilter)
     filterset_class = GroupFilter
-    ordering_fields = ('name', 'modified', 'principalCount', 'policyCount')
-    ordering = ('name',)
+    ordering_fields = ("name", "modified", "principalCount", "policyCount")
+    ordering = ("name",)
     proxy = PrincipalProxy()
 
     def get_queryset(self):
@@ -79,11 +84,11 @@ class GroupViewSet(mixins.CreateModelMixin,
 
     def get_serializer_class(self):
         """Get serializer based on route."""
-        if 'principals' in self.request.path:
+        if "principals" in self.request.path:
             return GroupPrincipalInputSerializer
-        if self.request.method in ('POST', 'PUT'):
+        if self.request.method in ("POST", "PUT"):
             return GroupInputSerializer
-        if self.request.path.endswith('groups/') and self.request.method == 'GET':
+        if self.request.path.endswith("groups/") and self.request.method == "GET":
             return GroupInputSerializer
         return GroupSerializer
 
@@ -234,15 +239,15 @@ class GroupViewSet(mixins.CreateModelMixin,
 
     def add_principals(self, group, principals, account):
         """Process list of principals and add them to the group."""
-        users = [principal.get('username') for principal in principals]
-        resp = self.proxy.request_filtered_principals(users, limit=len(users))
-        for item in resp.get('data', []):
-            username = item['username']
+        users = [principal.get("username") for principal in principals]
+        resp = self.proxy.request_filtered_principals(users, account, limit=len(users))
+        for item in resp.get("data", []):
+            username = item["username"]
             try:
                 principal = Principal.objects.get(username__iexact=username)
             except Principal.DoesNotExist:
                 principal = Principal.objects.create(username=username)
-                logger.info('Created new principal %s for account_id %s.', username, account)
+                logger.info("Created new principal %s for account_id %s.", username, account)
             group.principals.add(principal)
         group.save()
         return group
@@ -253,13 +258,13 @@ class GroupViewSet(mixins.CreateModelMixin,
             try:
                 principal = Principal.objects.get(username__iexact=username)
             except Principal.DoesNotExist:
-                logger.info('No principal %s found for account %s.', username, account)
+                logger.info("No principal %s found for account %s.", username, account)
             if principal:
                 group.principals.remove(principal)
         group.save()
         return group
 
-    @action(detail=True, methods=['post', 'delete'])
+    @action(detail=True, methods=["post", "delete"])
     def principals(self, request, uuid=None):
         """Add or remove principals from a group.
 
@@ -318,19 +323,19 @@ class GroupViewSet(mixins.CreateModelMixin,
         principals = []
         group = self.get_object()
         account = self.request.user.account
-        if request.method == 'POST':
+        if request.method == "POST":
             serializer = GroupPrincipalInputSerializer(data=request.data)
             if serializer.is_valid(raise_exception=True):
-                principals = serializer.data.pop('principals')
+                principals = serializer.data.pop("principals")
             group = self.add_principals(group, principals, account)
             output = GroupSerializer(group)
             return Response(status=status.HTTP_200_OK, data=output.data)
         else:
             if USERNAMES_KEY not in request.query_params:
-                key = 'detail'
-                message = 'Query parameter {} is required.'.format(USERNAMES_KEY)
+                key = "detail"
+                message = f"Query parameter {USERNAMES_KEY} is required."
                 raise serializers.ValidationError({key: _(message)})
-            username = request.query_params.get(USERNAMES_KEY, '')
-            principals = [name.strip() for name in username.split(',')]
+            username = request.query_params.get(USERNAMES_KEY, "")
+            principals = [name.strip() for name in username.split(",")]
             self.remove_principals(group, principals, account)
             return Response(status=status.HTTP_204_NO_CONTENT)
