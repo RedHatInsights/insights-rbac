@@ -119,3 +119,6 @@ scripts/aws_cost_usage/
 scripts/aws_pricing/
 
 .vscode/
+
+# config files
+rbac/managememt/role/definitions/
