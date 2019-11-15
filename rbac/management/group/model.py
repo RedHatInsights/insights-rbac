@@ -34,7 +34,6 @@ class Group(models.Model):
     principals = models.ManyToManyField(Principal, related_name='group')
     created = models.DateTimeField(default=timezone.now)
     modified = AutoDateTimeField(default=timezone.now)
-    system = models.BooleanField(default=False)
     platform_default = models.BooleanField(default=False)
 
     class Meta:
