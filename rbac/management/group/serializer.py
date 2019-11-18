@@ -100,3 +100,14 @@ class GroupPrincipalInputSerializer(serializers.Serializer):
         """Metadata for the serializer."""
 
         fields = ('principals',)
+
+
+class GroupRoleSerializer(serializers.Serializer):
+    """Serializer for managing roles for a group."""
+
+    roles = serializers.ListField(child=serializers.UUIDField())
+
+    def to_representation(self, obj):
+        """Convert representation to dictionary object."""
+        serialized_roles = [RoleMinimumSerializer(role).data for role in obj.roles()]
+        return {'roles': serialized_roles}
