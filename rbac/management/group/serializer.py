@@ -19,6 +19,7 @@
 from management.group.model import Group
 from management.principal.proxy import PrincipalProxy
 from management.principal.serializer import PrincpalInputSerializer, PrincpalSerializer
+from management.role.serializer import RoleMinimumSerializer
 from rest_framework import serializers, status
 from rest_framework.validators import UniqueValidator
 
@@ -32,16 +33,20 @@ class GroupInputSerializer(serializers.ModelSerializer):
                                  validators=[UniqueValidator(queryset=Group.objects.all())])
     description = serializers.CharField(allow_null=True, required=False)
     principalCount = serializers.IntegerField(read_only=True)
-    policyCount = serializers.IntegerField(read_only=True)
+    roleCount = serializers.SerializerMethodField()
     created = serializers.DateTimeField(read_only=True)
     modified = serializers.DateTimeField(read_only=True)
+
+    def get_roleCount(self, obj):
+        """Role count for the serializer."""
+        return obj.role_count()
 
     class Meta:
         """Metadata for the serializer."""
 
         model = Group
         fields = ('uuid', 'name', 'description',
-                  'principalCount', 'policyCount',
+                  'principalCount', 'roleCount',
                   'created', 'modified')
 
 
@@ -52,6 +57,8 @@ class GroupSerializer(serializers.ModelSerializer):
     name = serializers.CharField(required=True, max_length=150)
     description = serializers.CharField(allow_null=True, required=False)
     principals = PrincpalSerializer(read_only=True, many=True)
+    roles = serializers.SerializerMethodField()
+    roleCount = serializers.SerializerMethodField()
     created = serializers.DateTimeField(read_only=True)
     modified = serializers.DateTimeField(read_only=True)
 
@@ -59,7 +66,8 @@ class GroupSerializer(serializers.ModelSerializer):
         """Metadata for the serializer."""
 
         model = Group
-        fields = ('uuid', 'name', 'description', 'principals', 'created', 'modified')
+        fields = ('uuid', 'name', 'description', 'principals', 'created',
+                  'modified', 'roles', 'roleCount')
 
     def to_representation(self, obj):
         """Convert representation to dictionary object."""
@@ -72,6 +80,15 @@ class GroupSerializer(serializers.ModelSerializer):
             principals = resp.get('data')
         formatted['principals'] = principals
         return formatted
+
+    def get_roleCount(self, obj):
+        """Role count for the serializer."""
+        return obj.role_count()
+
+    def get_roles(self, obj):
+        """Role constructor for the serializer."""
+        serialized_roles = [RoleMinimumSerializer(role).data for role in obj.roles()]
+        return serialized_roles
 
 
 class GroupPrincipalInputSerializer(serializers.Serializer):
