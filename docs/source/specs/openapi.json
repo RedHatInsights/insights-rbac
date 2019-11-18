@@ -244,7 +244,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/GroupWithPrincipals"
+                  "$ref": "#/components/schemas/GroupWithPrincipalsAndRoles"
                 }
               }
             }
@@ -1389,7 +1389,7 @@
             "type": "integer",
             "minimum": 0
           },
-          "policyCount": {
+          "roleCount": {
             "type": "integer",
             "minimum": 0
           }
@@ -1428,6 +1428,46 @@
                 "type": "array",
                 "items": {
                   "$ref": "#/components/schemas/Principal"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "GroupWithPrincipalsAndRoles": {
+        "allOf": [{
+            "$ref": "#/components/schemas/Group"
+          },
+          {
+            "$ref": "#/components/schemas/UUID"
+          },
+          {
+            "$ref": "#/components/schemas/Timestamped"
+          },
+          {
+            "type": "object",
+            "required": [
+              "principals"
+            ],
+            "properties": {
+              "principals": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Principal"
+                }
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "roles"
+            ],
+            "properties": {
+              "roles": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Role"
                 }
               }
             }
