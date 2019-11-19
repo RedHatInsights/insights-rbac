@@ -1447,7 +1447,8 @@
           {
             "type": "object",
             "required": [
-              "principals"
+              "principals",
+              "roles"
             ],
             "properties": {
               "principals": {
@@ -1455,15 +1456,7 @@
                 "items": {
                   "$ref": "#/components/schemas/Principal"
                 }
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": [
-              "roles"
-            ],
-            "properties": {
+              },
               "roles": {
                 "type": "array",
                 "items": {
