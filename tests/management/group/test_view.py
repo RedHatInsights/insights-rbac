@@ -241,3 +241,114 @@ class GroupViewsetTests(IdentityRequest):
         client = APIClient()
         response = client.get(url, **self.headers)
         self.assertEqual(response.data.get('meta').get('count'), 0)
+
+    def test_get_group_roles_success(self):
+        """Test that getting roles for a group returns successfully."""
+        url = reverse('group-roles', kwargs={'uuid': self.group.uuid})
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        roles = response.data.get('roles')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(roles), 1)
+        self.assertEqual(roles[0].get('uuid'), str(self.role.uuid))
+        self.assertEqual(roles[0].get('name'), self.role.name)
+        self.assertEqual(roles[0].get('description'), self.role.description)
+
+    def test_add_group_roles_system_policy_create_success(self):
+        """Test that adding a role to a group without a system policy returns successfully."""
+        url = reverse('group-roles', kwargs={'uuid': self.group.uuid})
+        client = APIClient()
+        dummy_role_id = uuid4()
+        test_data = {'roles': [self.roleB.uuid, dummy_role_id]}
+
+        self.assertEqual([self.role], list(self.group.roles()))
+        self.assertEqual([self.policy], list(self.group.policies.all()))
+
+        response = client.post(url, test_data, format='json', **self.headers)
+        roles = response.data.get('roles')
+        system_policies = Policy.objects.filter(system=True, group=self.group)
+        system_policy = system_policies.first()
+
+        self.assertEqual(len(system_policies), 1)
+        self.assertEqual([system_policy, self.policy], list(self.group.policies.all()))
+        self.assertEqual([self.roleB], list(system_policy.roles.all()))
+        self.assertEqual([self.role], list(self.policy.roles.all()))
+        self.assertEqual([self.role, self.roleB], list(self.group.roles()))
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(roles), 2)
+        self.assertEqual(roles[0].get('uuid'), str(self.role.uuid))
+        self.assertEqual(roles[0].get('name'), self.role.name)
+        self.assertEqual(roles[0].get('description'), self.role.description)
+
+    def test_add_group_roles_system_policy_get_success(self):
+        """Test that adding a role to a group with existing system policy returns successfully."""
+        url = reverse('group-roles', kwargs={'uuid': self.group.uuid})
+        client = APIClient()
+        dummy_role_id = uuid4()
+        test_data = {'roles': [self.roleB.uuid, dummy_role_id]}
+        system_policy = Policy.objects.create(system=True, group=self.group)
+
+        self.assertEqual([self.role], list(self.group.roles()))
+        self.assertEqual([system_policy, self.policy], list(self.group.policies.all()))
+
+        response = client.post(url, test_data, format='json', **self.headers)
+        roles = response.data.get('roles')
+        system_policies = Policy.objects.filter(system=True, group=self.group)
+        system_policy = system_policies.first()
+
+        self.assertEqual(len(system_policies), 1)
+        self.assertEqual([system_policy, self.policy], list(self.group.policies.all()))
+        self.assertEqual([self.roleB], list(system_policy.roles.all()))
+        self.assertEqual([self.role], list(self.policy.roles.all()))
+        self.assertEqual([self.role, self.roleB], list(self.group.roles()))
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(roles), 2)
+        self.assertEqual(roles[0].get('uuid'), str(self.role.uuid))
+        self.assertEqual(roles[0].get('name'), self.role.name)
+        self.assertEqual(roles[0].get('description'), self.role.description)
+
+    def test_add_group_multiple_roles_success(self):
+        """Test that adding multiple roles to a group returns successfully."""
+        with tenant_context(self.tenant):
+            groupC = Group.objects.create(name='groupC')
+            url = reverse('group-roles', kwargs={'uuid': groupC.uuid})
+            client = APIClient()
+            test_data = {'roles': [self.role.uuid, self.roleB.uuid]}
+            self.assertEqual([], list(groupC.roles()))
+
+            response = client.post(url, test_data, format='json', **self.headers)
+            self.assertEqual([self.role, self.roleB], list(groupC.roles()))
+
+    def test_remove_group_roles_success(self):
+        """Test that removing a role from a group returns successfully."""
+        url = reverse('group-roles', kwargs={'uuid': self.group.uuid})
+        self.policyB.roles.add(self.role)
+        self.policyB.save()
+        client = APIClient()
+        url = '{}?roles={}'.format(url, self.role.uuid)
+        self.assertEqual([self.role], list(self.group.roles()))
+        response = client.delete(url, format='json', **self.headers)
+
+        self.assertEqual([], list(self.group.roles()))
+        self.assertEqual([self.role, self.roleB], list(self.groupB.roles()))
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+
+    def test_remove_group_multiple_roles_success(self):
+        """Test that removing multiple roles from a group returns successfully."""
+        self.policy.roles.add(self.roleB)
+        self.policy.save()
+        url = reverse('group-roles', kwargs={'uuid': self.group.uuid})
+        client = APIClient()
+        url = '{}?roles={},{}'.format(url, self.role.uuid, self.roleB.uuid)
+        self.assertEqual([self.role, self.roleB], list(self.group.roles()))
+
+        response = client.delete(url, format='json', **self.headers)
+        self.assertEqual([], list(self.group.roles()))
+
+    def test_remove_group_roles_invalid(self):
+        """Test that removing a role returns an error with invalid data format."""
+        url = reverse('group-roles', kwargs={'uuid': self.group.uuid})
+        client = APIClient()
+        response = client.delete(url, format='json', **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)

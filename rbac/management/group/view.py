@@ -40,7 +40,7 @@ from rest_framework.response import Response
 
 
 USERNAMES_KEY = 'usernames'
-ROLE_IDS_KEY = 'role_ids'
+ROLES_KEY = 'roles'
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 
@@ -86,7 +86,7 @@ class GroupViewSet(mixins.CreateModelMixin,
         """Get serializer based on route."""
         if 'principals' in self.request.path:
             return GroupPrincipalInputSerializer
-        if 'roles' in self.request.path:
+        if ROLES_KEY in self.request.path:
             return GroupRoleSerializer
         if self.request.method in ('POST', 'PUT'):
             return GroupInputSerializer
@@ -185,6 +185,7 @@ class GroupViewSet(mixins.CreateModelMixin,
         @apiSuccess {String} uuid Group unique identifier
         @apiSuccess {String} name Group name
         @apiSuccess {Array} principals Array of principals
+        @apiSuccess {Array} roles Array of roles
         @apiSuccessExample {json} Success-Response:
             HTTP/1.1 200 OK
             {
@@ -354,13 +355,12 @@ class GroupViewSet(mixins.CreateModelMixin,
         if system_policy_created:
             logger.info('Created new system policy for tenant.')
 
-        for role in roles:
+        for role_id in roles:
             try:
-                role_id = role.get('uuid')
                 role = Role.objects.get(uuid=role_id)
                 system_policy.roles.add(role)
-            except ValidationError:
-                logger.info('Invalid uuid %s adding role to system policy.', role_id)
+            except (Role.DoesNotExist, ValidationError):
+                logger.info('No role with id %s to save to group.', role_id)
 
         system_policy.save()
 
@@ -372,7 +372,7 @@ class GroupViewSet(mixins.CreateModelMixin,
                 role = Role.objects.get(uuid=role_id)
                 roles.append(role)
             except (Role.DoesNotExist, ValidationError):
-                logger.info('No role with id %s to delete.', role_id)
+                logger.info('No role with id %s to delete from group.', role_id)
 
         for policy in group.policies.all():
             policy.roles.remove(*roles)
@@ -415,13 +415,11 @@ class GroupViewSet(mixins.CreateModelMixin,
         @apiDescription Add roles to a group
         @apiHeader {String} token User authorization token
         @apiParam (Path) {String} id Group unique identifier
-        @apiParam (Request Body) {Array} roles Array of objects with Role uuids
+        @apiParam (Request Body) {Array} roles Array of role UUIDs
         @apiParamExample {json} Request Body:
             {
                 "roles": [
-                    {
-                        "uuid": "4df211e0-2d88-49a4-8802-728630224d15"
-                    }
+                    "4df211e0-2d88-49a4-8802-728630224d15"
                 ]
             }
         @apiSuccess {String} uuid Group unique identifier
@@ -450,12 +448,12 @@ class GroupViewSet(mixins.CreateModelMixin,
 
         @apiParam (Path) {String} id Group unique identifier
 
-        @apiParam (Query) {String} role_ids List of comma separated role uuids
+        @apiParam (Query) {String} roles List of comma separated role UUIDs
 
         @apiSuccessExample {json} Success-Response:
             HTTP/1.1 204 NO CONTENT
         """
-        roles = request.data.pop('roles', [])
+        roles = request.data.pop(ROLES_KEY, [])
         group = self.get_object()
         if request.method == 'POST':
             self.add_roles(group, roles)
@@ -463,11 +461,11 @@ class GroupViewSet(mixins.CreateModelMixin,
         elif request.method == 'GET':
             response_data = GroupRoleSerializer(group)
         else:
-            if ROLE_IDS_KEY not in request.query_params:
+            if ROLES_KEY not in request.query_params:
                 key = 'detail'
-                message = 'Query parameter {} is required.'.format(ROLE_IDS_KEY)
+                message = 'Query parameter {} is required.'.format(ROLES_KEY)
                 raise serializers.ValidationError({key: _(message)})
-            role_ids = request.query_params.get(ROLE_IDS_KEY, '')
+            role_ids = request.query_params.get(ROLES_KEY, '')
 
             self.remove_roles(group, role_ids.split(','))
             return Response(status=status.HTTP_204_NO_CONTENT)
