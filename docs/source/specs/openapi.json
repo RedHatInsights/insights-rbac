@@ -9,10 +9,13 @@
       "url": "https://opensource.org/licenses/AGPL-3.0"
     }
   },
-  "security": [{
-    "basic_auth": []
-  }],
-  "tags": [{
+  "security": [
+    {
+      "basic_auth": []
+    }
+  ],
+  "tags": [
+    {
       "name": "Principal",
       "description": "Operations about principals"
     },
@@ -76,7 +79,8 @@
         ],
         "summary": "List the principals for a tenant",
         "operationId": "listPrincipals",
-        "parameters": [{
+        "parameters": [
+          {
             "$ref": "#/components/parameters/QueryLimit"
           },
           {
@@ -169,7 +173,8 @@
         ],
         "summary": "List the groups for a tenant",
         "operationId": "listGroups",
-        "parameters": [{
+        "parameters": [
+          {
             "$ref": "#/components/parameters/QueryLimit"
           },
           {
@@ -228,16 +233,18 @@
         ],
         "summary": "Get a group in the tenant",
         "operationId": "getGroup",
-        "parameters": [{
-          "name": "uuid",
-          "in": "path",
-          "description": "ID of group to get",
-          "required": true,
-          "schema": {
-            "type": "string",
-            "format": "uuid"
+        "parameters": [
+          {
+            "name": "uuid",
+            "in": "path",
+            "description": "ID of group to get",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
           }
-        }],
+        ],
         "responses": {
           "200": {
             "description": "A Group object",
@@ -280,16 +287,18 @@
         ],
         "summary": "Udate a group in the tenant",
         "operationId": "updateGroup",
-        "parameters": [{
-          "name": "uuid",
-          "in": "path",
-          "description": "ID of group to update",
-          "required": true,
-          "schema": {
-            "type": "string",
-            "format": "uuid"
+        "parameters": [
+          {
+            "name": "uuid",
+            "in": "path",
+            "description": "ID of group to update",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
           }
-        }],
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -353,16 +362,18 @@
         ],
         "summary": "Delete a group in the tenant",
         "operationId": "deleteGroup",
-        "parameters": [{
-          "name": "uuid",
-          "in": "path",
-          "description": "ID of group to delete",
-          "required": true,
-          "schema": {
-            "type": "string",
-            "format": "uuid"
+        "parameters": [
+          {
+            "name": "uuid",
+            "in": "path",
+            "description": "ID of group to delete",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
           }
-        }],
+        ],
         "responses": {
           "204": {
             "description": "Group deleted"
@@ -410,16 +421,18 @@
         ],
         "summary": "Add a principal to a group in the tenant",
         "operationId": "addPrincipalToGroup",
-        "parameters": [{
-          "name": "uuid",
-          "in": "path",
-          "description": "ID of group to update",
-          "required": true,
-          "schema": {
-            "type": "string",
-            "format": "uuid"
+        "parameters": [
+          {
+            "name": "uuid",
+            "in": "path",
+            "description": "ID of group to update",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
           }
-        }],
+        ],
         "requestBody": {
           "$ref": "#/components/requestBodies/GroupPrincipalIn"
         },
@@ -468,7 +481,8 @@
         ],
         "summary": "Remove a principal from a group in the tenant",
         "operationId": "deletePrincipalFromGroup",
-        "parameters": [{
+        "parameters": [
+          {
             "name": "uuid",
             "in": "path",
             "description": "ID of group to update",
@@ -571,7 +585,8 @@
         ],
         "summary": "List the roles for a tenant",
         "operationId": "listRoles",
-        "parameters": [{
+        "parameters": [
+          {
             "$ref": "#/components/parameters/QueryLimit"
           },
           {
@@ -621,16 +636,18 @@
         ],
         "summary": "Get a role in the tenant",
         "operationId": "getRole",
-        "parameters": [{
-          "name": "uuid",
-          "in": "path",
-          "description": "ID of role to get",
-          "required": true,
-          "schema": {
-            "type": "string",
-            "format": "uuid"
+        "parameters": [
+          {
+            "name": "uuid",
+            "in": "path",
+            "description": "ID of role to get",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
           }
-        }],
+        ],
         "responses": {
           "200": {
             "description": "A Role object",
@@ -673,16 +690,18 @@
         ],
         "summary": "Delete a role in the tenant",
         "operationId": "deleteRole",
-        "parameters": [{
-          "name": "uuid",
-          "in": "path",
-          "description": "ID of role to delete",
-          "required": true,
-          "schema": {
-            "type": "string",
-            "format": "uuid"
+        "parameters": [
+          {
+            "name": "uuid",
+            "in": "path",
+            "description": "ID of role to delete",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
           }
-        }],
+        ],
         "responses": {
           "204": {
             "description": "Role deleted"
@@ -718,16 +737,18 @@
         ],
         "summary": "Update a Role in the tenant",
         "operationId": "updateRole",
-        "parameters": [{
-          "name": "uuid",
-          "in": "path",
-          "description": "ID of role to update",
-          "required": true,
-          "schema": {
-            "type": "string",
-            "format": "uuid"
+        "parameters": [
+          {
+            "name": "uuid",
+            "in": "path",
+            "description": "ID of role to update",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
           }
-        }],
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -819,7 +840,8 @@
         ],
         "summary": "List the policies in the tenant",
         "operationId": "listPolicies",
-        "parameters": [{
+        "parameters": [
+          {
             "$ref": "#/components/parameters/QueryLimit"
           },
           {
@@ -875,16 +897,18 @@
         ],
         "summary": "Get a policy in the tenant",
         "operationId": "getPolicy",
-        "parameters": [{
-          "name": "uuid",
-          "in": "path",
-          "description": "ID of policy to get",
-          "required": true,
-          "schema": {
-            "type": "string",
-            "format": "uuid"
+        "parameters": [
+          {
+            "name": "uuid",
+            "in": "path",
+            "description": "ID of policy to get",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
           }
-        }],
+        ],
         "responses": {
           "200": {
             "description": "A Policy object",
@@ -927,16 +951,18 @@
         ],
         "summary": "Update a policy in the tenant",
         "operationId": "updatePolicy",
-        "parameters": [{
-          "name": "uuid",
-          "in": "path",
-          "description": "ID of policy to update",
-          "required": true,
-          "schema": {
-            "type": "string",
-            "format": "uuid"
+        "parameters": [
+          {
+            "name": "uuid",
+            "in": "path",
+            "description": "ID of policy to update",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
           }
-        }],
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -990,16 +1016,18 @@
         ],
         "summary": "Delete a policy in the tenant",
         "operationId": "deletePolicy",
-        "parameters": [{
-          "name": "uuid",
-          "in": "path",
-          "description": "ID of policy to delete",
-          "required": true,
-          "schema": {
-            "type": "string",
-            "format": "uuid"
+        "parameters": [
+          {
+            "name": "uuid",
+            "in": "path",
+            "description": "ID of policy to delete",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
           }
-        }],
+        ],
         "responses": {
           "204": {
             "description": "Policy deleted"
@@ -1037,7 +1065,8 @@
         ],
         "summary": "Get the permitted access for a principal in the tenant",
         "operationId": "getPrincipalAccess",
-        "parameters": [{
+        "parameters": [
+          {
             "name": "application",
             "in": "query",
             "description": "The application name to obtain access for the principal",
@@ -1100,9 +1129,11 @@
       }
     }
   },
-  "servers": [{
-    "url": "/api/rbac/v1"
-  }],
+  "servers": [
+    {
+      "url": "/api/rbac/v1"
+    }
+  ],
   "components": {
     "parameters": {
       "QueryOffset": {
@@ -1330,7 +1361,8 @@
         }
       },
       "PrincipalOut": {
-        "allOf": [{
+        "allOf": [
+          {
             "$ref": "#/components/schemas/Principal"
           },
           {
@@ -1339,7 +1371,8 @@
         ]
       },
       "PrincipalPagination": {
-        "allOf": [{
+        "allOf": [
+          {
             "$ref": "#/components/schemas/ListPagination"
           },
           {
@@ -1374,7 +1407,8 @@
         }
       },
       "GroupOut": {
-        "allOf": [{
+        "allOf": [
+          {
             "$ref": "#/components/schemas/Group"
           },
           {
@@ -1409,7 +1443,8 @@
         }
       },
       "GroupWithPrincipals": {
-        "allOf": [{
+        "allOf": [
+          {
             "$ref": "#/components/schemas/Group"
           },
           {
@@ -1435,7 +1470,8 @@
         ]
       },
       "GroupWithPrincipalsAndRoles": {
-        "allOf": [{
+        "allOf": [
+          {
             "$ref": "#/components/schemas/Group"
           },
           {
@@ -1468,7 +1504,8 @@
         ]
       },
       "GroupPagination": {
-        "allOf": [{
+        "allOf": [
+          {
             "$ref": "#/components/schemas/ListPagination"
           },
           {
@@ -1555,7 +1592,8 @@
         }
       },
       "RoleIn": {
-        "allOf": [{
+        "allOf": [
+          {
             "$ref": "#/components/schemas/Role"
           },
           {
@@ -1575,7 +1613,8 @@
         ]
       },
       "RolePagination": {
-        "allOf": [{
+        "allOf": [
+          {
             "$ref": "#/components/schemas/ListPagination"
           },
           {
@@ -1595,7 +1634,8 @@
         ]
       },
       "RoleOut": {
-        "allOf": [{
+        "allOf": [
+          {
             "$ref": "#/components/schemas/Role"
           },
           {
@@ -1624,7 +1664,8 @@
         }
       },
       "RoleWithAccess": {
-        "allOf": [{
+        "allOf": [
+          {
             "$ref": "#/components/schemas/Role"
           },
           {
@@ -1665,7 +1706,8 @@
         }
       },
       "PolicyIn": {
-        "allOf": [{
+        "allOf": [
+          {
             "$ref": "#/components/schemas/Policy"
           },
           {
@@ -1693,7 +1735,8 @@
         ]
       },
       "PolicyExtended": {
-        "allOf": [{
+        "allOf": [
+          {
             "$ref": "#/components/schemas/Policy"
           },
           {
@@ -1723,7 +1766,8 @@
         ]
       },
       "PolicyPagination": {
-        "allOf": [{
+        "allOf": [
+          {
             "$ref": "#/components/schemas/ListPagination"
           },
           {
@@ -1743,7 +1787,8 @@
         ]
       },
       "AccessPagination": {
-        "allOf": [{
+        "allOf": [
+          {
             "$ref": "#/components/schemas/ListPagination"
           },
           {
