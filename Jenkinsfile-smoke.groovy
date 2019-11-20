@@ -2,10 +2,10 @@
 * Requires: https://github.com/RedHatInsights/insights-pipeline-lib
 */
 
-@Library("github.com/RedHatInsights/insights-pipeline-lib") _
+@Library("github.com/RedHatInsights/insights-pipeline-lib@v3") _
 
 if (env.CHANGE_ID) {
-    runSmokeTest (
+    execSmokeTest (
         ocDeployerBuilderPath: "rbac/rbac",
         ocDeployerComponentPath: "rbac/rbac",
         ocDeployerServiceSets: "rbac",
