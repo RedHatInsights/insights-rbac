@@ -453,9 +453,12 @@ class GroupViewSet(mixins.CreateModelMixin,
         @apiSuccessExample {json} Success-Response:
             HTTP/1.1 204 NO CONTENT
         """
-        roles = request.data.pop(ROLES_KEY, [])
+        roles = []
         group = self.get_object()
         if request.method == 'POST':
+            serializer = GroupRoleSerializer(data=request.data)
+            if serializer.is_valid(raise_exception=True):
+                roles = request.data.pop(ROLES_KEY, [])
             self.add_roles(group, roles)
             response_data = GroupRoleSerializer(group)
         elif request.method == 'GET':
@@ -465,9 +468,12 @@ class GroupViewSet(mixins.CreateModelMixin,
                 key = 'detail'
                 message = 'Query parameter {} is required.'.format(ROLES_KEY)
                 raise serializers.ValidationError({key: _(message)})
-            role_ids = request.query_params.get(ROLES_KEY, '')
 
-            self.remove_roles(group, role_ids.split(','))
+            role_ids = request.query_params.get(ROLES_KEY, '').split(',')
+            serializer = GroupRoleSerializer(data={'roles': role_ids})
+            if serializer.is_valid(raise_exception=True):
+                self.remove_roles(group, role_ids)
+
             return Response(status=status.HTTP_204_NO_CONTENT)
 
         return Response(status=status.HTTP_200_OK, data=response_data.data)
