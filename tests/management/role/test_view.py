@@ -26,8 +26,7 @@ from rest_framework.test import APIClient
 from tenant_schemas.utils import tenant_context
 
 from api.models import User
-from management.models import (Group, Principal, Role,
-                               Access, ResourceDefinition)
+from management.models import Group, Principal, Role
 from tests.identity_request import IdentityRequest
 
 
