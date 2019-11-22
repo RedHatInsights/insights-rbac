@@ -33,7 +33,6 @@ class GroupInputSerializer(serializers.ModelSerializer):
                                  validators=[UniqueValidator(queryset=Group.objects.all())])
     description = serializers.CharField(allow_null=True, required=False)
     principalCount = serializers.IntegerField(read_only=True)
-    policyCount = serializers.IntegerField(read_only=True)
     platform_default = serializers.BooleanField(read_only=True)
     roleCount = serializers.SerializerMethodField()
     created = serializers.DateTimeField(read_only=True)
@@ -48,9 +47,8 @@ class GroupInputSerializer(serializers.ModelSerializer):
 
         model = Group
         fields = ('uuid', 'name', 'description',
-                  'principalCount', 'policyCount',
-                  'platform_default', 'roleCount',
-                  'created', 'modified')
+                  'principalCount', 'platform_default',
+                  'roleCount', 'created', 'modified')
 
 
 class GroupSerializer(serializers.ModelSerializer):
@@ -74,7 +72,6 @@ class GroupSerializer(serializers.ModelSerializer):
                   'description', 'principals',
                   'platform_default', 'created',
                   'modified', 'roles', 'roleCount')
-
 
     def to_representation(self, obj):
         """Convert representation to dictionary object."""
