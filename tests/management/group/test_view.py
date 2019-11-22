@@ -54,12 +54,19 @@ class GroupViewsetTests(IdentityRequest):
             self.group.policies.add(self.policy)
             self.group.principals.add(self.principal)
             self.group.save()
+
+            self.defGroup = Group(name='groupDef', platform_default=True)
+            self.defGroup.save()
+            self.defGroup.principals.add(self.principal)
+            self.defGroup.save()
+
             self.groupB = Group.objects.create(name='groupB')
             self.groupB.principals.add(self.principal)
             self.policyB = Policy.objects.create(name='policyB', group=self.groupB)
             self.roleB = Role.objects.create(name='roleB')
             self.policyB.roles.add(self.roleB)
             self.policyB.save()
+
 
     def tearDown(self):
         """Tear down group viewset tests."""
@@ -91,6 +98,21 @@ class GroupViewsetTests(IdentityRequest):
 
         self.assertIsNotNone(response.data.get('uuid'))
         self.assertIsNotNone(response.data.get('name'))
+        self.assertEqual(group_name, response.data.get('name'))
+
+    def test_create_default_group(self):
+        """Test that system groups can be created."""
+        group_name = 'groupDef'
+
+
+        # test group retrieval
+        client = APIClient()
+        url = reverse('group-detail', kwargs={'uuid': self.defGroup.uuid})
+        response = client.get(url, **self.headers)
+
+        self.assertIsNotNone(response.data.get('uuid'))
+        self.assertIsNotNone(response.data.get('name'))
+        self.assertTrue(response.data.get('platform_default'))
         self.assertEqual(group_name, response.data.get('name'))
 
     def test_create_group_invalid(self):
@@ -132,7 +154,7 @@ class GroupViewsetTests(IdentityRequest):
         for keyname in ['meta', 'links', 'data']:
             self.assertIn(keyname, response.data)
         self.assertIsInstance(response.data.get('data'), list)
-        self.assertEqual(len(response.data.get('data')), 2)
+        self.assertEqual(len(response.data.get('data')), 3)
 
         group = response.data.get('data')[0]
         self.assertIsNotNone(group.get('name'))
@@ -172,6 +194,13 @@ class GroupViewsetTests(IdentityRequest):
         response = client.get(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
+    def test_delete_default_group(self):
+        """Test that platform_default groups are protected from deletion"""
+        url = reverse('group-detail', kwargs={'uuid': self.defGroup.uuid})
+        client = APIClient()
+        response = client.delete(url, **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
     def test_delete_group_invalid(self):
         """Test that deleting an invalid group returns an error."""
         url = reverse('group-detail', kwargs={'uuid': uuid4()})
@@ -199,7 +228,7 @@ class GroupViewsetTests(IdentityRequest):
         url = reverse('group-list')
         response = client.get(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data.get('meta').get('count'), 2)
+        self.assertEqual(response.data.get('meta').get('count'), 3)
         self.assertEqual(response.data.get('data')[0].get('principalCount'), 1)
         self.assertEqual(response.data.get('data')[0].get('policyCount'), None)
         self.assertEqual(response.data.get('data')[0].get('roleCount'), 1)
@@ -234,7 +263,7 @@ class GroupViewsetTests(IdentityRequest):
         url = '{}?username={}'.format(url, self.principal.username)
         client = APIClient()
         response = client.get(url, **self.headers)
-        self.assertEqual(response.data.get('meta').get('count'), 2)
+        self.assertEqual(response.data.get('meta').get('count'), 3)
 
         url = reverse('group-list')
         url = '{}?username={}'.format(url, uuid4())

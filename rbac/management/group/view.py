@@ -19,6 +19,7 @@
 import logging
 
 from django.db.models.aggregates import Count
+from django.shortcuts import get_object_or_404
 from django.utils.translation import gettext as _
 from django_filters import rest_framework as filters
 from management.group.model import Group
@@ -212,6 +213,14 @@ class GroupViewSet(mixins.CreateModelMixin,
         @apiSuccessExample {json} Success-Response:
             HTTP/1.1 204 NO CONTENT
         """
+        group = get_object_or_404(Group, uuid=kwargs.get('uuid'))
+        if group.platform_default:
+            key = 'group'
+            message = 'Platform groups cannot be deleted.'
+            error = {
+                key: [_(message)]
+            }
+            raise serializers.ValidationError(error)
         return super().destroy(request=request, args=args, kwargs=kwargs)
 
     def update(self, request, *args, **kwargs):

@@ -33,6 +33,7 @@ class GroupInputSerializer(serializers.ModelSerializer):
                                  validators=[UniqueValidator(queryset=Group.objects.all())])
     description = serializers.CharField(allow_null=True, required=False)
     principalCount = serializers.IntegerField(read_only=True)
+    platform_default = serializers.BooleanField(read_only=True)
     roleCount = serializers.SerializerMethodField()
     created = serializers.DateTimeField(read_only=True)
     modified = serializers.DateTimeField(read_only=True)
@@ -46,8 +47,8 @@ class GroupInputSerializer(serializers.ModelSerializer):
 
         model = Group
         fields = ('uuid', 'name', 'description',
-                  'principalCount', 'roleCount',
-                  'created', 'modified')
+                  'principalCount', 'platform_default',
+                  'roleCount', 'created', 'modified')
 
 
 class GroupSerializer(serializers.ModelSerializer):
@@ -57,6 +58,7 @@ class GroupSerializer(serializers.ModelSerializer):
     name = serializers.CharField(required=True, max_length=150)
     description = serializers.CharField(allow_null=True, required=False)
     principals = PrincpalSerializer(read_only=True, many=True)
+    platform_default = serializers.BooleanField(read_only=True)
     roles = serializers.SerializerMethodField()
     roleCount = serializers.SerializerMethodField()
     created = serializers.DateTimeField(read_only=True)
@@ -66,7 +68,9 @@ class GroupSerializer(serializers.ModelSerializer):
         """Metadata for the serializer."""
 
         model = Group
-        fields = ('uuid', 'name', 'description', 'principals', 'created',
+        fields = ('uuid', 'name',
+                  'description', 'principals',
+                  'platform_default', 'created',
                   'modified', 'roles', 'roleCount')
 
     def to_representation(self, obj):
