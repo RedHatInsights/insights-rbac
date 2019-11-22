@@ -35,6 +35,7 @@ class Policy(models.Model):
     group = models.ForeignKey(Group, null=True, on_delete=models.CASCADE,
                               related_name='policies')
     roles = models.ManyToManyField(Role, related_name='policies')
+    system = models.BooleanField(default=False)
     created = models.DateTimeField(default=timezone.now)
     modified = AutoDateTimeField(default=timezone.now)
 

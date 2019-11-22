@@ -235,7 +235,7 @@ class GroupViewSet(mixins.CreateModelMixin,
     def add_principals(self, group, principals, account):
         """Process list of principals and add them to the group."""
         users = [principal.get('username') for principal in principals]
-        resp = self.proxy.request_filtered_principals(users, limit=len(users))
+        resp = self.proxy.request_filtered_principals(users, account, limit=len(users))
         for item in resp.get('data', []):
             username = item['username']
             try:
