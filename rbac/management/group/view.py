@@ -351,7 +351,10 @@ class GroupViewSet(mixins.CreateModelMixin,
 
     def add_roles(self, group, roles):
         """Process list of roles and add them to the group."""
-        system_policy, system_policy_created = Policy.objects.get_or_create(system=True, group=group)
+        system_policy_name = 'System Policy for Group {}'.format(group.uuid)
+        system_policy, system_policy_created = Policy.objects.get_or_create(system=True,
+                                                                            group=group,
+                                                                            name=system_policy_name)
         if system_policy_created:
             logger.info('Created new system policy for tenant.')
 

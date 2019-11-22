@@ -262,35 +262,56 @@ class GroupViewsetTests(IdentityRequest):
         client = APIClient()
         test_data = {'roles': [self.roleB.uuid, self.dummy_role_id]}
 
-        self.assertEqual([self.role], list(self.group.roles()))
-        self.assertEqual([self.policy], list(self.group.policies.all()))
+        self.assertCountEqual([self.role], list(self.group.roles()))
+        self.assertCountEqual([self.policy], list(self.group.policies.all()))
 
         response = client.post(url, test_data, format='json', **self.headers)
 
         roles = response.data.get('roles')
-        system_policies = Policy.objects.filter(system=True, group=self.group)
-        system_policy = system_policies.first()
+        system_policies = Policy.objects.filter(system=True)
+        system_policy = system_policies.get(group=self.group)
 
         self.assertEqual(len(system_policies), 1)
-        self.assertEqual([system_policy, self.policy], list(self.group.policies.all()))
-        self.assertEqual([self.roleB], list(system_policy.roles.all()))
-        self.assertEqual([self.role], list(self.policy.roles.all()))
-        self.assertEqual([self.role, self.roleB], list(self.group.roles()))
+        self.assertCountEqual([system_policy, self.policy], list(self.group.policies.all()))
+        self.assertCountEqual([self.roleB], list(system_policy.roles.all()))
+        self.assertCountEqual([self.role], list(self.policy.roles.all()))
+        self.assertCountEqual([self.role, self.roleB], list(self.group.roles()))
         self.assertEqual(len(roles), 2)
         self.assertEqual(roles[0].get('uuid'), str(self.role.uuid))
         self.assertEqual(roles[0].get('name'), self.role.name)
         self.assertEqual(roles[0].get('description'), self.role.description)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
+    def test_add_group_roles_system_policy_create_new_group_success(self):
+        """Test that adding a role to a group without a system policy returns successfully."""
+        group_url = reverse('group-roles', kwargs={'uuid': self.group.uuid})
+        groupB_url = reverse('group-roles', kwargs={'uuid': self.groupB.uuid})
+        client = APIClient()
+        test_data = {'roles': [self.roleB.uuid]}
+
+        response = client.post(group_url, test_data, format='json', **self.headers)
+        responseB = client.post(groupB_url, test_data, format='json', **self.headers)
+
+        system_policies = Policy.objects.filter(system=True)
+        system_policy = system_policies.get(group=self.group)
+        system_policyB = system_policies.get(group=self.groupB)
+
+        self.assertEqual(len(system_policies), 2)
+        self.assertCountEqual([self.roleB], list(system_policy.roles.all()))
+        self.assertCountEqual([self.roleB], list(system_policyB.roles.all()))
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(responseB.status_code, status.HTTP_200_OK)
+
     def test_add_group_roles_system_policy_get_success(self):
         """Test that adding a role to a group with existing system policy returns successfully."""
         url = reverse('group-roles', kwargs={'uuid': self.group.uuid})
         client = APIClient()
         test_data = {'roles': [self.roleB.uuid, self.dummy_role_id]}
-        system_policy = Policy.objects.create(system=True, group=self.group)
+        system_policy_name = 'System Policy for Group {}'.format(self.group.uuid)
+        system_policy = Policy.objects.create(system=True, group=self.group, name=system_policy_name)
 
-        self.assertEqual([self.role], list(self.group.roles()))
-        self.assertEqual([system_policy, self.policy], list(self.group.policies.all()))
+        self.assertCountEqual([self.role], list(self.group.roles()))
+        self.assertCountEqual([system_policy, self.policy], list(self.group.policies.all()))
 
         response = client.post(url, test_data, format='json', **self.headers)
 
@@ -299,10 +320,10 @@ class GroupViewsetTests(IdentityRequest):
         system_policy = system_policies.first()
 
         self.assertEqual(len(system_policies), 1)
-        self.assertEqual([system_policy, self.policy], list(self.group.policies.all()))
-        self.assertEqual([self.roleB], list(system_policy.roles.all()))
-        self.assertEqual([self.role], list(self.policy.roles.all()))
-        self.assertEqual([self.role, self.roleB], list(self.group.roles()))
+        self.assertCountEqual([system_policy, self.policy], list(self.group.policies.all()))
+        self.assertCountEqual([self.roleB], list(system_policy.roles.all()))
+        self.assertCountEqual([self.role], list(self.policy.roles.all()))
+        self.assertCountEqual([self.role, self.roleB], list(self.group.roles()))
         self.assertEqual(len(roles), 2)
         self.assertEqual(roles[0].get('uuid'), str(self.role.uuid))
         self.assertEqual(roles[0].get('name'), self.role.name)
@@ -317,11 +338,11 @@ class GroupViewsetTests(IdentityRequest):
             client = APIClient()
             test_data = {'roles': [self.role.uuid, self.roleB.uuid]}
 
-            self.assertEqual([], list(groupC.roles()))
+            self.assertCountEqual([], list(groupC.roles()))
 
             response = client.post(url, test_data, format='json', **self.headers)
 
-            self.assertEqual([self.role, self.roleB], list(groupC.roles()))
+            self.assertCountEqual([self.role, self.roleB], list(groupC.roles()))
             self.assertEqual(response.status_code, status.HTTP_200_OK)
 
     def test_add_group_multiple_roles_invalid(self):
@@ -332,11 +353,11 @@ class GroupViewsetTests(IdentityRequest):
             client = APIClient()
             test_data = {'roles': ['abc123', self.roleB.uuid]}
 
-            self.assertEqual([], list(groupC.roles()))
+            self.assertCountEqual([], list(groupC.roles()))
 
             response = client.post(url, test_data, format='json', **self.headers)
 
-            self.assertEqual([], list(groupC.roles()))
+            self.assertCountEqual([], list(groupC.roles()))
             self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
     def test_add_group_multiple_roles_not_found_success(self):
@@ -347,11 +368,11 @@ class GroupViewsetTests(IdentityRequest):
             client = APIClient()
             test_data = {'roles': [self.dummy_role_id, self.roleB.uuid]}
 
-            self.assertEqual([], list(groupC.roles()))
+            self.assertCountEqual([], list(groupC.roles()))
 
             response = client.post(url, test_data, format='json', **self.headers)
 
-            self.assertEqual([self.roleB], list(groupC.roles()))
+            self.assertCountEqual([self.roleB], list(groupC.roles()))
             self.assertEqual(response.status_code, status.HTTP_200_OK)
 
     def test_remove_group_roles_success(self):
@@ -362,12 +383,12 @@ class GroupViewsetTests(IdentityRequest):
 
         self.policyB.roles.add(self.role)
         self.policyB.save()
-        self.assertEqual([self.role], list(self.group.roles()))
+        self.assertCountEqual([self.role], list(self.group.roles()))
 
         response = client.delete(url, format='json', **self.headers)
 
-        self.assertEqual([], list(self.group.roles()))
-        self.assertEqual([self.role, self.roleB], list(self.groupB.roles()))
+        self.assertCountEqual([], list(self.group.roles()))
+        self.assertCountEqual([self.role, self.roleB], list(self.groupB.roles()))
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
 
     def test_remove_group_multiple_roles_success(self):
@@ -378,11 +399,11 @@ class GroupViewsetTests(IdentityRequest):
 
         self.policy.roles.add(self.roleB)
         self.policy.save()
-        self.assertEqual([self.role, self.roleB], list(self.group.roles()))
+        self.assertCountEqual([self.role, self.roleB], list(self.group.roles()))
 
         response = client.delete(url, format='json', **self.headers)
 
-        self.assertEqual([], list(self.group.roles()))
+        self.assertCountEqual([], list(self.group.roles()))
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
 
     def test_remove_group_multiple_roles_invalid(self):
@@ -393,11 +414,11 @@ class GroupViewsetTests(IdentityRequest):
 
         self.policy.roles.add(self.roleB)
         self.policy.save()
-        self.assertEqual([self.role, self.roleB], list(self.group.roles()))
+        self.assertCountEqual([self.role, self.roleB], list(self.group.roles()))
 
         response = client.delete(url, format='json', **self.headers)
 
-        self.assertEqual([self.role, self.roleB], list(self.group.roles()))
+        self.assertCountEqual([self.role, self.roleB], list(self.group.roles()))
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
     def test_remove_group_multiple_roles_not_found_success(self):
@@ -408,11 +429,11 @@ class GroupViewsetTests(IdentityRequest):
 
         self.policy.roles.add(self.roleB)
         self.policy.save()
-        self.assertEqual([self.role, self.roleB], list(self.group.roles()))
+        self.assertCountEqual([self.role, self.roleB], list(self.group.roles()))
 
         response = client.delete(url, format='json', **self.headers)
 
-        self.assertEqual([], list(self.group.roles()))
+        self.assertCountEqual([], list(self.group.roles()))
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
 
     def test_remove_group_roles_invalid(self):
