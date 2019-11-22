@@ -154,7 +154,7 @@ class GroupViewsetTests(IdentityRequest):
         for keyname in ['meta', 'links', 'data']:
             self.assertIn(keyname, response.data)
         self.assertIsInstance(response.data.get('data'), list)
-        self.assertEqual(len(response.data.get('data')), 2)
+        self.assertEqual(len(response.data.get('data')), 3)
 
         group = response.data.get('data')[0]
         self.assertIsNotNone(group.get('name'))
@@ -228,7 +228,7 @@ class GroupViewsetTests(IdentityRequest):
         url = reverse('group-list')
         response = client.get(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data.get('meta').get('count'), 2)
+        self.assertEqual(response.data.get('meta').get('count'), 3)
         self.assertEqual(response.data.get('data')[0].get('principalCount'), 1)
         self.assertEqual(response.data.get('data')[0].get('policyCount'), None)
         self.assertEqual(response.data.get('data')[0].get('roleCount'), 1)
@@ -263,7 +263,7 @@ class GroupViewsetTests(IdentityRequest):
         url = '{}?username={}'.format(url, self.principal.username)
         client = APIClient()
         response = client.get(url, **self.headers)
-        self.assertEqual(response.data.get('meta').get('count'), 2)
+        self.assertEqual(response.data.get('meta').get('count'), 3)
 
         url = reverse('group-list')
         url = '{}?username={}'.format(url, uuid4())
