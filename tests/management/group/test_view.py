@@ -26,7 +26,7 @@ from rest_framework.test import APIClient
 from tenant_schemas.utils import tenant_context
 
 from api.models import User
-from management.models import Group, Principal
+from management.models import Group, Principal, Policy, Role
 from tests.identity_request import IdentityRequest
 
 
@@ -47,12 +47,26 @@ class GroupViewsetTests(IdentityRequest):
             self.principal.save()
             self.group = Group(name='groupA')
             self.group.save()
+            self.role = Role.objects.create(name='roleA')
+            self.policy = Policy.objects.create(name='policyA', group=self.group)
+            self.policy.roles.add(self.role)
+            self.policy.save()
+            self.group.policies.add(self.policy)
             self.group.principals.add(self.principal)
             self.group.save()
+
             self.defGroup = Group(name='groupDef', platform_default=True)
             self.defGroup.save()
             self.defGroup.principals.add(self.principal)
             self.defGroup.save()
+
+            self.groupB = Group.objects.create(name='groupB')
+            self.groupB.principals.add(self.principal)
+            self.policyB = Policy.objects.create(name='policyB', group=self.groupB)
+            self.roleB = Role.objects.create(name='roleB')
+            self.policyB.roles.add(self.roleB)
+            self.policyB.save()
+
 
     def tearDown(self):
         """Tear down group viewset tests."""
@@ -60,12 +74,14 @@ class GroupViewsetTests(IdentityRequest):
         with tenant_context(self.tenant):
             Group.objects.all().delete()
             Principal.objects.all().delete()
+            Role.objects.all().delete()
+            Policy.objects.all().delete()
 
     @patch('management.principal.proxy.PrincipalProxy.request_filtered_principals',
            return_value={'status_code': 200, 'data': []})
     def test_create_group_success(self, mock_request):
         """Test that we can create a group."""
-        group_name = 'groupB'
+        group_name = 'groupC'
         test_data = {
             'name': group_name
         }
@@ -118,6 +134,8 @@ class GroupViewsetTests(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertIsNotNone(response.data.get('name'))
         self.assertEqual(self.group.name, response.data.get('name'))
+        self.assertEqual(len(response.data.get('roles')), 1)
+        self.assertEqual(response.data.get('roles')[0]['uuid'], str(self.role.uuid))
 
     def test_read_group_invalid(self):
         """Test that reading an invalid group returns an error."""
@@ -212,7 +230,8 @@ class GroupViewsetTests(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data.get('meta').get('count'), 2)
         self.assertEqual(response.data.get('data')[0].get('principalCount'), 1)
-        self.assertEqual(response.data.get('data')[0].get('policyCount'), 0)
+        self.assertEqual(response.data.get('data')[0].get('policyCount'), None)
+        self.assertEqual(response.data.get('data')[0].get('roleCount'), 1)
 
     def test_remove_group_principals_success(self):
         """Test that removing a principal to a group returns successfully."""

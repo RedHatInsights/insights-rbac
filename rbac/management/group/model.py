@@ -21,6 +21,7 @@ from uuid import uuid4
 from django.db import models
 from django.utils import timezone
 from management.principal.model import Principal
+from management.role.model import Role
 from management.utils import AutoDateTimeField
 
 
@@ -35,6 +36,18 @@ class Group(models.Model):
     created = models.DateTimeField(default=timezone.now)
     modified = AutoDateTimeField(default=timezone.now)
     platform_default = models.BooleanField(default=False)
+
+    def roles(self):
+        """Roles for a group."""
+        return Role.objects.filter(policies__in=self.__policy_ids()).distinct()
+
+    def role_count(self):
+        """Role count for a group."""
+        return self.roles().count()
+
+    def __policy_ids(self):
+        """Policy IDs for a group."""
+        return self.policies.values_list('id', flat=True)
 
     class Meta:
         ordering = ['name', 'modified']
