@@ -248,7 +248,7 @@ class GroupViewsetTests(IdentityRequest):
         url = reverse('group-roles', kwargs={'uuid': self.group.uuid})
         client = APIClient()
         response = client.get(url, **self.headers)
-        roles = response.data.get('roles')
+        roles = response.data.get('data')
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(roles), 1)

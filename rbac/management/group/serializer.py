@@ -110,4 +110,4 @@ class GroupRoleSerializer(serializers.Serializer):
     def to_representation(self, obj):
         """Convert representation to dictionary object."""
         serialized_roles = [RoleMinimumSerializer(role).data for role in obj.roles()]
-        return {'roles': serialized_roles}
+        return {'data': serialized_roles}

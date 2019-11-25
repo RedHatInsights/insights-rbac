@@ -442,7 +442,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/GroupWithPrincipals"
+                  "$ref": "#/components/schemas/GroupWithPrincipalsAndRoles"
                 }
               }
             }
@@ -607,7 +607,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/GroupRolesOut"
+                  "$ref": "#/components/schemas/GroupWithPrincipalsAndRoles"
                 }
               }
             }
@@ -1702,7 +1702,7 @@
               "roles"
             ],
             "properties": {
-              "roles": {
+              "data": {
                 "type": "array",
                 "items": {
                   "$ref": "#/components/schemas/Role"

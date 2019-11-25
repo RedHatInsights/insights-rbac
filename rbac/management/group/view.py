@@ -395,13 +395,11 @@ class GroupViewSet(mixins.CreateModelMixin,
 
         @apiParam (Path) {String} id Group unique identifier.
 
-        @apiSuccess {String} uuid Group unique identifier
-        @apiSuccess {String} name Group name
-        @apiSuccess {Array} roles Array of roles
+        @apiSuccess {Array} data Array of roles
         @apiSuccessExample {json} Success-Response:
             HTTP/1.1 200 OK
             {
-                "roles": [
+                "data": [
                     {
                         "name": "RoleA",
                         "uuid": "4df211e0-2d88-49a4-8802-728630224d15",
@@ -431,6 +429,8 @@ class GroupViewSet(mixins.CreateModelMixin,
         @apiSuccessExample {json} Success-Response:
             HTTP/1.1 200 OK
             {
+                "uuid": "16fd2706-8baf-433b-82eb-8c7fada847da",
+                "name": "GroupA",
                 "roles": [
                     {
                         "name": "RoleA",
@@ -463,7 +463,7 @@ class GroupViewSet(mixins.CreateModelMixin,
             if serializer.is_valid(raise_exception=True):
                 roles = request.data.pop(ROLES_KEY, [])
             self.add_roles(group, roles)
-            response_data = GroupRoleSerializer(group)
+            response_data = GroupSerializer(group)
         elif request.method == 'GET':
             response_data = GroupRoleSerializer(group)
         else:
