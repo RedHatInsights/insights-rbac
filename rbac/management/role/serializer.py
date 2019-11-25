@@ -72,6 +72,7 @@ class RoleSerializer(serializers.ModelSerializer):
     policyCount = serializers.IntegerField(read_only=True)
     applications = serializers.SerializerMethodField()
     system = serializers.BooleanField(read_only=True)
+    platform_default = serializers.BooleanField(read_only=True)
     created = serializers.DateTimeField(read_only=True)
     modified = serializers.DateTimeField(read_only=True)
 
@@ -82,7 +83,8 @@ class RoleSerializer(serializers.ModelSerializer):
         fields = ('uuid', 'name', 'description',
                   'access', 'policyCount',
                   'applications', 'system',
-                  'created', 'modified')
+                  'platform_default', 'created',
+                  'modified')
 
     def get_applications(self, obj):
         """Get the list of applications in the role."""
