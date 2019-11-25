@@ -18,22 +18,20 @@
 """View for group management."""
 import logging
 
-from django.core.exceptions import ValidationError
 from django.db.models.aggregates import Count
 from django.shortcuts import get_object_or_404
 from django.utils.translation import gettext as _
 from django_filters import rest_framework as filters
+from management.group.definer import add_roles, remove_roles
 from management.group.model import Group
 from management.group.serializer import (GroupInputSerializer,
                                          GroupPrincipalInputSerializer,
                                          GroupRoleSerializer,
                                          GroupSerializer)
 from management.permissions import GroupAccessPermission
-from management.policy.model import Policy
 from management.principal.model import Principal
 from management.principal.proxy import PrincipalProxy
 from management.querysets import get_group_queryset
-from management.role.model import Role
 from rest_framework import mixins, serializers, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.filters import OrderingFilter
@@ -358,38 +356,6 @@ class GroupViewSet(mixins.CreateModelMixin,
             self.remove_principals(group, principals, account)
             return Response(status=status.HTTP_204_NO_CONTENT)
 
-    def add_roles(self, group, roles):
-        """Process list of roles and add them to the group."""
-        system_policy_name = 'System Policy for Group {}'.format(group.uuid)
-        system_policy, system_policy_created = Policy.objects.get_or_create(system=True,
-                                                                            group=group,
-                                                                            name=system_policy_name)
-        if system_policy_created:
-            logger.info('Created new system policy for tenant.')
-
-        for role_id in roles:
-            try:
-                role = Role.objects.get(uuid=role_id)
-                system_policy.roles.add(role)
-            except (Role.DoesNotExist, ValidationError):
-                logger.info('No role with id %s to save to group.', role_id)
-
-        system_policy.save()
-
-    def remove_roles(self, group, role_ids):
-        """Process list of roles and remove them from the group."""
-        roles = []
-        for role_id in role_ids:
-            try:
-                role = Role.objects.get(uuid=role_id)
-                roles.append(role)
-            except (Role.DoesNotExist, ValidationError):
-                logger.info('No role with id %s to delete from group.', role_id)
-
-        for policy in group.policies.all():
-            policy.roles.remove(*roles)
-            policy.save()
-
     @action(detail=True, methods=['get', 'post', 'delete'])
     def roles(self, request, uuid=None):
         """Get, add or remove roles from a group."""
@@ -471,7 +437,7 @@ class GroupViewSet(mixins.CreateModelMixin,
             serializer = GroupRoleSerializer(data=request.data)
             if serializer.is_valid(raise_exception=True):
                 roles = request.data.pop(ROLES_KEY, [])
-            self.add_roles(group, roles)
+            add_roles(group, roles)
             response_data = GroupSerializer(group)
         elif request.method == 'GET':
             response_data = GroupRoleSerializer(group)
@@ -484,7 +450,7 @@ class GroupViewSet(mixins.CreateModelMixin,
             role_ids = request.query_params.get(ROLES_KEY, '').split(',')
             serializer = GroupRoleSerializer(data={'roles': role_ids})
             if serializer.is_valid(raise_exception=True):
-                self.remove_roles(group, role_ids)
+                remove_roles(group, role_ids)
 
             return Response(status=status.HTTP_204_NO_CONTENT)
 
