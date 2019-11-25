@@ -41,6 +41,7 @@ class GroupViewsetTests(IdentityRequest):
                     tenant=self.tenant)
         user.save()
         request.user = user
+        self.dummy_role_id = uuid4()
 
         with tenant_context(self.tenant):
             self.principal = Principal(username=self.user_data['username'])
@@ -270,3 +271,205 @@ class GroupViewsetTests(IdentityRequest):
         client = APIClient()
         response = client.get(url, **self.headers)
         self.assertEqual(response.data.get('meta').get('count'), 0)
+
+    def test_get_group_roles_success(self):
+        """Test that getting roles for a group returns successfully."""
+        url = reverse('group-roles', kwargs={'uuid': self.group.uuid})
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        roles = response.data.get('data')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(roles), 1)
+        self.assertEqual(roles[0].get('uuid'), str(self.role.uuid))
+        self.assertEqual(roles[0].get('name'), self.role.name)
+        self.assertEqual(roles[0].get('description'), self.role.description)
+
+    def test_add_group_roles_system_policy_create_success(self):
+        """Test that adding a role to a group without a system policy returns successfully."""
+        url = reverse('group-roles', kwargs={'uuid': self.group.uuid})
+        client = APIClient()
+        test_data = {'roles': [self.roleB.uuid, self.dummy_role_id]}
+
+        self.assertCountEqual([self.role], list(self.group.roles()))
+        self.assertCountEqual([self.policy], list(self.group.policies.all()))
+
+        response = client.post(url, test_data, format='json', **self.headers)
+
+        roles = response.data.get('roles')
+        system_policies = Policy.objects.filter(system=True)
+        system_policy = system_policies.get(group=self.group)
+
+        self.assertEqual(len(system_policies), 1)
+        self.assertCountEqual([system_policy, self.policy], list(self.group.policies.all()))
+        self.assertCountEqual([self.roleB], list(system_policy.roles.all()))
+        self.assertCountEqual([self.role], list(self.policy.roles.all()))
+        self.assertCountEqual([self.role, self.roleB], list(self.group.roles()))
+        self.assertEqual(len(roles), 2)
+        self.assertEqual(roles[0].get('uuid'), str(self.role.uuid))
+        self.assertEqual(roles[0].get('name'), self.role.name)
+        self.assertEqual(roles[0].get('description'), self.role.description)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+    def test_add_group_roles_system_policy_create_new_group_success(self):
+        """Test that adding a role to a group without a system policy returns successfully."""
+        group_url = reverse('group-roles', kwargs={'uuid': self.group.uuid})
+        groupB_url = reverse('group-roles', kwargs={'uuid': self.groupB.uuid})
+        client = APIClient()
+        test_data = {'roles': [self.roleB.uuid]}
+
+        response = client.post(group_url, test_data, format='json', **self.headers)
+        responseB = client.post(groupB_url, test_data, format='json', **self.headers)
+
+        system_policies = Policy.objects.filter(system=True)
+        system_policy = system_policies.get(group=self.group)
+        system_policyB = system_policies.get(group=self.groupB)
+
+        self.assertEqual(len(system_policies), 2)
+        self.assertCountEqual([self.roleB], list(system_policy.roles.all()))
+        self.assertCountEqual([self.roleB], list(system_policyB.roles.all()))
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(responseB.status_code, status.HTTP_200_OK)
+
+    def test_add_group_roles_system_policy_get_success(self):
+        """Test that adding a role to a group with existing system policy returns successfully."""
+        url = reverse('group-roles', kwargs={'uuid': self.group.uuid})
+        client = APIClient()
+        test_data = {'roles': [self.roleB.uuid, self.dummy_role_id]}
+        system_policy_name = 'System Policy for Group {}'.format(self.group.uuid)
+        system_policy = Policy.objects.create(system=True, group=self.group, name=system_policy_name)
+
+        self.assertCountEqual([self.role], list(self.group.roles()))
+        self.assertCountEqual([system_policy, self.policy], list(self.group.policies.all()))
+
+        response = client.post(url, test_data, format='json', **self.headers)
+
+        roles = response.data.get('roles')
+        system_policies = Policy.objects.filter(system=True, group=self.group)
+        system_policy = system_policies.first()
+
+        self.assertEqual(len(system_policies), 1)
+        self.assertCountEqual([system_policy, self.policy], list(self.group.policies.all()))
+        self.assertCountEqual([self.roleB], list(system_policy.roles.all()))
+        self.assertCountEqual([self.role], list(self.policy.roles.all()))
+        self.assertCountEqual([self.role, self.roleB], list(self.group.roles()))
+        self.assertEqual(len(roles), 2)
+        self.assertEqual(roles[0].get('uuid'), str(self.role.uuid))
+        self.assertEqual(roles[0].get('name'), self.role.name)
+        self.assertEqual(roles[0].get('description'), self.role.description)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+    def test_add_group_multiple_roles_success(self):
+        """Test that adding multiple roles to a group returns successfully."""
+        with tenant_context(self.tenant):
+            groupC = Group.objects.create(name='groupC')
+            url = reverse('group-roles', kwargs={'uuid': groupC.uuid})
+            client = APIClient()
+            test_data = {'roles': [self.role.uuid, self.roleB.uuid]}
+
+            self.assertCountEqual([], list(groupC.roles()))
+
+            response = client.post(url, test_data, format='json', **self.headers)
+
+            self.assertCountEqual([self.role, self.roleB], list(groupC.roles()))
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+    def test_add_group_multiple_roles_invalid(self):
+        """Test that adding invalid roles to a group fails the request and does not add any."""
+        with tenant_context(self.tenant):
+            groupC = Group.objects.create(name='groupC')
+            url = reverse('group-roles', kwargs={'uuid': groupC.uuid})
+            client = APIClient()
+            test_data = {'roles': ['abc123', self.roleB.uuid]}
+
+            self.assertCountEqual([], list(groupC.roles()))
+
+            response = client.post(url, test_data, format='json', **self.headers)
+
+            self.assertCountEqual([], list(groupC.roles()))
+            self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_add_group_multiple_roles_not_found_success(self):
+        """Test that adding roles to a group skips ids not found, and returns success."""
+        with tenant_context(self.tenant):
+            groupC = Group.objects.create(name='groupC')
+            url = reverse('group-roles', kwargs={'uuid': groupC.uuid})
+            client = APIClient()
+            test_data = {'roles': [self.dummy_role_id, self.roleB.uuid]}
+
+            self.assertCountEqual([], list(groupC.roles()))
+
+            response = client.post(url, test_data, format='json', **self.headers)
+
+            self.assertCountEqual([self.roleB], list(groupC.roles()))
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+    def test_remove_group_roles_success(self):
+        """Test that removing a role from a group returns successfully."""
+        url = reverse('group-roles', kwargs={'uuid': self.group.uuid})
+        client = APIClient()
+        url = '{}?roles={}'.format(url, self.role.uuid)
+
+        self.policyB.roles.add(self.role)
+        self.policyB.save()
+        self.assertCountEqual([self.role], list(self.group.roles()))
+
+        response = client.delete(url, format='json', **self.headers)
+
+        self.assertCountEqual([], list(self.group.roles()))
+        self.assertCountEqual([self.role, self.roleB], list(self.groupB.roles()))
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+
+    def test_remove_group_multiple_roles_success(self):
+        """Test that removing multiple roles from a group returns successfully."""
+        url = reverse('group-roles', kwargs={'uuid': self.group.uuid})
+        client = APIClient()
+        url = '{}?roles={},{}'.format(url, self.role.uuid, self.roleB.uuid)
+
+        self.policy.roles.add(self.roleB)
+        self.policy.save()
+        self.assertCountEqual([self.role, self.roleB], list(self.group.roles()))
+
+        response = client.delete(url, format='json', **self.headers)
+
+        self.assertCountEqual([], list(self.group.roles()))
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+
+    def test_remove_group_multiple_roles_invalid(self):
+        """Test that removing invalid roles from a group fails the request and does not remove any."""
+        url = reverse('group-roles', kwargs={'uuid': self.group.uuid})
+        client = APIClient()
+        url = '{}?roles={},{}'.format(url, 'abc123', self.roleB.uuid)
+
+        self.policy.roles.add(self.roleB)
+        self.policy.save()
+        self.assertCountEqual([self.role, self.roleB], list(self.group.roles()))
+
+        response = client.delete(url, format='json', **self.headers)
+
+        self.assertCountEqual([self.role, self.roleB], list(self.group.roles()))
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_remove_group_multiple_roles_not_found_success(self):
+        """Test that removing roles from a group skips ids not found, and returns success."""
+        url = reverse('group-roles', kwargs={'uuid': self.group.uuid})
+        client = APIClient()
+        url = '{}?roles={},{},{}'.format(url, self.role.uuid, self.roleB.uuid, self.dummy_role_id)
+
+        self.policy.roles.add(self.roleB)
+        self.policy.save()
+        self.assertCountEqual([self.role, self.roleB], list(self.group.roles()))
+
+        response = client.delete(url, format='json', **self.headers)
+
+        self.assertCountEqual([], list(self.group.roles()))
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+
+    def test_remove_group_roles_invalid(self):
+        """Test that removing a role returns an error with invalid data format."""
+        url = reverse('group-roles', kwargs={'uuid': self.group.uuid})
+        client = APIClient()
+
+        response = client.delete(url, format='json', **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
