@@ -108,7 +108,15 @@ class GroupPrincipalInputSerializer(serializers.Serializer):
         fields = ('principals',)
 
 
-class GroupRoleSerializer(serializers.Serializer):
+class GroupRoleSerializerOut(serializers.Serializer):
+    """Serializer for getting roles for a group."""
+
+    def to_representation(self, obj):
+        """Return the collection to be serialized."""
+        return obj
+
+
+class GroupRoleSerializerIn(serializers.Serializer):
     """Serializer for managing roles for a group."""
 
     roles = serializers.ListField(child=serializers.UUIDField())

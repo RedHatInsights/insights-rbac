@@ -296,7 +296,7 @@ class GroupViewsetTests(IdentityRequest):
 
         response = client.post(url, test_data, format='json', **self.headers)
 
-        roles = response.data.get('roles')
+        roles = response.data.get('data')
         system_policies = Policy.objects.filter(system=True)
         system_policy = system_policies.get(group=self.group)
 
@@ -344,7 +344,7 @@ class GroupViewsetTests(IdentityRequest):
 
         response = client.post(url, test_data, format='json', **self.headers)
 
-        roles = response.data.get('roles')
+        roles = response.data.get('data')
         system_policies = Policy.objects.filter(system=True, group=self.group)
         system_policy = system_policies.first()
 

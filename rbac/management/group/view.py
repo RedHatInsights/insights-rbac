@@ -26,8 +26,10 @@ from management.group.definer import add_roles, remove_roles
 from management.group.model import Group
 from management.group.serializer import (GroupInputSerializer,
                                          GroupPrincipalInputSerializer,
-                                         GroupRoleSerializer,
-                                         GroupSerializer)
+                                         GroupRoleSerializerIn,
+                                         GroupRoleSerializerOut,
+                                         GroupSerializer,
+                                         RoleMinimumSerializer)
 from management.permissions import GroupAccessPermission
 from management.principal.model import Principal
 from management.principal.proxy import PrincipalProxy
@@ -85,8 +87,8 @@ class GroupViewSet(mixins.CreateModelMixin,
         """Get serializer based on route."""
         if 'principals' in self.request.path:
             return GroupPrincipalInputSerializer
-        if ROLES_KEY in self.request.path:
-            return GroupRoleSerializer
+        if ROLES_KEY in self.request.path and self.request.method == 'GET':
+            return GroupRoleSerializerOut
         if self.request.method in ('POST', 'PUT'):
             return GroupInputSerializer
         if self.request.path.endswith('groups/') and self.request.method == 'GET':
@@ -434,13 +436,16 @@ class GroupViewSet(mixins.CreateModelMixin,
         roles = []
         group = self.get_object()
         if request.method == 'POST':
-            serializer = GroupRoleSerializer(data=request.data)
+            serializer = GroupRoleSerializerIn(data=request.data)
             if serializer.is_valid(raise_exception=True):
                 roles = request.data.pop(ROLES_KEY, [])
             add_roles(group, roles)
-            response_data = GroupSerializer(group)
+            response_data = GroupRoleSerializerIn(group)
         elif request.method == 'GET':
-            response_data = GroupRoleSerializer(group)
+            serialized_roles = [RoleMinimumSerializer(role).data for role in group.roles()]
+            page = self.paginate_queryset(serialized_roles)
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
         else:
             if ROLES_KEY not in request.query_params:
                 key = 'detail'
@@ -448,7 +453,7 @@ class GroupViewSet(mixins.CreateModelMixin,
                 raise serializers.ValidationError({key: _(message)})
 
             role_ids = request.query_params.get(ROLES_KEY, '').split(',')
-            serializer = GroupRoleSerializer(data={'roles': role_ids})
+            serializer = GroupRoleSerializerIn(data={'roles': role_ids})
             if serializer.is_valid(raise_exception=True):
                 remove_roles(group, role_ids)
 

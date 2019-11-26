@@ -552,6 +552,12 @@
               "type": "string",
               "format": "uuid"
             }
+          },
+          {
+            "$ref": "#/components/parameters/QueryLimit"
+          },
+          {
+            "$ref": "#/components/parameters/QueryOffset"
           }
         ],
         "responses": {
@@ -560,7 +566,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/GroupRolesOut"
+                  "$ref": "#/components/schemas/GroupRolesPagination"
                 }
               }
             }
@@ -1702,12 +1708,15 @@
           }
         ]
       },
-      "GroupRolesOut": {
+      "GroupRolesPagination": {
         "allOf": [
+          {
+            "$ref": "#/components/schemas/ListPagination"
+          },
           {
             "type": "object",
             "required": [
-              "roles"
+              "data"
             ],
             "properties": {
               "data": {
