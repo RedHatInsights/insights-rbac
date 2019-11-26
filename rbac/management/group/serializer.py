@@ -34,6 +34,7 @@ class GroupInputSerializer(serializers.ModelSerializer):
     description = serializers.CharField(allow_null=True, required=False)
     principalCount = serializers.IntegerField(read_only=True)
     platform_default = serializers.BooleanField(read_only=True)
+    system = serializers.BooleanField(read_only=True)
     roleCount = serializers.SerializerMethodField()
     created = serializers.DateTimeField(read_only=True)
     modified = serializers.DateTimeField(read_only=True)
@@ -48,7 +49,7 @@ class GroupInputSerializer(serializers.ModelSerializer):
         model = Group
         fields = ('uuid', 'name', 'description',
                   'principalCount', 'platform_default',
-                  'roleCount', 'created', 'modified')
+                  'roleCount', 'created', 'modified', 'system')
 
 
 class GroupSerializer(serializers.ModelSerializer):
@@ -59,6 +60,7 @@ class GroupSerializer(serializers.ModelSerializer):
     description = serializers.CharField(allow_null=True, required=False)
     principals = PrincpalSerializer(read_only=True, many=True)
     platform_default = serializers.BooleanField(read_only=True)
+    system = serializers.BooleanField(read_only=True)
     roles = serializers.SerializerMethodField()
     roleCount = serializers.SerializerMethodField()
     created = serializers.DateTimeField(read_only=True)
@@ -71,7 +73,7 @@ class GroupSerializer(serializers.ModelSerializer):
         fields = ('uuid', 'name',
                   'description', 'principals',
                   'platform_default', 'created',
-                  'modified', 'roles', 'roleCount')
+                  'modified', 'roles', 'roleCount', 'system')
 
     def to_representation(self, obj):
         """Convert representation to dictionary object."""

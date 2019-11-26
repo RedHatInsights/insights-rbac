@@ -36,6 +36,7 @@ class Group(models.Model):
     created = models.DateTimeField(default=timezone.now)
     modified = AutoDateTimeField(default=timezone.now)
     platform_default = models.BooleanField(default=False)
+    system = models.BooleanField(default=False)
 
     def roles(self):
         """Roles for a group."""
