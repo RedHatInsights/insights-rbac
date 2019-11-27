@@ -29,6 +29,8 @@ from rest_framework.filters import OrderingFilter
 from .model import Role
 from .serializer import RoleSerializer
 
+APP_WHITELIST = ['app', 'cost-management']
+
 
 class RoleFilter(filters.FilterSet):
     """Filter for role."""
@@ -121,6 +123,15 @@ class RoleViewSet(mixins.CreateModelMixin,
                 ]
             }
         """
+        for perm in request.data.get('access') or []:
+            app = perm.get('permission').split(':')[0]
+            if app not in APP_WHITELIST:
+                key = 'role'
+                message = 'Custom roles cannot be created for {}'.format(app)
+                error = {
+                    key: [_(message)]
+                }
+                raise serializers.ValidationError(error)
         return super().create(request=request, args=args, kwargs=kwargs)
 
     def list(self, request, *args, **kwargs):
@@ -142,7 +153,8 @@ class RoleViewSet(mixins.CreateModelMixin,
         @apiSuccess {Object} links  The object containing links of results.
         @apiSuccess {Object[]} data  The array of results.
 
-        @apiSuccessExample {json} Success-Response:
+        @apiSuccessExample {json} Success-Re
+        sponse:
             HTTP/1.1 200 OK
             {
                 'meta': {

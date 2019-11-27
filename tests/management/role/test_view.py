@@ -99,7 +99,6 @@ class RoleViewsetTests(IdentityRequest):
         url = reverse('role-list')
         client = APIClient()
         response = client.post(url, test_data, format='json', **self.headers)
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         return response
 
     def test_create_role_success(self):
@@ -153,6 +152,53 @@ class RoleViewsetTests(IdentityRequest):
         url = reverse('role-list')
         client = APIClient()
         response = client.post(url, test_data, format='json', **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_create_role_whitelist(self):
+        """Test that we can create a role in a whitelisted application via API."""
+        role_name = 'C-MRole'
+        access_data = {
+            'permission': 'cost-management:*:*',
+            'resourceDefinitions': [
+                {
+                    'attributeFilter': {
+                          'key': 'keyA',
+                          'operation': 'equal',
+                        'value': 'valueA'
+                    }
+                }
+            ]
+        }
+        response = self.create_role(role_name, access_data)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+        # test that we can retrieve the role
+        url = reverse('role-detail', kwargs={'uuid': response.data.get('uuid')})
+        client = APIClient()
+        response = client.get(url, **self.headers)
+
+        self.assertIsNotNone(response.data.get('uuid'))
+        self.assertIsNotNone(response.data.get('name'))
+        self.assertEqual(role_name, response.data.get('name'))
+        self.assertIsInstance(response.data.get('access'), list)
+        self.assertEqual(access_data, response.data.get('access')[0])
+
+    def test_create_role_whitelist_fail(self):
+        """Test that we cannot create a role for a non-whitelisted app."""
+        role_name = 'roleFail'
+        access_data = {
+            'permission': 'someApp:*:*',
+            'resourceDefinitions': [
+                {
+                    'attributeFilter': {
+                          'key': 'keyA',
+                          'operation': 'equal',
+                        'value': 'valueA'
+                    }
+                }
+            ]
+        }
+        response = self.create_role(role_name, access_data)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
     def test_read_role_invalid(self):
