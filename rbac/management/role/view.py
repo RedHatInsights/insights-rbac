@@ -123,7 +123,7 @@ class RoleViewSet(mixins.CreateModelMixin,
                 ]
             }
         """
-        for perm in request.data.get('access') or []:
+        for perm in request.data.get('access', []):
             app = perm.get('permission').split(':')[0]
             if app not in APP_WHITELIST:
                 key = 'role'
@@ -153,8 +153,7 @@ class RoleViewSet(mixins.CreateModelMixin,
         @apiSuccess {Object} links  The object containing links of results.
         @apiSuccess {Object[]} data  The array of results.
 
-        @apiSuccessExample {json} Success-Re
-        sponse:
+        @apiSuccessExample {json} Success-Response:
             HTTP/1.1 200 OK
             {
                 'meta': {
