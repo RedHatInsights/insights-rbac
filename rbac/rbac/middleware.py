@@ -31,9 +31,10 @@ from tenant_schemas.utils import tenant_context
 from api.common import RH_IDENTITY_HEADER, RH_INSIGHTS_REQUEST_ID
 from api.models import Tenant, User
 from api.serializers import UserSerializer, create_schema_name, extract_header
-from management.utils import APPLICATION_KEY, access_for_principal  # noqa: I100, I201
+from management.group.definer import seed_group  # noqa: I100, I201
 from management.models import Principal  # noqa: I100, I201
 from management.role.definer import seed_roles
+from management.utils import APPLICATION_KEY, access_for_principal  # noqa: I100, I201
 
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
@@ -116,6 +117,7 @@ class IdentityHeaderMiddleware(MiddlewareMixin):  # pylint: disable=R0903
                 tenant.save()
                 logger.info('Created new tenant from account_id %s.', account)
                 seed_roles(tenant=tenant, update=False)
+                seed_group(tenant=tenant)
         except IntegrityError:
             tenant = Tenant.objects.filter(schema_name=schema_name).get()
 

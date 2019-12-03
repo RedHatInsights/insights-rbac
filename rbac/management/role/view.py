@@ -224,7 +224,7 @@ class RoleViewSet(mixins.CreateModelMixin,
             HTTP/1.1 204 NO CONTENT
         """
         role = get_object_or_404(Role, uuid=kwargs.get('uuid'))
-        if role.system:
+        if role.system or role.platform_default:
             key = 'role'
             message = 'System roles cannot be deleted.'
             error = {

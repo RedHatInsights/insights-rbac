@@ -37,6 +37,7 @@ class ManagementConfig(AppConfig):
             return
         try:
             self.role_seeding()
+            self.group_seeding()
         except (OperationalError, ProgrammingError) as op_error:
             if 'no such table' in str(op_error) or \
                     'does not exist' in str(op_error):
@@ -65,3 +66,20 @@ class ManagementConfig(AppConfig):
                         logger.info('Completed role seed changes for tenant %s.', future.result().schema_name)
         except Exception as exc:
             logger.error('Error encountered during role seeding %s.', exc)
+
+    def group_seeding(self):  # pylint: disable=R0201
+        """Update platform group at startup."""
+        # noqa: E402 pylint: disable=C0413
+        from api.models import Tenant
+        from management.group.definer import seed_group
+
+        logger.info('Start goup seed changes check.')
+        try:
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                for tenant in list(Tenant.objects.all()):
+                    if tenant.schema_name != 'public':
+                        logger.info('Checking for group seed changes for tenant %s.', tenant.schema_name)
+                        future = executor.submit(seed_group, tenant)
+                        logger.info('Completed group seed changes for tenant %s.', future.result().schema_name)
+        except Exception as exc:
+            logger.error('Error encountered during group seeding %s.', exc)

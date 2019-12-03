@@ -19,12 +19,17 @@
 import logging
 
 from django.db.models.aggregates import Count
+from django.shortcuts import get_object_or_404
 from django.utils.translation import gettext as _
 from django_filters import rest_framework as filters
+from management.group.definer import add_roles, remove_roles
 from management.group.model import Group
 from management.group.serializer import (GroupInputSerializer,
                                          GroupPrincipalInputSerializer,
-                                         GroupSerializer)
+                                         GroupRoleSerializerIn,
+                                         GroupRoleSerializerOut,
+                                         GroupSerializer,
+                                         RoleMinimumSerializer)
 from management.permissions import GroupAccessPermission
 from management.principal.model import Principal
 from management.principal.proxy import PrincipalProxy
@@ -36,6 +41,7 @@ from rest_framework.response import Response
 
 
 USERNAMES_KEY = 'usernames'
+ROLES_KEY = 'roles'
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 
@@ -81,6 +87,8 @@ class GroupViewSet(mixins.CreateModelMixin,
         """Get serializer based on route."""
         if 'principals' in self.request.path:
             return GroupPrincipalInputSerializer
+        if ROLES_KEY in self.request.path and self.request.method == 'GET':
+            return GroupRoleSerializerOut
         if self.request.method in ('POST', 'PUT'):
             return GroupInputSerializer
         if self.request.path.endswith('groups/') and self.request.method == 'GET':
@@ -178,6 +186,7 @@ class GroupViewSet(mixins.CreateModelMixin,
         @apiSuccess {String} uuid Group unique identifier
         @apiSuccess {String} name Group name
         @apiSuccess {Array} principals Array of principals
+        @apiSuccess {Array} roles Array of roles
         @apiSuccessExample {json} Success-Response:
             HTTP/1.1 200 OK
             {
@@ -185,6 +194,12 @@ class GroupViewSet(mixins.CreateModelMixin,
                 "name": "GroupA",
                 "principals": [
                     { "username": "jsmith" }
+                ],
+                "roles": [
+                    {
+                        "name": "RoleA",
+                        "uuid": "4df211e0-2d88-49a4-8802-728630224d15"
+                    }
                 ]
             }
         """
@@ -206,6 +221,14 @@ class GroupViewSet(mixins.CreateModelMixin,
         @apiSuccessExample {json} Success-Response:
             HTTP/1.1 204 NO CONTENT
         """
+        group = get_object_or_404(Group, uuid=kwargs.get('uuid'))
+        if group.platform_default:
+            key = 'group'
+            message = 'Platform groups cannot be deleted.'
+            error = {
+                key: [_(message)]
+            }
+            raise serializers.ValidationError(error)
         return super().destroy(request=request, args=args, kwargs=kwargs)
 
     def update(self, request, *args, **kwargs):
@@ -261,8 +284,8 @@ class GroupViewSet(mixins.CreateModelMixin,
 
     @action(detail=True, methods=['post', 'delete'])
     def principals(self, request, uuid=None):
-        """Add or remove principals from a group.
-
+        """Add or remove principals from a group."""
+        """
         @api {post} /api/v1/groups/:uuid/principals/   Add principals to a group
         @apiName addPrincipals
         @apiGroup Group
@@ -334,3 +357,106 @@ class GroupViewSet(mixins.CreateModelMixin,
             principals = [name.strip() for name in username.split(',')]
             self.remove_principals(group, principals, account)
             return Response(status=status.HTTP_204_NO_CONTENT)
+
+    @action(detail=True, methods=['get', 'post', 'delete'])
+    def roles(self, request, uuid=None):
+        """Get, add or remove roles from a group."""
+        """
+        @api {get} /api/v1/groups/:uuid/roles/   Get roles for a group
+        @apiName getRoles
+        @apiGroup Group
+        @apiVersion 1.0.0
+        @apiDescription Get roles for a group
+
+        @apiHeader {String} token User authorization token
+
+        @apiParam (Path) {String} id Group unique identifier.
+
+        @apiSuccess {Array} data Array of roles
+        @apiSuccessExample {json} Success-Response:
+            HTTP/1.1 200 OK
+            {
+                "data": [
+                    {
+                        "name": "RoleA",
+                        "uuid": "4df211e0-2d88-49a4-8802-728630224d15",
+                        "description": "RoleA Description"
+                    }
+                ]
+            }
+        """
+        """
+        @api {post} /api/v1/groups/:uuid/roles/   Add roles to a group
+        @apiName addRoles
+        @apiGroup Group
+        @apiVersion 1.0.0
+        @apiDescription Add roles to a group
+        @apiHeader {String} token User authorization token
+        @apiParam (Path) {String} id Group unique identifier
+        @apiParam (Request Body) {Array} roles Array of role UUIDs
+        @apiParamExample {json} Request Body:
+            {
+                "roles": [
+                    "4df211e0-2d88-49a4-8802-728630224d15"
+                ]
+            }
+        @apiSuccess {String} uuid Group unique identifier
+        @apiSuccess {String} name Group name
+        @apiSuccess {Array} roles Array of roles
+        @apiSuccessExample {json} Success-Response:
+            HTTP/1.1 200 OK
+            {
+                "uuid": "16fd2706-8baf-433b-82eb-8c7fada847da",
+                "name": "GroupA",
+                "roles": [
+                    {
+                        "name": "RoleA",
+                        "uuid": "4df211e0-2d88-49a4-8802-728630224d15",
+                        "description": "RoleA Description"
+                    }
+                ]
+            }
+        """
+        """
+        @api {delete} /api/v1/groups/:uuid/roles/   Remove roles from group
+        @apiName removeRoles
+        @apiGroup Group
+        @apiVersion 1.0.0
+        @apiDescription Remove roles from a group
+
+        @apiHeader {String} token User authorization token
+
+        @apiParam (Path) {String} id Group unique identifier
+
+        @apiParam (Query) {String} roles List of comma separated role UUIDs
+
+        @apiSuccessExample {json} Success-Response:
+            HTTP/1.1 204 NO CONTENT
+        """
+        roles = []
+        group = self.get_object()
+        if request.method == 'POST':
+            serializer = GroupRoleSerializerIn(data=request.data)
+            if serializer.is_valid(raise_exception=True):
+                roles = request.data.pop(ROLES_KEY, [])
+            add_roles(group, roles)
+            response_data = GroupRoleSerializerIn(group)
+        elif request.method == 'GET':
+            serialized_roles = [RoleMinimumSerializer(role).data for role in group.roles()]
+            page = self.paginate_queryset(serialized_roles)
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+        else:
+            if ROLES_KEY not in request.query_params:
+                key = 'detail'
+                message = 'Query parameter {} is required.'.format(ROLES_KEY)
+                raise serializers.ValidationError({key: _(message)})
+
+            role_ids = request.query_params.get(ROLES_KEY, '').split(',')
+            serializer = GroupRoleSerializerIn(data={'roles': role_ids})
+            if serializer.is_valid(raise_exception=True):
+                remove_roles(group, role_ids)
+
+            return Response(status=status.HTTP_204_NO_CONTENT)
+
+        return Response(status=status.HTTP_200_OK, data=response_data.data)

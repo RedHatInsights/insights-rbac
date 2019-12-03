@@ -32,6 +32,7 @@ class Role(models.Model):
     name = models.CharField(max_length=150, unique=True)
     description = models.TextField(null=True)
     system = models.BooleanField(default=False)
+    platform_default = models.BooleanField(default=False)
     version = models.PositiveIntegerField(default=1)
     created = models.DateTimeField(default=timezone.now)
     modified = AutoDateTimeField(default=timezone.now)
