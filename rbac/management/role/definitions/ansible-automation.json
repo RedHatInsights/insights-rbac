@@ -1,0 +1,19 @@
+{
+    "roles": [
+        {
+            "name": "Ansible Automation Access",
+            "description": "An all access role which grants read and write permissions.",
+            "system": true,
+            "platform_default": true,
+            "version": 2,
+            "access": [
+                {
+                    "permission": "ansible-automation:*:*"
+                },
+                {
+                    "permission": "inventory:*:*"
+                }
+            ]
+        }
+    ]
+}

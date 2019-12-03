@@ -35,6 +35,7 @@ def _make_role(tenant, data, update=False):
         access_list = data.pop('access')
         version = data.pop('version', 1)
         version_diff = False
+        is_platform_default = data.pop('platform_default', False)
         if update:
             role, created = Role.objects.filter(name=name).get_or_create(name=name)
             version_diff = version != role.version
@@ -43,13 +44,15 @@ def _make_role(tenant, data, update=False):
                 role.description = description
                 role.system = True
                 role.version = version
+                role.platform_default = is_platform_default
                 role.save()
                 role.access.all().delete()
         else:
             role = Role.objects.create(name=name,
                                        description=description,
                                        system=True,
-                                       version=version)
+                                       version=version,
+                                       platform_default=is_platform_default)
             logger.info('Creating role %s for tenant %s.', name, tenant.schema_name)
         if not update or (update and version_diff):
             for access_item in access_list:
