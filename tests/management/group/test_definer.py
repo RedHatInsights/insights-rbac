@@ -38,6 +38,9 @@ class GroupDefinerTests(IdentityRequest):
             self.assertEqual(group.platform_default, True)
             self.assertEqual(group.system, True)
             self.assertEqual(group.policies.get(name='System Policy for Group {}'.format(group.uuid)).system, True)
+            # only platform_default roles would be assigned to the default group
+            for role in group.roles():
+                self.assertTrue(role.platform_default)
 
     def test_default_group_seeding_skips(self):
         """Test that default groups with system flag false will be skipped during seeding"""
@@ -67,6 +70,8 @@ class GroupDefinerTests(IdentityRequest):
             group = Group.objects.get(platform_default=True)
             self.assertEqual(group.system, True)
             self.assertRaises(Role.DoesNotExist, group.roles().get, name="RBAC Administrator")
+            for role in group.roles():
+                self.assertTrue(role.platform_default)
 
     def modify_default_group(self, system=True):
         """ Add a role to the default group and/or change the system flag"""
