@@ -31,7 +31,7 @@ from rest_framework.filters import OrderingFilter
 from .model import Role
 from .serializer import RoleSerializer
 
-TESTING_APP = os.getenv('TESTING_APPLICATION', '')
+TESTING_APP = os.getenv('TESTING_APPLICATION')
 APP_WHITELIST = [TESTING_APP, 'cost-management']
 
 
