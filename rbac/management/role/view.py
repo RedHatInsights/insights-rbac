@@ -16,6 +16,8 @@
 #
 
 """View for role management."""
+import os
+
 from django.db import transaction
 from django.db.models.aggregates import Count
 from django.shortcuts import get_object_or_404
@@ -29,7 +31,8 @@ from rest_framework.filters import OrderingFilter
 from .model import Role
 from .serializer import RoleSerializer
 
-APP_WHITELIST = ['app', 'cost-management']
+TESTING_APP = os.getenv('TESTING_APPLICATION', '')
+APP_WHITELIST = [TESTING_APP, 'cost-management']
 
 
 class RoleFilter(filters.FilterSet):
