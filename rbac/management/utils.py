@@ -17,7 +17,7 @@
 """Helper utilities for management module."""
 from django.core.exceptions import PermissionDenied
 from django.utils.translation import gettext as _
-from management.models import Principal
+from management.models import Group, Principal
 from rest_framework import serializers
 
 USERNAME_KEY = 'username'
@@ -73,8 +73,10 @@ def access_for_roles(roles, application):
 
 
 def groups_for_principal(principal, **kwargs):
-    """Gathers all groups for a principal."""
-    return set(principal.group.all())
+    """Gathers all groups for a principal, including the default."""
+    principal_groups = principal.group.all()
+    platform_default_set = Group.objects.filter(platform_default=True)
+    return set(principal_groups | platform_default_set)
 
 
 def policies_for_principal(principal, **kwargs):
