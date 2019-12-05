@@ -21,8 +21,8 @@ from uuid import uuid4
 from django.db import models
 from django.utils import timezone
 from management.principal.model import Principal
+from management.rbac_fields import AutoDateTimeField
 from management.role.model import Role
-from management.utils import AutoDateTimeField
 
 
 class Group(models.Model):
