@@ -32,7 +32,7 @@ from .model import Role
 from .serializer import RoleSerializer
 
 TESTING_APP = os.getenv('TESTING_APPLICATION')
-APP_WHITELIST = [TESTING_APP, 'cost-management']
+APP_WHITELIST = [TESTING_APP, 'cost-management', 'catalog', 'approval']
 
 
 class RoleFilter(filters.FilterSet):
