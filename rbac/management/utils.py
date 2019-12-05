@@ -16,8 +16,6 @@
 #
 """Helper utilities for management module."""
 from django.core.exceptions import PermissionDenied
-from django.db import models
-from django.utils import timezone
 from django.utils.translation import gettext as _
 from management.models import Principal
 from rest_framework import serializers
@@ -103,11 +101,3 @@ def queryset_by_id(objects, clazz):
     """Return a queryset of from the class ordered by id."""
     wanted_ids = [obj.id for obj in objects]
     return clazz.objects.filter(id__in=wanted_ids).order_by('id')
-
-
-class AutoDateTimeField(models.DateTimeField):
-    """Class that defines is pre_save value."""
-
-    def pre_save(self, model_instance, add):
-        """Save its time as now."""
-        return timezone.now()
