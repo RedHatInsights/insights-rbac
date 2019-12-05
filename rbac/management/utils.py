@@ -74,9 +74,9 @@ def access_for_roles(roles, application):
 
 def groups_for_principal(principal, **kwargs):
     """Gathers all groups for a principal, including the default."""
-    principal_groups = principal.group.all()
-    platform_default_set = Group.objects.filter(platform_default=True)
-    return set(principal_groups | platform_default_set)
+    assigned_group_set = principal.group.all()
+    platform_default_group_set = Group.objects.filter(platform_default=True)
+    return set(assigned_group_set | platform_default_group_set)
 
 
 def policies_for_principal(principal, **kwargs):

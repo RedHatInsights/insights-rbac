@@ -18,7 +18,10 @@
 from tenant_schemas.utils import tenant_context
 
 from management.models import Group, Principal, Policy, Role, Access
-from management.utils import access_for_principal
+from management.utils import (access_for_principal,
+                              groups_for_principal,
+                              policies_for_principal,
+                              roles_for_principal)
 from tests.identity_request import IdentityRequest
 
 
@@ -75,3 +78,21 @@ class UtilsTests(IdentityRequest):
             kwargs = {'application': 'app'}
             access = access_for_principal(self.principal, **kwargs)
             self.assertCountEqual(access, [self.accessA, self.default_access])
+
+    def test_groups_for_principal(self):
+        """Test that we get the correct groups for a principal."""
+        with tenant_context(self.tenant):
+            groups = groups_for_principal(self.principal)
+            self.assertCountEqual(groups, [self.groupA, self.default_group])
+
+    def test_policies_for_principal(self):
+        """Test that we get the correct groups for a principal."""
+        with tenant_context(self.tenant):
+            policies = policies_for_principal(self.principal)
+            self.assertCountEqual(policies, [self.policyA, self.default_policy])
+
+    def test_roles_for_principal(self):
+        """Test that we get the correct groups for a principal."""
+        with tenant_context(self.tenant):
+            roles = roles_for_principal(self.principal)
+            self.assertCountEqual(roles, [self.roleA, self.default_role])
