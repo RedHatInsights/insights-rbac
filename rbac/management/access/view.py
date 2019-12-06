@@ -27,6 +27,7 @@ from rest_framework.views import APIView
 
 class AccessView(APIView):
     """Obtain principal access list."""
+
     """
     @api {get} /api/v1/access/   Obtain principal access list
     @apiName getPrincipalAccess

@@ -29,6 +29,7 @@ USERNAMES_KEY = 'usernames'
 
 class PrincipalView(APIView):
     """Obtain the list of principals for the tenant."""
+
     """
     @api {get} /api/v1/principals/   Obtain a list of principals
     @apiName getPrincipals
