@@ -360,7 +360,6 @@ class GroupViewsetTests(IdentityRequest):
         url = reverse('group-detail', kwargs={'uuid': self.defGroup.uuid})
         client = APIClient()
         response = client.put(url, test_data, format='json', **self.headers)
-        import pdb; pdb.set_trace()  # XXX BREAKPOINT
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertIsNotNone(response.data.get('uuid'))
         self.assertEqual(updated_name, response.data.get('name'))
