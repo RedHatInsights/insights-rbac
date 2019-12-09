@@ -255,6 +255,10 @@ class GroupViewSet(mixins.CreateModelMixin,
                 "name": "GroupA"
             }
         """
+        group = Group.objects.filter(uuid=kwargs.get('uuid')).first()
+        if group and group.platform_default:
+            group.system = False
+            group.save()
         return super().update(request=request, args=args, kwargs=kwargs)
 
     def add_principals(self, group, principals, account):
@@ -442,6 +446,9 @@ class GroupViewSet(mixins.CreateModelMixin,
             if serializer.is_valid(raise_exception=True):
                 roles = request.data.pop(ROLES_KEY, [])
             add_roles(group, roles)
+            if group.platform_default:
+                group.system = False
+                group.save()
             response_data = GroupRoleSerializerIn(group)
         elif request.method == 'GET':
             serialized_roles = [RoleMinimumSerializer(role).data for role in group.roles()]
@@ -458,6 +465,9 @@ class GroupViewSet(mixins.CreateModelMixin,
             serializer = GroupRoleSerializerIn(data={'roles': role_ids})
             if serializer.is_valid(raise_exception=True):
                 remove_roles(group, role_ids)
+                if group.platform_default:
+                    group.system = False
+                    group.save()
 
             return Response(status=status.HTTP_204_NO_CONTENT)
 
