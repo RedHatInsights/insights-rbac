@@ -25,6 +25,7 @@ from django.utils.translation import gettext as _
 from django_filters import rest_framework as filters
 from management.permissions import RoleAccessPermission
 from management.querysets import get_role_queryset
+from management.role.serializer import RoleMinimumSerializer
 from rest_framework import mixins, serializers, viewsets
 from rest_framework.filters import OrderingFilter
 
@@ -70,6 +71,12 @@ class RoleViewSet(mixins.CreateModelMixin,
     def get_queryset(self):
         """Obtain queryset for requesting user based on access."""
         return get_role_queryset(self.request)
+
+    def get_serializer_class(self):
+        """Get serializer based on route."""
+        if self.request.path.endswith('roles/') and self.request.method == 'GET':
+            return RoleMinimumSerializer
+        return RoleSerializer
 
     def create(self, request, *args, **kwargs):
         """Create a roles.
