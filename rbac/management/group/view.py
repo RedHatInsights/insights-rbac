@@ -22,7 +22,7 @@ from django.db.models.aggregates import Count
 from django.shortcuts import get_object_or_404
 from django.utils.translation import gettext as _
 from django_filters import rest_framework as filters
-from management.group.definer import add_roles, remove_roles
+from management.group.definer import add_roles, remove_roles, set_system_flag_post_update
 from management.group.model import Group
 from management.group.serializer import (GroupInputSerializer,
                                          GroupPrincipalInputSerializer,
@@ -442,9 +442,7 @@ class GroupViewSet(mixins.CreateModelMixin,
             if serializer.is_valid(raise_exception=True):
                 roles = request.data.pop(ROLES_KEY, [])
             add_roles(group, roles)
-            if group.platform_default:
-                group.system = False
-                group.save()
+            set_system_flag_post_update(group)
             response_data = GroupRoleSerializerIn(group)
         elif request.method == 'GET':
             serialized_roles = [RoleMinimumSerializer(role).data for role in group.roles()]
@@ -461,9 +459,7 @@ class GroupViewSet(mixins.CreateModelMixin,
             serializer = GroupRoleSerializerIn(data={'roles': role_ids})
             if serializer.is_valid(raise_exception=True):
                 remove_roles(group, role_ids)
-                if group.platform_default:
-                    group.system = False
-                    group.save()
+                set_system_flag_post_update(group)
 
             return Response(status=status.HTTP_204_NO_CONTENT)
 

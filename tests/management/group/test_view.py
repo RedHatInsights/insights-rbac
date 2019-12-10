@@ -317,10 +317,11 @@ class GroupViewsetTests(IdentityRequest):
         client = APIClient()
         test_data = {'roles': [self.roleB.uuid, self.dummy_role_id]}
 
+        self.assertTrue(self.defGroup.system)
         response = client.post(url, test_data, format='json', **self.headers)
-
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertFalse(Group.objects.filter(uuid=self.defGroup.uuid).first().system)
+        self.defGroup.refresh_from_db()
+        self.assertFalse(self.defGroup.system)
 
     def test_system_flag_update_on_remove(self):
         """Test that removing a role from a platform_default group flips the system flag."""
@@ -331,10 +332,11 @@ class GroupViewsetTests(IdentityRequest):
         self.policy.roles.add(self.roleB)
         self.policy.save()
 
+        self.assertTrue(self.defGroup.system)
         response = client.delete(url, format='json', **self.headers)
-
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
-        self.assertFalse(Group.objects.filter(uuid=self.defGroup.uuid).first().system)
+        self.defGroup.refresh_from_db()
+        self.assertFalse(self.defGroup.system)
 
     def test_add_group_roles_system_policy_create_new_group_success(self):
         """Test that adding a role to a group without a system policy returns successfully."""
