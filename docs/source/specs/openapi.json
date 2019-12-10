@@ -1701,7 +1701,7 @@
               "roles": {
                 "type": "array",
                 "items": {
-                  "$ref": "#/components/schemas/Role"
+                  "$ref": "#/components/schemas/RoleOut"
                 }
               }
             }
@@ -1722,7 +1722,7 @@
               "data": {
                 "type": "array",
                 "items": {
-                  "$ref": "#/components/schemas/Role"
+                  "$ref": "#/components/schemas/RoleOut"
                 }
               }
             }
@@ -1869,36 +1869,36 @@
           },
           {
             "$ref": "#/components/schemas/Timestamped"
-          }
-        ],
-        "properties": {
-          "policyCount": {
-            "type": "integer",
-            "minimum": 0
           },
-          "applications": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "example": "catalog"
+          {
+            "properties": {
+              "policyCount": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "applications": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "example": "catalog"
+                }
+              },
+              "system": {
+                "type": "boolean",
+                "default": false
+              },
+              "platform_default": {
+                "type": "boolean",
+                "default": false
+              }
             }
-          },
-          "system": {
-            "type": "boolean",
-            "default": false
           }
-        }
+        ]
       },
       "RoleWithAccess": {
         "allOf": [
           {
-            "$ref": "#/components/schemas/Role"
-          },
-          {
-            "$ref": "#/components/schemas/UUID"
-          },
-          {
-            "$ref": "#/components/schemas/Timestamped"
+            "$ref": "#/components/schemas/RoleOut"
           },
           {
             "type": "object",
