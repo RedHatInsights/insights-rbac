@@ -89,6 +89,8 @@ class GroupViewSet(mixins.CreateModelMixin,
             return GroupPrincipalInputSerializer
         if ROLES_KEY in self.request.path and self.request.method == 'GET':
             return GroupRoleSerializerOut
+        if ROLES_KEY in self.request.path:
+            return GroupRoleSerializerIn
         if self.request.method in ('POST', 'PUT'):
             return GroupInputSerializer
         if self.request.path.endswith('groups/') and self.request.method == 'GET':
