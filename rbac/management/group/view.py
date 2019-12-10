@@ -255,10 +255,6 @@ class GroupViewSet(mixins.CreateModelMixin,
                 "name": "GroupA"
             }
         """
-        group = Group.objects.filter(uuid=kwargs.get('uuid')).first()
-        if group and group.platform_default:
-            group.system = False
-            group.save()
         return super().update(request=request, args=args, kwargs=kwargs)
 
     def add_principals(self, group, principals, account):

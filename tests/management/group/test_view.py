@@ -176,21 +176,6 @@ class GroupViewsetTests(IdentityRequest):
         self.assertIsNotNone(response.data.get('uuid'))
         self.assertEqual(updated_name, response.data.get('name'))
 
-    @patch('management.principal.proxy.PrincipalProxy.request_filtered_principals',
-           return_value={'status_code': 200, 'data': []})
-    def test_update_platform_default_group_success(self, mock_request):
-        """Test that updating a default group changes system flag."""
-        group = Group.objects.filter(name='groupDef').first()
-        updated_name = group.name + '_update'
-        test_data = {'name': updated_name}
-        url = reverse('group-detail', kwargs={'uuid': group.uuid})
-        client = APIClient()
-        response = client.put(url, test_data, format='json', **self.headers)
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-
-        self.assertIsNotNone(response.data.get('uuid'))
-        self.assertEqual(updated_name, response.data.get('name'))
-
     def test_update_group_invalid(self):
         """Test that updating an invalid group returns an error."""
         url = reverse('group-detail', kwargs={'uuid': uuid4()})
@@ -350,21 +335,6 @@ class GroupViewsetTests(IdentityRequest):
 
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
         self.assertFalse(Group.objects.filter(uuid=self.defGroup.uuid).first().system)
-
-
-    def test_system_flag_update_on_rename(self):
-        """Test that renaminga platform_default group flips the system flag."""
-        group = Group.objects.filter(uuid=self.defGroup.uuid).first()
-        updated_name = group.name + '_update'
-        test_data = {'name': updated_name}
-        url = reverse('group-detail', kwargs={'uuid': self.defGroup.uuid})
-        client = APIClient()
-        response = client.put(url, test_data, format='json', **self.headers)
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertIsNotNone(response.data.get('uuid'))
-        self.assertEqual(updated_name, response.data.get('name'))
-        self.assertFalse(response.data.get('system'))
-
 
     def test_add_group_roles_system_policy_create_new_group_success(self):
         """Test that adding a role to a group without a system policy returns successfully."""
