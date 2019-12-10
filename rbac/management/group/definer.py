@@ -51,6 +51,12 @@ def seed_group(tenant):
     return tenant
 
 
+def set_system_flag_post_update(group):
+    """Update system flag on default groups."""
+    group.system = False
+    group.save()
+
+
 def add_roles(group, roles, replace=False):
     """Process list of roles and add them to the group."""
     system_policy_name = 'System Policy for Group {}'.format(group.uuid)

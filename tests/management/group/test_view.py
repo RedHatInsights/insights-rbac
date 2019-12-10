@@ -56,7 +56,7 @@ class GroupViewsetTests(IdentityRequest):
             self.group.principals.add(self.principal)
             self.group.save()
 
-            self.defGroup = Group(name='groupDef', platform_default=True)
+            self.defGroup = Group(name='groupDef', platform_default=True, system=True)
             self.defGroup.save()
             self.defGroup.principals.add(self.principal)
             self.defGroup.save()
@@ -310,6 +310,33 @@ class GroupViewsetTests(IdentityRequest):
         self.assertEqual(roles[0].get('name'), self.role.name)
         self.assertEqual(roles[0].get('description'), self.role.description)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+    def test_system_flag_update_on_add(self):
+        """Test that adding a role to a platform_default group flips the system flag."""
+        url = reverse('group-roles', kwargs={'uuid': self.defGroup.uuid})
+        client = APIClient()
+        test_data = {'roles': [self.roleB.uuid, self.dummy_role_id]}
+
+        self.assertTrue(self.defGroup.system)
+        response = client.post(url, test_data, format='json', **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.defGroup.refresh_from_db()
+        self.assertFalse(self.defGroup.system)
+
+    def test_system_flag_update_on_remove(self):
+        """Test that removing a role from a platform_default group flips the system flag."""
+        url = reverse('group-roles', kwargs={'uuid': self.defGroup.uuid})
+        client = APIClient()
+        url = '{}?roles={}'.format(url, self.roleB.uuid)
+
+        self.policy.roles.add(self.roleB)
+        self.policy.save()
+
+        self.assertTrue(self.defGroup.system)
+        response = client.delete(url, format='json', **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+        self.defGroup.refresh_from_db()
+        self.assertFalse(self.defGroup.system)
 
     def test_add_group_roles_system_policy_create_new_group_success(self):
         """Test that adding a role to a group without a system policy returns successfully."""
