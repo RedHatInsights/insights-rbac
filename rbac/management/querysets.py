@@ -136,7 +136,8 @@ def get_access_queryset(request):
                                          PRINCIPAL_SCOPE,
                                          Access,
                                          **{APPLICATION_KEY: app,
-                                            'prefetch_lookups': 'resourceDefinitions'})
+                                            'prefetch_lookups_for_ids': 'resourceDefinitions',
+                                            'prefetch_lookups_for_groups': 'policies__roles__access'})
 
 
 def get_object_principal_queryset(request, scope, clazz, **kwargs):
