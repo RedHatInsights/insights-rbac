@@ -99,7 +99,13 @@ def access_for_principal(principal, **kwargs):
     return access
 
 
-def queryset_by_id(objects, clazz):
+def queryset_by_id(objects, clazz, **kwargs):
     """Return a queryset of from the class ordered by id."""
     wanted_ids = [obj.id for obj in objects]
-    return clazz.objects.filter(id__in=wanted_ids).order_by('id')
+    prefetch_lookups = kwargs.get('prefetch_lookups')
+    query = clazz.objects.filter(id__in=wanted_ids).order_by('id')
+
+    if prefetch_lookups:
+        query = query.prefetch_related(prefetch_lookups)
+
+    return query
