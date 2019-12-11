@@ -11,5 +11,6 @@ if (env.CHANGE_ID) {
         ocDeployerServiceSets: "rbac",
         iqePlugins: ["iqe-rbac-plugin"],
         pytestMarker: "rbac_smoke",
+        extraEnvVars: [ TESTING_APPLICATION: "test" ]
     )
 }
