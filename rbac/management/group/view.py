@@ -382,7 +382,11 @@ class GroupViewSet(mixins.CreateModelMixin,
                     {
                         "name": "RoleA",
                         "uuid": "4df211e0-2d88-49a4-8802-728630224d15",
-                        "description": "RoleA Description"
+                        "description": "RoleA Description",
+                        "policyCount: 0,
+                        "applications": [],
+                        "system": false,
+                        "platform_default": false
                     }
                 ]
             }
@@ -408,13 +412,15 @@ class GroupViewSet(mixins.CreateModelMixin,
         @apiSuccessExample {json} Success-Response:
             HTTP/1.1 200 OK
             {
-                "uuid": "16fd2706-8baf-433b-82eb-8c7fada847da",
-                "name": "GroupA",
-                "roles": [
+                "data": [
                     {
                         "name": "RoleA",
                         "uuid": "4df211e0-2d88-49a4-8802-728630224d15",
-                        "description": "RoleA Description"
+                        "description": "RoleA Description",
+                        "policyCount: 0,
+                        "applications": [],
+                        "system": false,
+                        "platform_default": false
                     }
                 ]
             }
