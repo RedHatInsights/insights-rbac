@@ -42,6 +42,16 @@ class RoleViewsetTests(IdentityRequest):
         user.save()
         request.user = user
 
+        sys_role_config = {
+            'name': 'system_role',
+            'system': True
+        }
+
+        def_role_config = {
+            'name': 'default_role',
+            'platform_default': True
+        }
+
         with tenant_context(self.tenant):
             self.principal = Principal(username=self.user_data['username'])
             self.principal.save()
@@ -49,6 +59,12 @@ class RoleViewsetTests(IdentityRequest):
             self.group.save()
             self.group.principals.add(self.principal)
             self.group.save()
+
+            self.sysRole = Role(**sys_role_config)
+            self.sysRole.save()
+
+            self.defRole = Role(**def_role_config)
+            self.defRole.save()
 
     def tearDown(self):
         """Tear down role viewset tests."""
@@ -83,7 +99,6 @@ class RoleViewsetTests(IdentityRequest):
         url = reverse('role-list')
         client = APIClient()
         response = client.post(url, test_data, format='json', **self.headers)
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         return response
 
     def test_create_role_success(self):
@@ -139,6 +154,53 @@ class RoleViewsetTests(IdentityRequest):
         response = client.post(url, test_data, format='json', **self.headers)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
+    def test_create_role_whitelist(self):
+        """Test that we can create a role in a whitelisted application via API."""
+        role_name = 'C-MRole'
+        access_data = {
+            'permission': 'cost-management:*:*',
+            'resourceDefinitions': [
+                {
+                    'attributeFilter': {
+                          'key': 'keyA',
+                          'operation': 'equal',
+                        'value': 'valueA'
+                    }
+                }
+            ]
+        }
+        response = self.create_role(role_name, access_data)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+        # test that we can retrieve the role
+        url = reverse('role-detail', kwargs={'uuid': response.data.get('uuid')})
+        client = APIClient()
+        response = client.get(url, **self.headers)
+
+        self.assertIsNotNone(response.data.get('uuid'))
+        self.assertIsNotNone(response.data.get('name'))
+        self.assertEqual(role_name, response.data.get('name'))
+        self.assertIsInstance(response.data.get('access'), list)
+        self.assertEqual(access_data, response.data.get('access')[0])
+
+    def test_create_role_whitelist_fail(self):
+        """Test that we cannot create a role for a non-whitelisted app."""
+        role_name = 'roleFail'
+        access_data = {
+            'permission': 'someApp:*:*',
+            'resourceDefinitions': [
+                {
+                    'attributeFilter': {
+                          'key': 'keyA',
+                          'operation': 'equal',
+                        'value': 'valueA'
+                    }
+                }
+            ]
+        }
+        response = self.create_role(role_name, access_data)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
     def test_read_role_invalid(self):
         """Test that reading an invalid role returns an error."""
         url = reverse('role-detail', kwargs={'uuid': uuid4()})
@@ -151,8 +213,9 @@ class RoleViewsetTests(IdentityRequest):
         role_name = 'roleA'
         response = self.create_role(role_name)
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        role_uuid = response.data.get('uuid')
 
-        # list a roles
+        # list a role
         url = reverse('role-list')
         client = APIClient()
         response = client.get(url, **self.headers)
@@ -161,10 +224,15 @@ class RoleViewsetTests(IdentityRequest):
         for keyname in ['meta', 'links', 'data']:
             self.assertIn(keyname, response.data)
         self.assertIsInstance(response.data.get('data'), list)
-        self.assertEqual(len(response.data.get('data')), 1)
+        self.assertEqual(len(response.data.get('data')), 3)
 
-        role = response.data.get('data')[0]
-        self.assertIsNotNone(role.get('name'))
+        role = None
+
+        for iterRole in response.data.get('data'):
+            self.assertIsNotNone(iterRole.get('name'))
+            if iterRole.get('name') == role_name:
+                role = iterRole
+                break
         self.assertEqual(role.get('name'), role_name)
 
     def test_update_role_success(self):
@@ -204,6 +272,28 @@ class RoleViewsetTests(IdentityRequest):
         # verify the role no longer exists
         response = client.get(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_delete_system_role(self):
+        """Test that system roles are protected from deletion"""
+        url = reverse('role-detail', kwargs={'uuid': self.sysRole.uuid})
+        client = APIClient()
+        response = client.delete(url, **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+        # verify the role still exists
+        response = client.get(url, **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+    def test_delete_default_role(self):
+        """Test that default roles are protected from deletion"""
+        url = reverse('role-detail', kwargs={'uuid': self.defRole.uuid})
+        client = APIClient()
+        response = client.delete(url, **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+        # verify the role still exists
+        response = client.get(url, **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
 
     def test_delete_role_invalid(self):
         """Test that deleting an invalid role returns an error."""

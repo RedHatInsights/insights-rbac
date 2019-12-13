@@ -16,10 +16,8 @@
 #
 """Helper utilities for management module."""
 from django.core.exceptions import PermissionDenied
-from django.db import models
-from django.utils import timezone
 from django.utils.translation import gettext as _
-from management.models import Principal
+from management.models import Group, Principal
 from rest_framework import serializers
 
 USERNAME_KEY = 'username'
@@ -75,8 +73,10 @@ def access_for_roles(roles, application):
 
 
 def groups_for_principal(principal, **kwargs):
-    """Gathers all groups for a principal."""
-    return set(principal.group.all())
+    """Gathers all groups for a principal, including the default."""
+    assigned_group_set = principal.group.all()
+    platform_default_group_set = Group.objects.filter(platform_default=True)
+    return set(assigned_group_set | platform_default_group_set)
 
 
 def policies_for_principal(principal, **kwargs):
@@ -103,11 +103,3 @@ def queryset_by_id(objects, clazz):
     """Return a queryset of from the class ordered by id."""
     wanted_ids = [obj.id for obj in objects]
     return clazz.objects.filter(id__in=wanted_ids).order_by('id')
-
-
-class AutoDateTimeField(models.DateTimeField):
-    """Class that defines is pre_save value."""
-
-    def pre_save(self, model_instance, add):
-        """Save its time as now."""
-        return timezone.now()

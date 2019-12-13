@@ -16,6 +16,8 @@
 #
 
 """View for role management."""
+import os
+
 from django.db import transaction
 from django.db.models.aggregates import Count
 from django.shortcuts import get_object_or_404
@@ -23,11 +25,15 @@ from django.utils.translation import gettext as _
 from django_filters import rest_framework as filters
 from management.permissions import RoleAccessPermission
 from management.querysets import get_role_queryset
+from management.role.serializer import RoleMinimumSerializer
 from rest_framework import mixins, serializers, viewsets
 from rest_framework.filters import OrderingFilter
 
 from .model import Role
 from .serializer import RoleSerializer
+
+TESTING_APP = os.getenv('TESTING_APPLICATION')
+APP_WHITELIST = [TESTING_APP, 'cost-management', 'catalog', 'approval']
 
 
 class RoleFilter(filters.FilterSet):
@@ -65,6 +71,12 @@ class RoleViewSet(mixins.CreateModelMixin,
     def get_queryset(self):
         """Obtain queryset for requesting user based on access."""
         return get_role_queryset(self.request)
+
+    def get_serializer_class(self):
+        """Get serializer based on route."""
+        if self.request.path.endswith('roles/') and self.request.method == 'GET':
+            return RoleMinimumSerializer
+        return RoleSerializer
 
     def create(self, request, *args, **kwargs):
         """Create a roles.
@@ -121,6 +133,15 @@ class RoleViewSet(mixins.CreateModelMixin,
                 ]
             }
         """
+        for perm in request.data.get('access', []):
+            app = perm.get('permission').split(':')[0]
+            if app not in APP_WHITELIST:
+                key = 'role'
+                message = 'Custom roles cannot be created for {}'.format(app)
+                error = {
+                    key: [_(message)]
+                }
+                raise serializers.ValidationError(error)
         return super().create(request=request, args=args, kwargs=kwargs)
 
     def list(self, request, *args, **kwargs):
@@ -224,7 +245,7 @@ class RoleViewSet(mixins.CreateModelMixin,
             HTTP/1.1 204 NO CONTENT
         """
         role = get_object_or_404(Role, uuid=kwargs.get('uuid'))
-        if role.system:
+        if role.system or role.platform_default:
             key = 'role'
             message = 'System roles cannot be deleted.'
             error = {

@@ -72,6 +72,7 @@ class RoleSerializer(serializers.ModelSerializer):
     policyCount = serializers.IntegerField(read_only=True)
     applications = serializers.SerializerMethodField()
     system = serializers.BooleanField(read_only=True)
+    platform_default = serializers.BooleanField(read_only=True)
     created = serializers.DateTimeField(read_only=True)
     modified = serializers.DateTimeField(read_only=True)
 
@@ -82,17 +83,12 @@ class RoleSerializer(serializers.ModelSerializer):
         fields = ('uuid', 'name', 'description',
                   'access', 'policyCount',
                   'applications', 'system',
-                  'created', 'modified')
+                  'platform_default', 'created',
+                  'modified')
 
     def get_applications(self, obj):
         """Get the list of applications in the role."""
-        apps = []
-        for access_item in obj.access.all():
-            perm_list = access_item.permission.split(':')
-            perm_len = len(perm_list)
-            if perm_len == 3:
-                apps.append(perm_list[0])
-        return list(set(apps))
+        obtain_applications(obj)
 
     def create(self, validated_data):
         """Create the role object in the database."""
@@ -145,9 +141,29 @@ class RoleMinimumSerializer(serializers.ModelSerializer):
     description = serializers.CharField(allow_null=True, required=False)
     created = serializers.DateTimeField(read_only=True)
     modified = serializers.DateTimeField(read_only=True)
+    policyCount = serializers.IntegerField(read_only=True)
+    applications = serializers.SerializerMethodField()
+    system = serializers.BooleanField(read_only=True)
+    platform_default = serializers.BooleanField(read_only=True)
 
     class Meta:
         """Metadata for the serializer."""
 
         model = Role
-        fields = ('uuid', 'name', 'description', 'created', 'modified')
+        fields = ('uuid', 'name', 'description', 'created', 'modified', 'policyCount',
+                  'applications', 'system', 'platform_default')
+
+    def get_applications(self, obj):
+        """Get the list of applications in the role."""
+        return obtain_applications(obj)
+
+
+def obtain_applications(obj):
+    """Shared function to get the list of applications in the role."""
+    apps = []
+    for access_item in obj.access.all():
+        perm_list = access_item.permission.split(':')
+        perm_len = len(perm_list)
+        if perm_len == 3:
+            apps.append(perm_list[0])
+    return list(set(apps))
