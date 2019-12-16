@@ -22,7 +22,7 @@ from django.db.models.aggregates import Count
 from django.shortcuts import get_object_or_404
 from django.utils.translation import gettext as _
 from django_filters import rest_framework as filters
-from management.group.definer import add_roles, remove_roles
+from management.group.definer import add_roles, remove_roles, set_system_flag_post_update
 from management.group.model import Group
 from management.group.serializer import (GroupInputSerializer,
                                          GroupPrincipalInputSerializer,
@@ -382,7 +382,11 @@ class GroupViewSet(mixins.CreateModelMixin,
                     {
                         "name": "RoleA",
                         "uuid": "4df211e0-2d88-49a4-8802-728630224d15",
-                        "description": "RoleA Description"
+                        "description": "RoleA Description",
+                        "policyCount: 0,
+                        "applications": [],
+                        "system": false,
+                        "platform_default": false
                     }
                 ]
             }
@@ -408,13 +412,15 @@ class GroupViewSet(mixins.CreateModelMixin,
         @apiSuccessExample {json} Success-Response:
             HTTP/1.1 200 OK
             {
-                "uuid": "16fd2706-8baf-433b-82eb-8c7fada847da",
-                "name": "GroupA",
-                "roles": [
+                "data": [
                     {
                         "name": "RoleA",
                         "uuid": "4df211e0-2d88-49a4-8802-728630224d15",
-                        "description": "RoleA Description"
+                        "description": "RoleA Description",
+                        "policyCount: 0,
+                        "applications": [],
+                        "system": false,
+                        "platform_default": false
                     }
                 ]
             }
@@ -442,6 +448,7 @@ class GroupViewSet(mixins.CreateModelMixin,
             if serializer.is_valid(raise_exception=True):
                 roles = request.data.pop(ROLES_KEY, [])
             add_roles(group, roles)
+            set_system_flag_post_update(group)
             response_data = GroupRoleSerializerIn(group)
         elif request.method == 'GET':
             serialized_roles = [RoleMinimumSerializer(role).data for role in group.roles()]
@@ -458,6 +465,7 @@ class GroupViewSet(mixins.CreateModelMixin,
             serializer = GroupRoleSerializerIn(data={'roles': role_ids})
             if serializer.is_valid(raise_exception=True):
                 remove_roles(group, role_ids)
+                set_system_flag_post_update(group)
 
             return Response(status=status.HTTP_204_NO_CONTENT)
 
