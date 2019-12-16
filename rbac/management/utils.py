@@ -76,30 +76,42 @@ def groups_for_principal(principal, **kwargs):
     """Gathers all groups for a principal, including the default."""
     assigned_group_set = principal.group.all()
     platform_default_group_set = Group.objects.filter(platform_default=True)
+    prefetch_lookups = kwargs.get('prefetch_lookups_for_groups')
+
+    if prefetch_lookups:
+        assigned_group_set = assigned_group_set.prefetch_related(prefetch_lookups)
+        platform_default_group_set = platform_default_group_set.prefetch_related(prefetch_lookups)
+
     return set(assigned_group_set | platform_default_group_set)
 
 
 def policies_for_principal(principal, **kwargs):
     """Gathers all policies for a principal."""
-    groups = groups_for_principal(principal)
+    groups = groups_for_principal(principal, **kwargs)
     return policies_for_groups(groups)
 
 
 def roles_for_principal(principal, **kwargs):
     """Gathers all roles for a principal."""
-    policies = policies_for_principal(principal)
+    policies = policies_for_principal(principal, **kwargs)
     return roles_for_policies(policies)
 
 
 def access_for_principal(principal, **kwargs):
     """Gathers all access for a principal for an application."""
     application = kwargs.get(APPLICATION_KEY)
-    roles = roles_for_principal(principal)
+    roles = roles_for_principal(principal, **kwargs)
     access = access_for_roles(roles, application)
     return access
 
 
-def queryset_by_id(objects, clazz):
+def queryset_by_id(objects, clazz, **kwargs):
     """Return a queryset of from the class ordered by id."""
     wanted_ids = [obj.id for obj in objects]
-    return clazz.objects.filter(id__in=wanted_ids).order_by('id')
+    prefetch_lookups = kwargs.get('prefetch_lookups_for_ids')
+    query = clazz.objects.filter(id__in=wanted_ids).order_by('id')
+
+    if prefetch_lookups:
+        query = query.prefetch_related(prefetch_lookups)
+
+    return query

@@ -135,7 +135,9 @@ def get_access_queryset(request):
     return get_object_principal_queryset(request,
                                          PRINCIPAL_SCOPE,
                                          Access,
-                                         **{APPLICATION_KEY: app})
+                                         **{APPLICATION_KEY: app,
+                                            'prefetch_lookups_for_ids': 'resourceDefinitions',
+                                            'prefetch_lookups_for_groups': 'policies__roles__access'})
 
 
 def get_object_principal_queryset(request, scope, clazz, **kwargs):
@@ -154,4 +156,4 @@ def get_object_principal_queryset(request, scope, clazz, **kwargs):
     object_principal_func = PRINCIPAL_QUERYSET_MAP.get(clazz.__name__)
     principal = get_principal_from_request(request)
     objects = object_principal_func(principal, **kwargs)
-    return queryset_by_id(objects, clazz)
+    return queryset_by_id(objects, clazz, **kwargs)
