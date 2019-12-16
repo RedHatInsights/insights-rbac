@@ -93,7 +93,7 @@ class GroupSerializer(serializers.ModelSerializer):
 
     def get_roles(self, obj):
         """Role constructor for the serializer."""
-        serialized_roles = [RoleMinimumSerializer(role).data for role in obj.roles()]
+        serialized_roles = [RoleMinimumSerializer(role).data for role in obj.roles().prefetch_related('access')]
         return serialized_roles
 
 
@@ -123,5 +123,5 @@ class GroupRoleSerializerIn(serializers.Serializer):
 
     def to_representation(self, obj):
         """Convert representation to dictionary object."""
-        serialized_roles = [RoleMinimumSerializer(role).data for role in obj.roles()]
+        serialized_roles = [RoleMinimumSerializer(role).data for role in obj.roles().prefetch_related('access')]
         return {'data': serialized_roles}
