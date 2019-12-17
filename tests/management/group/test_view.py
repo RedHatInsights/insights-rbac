@@ -176,6 +176,14 @@ class GroupViewsetTests(IdentityRequest):
         self.assertIsNotNone(response.data.get('uuid'))
         self.assertEqual(updated_name, response.data.get('name'))
 
+    def test_update_default_group(self):
+        """Test that platform_default groups are protected from updates"""
+        url = reverse('group-detail', kwargs={'uuid': self.defGroup.uuid})
+        test_data = {'name': self.defGroup.name + '_updated'}
+        client = APIClient()
+        response = client.put(url, test_data, format='json', **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
     def test_update_group_invalid(self):
         """Test that updating an invalid group returns an error."""
         url = reverse('group-detail', kwargs={'uuid': uuid4()})
