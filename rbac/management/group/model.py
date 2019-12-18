@@ -42,6 +42,10 @@ class Group(models.Model):
         """Roles for a group."""
         return Role.objects.filter(policies__in=self.__policy_ids()).distinct()
 
+    def roles_with_access(self):
+        """Queryset for roles with access data prefetched."""
+        return self.roles().prefetch_related('access')
+
     def role_count(self):
         """Role count for a group."""
         return self.roles().count()
