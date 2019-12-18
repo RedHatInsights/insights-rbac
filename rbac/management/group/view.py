@@ -451,7 +451,7 @@ class GroupViewSet(mixins.CreateModelMixin,
             set_system_flag_post_update(group)
             response_data = GroupRoleSerializerIn(group)
         elif request.method == 'GET':
-            serialized_roles = [RoleMinimumSerializer(role).data for role in group.roles()]
+            serialized_roles = [RoleMinimumSerializer(role).data for role in group.roles_with_access()]
             page = self.paginate_queryset(serialized_roles)
             serializer = self.get_serializer(page, many=True)
             return self.get_paginated_response(serializer.data)
