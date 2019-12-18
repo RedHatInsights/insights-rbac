@@ -97,6 +97,17 @@ class GroupViewSet(mixins.CreateModelMixin,
             return GroupInputSerializer
         return GroupSerializer
 
+    def protect_default_groups(self, uuid, action):
+        """Deny modifications on platform_default groups."""
+        group = get_object_or_404(Group, uuid=uuid)
+        if group.platform_default:
+            key = 'group'
+            message = '{} cannot be performed on platform default groups.'.format(action.upper())
+            error = {
+                key: [_(message)]
+            }
+            raise serializers.ValidationError(error)
+
     def create(self, request, *args, **kwargs):
         """Create a group.
 
@@ -223,14 +234,7 @@ class GroupViewSet(mixins.CreateModelMixin,
         @apiSuccessExample {json} Success-Response:
             HTTP/1.1 204 NO CONTENT
         """
-        group = get_object_or_404(Group, uuid=kwargs.get('uuid'))
-        if group.platform_default:
-            key = 'group'
-            message = 'Platform groups cannot be deleted.'
-            error = {
-                key: [_(message)]
-            }
-            raise serializers.ValidationError(error)
+        self.protect_default_groups(kwargs.get('uuid'), 'delete')
         return super().destroy(request=request, args=args, kwargs=kwargs)
 
     def update(self, request, *args, **kwargs):
@@ -255,6 +259,7 @@ class GroupViewSet(mixins.CreateModelMixin,
                 "name": "GroupA"
             }
         """
+        self.protect_default_groups(kwargs.get('uuid'), 'update')
         return super().update(request=request, args=args, kwargs=kwargs)
 
     def add_principals(self, group, principals, account):
@@ -451,7 +456,7 @@ class GroupViewSet(mixins.CreateModelMixin,
             set_system_flag_post_update(group)
             response_data = GroupRoleSerializerIn(group)
         elif request.method == 'GET':
-            serialized_roles = [RoleMinimumSerializer(role).data for role in group.roles()]
+            serialized_roles = [RoleMinimumSerializer(role).data for role in group.roles_with_access()]
             page = self.paginate_queryset(serialized_roles)
             serializer = self.get_serializer(page, many=True)
             return self.get_paginated_response(serializer.data)
