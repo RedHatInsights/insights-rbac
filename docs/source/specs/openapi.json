@@ -1245,7 +1245,7 @@
         "tags": [
           "Access"
         ],
-        "summary": "Get the permitted access for a principal in the tenant",
+        "summary": "Get the permitted access for a principal in the tenant (defaults to principal from the identity header)",
         "operationId": "getPrincipalAccess",
         "parameters": [
           {
@@ -1260,7 +1260,7 @@
           {
             "name": "username",
             "in": "query",
-            "description": "Unique username of the principal to obtain access for",
+            "description": "Unique username of the principal to obtain access for (only available for admins, and if supplied, takes precedence over the identity header).",
             "required": false,
             "schema": {
               "type": "string"
