@@ -101,7 +101,7 @@ class GroupViewSet(mixins.CreateModelMixin,
         """Deny modifications on platform_default groups."""
         if group.platform_default:
             key = 'group'
-            message = '{} cannot be performed on platform default groups.'.format(action)
+            message = '{} cannot be performed on platform default groups.'.format(action.upper())
             error = {
                 key: [_(message)]
             }
