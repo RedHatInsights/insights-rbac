@@ -19,7 +19,6 @@
 import logging
 
 from django.db.models.aggregates import Count
-from django.shortcuts import get_object_or_404
 from django.utils.translation import gettext as _
 from django_filters import rest_framework as filters
 from management.group.definer import add_roles, remove_roles, set_system_flag_post_update
@@ -97,9 +96,9 @@ class GroupViewSet(mixins.CreateModelMixin,
             return GroupInputSerializer
         return GroupSerializer
 
-    def protect_default_groups(self, uuid, action):
+    def protect_default_groups(self, action):
         """Deny modifications on platform_default groups."""
-        group = get_object_or_404(Group, uuid=uuid)
+        group = self.get_object()
         if group.platform_default:
             key = 'group'
             message = '{} cannot be performed on platform default groups.'.format(action.upper())
@@ -234,7 +233,7 @@ class GroupViewSet(mixins.CreateModelMixin,
         @apiSuccessExample {json} Success-Response:
             HTTP/1.1 204 NO CONTENT
         """
-        self.protect_default_groups(kwargs.get('uuid'), 'delete')
+        self.protect_default_groups('delete')
         return super().destroy(request=request, args=args, kwargs=kwargs)
 
     def update(self, request, *args, **kwargs):
@@ -259,7 +258,7 @@ class GroupViewSet(mixins.CreateModelMixin,
                 "name": "GroupA"
             }
         """
-        self.protect_default_groups(kwargs.get('uuid'), 'update')
+        self.protect_default_groups('update')
         return super().update(request=request, args=args, kwargs=kwargs)
 
     def add_principals(self, group, principals, account):
