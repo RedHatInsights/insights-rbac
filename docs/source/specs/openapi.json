@@ -1777,26 +1777,28 @@
           },
           {
             "$ref": "#/components/schemas/Timestamped"
+          },
+          {
+            "properties": {
+              "principalCount": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "roleCount": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "system": {
+                "type": "boolean",
+                "default": false
+              },
+              "platform_default": {
+                "type": "boolean",
+                "default": false
+              }
+            }
           }
-        ],
-        "properties": {
-          "principalCount": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "roleCount": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "system": {
-            "type": "boolean",
-            "default": false
-          },
-          "platform_default": {
-            "type": "boolean",
-            "default": false
-          }
-        }
+        ]
       },
       "GroupPrincipalIn": {
         "required": [
