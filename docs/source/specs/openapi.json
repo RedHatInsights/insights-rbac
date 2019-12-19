@@ -81,6 +81,9 @@
         "operationId": "listPrincipals",
         "parameters": [
           {
+            "$ref": "#/components/parameters/IdentityHeader"
+          },
+          {
             "$ref": "#/components/parameters/QueryLimit"
           },
           {
@@ -140,6 +143,11 @@
         ],
         "summary": "Create a group in a tenant",
         "operationId": "createGroup",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdentityHeader"
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -194,6 +202,9 @@
         "summary": "List the groups for a tenant",
         "operationId": "listGroups",
         "parameters": [
+          {
+            "$ref": "#/components/parameters/IdentityHeader"
+          },
           {
             "$ref": "#/components/parameters/QueryLimit"
           },
@@ -265,6 +276,9 @@
         "operationId": "getGroup",
         "parameters": [
           {
+            "$ref": "#/components/parameters/IdentityHeader"
+          },
+          {
             "name": "uuid",
             "in": "path",
             "description": "ID of group to get",
@@ -328,6 +342,9 @@
         "summary": "Udate a group in the tenant",
         "operationId": "updateGroup",
         "parameters": [
+          {
+            "$ref": "#/components/parameters/IdentityHeader"
+          },
           {
             "name": "uuid",
             "in": "path",
@@ -404,6 +421,9 @@
         "operationId": "deleteGroup",
         "parameters": [
           {
+            "$ref": "#/components/parameters/IdentityHeader"
+          },
+          {
             "name": "uuid",
             "in": "path",
             "description": "ID of group to delete",
@@ -462,6 +482,9 @@
         "summary": "Add a principal to a group in the tenant",
         "operationId": "addPrincipalToGroup",
         "parameters": [
+          {
+            "$ref": "#/components/parameters/IdentityHeader"
+          },
           {
             "name": "uuid",
             "in": "path",
@@ -532,6 +555,9 @@
         "summary": "Remove a principal from a group in the tenant",
         "operationId": "deletePrincipalFromGroup",
         "parameters": [
+          {
+            "$ref": "#/components/parameters/IdentityHeader"
+          },
           {
             "name": "uuid",
             "in": "path",
@@ -604,6 +630,9 @@
         "operationId": "listRolesForGroup",
         "parameters": [
           {
+            "$ref": "#/components/parameters/IdentityHeader"
+          },
+          {
             "name": "uuid",
             "in": "path",
             "description": "ID of group",
@@ -663,6 +692,9 @@
         "summary": "Add a role to a group in the tenant",
         "operationId": "addRoleToGroup",
         "parameters": [
+          {
+            "$ref": "#/components/parameters/IdentityHeader"
+          },
           {
             "name": "uuid",
             "in": "path",
@@ -745,6 +777,9 @@
         "operationId": "deleteRoleFromGroup",
         "parameters": [
           {
+            "$ref": "#/components/parameters/IdentityHeader"
+          },
+          {
             "name": "uuid",
             "in": "path",
             "description": "ID of group to update",
@@ -814,6 +849,11 @@
         ],
         "summary": "Create a roles for a tenant",
         "operationId": "createRoles",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdentityHeader"
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -868,6 +908,9 @@
         "summary": "List the roles for a tenant",
         "operationId": "listRoles",
         "parameters": [
+          {
+            "$ref": "#/components/parameters/IdentityHeader"
+          },
           {
             "$ref": "#/components/parameters/QueryLimit"
           },
@@ -929,6 +972,9 @@
         "summary": "Get a role in the tenant",
         "operationId": "getRole",
         "parameters": [
+          {
+            "$ref": "#/components/parameters/IdentityHeader"
+          },
           {
             "name": "uuid",
             "in": "path",
@@ -994,6 +1040,9 @@
         "operationId": "deleteRole",
         "parameters": [
           {
+            "$ref": "#/components/parameters/IdentityHeader"
+          },
+          {
             "name": "uuid",
             "in": "path",
             "description": "ID of role to delete",
@@ -1050,6 +1099,9 @@
         "summary": "Update a Role in the tenant",
         "operationId": "updateRole",
         "parameters": [
+          {
+            "$ref": "#/components/parameters/IdentityHeader"
+          },
           {
             "name": "uuid",
             "in": "path",
@@ -1119,6 +1171,11 @@
         ],
         "summary": "Create a policy in a tenant",
         "operationId": "createPolicies",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdentityHeader"
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -1163,6 +1220,9 @@
         "summary": "List the policies in the tenant",
         "operationId": "listPolicies",
         "parameters": [
+          {
+            "$ref": "#/components/parameters/IdentityHeader"
+          },
           {
             "$ref": "#/components/parameters/QueryLimit"
           },
@@ -1221,6 +1281,9 @@
         "operationId": "getPolicy",
         "parameters": [
           {
+            "$ref": "#/components/parameters/IdentityHeader"
+          },
+          {
             "name": "uuid",
             "in": "path",
             "description": "ID of policy to get",
@@ -1274,6 +1337,9 @@
         "summary": "Update a policy in the tenant",
         "operationId": "updatePolicy",
         "parameters": [
+          {
+            "$ref": "#/components/parameters/IdentityHeader"
+          },
           {
             "name": "uuid",
             "in": "path",
@@ -1340,6 +1406,9 @@
         "operationId": "deletePolicy",
         "parameters": [
           {
+            "$ref": "#/components/parameters/IdentityHeader"
+          },
+          {
             "name": "uuid",
             "in": "path",
             "description": "ID of policy to delete",
@@ -1388,6 +1457,9 @@
         "summary": "Get the permitted access for a principal in the tenant (defaults to principal from the identity header)",
         "operationId": "getPrincipalAccess",
         "parameters": [
+          {
+            "$ref": "#/components/parameters/IdentityHeader"
+          },
           {
             "name": "application",
             "in": "query",
@@ -1530,6 +1602,16 @@
             "principal"
           ],
           "default": "account"
+        }
+      },
+      "IdentityHeader": {
+        "in": "header",
+        "name": "x-rh-identity",
+        "required": true,
+        "description": "Base64 encoded identity header object",
+        "schema": {
+          "type": "string",
+          "format": "byte"
         }
       }
     },
