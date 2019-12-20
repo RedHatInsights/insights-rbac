@@ -20,7 +20,6 @@ import os
 
 from django.db import transaction
 from django.db.models.aggregates import Count
-from django.shortcuts import get_object_or_404
 from django.utils.translation import gettext as _
 from django_filters import rest_framework as filters
 from management.permissions import RoleAccessPermission
@@ -247,7 +246,7 @@ class RoleViewSet(mixins.CreateModelMixin,
         @apiSuccessExample {json} Success-Response:
             HTTP/1.1 204 NO CONTENT
         """
-        role = get_object_or_404(Role, uuid=kwargs.get('uuid'))
+        role = self.get_object()
         if role.system or role.platform_default:
             key = 'role'
             message = 'System roles cannot be deleted.'
