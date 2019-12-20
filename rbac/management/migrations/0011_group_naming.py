@@ -8,8 +8,6 @@ def update_default_name(apps, schema_editor):
     for group in Group.objects.all():
         if group.system:
             group.name = "Default user access"
-        else:
-            group.name = "Custom default user access"
 
 class Migration(migrations.Migration):
 
