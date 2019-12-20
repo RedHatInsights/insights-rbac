@@ -76,7 +76,7 @@ class RoleViewsetTests(IdentityRequest):
 
     def create_role(self, role_name, in_access_data=None):
         """Create a role."""
-        access_data = {
+        access_data = [{
             'permission': 'app:*:*',
             'resourceDefinitions': [
                 {
@@ -87,12 +87,12 @@ class RoleViewsetTests(IdentityRequest):
                     }
                 }
             ]
-        }
+        }]
         if in_access_data:
             access_data = in_access_data
         test_data = {
             'name': role_name,
-            'access': [access_data]
+            'access': access_data
         }
 
         # create a role
@@ -104,7 +104,7 @@ class RoleViewsetTests(IdentityRequest):
     def test_create_role_success(self):
         """Test that we can create a role."""
         role_name = 'roleA'
-        access_data = {
+        access_data = [{
             'permission': 'app:*:*',
             'resourceDefinitions': [
                 {
@@ -115,7 +115,7 @@ class RoleViewsetTests(IdentityRequest):
                     }
                 }
             ]
-        }
+        }]
         response = self.create_role(role_name, access_data)
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
 
@@ -128,7 +128,7 @@ class RoleViewsetTests(IdentityRequest):
         self.assertIsNotNone(response.data.get('name'))
         self.assertEqual(role_name, response.data.get('name'))
         self.assertIsInstance(response.data.get('access'), list)
-        self.assertEqual(access_data, response.data.get('access')[0])
+        self.assertEqual(access_data, response.data.get('access'))
 
     def test_create_role_invalid(self):
         """Test that creating an invalid role returns an error."""
@@ -157,7 +157,7 @@ class RoleViewsetTests(IdentityRequest):
     def test_create_role_whitelist(self):
         """Test that we can create a role in a whitelisted application via API."""
         role_name = 'C-MRole'
-        access_data = {
+        access_data = [{
             'permission': 'cost-management:*:*',
             'resourceDefinitions': [
                 {
@@ -168,7 +168,7 @@ class RoleViewsetTests(IdentityRequest):
                     }
                 }
             ]
-        }
+        }]
         response = self.create_role(role_name, access_data)
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
 
@@ -181,12 +181,12 @@ class RoleViewsetTests(IdentityRequest):
         self.assertIsNotNone(response.data.get('name'))
         self.assertEqual(role_name, response.data.get('name'))
         self.assertIsInstance(response.data.get('access'), list)
-        self.assertEqual(access_data, response.data.get('access')[0])
+        self.assertEqual(access_data, response.data.get('access'))
 
     def test_create_role_whitelist_fail(self):
         """Test that we cannot create a role for a non-whitelisted app."""
         role_name = 'roleFail'
-        access_data = {
+        access_data = [{
             'permission': 'someApp:*:*',
             'resourceDefinitions': [
                 {
@@ -197,7 +197,21 @@ class RoleViewsetTests(IdentityRequest):
                     }
                 }
             ]
-        }
+        }]
+        response = self.create_role(role_name, access_data)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+ 
+    def test_create_role_fail_with_access_not_list(self):
+        """Test that we cannot create a role for a non-whitelisted app."""
+        role_name = 'AccessNotList'
+        access_data = 'some data'
+        response = self.create_role(role_name, access_data)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_create_role_fail_with_invalid_access(self):
+        """Test that we cannot create a role for invalid access data."""
+        role_name = 'AccessInvalid'
+        access_data = [{'per': 'some data'}]
         response = self.create_role(role_name, access_data)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
