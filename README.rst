@@ -125,6 +125,26 @@ To lint the code base ::
 
     tox -e lint
 
+Caveats
+-------------------
+
+For all requests to the Insights RBAC API, it is assumed and required that principal
+information for the request be sent in a header named: `x-rh-identity`. The information
+in this header is used to determine the tenant, principal and other account-level
+information for the request.
+
+Consumers of this API through cloud.redhat.com should not be concerned with adding
+this header, as it will be overwritten by the gateway. All traffic to the Insights
+RBAC API comes through Akamai and the Insights 3scale Gateway. The gateway is responsible
+for adding the `x-rh-identity` header to all authenticated requests.
+
+Any internal, service-to-service requests which do **not** go through the gateway
+will need to have this header added to each request.
+
+This header requirement is not reflected in the openapi.json spec, as it would
+cause spec-based API clients to require the header, which would be superfluously
+added to all requests on cloud.redhat.com.
+
 Contributing
 =============
 
