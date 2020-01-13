@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 def seed_group(tenant):
     """For a tenant create or update default group."""
     with tenant_context(tenant):
-        name = 'Platform group'
+        name = 'Default user access'
         group_description = 'Default group that contains default permissions for new users.'
 
         group, group_created = Group.objects.get_or_create(
@@ -53,6 +53,8 @@ def seed_group(tenant):
 
 def set_system_flag_post_update(group):
     """Update system flag on default groups."""
+    if group.system:
+        group.name = 'Custom default user access'
     group.system = False
     group.save()
 
