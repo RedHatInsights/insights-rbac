@@ -19,7 +19,6 @@
 import logging
 
 from django.db.models.aggregates import Count
-from django.shortcuts import get_object_or_404
 from django.utils.translation import gettext as _
 from django_filters import rest_framework as filters
 from management.group.definer import add_roles, remove_roles, set_system_flag_post_update
@@ -33,7 +32,8 @@ from management.group.serializer import (GroupInputSerializer,
 from management.permissions import GroupAccessPermission
 from management.principal.model import Principal
 from management.principal.proxy import PrincipalProxy
-from management.querysets import get_group_queryset
+from management.querysets import get_group_queryset, get_object_principal_queryset
+from management.role.model import Role
 from rest_framework import mixins, serializers, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.filters import OrderingFilter
@@ -42,6 +42,8 @@ from rest_framework.response import Response
 
 USERNAMES_KEY = 'usernames'
 ROLES_KEY = 'roles'
+EXCLUDE_KEY = 'exclude'
+VALID_EXCLUDE_VALUES = ['true', 'false']
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 
@@ -96,6 +98,17 @@ class GroupViewSet(mixins.CreateModelMixin,
         if self.request.path.endswith('groups/') and self.request.method == 'GET':
             return GroupInputSerializer
         return GroupSerializer
+
+    def protect_default_groups(self, action):
+        """Deny modifications on platform_default groups."""
+        group = self.get_object()
+        if group.platform_default:
+            key = 'group'
+            message = '{} cannot be performed on platform default groups.'.format(action.upper())
+            error = {
+                key: [_(message)]
+            }
+            raise serializers.ValidationError(error)
 
     def create(self, request, *args, **kwargs):
         """Create a group.
@@ -223,14 +236,7 @@ class GroupViewSet(mixins.CreateModelMixin,
         @apiSuccessExample {json} Success-Response:
             HTTP/1.1 204 NO CONTENT
         """
-        group = get_object_or_404(Group, uuid=kwargs.get('uuid'))
-        if group.platform_default:
-            key = 'group'
-            message = 'Platform groups cannot be deleted.'
-            error = {
-                key: [_(message)]
-            }
-            raise serializers.ValidationError(error)
+        self.protect_default_groups('delete')
         return super().destroy(request=request, args=args, kwargs=kwargs)
 
     def update(self, request, *args, **kwargs):
@@ -255,6 +261,7 @@ class GroupViewSet(mixins.CreateModelMixin,
                 "name": "GroupA"
             }
         """
+        self.protect_default_groups('update')
         return super().update(request=request, args=args, kwargs=kwargs)
 
     def add_principals(self, group, principals, account):
@@ -451,7 +458,7 @@ class GroupViewSet(mixins.CreateModelMixin,
             set_system_flag_post_update(group)
             response_data = GroupRoleSerializerIn(group)
         elif request.method == 'GET':
-            serialized_roles = [RoleMinimumSerializer(role).data for role in group.roles()]
+            serialized_roles = self.obtain_roles(request, group)
             page = self.paginate_queryset(serialized_roles)
             serializer = self.get_serializer(page, many=True)
             return self.get_paginated_response(serializer.data)
@@ -470,3 +477,34 @@ class GroupViewSet(mixins.CreateModelMixin,
             return Response(status=status.HTTP_204_NO_CONTENT)
 
         return Response(status=status.HTTP_200_OK, data=response_data.data)
+
+    def obtain_roles(self, request, group):
+        """Obtain roles based on request, supports exclusion."""
+        exclude = self.validate_and_get_exclude_key(request.query_params)
+
+        roles = (group.roles_with_access() if exclude == 'false'
+                 else self.obtain_roles_with_exclusion(request, group))
+
+        return [RoleMinimumSerializer(role).data for role in roles]
+
+    def obtain_roles_with_exclusion(self, request, group):
+        """Obtain the queryset for roles based on scope."""
+        scope = request.query_params.get('scope', 'account')
+        # Get roles in principal or account scope
+        roles = (get_object_principal_queryset(request, scope, Role) if scope == 'principal'
+                 else Role.objects.all().prefetch_related('access'))
+
+        # Exclude the roles in the group
+        roles_for_group = group.roles().values('uuid')
+        return roles.exclude(uuid__in=roles_for_group)
+
+    def validate_and_get_exclude_key(self, params):
+        """Validate the exclude key."""
+        exclude = params.get(EXCLUDE_KEY, 'false').lower()
+        if exclude not in VALID_EXCLUDE_VALUES:
+            key = 'detail'
+            message = '{} query parameter value {} is invalid. booleans are valid inputs.'.format(
+                EXCLUDE_KEY,
+                exclude)
+            raise serializers.ValidationError({key: _(message)})
+        return exclude

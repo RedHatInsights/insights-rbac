@@ -110,6 +110,16 @@
           "401": {
             "description": "Unauthorized"
           },
+          "403": {
+            "description": "Insufficient permissions to list principals",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error403"
+                }
+              }
+            }
+          },
           "500": {
             "description": "Unexpected Error",
             "content": {
@@ -154,6 +164,16 @@
           },
           "401": {
             "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Insufficient permissions to create group",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error403"
+                }
+              }
+            }
           },
           "500": {
             "description": "Unexpected Error",
@@ -213,6 +233,16 @@
           "401": {
             "description": "Unauthorized"
           },
+          "403": {
+            "description": "Insufficient permissions to list groups",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error403"
+                }
+              }
+            }
+          },
           "500": {
             "description": "Unexpected Error",
             "content": {
@@ -258,6 +288,16 @@
           },
           "401": {
             "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Insufficient permissions to get group",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error403"
+                }
+              }
+            }
           },
           "404": {
             "description": "Not Found",
@@ -325,11 +365,11 @@
             "description": "Unauthorized"
           },
           "403": {
-            "description": "Insufficent permissions to update group",
+            "description": "Insufficient permissions to update group",
             "content": {
-              "*/*": {
+              "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/Error403"
                 }
               }
             }
@@ -382,11 +422,11 @@
             "description": "Unauthorized"
           },
           "403": {
-            "description": "Insufficent permissions to delete group",
+            "description": "Insufficient permissions to delete group",
             "content": {
-              "*/*": {
+              "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/Error403"
                 }
               }
             }
@@ -453,6 +493,16 @@
           "401": {
             "description": "Unauthorized"
           },
+          "403": {
+            "description": "Insufficient permissions to update principals in group",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error403"
+                }
+              }
+            }
+          },
           "404": {
             "description": "Not Found",
             "content": {
@@ -512,6 +562,16 @@
           "401": {
             "description": "Unauthorized"
           },
+          "403": {
+            "description": "Insufficient permissions to remove principals from group",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error403"
+                }
+              }
+            }
+          },
           "404": {
             "description": "Not Found",
             "content": {
@@ -554,6 +614,16 @@
             }
           },
           {
+            "name": "exclude",
+            "in": "query",
+            "description": "If this is set to true, the result would be roles excluding the ones in the group",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            }
+          },
+          {
             "$ref": "#/components/parameters/QueryLimit"
           },
           {
@@ -573,6 +643,16 @@
           },
           "401": {
             "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Insufficient permissions to list roles for group",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error403"
+                }
+              }
+            }
           },
           "500": {
             "description": "Unexpected Error",
@@ -635,6 +715,16 @@
           "401": {
             "description": "Unauthorized"
           },
+          "403": {
+            "description": "Insufficient permissions to update roles for group",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error403"
+                }
+              }
+            }
+          },
           "404": {
             "description": "Not Found",
             "content": {
@@ -694,6 +784,16 @@
           "401": {
             "description": "Unauthorized"
           },
+          "403": {
+            "description": "Insufficient permissions to remove roles from group",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error403"
+                }
+              }
+            }
+          },
           "404": {
             "description": "Not Found",
             "content": {
@@ -749,6 +849,16 @@
           "401": {
             "description": "Unauthorized"
           },
+          "403": {
+            "description": "Insufficient permissions to create role",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error403"
+                }
+              }
+            }
+          },
           "500": {
             "description": "Unexpected Error",
             "content": {
@@ -798,6 +908,16 @@
           "401": {
             "description": "Unauthorized"
           },
+          "403": {
+            "description": "Insufficient permissions to list roles",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error403"
+                }
+              }
+            }
+          },
           "500": {
             "description": "Unexpected Error",
             "content": {
@@ -843,6 +963,16 @@
           },
           "401": {
             "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Insufficient permissions to get role",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error403"
+                }
+              }
+            }
           },
           "404": {
             "description": "Not Found",
@@ -890,6 +1020,16 @@
           },
           "401": {
             "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Insufficient permissions to delete role",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error403"
+                }
+              }
+            }
           },
           "404": {
             "description": "Not Found",
@@ -948,6 +1088,16 @@
           },
           "401": {
             "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Insufficient permissions to update role",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error403"
+                }
+              }
+            }
           },
           "404": {
             "description": "Not Found",
@@ -1245,7 +1395,7 @@
         "tags": [
           "Access"
         ],
-        "summary": "Get the permitted access for a principal in the tenant",
+        "summary": "Get the permitted access for a principal in the tenant (defaults to principal from the identity header)",
         "operationId": "getPrincipalAccess",
         "parameters": [
           {
@@ -1260,7 +1410,7 @@
           {
             "name": "username",
             "in": "query",
-            "description": "Unique username of the principal to obtain access for",
+            "description": "Unique username of the principal to obtain access for (only available for admins, and if supplied, takes precedence over the identity header).",
             "required": false,
             "schema": {
               "type": "string"
@@ -1442,6 +1592,24 @@
           }
         }
       },
+      "Error403": {
+        "required": [
+          "errors"
+        ],
+        "properties": {
+          "errors": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "example": {
+                "detail": "You do not have permission to perform this action.",
+                "source": "detail",
+                "status": 403
+              }
+            }
+          }
+        }
+      },
       "UUID": {
         "type": "object",
         "required": [
@@ -1609,26 +1777,28 @@
           },
           {
             "$ref": "#/components/schemas/Timestamped"
+          },
+          {
+            "properties": {
+              "principalCount": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "roleCount": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "system": {
+                "type": "boolean",
+                "default": false
+              },
+              "platform_default": {
+                "type": "boolean",
+                "default": false
+              }
+            }
           }
-        ],
-        "properties": {
-          "principalCount": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "roleCount": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "system": {
-            "type": "boolean",
-            "default": false
-          },
-          "platform_default": {
-            "type": "boolean",
-            "default": false
-          }
-        }
+        ]
       },
       "GroupPrincipalIn": {
         "required": [

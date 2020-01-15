@@ -81,12 +81,15 @@ def get_group_queryset(request):
 def get_role_queryset(request):
     """Obtain the queryset for roles."""
     scope = request.query_params.get(SCOPE_KEY, ACCOUNT_SCOPE)
+    base_query = Role.objects.prefetch_related('access').annotate(policyCount=Count('policies', distinct=True))
     if scope != ACCOUNT_SCOPE:
-        return get_object_principal_queryset(request, scope, Role)
+        return get_object_principal_queryset(request, scope, Role,
+                                             **{'prefetch_lookups_for_ids': 'access',
+                                                'prefetch_lookups_for_groups': 'policies__roles'})
     if ENVIRONMENT.get_value('ALLOW_ANY', default=False, cast=bool):
-        return Role.objects.annotate(policyCount=Count('policies', distinct=True))
+        return base_query
     if request.user.admin:
-        return Role.objects.annotate(policyCount=Count('policies', distinct=True))
+        return base_query
     access = request.user.access
     access_op = 'read'
     if request.method in ('POST', 'PUT'):
@@ -95,8 +98,8 @@ def get_role_queryset(request):
     if not res_list:
         return Role.objects.none()
     if '*' in res_list:
-        return Role.objects.annotate(policyCount=Count('policies', distinct=True))
-    return Role.objects.filter(uuid__in=res_list).annotate(policyCount=Count('policies', distinct=True))
+        return base_query
+    return base_query.filter(uuid__in=res_list)
 
 
 def get_policy_queryset(request):
@@ -135,7 +138,9 @@ def get_access_queryset(request):
     return get_object_principal_queryset(request,
                                          PRINCIPAL_SCOPE,
                                          Access,
-                                         **{APPLICATION_KEY: app})
+                                         **{APPLICATION_KEY: app,
+                                            'prefetch_lookups_for_ids': 'resourceDefinitions',
+                                            'prefetch_lookups_for_groups': 'policies__roles__access'})
 
 
 def get_object_principal_queryset(request, scope, clazz, **kwargs):
@@ -154,4 +159,4 @@ def get_object_principal_queryset(request, scope, clazz, **kwargs):
     object_principal_func = PRINCIPAL_QUERYSET_MAP.get(clazz.__name__)
     principal = get_principal_from_request(request)
     objects = object_principal_func(principal, **kwargs)
-    return queryset_by_id(objects, clazz)
+    return queryset_by_id(objects, clazz, **kwargs)

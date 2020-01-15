@@ -20,12 +20,11 @@ import os
 
 from django.db import transaction
 from django.db.models.aggregates import Count
-from django.shortcuts import get_object_or_404
 from django.utils.translation import gettext as _
 from django_filters import rest_framework as filters
 from management.permissions import RoleAccessPermission
 from management.querysets import get_role_queryset
-from management.role.serializer import RoleMinimumSerializer
+from management.role.serializer import AccessSerializer, RoleMinimumSerializer
 from rest_framework import mixins, serializers, viewsets
 from rest_framework.filters import OrderingFilter
 
@@ -33,7 +32,10 @@ from .model import Role
 from .serializer import RoleSerializer
 
 TESTING_APP = os.getenv('TESTING_APPLICATION')
-APP_WHITELIST = [TESTING_APP, 'cost-management', 'catalog', 'approval']
+APP_WHITELIST = ['cost-management', 'catalog', 'approval']
+
+if TESTING_APP:
+    APP_WHITELIST.append(TESTING_APP)
 
 
 class RoleFilter(filters.FilterSet):
@@ -133,7 +135,8 @@ class RoleViewSet(mixins.CreateModelMixin,
                 ]
             }
         """
-        for perm in request.data.get('access', []):
+        access_list = self.validate_and_get_access_list(request.data)
+        for perm in access_list:
             app = perm.get('permission').split(':')[0]
             if app not in APP_WHITELIST:
                 key = 'role'
@@ -244,7 +247,7 @@ class RoleViewSet(mixins.CreateModelMixin,
         @apiSuccessExample {json} Success-Response:
             HTTP/1.1 204 NO CONTENT
         """
-        role = get_object_or_404(Role, uuid=kwargs.get('uuid'))
+        role = self.get_object()
         if role.system or role.platform_default:
             key = 'role'
             message = 'System roles cannot be deleted.'
@@ -317,3 +320,17 @@ class RoleViewSet(mixins.CreateModelMixin,
             }
         """
         return super().update(request=request, args=args, kwargs=kwargs)
+
+    def validate_and_get_access_list(self, data):
+        """Validate if input data contains valid access list and return."""
+        access_list = data.get('access')
+        if not isinstance(access_list, list):
+            key = 'access'
+            message = 'A list of access is expected, but {} is found.'.format(type(access_list).__name__)
+            error = {
+                key: [_(message)]
+            }
+            raise serializers.ValidationError(error)
+        for access in access_list:
+            AccessSerializer(data=access).is_valid(raise_exception=True)
+        return access_list

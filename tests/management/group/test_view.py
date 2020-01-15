@@ -68,6 +68,9 @@ class GroupViewsetTests(IdentityRequest):
             self.policyB.roles.add(self.roleB)
             self.policyB.save()
 
+            # role that's not assigned to principal
+            self.roleOrphan = Role.objects.create(name='roleOrphan')
+
 
     def tearDown(self):
         """Tear down group viewset tests."""
@@ -175,6 +178,14 @@ class GroupViewsetTests(IdentityRequest):
 
         self.assertIsNotNone(response.data.get('uuid'))
         self.assertEqual(updated_name, response.data.get('name'))
+
+    def test_update_default_group(self):
+        """Test that platform_default groups are protected from updates"""
+        url = reverse('group-detail', kwargs={'uuid': self.defGroup.uuid})
+        test_data = {'name': self.defGroup.name + '_updated'}
+        client = APIClient()
+        response = client.put(url, test_data, format='json', **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
     def test_update_group_invalid(self):
         """Test that updating an invalid group returns an error."""
@@ -285,6 +296,51 @@ class GroupViewsetTests(IdentityRequest):
         self.assertEqual(roles[0].get('name'), self.role.name)
         self.assertEqual(roles[0].get('description'), self.role.description)
 
+    def test_get_group_roles_with_exclude_false_success(self):
+        """Test that getting roles with 'exclude=false' for a group works as default."""
+        url = "%s?exclude=FALSE" % (reverse('group-roles', kwargs={'uuid': self.group.uuid}))
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        roles = response.data.get('data')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(roles), 1)
+        self.assertEqual(roles[0].get('uuid'), str(self.role.uuid))
+        self.assertEqual(roles[0].get('name'), self.role.name)
+        self.assertEqual(roles[0].get('description'), self.role.description)
+
+    def test_get_group_roles_with_exclude_success(self):
+        """Test that getting roles with 'exclude=True' for a group returns successfully."""
+        url = "%s?exclude=True" % (reverse('group-roles', kwargs={'uuid': self.group.uuid}))
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        roles = response.data.get('data')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(roles), 2)
+        self.assertTrue(role.uuid in [self.roleB.uuid, self.roleOrphan.uuid] for role in roles)
+
+    def test_get_group_roles_with_exclude_in_principal_scope_success(self):
+        """Test that getting roles with 'exclude=True' for a group in principal scope."""
+        url = "%s?exclude=True&scope=principal" % (reverse('group-roles', kwargs={'uuid': self.group.uuid}))
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        roles = response.data.get('data')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(roles), 1)
+        self.assertEqual(roles[0].get('uuid'), str(self.roleB.uuid))
+        self.assertEqual(roles[0].get('name'), self.roleB.name)
+        self.assertEqual(roles[0].get('description'), self.roleB.description)
+
+    def test_exclude_input_invalid(self):
+        """Test that getting roles with 'exclude=' for a group returns failed validation."""
+        url = "%s?exclude=sth" % (reverse('group-roles', kwargs={'uuid': self.group.uuid}))
+        client = APIClient()
+        response = client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
     def test_add_group_roles_system_policy_create_success(self):
         """Test that adding a role to a group without a system policy returns successfully."""
         url = reverse('group-roles', kwargs={'uuid': self.group.uuid})
@@ -321,6 +377,7 @@ class GroupViewsetTests(IdentityRequest):
         response = client.post(url, test_data, format='json', **self.headers)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.defGroup.refresh_from_db()
+        self.assertEqual(self.defGroup.name, "Custom default user access")
         self.assertFalse(self.defGroup.system)
 
     def test_system_flag_update_on_remove(self):
@@ -336,6 +393,7 @@ class GroupViewsetTests(IdentityRequest):
         response = client.delete(url, format='json', **self.headers)
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
         self.defGroup.refresh_from_db()
+        self.assertEqual(self.defGroup.name, "Custom default user access")
         self.assertFalse(self.defGroup.system)
 
     def test_add_group_roles_system_policy_create_new_group_success(self):
