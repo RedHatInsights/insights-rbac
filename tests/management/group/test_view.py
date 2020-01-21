@@ -228,6 +228,24 @@ class GroupViewsetTests(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_405_METHOD_NOT_ALLOWED)
 
     @patch('management.principal.proxy.PrincipalProxy.request_filtered_principals',
+           return_value={'status_code': status.HTTP_500_INTERNAL_SERVER_ERROR, 'errors': [{
+               'detail': 'Unexpected error.',
+               'status': status.HTTP_500_INTERNAL_SERVER_ERROR,
+               'source': 'principals'
+          }]})
+    def test_add_group_principals_failure(self, mock_request):
+        """Test that adding a principal to a group returns has proper response when it is failed."""
+        url = reverse('group-principals', kwargs={'uuid': self.group.uuid})
+        client = APIClient()
+        new_username = uuid4()
+        test_data = {'principals': [{'username': self.principal.username}, {'username': new_username}]}
+        response = client.post(url, test_data, format='json', **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
+        self.assertEqual(response.data[0]['detail'], 'Unexpected error.')
+        self.assertEqual(response.data[0]['status'], 500)
+        self.assertEqual(response.data[0]['source'], 'principals')
+
+    @patch('management.principal.proxy.PrincipalProxy.request_filtered_principals',
            return_value={'status_code': 200, 'data': []})
     def test_add_group_principals_success(self, mock_request):
         """Test that adding a principal to a group returns successfully."""
