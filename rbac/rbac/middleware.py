@@ -151,7 +151,7 @@ class IdentityHeaderMiddleware(MiddlewareMixin):  # pylint: disable=R0903
         return new_user
 
     @staticmethod  # noqa: C901
-    def _get_access_for_user(username, tenant):  # pylint: disable=too-many-locals,too-many-branches,unused-argument
+    def _get_access_for_user():  # pylint: disable=too-many-locals,too-many-branches
         """Obtain access data for given username.
 
         Stubbed out to begin removal of RBAC on RBAC, with minimal disruption
@@ -226,7 +226,7 @@ class IdentityHeaderMiddleware(MiddlewareMixin):  # pylint: disable=R0903
             user.account = account
             user.req_id = req_id
             if not is_admin:
-                user.access = IdentityHeaderMiddleware._get_access_for_user(username, tenant)
+                user.access = IdentityHeaderMiddleware._get_access_for_user()
             request.user = user
 
     def process_response(self, request, response):  # pylint: disable=no-self-use

@@ -193,7 +193,7 @@ class AccessHandlingTest(TestCase):
                 'write': []
             }
         }
-        access = IdentityHeaderMiddleware._get_access_for_user('test_user', self.tenant)
+        access = IdentityHeaderMiddleware._get_access_for_user()
         self.assertEqual(expected, access)
 
     def test_principal_no_access(self):
@@ -213,5 +213,5 @@ class AccessHandlingTest(TestCase):
                 'write': []
             }
         }
-        access = IdentityHeaderMiddleware._get_access_for_user('test_user', self.tenant)
+        access = IdentityHeaderMiddleware._get_access_for_user()
         self.assertEqual(expected, access)
