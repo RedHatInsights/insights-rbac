@@ -57,6 +57,8 @@ class AccessViewTests(IdentityRequest):
         with tenant_context(self.tenant):
             self.principal = Principal(username=self.user_data['username'])
             self.principal.save()
+            self.admin_principal = Principal(username="user_admin")
+            self.admin_principal.save()
             self.group = Group(name='groupA')
             self.group.save()
             self.group.principals.add(self.principal)

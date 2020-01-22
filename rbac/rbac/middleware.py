@@ -34,7 +34,6 @@ from api.serializers import UserSerializer, create_schema_name, extract_header
 from management.group.definer import seed_group  # noqa: I100, I201
 from management.models import Principal  # noqa: I100, I201
 from management.role.definer import seed_roles
-from management.utils import APPLICATION_KEY, access_for_principal  # noqa: I100, I201
 
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
@@ -152,10 +151,11 @@ class IdentityHeaderMiddleware(MiddlewareMixin):  # pylint: disable=R0903
         return new_user
 
     @staticmethod  # noqa: C901
-    def _get_access_for_user(username, tenant):  # pylint: disable=too-many-locals,too-many-branches
-        """Obtain access data for given username."""
-        principal = None
-        access_list = None
+    def _get_access_for_user():  # pylint: disable=too-many-locals,too-many-branches
+        """Obtain access data for given username.
+
+        Stubbed out to begin removal of RBAC on RBAC, with minimal disruption
+        """
         access = {
             'group': {
                 'read': [],
@@ -170,53 +170,7 @@ class IdentityHeaderMiddleware(MiddlewareMixin):  # pylint: disable=R0903
                 'write': []
             }
         }
-        with tenant_context(tenant):
-            try:  # pylint: disable=R1702
-                principal = Principal.objects.get(username__iexact=username)
-                kwargs = {APPLICATION_KEY: 'rbac'}
-                access_list = access_for_principal(principal, **kwargs)
-                for access_item in access_list:  # pylint: disable=too-many-nested-blocks
-                    perm_list = access_item.permission.split(':')
-                    perm_len = len(perm_list)
-                    if perm_len != 3:
-                        logger.warning('Skipping invalid permission %s', access_item.permission)
-                    else:
-                        resource_type = perm_list[1]
-                        operation = perm_list[2]
-                        res_list = []
-                        res_defs = access_item.resourceDefinitions
-                        if operation == '*':
-                            operation = 'write'
-                        for res_def in res_defs.all():
-                            attr_filter = res_def.attributeFilter
-                            if attr_filter.get('operation') == 'equal' and attr_filter.get('value'):
-                                res_list.append(attr_filter.get('value'))
-                            if attr_filter.get('operation') == 'in' and attr_filter.get('value'):
-                                res_list += attr_filter.get('value').split(',')
-                        if not res_defs or not res_defs.values():
-                            res_list = ['*']
-                        if resource_type == '*':
-                            for resource in ('group', 'role', 'policy'):
-                                if (resource in access.keys() and  # noqa: W504
-                                        operation in access.get(resource,
-                                                                {}).keys() and  # noqa: W504
-                                        isinstance(access.get(resource,
-                                                              {}).get(operation), list)):
-                                    access[resource][operation] += res_list
-                                    if operation == 'write':
-                                        access[resource]['read'] += res_list
-                        elif (resource_type in access.keys() and  # noqa: W504
-                              operation in access.get(resource_type, {}).keys() and  # noqa: W504
-                              isinstance(access.get(resource_type, {}).get(operation), list)):
-                            access[resource_type][operation] += res_list
-                            if operation == 'write':
-                                access[resource_type]['read'] += res_list
-                    for res_type, res_ops_obj in access.items():
-                        for op_type, op_list in res_ops_obj.items():
-                            if '*' in op_list:
-                                access[res_type][op_type] = ['*']
-            except Principal.DoesNotExist:
-                return access
+
         return access
 
     def process_request(self, request):  # noqa: C901
@@ -272,7 +226,7 @@ class IdentityHeaderMiddleware(MiddlewareMixin):  # pylint: disable=R0903
             user.account = account
             user.req_id = req_id
             if not is_admin:
-                user.access = IdentityHeaderMiddleware._get_access_for_user(username, tenant)
+                user.access = IdentityHeaderMiddleware._get_access_for_user()
             request.user = user
 
     def process_response(self, request, response):  # pylint: disable=no-self-use

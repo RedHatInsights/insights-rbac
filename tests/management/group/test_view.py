@@ -576,3 +576,66 @@ class GroupViewsetTests(IdentityRequest):
         response = client.delete(url, format='json', **self.headers)
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_admin_RonR(self):
+        """Test that a admin user can group RBAC resources"""
+        url = '{}?application={}'.format(reverse('group-list'), 'rbac')
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+
+class GroupViewNonAdminTests(IdentityRequest):
+    """Test the group view for nonadmin user."""
+
+    def setUp(self):
+        """Set up the group view nonadmin tests."""
+        super().setUp()
+
+        self.user_data = self._create_user_data()
+        self.customer = self._create_customer_data()
+        self.request_context = self._create_request_context(self.customer,
+                                                            self.user_data,
+                                                            is_org_admin=False)
+
+
+        request = self.request_context['request']
+        self.headers = request.META
+        self.access_data = {
+            'permission': 'app:*:*',
+            'resourceDefinitions': [
+                {
+                    'attributeFilter': {
+                        'key': 'key1',
+                        'operation': 'equal',
+                        'value': 'value1'
+                    }
+                }
+            ]
+        }
+        with tenant_context(self.tenant):
+            self.principal = Principal(username=self.user_data['username'])
+            self.principal.save()
+            self.admin_principal = Principal(username="user_admin")
+            self.admin_principal.save()
+            self.group = Group(name='groupA')
+            self.group.save()
+            self.group.principals.add(self.principal)
+            self.group.save()
+
+    def tearDown(self):
+        """Tear down group view tests."""
+        User.objects.all().delete()
+        with tenant_context(self.tenant):
+            Group.objects.all().delete()
+            Principal.objects.all().delete()
+            Role.objects.all().delete()
+            Policy.objects.all().delete()
+
+    def test_nonadmin_RonR(self):
+        """Test that a nonadmin user can't group RBAC resources"""
+        url = '{}?application={}'.format(reverse('group-list'), 'rbac')
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
