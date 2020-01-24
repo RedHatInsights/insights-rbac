@@ -4,7 +4,6 @@ from django.db import migrations, models
 
 
 def remove_rbac_roles(apps, schema_editor):
-    import pdb; pdb.set_trace()  # XXX BREAKPOINT
     # get all permissions/access objects for RBAC
     Access = apps.get_model('management', 'Access')
     rbac_permissions = Access.objects.filter(permission__contains='rbac:')
