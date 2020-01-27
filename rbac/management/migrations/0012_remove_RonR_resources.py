@@ -19,12 +19,10 @@ def remove_rbac_roles(apps, schema_editor):
         # if so, just delete the access object we know is RBAC, and leave the role
         if non_rbac_permissions:
             # this will still delete the resource definitions for the access object
-            access.delete()
+            rbac_permission.delete()
         else:
             # otherwise, we only have RBAC access objects, so delete everything
             role.delete()
-
-
 
 
 class Migration(migrations.Migration):
