@@ -3,7 +3,7 @@
 from django.db import migrations
 
 
-def remove_catalog_platform_default_role(apps, schema_editor):
+def remove_unnecessary_platform_default_role(apps, schema_editor):
   role_names_to_remove = [
     'Ansible Automation Access',
     'Ansible Hub Access',
@@ -23,5 +23,5 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-      migrations.RunPython(remove_catalog_platform_default_role),
+      migrations.RunPython(remove_unnecessary_platform_default_role),
     ]
