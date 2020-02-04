@@ -1,0 +1,40 @@
+trigger:
+  batch: true
+  branches:
+    include:
+      - master
+  tags:
+    include:
+      - '*'
+
+pr:
+  branches:
+    include:
+      - master
+
+stages:
+  - stage: DockerHub
+    displayName: Docker Hub
+    jobs:
+      - job: dockerhub
+        displayName: Build and Push to Docker Hub
+        pool:
+          vmImage: 'ubuntu-16.04'
+        steps:
+          - task: Docker@2
+            inputs:
+              containerRegistry: 'DockerHub'
+              repository: 'carlosthe19916/insights-rbac'
+              command: 'build'
+              Dockerfile: '**/Dockerfile-analytics'
+              tags: |
+                $(Build.BuildNumber)
+                latest
+          - task: Docker@2
+            inputs:
+              containerRegistry: 'DockerHub'
+              repository: 'carlosthe19916/insights-rbac-mock'
+              command: 'push'
+              tags: |
+                $(Build.BuildNumber)
+                latest
