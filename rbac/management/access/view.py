@@ -18,7 +18,6 @@
 """View for principal access."""
 from management.querysets import get_access_queryset
 from management.role.serializer import AccessSerializer
-from rest_framework import status
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.settings import api_settings
@@ -83,17 +82,19 @@ class AccessView(APIView):
 
     def get(self, request):
         """Provide access data for prinicpal."""
-        page = self.paginate_queryset(self.get_queryset())
+        queryset = self.get_queryset()
+        page = self.paginate_queryset(queryset)
         if page is not None:
             serializer = self.serializer_class(page, many=True)
             return self.get_paginated_response(serializer.data)
-        return Response(status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        return Response({'data': self.serializer_class(queryset, many=True).data})
 
     @property
     def paginator(self):
         """Return the paginator instance associated with the view, or `None`."""
         if not hasattr(self, '_paginator'):
-            if self.pagination_class is None:
+            if self.pagination_class is None or 'limit' not in self.request.query_params:
                 self._paginator = None
             else:
                 self._paginator = self.pagination_class()
