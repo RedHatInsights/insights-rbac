@@ -2057,6 +2057,10 @@
                 "type": "integer",
                 "minimum": 0
               },
+              "accessCount": {
+                "type": "integer",
+                "minimum": 0
+              },
               "applications": {
                 "type": "array",
                 "items": {
