@@ -30,7 +30,7 @@ services:
         - db
 
   rbac-worker:
-      container_name: rbac_worker
+      # container_name: rbac_worker
       build:
           context: .
           dockerfile: Dockerfile-env
@@ -43,7 +43,7 @@ services:
           - redis
   
   rbac-scheduler:
-      container_name: rbac_scheduler
+      # container_name: rbac_scheduler
       build:
           context: .
           dockerfile: Dockerfile-env
@@ -56,7 +56,7 @@ services:
           - redis
 
   redis:
-    container_name: rbac_redis
+    # container_name: rbac_redis
     image: redis:5.0.4
     ports:
       - "6379:6379"
