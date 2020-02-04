@@ -200,7 +200,7 @@ class RoleViewsetTests(IdentityRequest):
         }]
         response = self.create_role(role_name, access_data)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
- 
+
     def test_create_role_fail_with_access_not_list(self):
         """Test that we cannot create a role for a non-whitelisted app."""
         role_name = 'AccessNotList'
@@ -245,6 +245,7 @@ class RoleViewsetTests(IdentityRequest):
         for iterRole in response.data.get('data'):
             self.assertIsNotNone(iterRole.get('name'))
             if iterRole.get('name') == role_name:
+                self.assertEqual(iterRole.get('accessCount'), 1)
                 role = iterRole
                 break
         self.assertEqual(role.get('name'), role_name)

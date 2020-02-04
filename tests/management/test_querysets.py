@@ -209,6 +209,7 @@ class QuerySetTest(TestCase):
         req = Mock(user=user, query_params={})
         queryset = get_role_queryset(req)
         self.assertEquals(queryset.count(), 5)
+        self.assertIsNotNone(queryset.last().accessCount)
 
     def test_get_role_queryset_get_all(self):
         """Test get_role_queryset as a user with all access."""
