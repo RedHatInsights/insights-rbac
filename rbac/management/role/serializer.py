@@ -70,6 +70,7 @@ class RoleSerializer(serializers.ModelSerializer):
     description = serializers.CharField(allow_null=True, required=False)
     access = AccessSerializer(many=True)
     policyCount = serializers.IntegerField(read_only=True)
+    accessCount = serializers.IntegerField(read_only=True)
     applications = serializers.SerializerMethodField()
     system = serializers.BooleanField(read_only=True)
     platform_default = serializers.BooleanField(read_only=True)
@@ -81,7 +82,7 @@ class RoleSerializer(serializers.ModelSerializer):
 
         model = Role
         fields = ('uuid', 'name', 'description',
-                  'access', 'policyCount',
+                  'access', 'policyCount', 'accessCount',
                   'applications', 'system',
                   'platform_default', 'created',
                   'modified')
@@ -142,6 +143,7 @@ class RoleMinimumSerializer(serializers.ModelSerializer):
     created = serializers.DateTimeField(read_only=True)
     modified = serializers.DateTimeField(read_only=True)
     policyCount = serializers.IntegerField(read_only=True)
+    accessCount = serializers.IntegerField(read_only=True)
     applications = serializers.SerializerMethodField()
     system = serializers.BooleanField(read_only=True)
     platform_default = serializers.BooleanField(read_only=True)
@@ -151,7 +153,7 @@ class RoleMinimumSerializer(serializers.ModelSerializer):
 
         model = Role
         fields = ('uuid', 'name', 'description', 'created', 'modified', 'policyCount',
-                  'applications', 'system', 'platform_default')
+                  'accessCount', 'applications', 'system', 'platform_default')
 
     def get_applications(self, obj):
         """Get the list of applications in the role."""
