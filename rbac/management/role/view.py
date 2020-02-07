@@ -332,10 +332,9 @@ class RoleViewSet(mixins.CreateModelMixin,
         except (Role.DoesNotExist, ValidationError):
             raise Http404
 
-        if role:
-            access = AccessSerializer(role.access, many=True).data
-            page = self.paginate_queryset(access)
-            return self.get_paginated_response(page)
+        access = AccessSerializer(role.access, many=True).data
+        page = self.paginate_queryset(access)
+        return self.get_paginated_response(page)
 
     def validate_and_get_access_list(self, data):
         """Validate if input data contains valid access list and return."""
