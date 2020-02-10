@@ -314,8 +314,6 @@ class GroupViewSet(mixins.CreateModelMixin,
         @apiSuccessExample {json} Success-Response:
             HTTP/1.1 200 OK
             {
-                "uuid": "16fd2706-8baf-433b-82eb-8c7fada847da",
-                "name": "GroupA",
                 "principals": [
                     { "username": "jsmith" }
                 ]
