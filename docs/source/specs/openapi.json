@@ -1429,14 +1429,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "oneOf": [
-                    {
-                      "$ref": "#/components/schemas/AccessNoPagination"
-                    },
-                    {
-                      "$ref": "#/components/schemas/AccessPagination"
-                    }
-                  ]
+                  "$ref" : "#/components/schemas/OneOfAccessPagination"
                 },
                 "examples": {
                   "AccessNoPagination": {
@@ -2223,6 +2216,7 @@
           }
         ]
       },
+      
       "AccessPagination": {
         "allOf": [
           {
@@ -2259,6 +2253,16 @@
                 }
               }
             }
+          }
+        ]
+      },
+      "OneOfAccessPagination" : {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/AccessNoPagination"
+          },
+          {
+            "$ref": "#/components/schemas/AccessPagination"
           }
         ]
       },
