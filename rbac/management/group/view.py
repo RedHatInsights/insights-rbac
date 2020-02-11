@@ -32,7 +32,7 @@ from management.group.serializer import (GroupInputSerializer,
 from management.permissions import GroupAccessPermission
 from management.principal.model import Principal
 from management.principal.proxy import PrincipalProxy
-from management.principal.serializer import PrincpalSerializer
+from management.principal.serializer import PrincipalSerializer
 from management.querysets import get_group_queryset, get_object_principal_queryset
 from management.role.model import Role
 from rest_framework import mixins, serializers, status, viewsets
