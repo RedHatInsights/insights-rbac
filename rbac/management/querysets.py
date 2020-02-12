@@ -81,7 +81,8 @@ def get_group_queryset(request):
 def get_role_queryset(request):
     """Obtain the queryset for roles."""
     scope = request.query_params.get(SCOPE_KEY, ACCOUNT_SCOPE)
-    base_query = Role.objects.prefetch_related('access').annotate(policyCount=Count('policies', distinct=True))
+    base_query = Role.objects.prefetch_related('access').annotate(policyCount=Count('policies', distinct=True),
+                                                                  accessCount=Count('access', distinct=True))
     if scope != ACCOUNT_SCOPE:
         return get_object_principal_queryset(request, scope, Role,
                                              **{'prefetch_lookups_for_ids': 'access',

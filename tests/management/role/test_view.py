@@ -26,7 +26,7 @@ from rest_framework.test import APIClient
 from tenant_schemas.utils import tenant_context
 
 from api.models import User
-from management.models import Group, Principal, Role
+from management.models import Group, Principal, Role, Access
 from tests.identity_request import IdentityRequest
 
 
@@ -65,6 +65,8 @@ class RoleViewsetTests(IdentityRequest):
 
             self.defRole = Role(**def_role_config)
             self.defRole.save()
+
+            self.access = Access.objects.create(permission='app:*:*', role=self.defRole)
 
     def tearDown(self):
         """Tear down role viewset tests."""
@@ -200,7 +202,7 @@ class RoleViewsetTests(IdentityRequest):
         }]
         response = self.create_role(role_name, access_data)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
- 
+
     def test_create_role_fail_with_access_not_list(self):
         """Test that we cannot create a role for a non-whitelisted app."""
         role_name = 'AccessNotList'
@@ -218,6 +220,32 @@ class RoleViewsetTests(IdentityRequest):
     def test_read_role_invalid(self):
         """Test that reading an invalid role returns an error."""
         url = reverse('role-detail', kwargs={'uuid': uuid4()})
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_read_role_access_success(self):
+        """Test that reading a valid role returns access."""
+        url = reverse('role-access', kwargs={'uuid': self.defRole.uuid})
+        client = APIClient()
+        response = client.get(url, **self.headers)
+
+        for keyname in ['meta', 'links', 'data']:
+            self.assertIn(keyname, response.data)
+        self.assertIsInstance(response.data.get('data'), list)
+        self.assertEqual(len(response.data.get('data')), 1)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+    def test_read_role_access_invalid_uuid(self):
+        """Test that reading a non-existent role uuid returns an error."""
+        url = reverse('role-access', kwargs={'uuid': 'abc-123'})
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_read_role_access_not_found_uuid(self):
+        """Test that reading an invalid role uuid returns an error."""
+        url = reverse('role-access', kwargs={'uuid': uuid4()})
         client = APIClient()
         response = client.get(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
@@ -245,6 +273,7 @@ class RoleViewsetTests(IdentityRequest):
         for iterRole in response.data.get('data'):
             self.assertIsNotNone(iterRole.get('name'))
             if iterRole.get('name') == role_name:
+                self.assertEqual(iterRole.get('accessCount'), 1)
                 role = iterRole
                 break
         self.assertEqual(role.get('name'), role_name)

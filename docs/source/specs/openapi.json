@@ -1122,6 +1122,89 @@
         }
       }
     },
+    "/roles/{uuid}/access/": {
+      "get": {
+        "tags": [
+          "Role"
+        ],
+        "summary": "Get access for a role in the tenant",
+        "operationId": "getRoleAccess",
+        "parameters": [
+          {
+            "name": "uuid",
+            "in": "path",
+            "description": "ID of the role",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/QueryLimit"
+          },
+          {
+            "$ref": "#/components/parameters/QueryOffset"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A paginated list of the access objects for a role",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data"
+                  ],
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/AccessPagination"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Insufficient permissions to get access for role",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error403"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/policies/": {
       "post": {
         "tags": [
@@ -1417,7 +1500,7 @@
             }
           },
           {
-            "$ref": "#/components/parameters/QueryLimit"
+            "$ref": "#/components/parameters/QueryLimitNoDefault"
           },
           {
             "$ref": "#/components/parameters/QueryOffset"
@@ -1425,11 +1508,26 @@
         ],
         "responses": {
           "200": {
-            "description": "A paginated list of access objects",
+            "description": "A list of access objects. By default, this request will not be paginated. To received a paginated response, include the `/?limit=` query parameter.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AccessPagination"
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/AccessNoPagination"
+                    },
+                    {
+                      "$ref": "#/components/schemas/AccessPagination"
+                    }
+                  ]
+                },
+                "examples": {
+                  "AccessNoPagination": {
+                    "$ref": "#/components/examples/AccessNoPagination"
+                  },
+                  "AccessPagination": {
+                    "$ref": "#/components/examples/AccessPagination"
+                  }
                 }
               }
             }
@@ -1487,6 +1585,17 @@
         "schema": {
           "type": "integer",
           "default": 10,
+          "minimum": 1,
+          "maximum": 1000
+        }
+      },
+      "QueryLimitNoDefault": {
+        "in": "query",
+        "name": "limit",
+        "required": false,
+        "description": "Parameter for selecting the amount of data returned.",
+        "schema": {
+          "type": "integer",
           "minimum": 1,
           "maximum": 1000
         }
@@ -2057,6 +2166,10 @@
                 "type": "integer",
                 "minimum": 0
               },
+              "accessCount": {
+                "type": "integer",
+                "minimum": 0
+              },
               "applications": {
                 "type": "array",
                 "items": {
@@ -2214,6 +2327,24 @@
           }
         ]
       },
+      "AccessNoPagination": {
+        "allOf": [
+          {
+            "type": "object",
+            "required": [
+              "data"
+            ],
+            "properties": {
+              "data": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Access"
+                }
+              }
+            }
+          }
+        ]
+      },
       "Status": {
         "required": [
           "api_version"
@@ -2263,6 +2394,39 @@
               "http.server": "0.6"
             }
           }
+        }
+      }
+    },
+    "examples": {
+      "AccessNoPagination": {
+        "value": {
+          "data": [
+            {
+              "permission": "app-name:*:*",
+              "resourceDefinitions": []
+            }
+          ]
+        }
+      },
+      "AccessPagination": {
+        "value": {
+          "meta": {
+            "count": 1,
+            "limit": 10,
+            "offset": 0
+          },
+          "links": {
+            "first": "/access/?application=app-name&limit=10",
+            "next": null,
+            "previous": null,
+            "last": "/access/?application=app-name&limit=10"
+          },
+          "data": [
+            {
+              "permission": "app-name:*:*",
+              "resourceDefinitions": []
+            }
+          ]
         }
       }
     }

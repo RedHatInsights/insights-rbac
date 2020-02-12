@@ -57,6 +57,8 @@ class AccessViewTests(IdentityRequest):
         with tenant_context(self.tenant):
             self.principal = Principal(username=self.user_data['username'])
             self.principal.save()
+            self.admin_principal = Principal(username="user_admin")
+            self.admin_principal.save()
             self.group = Group(name='groupA')
             self.group.save()
             self.group.principals.add(self.principal)
@@ -103,7 +105,7 @@ class AccessViewTests(IdentityRequest):
         return response
 
     def test_get_access_success(self):
-        """Test that we can obtain the expected access."""
+        """Test that we can obtain the expected access without pagination."""
         role_name = 'roleA'
         response = self.create_role(role_name)
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
@@ -121,6 +123,30 @@ class AccessViewTests(IdentityRequest):
         self.assertIsNotNone(response.data.get('data'))
         self.assertIsInstance(response.data.get('data'), list)
         self.assertEqual(len(response.data.get('data')), 1)
+        self.assertIsNone(response.data.get('meta'))
+        self.assertEqual(self.access_data, response.data.get('data')[0])
+
+    def test_get_access_with_limit(self):
+        """Test that we can obtain the expected access with pagination."""
+        role_name = 'roleA'
+        response = self.create_role(role_name)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        role_uuid = response.data.get('uuid')
+        policy_name = 'policyA'
+        response = self.create_policy(policy_name, self.group.uuid, [role_uuid])
+
+        # test that we can retrieve the principal access
+        url = '{}?application={}&username={}&limit=1'.format(reverse('access'),
+                                                     'app',
+                                                     self.principal.username)
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIsNotNone(response.data.get('data'))
+        self.assertIsInstance(response.data.get('data'), list)
+        self.assertEqual(len(response.data.get('data')), 1)
+        self.assertEqual(response.data.get('meta').get('count'), 1)
+        self.assertEqual(response.data.get('meta').get('limit'), 1)
         self.assertEqual(self.access_data, response.data.get('data')[0])
 
     def test_missing_query_params(self):

@@ -268,6 +268,8 @@ class GroupViewSet(mixins.CreateModelMixin,
         """Process list of principals and add them to the group."""
         users = [principal.get('username') for principal in principals]
         resp = self.proxy.request_filtered_principals(users, account, limit=len(users))
+        if 'errors' in resp:
+            return resp
         for item in resp.get('data', []):
             username = item['username']
             try:
@@ -354,8 +356,10 @@ class GroupViewSet(mixins.CreateModelMixin,
             serializer = GroupPrincipalInputSerializer(data=request.data)
             if serializer.is_valid(raise_exception=True):
                 principals = serializer.data.pop('principals')
-            group = self.add_principals(group, principals, account)
-            output = GroupSerializer(group)
+            resp = self.add_principals(group, principals, account)
+            if isinstance(resp, dict) and 'errors' in resp:
+                return Response(status=resp['status_code'], data=resp['errors'])
+            output = GroupSerializer(resp)
             return Response(status=status.HTTP_200_OK, data=output.data)
         else:
             if USERNAMES_KEY not in request.query_params:
