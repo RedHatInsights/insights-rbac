@@ -18,14 +18,17 @@
 """View for role management."""
 import os
 
+from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.db.models.aggregates import Count
+from django.http import Http404
 from django.utils.translation import gettext as _
 from django_filters import rest_framework as filters
 from management.permissions import RoleAccessPermission
 from management.querysets import get_role_queryset
 from management.role.serializer import AccessSerializer, RoleMinimumSerializer
 from rest_framework import mixins, serializers, viewsets
+from rest_framework.decorators import action
 from rest_framework.filters import OrderingFilter
 
 from .model import Role
@@ -320,6 +323,18 @@ class RoleViewSet(mixins.CreateModelMixin,
             }
         """
         return super().update(request=request, args=args, kwargs=kwargs)
+
+    @action(detail=True, methods=['get'])
+    def access(self, request, uuid=None):
+        """Return access objects for specified role."""
+        try:
+            role = Role.objects.get(uuid=uuid)
+        except (Role.DoesNotExist, ValidationError):
+            raise Http404
+
+        access = AccessSerializer(role.access, many=True).data
+        page = self.paginate_queryset(access)
+        return self.get_paginated_response(page)
 
     def validate_and_get_access_list(self, data):
         """Validate if input data contains valid access list and return."""
