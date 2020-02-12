@@ -272,9 +272,8 @@ class GroupViewsetTests(IdentityRequest):
         url = reverse('group-principals', kwargs={'uuid': self.emptyGroup.uuid})
         response = client.get(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertIsInstance(response.data, list)
-        self.assertEqual(len(response.data), 0)
-        self.assertEqual(response.data, [])
+        self.assertEqual(response.data.get('meta').get('count'), 0)
+        self.assertEqual(response.data.get('data'), [])
 
     def test_get_group_principals_nonempty(self):
         """Test that getting principals from a nonempty group returns successfully."""
@@ -282,9 +281,8 @@ class GroupViewsetTests(IdentityRequest):
         url = reverse('group-principals', kwargs={'uuid': self.group.uuid})
         response = client.get(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertIsInstance(response.data, list)
-        self.assertEqual(len(response.data), 1)
-        self.assertEqual(response.data[0].get('username'), self.principal.username)
+        self.assertEqual(response.data.get('meta').get('count'), 1)
+        self.assertEqual(response.data.get('data')[0].get('username'), self.principal.username)
 
     def test_remove_group_principals_success(self):
         """Test that removing a principal to a group returns successfully."""

@@ -383,8 +383,11 @@ class GroupViewSet(mixins.CreateModelMixin,
             if isinstance(resp, dict) and 'errors' in resp:
                 return Response(status=resp['status_code'], data=resp['errors'])
             output = GroupSerializer(resp)
+            response = Response(status=status.HTTP_200_OK, data=output.data)
         elif request.method == 'GET':
-            output = PrincpalSerializer(group.principals.all(), many=True)
+            page = self.paginate_queryset(group.principals.all())
+            serializer = PrincipalSerializer(page, many=True)
+            response = self.get_paginated_response(serializer.data)
         else:
             if USERNAMES_KEY not in request.query_params:
                 key = 'detail'
@@ -393,8 +396,8 @@ class GroupViewSet(mixins.CreateModelMixin,
             username = request.query_params.get(USERNAMES_KEY, '')
             principals = [name.strip() for name in username.split(',')]
             self.remove_principals(group, principals, account)
-            return Response(status=status.HTTP_204_NO_CONTENT)
-        return Response(status=status.HTTP_200_OK, data=output.data)
+            response = Response(status=status.HTTP_204_NO_CONTENT)
+        return response
 
     @action(detail=True, methods=['get', 'post', 'delete'])
     def roles(self, request, uuid=None):

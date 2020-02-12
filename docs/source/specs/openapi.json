@@ -557,7 +557,7 @@
                     "principals": {
                       "type": "array",
                       "items": {
-                        "$ref": "#/components/schemas/PrincipalOut"
+                        "$ref": "#/components/schemas/PrincipalPagination"
                       }
                     }
                   }
