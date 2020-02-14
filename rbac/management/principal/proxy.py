@@ -161,9 +161,13 @@ class PrincipalProxy:  # pylint: disable=too-few-public-methods
             resp['errors'] = [error]
         return resp
 
-    def request_principals(self, account, limit=None, offset=None):
+    def request_principals(self, account, limit=None, offset=None, count=False):
         """Request principals for an account."""
-        account_principals_path = '/v1/accounts/{}/users'.format(account)
+        if count:
+            account_principals_path = '/v1/accounts/{}/users'.format(account)
+        else:
+            account_principals_path = '/v2/accounts/{}/users'.format(account)
+
         params = self._create_params(limit=limit, offset=offset)
         url = '{}://{}:{}{}{}'.format(self.protocol,
                                       self.host,
