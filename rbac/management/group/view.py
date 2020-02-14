@@ -387,7 +387,12 @@ class GroupViewSet(mixins.CreateModelMixin,
         elif request.method == 'GET':
             page = self.paginate_queryset(group.principals.all())
             serializer = PrincipalSerializer(page, many=True)
-            response = self.get_paginated_response(serializer.data)
+            usernames = serializer.data
+            proxy = PrincipalProxy()
+            resp = proxy.request_filtered_principals(usernames, account)
+            if isinstance(resp, dict) and 'errors' in resp:
+                return Response(status=resp.get('status_code'), data=resp.get('errors'))
+            response = self.get_paginated_response(resp.get('data'))
         else:
             if USERNAMES_KEY not in request.query_params:
                 key = 'detail'
