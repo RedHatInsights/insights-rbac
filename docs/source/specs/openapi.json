@@ -12,6 +12,9 @@
   "security": [
     {
       "basic_auth": []
+    },
+    {
+      "identity_auth": []
     }
   ],
   "tags": [
@@ -1681,6 +1684,12 @@
         "type": "http",
         "description": "The userid/password is needed when accessing this API externally",
         "scheme": "basic"
+      },
+      "identity_auth": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "x-rh-identity",
+        "description": "Internal authorization scheme for cross-service communication"
       }
     },
     "schemas": {
