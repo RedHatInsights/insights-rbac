@@ -28,12 +28,14 @@ from rest_framework.exceptions import ValidationError
 from tenant_schemas.middleware import BaseTenantMiddleware
 from tenant_schemas.utils import tenant_context
 
-from api.common import RH_IDENTITY_HEADER, RH_INSIGHTS_REQUEST_ID
+from api.common import RH_IDENTITY_HEADER, RH_INSIGHTS_REQUEST_ID, RH_RBAC_ACCOUNT, RH_RBAC_PSK
 from api.models import Tenant, User
 from api.serializers import UserSerializer, create_schema_name, extract_header
+
 from management.group.definer import seed_group  # noqa: I100, I201
 from management.models import Principal  # noqa: I100, I201
 from management.role.definer import seed_roles
+from management.utils import match_request_psk_for_tenant
 
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
@@ -65,7 +67,9 @@ class RolesTenantMiddleware(BaseTenantMiddleware):
     def process_request(self, request):  # pylint: disable=R1710
         """Check before super."""
         if not is_no_auth(request):
-            if hasattr(request, 'user') and hasattr(request.user, 'username'):
+            if hasattr(request, 'user') and hasattr(request.user, 'system') and request.user.system:
+                super().process_request(request)
+            elif hasattr(request, 'user') and hasattr(request.user, 'username'):
                 username = request.user.username
                 try:
                     User.objects.get(username=username)
@@ -77,6 +81,9 @@ class RolesTenantMiddleware(BaseTenantMiddleware):
 
     def get_tenant(self, model, hostname, request):
         """Override the tenant selection logic."""
+        if request.user.system:
+            tenant = model.objects.get(schema_name=create_schema_name(request.user.account))
+            return tenant
         schema_name = 'public'
         if not is_no_auth(request):
             user = User.objects.get(username=request.user.username)
@@ -173,6 +180,11 @@ class IdentityHeaderMiddleware(MiddlewareMixin):  # pylint: disable=R0903
 
         return access
 
+    @staticmethod
+    def system_user():
+        """Return a non-principal based user."""
+        return User('', '')
+
     def process_request(self, request):  # noqa: C901
         """Process request for identity middleware.
 
@@ -180,17 +192,32 @@ class IdentityHeaderMiddleware(MiddlewareMixin):  # pylint: disable=R0903
             request (object): The request object
 
         """
+        request_psk = request.META.get(RH_RBAC_PSK)
+        request_account = request.META.get(RH_RBAC_ACCOUNT)
+
+        if request_psk:
+            if match_request_psk_for_tenant(request_psk, request_account):
+                user = IdentityHeaderMiddleware.system_user()
+                req_id = request.META.get(RH_INSIGHTS_REQUEST_ID)
+                user.account = request_account
+                user.admin = True
+                user.system = True
+                user.req_id = req_id
+                request.user = user
+            return
+
         if is_no_auth(request):
-            request.user = User('', '')
+            request.user = IdentityHeaderMiddleware.system_user()
             return
         try:
             rh_auth_header, json_rh_auth = extract_header(request, self.header)
             username = json_rh_auth.get('identity', {}).get('user', {}).get('username')
             account = json_rh_auth.get('identity', {}).get('account_number')
             is_admin = json_rh_auth.get('identity', {}).get('user', {}).get('is_org_admin')
-        except (KeyError, JSONDecodeError) as decode_err:
+        except (KeyError, JSONDecodeError):
             logger.error('Could not obtain identity on request.')
-            raise decode_err
+            HttpResponseUnauthorizedRequest()
+            return
         except binascii.Error as error:
             logger.error('Could not decode header: %s.', error)
             raise error
@@ -246,12 +273,13 @@ class IdentityHeaderMiddleware(MiddlewareMixin):  # pylint: disable=R0903
             query_string = '?{}'.format(request.META['QUERY_STRING'])
 
         if hasattr(request, 'user') and request.user:
-            is_admin = request.user.admin
+            is_admin = f'Admin: {request.user.admin}'
             account = request.user.account
             username = request.user.username
+            is_system = f'System: {request.user.system}'
             req_id = request.user.req_id
         if account:
-            context = f' -- {req_id} {account} {username} {is_admin}'
+            context = f' -- {req_id} {account} {username} {is_admin} {is_system}'
         logger.info(f'{request.method} {request.path}{query_string}'  # pylint: disable=W1203
                     f' {response.status_code}{context}')
         return response

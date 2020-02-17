@@ -69,7 +69,7 @@ class RbacTenantMiddlewareTest(IdentityRequest):
 
     def test_get_tenant_user_not_found(self):
         """Test that a 401 is returned."""
-        mock_user = Mock(username='mockuser')
+        mock_user = Mock(username='mockuser', system=False)
         mock_request = Mock(path='/api/v1/providers/', user=mock_user)
         middleware = RolesTenantMiddleware()
         result = middleware.process_request(mock_request)

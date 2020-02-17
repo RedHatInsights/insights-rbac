@@ -15,6 +15,9 @@
 #    along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Helper utilities for management module."""
+import json
+import os
+
 from django.core.exceptions import PermissionDenied
 from django.utils.translation import gettext as _
 from management.models import Group, Principal
@@ -22,6 +25,14 @@ from rest_framework import serializers
 
 USERNAME_KEY = 'username'
 APPLICATION_KEY = 'application'
+
+
+def match_request_psk_for_tenant(request_psk, account):
+    """Validate that the PSK is for the account/tenant."""
+    os.environ.setdefault('ACCOUNT_PSKS', '{ "abc123": "10001" }')
+    psks = json.loads(os.environ.get('ACCOUNT_PSKS', '{}'))
+
+    return account == psks.get(request_psk)
 
 
 def get_principal_from_request(request):
