@@ -15,17 +15,13 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Django database settings."""
-import os
 from tempfile import NamedTemporaryFile
-
-from django.conf import settings
 
 from .env import ENVIRONMENT
 
 
 def config():
     """Database config."""
-
     db_obj = {
         'ENGINE': 'tenant_schemas.postgresql_backend',
         'NAME': ENVIRONMENT.get_value('DATABASE_NAME', default=None),
