@@ -48,7 +48,7 @@ class GroupViewsetTests(IdentityRequest):
             self.principal.save()
             self.group = Group(name='groupA')
             self.group.save()
-            self.role = Role.objects.create(name='roleA')
+            self.role = Role.objects.create(name='roleA', description='A role for a group.')
             self.policy = Policy.objects.create(name='policyA', group=self.group)
             self.policy.roles.add(self.role)
             self.policy.save()
@@ -384,6 +384,75 @@ class GroupViewsetTests(IdentityRequest):
         response = client.get(url, **self.headers)
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_role_name_filter_for_group_roles_no_match(self):
+        """Test role_name filter for getting roles for a group."""
+        url = reverse('group-roles', kwargs={'uuid': self.group.uuid})
+        url = '{}?role_name=test'.format(url)
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        roles = response.data.get('data')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(roles), 0)
+
+    def test_role_name_filter_for_group_roles_match(self):
+        """Test role_name filter for getting roles for a group."""
+        url = reverse('group-roles', kwargs={'uuid': self.group.uuid})
+        url = '{}?role_name={}'.format(url, self.role.name)
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        roles = response.data.get('data')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(roles), 1)
+        self.assertEqual(roles[0].get('uuid'), str(self.role.uuid))
+
+    def test_role_description_filter_for_group_roles_no_match(self):
+        """Test role_description filter for getting roles for a group."""
+        url = reverse('group-roles', kwargs={'uuid': self.group.uuid})
+        url = '{}?role_description=test'.format(url)
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        roles = response.data.get('data')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(roles), 0)
+
+    def test_role_description_filter_for_group_roles_match(self):
+        """Test role_description filter for getting roles for a group."""
+        url = reverse('group-roles', kwargs={'uuid': self.group.uuid})
+        url = '{}?role_description={}'.format(url, self.role.description)
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        roles = response.data.get('data')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(roles), 1)
+        self.assertEqual(roles[0].get('uuid'), str(self.role.uuid))
+
+    def test_all_role_filters_for_group_roles_no_match(self):
+        """Test role filters for getting roles for a group."""
+        url = reverse('group-roles', kwargs={'uuid': self.group.uuid})
+        url = '{}?role_description=test&role_name=test'.format(url)
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        roles = response.data.get('data')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(roles), 0)
+
+    def test_all_role_filters_for_group_roles_match(self):
+        """Test role filters for getting roles for a group."""
+        url = reverse('group-roles', kwargs={'uuid': self.group.uuid})
+        url = '{}?role_description={}&role_name={}'.format(url, self.role.description, self.role.name)
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        roles = response.data.get('data')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(roles), 1)
+        self.assertEqual(roles[0].get('uuid'), str(self.role.uuid))
 
     def test_add_group_roles_system_policy_create_success(self):
         """Test that adding a role to a group without a system policy returns successfully."""

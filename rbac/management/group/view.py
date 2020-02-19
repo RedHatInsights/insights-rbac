@@ -45,6 +45,7 @@ USERNAMES_KEY = 'usernames'
 ROLES_KEY = 'roles'
 EXCLUDE_KEY = 'exclude'
 VALID_EXCLUDE_VALUES = ['true', 'false']
+VALID_GROUP_ROLE_FILTERS = ['role_name', 'role_description']
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 
@@ -519,6 +520,16 @@ class GroupViewSet(mixins.CreateModelMixin,
 
         return Response(status=status.HTTP_200_OK, data=response_data.data)
 
+    def filtered_roles(self, roles, request):
+        """Return filtered roles for group from query params."""
+        role_filters = {}
+        for param_name, param_value in request.query_params.items():
+            if param_name in VALID_GROUP_ROLE_FILTERS:
+                attr_filter_name = param_name.replace('role_', '')
+                role_filters[f'{attr_filter_name}__icontains'] = param_value
+
+        return roles.filter(**role_filters)
+
     def obtain_roles(self, request, group):
         """Obtain roles based on request, supports exclusion."""
         exclude = self.validate_and_get_exclude_key(request.query_params)
@@ -526,7 +537,9 @@ class GroupViewSet(mixins.CreateModelMixin,
         roles = (group.roles_with_access() if exclude == 'false'
                  else self.obtain_roles_with_exclusion(request, group))
 
-        return [RoleMinimumSerializer(role).data for role in roles]
+        filtered_roles = self.filtered_roles(roles, request)
+
+        return [RoleMinimumSerializer(role).data for role in filtered_roles]
 
     def obtain_roles_with_exclusion(self, request, group):
         """Obtain the queryset for roles based on scope."""
