@@ -627,6 +627,24 @@
             }
           },
           {
+            "name": "role_name",
+            "in": "query",
+            "required": false,
+            "description": "Parameter for filtering group roles by role `name` using string contains search.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "role_description",
+            "in": "query",
+            "required": false,
+            "description": "Parameter for filtering group roles by role `description` using string contains search.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "$ref": "#/components/parameters/QueryLimit"
           },
           {
