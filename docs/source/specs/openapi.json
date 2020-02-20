@@ -1518,7 +1518,7 @@
             }
           },
           {
-            "$ref": "#/components/parameters/QueryLimitNoDefault"
+            "$ref": "#/components/parameters/QueryLimit"
           },
           {
             "$ref": "#/components/parameters/QueryOffset"
@@ -1526,26 +1526,11 @@
         ],
         "responses": {
           "200": {
-            "description": "A list of access objects. By default, this request will not be paginated. To received a paginated response, include the `/?limit=` query parameter.",
+            "description": "A paginated list of access objects",
             "content": {
               "application/json": {
                 "schema": {
-                  "oneOf": [
-                    {
-                      "$ref": "#/components/schemas/AccessNoPagination"
-                    },
-                    {
-                      "$ref": "#/components/schemas/AccessPagination"
-                    }
-                  ]
-                },
-                "examples": {
-                  "AccessNoPagination": {
-                    "$ref": "#/components/examples/AccessNoPagination"
-                  },
-                  "AccessPagination": {
-                    "$ref": "#/components/examples/AccessPagination"
-                  }
+                  "$ref": "#/components/schemas/AccessPagination"
                 }
               }
             }
@@ -1603,17 +1588,6 @@
         "schema": {
           "type": "integer",
           "default": 10,
-          "minimum": 1,
-          "maximum": 1000
-        }
-      },
-      "QueryLimitNoDefault": {
-        "in": "query",
-        "name": "limit",
-        "required": false,
-        "description": "Parameter for selecting the amount of data returned.",
-        "schema": {
-          "type": "integer",
           "minimum": 1,
           "maximum": 1000
         }
@@ -2345,24 +2319,6 @@
           }
         ]
       },
-      "AccessNoPagination": {
-        "allOf": [
-          {
-            "type": "object",
-            "required": [
-              "data"
-            ],
-            "properties": {
-              "data": {
-                "type": "array",
-                "items": {
-                  "$ref": "#/components/schemas/Access"
-                }
-              }
-            }
-          }
-        ]
-      },
       "Status": {
         "required": [
           "api_version"
@@ -2412,39 +2368,6 @@
               "http.server": "0.6"
             }
           }
-        }
-      }
-    },
-    "examples": {
-      "AccessNoPagination": {
-        "value": {
-          "data": [
-            {
-              "permission": "app-name:*:*",
-              "resourceDefinitions": []
-            }
-          ]
-        }
-      },
-      "AccessPagination": {
-        "value": {
-          "meta": {
-            "count": 1,
-            "limit": 10,
-            "offset": 0
-          },
-          "links": {
-            "first": "/access/?application=app-name&limit=10",
-            "next": null,
-            "previous": null,
-            "last": "/access/?application=app-name&limit=10"
-          },
-          "data": [
-            {
-              "permission": "app-name:*:*",
-              "resourceDefinitions": []
-            }
-          ]
         }
       }
     }

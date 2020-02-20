@@ -94,10 +94,9 @@ class AccessView(APIView):
     def paginator(self):
         """Return the paginator instance associated with the view, or `None`."""
         if not hasattr(self, '_paginator'):
+            self._paginator = self.pagination_class()
             if self.pagination_class is None or 'limit' not in self.request.query_params:
-                self._paginator = None
-            else:
-                self._paginator = self.pagination_class()
+                self._paginator.default_limit = self._paginator.max_limit
         return self._paginator
 
     def paginate_queryset(self, queryset):
