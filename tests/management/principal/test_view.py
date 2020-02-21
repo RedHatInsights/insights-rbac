@@ -55,7 +55,7 @@ class PrincipalViewsetTests(IdentityRequest):
             Principal.objects.all().delete()
 
     @patch('management.principal.proxy.PrincipalProxy.request_principals',
-           return_value={'status_code': 200, 'data': [{'username': 'test_user'}]})
+           return_value={'status_code': 200, 'data': {'userCount': '1', "users": [{'username': 'test_user'}]}})
     def test_read_principal_list_success(self, mock_request):
         """Test that we can read a list of principals."""
         url = reverse('principals')
@@ -66,6 +66,7 @@ class PrincipalViewsetTests(IdentityRequest):
         for keyname in ['meta', 'links', 'data']:
             self.assertIn(keyname, response.data)
         self.assertIsInstance(response.data.get('data'), list)
+        self.assertEqual(int(response.data.get('meta').get('count')), 1)
         self.assertEqual(len(response.data.get('data')), 1)
 
         principal = response.data.get('data')[0]
@@ -85,6 +86,7 @@ class PrincipalViewsetTests(IdentityRequest):
             self.assertIn(keyname, response.data)
         self.assertIsInstance(response.data.get('data'), list)
         self.assertEqual(len(response.data.get('data')), 1)
+        self.assertEqual(response.data.get('meta').get('count'), None)
 
         principal = response.data.get('data')[0]
         self.assertIsNotNone(principal.get('username'))
@@ -124,6 +126,7 @@ class PrincipalViewsetTests(IdentityRequest):
         for keyname in ['meta', 'links', 'data']:
             self.assertIn(keyname, response.data)
         self.assertIsInstance(response.data.get('data'), list)
+        self.assertEqual(response.data.get('meta').get('count'), None)
         resp = proxy._process_data(response.data.get('data'), account='1234', account_filter=True)
         self.assertEqual(len(resp), 1)
 
@@ -160,6 +163,7 @@ class PrincipalViewsetTests(IdentityRequest):
         for keyname in ['meta', 'links', 'data']:
             self.assertIn(keyname, response.data)
         self.assertIsInstance(response.data.get('data'), list)
+        self.assertEqual(response.data.get('meta').get('count'), None)
         resp = proxy._process_data(response.data.get('data'), account='1234', account_filter=False)
         self.assertEqual(len(resp), 1)
 

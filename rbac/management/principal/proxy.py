@@ -177,7 +177,7 @@ class PrincipalProxy:  # pylint: disable=too-few-public-methods
                                       self.path,
                                       account_principals_path)
 
-        # For v1 account users endpoints are already filtered by account
+        # For v2 account users endpoints are already filtered by account
         return self._request_principals(url, params=params, account_filter=False)
 
     def request_filtered_principals(self, principals, account=None, limit=None, offset=None):
