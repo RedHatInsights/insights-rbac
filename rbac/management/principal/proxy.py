@@ -143,7 +143,12 @@ class PrincipalProxy:  # pylint: disable=too-few-public-methods
         if response.status_code == status.HTTP_200_OK:
             """ Testing if account numbers match """
             try:
-                resp['data'] = self._process_data(response.json(), account, account_filter)
+                data = response.json()
+                if isinstance(data, dict):
+                    userList = self._process_data(data.get('users'), account, account_filter)
+                else:
+                    userList = self._process_data(data, account, account_filter)
+                resp['data'] = userList
             except ValueError:
                 resp['status_code'] = status.HTTP_500_INTERNAL_SERVER_ERROR
                 error = unexpected_error
@@ -163,7 +168,8 @@ class PrincipalProxy:  # pylint: disable=too-few-public-methods
 
     def request_principals(self, account, limit=None, offset=None):
         """Request principals for an account."""
-        account_principals_path = '/v1/accounts/{}/users'.format(account)
+        account_principals_path = '/v2/accounts/{}/users'.format(account)
+
         params = self._create_params(limit=limit, offset=offset)
         url = '{}://{}:{}{}{}'.format(self.protocol,
                                       self.host,
@@ -171,7 +177,7 @@ class PrincipalProxy:  # pylint: disable=too-few-public-methods
                                       self.path,
                                       account_principals_path)
 
-        # For v1 account users endpoints are already filtered by account
+        # For v2 account users endpoints are already filtered by account
         return self._request_principals(url, params=params, account_filter=False)
 
     def request_filtered_principals(self, principals, account=None, limit=None, offset=None):
