@@ -549,18 +549,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "required": [
-                    "principals"
-                  ],
-                  "properties": {
-                    "principals": {
-                      "type": "array",
-                      "items": {
-                        "$ref": "#/components/schemas/PrincipalPagination"
-                      }
-                    }
-                  }
+                  "$ref": "#/components/schemas/PrincipalPagination"
                 }
               }
             }
