@@ -123,7 +123,7 @@ class AccessViewTests(IdentityRequest):
         self.assertIsNotNone(response.data.get('data'))
         self.assertIsInstance(response.data.get('data'), list)
         self.assertEqual(len(response.data.get('data')), 1)
-        self.assertIsNone(response.data.get('meta'))
+        self.assertEqual(response.data.get('meta').get('limit'), 1000)
         self.assertEqual(self.access_data, response.data.get('data')[0])
 
     def test_get_access_with_limit(self):
