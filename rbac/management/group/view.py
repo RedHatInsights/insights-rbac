@@ -32,6 +32,7 @@ from management.group.serializer import (GroupInputSerializer,
 from management.permissions import GroupAccessPermission
 from management.principal.model import Principal
 from management.principal.proxy import PrincipalProxy
+from management.principal.serializer import PrincipalSerializer
 from management.querysets import get_group_queryset, get_object_principal_queryset
 from management.role.model import Role
 from rest_framework import mixins, serializers, status, viewsets
@@ -294,9 +295,31 @@ class GroupViewSet(mixins.CreateModelMixin,
         group.save()
         return group
 
-    @action(detail=True, methods=['post', 'delete'])
+    @action(detail=True, methods=['get', 'post', 'delete'])
     def principals(self, request, uuid=None):
-        """Add or remove principals from a group."""
+        """Get, add or remove principals from a group."""
+        """
+        @api {get} /api/v1/groups/:uuid/principals/    Get principals for a group
+        @apiName getPrincipals
+        @apiGroup Group
+        @apiVersion 1.0.0
+        @apiDescription Get principals for a group
+
+        @apiHeader {String} token User authorization token
+
+        @apiParam (Path) {String} id Group unique identifier
+
+        @apiSuccess {String} uuid Group unique identifier
+        @apiSuccess {String} name Group name
+        @apiSuccess {Array} principals Array of principals
+        @apiSuccessExample {json} Success-Response:
+            HTTP/1.1 200 OK
+            {
+                "principals": [
+                    { "username": "jsmith" }
+                ]
+            }
+        """
         """
         @api {post} /api/v1/groups/:uuid/principals/   Add principals to a group
         @apiName addPrincipals
@@ -361,7 +384,20 @@ class GroupViewSet(mixins.CreateModelMixin,
             if isinstance(resp, dict) and 'errors' in resp:
                 return Response(status=resp['status_code'], data=resp['errors'])
             output = GroupSerializer(resp)
-            return Response(status=status.HTTP_200_OK, data=output.data)
+            response = Response(status=status.HTTP_200_OK, data=output.data)
+        elif request.method == 'GET':
+            page = self.paginate_queryset(group.principals.all())
+            serializer = PrincipalSerializer(page, many=True)
+            usernames = serializer.data
+            if usernames:
+                usernameList = list(usernames[0].values())
+            else:
+                usernameList = []
+            proxy = PrincipalProxy()
+            resp = proxy.request_filtered_principals(usernameList, account)
+            if isinstance(resp, dict) and 'errors' in resp:
+                return Response(status=resp.get('status_code'), data=resp.get('errors'))
+            response = self.get_paginated_response(resp.get('data'))
         else:
             if USERNAMES_KEY not in request.query_params:
                 key = 'detail'
@@ -370,7 +406,8 @@ class GroupViewSet(mixins.CreateModelMixin,
             username = request.query_params.get(USERNAMES_KEY, '')
             principals = [name.strip() for name in username.split(',')]
             self.remove_principals(group, principals, account)
-            return Response(status=status.HTTP_204_NO_CONTENT)
+            response = Response(status=status.HTTP_204_NO_CONTENT)
+        return response
 
     @action(detail=True, methods=['get', 'post', 'delete'])
     def roles(self, request, uuid=None):

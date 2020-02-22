@@ -21,7 +21,7 @@ from rest_framework import serializers
 from .model import Principal
 
 
-class PrincpalSerializer(serializers.ModelSerializer):
+class PrincipalSerializer(serializers.ModelSerializer):
     """Serializer for the Principal model."""
 
     class Meta:
@@ -31,7 +31,7 @@ class PrincpalSerializer(serializers.ModelSerializer):
         fields = ('username',)
 
 
-class PrincpalInputSerializer(serializers.Serializer):
+class PrincipalInputSerializer(serializers.Serializer):
     """Serializer for the Principal model."""
 
     username = serializers.CharField(required=True, max_length=150)

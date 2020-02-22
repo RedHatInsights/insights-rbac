@@ -61,6 +61,9 @@ class GroupViewsetTests(IdentityRequest):
             self.defGroup.principals.add(self.principal)
             self.defGroup.save()
 
+            self.emptyGroup = Group(name='groupE')
+            self.emptyGroup.save()
+
             self.groupB = Group.objects.create(name='groupB')
             self.groupB.principals.add(self.principal)
             self.policyB = Policy.objects.create(name='policyB', group=self.groupB)
@@ -158,7 +161,7 @@ class GroupViewsetTests(IdentityRequest):
         for keyname in ['meta', 'links', 'data']:
             self.assertIn(keyname, response.data)
         self.assertIsInstance(response.data.get('data'), list)
-        self.assertEqual(len(response.data.get('data')), 3)
+        self.assertEqual(len(response.data.get('data')), 4)
 
         group = response.data.get('data')[0]
         self.assertIsNotNone(group.get('name'))
@@ -258,10 +261,33 @@ class GroupViewsetTests(IdentityRequest):
         url = reverse('group-list')
         response = client.get(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data.get('meta').get('count'), 3)
+        self.assertEqual(response.data.get('meta').get('count'), 4)
         self.assertEqual(response.data.get('data')[0].get('principalCount'), 1)
         self.assertEqual(response.data.get('data')[0].get('policyCount'), None)
         self.assertEqual(response.data.get('data')[0].get('roleCount'), 1)
+
+    @patch('management.principal.proxy.PrincipalProxy.request_filtered_principals',
+           return_value={'status_code': 200, 'data': []})
+    def test_get_group_principals_empty(self, mock_request):
+        """Test that getting principals from an empty group returns successfully."""
+        client = APIClient()
+        url = reverse('group-principals', kwargs={'uuid': self.emptyGroup.uuid})
+        response = client.get(url, **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data.get('meta').get('count'), 0)
+        self.assertEqual(response.data.get('data'), [])
+
+    @patch('management.principal.proxy.PrincipalProxy.request_filtered_principals',
+           return_value={'status_code': 200, 'data': []})
+    def test_get_group_principals_nonempty(self, mock_request):
+        """Test that getting principals from a nonempty group returns successfully."""
+        mock_request.return_value['data'] = [{'username': self.principal.username}]
+        client = APIClient()
+        url = reverse('group-principals', kwargs={'uuid': self.group.uuid})
+        response = client.get(url, **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data.get('meta').get('count'), 1)
+        self.assertEqual(response.data.get('data')[0].get('username'), self.principal.username)
 
     def test_remove_group_principals_success(self):
         """Test that removing a principal to a group returns successfully."""
