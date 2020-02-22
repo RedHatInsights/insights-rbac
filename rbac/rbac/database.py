@@ -15,8 +15,6 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Django database settings."""
-from tempfile import NamedTemporaryFile
-
 from .env import ENVIRONMENT
 
 
@@ -31,17 +29,13 @@ def config():
         'PORT': ENVIRONMENT.get_value('DATABASE_PORT', default=None),
     }
 
-    database_cert = ENVIRONMENT.get_value('DATABASE_SERVICE_CERT', default=None)
-    if database_cert:
-        temp_cert_file = NamedTemporaryFile(delete=False, mode='w', suffix='pem')
-        with open(temp_cert_file.name, mode='w') as cert_file:
-            cert_file.write(database_cert)
-        db_options = {
-            'OPTIONS': {
-                'sslmode': 'verify-full',
-                'sslrootcert': temp_cert_file.name
-            }
+    db_options = {
+        'OPTIONS': {
+            'sslmode': ENVIRONMENT.get_value('PGSSLMODE', default='prefer'),
+            'sslrootcert': ENVIRONMENT.get_value('PGSSLROOTCERT',
+                                                 default='/etc/rds-certs/rds-cacert')
         }
-        db_obj.update(db_options)
+    }
+    db_obj.update(db_options)
 
     return db_obj
