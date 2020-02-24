@@ -17,7 +17,7 @@
 """Test the group viewset."""
 import random
 from decimal import Decimal
-from unittest.mock import patch
+from unittest.mock import patch, ANY
 from uuid import uuid4
 
 from django.urls import reverse
@@ -453,6 +453,34 @@ class GroupViewsetTests(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(roles), 1)
         self.assertEqual(roles[0].get('uuid'), str(self.role.uuid))
+
+    @patch('management.principal.proxy.PrincipalProxy.request_filtered_principals',
+        return_value={'status_code': 200, 'data': []})
+    def test_principal_username_filter_for_group_roles_no_match(self, mock_request):
+        """Test principal_username filter for getting principals for a group."""
+        url = reverse('group-principals', kwargs={'uuid': self.group.uuid})
+        url = '{}?principal_username=test'.format(url)
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        principals = response.data.get('data')
+
+        mock_request.assert_called_with([], ANY)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(principals), 0)
+
+    @patch('management.principal.proxy.PrincipalProxy.request_filtered_principals',
+           return_value={'status_code': 200, 'data': [{'username': 'test_user'}]})
+    def test_principal_username_filter_for_group_roles_match(self, mock_request):
+        """Test principal_username filter for getting principals for a group."""
+        url = reverse('group-principals', kwargs={'uuid': self.group.uuid})
+        url = '{}?principal_username={}'.format(url, self.principal.username)
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        principals = response.data.get('data')
+
+        mock_request.assert_called_with([self.principal.username], ANY)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(principals), 1)
 
     def test_add_group_roles_system_policy_create_success(self):
         """Test that adding a role to a group without a system policy returns successfully."""
