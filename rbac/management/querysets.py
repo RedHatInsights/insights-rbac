@@ -63,7 +63,7 @@ def get_group_queryset(request):
         if username != identity_username:
             return Group.objects.none()
         else:
-            return Group.objects.filter(principals__username=username)
+            return Group.objects.filter(principals__username=username) | Group.platform_default_set()
     access = request.user.access
     access_op = 'read'
     if request.method in ('POST', 'PUT'):

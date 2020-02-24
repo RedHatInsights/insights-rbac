@@ -299,7 +299,7 @@ class GroupViewsetTests(IdentityRequest):
         url = '{}?username={}'.format(url, uuid4())
         client = APIClient()
         response = client.get(url, **self.headers)
-        self.assertEqual(response.data.get('meta').get('count'), 0)
+        self.assertEqual(response.data.get('meta').get('count'), 1)
 
     def test_get_group_roles_success(self):
         """Test that getting roles for a group returns successfully."""
