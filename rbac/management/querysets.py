@@ -16,6 +16,7 @@
 #
 """Queryset helpers for management module."""
 from django.db.models.aggregates import Count
+from django.urls import reverse
 from django.utils.translation import gettext as _
 from management.group.model import Group
 from management.policy.model import Policy
@@ -64,6 +65,10 @@ def get_group_queryset(request):
             return Group.objects.none()
         else:
             return Group.objects.filter(principals__username=username)
+    elif request._request.path == reverse('group-list') and request._request.method == 'GET':
+        return Group.objects.annotate(principalCount=Count('principals', distinct=True),
+                                      policyCount=Count('policies', distinct=True))
+
     access = request.user.access
     access_op = 'read'
     if request.method in ('POST', 'PUT'):
