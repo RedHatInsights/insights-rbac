@@ -46,14 +46,21 @@ ROLES_KEY = 'roles'
 EXCLUDE_KEY = 'exclude'
 VALID_EXCLUDE_VALUES = ['true', 'false']
 VALID_GROUP_ROLE_FILTERS = ['role_name', 'role_description']
+VALID_GROUP_PRINCIPAL_FILTERS = ['principal_username']
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 
 class GroupFilter(filters.FilterSet):
     """Filter for group."""
 
+    def username_filter(queryset, field, value):
+        """Filter for group username lookup."""
+        filters = {'{}__username__icontains'.format(field): value}
+        filtered_set = queryset.filter(**filters)
+        return filtered_set | Group.platform_default_set()
+
     name = filters.CharFilter(field_name='name', lookup_expr='icontains')
-    username = filters.CharFilter(field_name='principals', lookup_expr='username__icontains')
+    username = filters.CharFilter(field_name='principals', method=username_filter)
 
     class Meta:
         model = Group
@@ -386,7 +393,8 @@ class GroupViewSet(mixins.CreateModelMixin,
             output = GroupSerializer(resp)
             response = Response(status=status.HTTP_200_OK, data=output.data)
         elif request.method == 'GET':
-            page = self.paginate_queryset(group.principals.all())
+            principals_from_params = self.filtered_principals(group, request)
+            page = self.paginate_queryset(principals_from_params)
             serializer = PrincipalSerializer(page, many=True)
             usernames = serializer.data
             if usernames:
@@ -522,13 +530,22 @@ class GroupViewSet(mixins.CreateModelMixin,
 
     def filtered_roles(self, roles, request):
         """Return filtered roles for group from query params."""
-        role_filters = {}
-        for param_name, param_value in request.query_params.items():
-            if param_name in VALID_GROUP_ROLE_FILTERS:
-                attr_filter_name = param_name.replace('role_', '')
-                role_filters[f'{attr_filter_name}__icontains'] = param_value
-
+        role_filters = self.filters_from_params(VALID_GROUP_ROLE_FILTERS, 'role', request)
         return roles.filter(**role_filters)
+
+    def filtered_principals(self, group, request):
+        """Return filtered principals for group from query params."""
+        principal_filters = self.filters_from_params(VALID_GROUP_PRINCIPAL_FILTERS, 'principal', request)
+        return group.principals.filter(**principal_filters)
+
+    def filters_from_params(self, valid_filters, model_name, request):
+        """Build filters from group params."""
+        filters = {}
+        for param_name, param_value in request.query_params.items():
+            if param_name in valid_filters:
+                attr_filter_name = param_name.replace(f'{model_name}_', '')
+                filters[f'{attr_filter_name}__icontains'] = param_value
+        return filters
 
     def obtain_roles(self, request, group):
         """Obtain roles based on request, supports exclusion."""
