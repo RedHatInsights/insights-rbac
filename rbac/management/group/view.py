@@ -52,8 +52,14 @@ logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 class GroupFilter(filters.FilterSet):
     """Filter for group."""
 
+    def username_filter(queryset, field, value):
+        """Filter for group username lookup."""
+        filters = {'{}__username__icontains'.format(field): value}
+        filtered_set = queryset.filter(**filters)
+        return filtered_set | Group.platform_default_set()
+
     name = filters.CharFilter(field_name='name', lookup_expr='icontains')
-    username = filters.CharFilter(field_name='principals', lookup_expr='username__icontains')
+    username = filters.CharFilter(field_name='principals', method=username_filter)
 
     class Meta:
         model = Group
