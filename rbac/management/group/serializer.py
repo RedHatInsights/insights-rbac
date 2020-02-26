@@ -18,7 +18,7 @@
 """Serializer for group management."""
 from management.group.model import Group
 from management.principal.proxy import PrincipalProxy
-from management.principal.serializer import PrincpalInputSerializer, PrincpalSerializer
+from management.principal.serializer import PrincipalInputSerializer, PrincipalSerializer
 from management.role.serializer import RoleMinimumSerializer
 from rest_framework import serializers, status
 from rest_framework.validators import UniqueValidator
@@ -58,7 +58,7 @@ class GroupSerializer(serializers.ModelSerializer):
     uuid = serializers.UUIDField(read_only=True)
     name = serializers.CharField(required=True, max_length=150)
     description = serializers.CharField(allow_null=True, required=False)
-    principals = PrincpalSerializer(read_only=True, many=True)
+    principals = PrincipalSerializer(read_only=True, many=True)
     platform_default = serializers.BooleanField(read_only=True)
     system = serializers.BooleanField(read_only=True)
     roles = serializers.SerializerMethodField()
@@ -100,7 +100,7 @@ class GroupSerializer(serializers.ModelSerializer):
 class GroupPrincipalInputSerializer(serializers.Serializer):
     """Serializer for adding principals to a group."""
 
-    principals = PrincpalInputSerializer(many=True)
+    principals = PrincipalInputSerializer(many=True)
 
     class Meta:
         """Metadata for the serializer."""

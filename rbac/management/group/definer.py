@@ -31,7 +31,10 @@ def seed_group(tenant):
     """For a tenant create or update default group."""
     with tenant_context(tenant):
         name = 'Default user access'
-        group_description = 'Default group that contains default permissions for new users.'
+        group_description = (
+            'This group contains the roles that all users inherit by default. '
+            'Adding or removing roles in this group will affect permissions for all users in your organization.'
+        )
 
         group, group_created = Group.objects.get_or_create(
             platform_default=True,
