@@ -755,10 +755,16 @@ class GroupViewNonAdminTests(IdentityRequest):
             Role.objects.all().delete()
             Policy.objects.all().delete()
 
-    def test_nonadmin_RonR(self):
-        """Test that a nonadmin user can't group RBAC resources"""
+    def test_nonadmin_RonR_list(self):
+        """Test that a nonadmin user can list groups in tenant"""
         url = '{}?application={}'.format(reverse('group-list'), 'rbac')
         client = APIClient()
         response = client.get(url, **self.headers)
-        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
 
+    def test_nonadmin_RonR_retrieve(self):
+        """Test that a nonadmin user can't retrieve group RBAC resources"""
+        url = reverse('group-detail', kwargs={'uuid': self.group.uuid})
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
