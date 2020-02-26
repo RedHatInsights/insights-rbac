@@ -35,7 +35,7 @@ from .model import Role
 from .serializer import RoleSerializer
 
 TESTING_APP = os.getenv('TESTING_APPLICATION')
-APP_WHITELIST = ['cost-management', 'catalog', 'approval']
+APP_WHITELIST = ['cost-management']
 
 if TESTING_APP:
     APP_WHITELIST.append(TESTING_APP)
