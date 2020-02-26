@@ -541,6 +541,15 @@
               "type": "string",
               "format": "uuid"
             }
+          },
+          {
+            "name": "principal_username",
+            "in": "query",
+            "required": false,
+            "description": "Parameter for filtering group principals by principal `username` using string contains search.",
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
