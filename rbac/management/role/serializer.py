@@ -17,6 +17,7 @@
 
 """Serializer for role management."""
 from django.utils.translation import gettext as _
+from management.group.model import Group
 from rest_framework import serializers
 from rest_framework.validators import UniqueValidator
 
@@ -160,6 +161,60 @@ class RoleMinimumSerializer(serializers.ModelSerializer):
         return obtain_applications(obj)
 
 
+class DynamicFieldsModelSerializer(serializers.ModelSerializer):
+    """A ModelSerializer that controls which fields should be displayed."""
+
+    def __init__(self, *args, **kwargs):
+        """Instantiate the serializer."""
+        fields = kwargs.pop('fields', None)
+
+        # Instantiate the superclass normally
+        super(DynamicFieldsModelSerializer, self).__init__(*args, **kwargs)
+
+        if fields is not None:
+            # Drop any fields that are not specified in the `fields` argument.
+            allowed = set(fields)
+            existing = set(self.fields)
+            for field_name in existing - allowed:
+                self.fields.pop(field_name)
+
+
+class RoleDynamicSerializer(DynamicFieldsModelSerializer):
+    """Serializer for the Role model that could dynamically return required field."""
+
+    uuid = serializers.UUIDField(read_only=True)
+    name = serializers.CharField(required=True, max_length=150)
+    description = serializers.CharField(allow_null=True, required=False)
+    created = serializers.DateTimeField(read_only=True)
+    modified = serializers.DateTimeField(read_only=True)
+    policyCount = serializers.IntegerField(read_only=True)
+    groups_in = serializers.SerializerMethodField()
+    groups_in_count = serializers.SerializerMethodField()
+    accessCount = serializers.IntegerField(read_only=True)
+    applications = serializers.SerializerMethodField()
+    system = serializers.BooleanField(read_only=True)
+    platform_default = serializers.BooleanField(read_only=True)
+
+    class Meta:
+        """Metadata for the serializer."""
+
+        model = Role
+        fields = ('uuid', 'name', 'description', 'created', 'modified', 'policyCount', 'groups_in',
+                  'groups_in_count', 'accessCount', 'applications', 'system', 'platform_default')
+
+    def get_applications(self, obj):
+        """Get the list of applications in the role."""
+        return obtain_applications(obj)
+
+    def get_groups_in_count(self, obj):
+        """Get the totoal count of groups where the role is in."""
+        return obtain_groups_in(obj).count()
+
+    def get_groups_in(self, obj):
+        """Get the groups where the role is in."""
+        return obtain_groups_in(obj).values('name', 'uuid')
+
+
 def obtain_applications(obj):
     """Shared function to get the list of applications in the role."""
     apps = []
@@ -169,3 +224,10 @@ def obtain_applications(obj):
         if perm_len == 3:
             apps.append(perm_list[0])
     return list(set(apps))
+
+
+def obtain_groups_in(obj):
+    """Shared function to get the groups the roles is in."""
+    policy_ids = list(obj.policies.values_list('id', flat=True))
+
+    return Group.objects.filter(policies__in=policy_ids).distinct()

@@ -75,7 +75,7 @@ def access_for_roles(roles, application):
 def groups_for_principal(principal, **kwargs):
     """Gathers all groups for a principal, including the default."""
     assigned_group_set = principal.group.all()
-    platform_default_group_set = Group.objects.filter(platform_default=True)
+    platform_default_group_set = Group.platform_default_set()
     prefetch_lookups = kwargs.get('prefetch_lookups_for_groups')
 
     if prefetch_lookups:

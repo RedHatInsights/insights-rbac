@@ -16,6 +16,7 @@
 #
 """Queryset helpers for management module."""
 from django.db.models.aggregates import Count
+from django.urls import reverse
 from django.utils.translation import gettext as _
 from management.group.model import Group
 from management.policy.model import Policy
@@ -43,39 +44,38 @@ PRINCIPAL_QUERYSET_MAP = {
 }
 
 
+def get_annotated_groups():
+    """Return an annotated set of groups for the tenant."""
+    return Group.objects.annotate(principalCount=Count('principals', distinct=True),
+                                  policyCount=Count('policies', distinct=True))
+
+
+def has_group_all_access(request):
+    """Quick check to determine if a request should have access to all groups on a tenant."""
+    return (ENVIRONMENT.get_value('ALLOW_ANY', default=False, cast=bool)
+            or request.user.admin
+            or (request.path == reverse('group-list') and request.method == 'GET'))
+
+
 def get_group_queryset(request):
     """Obtain the queryset for groups."""
     scope = request.query_params.get(SCOPE_KEY, ACCOUNT_SCOPE)
     if scope != ACCOUNT_SCOPE:
         return get_object_principal_queryset(request, scope, Group)
 
-    if ENVIRONMENT.get_value('ALLOW_ANY', default=False, cast=bool):
-        return Group.objects.annotate(principalCount=Count('principals', distinct=True),
-                                      policyCount=Count('policies', distinct=True))
-    if request.user.admin:
-        return Group.objects.annotate(principalCount=Count('principals', distinct=True),
-                                      policyCount=Count('policies', distinct=True))
-
     username = request.query_params.get('username')
     if username:
         decoded = request.user.identity_header.get('decoded', {})
         identity_username = decoded.get('identity', {}).get('user', {}).get('username')
-        if username != identity_username:
+        if username != identity_username and not request.user.admin:
             return Group.objects.none()
         else:
             return Group.objects.filter(principals__username=username)
-    access = request.user.access
-    access_op = 'read'
-    if request.method in ('POST', 'PUT'):
-        access_op = 'write'
-    res_list = access.get('group', {}).get(access_op, [])
-    if not res_list:
-        return Group.objects.none()
-    if '*' in res_list:
-        return Group.objects.annotate(principalCount=Count('principals', distinct=True),
-                                      policyCount=Count('policies', distinct=True))
-    return Group.objects.filter(uuid__in=res_list).annotate(principalCount=Count('principals', distinct=True),
-                                                            policyCount=Count('policies', distinct=True))
+
+    if has_group_all_access(request):
+        return get_annotated_groups()
+
+    return Group.objects.none()
 
 
 def get_role_queryset(request):

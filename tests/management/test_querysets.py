@@ -20,6 +20,7 @@ from unittest.mock import Mock
 from django.db import connection
 from django.db.models.aggregates import Count
 from django.test import TestCase
+from django.urls import reverse
 from management.group.model import Group
 from management.policy.model import Policy
 from management.principal.model import Principal
@@ -84,83 +85,26 @@ class QuerySetTest(TestCase):
         queryset = get_group_queryset(req)
         self.assertEquals(queryset.count(), 5)
 
-    def test_get_group_queryset_get_all(self):
-        """Test get_group_queryset as a user with all access."""
+    def test_get_user_group_queryset_admin(self):
+        """Test get_group_queryset as an admin."""
         self._create_groups()
-        access = {
-            'group': {
-                'read': ['*']
+        principal = Principal.objects.create(username='test_user')
+        group = Group.objects.first()
+        group.principals.add(principal)
+        identity_header = {
+            'decoded': {
+                'identity': {
+                    'user': {
+                        'username': 'test_user'
+                    }
+                }
             }
         }
-        user = Mock(spec=User, admin=False, access=access)
-        req = Mock(user=user, method='GET', query_params={})
-        queryset = get_group_queryset(req)
-        self.assertEquals(queryset.count(), 5)
 
-    def test_get_group_queryset_get_some(self):
-        """Test get_group_queryset as a user with one group access."""
-        self._create_groups()
-        access = {
-            'group': {
-                'read': [Group.objects.first().uuid]
-            }
-        }
-        user = Mock(spec=User, admin=False, access=access)
-        req = Mock(user=user, method='GET', query_params={})
+        user = Mock(spec=User, admin=True, identity_header=identity_header)
+        req = Mock(user=user, query_params={'username': 'test_user'})
         queryset = get_group_queryset(req)
         self.assertEquals(queryset.count(), 1)
-
-    def test_get_group_queryset_get_none(self):
-        """Test get_group_queryset as a user with no access."""
-        self._create_groups()
-        access = {
-            'group': {
-                'read': []
-            }
-        }
-        user = Mock(spec=User, admin=False, access=access)
-        req = Mock(user=user, method='GET', query_params={})
-        queryset = get_group_queryset(req)
-        self.assertEquals(queryset.count(), 0)
-
-    def test_get_group_queryset_post_all(self):
-        """Test get_group_queryset as a user with all access."""
-        self._create_groups()
-        access = {
-            'group': {
-                'write': ['*']
-            }
-        }
-        user = Mock(spec=User, admin=False, access=access)
-        req = Mock(user=user, method='PUT', query_params={})
-        queryset = get_group_queryset(req)
-        self.assertEquals(queryset.count(), 5)
-
-    def test_get_group_queryset_put_some(self):
-        """Test get_group_queryset as a user with one group access."""
-        self._create_groups()
-        access = {
-            'group': {
-                'write': [Group.objects.first().uuid]
-            }
-        }
-        user = Mock(spec=User, admin=False, access=access)
-        req = Mock(user=user, method='PUT', query_params={})
-        queryset = get_group_queryset(req)
-        self.assertEquals(queryset.count(), 1)
-
-    def test_get_group_queryset_put_none(self):
-        """Test get_group_queryset as a user with no access."""
-        self._create_groups()
-        access = {
-            'group': {
-                'write': []
-            }
-        }
-        user = Mock(spec=User, admin=False, access=access)
-        req = Mock(user=user, method='PUT', query_params={})
-        queryset = get_group_queryset(req)
-        self.assertEquals(queryset.count(), 0)
 
     def test_get_group_queryset_get_users_own_groups(self):
         """Test get_group_queryset to get a users own groups."""
@@ -178,7 +122,7 @@ class QuerySetTest(TestCase):
             }
         }
         user = Mock(spec=User, admin=False, identity_header=identity_header)
-        req = Mock(user=user, method='GET', query_params={'username': 'test_user'})
+        req = Mock(user=user, method='GET', query_params={'username': 'test_user'}, path=reverse('group-list'))
         queryset = get_group_queryset(req)
         self.assertEquals(queryset.count(), 1)
 
