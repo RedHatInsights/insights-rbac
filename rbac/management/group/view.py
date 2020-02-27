@@ -396,13 +396,13 @@ class GroupViewSet(mixins.CreateModelMixin,
             principals_from_params = self.filtered_principals(group, request)
             page = self.paginate_queryset(principals_from_params)
             serializer = PrincipalSerializer(page, many=True)
-            usernames = serializer.data
-            if usernames:
-                usernameList = list(usernames[0].values())
+            principal_data = serializer.data
+            if principal_data:
+                username_list = [principal['username'] for principal in principal_data]
             else:
-                usernameList = []
+                username_list = []
             proxy = PrincipalProxy()
-            resp = proxy.request_filtered_principals(usernameList, account)
+            resp = proxy.request_filtered_principals(username_list, account)
             if isinstance(resp, dict) and 'errors' in resp:
                 return Response(status=resp.get('status_code'), data=resp.get('errors'))
             response = self.get_paginated_response(resp.get('data'))
