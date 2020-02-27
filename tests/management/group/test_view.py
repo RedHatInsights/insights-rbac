@@ -17,7 +17,7 @@
 """Test the group viewset."""
 import random
 from decimal import Decimal
-from unittest.mock import patch
+from unittest.mock import patch, ANY
 from uuid import uuid4
 
 from django.urls import reverse
@@ -46,20 +46,25 @@ class GroupViewsetTests(IdentityRequest):
         with tenant_context(self.tenant):
             self.principal = Principal(username=self.user_data['username'])
             self.principal.save()
+            self.principalB = Principal(username='mock_user')
+            self.principalB.save()
             self.group = Group(name='groupA')
             self.group.save()
-            self.role = Role.objects.create(name='roleA')
+            self.role = Role.objects.create(name='roleA', description='A role for a group.')
             self.policy = Policy.objects.create(name='policyA', group=self.group)
             self.policy.roles.add(self.role)
             self.policy.save()
             self.group.policies.add(self.policy)
-            self.group.principals.add(self.principal)
+            self.group.principals.add(self.principal, self.principalB)
             self.group.save()
 
             self.defGroup = Group(name='groupDef', platform_default=True, system=True)
             self.defGroup.save()
             self.defGroup.principals.add(self.principal)
             self.defGroup.save()
+
+            self.emptyGroup = Group(name='groupE')
+            self.emptyGroup.save()
 
             self.groupB = Group.objects.create(name='groupB')
             self.groupB.principals.add(self.principal)
@@ -158,7 +163,7 @@ class GroupViewsetTests(IdentityRequest):
         for keyname in ['meta', 'links', 'data']:
             self.assertIn(keyname, response.data)
         self.assertIsInstance(response.data.get('data'), list)
-        self.assertEqual(len(response.data.get('data')), 3)
+        self.assertEqual(len(response.data.get('data')), 4)
 
         group = response.data.get('data')[0]
         self.assertIsNotNone(group.get('name'))
@@ -258,10 +263,45 @@ class GroupViewsetTests(IdentityRequest):
         url = reverse('group-list')
         response = client.get(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data.get('meta').get('count'), 3)
-        self.assertEqual(response.data.get('data')[0].get('principalCount'), 1)
+        self.assertEqual(response.data.get('meta').get('count'), 4)
+        self.assertEqual(response.data.get('data')[0].get('principalCount'), 2)
         self.assertEqual(response.data.get('data')[0].get('policyCount'), None)
         self.assertEqual(response.data.get('data')[0].get('roleCount'), 1)
+
+    @patch('management.principal.proxy.PrincipalProxy.request_filtered_principals',
+           return_value={'status_code': 200, 'data': []})
+    def test_get_group_principals_empty(self, mock_request):
+        """Test that getting principals from an empty group returns successfully."""
+        client = APIClient()
+        url = reverse('group-principals', kwargs={'uuid': self.emptyGroup.uuid})
+        response = client.get(url, **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data.get('meta').get('count'), 0)
+        self.assertEqual(response.data.get('data'), [])
+
+    @patch('management.principal.proxy.PrincipalProxy.request_filtered_principals',
+           return_value={'status_code': 200, 'data': []})
+    def test_get_group_principals_nonempty(self, mock_request):
+        """Test that getting principals from a nonempty group returns successfully."""
+        mock_request.return_value['data'] = [
+            {'username': self.principal.username},
+            {'username': self.principalB.username}
+        ]
+
+        client = APIClient()
+        url = reverse('group-principals', kwargs={'uuid': self.group.uuid})
+        response = client.get(url, **self.headers)
+
+        call_args, kwargs = mock_request.call_args_list[0]
+        username_arg = call_args[0]
+
+        for username in [self.principal.username, self.principalB.username]:
+            self.assertTrue(username in username_arg)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data.get('meta').get('count'), 2)
+        self.assertEqual(response.data.get('data')[0].get('username'), self.principal.username)
+        self.assertEqual(response.data.get('data')[1].get('username'), self.principalB.username)
 
     def test_remove_group_principals_success(self):
         """Test that removing a principal to a group returns successfully."""
@@ -299,7 +339,7 @@ class GroupViewsetTests(IdentityRequest):
         url = '{}?username={}'.format(url, uuid4())
         client = APIClient()
         response = client.get(url, **self.headers)
-        self.assertEqual(response.data.get('meta').get('count'), 0)
+        self.assertEqual(response.data.get('meta').get('count'), 1)
 
     def test_get_group_roles_success(self):
         """Test that getting roles for a group returns successfully."""
@@ -358,6 +398,103 @@ class GroupViewsetTests(IdentityRequest):
         response = client.get(url, **self.headers)
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_role_name_filter_for_group_roles_no_match(self):
+        """Test role_name filter for getting roles for a group."""
+        url = reverse('group-roles', kwargs={'uuid': self.group.uuid})
+        url = '{}?role_name=test'.format(url)
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        roles = response.data.get('data')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(roles), 0)
+
+    def test_role_name_filter_for_group_roles_match(self):
+        """Test role_name filter for getting roles for a group."""
+        url = reverse('group-roles', kwargs={'uuid': self.group.uuid})
+        url = '{}?role_name={}'.format(url, self.role.name)
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        roles = response.data.get('data')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(roles), 1)
+        self.assertEqual(roles[0].get('uuid'), str(self.role.uuid))
+
+    def test_role_description_filter_for_group_roles_no_match(self):
+        """Test role_description filter for getting roles for a group."""
+        url = reverse('group-roles', kwargs={'uuid': self.group.uuid})
+        url = '{}?role_description=test'.format(url)
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        roles = response.data.get('data')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(roles), 0)
+
+    def test_role_description_filter_for_group_roles_match(self):
+        """Test role_description filter for getting roles for a group."""
+        url = reverse('group-roles', kwargs={'uuid': self.group.uuid})
+        url = '{}?role_description={}'.format(url, self.role.description)
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        roles = response.data.get('data')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(roles), 1)
+        self.assertEqual(roles[0].get('uuid'), str(self.role.uuid))
+
+    def test_all_role_filters_for_group_roles_no_match(self):
+        """Test role filters for getting roles for a group."""
+        url = reverse('group-roles', kwargs={'uuid': self.group.uuid})
+        url = '{}?role_description=test&role_name=test'.format(url)
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        roles = response.data.get('data')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(roles), 0)
+
+    def test_all_role_filters_for_group_roles_match(self):
+        """Test role filters for getting roles for a group."""
+        url = reverse('group-roles', kwargs={'uuid': self.group.uuid})
+        url = '{}?role_description={}&role_name={}'.format(url, self.role.description, self.role.name)
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        roles = response.data.get('data')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(roles), 1)
+        self.assertEqual(roles[0].get('uuid'), str(self.role.uuid))
+
+    @patch('management.principal.proxy.PrincipalProxy.request_filtered_principals',
+        return_value={'status_code': 200, 'data': []})
+    def test_principal_username_filter_for_group_roles_no_match(self, mock_request):
+        """Test principal_username filter for getting principals for a group."""
+        url = reverse('group-principals', kwargs={'uuid': self.group.uuid})
+        url = '{}?principal_username=test'.format(url)
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        principals = response.data.get('data')
+
+        mock_request.assert_called_with([], ANY)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(principals), 0)
+
+    @patch('management.principal.proxy.PrincipalProxy.request_filtered_principals',
+           return_value={'status_code': 200, 'data': [{'username': 'test_user'}]})
+    def test_principal_username_filter_for_group_roles_match(self, mock_request):
+        """Test principal_username filter for getting principals for a group."""
+        url = reverse('group-principals', kwargs={'uuid': self.group.uuid})
+        url = '{}?principal_username={}'.format(url, self.principal.username)
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        principals = response.data.get('data')
+
+        mock_request.assert_called_with([self.principal.username], ANY)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(principals), 1)
 
     def test_add_group_roles_system_policy_create_success(self):
         """Test that adding a role to a group without a system policy returns successfully."""
@@ -632,10 +769,16 @@ class GroupViewNonAdminTests(IdentityRequest):
             Role.objects.all().delete()
             Policy.objects.all().delete()
 
-    def test_nonadmin_RonR(self):
-        """Test that a nonadmin user can't group RBAC resources"""
+    def test_nonadmin_RonR_list(self):
+        """Test that a nonadmin user can list groups in tenant"""
         url = '{}?application={}'.format(reverse('group-list'), 'rbac')
         client = APIClient()
         response = client.get(url, **self.headers)
-        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
 
+    def test_nonadmin_RonR_retrieve(self):
+        """Test that a nonadmin user can't retrieve group RBAC resources"""
+        url = reverse('group-detail', kwargs={'uuid': self.group.uuid})
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)

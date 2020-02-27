@@ -32,6 +32,7 @@ from management.group.serializer import (GroupInputSerializer,
 from management.permissions import GroupAccessPermission
 from management.principal.model import Principal
 from management.principal.proxy import PrincipalProxy
+from management.principal.serializer import PrincipalSerializer
 from management.querysets import get_group_queryset, get_object_principal_queryset
 from management.role.model import Role
 from rest_framework import mixins, serializers, status, viewsets
@@ -44,14 +45,22 @@ USERNAMES_KEY = 'usernames'
 ROLES_KEY = 'roles'
 EXCLUDE_KEY = 'exclude'
 VALID_EXCLUDE_VALUES = ['true', 'false']
+VALID_GROUP_ROLE_FILTERS = ['role_name', 'role_description']
+VALID_GROUP_PRINCIPAL_FILTERS = ['principal_username']
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 
 class GroupFilter(filters.FilterSet):
     """Filter for group."""
 
+    def username_filter(queryset, field, value):
+        """Filter for group username lookup."""
+        filters = {'{}__username__icontains'.format(field): value}
+        filtered_set = queryset.filter(**filters)
+        return filtered_set | Group.platform_default_set()
+
     name = filters.CharFilter(field_name='name', lookup_expr='icontains')
-    username = filters.CharFilter(field_name='principals', lookup_expr='username__icontains')
+    username = filters.CharFilter(field_name='principals', method=username_filter)
 
     class Meta:
         model = Group
@@ -293,9 +302,31 @@ class GroupViewSet(mixins.CreateModelMixin,
         group.save()
         return group
 
-    @action(detail=True, methods=['post', 'delete'])
+    @action(detail=True, methods=['get', 'post', 'delete'])
     def principals(self, request, uuid=None):
-        """Add or remove principals from a group."""
+        """Get, add or remove principals from a group."""
+        """
+        @api {get} /api/v1/groups/:uuid/principals/    Get principals for a group
+        @apiName getPrincipals
+        @apiGroup Group
+        @apiVersion 1.0.0
+        @apiDescription Get principals for a group
+
+        @apiHeader {String} token User authorization token
+
+        @apiParam (Path) {String} id Group unique identifier
+
+        @apiSuccess {String} uuid Group unique identifier
+        @apiSuccess {String} name Group name
+        @apiSuccess {Array} principals Array of principals
+        @apiSuccessExample {json} Success-Response:
+            HTTP/1.1 200 OK
+            {
+                "principals": [
+                    { "username": "jsmith" }
+                ]
+            }
+        """
         """
         @api {post} /api/v1/groups/:uuid/principals/   Add principals to a group
         @apiName addPrincipals
@@ -360,7 +391,21 @@ class GroupViewSet(mixins.CreateModelMixin,
             if isinstance(resp, dict) and 'errors' in resp:
                 return Response(status=resp['status_code'], data=resp['errors'])
             output = GroupSerializer(resp)
-            return Response(status=status.HTTP_200_OK, data=output.data)
+            response = Response(status=status.HTTP_200_OK, data=output.data)
+        elif request.method == 'GET':
+            principals_from_params = self.filtered_principals(group, request)
+            page = self.paginate_queryset(principals_from_params)
+            serializer = PrincipalSerializer(page, many=True)
+            principal_data = serializer.data
+            if principal_data:
+                username_list = [principal['username'] for principal in principal_data]
+            else:
+                username_list = []
+            proxy = PrincipalProxy()
+            resp = proxy.request_filtered_principals(username_list, account)
+            if isinstance(resp, dict) and 'errors' in resp:
+                return Response(status=resp.get('status_code'), data=resp.get('errors'))
+            response = self.get_paginated_response(resp.get('data'))
         else:
             if USERNAMES_KEY not in request.query_params:
                 key = 'detail'
@@ -369,7 +414,8 @@ class GroupViewSet(mixins.CreateModelMixin,
             username = request.query_params.get(USERNAMES_KEY, '')
             principals = [name.strip() for name in username.split(',')]
             self.remove_principals(group, principals, account)
-            return Response(status=status.HTTP_204_NO_CONTENT)
+            response = Response(status=status.HTTP_204_NO_CONTENT)
+        return response
 
     @action(detail=True, methods=['get', 'post', 'delete'])
     def roles(self, request, uuid=None):
@@ -482,6 +528,25 @@ class GroupViewSet(mixins.CreateModelMixin,
 
         return Response(status=status.HTTP_200_OK, data=response_data.data)
 
+    def filtered_roles(self, roles, request):
+        """Return filtered roles for group from query params."""
+        role_filters = self.filters_from_params(VALID_GROUP_ROLE_FILTERS, 'role', request)
+        return roles.filter(**role_filters)
+
+    def filtered_principals(self, group, request):
+        """Return filtered principals for group from query params."""
+        principal_filters = self.filters_from_params(VALID_GROUP_PRINCIPAL_FILTERS, 'principal', request)
+        return group.principals.filter(**principal_filters)
+
+    def filters_from_params(self, valid_filters, model_name, request):
+        """Build filters from group params."""
+        filters = {}
+        for param_name, param_value in request.query_params.items():
+            if param_name in valid_filters:
+                attr_filter_name = param_name.replace(f'{model_name}_', '')
+                filters[f'{attr_filter_name}__icontains'] = param_value
+        return filters
+
     def obtain_roles(self, request, group):
         """Obtain roles based on request, supports exclusion."""
         exclude = self.validate_and_get_exclude_key(request.query_params)
@@ -489,7 +554,9 @@ class GroupViewSet(mixins.CreateModelMixin,
         roles = (group.roles_with_access() if exclude == 'false'
                  else self.obtain_roles_with_exclusion(request, group))
 
-        return [RoleMinimumSerializer(role).data for role in roles]
+        filtered_roles = self.filtered_roles(roles, request)
+
+        return [RoleMinimumSerializer(role).data for role in filtered_roles]
 
     def obtain_roles_with_exclusion(self, request, group):
         """Obtain the queryset for roles based on scope."""

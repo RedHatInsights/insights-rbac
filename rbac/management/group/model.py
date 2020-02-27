@@ -50,6 +50,10 @@ class Group(models.Model):
         """Role count for a group."""
         return self.roles().count()
 
+    def platform_default_set():
+        """Queryset for platform default group."""
+        return Group.objects.filter(platform_default=True)
+
     def __policy_ids(self):
         """Policy IDs for a group."""
         return self.policies.values_list('id', flat=True)

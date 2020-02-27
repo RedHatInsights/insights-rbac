@@ -26,7 +26,7 @@ from django.utils.translation import gettext as _
 from django_filters import rest_framework as filters
 from management.permissions import RoleAccessPermission
 from management.querysets import get_role_queryset
-from management.role.serializer import AccessSerializer, RoleMinimumSerializer
+from management.role.serializer import AccessSerializer, RoleDynamicSerializer
 from rest_framework import mixins, serializers, viewsets
 from rest_framework.decorators import action
 from rest_framework.filters import OrderingFilter
@@ -35,7 +35,11 @@ from .model import Role
 from .serializer import RoleSerializer
 
 TESTING_APP = os.getenv('TESTING_APPLICATION')
-APP_WHITELIST = ['cost-management', 'catalog', 'approval']
+APP_WHITELIST = ['cost-management']
+ADDITIONAL_FIELDS_KEY = 'add_fields'
+VALID_FIELD_VALUES = ['groups_in_count', 'groups_in']
+LIST_ROLE_FIELDS = ['uuid', 'name', 'description', 'created', 'modified', 'policyCount',
+                    'accessCount', 'applications', 'system', 'platform_default']
 
 if TESTING_APP:
     APP_WHITELIST.append(TESTING_APP)
@@ -78,10 +82,20 @@ class RoleViewSet(mixins.CreateModelMixin,
         return get_role_queryset(self.request)
 
     def get_serializer_class(self):
-        """Get serializer based on route."""
+        """Get serializer class based on route."""
         if self.request.path.endswith('roles/') and self.request.method == 'GET':
-            return RoleMinimumSerializer
+            return RoleDynamicSerializer
         return RoleSerializer
+
+    def get_serializer(self, *args, **kwargs):
+        """Get serializer."""
+        serializer_class = self.get_serializer_class()
+        kwargs['context'] = self.get_serializer_context()
+
+        if self.action == 'list':
+            kwargs['fields'] = self.validate_and_get_additional_field_key(self.request.query_params)
+
+        return serializer_class(*args, **kwargs)
 
     def create(self, request, *args, **kwargs):
         """Create a roles.
@@ -349,3 +363,21 @@ class RoleViewSet(mixins.CreateModelMixin,
         for access in access_list:
             AccessSerializer(data=access).is_valid(raise_exception=True)
         return access_list
+
+    def validate_and_get_additional_field_key(self, params):
+        """Validate the add field key."""
+        fields = params.get(ADDITIONAL_FIELDS_KEY)
+        if fields is None:
+            return LIST_ROLE_FIELDS
+
+        field_list = fields.split(',')
+        for field in field_list:
+            if field not in VALID_FIELD_VALUES:
+                key = 'detail'
+                message = '{} query parameter value {} is invalid. Valid inputs are {}.'.format(
+                    ADDITIONAL_FIELDS_KEY,
+                    field,
+                    VALID_FIELD_VALUES)
+                raise serializers.ValidationError({key: _(message)})
+
+        return LIST_ROLE_FIELDS + field_list

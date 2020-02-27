@@ -116,8 +116,13 @@ class PrincipalView(APIView):
         response_data = {}
         if status_code == status.HTTP_200_OK:
             data = resp.get('data', [])
+            if isinstance(data, dict):
+                count = data.get('userCount')
+                data = data.get('users')
+            else:
+                count = None
             response_data['meta'] = {
-                'count': None
+                'count': count
             }
             response_data['links'] = {
                 'first': f'{path}?limit={limit}&offset=0{usernames_filter}',
