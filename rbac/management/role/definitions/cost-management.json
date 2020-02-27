@@ -19,10 +19,12 @@
         "name": "Cost Cloud Viewer",
         "description": "A cost management role that grants read permissions on cost reports related to cloud sources.",
         "system": true,
-        "version": 2,
+        "version": 3,
         "access": [{
             "permission": "cost-management:aws.account:*"
-        }]
+        }, {
+            "permission": "cost-management:azure.subscription_guid:*"
+           }]
     }, {
         "name": "Cost OpenShift Viewer",
         "description": "A cost management role that grants read permissions on cost reports related to OpenShift sources.",
