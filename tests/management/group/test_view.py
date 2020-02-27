@@ -48,6 +48,8 @@ class GroupViewsetTests(IdentityRequest):
             self.principal.save()
             self.principalB = Principal(username='mock_user')
             self.principalB.save()
+            self.principalC = Principal(username='mock_user_3')
+            self.principalC.save()
             self.group = Group(name='groupA')
             self.group.save()
             self.role = Role.objects.create(name='roleA', description='A role for a group.')
@@ -302,6 +304,58 @@ class GroupViewsetTests(IdentityRequest):
         self.assertEqual(response.data.get('meta').get('count'), 2)
         self.assertEqual(response.data.get('data')[0].get('username'), self.principal.username)
         self.assertEqual(response.data.get('data')[1].get('username'), self.principalB.username)
+
+    @patch('management.principal.proxy.PrincipalProxy.request_principals',
+           return_value={'status_code': 200, 'data': {}})
+    def test_get_group_principals_with_exclution(self, mock_request):
+        """Test that getting principals from a nonempty group returns successfully."""
+        mock_request.return_value['data'] = {
+            'userCount': 3,
+            'users': [
+                {'username': self.principal.username},
+                {'username': self.principalB.username},
+                {'username': self.principalC.username}
+            ]
+        }
+
+        client = APIClient()
+        base_url = reverse('group-principals', kwargs={'uuid': self.group.uuid})
+        url = '{}?exclude=true'.format(base_url)
+        response = client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data.get('meta').get('count'), 1)
+        self.assertEqual(response.data.get('data')[0].get('username'), self.principalC.username)
+
+    @patch('management.principal.proxy.PrincipalProxy.request_principals',
+           return_value={'status_code': 200, 'data': {}})
+    def test_get_group_principals_with_exclution_and_pagination(self, mock_request):
+        """Test that getting principals from a nonempty group returns successfully."""
+        mock_request.return_value['data'] = {
+            'userCount': 3,
+            'users': [
+                {'username': self.principal.username},
+                {'username': self.principalB.username},
+                {'username': self.principalC.username}
+            ]
+        }
+
+        client = APIClient()
+        base_url = reverse('group-principals', kwargs={'uuid': self.groupB.uuid})
+        url = '{}?exclude=true&limit=1'.format(base_url)
+        response = client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data.get('meta').get('count'), 2)
+        self.assertEqual(len(response.data.get('data')), 1)
+        self.assertEqual(response.data.get('data')[0].get('username'), self.principalB.username)
+
+        url = '{}?exclude=true&limit=1&offset=1'.format(base_url)
+        response = client.get(url, **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data.get('meta').get('count'), 2)
+        self.assertEqual(len(response.data.get('data')), 1)
+        self.assertEqual(response.data.get('data')[0].get('username'), self.principalC.username)
 
     def test_remove_group_principals_success(self):
         """Test that removing a principal to a group returns successfully."""

@@ -550,6 +550,16 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "exclude",
+            "in": "query",
+            "description": "If this is set to true, the result would be principals excluding the ones in the group",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            }
           }
         ],
         "responses": {

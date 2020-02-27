@@ -28,7 +28,6 @@ from tenant_schemas.utils import tenant_context
 from api.models import User
 from management.models import Group, Principal, Role, Access
 from tests.identity_request import IdentityRequest
-import pdb
 
 
 class RoleViewsetTests(IdentityRequest):

@@ -40,6 +40,8 @@ from rest_framework.decorators import action
 from rest_framework.filters import OrderingFilter
 from rest_framework.response import Response
 
+from api.common.pagination import StandardResultsSetPagination
+
 
 USERNAMES_KEY = 'usernames'
 ROLES_KEY = 'roles'
@@ -393,19 +395,7 @@ class GroupViewSet(mixins.CreateModelMixin,
             output = GroupSerializer(resp)
             response = Response(status=status.HTTP_200_OK, data=output.data)
         elif request.method == 'GET':
-            principals_from_params = self.filtered_principals(group, request)
-            page = self.paginate_queryset(principals_from_params)
-            serializer = PrincipalSerializer(page, many=True)
-            principal_data = serializer.data
-            if principal_data:
-                username_list = [principal['username'] for principal in principal_data]
-            else:
-                username_list = []
-            proxy = PrincipalProxy()
-            resp = proxy.request_filtered_principals(username_list, account)
-            if isinstance(resp, dict) and 'errors' in resp:
-                return Response(status=resp.get('status_code'), data=resp.get('errors'))
-            response = self.get_paginated_response(resp.get('data'))
+            return self.obtain_principals(request, group)
         else:
             if USERNAMES_KEY not in request.query_params:
                 key = 'detail'
@@ -579,3 +569,44 @@ class GroupViewSet(mixins.CreateModelMixin,
                 exclude)
             raise serializers.ValidationError({key: _(message)})
         return exclude
+
+    def obtain_principals(self, request, group):
+        """Obtain principals based on request, supports exclusion."""
+        principals_from_params = self.filtered_principals(group, request)
+
+        exclude = self.validate_and_get_exclude_key(request.query_params)
+
+        if exclude == 'false':
+            page = self.paginate_queryset(principals_from_params)
+            serializer = PrincipalSerializer(page, many=True)
+        else:
+            # Get all the principals to be excluded
+            serializer = PrincipalSerializer(principals_from_params, many=True)
+
+        principal_data = serializer.data
+        if principal_data:
+            username_list = [principal['username'] for principal in principal_data]
+        else:
+            username_list = []
+
+        # Call BOP to get principals
+        proxy = PrincipalProxy()
+
+        if exclude == 'false':
+            resp = proxy.request_filtered_principals(username_list, request.user.account)
+        else:
+            resp = proxy.request_principals(request.user.account,
+                                            StandardResultsSetPagination.max_limit)
+
+        # Deal with error
+        if isinstance(resp, dict) and 'errors' in resp:
+            return Response(status=resp.get('status_code'), data=resp.get('errors'))
+
+        if exclude == 'false':
+            response_data = resp.get('data')
+        else:
+            data_without_pagination = [principal for principal in resp.get('data').get('users')
+                                       if principal['username'] not in username_list]
+            response_data = self.paginate_queryset(data_without_pagination)
+
+        return self.get_paginated_response(response_data)
