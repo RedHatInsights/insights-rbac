@@ -346,6 +346,19 @@ class RoleViewsetTests(IdentityRequest):
         self.assertIsNotNone(response.data.get('uuid'))
         self.assertEqual(updated_name, response.data.get('name'))
 
+    def test_update_role_system(self):
+        """Test that we can't update a system role."""
+        url = reverse('role-detail', kwargs={'uuid': self.sysRole.uuid})
+        updated_name = self.sysRole.name + '_update'
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        test_data = response.data
+        test_data['name'] = updated_name
+        response = client.put(url, test_data, format='json', **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIsNotNone(response.data.get('errors'))
+        self.assertEqual(response.data.get('errors')[0].get('detail').lower(), 'system roles cannot be modified.')
+
     def test_update_role_invalid(self):
         """Test that updating an invalid role returns an error."""
         url = reverse('role-detail', kwargs={'uuid': uuid4()})

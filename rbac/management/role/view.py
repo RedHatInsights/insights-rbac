@@ -280,7 +280,7 @@ class RoleViewSet(mixins.CreateModelMixin,
             return super().destroy(request=request, args=args, kwargs=kwargs)
 
     def update(self, request, *args, **kwargs):
-        """Update a group.
+        """Update a role.
 
         @api {post} /api/v1/roles/:uuid   Update a role
         @apiName updateRole
@@ -336,6 +336,14 @@ class RoleViewSet(mixins.CreateModelMixin,
                 ]
             }
         """
+        role = self.get_object()
+        if role.system or role.platform_default:
+            key = 'role'
+            message = 'System roles cannot be modified.'
+            error = {
+                key: [_(message)]
+            }
+            raise serializers.ValidationError(error)
         return super().update(request=request, args=args, kwargs=kwargs)
 
     @action(detail=True, methods=['get'])
