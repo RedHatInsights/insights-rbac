@@ -146,9 +146,10 @@ class PrincipalProxy:  # pylint: disable=too-few-public-methods
                 data = response.json()
                 if isinstance(data, dict):
                     userList = self._process_data(data.get('users'), account, account_filter)
+                    resp['data'] = {'userCount': data.get('userCount'), 'users': userList}
                 else:
                     userList = self._process_data(data, account, account_filter)
-                resp['data'] = userList
+                    resp['data'] = userList
             except ValueError:
                 resp['status_code'] = status.HTTP_500_INTERNAL_SERVER_ERROR
                 error = unexpected_error
