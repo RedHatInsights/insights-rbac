@@ -27,12 +27,16 @@ USERNAME_KEY = 'username'
 APPLICATION_KEY = 'application'
 
 
-def match_request_psk_for_tenant(request_psk, account):
-    """Validate that the PSK is for the account/tenant."""
-    os.environ.setdefault('ACCOUNT_PSKS', '{ "abc123": "10001" }')
-    psks = json.loads(os.environ.get('ACCOUNT_PSKS', '{}'))
+def validate_psk(psk, client_id):
+    """Validate the PSK for the client."""
+    os.environ.setdefault('SERVICE_PSKS', '{ "catalog": ["abc123", "def456"], "approval": ["xyz321"] }')
+    psks = json.loads(os.environ.get('SERVICE_PSKS', '{}'))
+    psks_for_client = psks.get(client_id)
 
-    return account == psks.get(request_psk)
+    if psks_for_client:
+        return psk in psks_for_client
+
+    return False
 
 
 def get_principal_from_request(request):

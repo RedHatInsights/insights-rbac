@@ -28,14 +28,18 @@ from rest_framework.exceptions import ValidationError
 from tenant_schemas.middleware import BaseTenantMiddleware
 from tenant_schemas.utils import tenant_context
 
-from api.common import RH_IDENTITY_HEADER, RH_INSIGHTS_REQUEST_ID, RH_RBAC_ACCOUNT, RH_RBAC_PSK
+from api.common import (RH_IDENTITY_HEADER,
+                        RH_INSIGHTS_REQUEST_ID,
+                        RH_RBAC_ACCOUNT,
+                        RH_RBAC_PSK,
+                        RH_RBAC_CLIENT_ID)
 from api.models import Tenant, User
 from api.serializers import UserSerializer, create_schema_name, extract_header
 
 from management.group.definer import seed_group  # noqa: I100, I201
 from management.models import Principal  # noqa: I100, I201
 from management.role.definer import seed_roles
-from management.utils import match_request_psk_for_tenant
+from management.utils import validate_psk
 
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
@@ -194,10 +198,12 @@ class IdentityHeaderMiddleware(MiddlewareMixin):  # pylint: disable=R0903
         """
         request_psk = request.META.get(RH_RBAC_PSK)
         request_account = request.META.get(RH_RBAC_ACCOUNT)
+        request_client_id = request.META.get(RH_RBAC_CLIENT_ID)
 
-        if request_psk:
-            if match_request_psk_for_tenant(request_psk, request_account):
+        if request_psk and request_account and request_client_id:
+            if validate_psk(request_psk, request_client_id):
                 user = IdentityHeaderMiddleware.system_user()
+                user.username = request_client_id
                 req_id = request.META.get(RH_INSIGHTS_REQUEST_ID)
                 user.account = request_account
                 user.admin = True
