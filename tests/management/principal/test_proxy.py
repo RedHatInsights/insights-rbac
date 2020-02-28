@@ -67,6 +67,22 @@ def mocked_requests_get_200_json(*args, **kwargs):  # pylint: disable=unused-arg
     json_response = [user]
     return MockResponse(json_response, status.HTTP_200_OK)
 
+def mocked_requests_get_200_json_count(*args, **kwargs): # pylint: disable=unused-argument
+    """Mock valid response that returns json with usercount."""
+    user1 = {
+        'username': 'test_user1',
+        'email': 'test_user1@email.foo',
+        'first_name': 'test',
+        'last_name': 'user1'
+        }
+    user2 = {
+        'username': 'test_user2',
+        'email': 'test_user2@email.foo',
+        'first_name': 'test',
+        'last_name': 'user2'
+        }
+    json_response = {"userCount": 2, "users": [user1, user2]}
+    return MockResponse(json_response, status.HTTP_200_OK)
 
 def mocked_requests_get_200_except(*args, **kwargs):  # pylint: disable=unused-argument
     """Mock valid response that returns exception on json."""
@@ -157,6 +173,29 @@ class PrincipalProxyTest(TestCase):
         }
         expected = {
             'data': [user],
+            'status_code': 200
+        }
+        self.assertEqual(expected, result)
+
+    def test__request_principals_200_count(self):
+        """Test request with 200 and good data including userCount."""
+        proxy = PrincipalProxy()
+        result = proxy._request_principals(url='http://localhost:8080/v1/users',
+                                           method=mocked_requests_get_200_json_count)
+        user1 = {
+            'username': 'test_user1',
+            'email': 'test_user1@email.foo',
+            'first_name': 'test',
+            'last_name': 'user1'
+        }
+        user2 = {
+            'username': 'test_user2',
+            'email': 'test_user2@email.foo',
+            'first_name': 'test',
+            'last_name': 'user2'
+        }
+        expected = {
+            'data': {"userCount": 2, "users": [user1, user2]},
             'status_code': 200
         }
         self.assertEqual(expected, result)
