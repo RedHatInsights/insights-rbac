@@ -1953,9 +1953,6 @@
         }
       },
       "AdditionalGroup": {
-        "required": [
-          "name"
-        ],
         "properties": {
           "name": {
             "type": "string",
@@ -2350,7 +2347,10 @@
                 "minimum": 0
               },
               "groups_in": {
-                "$ref": "#/components/schemas/AdditionalGroup"
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/AdditionalGroup"
+                }
               }
             }
           }
