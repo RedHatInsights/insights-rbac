@@ -50,4 +50,4 @@ class DevelopmentIdentityHeaderMiddleware(MiddlewareMixin):  # pylint: disable=t
                                }
             json_identity = json_dumps(identity_header)
             dev_header = b64encode(json_identity.encode('utf-8'))
-            # request.META[self.header] = dev_header
+            request.META[self.header] = dev_header

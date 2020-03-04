@@ -19,11 +19,17 @@ from unittest.mock import Mock
 
 from django.db import connection
 from django.test import TestCase
+from django.urls import reverse
+from api.common import RH_IDENTITY_HEADER
+
+from rest_framework import status
+from rest_framework.test import APIClient
 
 from api.models import Tenant, User
 from api.serializers import (UserSerializer,
                                  create_schema_name)
 from tests.identity_request import IdentityRequest
+from test.support import EnvironmentVarGuard
 from rbac.middleware import (HttpResponseUnauthorizedRequest,
                              IdentityHeaderMiddleware,
                              RolesTenantMiddleware)
@@ -159,6 +165,63 @@ class IdentityHeaderMiddlewareTest(IdentityRequest):
                                               tenant=tenant,
                                               request=mock_request)
 
+
+class ServiceToService(IdentityRequest):
+    """Tests requests without an identity header."""
+
+    def setUp(self):
+        """Setup tests."""
+        self.env = EnvironmentVarGuard()
+        self.env.set('SERVICE_PSKS', '{"catalog": {"secret": "abc123"}}')
+        self.account_id = '1234'
+        self.service_headers = {
+            'HTTP_X_RH_RBAC_PSK': 'abc123',
+            'HTTP_X_RH_RBAC_ACCOUNT': self.account_id,
+            'HTTP_X_RH_RBAC_CLIENT_ID': 'catalog'
+        }
+
+    def test_no_identity_or_service_headers_returns_401(self):
+        url = reverse('group-list')
+        client = APIClient()
+        self.service_headers = {}
+        response = client.get(url, {})
+
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_no_identity_and_invalid_psk_returns_401(self):
+        Tenant.objects.create(schema_name=f'acct{self.account_id}')
+        url = reverse('group-list')
+        client = APIClient()
+        self.service_headers['HTTP_X_RH_RBAC_PSK'] = 'xyz'
+        response = client.get(url, **self.service_headers)
+
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_no_identity_and_invalid_account_returns_404(self):
+        Tenant.objects.create(schema_name=f'acct{self.account_id}')
+        url = reverse('group-list')
+        client = APIClient()
+        self.service_headers['HTTP_X_RH_RBAC_ACCOUNT'] = '1212'
+        response = client.get(url, **self.service_headers)
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_no_identity_and_invalid_client_id_returns_401(self):
+        Tenant.objects.create(schema_name=f'acct{self.account_id}')
+        url = reverse('group-list')
+        client = APIClient()
+        self.service_headers['HTTP_X_RH_RBAC_CLIENT_ID'] = 'bad-service'
+        response = client.get(url, **self.service_headers)
+
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_no_identity_and_valid_psk_client_id_and_account_returns_200(self):
+        Tenant.objects.create(schema_name=f'acct{self.account_id}')
+        url = reverse('group-list')
+        client = APIClient()
+        response = client.get(url, **self.service_headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
 
 class AccessHandlingTest(TestCase):
     """Tests against getting user access in the IdentityHeaderMiddleware."""

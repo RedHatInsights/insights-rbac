@@ -29,12 +29,13 @@ APPLICATION_KEY = 'application'
 
 def validate_psk(psk, client_id):
     """Validate the PSK for the client."""
-    os.environ.setdefault('SERVICE_PSKS', '{ "catalog": ["abc123", "def456"], "approval": ["xyz321"] }')
     psks = json.loads(os.environ.get('SERVICE_PSKS', '{}'))
-    psks_for_client = psks.get(client_id)
+    client_config = psks.get(client_id, {})
+    primary_key = client_config.get('secret')
+    alt_key = client_config.get('alt-secret')
 
-    if psks_for_client:
-        return psk in psks_for_client
+    if psks:
+        return psk == primary_key or psk == alt_key
 
     return False
 

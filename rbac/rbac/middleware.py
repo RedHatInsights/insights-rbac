@@ -31,8 +31,8 @@ from tenant_schemas.utils import tenant_context
 from api.common import (RH_IDENTITY_HEADER,
                         RH_INSIGHTS_REQUEST_ID,
                         RH_RBAC_ACCOUNT,
-                        RH_RBAC_PSK,
-                        RH_RBAC_CLIENT_ID)
+                        RH_RBAC_CLIENT_ID,
+                        RH_RBAC_PSK)
 from api.models import Tenant, User
 from api.serializers import UserSerializer, create_schema_name, extract_header
 
@@ -185,7 +185,28 @@ class IdentityHeaderMiddleware(MiddlewareMixin):  # pylint: disable=R0903
         return access
 
     @staticmethod
-    def system_user():
+    def _system_auth(request):
+        request_psk = request.META.get(RH_RBAC_PSK)
+        request_account = request.META.get(RH_RBAC_ACCOUNT)
+        request_client_id = request.META.get(RH_RBAC_CLIENT_ID)
+        has_system_auth_headers = request_psk and request_account and request_client_id
+
+        if has_system_auth_headers and validate_psk(request_psk, request_client_id):
+            user = IdentityHeaderMiddleware._system_user()
+            user.username = request_client_id
+            req_id = request.META.get(RH_INSIGHTS_REQUEST_ID)
+            user.account = request_account
+            user.admin = True
+            user.system = True
+            user.req_id = req_id
+            request.user = user
+
+            return True
+
+        return False
+
+    @staticmethod
+    def _system_user():
         """Return a non-principal based user."""
         return User('', '')
 
@@ -196,24 +217,8 @@ class IdentityHeaderMiddleware(MiddlewareMixin):  # pylint: disable=R0903
             request (object): The request object
 
         """
-        request_psk = request.META.get(RH_RBAC_PSK)
-        request_account = request.META.get(RH_RBAC_ACCOUNT)
-        request_client_id = request.META.get(RH_RBAC_CLIENT_ID)
-
-        if request_psk and request_account and request_client_id:
-            if validate_psk(request_psk, request_client_id):
-                user = IdentityHeaderMiddleware.system_user()
-                user.username = request_client_id
-                req_id = request.META.get(RH_INSIGHTS_REQUEST_ID)
-                user.account = request_account
-                user.admin = True
-                user.system = True
-                user.req_id = req_id
-                request.user = user
-            return
-
         if is_no_auth(request):
-            request.user = IdentityHeaderMiddleware.system_user()
+            request.user = IdentityHeaderMiddleware._system_user()
             return
         try:
             rh_auth_header, json_rh_auth = extract_header(request, self.header)
@@ -221,6 +226,9 @@ class IdentityHeaderMiddleware(MiddlewareMixin):  # pylint: disable=R0903
             account = json_rh_auth.get('identity', {}).get('account_number')
             is_admin = json_rh_auth.get('identity', {}).get('user', {}).get('is_org_admin')
         except (KeyError, JSONDecodeError):
+            if IdentityHeaderMiddleware._system_auth(request):
+                return
+
             logger.error('Could not obtain identity on request.')
             HttpResponseUnauthorizedRequest()
             return
