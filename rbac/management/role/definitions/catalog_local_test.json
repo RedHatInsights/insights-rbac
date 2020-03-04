@@ -1,10 +1,10 @@
 {
   "roles": [
     {
-      "name": "Catalog Administrator",
+      "name": "Catalog Administrator Local Test",
       "system": true,
       "version": 4,
-      "description": "A catalog administrator roles grants create,read,update, delete and order permissions",
+      "description": "A catalog administrator roles grants create,read,update, delete and order permissions, just for testing locally",
       "access": [
         {
           "permission": "catalog:portfolios:read"
@@ -69,7 +69,7 @@
       ]
     },
     {
-      "name": "Catalog User",
+      "name": "Catalog User Local Test",
       "system": true,
       "version": 4,
       "description": "A catalog user roles grants read and order permissions",

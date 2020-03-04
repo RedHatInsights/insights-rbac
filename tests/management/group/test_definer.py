@@ -56,7 +56,7 @@ class GroupDefinerTests(IdentityRequest):
         with tenant_context(self.tenant):
             group = Group.objects.get(platform_default=True)
             self.assertEqual(group.system, False)
-            group.roles().get(name="RBAC Administrator")
+            group.roles().get(name="Ansible Automation Access Local Test")
 
     def test_default_group_seeding_reassign_roles(self):
         """Test that previous assigned roles would be eliminated before assigning new roles."""

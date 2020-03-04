@@ -36,7 +36,7 @@ class RoleDefinerTests(IdentityRequest):
         with tenant_context(self.tenant):
             roles = Role.objects.filter(platform_default=True)
             self.assertTrue(len(roles))
-            self.assertFalse(Role.objects.get(name="RBAC Administrator").platform_default)
+            self.assertFalse(Role.objects.get(name="RBAC Administrator Local Test").platform_default)
 
     def test_role_update(self):
         """ Test that role seeding update will re-create the roles. """

@@ -1,10 +1,10 @@
 {
   "roles": [
     {
-      "name": "Approval Administrator",
+      "name": "Approval Administrator Local Test",
       "system": true,
       "version": 3,
-      "description": "An Approval administrator role that grants create, read, update and destroy permissions",
+      "description": "An Approval administrator role that grants create, read, update and destroy permissions, just for testing locally",
       "access": [
         {
           "permission": "approval:templates:read",
