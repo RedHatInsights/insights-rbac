@@ -1,0 +1,35 @@
+{
+    "roles": [{
+        "name": "Cost Administrator Local Test",
+        "description": "A cost management administrator role that grants read and write permissions, just for testing locally.",
+        "system": true,
+        "version": 2,
+        "access": [{
+            "permission": "cost-management:*:*"
+        }]
+    }, {
+        "name": "Cost Price List Administrator Local Test",
+        "description": "A cost management role that grants read and write permissions on price list rates, just for testing locally.",
+        "system": true,
+        "version": 2,
+        "access": [{
+            "permission": "cost-management:rate:*"
+        }]
+    }, {
+        "name": "Cost Cloud Viewer Local Test",
+        "description": "A cost management role that grants read permissions on cost reports related to cloud sources, just for testing locally.",
+        "system": true,
+        "version": 2,
+        "access": [{
+            "permission": "cost-management:aws.account:*"
+        }]
+    }, {
+        "name": "Cost OpenShift Viewer Local Test",
+        "description": "A cost management role that grants read permissions on cost reports related to OpenShift sources, just for testing locally.",
+        "system": true,
+        "version": 2,
+        "access": [{
+            "permission": "cost-management:openshift.cluster:*"
+        }]
+    }]
+}
