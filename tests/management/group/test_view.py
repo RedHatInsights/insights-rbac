@@ -399,6 +399,23 @@ class GroupViewsetTests(IdentityRequest):
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
+    def test_get_group_roles_ordered(self):
+        """Test getting roles with 'order_by=' returns properly."""
+        url = f"{reverse('group-roles', kwargs={'uuid': self.group.uuid})}?order_by=-name"
+        client = APIClient()
+
+        test_data = {'roles': [self.roleB.uuid]}
+        response = client.post( url, test_data, format='json', **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        response = client.get(url, **self.headers)
+        roles = response.data.get('data')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(roles), 2)
+        self.assertEqual(roles[0].get('name'), self.roleB.name)
+        self.assertEqual(roles[1].get('name'), self.role.name)
+
     def test_role_name_filter_for_group_roles_no_match(self):
         """Test role_name filter for getting roles for a group."""
         url = reverse('group-roles', kwargs={'uuid': self.group.uuid})

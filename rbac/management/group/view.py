@@ -47,6 +47,9 @@ EXCLUDE_KEY = 'exclude'
 VALID_EXCLUDE_VALUES = ['true', 'false']
 VALID_GROUP_ROLE_FILTERS = ['role_name', 'role_description']
 VALID_GROUP_PRINCIPAL_FILTERS = ['principal_username']
+ORDERING_PARAM = 'order_by'
+VALID_ROLE_ORDER_FIELDS = ['name', 'modified', 'policyCount']
+VALID_PRINCIPAL_ORDER_FIELDS = ['username']
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 
@@ -430,6 +433,7 @@ class GroupViewSet(mixins.CreateModelMixin,
         @apiHeader {String} token User authorization token
 
         @apiParam (Path) {String} id Group unique identifier.
+        @apiParam (Query) {String} order_by Determine ordering of returned roles.
 
         @apiSuccess {Array} data Array of roles
         @apiSuccessExample {json} Success-Response:
@@ -533,10 +537,20 @@ class GroupViewSet(mixins.CreateModelMixin,
         role_filters = self.filters_from_params(VALID_GROUP_ROLE_FILTERS, 'role', request)
         return roles.filter(**role_filters)
 
+    def order_queryset(self, queryset, valid_fields, order_field):
+        """Return queryset ordered according to order_by query param."""
+        all_fields = valid_fields + ['-' + field for field in valid_fields]
+        if order_field in all_fields:
+            return queryset.order_by(order_field)
+
     def filtered_principals(self, group, request):
         """Return filtered principals for group from query params."""
         principal_filters = self.filters_from_params(VALID_GROUP_PRINCIPAL_FILTERS, 'principal', request)
-        return group.principals.filter(**principal_filters)
+        filtered_principals = group.principals.filter(**principal_filters)
+        ordered_principals = self.order_queryset(filtered_principals, VALID_PRINCIPAL_ORDER_FIELDS,
+                                                 request.query_params.get(ORDERING_PARAM))
+        result = ordered_principals if ordered_principals else filtered_principals
+        return result
 
     def filters_from_params(self, valid_filters, model_name, request):
         """Build filters from group params."""
@@ -555,8 +569,9 @@ class GroupViewSet(mixins.CreateModelMixin,
                  else self.obtain_roles_with_exclusion(request, group))
 
         filtered_roles = self.filtered_roles(roles, request)
-
-        return [RoleMinimumSerializer(role).data for role in filtered_roles]
+        ordered_roles = self.order_queryset(roles, VALID_ROLE_ORDER_FIELDS, request.query_params.get(ORDERING_PARAM))
+        result = ordered_roles if ordered_roles else filtered_roles
+        return [RoleMinimumSerializer(role).data for role in result]
 
     def obtain_roles_with_exclusion(self, request, group):
         """Obtain the queryset for roles based on scope."""
