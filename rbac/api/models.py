@@ -50,6 +50,7 @@ class User(models.Model):
         self.access = None
         self.identity_header = None
         self.req_id = None
+        self.system = False
 
     class Meta:
         ordering = ['username']
