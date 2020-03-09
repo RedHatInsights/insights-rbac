@@ -35,7 +35,7 @@ from .model import Role
 from .serializer import RoleSerializer
 
 TESTING_APP = os.getenv('TESTING_APPLICATION')
-APP_WHITELIST = ['cost-management']
+APP_WHITELIST = ['cost-management', 'remediations']
 ADDITIONAL_FIELDS_KEY = 'add_fields'
 VALID_FIELD_VALUES = ['groups_in_count', 'groups_in']
 LIST_ROLE_FIELDS = ['uuid', 'name', 'description', 'created', 'modified', 'policyCount',
