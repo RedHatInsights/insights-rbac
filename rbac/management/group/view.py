@@ -48,7 +48,7 @@ VALID_EXCLUDE_VALUES = ['true', 'false']
 VALID_GROUP_ROLE_FILTERS = ['role_name', 'role_description']
 VALID_GROUP_PRINCIPAL_FILTERS = ['principal_username']
 ORDERING_PARAM = 'order_by'
-VALID_ROLE_ORDER_FIELDS = ['name', 'modified', 'policyCount']
+VALID_ROLE_ORDER_FIELDS = ['name', 'modified']
 VALID_PRINCIPAL_ORDER_FIELDS = ['username']
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
@@ -380,6 +380,8 @@ class GroupViewSet(mixins.CreateModelMixin,
 
         @apiParam (Query) {String} usernames List of comma separated principal usernames
 
+        @apiParam (Query) {String} order_by Determine ordering of returned principals.
+
         @apiSuccessExample {json} Success-Response:
             HTTP/1.1 204 NO CONTENT
         """
@@ -404,8 +406,15 @@ class GroupViewSet(mixins.CreateModelMixin,
                 username_list = [principal['username'] for principal in principal_data]
             else:
                 username_list = []
+            order_op = request.query_params.get(ORDERING_PARAM)
+            all_fields = VALID_PRINCIPAL_ORDER_FIELDS + ['-' + field for field in VALID_PRINCIPAL_ORDER_FIELDS]
+            if order_op and order_op in all_fields:
+                if order_op.startswith('-'):
+                    order_op = 'des'
+                else:
+                    order_op = 'asc'
             proxy = PrincipalProxy()
-            resp = proxy.request_filtered_principals(username_list, account)
+            resp = proxy.request_filtered_principals(username_list, account, order_op)
             if isinstance(resp, dict) and 'errors' in resp:
                 return Response(status=resp.get('status_code'), data=resp.get('errors'))
             response = self.get_paginated_response(resp.get('data'))
@@ -569,9 +578,11 @@ class GroupViewSet(mixins.CreateModelMixin,
                  else self.obtain_roles_with_exclusion(request, group))
 
         filtered_roles = self.filtered_roles(roles, request)
-        ordered_roles = self.order_queryset(roles, VALID_ROLE_ORDER_FIELDS, request.query_params.get(ORDERING_PARAM))
-        result = ordered_roles if ordered_roles else filtered_roles
-        return [RoleMinimumSerializer(role).data for role in result]
+        if ORDERING_PARAM in request.query_params:
+            ordered_roles = self.order_queryset(filtered_roles, VALID_ROLE_ORDER_FIELDS,
+                                                request.query_params.get(ORDERING_PARAM))
+            return [RoleMinimumSerializer(role).data for role in ordered_roles]
+        return [RoleMinimumSerializer(role).data for role in filtered_roles]
 
     def obtain_roles_with_exclusion(self, request, group):
         """Obtain the queryset for roles based on scope."""

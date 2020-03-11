@@ -303,6 +303,30 @@ class GroupViewsetTests(IdentityRequest):
         self.assertEqual(response.data.get('data')[0].get('username'), self.principal.username)
         self.assertEqual(response.data.get('data')[1].get('username'), self.principalB.username)
 
+    @patch('management.principal.proxy.PrincipalProxy.request_filtered_principals',
+           return_value={'status_code': 200, 'data': []})
+    def test_get_group_principals_ordered(self, mock_request):
+        """Test that getting principals from a nonempty group returns successfully with order_by=."""
+        mock_request.return_value['data'] = [
+            {'username': self.principal.username},
+            {'username': self.principalB.username}
+        ]
+        client = APIClient()
+        url = f"{reverse('group-principals', kwargs={'uuid': self.group.uuid})}?order_by=-username"
+        response = client.get(url, **self.headers)
+
+        call_args, kwargs = mock_request.call_args_list[0]
+        username_arg = call_args[0]
+
+        for username in [self.principal.username, self.principalB.username]:
+            self.assertTrue(username in username_arg)
+        ordered_names = sorted([self.principal.username, self.principalB.username], reverse=True)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data.get('meta').get('count'), 2)
+
+        mock_request.assert_called_with(ordered_names, ANY, 'des')
+
     def test_remove_group_principals_success(self):
         """Test that removing a principal to a group returns successfully."""
         url = reverse('group-principals', kwargs={'uuid': self.group.uuid})
@@ -495,7 +519,7 @@ class GroupViewsetTests(IdentityRequest):
         response = client.get(url, **self.headers)
         principals = response.data.get('data')
 
-        mock_request.assert_called_with([], ANY)
+        mock_request.assert_called_with([], ANY, None)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(principals), 0)
 
@@ -509,7 +533,7 @@ class GroupViewsetTests(IdentityRequest):
         response = client.get(url, **self.headers)
         principals = response.data.get('data')
 
-        mock_request.assert_called_with([self.principal.username], ANY)
+        mock_request.assert_called_with([self.principal.username], ANY, None)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(principals), 1)
 
