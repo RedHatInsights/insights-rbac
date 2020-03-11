@@ -48,7 +48,7 @@ VALID_EXCLUDE_VALUES = ['true', 'false']
 VALID_GROUP_ROLE_FILTERS = ['role_name', 'role_description']
 VALID_GROUP_PRINCIPAL_FILTERS = ['principal_username']
 ORDERING_PARAM = 'order_by'
-VALID_ROLE_ORDER_FIELDS = ['name', 'modified']
+VALID_ROLE_ORDER_FIELDS = ['name', 'modified', 'policyCount']
 VALID_PRINCIPAL_ORDER_FIELDS = ['username']
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
@@ -578,6 +578,7 @@ class GroupViewSet(mixins.CreateModelMixin,
                  else self.obtain_roles_with_exclusion(request, group))
 
         filtered_roles = self.filtered_roles(roles, request)
+        filtered_roles = filtered_roles.annotate(policyCount=Count('policies', distinct=True))
         if ORDERING_PARAM in request.query_params:
             ordered_roles = self.order_queryset(filtered_roles, VALID_ROLE_ORDER_FIELDS,
                                                 request.query_params.get(ORDERING_PARAM))
