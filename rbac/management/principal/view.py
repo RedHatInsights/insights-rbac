@@ -16,6 +16,7 @@
 #
 
 """View for principal management."""
+from management.utils import validate_and_get_key
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -25,6 +26,8 @@ from .proxy import PrincipalProxy
 from ..permissions.admin_access import AdminAccessPermission
 
 USERNAMES_KEY = 'usernames'
+SORTORDER_KEY = 'sort_order'
+VALID_SORTORDER_VALUE = ['asc', 'desc']
 
 
 class PrincipalView(APIView):
@@ -87,6 +90,11 @@ class PrincipalView(APIView):
             limit = int(query_params.get('limit', default_limit))
             offset = int(query_params.get('offset', 0))
             usernames = query_params.get(USERNAMES_KEY)
+            sort_order = validate_and_get_key(
+                query_params,
+                SORTORDER_KEY,
+                VALID_SORTORDER_VALUE,
+                'asc')
         except ValueError:
             error = {
                 'detail': 'Values for limit and offset must be positive numbers.',
@@ -106,12 +114,14 @@ class PrincipalView(APIView):
             resp = proxy.request_filtered_principals(principals,
                                                      user.account,
                                                      limit=limit,
-                                                     offset=offset)
+                                                     offset=offset,
+                                                     sort_order=sort_order)
             usernames_filter = f'&usernames={usernames}'
         else:
             resp = proxy.request_principals(user.account,
                                             limit=limit,
-                                            offset=offset)
+                                            offset=offset,
+                                            sort_order=sort_order)
         status_code = resp.get('status_code')
         response_data = {}
         if status_code == status.HTTP_200_OK:
