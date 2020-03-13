@@ -59,12 +59,19 @@ class GroupFilter(filters.FilterSet):
         filtered_set = queryset.filter(**filters)
         return filtered_set | Group.platform_default_set()
 
+    def uuid_filter(queryset, field, values):
+        """Filter for group uuid lookup."""
+        filters = {f'{field}__in': values.split(',')}
+        filtered_set = queryset.filter(**filters)
+        return filtered_set
+
     name = filters.CharFilter(field_name='name', lookup_expr='icontains')
     username = filters.CharFilter(field_name='principals', method=username_filter)
+    uuid = filters.CharFilter(field_name='uuid', method=uuid_filter)
 
     class Meta:
         model = Group
-        fields = ['name', 'principals']
+        fields = ['name', 'principals', 'uuid']
 
 
 class GroupViewSet(mixins.CreateModelMixin,
@@ -160,6 +167,7 @@ class GroupViewSet(mixins.CreateModelMixin,
         @apiHeader {String} token User authorization token
 
         @apiParam (Query) {String} name Filter by group name.
+        @apiParam (Query) {array} uuid Filter by comma separated list of uuids
         @apiParam (Query) {Number} offset Parameter for selecting the start of data (default is 0).
         @apiParam (Query) {Number} limit Parameter for selecting the amount of data (default is 10).
 

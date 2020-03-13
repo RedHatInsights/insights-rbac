@@ -169,6 +169,53 @@ class GroupViewsetTests(IdentityRequest):
         self.assertIsNotNone(group.get('name'))
         self.assertEqual(group.get('name'), self.group.name)
 
+    def test_filter_group_list_by_uuid_success(self):
+        """Test that we can filter a list of groups by uuid."""
+        url = f"{reverse('group-list')}?uuid={self.group.uuid}"
+        client = APIClient()
+        response = client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        for keyname in ['meta', 'links', 'data']:
+            self.assertIn(keyname, response.data)
+        self.assertIsInstance(response.data.get('data'), list)
+        self.assertEqual(len(response.data.get('data')), 1)
+
+        group = response.data.get('data')[0]
+        self.assertIsNotNone(group.get('name'))
+        self.assertEqual(group.get('name'), self.group.name)
+
+    def test_filter_group_list_by_uuid_multiple(self):
+        """Test that we can filter a list of groups by uuid."""
+        url = f"{reverse('group-list')}?uuid={self.group.uuid},{self.groupB.uuid}"
+        client = APIClient()
+        response = client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        for keyname in ['meta', 'links', 'data']:
+            self.assertIn(keyname, response.data)
+        self.assertIsInstance(response.data.get('data'), list)
+        self.assertEqual(len(response.data.get('data')), 2)
+
+        group = response.data.get('data')[0]
+        self.assertIsNotNone(group.get('name'))
+        self.assertEqual(group.get('name'), self.group.name)
+        group = response.data.get('data')[1]
+        self.assertIsNotNone(group.get('name'))
+        self.assertEqual(group.get('name'), self.groupB.name)
+
+    def test_filter_group_list_by_uuid_fail(self):
+        """Test that filtering by a nonexistant uuid returns nothing."""
+        url = f"{reverse('group-list')}?uuid={uuid4()}"
+        client = APIClient()
+        response = client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        for keyname in ['meta', 'links', 'data']:
+            self.assertIn(keyname, response.data)
+        self.assertEqual(response.data.get('data'), [])
+        self.assertEqual(len(response.data.get('data')), 0)
+
     @patch('management.principal.proxy.PrincipalProxy.request_filtered_principals',
            return_value={'status_code': 200, 'data': []})
     def test_update_group_success(self, mock_request):

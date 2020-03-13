@@ -216,6 +216,21 @@
             }
           },
           {
+            "name": "uuid",
+            "in": "query",
+            "description": "A list of UUIDs to filter listed groups.",
+            "required": false,
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "collectionFormat": "csv"
+            },
+            "explode": false,
+            "style": "form"
+          },
+          {
             "$ref": "#/components/parameters/OrderByFilter"
           }
         ],
