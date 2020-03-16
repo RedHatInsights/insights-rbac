@@ -216,6 +216,30 @@
             }
           },
           {
+            "name": "role_names",
+            "in": "query",
+            "description": "List of role name to filter for groups. It is exact match but case-insensitive",
+            "required": false,
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "explode": false,
+            "style": "form"
+          },
+          {
+            "name": "role_discriminator",
+            "in": "query",
+            "description": "Discriminator that works with role_names to indicate matching all/any of the role names",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": ["all", "any"]
+            }
+          },
+          {
             "$ref": "#/components/parameters/OrderByFilter"
           }
         ],

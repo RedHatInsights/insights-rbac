@@ -44,9 +44,11 @@ from rest_framework.response import Response
 USERNAMES_KEY = 'usernames'
 ROLES_KEY = 'roles'
 EXCLUDE_KEY = 'exclude'
+ROLE_DISCRIMINATOR_KEY = 'role_discriminator'
 VALID_EXCLUDE_VALUES = ['true', 'false']
 VALID_GROUP_ROLE_FILTERS = ['role_name', 'role_description']
 VALID_GROUP_PRINCIPAL_FILTERS = ['principal_username']
+VALID_ROLE_ROLE_DISCRIMINATOR = ['all', 'any']
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 
@@ -59,12 +61,37 @@ class GroupFilter(filters.FilterSet):
         filtered_set = queryset.filter(**filters)
         return filtered_set | Group.platform_default_set()
 
+    def roles_filter(self, queryset, field, values):
+        """Filter for group to lookup list of role name."""
+        if not values:
+            key = 'groups_filter'
+            message = 'No value of roles provided to filter groups!'
+            error = {
+                key: [_(message)]
+            }
+            raise serializers.ValidationError(error)
+        roles_list = [value.lower() for value in values.split(',')]
+
+        discriminator = validate_and_get_key(
+            self.request.query_params,
+            ROLE_DISCRIMINATOR_KEY,
+            VALID_ROLE_ROLE_DISCRIMINATOR,
+            'any')
+
+        if discriminator == 'any':
+            return queryset.filter(policies__roles__name__iregex=r'(' + '|'.join(roles_list) + ')')
+
+        for role_name in roles_list:
+            queryset = queryset.filter(policies__roles__name__icontains=role_name)
+        return queryset
+
     name = filters.CharFilter(field_name='name', lookup_expr='icontains')
     username = filters.CharFilter(field_name='principals', method=username_filter)
+    role_names = filters.CharFilter(field_name='role_names', method='roles_filter')
 
     class Meta:
         model = Group
-        fields = ['name', 'principals']
+        fields = ['name', 'principals', 'role_names']
 
 
 class GroupViewSet(mixins.CreateModelMixin,
@@ -549,7 +576,11 @@ class GroupViewSet(mixins.CreateModelMixin,
 
     def obtain_roles(self, request, group):
         """Obtain roles based on request, supports exclusion."""
-        exclude = self.validate_and_get_exclude_key(request.query_params)
+        exclude = validate_and_get_key(
+            request.query_params,
+            EXCLUDE_KEY,
+            VALID_EXCLUDE_VALUES,
+            'false')
 
         roles = (group.roles_with_access() if exclude == 'false'
                  else self.obtain_roles_with_exclusion(request, group))
@@ -569,13 +600,15 @@ class GroupViewSet(mixins.CreateModelMixin,
         roles_for_group = group.roles().values('uuid')
         return roles.exclude(uuid__in=roles_for_group)
 
-    def validate_and_get_exclude_key(self, params):
-        """Validate the exclude key."""
-        exclude = params.get(EXCLUDE_KEY, 'false').lower()
-        if exclude not in VALID_EXCLUDE_VALUES:
-            key = 'detail'
-            message = '{} query parameter value {} is invalid. booleans are valid inputs.'.format(
-                EXCLUDE_KEY,
-                exclude)
-            raise serializers.ValidationError({key: _(message)})
-        return exclude
+
+def validate_and_get_key(params, query_key, valid_values, default_value):
+    """Validate the key."""
+    value = params.get(query_key, default_value).lower()
+    if value not in valid_values:
+        key = 'detail'
+        message = '{} query parameter value {} is invalid. {} are valid inputs.'.format(
+            query_key,
+            value,
+            valid_values)
+        raise serializers.ValidationError({key: _(message)})
+    return value
