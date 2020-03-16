@@ -17,6 +17,7 @@
 """Test the Management queryset helpers."""
 from unittest.mock import Mock
 
+from django.core.exceptions import PermissionDenied
 from django.db import connection
 from django.db.models.aggregates import Count
 from django.test import TestCase
@@ -154,6 +155,81 @@ class QuerySetTest(TestCase):
         queryset = get_role_queryset(req)
         self.assertEquals(queryset.count(), 5)
         self.assertIsNotNone(queryset.last().accessCount)
+
+    def test_get_role_queryset_non_admin_username(self):
+        """Test get_role_queryset as a non-admin supplying a username."""
+        roles = self._setup_roles_for_role_username_queryset_tests()
+        identity_header = {
+            'decoded': {
+                'identity': {
+                    'user': {
+                        'username': 'test_user2'
+                    }
+                }
+            }
+        }
+
+        user = Mock(spec=User, admin=False, identity_header=identity_header)
+        req = Mock(user=user, method='GET', query_params={'username': 'test_user2'})
+        with self.assertRaises(PermissionDenied):
+            get_role_queryset(req)
+
+    def test_get_role_queryset_non_admin_username_different(self):
+        """Test get_role_queryset as a non-admin supplying a different username."""
+        roles = self._setup_roles_for_role_username_queryset_tests()
+        identity_header = {
+            'decoded': {
+                'identity': {
+                    'user': {
+                        'username': 'test_user'
+                    }
+                }
+            }
+        }
+
+        user = Mock(spec=User, admin=False, identity_header=identity_header)
+        req = Mock(user=user, method='GET', query_params={'username': 'test_user2'})
+        queryset = get_role_queryset(req)
+        self.assertEquals(list(queryset), [])
+        self.assertEquals(queryset.count(), 0)
+
+    def test_get_role_queryset_admin_username(self):
+        """Test get_role_queryset as an admin supplying a username."""
+        roles = self._setup_roles_for_role_username_queryset_tests()
+        identity_header = {
+            'decoded': {
+                'identity': {
+                    'user': {
+                        'username': 'test_user2'
+                    }
+                }
+            }
+        }
+
+        user = Mock(spec=User, admin=True, identity_header=identity_header)
+        req = Mock(user=user, method='GET', query_params={'username': 'test_user2'})
+        queryset = get_role_queryset(req)
+        self.assertEquals(list(queryset), [roles.first()])
+        self.assertEquals(queryset.count(), 1)
+
+    def test_get_role_queryset_admin_username_different(self):
+        """Test get_role_queryset as an admin supplying a different username."""
+        roles = self._setup_roles_for_role_username_queryset_tests()
+        identity_header = {
+            'decoded': {
+                'identity': {
+                    'user': {
+                        'username': 'admin'
+                    }
+                }
+            }
+        }
+
+        user = Mock(spec=User, admin=True, identity_header=identity_header)
+        req = Mock(user=user, method='GET', query_params={'username': 'test_user2'})
+        queryset = get_role_queryset(req)
+        self.assertEquals(list(queryset), [roles.first()])
+        self.assertEquals(queryset.count(), 1)
 
     def test_get_role_queryset_get_all(self):
         """Test get_role_queryset as a user with all access."""
@@ -344,3 +420,18 @@ class QuerySetTest(TestCase):
         req = Mock(user=user, method='GET', query_params={SCOPE_KEY: 'bad'})
         with self.assertRaises(serializers.ValidationError):
             get_policy_queryset(req)
+
+    def _setup_roles_for_role_username_queryset_tests(self):
+        self._create_groups()
+        self._create_policies()
+        self._create_roles()
+
+        principal = Principal.objects.create(username='test_user2')
+        group = Group.objects.first()
+        policy = Policy.objects.first()
+        roles = Role.objects.all()
+
+        policy.roles.add(roles.first())
+        group.principals.add(principal)
+        group.policies.add(policy)
+        return roles
