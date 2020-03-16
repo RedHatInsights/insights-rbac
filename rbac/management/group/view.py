@@ -17,6 +17,7 @@
 
 """View for group management."""
 import logging
+from uuid import UUID
 
 from django.db.models.aggregates import Count
 from django.utils.translation import gettext as _
@@ -61,7 +62,15 @@ class GroupFilter(filters.FilterSet):
 
     def uuid_filter(queryset, field, values):
         """Filter for group uuid lookup."""
-        filters = {f'{field}__in': values.split(',')}
+        uuids = values.split(',')
+        for uuid in uuids:
+            try:
+                UUID(uuid)
+            except ValueError:
+                key = 'groups uuid filter'
+                message = f'{uuid} is not a valid UUID.'
+                raise serializers.ValidationError({key: _(message)})
+        filters = {f'{field}__in': uuids}
         filtered_set = queryset.filter(**filters)
         return filtered_set
 
