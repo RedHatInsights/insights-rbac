@@ -1018,6 +1018,15 @@
             },
             "explode": false,
             "style": "form"
+          },
+          {
+            "name": "username",
+            "in": "query",
+            "description": "Unique username of the principal to obtain roles for (only available for admins, and if supplied, takes precedence over the identity header).",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -1732,7 +1741,7 @@
         "in": "query",
         "name": "order_by",
         "required": false,
-        "description": "Parameter for ordering resource by value.",
+        "description": "Parameter for ordering resource by value. For inverse ordering, supply '-' before the param value, such as: ?order_by=-name",
         "schema": {
           "type": "string"
         }
@@ -2336,10 +2345,10 @@
           {
             "type": "object",
             "required": [
-              "policyCount", 
-              "accessCount", 
-              "applications", 
-              "system", 
+              "policyCount",
+              "accessCount",
+              "applications",
+              "system",
               "platform_default"
             ],
             "properties": {

@@ -74,7 +74,8 @@ def _update_or_create_roles(tenant, roles, update=False):
 def seed_roles(tenant, update=False):
     """For a tenant update or create system defined roles."""
     roles_directory = os.path.join(settings.BASE_DIR, 'management', 'role', 'definitions')
-    role_files = [f for f in os.listdir(roles_directory) if os.path.isfile(os.path.join(roles_directory, f))]
+    role_files = [f for f in os.listdir(roles_directory)
+                  if os.path.isfile(os.path.join(roles_directory, f)) and f.endswith('.json')]
     for role_file_name in role_files:
         role_file_path = os.path.join(roles_directory, role_file_name)
         with open(role_file_path) as json_file:
