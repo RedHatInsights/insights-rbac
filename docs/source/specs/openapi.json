@@ -1288,18 +1288,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "required": [
-                    "data"
-                  ],
-                  "properties": {
-                    "data": {
-                      "type": "array",
-                      "items": {
-                        "$ref": "#/components/schemas/AccessPagination"
-                      }
-                    }
-                  }
+                  "$ref": "#/components/schemas/AccessPagination"
                 }
               }
             }
