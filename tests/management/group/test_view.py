@@ -76,6 +76,13 @@ class GroupViewsetTests(IdentityRequest):
             # role that's not assigned to principal
             self.roleOrphan = Role.objects.create(name='roleOrphan')
 
+            # group that associates with multipal roles
+            self.groupMultiRole = Group.objects.create(name='groupMultiRole')
+            self.policyMultiRole = Policy.objects.create(name='policyMultiRole')
+            self.policyMultiRole.roles.add(self.role)
+            self.policyMultiRole.roles.add(self.roleB)
+            self.groupMultiRole.policies.add(self.policyMultiRole)
+
 
     def tearDown(self):
         """Tear down group viewset tests."""
@@ -132,6 +139,36 @@ class GroupViewsetTests(IdentityRequest):
         response = client.post(url, test_data, format='json', **self.headers)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
+    def test_group_filter_by_any_role_name_in_a_list_success(self):
+        """Test default behaviour that filter groups by any role name in a list success."""
+        url = '{}?role_names={},{}'.format(reverse('group-list'), 'Rolea', 'RoleB')
+        client = APIClient()
+        response = client.get(url, **self.headers)
+
+        self.assertTrue(response.data.get('meta').get('count') == 3)
+
+        expected_groups = [self.group.name, self.groupB.name, self.groupMultiRole.name]
+        self.assertEqual(expected_groups, [group.get('name') for group in response.data.get('data')])
+
+    def test_group_filter_by_all_role_name_in_a_list_success(self):
+        """Test that filter groups by all role names in a list success."""
+        url = '{}?role_names={},{}&role_discriminator=all'.format(reverse('group-list'), 'Rolea', 'roleB')
+        client = APIClient()
+        response = client.get(url, **self.headers)
+
+        self.assertTrue(response.data.get('meta').get('count') == 1)
+
+        expected_groups = [self.groupMultiRole.name]
+        self.assertEqual(expected_groups, [group.get('name') for group in response.data.get('data')])
+
+    def test_group_filter_with_invalid_discriminator_failure(self):
+        """Test that filter groups with invalid discriminator returns failed validation."""
+        url = '{}?role_names={},{}&role_discriminator=invalid'.format(reverse('group-list'), 'roleA', 'ROLEb')
+        client = APIClient()
+        response = client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
     @patch('management.principal.proxy.PrincipalProxy.request_filtered_principals',
            return_value={'status_code': 200, 'data': []})
     def test_read_group_success(self, mock_request):
@@ -163,7 +200,7 @@ class GroupViewsetTests(IdentityRequest):
         for keyname in ['meta', 'links', 'data']:
             self.assertIn(keyname, response.data)
         self.assertIsInstance(response.data.get('data'), list)
-        self.assertEqual(len(response.data.get('data')), 4)
+        self.assertEqual(len(response.data.get('data')), 5)
 
         group = response.data.get('data')[0]
         self.assertIsNotNone(group.get('name'))
@@ -310,7 +347,7 @@ class GroupViewsetTests(IdentityRequest):
         url = reverse('group-list')
         response = client.get(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data.get('meta').get('count'), 4)
+        self.assertEqual(response.data.get('meta').get('count'), 5)
         self.assertEqual(response.data.get('data')[0].get('principalCount'), 2)
         self.assertEqual(response.data.get('data')[0].get('policyCount'), None)
         self.assertEqual(response.data.get('data')[0].get('roleCount'), 1)

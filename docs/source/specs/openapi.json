@@ -230,6 +230,30 @@
             "style": "form"
           },
           {
+            "name": "role_names",
+            "in": "query",
+            "description": "List of role name to filter for groups. It is exact match but case-insensitive",
+            "required": false,
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "explode": false,
+            "style": "form"
+          },
+          {
+            "name": "role_discriminator",
+            "in": "query",
+            "description": "Discriminator that works with role_names to indicate matching all/any of the role names",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": ["all", "any"]
+            }
+          },
+          {
             "$ref": "#/components/parameters/OrderByFilter"
           }
         ],
@@ -1008,6 +1032,15 @@
             },
             "explode": false,
             "style": "form"
+          },
+          {
+            "name": "username",
+            "in": "query",
+            "description": "Unique username of the principal to obtain roles for (only available for admins, and if supplied, takes precedence over the identity header).",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -1269,18 +1302,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "required": [
-                    "data"
-                  ],
-                  "properties": {
-                    "data": {
-                      "type": "array",
-                      "items": {
-                        "$ref": "#/components/schemas/AccessPagination"
-                      }
-                    }
-                  }
+                  "$ref": "#/components/schemas/AccessPagination"
                 }
               }
             }
