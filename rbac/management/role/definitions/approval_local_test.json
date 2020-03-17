@@ -3,133 +3,81 @@
     {
       "name": "Approval Administrator Local Test",
       "system": true,
-      "version": 3,
+      "version": 4,
       "description": "An Approval administrator role that grants create, read, update and destroy permissions, just for testing locally",
       "access": [
         {
-          "permission": "approval:templates:read",
-          "resourceDefinitions": [
-            {
-              "attributeFilter": {
-                "value": "*",
-                "key": "id",
-                "operation": "equal"
-              }
-            }
-          ]
+          "permission": "approval:templates:read"
         },
         {
-          "permission": "approval:workflows:create",
-          "resourceDefinitions": [
-            {
-              "attributeFilter": {
-                "value": "*",
-                "key": "id",
-                "operation": "equal"
-              }
-            }
-          ]
+          "permission": "approval:workflows:create"
         },
         {
-          "permission": "approval:workflows:read",
-          "resourceDefinitions": [
-            {
-              "attributeFilter": {
-                "value": "*",
-                "key": "id",
-                "operation": "equal"
-              }
-            }
-          ]
+          "permission": "approval:workflows:read"
         },
         {
-          "permission": "approval:workflows:update",
-          "resourceDefinitions": [
-            {
-              "attributeFilter": {
-                "value": "*",
-                "key": "id",
-                "operation": "equal"
-              }
-            }
-          ]
+          "permission": "approval:workflows:update"
         },
         {
-          "permission": "approval:workflows:destroy",
-          "resourceDefinitions": [
-            {
-              "attributeFilter": {
-                "value": "*",
-                "key": "id",
-                "operation": "equal"
-              }
-            }
-          ]
+          "permission": "approval:workflows:destroy"
         },
         {
-          "permission": "approval:requests:read",
-          "resourceDefinitions": [
-            {
-              "attributeFilter": {
-                "value": "*",
-                "key": "id",
-                "operation": "equal"
-              }
-            }
-          ]
+          "permission": "approval:requests:admin"
         },
         {
-          "permission": "approval:stages:read",
-          "resourceDefinitions": [
-            {
-              "attributeFilter": {
-                "value": "*",
-                "key": "id",
-                "operation": "equal"
-              }
-            }
-          ]
+          "permission": "approval:requests:create"
         },
         {
-          "permission": "approval:actions:read",
-          "resourceDefinitions": [
-            {
-              "attributeFilter": {
-                "value": "*",
-                "key": "id",
-                "operation": "equal"
-              }
-            }
-          ]
+          "permission": "approval:requests:read"
         },
         {
-          "permission": "approval:actions:create",
-          "resourceDefinitions": [
-            {
-              "attributeFilter": {
-                "value": "*",
-                "key": "id",
-                "operation": "equal"
-              }
-            }
-          ]
+          "permission": "approval:actions:admin"
+        },
+        {
+          "permission": "approval:actions:read"
+        },
+        {
+          "permission": "approval:actions:create"
         }
       ]
     },
     {
       "name": "Approval Approver",
       "system": true,
-      "version": 3,
+      "version": 4,
       "description": "An Approval approver role that grants read and create permissions",
+      "access": [
+        {
+          "permission": "approval:requests:approve"
+        },
+        {
+          "permission": "approval:requests:create"
+        },
+        {
+          "permission": "approval:requests:read"
+        },
+        {
+          "permission": "approval:actions:approve"
+        },
+        {
+          "permission": "approval:actions:read"
+        },
+        {
+          "permission": "approval:actions:create"
+        }
+      ]
+    },
+    {
+      "name": "Approval User",
+      "system": true,
+      "version": 4,
+      "description": "An approval user role which grants permissions to read/create a request.",
       "access": [
         {
           "permission": "approval:requests:read"
         },
         {
-          "permission": "approval:workflows:read"
-        },
-        {
-          "permission": "approval:actions:read"
+          "permission": "approval:requests:create"
         },
         {
           "permission": "approval:actions:create"
