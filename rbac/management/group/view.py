@@ -625,8 +625,8 @@ class GroupViewSet(mixins.CreateModelMixin,
         if ORDERING_PARAM in request.query_params:
             ordered_roles = self.order_queryset(annotated_roles, VALID_ROLE_ORDER_FIELDS,
                                                 request.query_params.get(ORDERING_PARAM))
-            if ordered_roles:
-                return [RoleMinimumSerializer(role).data for role in ordered_roles]
+
+            return [RoleMinimumSerializer(role).data for role in ordered_roles]
         return [RoleMinimumSerializer(role).data for role in annotated_roles]
 
     def obtain_roles_with_exclusion(self, request, group):
