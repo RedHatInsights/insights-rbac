@@ -95,9 +95,12 @@ def get_role_queryset(request):
         if username != identity_username and not request.user.admin:
             return Role.objects.none()
         else:
-            return get_object_principal_queryset(request, PRINCIPAL_SCOPE, Role,
-                                                 **{'prefetch_lookups_for_ids': 'access',
-                                                    'prefetch_lookups_for_groups': 'policies__roles'})
+            queryset = get_object_principal_queryset(request, PRINCIPAL_SCOPE, Role,
+                                                     **{'prefetch_lookups_for_ids': 'access',
+                                                        'prefetch_lookups_for_groups': 'policies__roles'})
+
+            return queryset.annotate(policyCount=Count('policies', distinct=True),
+                                     accessCount=Count('access', distinct=True))
 
     if ENVIRONMENT.get_value('ALLOW_ANY', default=False, cast=bool):
         return base_query

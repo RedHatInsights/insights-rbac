@@ -209,8 +209,11 @@ class QuerySetTest(TestCase):
         user = Mock(spec=User, admin=True, identity_header=identity_header)
         req = Mock(user=user, method='GET', query_params={'username': 'test_user2'})
         queryset = get_role_queryset(req)
+        role = queryset.last()
         self.assertEquals(list(queryset), [roles.first()])
         self.assertEquals(queryset.count(), 1)
+        self.assertTrue(hasattr(role, 'accessCount'))
+        self.assertTrue(hasattr(role, 'policyCount'))
 
     def test_get_role_queryset_admin_username_different(self):
         """Test get_role_queryset as an admin supplying a different username."""
