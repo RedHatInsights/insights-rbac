@@ -17,6 +17,7 @@
 
 """View for group management."""
 import logging
+from uuid import UUID
 
 from django.db.models.aggregates import Count
 from django.utils.translation import gettext as _
@@ -46,28 +47,71 @@ USERNAMES_KEY = 'usernames'
 ROLES_KEY = 'roles'
 EXCLUDE_KEY = 'exclude'
 ORDERING_PARAM = 'order_by'
+VALID_ROLE_ORDER_FIELDS = list(RoleViewSet.ordering_fields)
+ROLE_DISCRIMINATOR_KEY = 'role_discriminator'
 VALID_EXCLUDE_VALUES = ['true', 'false']
 VALID_GROUP_ROLE_FILTERS = ['role_name', 'role_description']
 VALID_GROUP_PRINCIPAL_FILTERS = ['principal_username']
-VALID_ROLE_ORDER_FIELDS = list(RoleViewSet.ordering_fields)
+VALID_ROLE_ROLE_DISCRIMINATOR = ['all', 'any']
+
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 
 class GroupFilter(filters.FilterSet):
     """Filter for group."""
 
-    def username_filter(queryset, field, value):
+    def username_filter(self, queryset, field, value):
         """Filter for group username lookup."""
         filters = {'{}__username__icontains'.format(field): value}
         filtered_set = queryset.filter(**filters)
         return filtered_set | Group.platform_default_set()
 
+    def uuid_filter(self, queryset, field, values):
+        """Filter for group uuid lookup."""
+        uuids = values.split(',')
+        for uuid in uuids:
+            try:
+                UUID(uuid)
+            except ValueError:
+                key = 'groups uuid filter'
+                message = f'{uuid} is not a valid UUID.'
+                raise serializers.ValidationError({key: _(message)})
+        filters = {f'{field}__in': uuids}
+        filtered_set = queryset.filter(**filters)
+        return filtered_set
+
+    def roles_filter(self, queryset, field, values):
+        """Filter for group to lookup list of role name."""
+        if not values:
+            key = 'groups_filter'
+            message = 'No value of roles provided to filter groups!'
+            error = {
+                key: [_(message)]
+            }
+            raise serializers.ValidationError(error)
+        roles_list = [value.lower() for value in values.split(',')]
+
+        discriminator = validate_and_get_key(
+            self.request.query_params,
+            ROLE_DISCRIMINATOR_KEY,
+            VALID_ROLE_ROLE_DISCRIMINATOR,
+            'any')
+
+        if discriminator == 'any':
+            return queryset.filter(policies__roles__name__iregex=r'(' + '|'.join(roles_list) + ')')
+
+        for role_name in roles_list:
+            queryset = queryset.filter(policies__roles__name__icontains=role_name)
+        return queryset
+
     name = filters.CharFilter(field_name='name', lookup_expr='icontains')
-    username = filters.CharFilter(field_name='principals', method=username_filter)
+    username = filters.CharFilter(field_name='principals', method='username_filter')
+    role_names = filters.CharFilter(field_name='role_names', method='roles_filter')
+    uuid = filters.CharFilter(field_name='uuid', method='uuid_filter')
 
     class Meta:
         model = Group
-        fields = ['name', 'principals']
+        fields = ['name', 'principals', 'role_names', 'uuid']
 
 
 class GroupViewSet(mixins.CreateModelMixin,
@@ -163,6 +207,7 @@ class GroupViewSet(mixins.CreateModelMixin,
         @apiHeader {String} token User authorization token
 
         @apiParam (Query) {String} name Filter by group name.
+        @apiParam (Query) {array} uuid Filter by comma separated list of uuids
         @apiParam (Query) {Number} offset Parameter for selecting the start of data (default is 0).
         @apiParam (Query) {Number} limit Parameter for selecting the amount of data (default is 10).
 
@@ -564,7 +609,11 @@ class GroupViewSet(mixins.CreateModelMixin,
 
     def obtain_roles(self, request, group):
         """Obtain roles based on request, supports exclusion."""
-        exclude = self.validate_and_get_exclude_key(request.query_params)
+        exclude = validate_and_get_key(
+            request.query_params,
+            EXCLUDE_KEY,
+            VALID_EXCLUDE_VALUES,
+            'false')
 
         roles = (group.roles_with_access() if exclude == 'false'
                  else self.obtain_roles_with_exclusion(request, group))
@@ -591,13 +640,15 @@ class GroupViewSet(mixins.CreateModelMixin,
         roles_for_group = group.roles().values('uuid')
         return roles.exclude(uuid__in=roles_for_group)
 
-    def validate_and_get_exclude_key(self, params):
-        """Validate the exclude key."""
-        exclude = params.get(EXCLUDE_KEY, 'false').lower()
-        if exclude not in VALID_EXCLUDE_VALUES:
-            key = 'detail'
-            message = '{} query parameter value {} is invalid. booleans are valid inputs.'.format(
-                EXCLUDE_KEY,
-                exclude)
-            raise serializers.ValidationError({key: _(message)})
-        return exclude
+
+def validate_and_get_key(params, query_key, valid_values, default_value):
+    """Validate the key."""
+    value = params.get(query_key, default_value).lower()
+    if value not in valid_values:
+        key = 'detail'
+        message = '{} query parameter value {} is invalid. {} are valid inputs.'.format(
+            query_key,
+            value,
+            valid_values)
+        raise serializers.ValidationError({key: _(message)})
+    return value
