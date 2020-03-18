@@ -216,6 +216,20 @@
             }
           },
           {
+            "name": "uuid",
+            "in": "query",
+            "description": "A list of UUIDs to filter listed groups.",
+            "required": false,
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "explode": false,
+            "style": "form"
+          },
+          {
             "name": "role_names",
             "in": "query",
             "description": "List of role name to filter for groups. It is exact match but case-insensitive",

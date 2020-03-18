@@ -17,6 +17,7 @@
 
 """View for group management."""
 import logging
+from uuid import UUID
 
 from django.db.models.aggregates import Count
 from django.utils.translation import gettext as _
@@ -55,11 +56,25 @@ logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 class GroupFilter(filters.FilterSet):
     """Filter for group."""
 
-    def username_filter(queryset, field, value):
+    def username_filter(self, queryset, field, value):
         """Filter for group username lookup."""
         filters = {'{}__username__icontains'.format(field): value}
         filtered_set = queryset.filter(**filters)
         return filtered_set | Group.platform_default_set()
+
+    def uuid_filter(self, queryset, field, values):
+        """Filter for group uuid lookup."""
+        uuids = values.split(',')
+        for uuid in uuids:
+            try:
+                UUID(uuid)
+            except ValueError:
+                key = 'groups uuid filter'
+                message = f'{uuid} is not a valid UUID.'
+                raise serializers.ValidationError({key: _(message)})
+        filters = {f'{field}__in': uuids}
+        filtered_set = queryset.filter(**filters)
+        return filtered_set
 
     def roles_filter(self, queryset, field, values):
         """Filter for group to lookup list of role name."""
@@ -86,12 +101,13 @@ class GroupFilter(filters.FilterSet):
         return queryset
 
     name = filters.CharFilter(field_name='name', lookup_expr='icontains')
-    username = filters.CharFilter(field_name='principals', method=username_filter)
+    username = filters.CharFilter(field_name='principals', method='username_filter')
     role_names = filters.CharFilter(field_name='role_names', method='roles_filter')
+    uuid = filters.CharFilter(field_name='uuid', method='uuid_filter')
 
     class Meta:
         model = Group
-        fields = ['name', 'principals', 'role_names']
+        fields = ['name', 'principals', 'role_names', 'uuid']
 
 
 class GroupViewSet(mixins.CreateModelMixin,
@@ -187,6 +203,7 @@ class GroupViewSet(mixins.CreateModelMixin,
         @apiHeader {String} token User authorization token
 
         @apiParam (Query) {String} name Filter by group name.
+        @apiParam (Query) {array} uuid Filter by comma separated list of uuids
         @apiParam (Query) {Number} offset Parameter for selecting the start of data (default is 0).
         @apiParam (Query) {Number} limit Parameter for selecting the amount of data (default is 10).
 
