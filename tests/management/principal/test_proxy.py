@@ -62,7 +62,8 @@ def mocked_requests_get_200_json(*args, **kwargs):  # pylint: disable=unused-arg
         'username': 'test_user1',
         'email': 'test_user1@email.foo',
         'first_name': 'test',
-        'last_name': 'user1'
+        'last_name': 'user1',
+        'is_active': 'true'
         }
     json_response = [user]
     return MockResponse(json_response, status.HTTP_200_OK)
@@ -73,13 +74,15 @@ def mocked_requests_get_200_json_count(*args, **kwargs): # pylint: disable=unuse
         'username': 'test_user1',
         'email': 'test_user1@email.foo',
         'first_name': 'test',
-        'last_name': 'user1'
+        'last_name': 'user1',
+        'is_active': 'true'
         }
     user2 = {
         'username': 'test_user2',
         'email': 'test_user2@email.foo',
         'first_name': 'test',
-        'last_name': 'user2'
+        'last_name': 'user2',
+        'is_active': 'true'
         }
     json_response = {"userCount": 2, "users": [user1, user2]}
     return MockResponse(json_response, status.HTTP_200_OK)
@@ -169,7 +172,8 @@ class PrincipalProxyTest(TestCase):
             'username': 'test_user1',
             'email': 'test_user1@email.foo',
             'first_name': 'test',
-            'last_name': 'user1'
+            'last_name': 'user1',
+            'is_active': 'true'
         }
         expected = {
             'data': [user],
@@ -186,13 +190,15 @@ class PrincipalProxyTest(TestCase):
             'username': 'test_user1',
             'email': 'test_user1@email.foo',
             'first_name': 'test',
-            'last_name': 'user1'
+            'last_name': 'user1',
+            'is_active': 'true'
         }
         user2 = {
             'username': 'test_user2',
             'email': 'test_user2@email.foo',
             'first_name': 'test',
-            'last_name': 'user2'
+            'last_name': 'user2',
+            'is_active': 'true'
         }
         expected = {
             'data': {"userCount": 2, "users": [user1, user2]},
