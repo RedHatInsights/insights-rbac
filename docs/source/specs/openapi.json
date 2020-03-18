@@ -1928,6 +1928,9 @@
           "last_name": {
             "type": "string",
             "example": "Smith"
+          },
+          "is_active": {
+            "type": "boolean"
           }
         }
       },
