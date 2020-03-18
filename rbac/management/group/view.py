@@ -46,11 +46,13 @@ from rest_framework.response import Response
 USERNAMES_KEY = 'usernames'
 ROLES_KEY = 'roles'
 EXCLUDE_KEY = 'exclude'
+ORDERING_PARAM = 'order_by'
 ROLE_DISCRIMINATOR_KEY = 'role_discriminator'
 VALID_EXCLUDE_VALUES = ['true', 'false']
 VALID_GROUP_ROLE_FILTERS = ['role_name', 'role_description']
 VALID_GROUP_PRINCIPAL_FILTERS = ['principal_username']
 VALID_ROLE_ROLE_DISCRIMINATOR = ['all', 'any']
+VALID_PRINCIPAL_ORDER_FIELDS = ['username']
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 
@@ -447,7 +449,8 @@ class GroupViewSet(mixins.CreateModelMixin,
             else:
                 username_list = []
             proxy = PrincipalProxy()
-            resp = proxy.request_filtered_principals(username_list, account)
+            sort_order = request.query_params.get(ORDERING_PARAM)
+            resp = proxy.request_filtered_principals(username_list, account, sort_order=sort_order)
             if isinstance(resp, dict) and 'errors' in resp:
                 return Response(status=resp.get('status_code'), data=resp.get('errors'))
             response = self.get_paginated_response(resp.get('data'))
