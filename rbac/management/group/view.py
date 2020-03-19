@@ -37,6 +37,7 @@ from management.principal.serializer import PrincipalSerializer
 from management.querysets import get_group_queryset, get_object_principal_queryset
 from management.role.model import Role
 from management.role.view import RoleViewSet
+from management.utils import validate_and_get_key
 from rest_framework import mixins, serializers, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.filters import OrderingFilter
@@ -639,16 +640,3 @@ class GroupViewSet(mixins.CreateModelMixin,
         # Exclude the roles in the group
         roles_for_group = group.roles().values('uuid')
         return roles.exclude(uuid__in=roles_for_group)
-
-
-def validate_and_get_key(params, query_key, valid_values, default_value):
-    """Validate the key."""
-    value = params.get(query_key, default_value).lower()
-    if value not in valid_values:
-        key = 'detail'
-        message = '{} query parameter value {} is invalid. {} are valid inputs.'.format(
-            query_key,
-            value,
-            valid_values)
-        raise serializers.ValidationError({key: _(message)})
-    return value

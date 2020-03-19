@@ -94,7 +94,17 @@
             "schema": {
               "type": "string"
             }
-          }
+          },
+          {
+            "name": "sort_order",
+            "in": "query",
+            "description": "The sort order of the query, either ascending or descending",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": ["asc", "desc"]
+            }
+          }          
         ],
         "responses": {
           "200": {
