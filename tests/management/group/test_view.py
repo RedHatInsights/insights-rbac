@@ -562,7 +562,7 @@ class GroupViewsetTests(IdentityRequest):
         response = client.get(url, **self.headers)
         principals = response.data.get('data')
 
-        mock_request.assert_called_with([], ANY)
+        mock_request.assert_called_with([], ANY, sort_order=None)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(principals), 0)
 
@@ -576,7 +576,20 @@ class GroupViewsetTests(IdentityRequest):
         response = client.get(url, **self.headers)
         principals = response.data.get('data')
 
-        mock_request.assert_called_with([self.principal.username], ANY)
+        mock_request.assert_called_with([self.principal.username], ANY, sort_order=None)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(principals), 1)
+
+    @patch('management.principal.proxy.PrincipalProxy.request_filtered_principals',
+           return_value={'status_code': 200, 'data': [{'username': 'test_user'}]})
+    def test_principal_get_ordering_success(self, mock_request):
+        """Test that passing an order_by parameter calls the proxy correctly"""
+        url = f"{reverse('group-principals', kwargs={'uuid': self.group.uuid})}?order_by=username"
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        principals = response.data.get('data')
+
+        mock_request.assert_called_with([self.principal.username, self.principalB.username], ANY, sort_order='asc')
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(principals), 1)
 

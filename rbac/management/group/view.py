@@ -17,6 +17,7 @@
 
 """View for group management."""
 import logging
+import operator
 from uuid import UUID
 
 from django.db.models.aggregates import Count
@@ -52,7 +53,7 @@ VALID_EXCLUDE_VALUES = ['true', 'false']
 VALID_GROUP_ROLE_FILTERS = ['role_name', 'role_description']
 VALID_GROUP_PRINCIPAL_FILTERS = ['principal_username']
 VALID_ROLE_ROLE_DISCRIMINATOR = ['all', 'any']
-VALID_PRINCIPAL_ORDER_FIELDS = ['username']
+VALID_PRINCIPAL_ORDER_FIELDS = ['username', 'first_name', 'last_name', 'email']
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 
@@ -449,10 +450,17 @@ class GroupViewSet(mixins.CreateModelMixin,
             else:
                 username_list = []
             proxy = PrincipalProxy()
-            sort_order = request.query_params.get(ORDERING_PARAM)
+            sort_field = request.query_params.get(ORDERING_PARAM)
+            if sort_field and 'username' in sort_field:
+                sort_order = 'asc' if sort_field == 'username' else 'desc'
+            else:
+                sort_order = None
             resp = proxy.request_filtered_principals(username_list, account, sort_order=sort_order)
             if isinstance(resp, dict) and 'errors' in resp:
                 return Response(status=resp.get('status_code'), data=resp.get('errors'))
+            if sort_field and not sort_order:
+                principals = self.ordered_principals(resp.get('data'), sort_field)
+                resp['data'] = principals
             response = self.get_paginated_response(resp.get('data'))
         else:
             if USERNAMES_KEY not in request.query_params:
@@ -575,6 +583,22 @@ class GroupViewSet(mixins.CreateModelMixin,
             return Response(status=status.HTTP_204_NO_CONTENT)
 
         return Response(status=status.HTTP_200_OK, data=response_data.data)
+
+    def ordered_principals(self, principals, order_field):
+        """Return principals ordered by order_field."""
+        all_fields = VALID_PRINCIPAL_ORDER_FIELDS + ['-' + field for field in VALID_PRINCIPAL_ORDER_FIELDS]
+        if order_field.lower() in all_fields:
+            if order_field.startswith('-'):
+                reverse = True
+                order_field = order_field[1:]
+            else:
+                reverse = False
+            try:
+                return sorted(principals, key=operator.itemgetter(order_field), reverse=reverse)
+            except KeyError:
+                key = 'detail'
+                message = f'Failed ot sort on {order_field}'
+                raise serializers.ValidationError({key: _(message)})
 
     def filtered_roles(self, roles, request):
         """Return filtered roles for group from query params."""
