@@ -15,6 +15,9 @@
 #    along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Helper utilities for management module."""
+import json
+import os
+
 from django.core.exceptions import PermissionDenied
 from django.utils.translation import gettext as _
 from management.models import Group, Principal
@@ -22,6 +25,19 @@ from rest_framework import serializers
 
 USERNAME_KEY = 'username'
 APPLICATION_KEY = 'application'
+
+
+def validate_psk(psk, client_id):
+    """Validate the PSK for the client."""
+    psks = json.loads(os.environ.get('SERVICE_PSKS', '{}'))
+    client_config = psks.get(client_id, {})
+    primary_key = client_config.get('secret')
+    alt_key = client_config.get('alt-secret')
+
+    if psks:
+        return psk == primary_key or psk == alt_key
+
+    return False
 
 
 def get_principal_from_request(request):
@@ -115,3 +131,16 @@ def queryset_by_id(objects, clazz, **kwargs):
         query = query.prefetch_related(prefetch_lookups)
 
     return query
+
+
+def validate_and_get_key(params, query_key, valid_values, default_value):
+    """Validate the key."""
+    value = params.get(query_key, default_value).lower()
+    if value not in valid_values:
+        key = 'detail'
+        message = '{} query parameter value {} is invalid. {} are valid inputs.'.format(
+            query_key,
+            value,
+            valid_values)
+        raise serializers.ValidationError({key: _(message)})
+    return value

@@ -78,15 +78,36 @@ def get_group_queryset(request):
     return Group.objects.none()
 
 
+def annotate_roles_with_counts(queryset):
+    """Annotate the queryset for roles with counts."""
+    return queryset.annotate(policyCount=Count('policies', distinct=True),
+                             accessCount=Count('access', distinct=True))
+
+
 def get_role_queryset(request):
     """Obtain the queryset for roles."""
     scope = request.query_params.get(SCOPE_KEY, ACCOUNT_SCOPE)
-    base_query = Role.objects.prefetch_related('access').annotate(policyCount=Count('policies', distinct=True),
-                                                                  accessCount=Count('access', distinct=True))
+    base_query = annotate_roles_with_counts(Role.objects.prefetch_related('access'))
+
     if scope != ACCOUNT_SCOPE:
-        return get_object_principal_queryset(request, scope, Role,
-                                             **{'prefetch_lookups_for_ids': 'access',
-                                                'prefetch_lookups_for_groups': 'policies__roles'})
+        queryset = get_object_principal_queryset(request, scope, Role,
+                                                 **{'prefetch_lookups_for_ids': 'access',
+                                                    'prefetch_lookups_for_groups': 'policies__roles'})
+        return annotate_roles_with_counts(queryset)
+
+    username = request.query_params.get('username')
+    if username:
+        decoded = request.user.identity_header.get('decoded', {})
+        identity_username = decoded.get('identity', {}).get('user', {}).get('username')
+        if username != identity_username and not request.user.admin:
+            return Role.objects.none()
+        else:
+            queryset = get_object_principal_queryset(request, PRINCIPAL_SCOPE, Role,
+                                                     **{'prefetch_lookups_for_ids': 'access',
+                                                        'prefetch_lookups_for_groups': 'policies__roles'})
+
+            return annotate_roles_with_counts(queryset)
+
     if ENVIRONMENT.get_value('ALLOW_ANY', default=False, cast=bool):
         return base_query
     if request.user.admin:

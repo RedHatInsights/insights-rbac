@@ -18,7 +18,7 @@
 
 import random
 from decimal import Decimal
-from unittest.mock import patch
+from unittest.mock import patch, ANY
 from uuid import uuid4
 
 from django.urls import reverse
@@ -62,6 +62,7 @@ class PrincipalViewsetTests(IdentityRequest):
         client = APIClient()
         response = client.get(url, **self.headers)
 
+        mock_request.assert_called_once_with(ANY, limit=10, offset=0, sort_order='asc')
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         for keyname in ['meta', 'links', 'data']:
             self.assertIn(keyname, response.data)
@@ -81,6 +82,7 @@ class PrincipalViewsetTests(IdentityRequest):
         client = APIClient()
         response = client.get(url, **self.headers)
 
+        mock_request.assert_called_once_with(['test_user'], ANY, limit=10, offset=30, sort_order='asc')
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         for keyname in ['meta', 'links', 'data']:
             self.assertIn(keyname, response.data)
@@ -95,6 +97,14 @@ class PrincipalViewsetTests(IdentityRequest):
     def test_bad_query_param(self):
         """Test handling of bad query params."""
         url = f'{reverse("principals")}?limit=foo'
+        client = APIClient()
+        response = client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_bad_query_param_of_sort_order(self):
+        """Test handling of bad query params."""
+        url = f'{reverse("principals")}?sort_order=det'
         client = APIClient()
         response = client.get(url, **self.headers)
 
@@ -117,11 +127,12 @@ class PrincipalViewsetTests(IdentityRequest):
            return_value={'status_code': 200, 'data': [{'username': 'test_user', 'account_number': '1234'}]})
     def test_read_principal_list_account(self, mock_request):
         """Test that we can handle a request with matching accounts"""
-        url = f'{reverse("principals")}?usernames=test_user&offset=30'
+        url = f'{reverse("principals")}?usernames=test_user&offset=30&sort_order=desc'
         client = APIClient()
         proxy = PrincipalProxy()
         response = client.get(url, **self.headers)
 
+        mock_request.assert_called_once_with(['test_user'], ANY, limit=10, offset=30, sort_order='desc')
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         for keyname in ['meta', 'links', 'data']:
             self.assertIn(keyname, response.data)
