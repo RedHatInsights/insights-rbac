@@ -760,6 +760,20 @@
           },
           {
             "$ref": "#/components/parameters/QueryOffset"
+          },
+          {
+            "in": "query",
+            "name": "order_by",
+            "required": false,
+            "description": "Parameter for ordering resource by value. For inverse ordering, supply '-' before the param value, such as: ?order_by=-name",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "name",
+                "modified",
+                "policyCount"
+              ]
+            }
           }
         ],
         "responses": {
