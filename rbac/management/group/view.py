@@ -36,6 +36,7 @@ from management.principal.proxy import PrincipalProxy
 from management.principal.serializer import PrincipalSerializer
 from management.querysets import get_group_queryset, get_object_principal_queryset
 from management.role.model import Role
+from management.role.view import RoleViewSet
 from management.utils import validate_and_get_key
 from rest_framework import mixins, serializers, status, viewsets
 from rest_framework.decorators import action
@@ -46,11 +47,14 @@ from rest_framework.response import Response
 USERNAMES_KEY = 'usernames'
 ROLES_KEY = 'roles'
 EXCLUDE_KEY = 'exclude'
+ORDERING_PARAM = 'order_by'
+VALID_ROLE_ORDER_FIELDS = list(RoleViewSet.ordering_fields)
 ROLE_DISCRIMINATOR_KEY = 'role_discriminator'
 VALID_EXCLUDE_VALUES = ['true', 'false']
 VALID_GROUP_ROLE_FILTERS = ['role_name', 'role_description']
 VALID_GROUP_PRINCIPAL_FILTERS = ['principal_username']
 VALID_ROLE_ROLE_DISCRIMINATOR = ['all', 'any']
+
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 
@@ -476,6 +480,8 @@ class GroupViewSet(mixins.CreateModelMixin,
 
         @apiParam (Path) {String} id Group unique identifier.
 
+        @apiParam (Query) {String} order_by Determine ordering of returned roles.
+
         @apiSuccess {Array} data Array of roles
         @apiSuccessExample {json} Success-Response:
             HTTP/1.1 200 OK
@@ -573,6 +579,16 @@ class GroupViewSet(mixins.CreateModelMixin,
 
         return Response(status=status.HTTP_200_OK, data=response_data.data)
 
+    def order_queryset(self, queryset, valid_fields, order_field):
+        """Return queryset ordered according to order_by query param."""
+        all_valid_fields = valid_fields + ['-' + field for field in valid_fields]
+        if order_field in all_valid_fields:
+            return queryset.order_by(order_field)
+        else:
+            key = 'detail'
+            message = f'{order_field} is not a valid ordering field. Valid values are {all_valid_fields}'
+            raise serializers.ValidationError({key: _(message)})
+
     def filtered_roles(self, roles, request):
         """Return filtered roles for group from query params."""
         role_filters = self.filters_from_params(VALID_GROUP_ROLE_FILTERS, 'role', request)
@@ -605,7 +621,14 @@ class GroupViewSet(mixins.CreateModelMixin,
 
         filtered_roles = self.filtered_roles(roles, request)
 
-        return [RoleMinimumSerializer(role).data for role in filtered_roles]
+        annotated_roles = filtered_roles.annotate(policyCount=Count('policies', distinct=True))
+
+        if ORDERING_PARAM in request.query_params:
+            ordered_roles = self.order_queryset(annotated_roles, VALID_ROLE_ORDER_FIELDS,
+                                                request.query_params.get(ORDERING_PARAM))
+
+            return [RoleMinimumSerializer(role).data for role in ordered_roles]
+        return [RoleMinimumSerializer(role).data for role in annotated_roles]
 
     def obtain_roles_with_exclusion(self, request, group):
         """Obtain the queryset for roles based on scope."""
