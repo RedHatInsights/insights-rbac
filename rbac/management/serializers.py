@@ -17,7 +17,7 @@
 """API models for import organization."""
 # flake8: noqa
 # pylint: disable=unused-import
-from management.principal.serializer import PrincpalSerializer
+from management.principal.serializer import PrincipalSerializer
 from management.group.serializer import GroupSerializer
 from management.role.serializer import RoleSerializer
 from management.policy.serializer import PolicySerializer

@@ -1,17 +1,14 @@
 {
     "roles": [
         {
-            "name": "Ansible Automation Access",
-            "description": "An all access role which grants read and write permissions.",
+            "name": "Ansible Automation Access Local Test",
+            "description": "An all access role which grants read and write permissions, just for testing locally.",
             "system": true,
             "platform_default": true,
             "version": 2,
             "access": [
                 {
                     "permission": "ansible-automation:*:*"
-                },
-                {
-                    "permission": "inventory:*:*"
                 }
             ]
         }

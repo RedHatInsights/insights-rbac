@@ -52,6 +52,9 @@ class RoleViewsetTests(IdentityRequest):
             'platform_default': True
         }
 
+        self.display_fields = {'applications', 'description', 'uuid', 'name', 'system', 'created',
+                                'policyCount', 'accessCount', 'modified', 'platform_default'}
+
         with tenant_context(self.tenant):
             self.principal = Principal(username=self.user_data['username'])
             self.principal.save()
@@ -262,6 +265,7 @@ class RoleViewsetTests(IdentityRequest):
         client = APIClient()
         response = client.get(url, **self.headers)
 
+        # three parts in response: meta, links and data
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         for keyname in ['meta', 'links', 'data']:
             self.assertIn(keyname, response.data)
@@ -272,11 +276,57 @@ class RoleViewsetTests(IdentityRequest):
 
         for iterRole in response.data.get('data'):
             self.assertIsNotNone(iterRole.get('name'))
+            # fields displayed are same as defined
+            self.assertEqual(self.display_fields, set(iterRole.keys()))
             if iterRole.get('name') == role_name:
                 self.assertEqual(iterRole.get('accessCount'), 1)
                 role = iterRole
-                break
         self.assertEqual(role.get('name'), role_name)
+
+    def test_list_role_with_additional_fields_success(self):
+        """Test that we can read a list of roles and add fields."""
+        role_name = 'roleA'
+        field_1 = 'groups_in_count'
+        field_2 = 'groups_in'
+        new_diaplay_fields = self.display_fields
+        new_diaplay_fields.add(field_1)
+        new_diaplay_fields.add(field_2)
+        response = self.create_role(role_name)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+        # list a role
+        url = '{}?add_fields={},{}'.format(reverse('role-list'), field_1, field_2)
+        client = APIClient()
+        response = client.get(url, **self.headers)
+
+        # three parts in response: meta, links and data
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        for keyname in ['meta', 'links', 'data']:
+            self.assertIn(keyname, response.data)
+        self.assertIsInstance(response.data.get('data'), list)
+        self.assertEqual(len(response.data.get('data')), 3)
+
+        role = None
+
+        for iterRole in response.data.get('data'):
+            # fields displayed are same as defined, groupsInCount is added
+            self.assertEqual(new_diaplay_fields, set(iterRole.keys()))
+            if iterRole.get('name') == role_name:
+                self.assertEqual(iterRole.get('accessCount'), 1)
+                role = iterRole
+
+        self.assertEqual(role.get('name'), role_name)
+
+    def test_list_role_with_invalid_additional_fields(self):
+        """Test that invalid additional fields will raise exception."""
+        add_field = 'invalid_field'
+
+        # list a role
+        url = '{}?add_fields={}'.format(reverse('role-list'), add_field)
+        client = APIClient()
+        response = client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
     def test_update_role_success(self):
         """Test that we can update an existing role."""

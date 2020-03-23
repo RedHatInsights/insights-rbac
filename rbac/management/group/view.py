@@ -17,6 +17,7 @@
 
 """View for group management."""
 import logging
+from uuid import UUID
 
 from django.db.models.aggregates import Count
 from django.utils.translation import gettext as _
@@ -32,8 +33,11 @@ from management.group.serializer import (GroupInputSerializer,
 from management.permissions import GroupAccessPermission
 from management.principal.model import Principal
 from management.principal.proxy import PrincipalProxy
+from management.principal.serializer import PrincipalSerializer
 from management.querysets import get_group_queryset, get_object_principal_queryset
 from management.role.model import Role
+from management.role.view import RoleViewSet
+from management.utils import validate_and_get_key
 from rest_framework import mixins, serializers, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.filters import OrderingFilter
@@ -43,19 +47,72 @@ from rest_framework.response import Response
 USERNAMES_KEY = 'usernames'
 ROLES_KEY = 'roles'
 EXCLUDE_KEY = 'exclude'
+ORDERING_PARAM = 'order_by'
+VALID_ROLE_ORDER_FIELDS = list(RoleViewSet.ordering_fields)
+ROLE_DISCRIMINATOR_KEY = 'role_discriminator'
 VALID_EXCLUDE_VALUES = ['true', 'false']
+VALID_GROUP_ROLE_FILTERS = ['role_name', 'role_description']
+VALID_GROUP_PRINCIPAL_FILTERS = ['principal_username']
+VALID_ROLE_ROLE_DISCRIMINATOR = ['all', 'any']
+
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 
 class GroupFilter(filters.FilterSet):
     """Filter for group."""
 
+    def username_filter(self, queryset, field, value):
+        """Filter for group username lookup."""
+        filters = {'{}__username__icontains'.format(field): value}
+        filtered_set = queryset.filter(**filters)
+        return filtered_set | Group.platform_default_set()
+
+    def uuid_filter(self, queryset, field, values):
+        """Filter for group uuid lookup."""
+        uuids = values.split(',')
+        for uuid in uuids:
+            try:
+                UUID(uuid)
+            except ValueError:
+                key = 'groups uuid filter'
+                message = f'{uuid} is not a valid UUID.'
+                raise serializers.ValidationError({key: _(message)})
+        filters = {f'{field}__in': uuids}
+        filtered_set = queryset.filter(**filters)
+        return filtered_set
+
+    def roles_filter(self, queryset, field, values):
+        """Filter for group to lookup list of role name."""
+        if not values:
+            key = 'groups_filter'
+            message = 'No value of roles provided to filter groups!'
+            error = {
+                key: [_(message)]
+            }
+            raise serializers.ValidationError(error)
+        roles_list = [value.lower() for value in values.split(',')]
+
+        discriminator = validate_and_get_key(
+            self.request.query_params,
+            ROLE_DISCRIMINATOR_KEY,
+            VALID_ROLE_ROLE_DISCRIMINATOR,
+            'any')
+
+        if discriminator == 'any':
+            return queryset.filter(policies__roles__name__iregex=r'(' + '|'.join(roles_list) + ')')
+
+        for role_name in roles_list:
+            queryset = queryset.filter(policies__roles__name__icontains=role_name)
+        return queryset
+
     name = filters.CharFilter(field_name='name', lookup_expr='icontains')
-    username = filters.CharFilter(field_name='principals', lookup_expr='username__icontains')
+    username = filters.CharFilter(field_name='principals', method='username_filter')
+    role_names = filters.CharFilter(field_name='role_names', method='roles_filter')
+    uuid = filters.CharFilter(field_name='uuid', method='uuid_filter')
 
     class Meta:
         model = Group
-        fields = ['name', 'principals']
+        fields = ['name', 'principals', 'role_names', 'uuid']
 
 
 class GroupViewSet(mixins.CreateModelMixin,
@@ -151,6 +208,7 @@ class GroupViewSet(mixins.CreateModelMixin,
         @apiHeader {String} token User authorization token
 
         @apiParam (Query) {String} name Filter by group name.
+        @apiParam (Query) {array} uuid Filter by comma separated list of uuids
         @apiParam (Query) {Number} offset Parameter for selecting the start of data (default is 0).
         @apiParam (Query) {Number} limit Parameter for selecting the amount of data (default is 10).
 
@@ -293,9 +351,31 @@ class GroupViewSet(mixins.CreateModelMixin,
         group.save()
         return group
 
-    @action(detail=True, methods=['post', 'delete'])
+    @action(detail=True, methods=['get', 'post', 'delete'])
     def principals(self, request, uuid=None):
-        """Add or remove principals from a group."""
+        """Get, add or remove principals from a group."""
+        """
+        @api {get} /api/v1/groups/:uuid/principals/    Get principals for a group
+        @apiName getPrincipals
+        @apiGroup Group
+        @apiVersion 1.0.0
+        @apiDescription Get principals for a group
+
+        @apiHeader {String} token User authorization token
+
+        @apiParam (Path) {String} id Group unique identifier
+
+        @apiSuccess {String} uuid Group unique identifier
+        @apiSuccess {String} name Group name
+        @apiSuccess {Array} principals Array of principals
+        @apiSuccessExample {json} Success-Response:
+            HTTP/1.1 200 OK
+            {
+                "principals": [
+                    { "username": "jsmith" }
+                ]
+            }
+        """
         """
         @api {post} /api/v1/groups/:uuid/principals/   Add principals to a group
         @apiName addPrincipals
@@ -360,7 +440,21 @@ class GroupViewSet(mixins.CreateModelMixin,
             if isinstance(resp, dict) and 'errors' in resp:
                 return Response(status=resp['status_code'], data=resp['errors'])
             output = GroupSerializer(resp)
-            return Response(status=status.HTTP_200_OK, data=output.data)
+            response = Response(status=status.HTTP_200_OK, data=output.data)
+        elif request.method == 'GET':
+            principals_from_params = self.filtered_principals(group, request)
+            page = self.paginate_queryset(principals_from_params)
+            serializer = PrincipalSerializer(page, many=True)
+            principal_data = serializer.data
+            if principal_data:
+                username_list = [principal['username'] for principal in principal_data]
+            else:
+                username_list = []
+            proxy = PrincipalProxy()
+            resp = proxy.request_filtered_principals(username_list, account)
+            if isinstance(resp, dict) and 'errors' in resp:
+                return Response(status=resp.get('status_code'), data=resp.get('errors'))
+            response = self.get_paginated_response(resp.get('data'))
         else:
             if USERNAMES_KEY not in request.query_params:
                 key = 'detail'
@@ -369,7 +463,8 @@ class GroupViewSet(mixins.CreateModelMixin,
             username = request.query_params.get(USERNAMES_KEY, '')
             principals = [name.strip() for name in username.split(',')]
             self.remove_principals(group, principals, account)
-            return Response(status=status.HTTP_204_NO_CONTENT)
+            response = Response(status=status.HTTP_204_NO_CONTENT)
+        return response
 
     @action(detail=True, methods=['get', 'post', 'delete'])
     def roles(self, request, uuid=None):
@@ -384,6 +479,8 @@ class GroupViewSet(mixins.CreateModelMixin,
         @apiHeader {String} token User authorization token
 
         @apiParam (Path) {String} id Group unique identifier.
+
+        @apiParam (Query) {String} order_by Determine ordering of returned roles.
 
         @apiSuccess {Array} data Array of roles
         @apiSuccessExample {json} Success-Response:
@@ -482,14 +579,56 @@ class GroupViewSet(mixins.CreateModelMixin,
 
         return Response(status=status.HTTP_200_OK, data=response_data.data)
 
+    def order_queryset(self, queryset, valid_fields, order_field):
+        """Return queryset ordered according to order_by query param."""
+        all_valid_fields = valid_fields + ['-' + field for field in valid_fields]
+        if order_field in all_valid_fields:
+            return queryset.order_by(order_field)
+        else:
+            key = 'detail'
+            message = f'{order_field} is not a valid ordering field. Valid values are {all_valid_fields}'
+            raise serializers.ValidationError({key: _(message)})
+
+    def filtered_roles(self, roles, request):
+        """Return filtered roles for group from query params."""
+        role_filters = self.filters_from_params(VALID_GROUP_ROLE_FILTERS, 'role', request)
+        return roles.filter(**role_filters)
+
+    def filtered_principals(self, group, request):
+        """Return filtered principals for group from query params."""
+        principal_filters = self.filters_from_params(VALID_GROUP_PRINCIPAL_FILTERS, 'principal', request)
+        return group.principals.filter(**principal_filters)
+
+    def filters_from_params(self, valid_filters, model_name, request):
+        """Build filters from group params."""
+        filters = {}
+        for param_name, param_value in request.query_params.items():
+            if param_name in valid_filters:
+                attr_filter_name = param_name.replace(f'{model_name}_', '')
+                filters[f'{attr_filter_name}__icontains'] = param_value
+        return filters
+
     def obtain_roles(self, request, group):
         """Obtain roles based on request, supports exclusion."""
-        exclude = self.validate_and_get_exclude_key(request.query_params)
+        exclude = validate_and_get_key(
+            request.query_params,
+            EXCLUDE_KEY,
+            VALID_EXCLUDE_VALUES,
+            'false')
 
         roles = (group.roles_with_access() if exclude == 'false'
                  else self.obtain_roles_with_exclusion(request, group))
 
-        return [RoleMinimumSerializer(role).data for role in roles]
+        filtered_roles = self.filtered_roles(roles, request)
+
+        annotated_roles = filtered_roles.annotate(policyCount=Count('policies', distinct=True))
+
+        if ORDERING_PARAM in request.query_params:
+            ordered_roles = self.order_queryset(annotated_roles, VALID_ROLE_ORDER_FIELDS,
+                                                request.query_params.get(ORDERING_PARAM))
+
+            return [RoleMinimumSerializer(role).data for role in ordered_roles]
+        return [RoleMinimumSerializer(role).data for role in annotated_roles]
 
     def obtain_roles_with_exclusion(self, request, group):
         """Obtain the queryset for roles based on scope."""
@@ -501,14 +640,3 @@ class GroupViewSet(mixins.CreateModelMixin,
         # Exclude the roles in the group
         roles_for_group = group.roles().values('uuid')
         return roles.exclude(uuid__in=roles_for_group)
-
-    def validate_and_get_exclude_key(self, params):
-        """Validate the exclude key."""
-        exclude = params.get(EXCLUDE_KEY, 'false').lower()
-        if exclude not in VALID_EXCLUDE_VALUES:
-            key = 'detail'
-            message = '{} query parameter value {} is invalid. booleans are valid inputs.'.format(
-                EXCLUDE_KEY,
-                exclude)
-            raise serializers.ValidationError({key: _(message)})
-        return exclude
