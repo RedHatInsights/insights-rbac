@@ -586,19 +586,17 @@ class GroupViewSet(mixins.CreateModelMixin,
 
     def ordered_principals(self, principals, order_field):
         """Return principals ordered by order_field."""
-        all_fields = VALID_PRINCIPAL_ORDER_FIELDS + ['-' + field for field in VALID_PRINCIPAL_ORDER_FIELDS]
-        if order_field.lower() in all_fields:
-            if order_field.startswith('-'):
-                reverse = True
-                order_field = order_field[1:]
-            else:
-                reverse = False
-            try:
-                return sorted(principals, key=operator.itemgetter(order_field), reverse=reverse)
-            except KeyError:
-                key = 'detail'
-                message = f'Failed ot sort on {order_field}'
-                raise serializers.ValidationError({key: _(message)})
+        if order_field.startswith('-'):
+            reverse = True
+            order_field = order_field[1:]
+        else:
+            reverse = False
+        try:
+            return sorted(principals, key=operator.itemgetter(order_field), reverse=reverse)
+        except KeyError:
+            key = 'detail'
+            message = f'Failed to sort on {order_field}'
+            raise serializers.ValidationError({key: _(message)})
 
     def filtered_roles(self, roles, request):
         """Return filtered roles for group from query params."""
