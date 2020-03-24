@@ -15,58 +15,27 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Django database settings."""
-import os
-from tempfile import NamedTemporaryFile
-
-from django.conf import settings
-
 from .env import ENVIRONMENT
-
-# pylint: disable=invalid-name
-engines = {
-    'sqlite': 'django.db.backends.sqlite3',
-    'postgresql': 'tenant_schemas.postgresql_backend',
-    'mysql': 'django.db.backends.mysql',
-}
 
 
 def config():
     """Database config."""
-    service_name = ENVIRONMENT.get_value('DATABASE_SERVICE_NAME',
-                                         default='').upper().replace('-', '_')
-    if service_name:
-        engine = engines.get(ENVIRONMENT.get_value('DATABASE_ENGINE'),
-                             engines['postgresql'])
-    else:
-        engine = engines['postgresql']
-
-    name = ENVIRONMENT.get_value('DATABASE_NAME', default=None)
-
-    if not name and engine == engines['sqlite']:
-        name = os.path.join(settings.BASE_DIR, 'db.sqlite3')
-
     db_obj = {
-        'ENGINE': engine,
-        'NAME': name,
+        'ENGINE': 'tenant_schemas.postgresql_backend',
+        'NAME': ENVIRONMENT.get_value('DATABASE_NAME', default=None),
         'USER': ENVIRONMENT.get_value('DATABASE_USER', default=None),
         'PASSWORD': ENVIRONMENT.get_value('DATABASE_PASSWORD', default=None),
-        'HOST': ENVIRONMENT.get_value('{}_SERVICE_HOST'.format(service_name),
-                                      default=None),
-        'PORT': ENVIRONMENT.get_value('{}_SERVICE_PORT'.format(service_name),
-                                      default=None),
+        'HOST': ENVIRONMENT.get_value('DATABASE_HOST', default=None),
+        'PORT': ENVIRONMENT.get_value('DATABASE_PORT', default=None),
     }
 
-    database_cert = ENVIRONMENT.get_value('DATABASE_SERVICE_CERT', default=None)
-    if database_cert:
-        temp_cert_file = NamedTemporaryFile(delete=False, mode='w', suffix='pem')
-        with open(temp_cert_file.name, mode='w') as cert_file:
-            cert_file.write(database_cert)
-        db_options = {
-            'OPTIONS': {
-                'sslmode': 'verify-full',
-                'sslrootcert': temp_cert_file.name
-            }
+    db_options = {
+        'OPTIONS': {
+            'sslmode': ENVIRONMENT.get_value('PGSSLMODE', default='prefer'),
+            'sslrootcert': ENVIRONMENT.get_value('PGSSLROOTCERT',
+                                                 default='/etc/rds-certs/rds-cacert')
         }
-        db_obj.update(db_options)
+    }
+    db_obj.update(db_options)
 
     return db_obj

@@ -92,7 +92,8 @@ class PrincipalProxy:  # pylint: disable=too-few-public-methods
             'username': item.get('username'),
             'email': item.get('email'),
             'first_name': item.get('first_name'),
-            'last_name': item.get('last_name')
+            'last_name': item.get('last_name'),
+            'is_active': item.get('is_active')
         }
         return processed_item
 
