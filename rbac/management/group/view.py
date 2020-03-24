@@ -17,7 +17,6 @@
 
 """View for group management."""
 import logging
-import operator
 from uuid import UUID
 
 from django.db.models.aggregates import Count
@@ -453,15 +452,12 @@ class GroupViewSet(mixins.CreateModelMixin,
             proxy = PrincipalProxy()
             sort_field = request.query_params.get(ORDERING_PARAM)
             if sort_field and 'username' in sort_field:
-                sort_order = 'asc' if sort_field == 'username' else 'desc'
+                sort_order = 'desc' if sort_field == '-username' else 'asc'
             else:
                 sort_order = None
             resp = proxy.request_filtered_principals(username_list, account, sort_order=sort_order)
             if isinstance(resp, dict) and 'errors' in resp:
                 return Response(status=resp.get('status_code'), data=resp.get('errors'))
-            if sort_field and not sort_order:
-                principals = self.ordered_principals(resp.get('data'), sort_field)
-                resp['data'] = principals
             response = self.get_paginated_response(resp.get('data'))
         else:
             if USERNAMES_KEY not in request.query_params:
@@ -586,20 +582,6 @@ class GroupViewSet(mixins.CreateModelMixin,
             return Response(status=status.HTTP_204_NO_CONTENT)
 
         return Response(status=status.HTTP_200_OK, data=response_data.data)
-
-    def ordered_principals(self, principals, order_field):
-        """Return principals ordered by order_field."""
-        if order_field.startswith('-'):
-            reverse = True
-            order_field = order_field[1:]
-        else:
-            reverse = False
-        try:
-            return sorted(principals, key=operator.itemgetter(order_field), reverse=reverse)
-        except KeyError:
-            key = 'detail'
-            message = f'Failed to sort on {order_field}'
-            raise serializers.ValidationError({key: _(message)})
 
     def order_queryset(self, queryset, valid_fields, order_field):
         """Return queryset ordered according to order_by query param."""

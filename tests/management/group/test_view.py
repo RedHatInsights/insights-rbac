@@ -611,46 +611,6 @@ class GroupViewsetTests(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(principals), 1)
 
-    @patch('management.principal.proxy.PrincipalProxy.request_filtered_principals',
-           return_value={'status_code': 200, 'data': [{'username': 'test_user',
-                                                       'first_name': 'test',
-                                                       'last_name': 'user'},]})
-    def test_principal_get_ordering_success(self, mock_request):
-        """Test that passing a valid non-username order_by parameter works as expected"""
-        mock_principals = [
-            {'username': self.principal.username,
-             'first_name': self.principal.username[:1],
-             'last_name': self.principal.username[1:]
-            },
-            {'username': self.principalB.username,
-             'first_name': self.principalB.username[:1],
-             'last_name': self.principalB.username[1:]
-            }
-        ]
-        mock_request.return_value['data'] = sorted(mock_principals, key=operator.itemgetter('first_name')) 
-        url = f"{reverse('group-principals', kwargs={'uuid': self.group.uuid})}?order_by=first_name"
-        client = APIClient()
-        response = client.get(url, **self.headers)
-        principals = response.data.get('data')
-
-        mock_request.assert_called_with([self.principal.username, self.principalB.username], ANY, sort_order=None)
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(principals), 2)    
-
-    @patch('management.principal.proxy.PrincipalProxy.request_filtered_principals',
-           return_value={'status_code': 200, 'data': [{'username': 'test_user', 
-                                                       'first_name': 'test',
-                                                       'last_name': 'user'}]})
-    def test_principal_get_ordering_failure(self, mock_request):
-        """Test that passing an invalid order_by parameter fails as expected."""
-        url = f"{reverse('group-principals', kwargs={'uuid': self.group.uuid})}?order_by=GPA"
-        client = APIClient()
-        response = client.get(url, **self.headers)
-        principals = response.data.get('data')
-
-        mock_request.assert_called_with([self.principal.username, self.principalB.username], ANY, sort_order=None)
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-
     def test_add_group_roles_system_policy_create_success(self):
         """Test that adding a role to a group without a system policy returns successfully."""
         url = reverse('group-roles', kwargs={'uuid': self.group.uuid})
