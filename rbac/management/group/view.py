@@ -53,6 +53,7 @@ ROLE_DISCRIMINATOR_KEY = 'role_discriminator'
 VALID_EXCLUDE_VALUES = ['true', 'false']
 VALID_GROUP_ROLE_FILTERS = ['role_name', 'role_description']
 VALID_GROUP_PRINCIPAL_FILTERS = ['principal_username']
+VALID_PRINCIPAL_ORDER_FIELDS = ['username']
 VALID_ROLE_ROLE_DISCRIMINATOR = ['all', 'any']
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
@@ -450,8 +451,9 @@ class GroupViewSet(mixins.CreateModelMixin,
             else:
                 username_list = []
             proxy = PrincipalProxy()
-            sort_field = request.query_params.get(ORDERING_PARAM)
-            if sort_field and 'username' in sort_field:
+            all_valid_fields = VALID_PRINCIPAL_ORDER_FIELDS + ['-' + field for field in VALID_PRINCIPAL_ORDER_FIELDS]
+            if request.query_params.get(ORDERING_PARAM):
+                sort_field = validate_and_get_key(request.query_params, ORDERING_PARAM, all_valid_fields, 'username')
                 sort_order = 'desc' if sort_field == '-username' else 'asc'
             else:
                 sort_order = None

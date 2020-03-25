@@ -606,10 +606,22 @@ class GroupViewsetTests(IdentityRequest):
         client = APIClient()
         response = client.get(url, **self.headers)
         principals = response.data.get('data')
-
-        mock_request.assert_called_with([self.principal.username, self.principalB.username], ANY, sort_order='asc')
+        expected_principals = sorted([self.principal.username, self.principalB.username])
+        mock_request.assert_called_with(expected_principals, ANY, sort_order='asc')
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(principals), 1)
+
+    @patch('management.principal.proxy.PrincipalProxy.request_filtered_principals',
+           return_value={'status_code': 200, 'data': [{'username': 'test_user'}]})
+    def test_principal_get_ordering_nonusername_fail(self, mock_request):
+        """Test that passing a username order_by parameter calls the proxy correctly."""
+        url = f"{reverse('group-principals', kwargs={'uuid': self.group.uuid})}?order_by=best_joke"
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        principals = response.data.get('data')
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(principals, None)
 
     def test_add_group_roles_system_policy_create_success(self):
         """Test that adding a role to a group without a system policy returns successfully."""
