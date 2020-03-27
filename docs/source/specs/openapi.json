@@ -598,6 +598,16 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "in": "query",
+            "name": "order_by",
+            "required": false,
+            "description": "Parameter for ordering principals by value. For inverse ordering, supply '-' before the param value, such as: ?order_by=-username",
+            "schema": {
+              "type": "string",
+              "enum": ["username"]
+            }
           }
         ],
         "responses": {
