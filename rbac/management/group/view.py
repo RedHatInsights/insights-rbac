@@ -454,7 +454,7 @@ class GroupViewSet(mixins.CreateModelMixin,
             all_valid_fields = VALID_PRINCIPAL_ORDER_FIELDS + ['-' + field for field in VALID_PRINCIPAL_ORDER_FIELDS]
             if request.query_params.get(ORDERING_PARAM):
                 sort_field = validate_and_get_key(request.query_params, ORDERING_PARAM, all_valid_fields, 'username')
-                sort_order = 'desc' if sort_field == '-username' else 'asc'
+                sort_order = 'des' if sort_field == '-username' else 'asc'
             else:
                 sort_order = None
             resp = proxy.request_filtered_principals(username_list, account, sort_order=sort_order)
