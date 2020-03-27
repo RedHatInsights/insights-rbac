@@ -78,6 +78,7 @@
           "Principal"
         ],
         "summary": "List the principals for a tenant",
+        "description": "By default, responses are sorted in ascending order by username",
         "operationId": "listPrincipals",
         "parameters": [
           {
@@ -202,6 +203,7 @@
           "Group"
         ],
         "summary": "List the groups for a tenant",
+        "description": "By default, responses are sorted in ascending order by group name",
         "operationId": "listGroups",
         "parameters": [
           {
@@ -578,6 +580,7 @@
           "Group"
         ],
         "summary": "Get a list of principals from a group in the tenant",
+        "description": "By default, responses are sorted in ascending order by username",
         "operationId": "getPrincipalsFromGroup",
         "parameters": [
           {
@@ -715,6 +718,7 @@
           "Group"
         ],
         "summary": "List the roles for a group in the tenant",
+        "description": "By default, responses are sorted in ascending order by role name",
         "operationId": "listRolesForGroup",
         "parameters": [
           {
@@ -1022,6 +1026,7 @@
           "Role"
         ],
         "summary": "List the roles for a tenant",
+        "description": "By default, responses are sorted in ascending order by role name",
         "operationId": "listRoles",
         "parameters": [
           {
@@ -1416,6 +1421,7 @@
           "Policy"
         ],
         "summary": "List the policies in the tenant",
+        "description": "By default, responses are sorted in ascending order by policy name",
         "operationId": "listPolicies",
         "parameters": [
           {
@@ -1641,6 +1647,7 @@
           "Access"
         ],
         "summary": "Get the permitted access for a principal in the tenant (defaults to principal from the identity header)",
+        "description": "Access responses are sorted in ascending order by an ID internal to the database",
         "operationId": "getPrincipalAccess",
         "parameters": [
           {
