@@ -31,7 +31,8 @@ class GroupModelTests(IdentityRequest):
         super().setUp()
 
         with tenant_context(self.tenant):
-            self.group = Group.objects.create(name='groupA')
+            self.group = Group.objects.create(name='groupA', platform_default=True, system=True)
+            self.groupB = Group.objects.create(name='groupB', system=True)
             self.roleA = Role.objects.create(name='roleA')
             self.roleB = Role.objects.create(name='roleB')
             self.policy = Policy(name='policyA', group=self.group)
@@ -58,3 +59,9 @@ class GroupModelTests(IdentityRequest):
         """Test the role count for a group."""
         with tenant_context(self.tenant):
             self.assertEqual(self.group.role_count(), 1)
+
+    def test_platform_default_set(self):
+        """Test the platform default queryset only returns system groups."""
+        with tenant_context(self.tenant):
+            platform_default_groups = Group.platform_default_set()
+            self.assertEqual(list(platform_default_groups), [self.group, self.groupB])
