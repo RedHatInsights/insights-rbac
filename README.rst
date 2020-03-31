@@ -8,9 +8,10 @@ Insights Role Based Access Control README
 About
 ~~~~~
 
-Insights RBAC's goal is to provide an open source solution for storing roles, permissions and policies.
+Insights RBAC's goal is to provide an open source solution for storing roles, permissions and groups.
 
 Full documentation is available through readthedocs_.
+More info is available through platformdocs_.
 
 
 Getting Started
@@ -171,6 +172,7 @@ Default roles:
 For additional information please refer to Contributing_.
 
 .. _readthedocs: http://insights-rbac.readthedocs.io/en/latest/
+.. _platformdocs: https://platform-docs.cloud.paas.psi.redhat.com/backend/rbac.html
 .. _tutorial: https://www.postgresql.org/docs/10/static/tutorial-start.html
 .. _`Install APIDoc`: http://apidocjs.com/#install
 .. _`Working with Openshift`: https://insights-rbac.readthedocs.io/en/latest/openshift.html
