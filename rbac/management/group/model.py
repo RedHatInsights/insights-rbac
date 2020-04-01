@@ -52,7 +52,7 @@ class Group(models.Model):
 
     def platform_default_set():
         """Queryset for platform default group."""
-        return Group.objects.filter(system=True)
+        return Group.objects.filter(platform_default=True)
 
     def __policy_ids(self):
         """Policy IDs for a group."""
