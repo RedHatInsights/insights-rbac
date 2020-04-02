@@ -330,6 +330,7 @@ CELERY_BROKER_URL = ENVIRONMENT.get_value('CELERY_BROKER_URL',
 
 # Role Seeding Setup
 ROLE_SEEDING_ENABLED = ENVIRONMENT.bool('ROLE_SEEDING_ENABLED', default=True)
+logconfig_dict = LOGGING
 
 # disable log messages less than CRITICAL when running unit tests.
 if len(sys.argv) > 1 and sys.argv[1] == 'test':
