@@ -287,6 +287,11 @@ LOGGING = {
             'handlers': LOGGING_HANDLERS,
             'level': RBAC_LOGGING_LEVEL,
         },
+        'gunicorn': {
+            'handlers': ['console'],
+            'level': RBAC_LOGGING_LEVEL,
+            'propagate': False,
+        },
     },
 }
 
