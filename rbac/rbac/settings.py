@@ -291,6 +291,7 @@ LOGGING = {
 }
 
 if CW_AWS_ACCESS_KEY_ID:
+    print('setting up CW handler')
     NAMESPACE = ENVIRONMENT.get_value('APP_NAMESPACE', default='unknown')
     BOTO3_SESSION = Session(aws_access_key_id=CW_AWS_ACCESS_KEY_ID,
                             aws_secret_access_key=CW_AWS_SECRET_ACCESS_KEY,
