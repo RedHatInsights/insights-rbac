@@ -287,16 +287,10 @@ LOGGING = {
             'handlers': LOGGING_HANDLERS,
             'level': RBAC_LOGGING_LEVEL,
         },
-        'gunicorn.access': {
-            'handlers': ['console'],
-            'level': RBAC_LOGGING_LEVEL,
-            'propagate': False,
-        },
     },
 }
 
 if CW_AWS_ACCESS_KEY_ID:
-    print('setting up CW handler')
     NAMESPACE = ENVIRONMENT.get_value('APP_NAMESPACE', default='unknown')
     BOTO3_SESSION = Session(aws_access_key_id=CW_AWS_ACCESS_KEY_ID,
                             aws_secret_access_key=CW_AWS_SECRET_ACCESS_KEY,
@@ -306,8 +300,9 @@ if CW_AWS_ACCESS_KEY_ID:
         'class': 'watchtower.CloudWatchLogHandler',
         'boto3_session': BOTO3_SESSION,
         'log_group': CW_LOG_GROUP,
-        'stream_name': 'rbac-test',
+        'stream_name': NAMESPACE,
         'formatter': LOGGING_FORMATTER,
+        'use_queues': False,
     }
     LOGGING['handlers']['watchtower'] = WATCHTOWER_HANDLER
 
@@ -335,7 +330,6 @@ CELERY_BROKER_URL = ENVIRONMENT.get_value('CELERY_BROKER_URL',
 
 # Role Seeding Setup
 ROLE_SEEDING_ENABLED = ENVIRONMENT.bool('ROLE_SEEDING_ENABLED', default=True)
-logconfig_dict = LOGGING
 
 # disable log messages less than CRITICAL when running unit tests.
 if len(sys.argv) > 1 and sys.argv[1] == 'test':
