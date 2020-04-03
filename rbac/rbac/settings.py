@@ -301,7 +301,7 @@ if CW_AWS_ACCESS_KEY_ID:
         'boto3_session': BOTO3_SESSION,
         'log_group': CW_LOG_GROUP,
         'stream_name': 'rbac-test',
-        'formatter': LOGGING_FORMATTER,
+        'formatter': 'json',
         'use_queues': False,
     }
     LOGGING['handlers']['watchtower'] = WATCHTOWER_HANDLER
