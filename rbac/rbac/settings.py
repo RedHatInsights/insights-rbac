@@ -300,8 +300,8 @@ if CW_AWS_ACCESS_KEY_ID:
         'class': 'watchtower.CloudWatchLogHandler',
         'boto3_session': BOTO3_SESSION,
         'log_group': CW_LOG_GROUP,
-        'stream_name': 'rbac-test',
-        'formatter': 'json',
+        'stream_name': 'rbac-test-local',
+        'formatter': LOGGING_FORMATTER,
         'use_queues': False,
     }
     LOGGING['handlers']['watchtower'] = WATCHTOWER_HANDLER
