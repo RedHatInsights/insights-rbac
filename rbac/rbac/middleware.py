@@ -297,7 +297,7 @@ class IdentityHeaderMiddleware(MiddlewareMixin):  # pylint: disable=R0903
             'method': request.method,
             'path': request.path + query_string,
             'status': response.status_code,
-            'req_id': req_id,
+            'request_id': req_id,
             'account': account,
             'username': username,
             'is_admin': is_admin,
