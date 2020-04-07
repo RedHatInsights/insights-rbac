@@ -277,9 +277,9 @@ class IdentityHeaderMiddleware(MiddlewareMixin):  # pylint: disable=R0903
             request (object): The request object
             response (object): The response object
         """
-        context = ''
         query_string = ''
         is_admin = False
+        is_system = False
         account = None
         username = None
         req_id = None
@@ -287,15 +287,24 @@ class IdentityHeaderMiddleware(MiddlewareMixin):  # pylint: disable=R0903
             query_string = '?{}'.format(request.META['QUERY_STRING'])
 
         if hasattr(request, 'user') and request.user:
-            is_admin = f'Admin: {request.user.admin}'
+            is_admin = request.user.admin
             account = request.user.account
             username = request.user.username
-            is_system = f'System: {request.user.system}'
+            is_system = request.user.system
             req_id = request.user.req_id
-        if account:
-            context = f' -- {req_id} {account} {username} {is_admin} {is_system}'
-        logger.info(f'{request.method} {request.path}{query_string}'  # pylint: disable=W1203
-                    f' {response.status_code}{context}')
+
+        log_object = {
+            'method': request.method,
+            'path': request.path + query_string,
+            'status': response.status_code,
+            'request_id': req_id,
+            'account': account,
+            'username': username,
+            'is_admin': is_admin,
+            'is_system': is_system,
+        }
+
+        logger.info(log_object)
         return response
 
 
