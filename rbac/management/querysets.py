@@ -94,9 +94,7 @@ def get_role_queryset(request):
 
     username = request.query_params.get('username')
     if username:
-        decoded = request.user.identity_header.get('decoded', {})
-        identity_username = decoded.get('identity', {}).get('user', {}).get('username')
-        if username != identity_username and not request.user.admin:
+        if username != request.user.username and not request.user.admin:
             return Role.objects.none()
         else:
             queryset = get_object_principal_queryset(request, PRINCIPAL_SCOPE, Role,

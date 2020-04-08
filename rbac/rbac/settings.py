@@ -110,7 +110,6 @@ MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'django.middleware.common.CommonMiddleware',
     'rbac.middleware.IdentityHeaderMiddleware',
-    'rbac.middleware.RolesTenantMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',
     'django_prometheus.middleware.PrometheusAfterMiddleware',
@@ -119,6 +118,8 @@ MIDDLEWARE = [
 DEVELOPMENT = ENVIRONMENT.bool('DEVELOPMENT', default=False)
 if DEVELOPMENT:
     MIDDLEWARE.insert(5, 'rbac.dev_middleware.DevelopmentIdentityHeaderMiddleware')
+# Don't try to go verify Principals against the BOP user service
+BYPASS_BOP_VERIFICATION = ENVIRONMENT.bool('BYPASS_BOP_VERIFICATION', default=False)
 
 AUTHENTICATION_BACKENDS = [
     'django.contrib.auth.backends.AllowAllUsersModelBackend',
@@ -350,6 +351,7 @@ GROUP_SEEDING_ENABLED = ENVIRONMENT.bool('GROUP_SEEDING_ENABLED', default=True)
 if len(sys.argv) > 1 and sys.argv[1] == 'test':
     logging.disable(logging.CRITICAL)
 
+# Optionally log all DB queries
 if ENVIRONMENT.bool('LOG_DATABASE_QUERIES', default=False):
     LOGGING['loggers']['django.db.backends'] = {
         'handlers': ['console'],

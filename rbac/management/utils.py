@@ -44,32 +44,33 @@ def validate_psk(psk, client_id):
 def get_principal_from_request(request):
     """Obtain principal from the request object."""
     current_user = request.user.username
-    username = request.query_params.get(USERNAME_KEY)
+    qs_user = request.query_params.get(USERNAME_KEY)
 
-    if username and not request.user.admin:
+    if qs_user and not request.user.admin:
         raise PermissionDenied()
-    if not username:
-        username = current_user
+    username = qs_user if qs_user else current_user
 
-    return get_principal(username, request.user.account)
+    return get_principal(username, request.user.account, 
+                         verify_principal=not qs_user)
 
 
-def get_principal(username, account):
+def get_principal(username, account, verify_principal=True):
     """Get principals from username."""
     # First check if principal exist on our side,
     # if not call BOP to check if user exist in the account.
     try:
         principal = Principal.objects.get(username__iexact=username)
     except Principal.DoesNotExist:
-        proxy = PrincipalProxy()
-        resp = proxy.request_filtered_principals([username], account)
-        if isinstance(resp, dict) and 'errors' in resp:
-            raise Exception('Dependency error: request to get users from dependent service failed.')
+        if verify_principal:
+            proxy = PrincipalProxy()
+            resp = proxy.request_filtered_principals([username], account)
+            if isinstance(resp, dict) and 'errors' in resp:
+                raise Exception('Dependency error: request to get users from dependent service failed.')
 
-        if resp.get('data') == []:
-            key = 'detail'
-            message = 'No data found for principal with username {}.'.format(username)
-            raise serializers.ValidationError({key: _(message)})
+            if resp.get('data') == []:
+                key = 'detail'
+                message = 'No data found for principal with username {}.'.format(username)
+                raise serializers.ValidationError({key: _(message)})
 
         return Principal.objects.create(username=username)
 

@@ -115,6 +115,11 @@ class PrincipalProxy:  # pylint: disable=too-few-public-methods
 
     def _request_principals(self, url, account=None, account_filter=False, method=requests.get, params=None, data=None):
         """Send request to proxy service."""
+        if settings.BYPASS_BOP_VERIFICATION:
+            to_return = []
+            for principal in data['users']:
+                to_return.append(dict(username=principal))
+            return dict(data=to_return)
         headers = {
             USER_ENV_HEADER: self.user_env,
             CLIENT_ID_HEADER: self.client_id,

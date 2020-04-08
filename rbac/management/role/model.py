@@ -73,19 +73,21 @@ class ResourceDefinition(models.Model):
     attributeFilter = JSONField(default=dict)
     access = models.ForeignKey(Access, null=True, on_delete=models.CASCADE,
                                related_name='resourceDefinitions')
-    
+
     @property
     def role(self):
         if self.access:
             return self.access.role
-    
+
 
 def role_related_obj_change_cache_handler(sender=None, instance=None, using=None, **kwargs):
-    logger.info('Handling signal for added/removed/changed role-related object %s - invalidating associated user cache keys', instance)
+    logger.info('Handling signal for added/removed/changed role-related object %s - '
+                'invalidating associated user cache keys', instance)
     cache = AccessCache(connections[using].schema_name)
     if instance.role:
         for principal in Principal.objects.filter(group__policies__roles__pk=instance.role.pk):
             cache.delete_policy(principal.uuid)
+
 
 signals.pre_delete.connect(role_related_obj_change_cache_handler, sender=Role)
 signals.pre_delete.connect(role_related_obj_change_cache_handler, sender=Access)
