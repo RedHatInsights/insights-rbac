@@ -16,12 +16,19 @@
 #
 
 """Model for role management."""
+import logging
 from uuid import uuid4
 
 from django.contrib.postgres.fields import JSONField
-from django.db import models
+from django.db import models, connections
+from django.db.models import signals
 from django.utils import timezone
+from management.cache import AccessCache
 from management.rbac_fields import AutoDateTimeField
+from management.principal.model import Principal
+
+
+logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 
 class Role(models.Model):
@@ -36,6 +43,10 @@ class Role(models.Model):
     version = models.PositiveIntegerField(default=1)
     created = models.DateTimeField(default=timezone.now)
     modified = AutoDateTimeField(default=timezone.now)
+
+    @property
+    def role(self):
+        return self
 
     class Meta:
         ordering = ['name', 'modified']
@@ -62,3 +73,22 @@ class ResourceDefinition(models.Model):
     attributeFilter = JSONField(default=dict)
     access = models.ForeignKey(Access, null=True, on_delete=models.CASCADE,
                                related_name='resourceDefinitions')
+    
+    @property
+    def role(self):
+        if self.access:
+            return self.access.role
+    
+
+def role_related_obj_change_cache_handler(sender=None, instance=None, using=None, **kwargs):
+    logger.info('Handling signal for added/removed/changed role-related object %s - invalidating associated user cache keys', instance)
+    cache = AccessCache(connections[using].schema_name)
+    if instance.role:
+        for principal in Principal.objects.filter(group__policies__roles__pk=instance.role.pk):
+            cache.delete_policy(principal.uuid)
+
+signals.pre_delete.connect(role_related_obj_change_cache_handler, sender=Role)
+signals.pre_delete.connect(role_related_obj_change_cache_handler, sender=Access)
+signals.pre_delete.connect(role_related_obj_change_cache_handler, sender=ResourceDefinition)
+signals.post_save.connect(role_related_obj_change_cache_handler, sender=Access)
+signals.post_save.connect(role_related_obj_change_cache_handler, sender=ResourceDefinition)

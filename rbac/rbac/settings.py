@@ -78,6 +78,7 @@ INSTALLED_APPS = [
     'django_filters',
     'corsheaders',
     'django_prometheus',
+    'django_extensions',
 
     # local apps
     'api',
@@ -93,6 +94,7 @@ SHARED_APPS = (
     'django.contrib.sessions',
     'django.contrib.messages',
     'rest_framework',
+    'django_extensions'
 )
 
 TENANT_APPS = (
@@ -328,6 +330,18 @@ DEFAULT_REDIS_URL = f'redis://{REDIS_HOST}:{REDIS_PORT}/0'
 CELERY_BROKER_URL = ENVIRONMENT.get_value('CELERY_BROKER_URL',
                                           default=DEFAULT_REDIS_URL)
 
+ACCESS_CACHE_DB = 1
+ACCESS_CACHE_LIFETIME = 10 * 60
+
+REDIS_CACHE_CONNECTION_PARAMS = dict(
+    host=REDIS_HOST,
+    port=REDIS_PORT,
+    db=ACCESS_CACHE_DB,
+    socket_connect_timeout=0.1,
+    socket_timeout=0.1
+)
+ACCESS_CACHE_ENABLED = ENVIRONMENT.bool('ACCESS_CACHE_ENABLED', default=True)
+
 # Seeding Setup
 ROLE_SEEDING_ENABLED = ENVIRONMENT.bool('ROLE_SEEDING_ENABLED', default=True)
 GROUP_SEEDING_ENABLED = ENVIRONMENT.bool('GROUP_SEEDING_ENABLED', default=True)
@@ -335,3 +349,10 @@ GROUP_SEEDING_ENABLED = ENVIRONMENT.bool('GROUP_SEEDING_ENABLED', default=True)
 # disable log messages less than CRITICAL when running unit tests.
 if len(sys.argv) > 1 and sys.argv[1] == 'test':
     logging.disable(logging.CRITICAL)
+
+if ENVIRONMENT.bool('LOG_DATABASE_QUERIES', default=False):
+    LOGGING['loggers']['django.db.backends'] = {
+        'handlers': ['console'],
+        'level': 'DEBUG',
+        'propagate': False
+    }
