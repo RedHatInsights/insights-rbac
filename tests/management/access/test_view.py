@@ -87,6 +87,8 @@ class AccessViewTests(IdentityRequest):
         url = reverse('role-list')
         client = APIClient()
         response = client.post(url, test_data, format='json', **self.headers)
+        print("RESPONSE: ")
+        print(response.data)
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         return response
 
@@ -125,6 +127,68 @@ class AccessViewTests(IdentityRequest):
         self.assertEqual(len(response.data.get('data')), 1)
         self.assertEqual(response.data.get('meta').get('limit'), 1000)
         self.assertEqual(self.access_data, response.data.get('data')[0])
+
+    def test_get_access_no_partial_match(self):
+        """Test that we can have a partial match on app/permission."""
+        role_name = 'roleA'
+        policy_name = 'policyA'
+        access_data = {
+            'permission': 'app:foo:bar',
+            'resourceDefinitions': [
+                {
+                    'attributeFilter': {
+                          'key': 'keyA',
+                          'operation': 'equal',
+                        'value': 'valueA'
+                    }
+                }
+            ]
+        }
+        response = self.create_role(role_name, access_data)
+        role_uuid = response.data.get('uuid')
+        self.create_policy(policy_name, self.group.uuid, [role_uuid])
+
+        url = '{}?application={}&username={}'.format(reverse('access'),
+                                                     'ap',
+                                                     self.principal.username)
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIsNotNone(response.data.get('data'))
+        self.assertIsInstance(response.data.get('data'), list)
+        self.assertEqual(len(response.data.get('data')), 0)
+        self.assertEqual(response.data.get('meta').get('limit'), 1000)
+
+    def test_get_access_no_match(self):
+        """Test that we only match on the application name of the permission data."""
+        role_name = 'roleA'
+        policy_name = 'policyA'
+        access_data = {
+            'permission': 'app:foo:bar',
+            'resourceDefinitions': [
+                {
+                    'attributeFilter': {
+                          'key': 'keyA',
+                          'operation': 'equal',
+                        'value': 'valueA'
+                    }
+                }
+            ]
+        }
+        response = self.create_role(role_name, access_data)
+        role_uuid = response.data.get('uuid')
+        self.create_policy(policy_name, self.group.uuid, [role_uuid])
+
+        url = '{}?application={}&username={}'.format(reverse('access'),
+                                                     'foo',
+                                                     self.principal.username)
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIsNotNone(response.data.get('data'))
+        self.assertIsInstance(response.data.get('data'), list)
+        self.assertEqual(len(response.data.get('data')), 0)
+        self.assertEqual(response.data.get('meta').get('limit'), 1000)
 
     def test_get_access_with_limit(self):
         """Test that we can obtain the expected access with pagination."""
