@@ -83,9 +83,7 @@ def access_for_roles(roles, param_application):
     for role in set(roles):
         role_access = set(role.access.all())
         for access_item in role_access:
-            split_permission = access_item.permission.split(':')
-            permission_application = next(iter(split_permission))
-            if param_application == permission_application:
+            if param_application == access_item.permission_application():
                 access.append(access_item)
     return access
 
