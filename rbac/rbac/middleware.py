@@ -114,7 +114,7 @@ class IdentityHeaderMiddleware(BaseTenantMiddleware):
 
         return access
 
-    def process_request(self, request):  # noqa: C901, R1710
+    def process_request(self, request):  # pylint: disable=R1710
         """Process request for identity middleware.
 
         Args:
