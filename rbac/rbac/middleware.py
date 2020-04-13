@@ -175,10 +175,16 @@ class IdentityHeaderMiddleware(BaseTenantMiddleware):
             query_string = '?{}'.format(request.META['QUERY_STRING'])
 
         if hasattr(request, 'user') and request.user:
-            is_admin = request.user.admin
-            account = request.user.account
-            username = request.user.username
-            is_system = request.user.system
+            username = request.user.username            
+            if username:
+                # rbac.api.models.User has these fields
+                is_admin = request.user.admin
+                account = request.user.account
+                is_system = request.user.system
+            else:
+                # django.contrib.auth.models.AnonymousUser does not
+                is_admin = is_system = False
+                account = None
 
         log_object = {
             'method': request.method,
