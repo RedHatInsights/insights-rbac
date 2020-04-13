@@ -87,8 +87,6 @@ class AccessViewTests(IdentityRequest):
         url = reverse('role-list')
         client = APIClient()
         response = client.post(url, test_data, format='json', **self.headers)
-        print("RESPONSE: ")
-        print(response.data)
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         return response
 
