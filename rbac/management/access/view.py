@@ -93,7 +93,7 @@ class AccessView(APIView):
             access_policy = self.serializer_class(queryset, many=True).data
             cache.save_policy(principal.uuid, app, access_policy)
         page = self.paginate_queryset(access_policy)
-        
+
         if page is not None:
             return self.get_paginated_response(access_policy)
         return Response({'data': access_policy})

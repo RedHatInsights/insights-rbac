@@ -20,12 +20,12 @@ import logging
 from uuid import uuid4
 
 from django.contrib.postgres.fields import JSONField
-from django.db import models, connections
+from django.db import connections, models
 from django.db.models import signals
 from django.utils import timezone
 from management.cache import AccessCache
-from management.rbac_fields import AutoDateTimeField
 from management.principal.model import Principal
+from management.rbac_fields import AutoDateTimeField
 
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
@@ -46,6 +46,7 @@ class Role(models.Model):
 
     @property
     def role(self):
+        """Get role for self."""
         return self
 
     class Meta:
@@ -76,11 +77,13 @@ class ResourceDefinition(models.Model):
 
     @property
     def role(self):
+        """Get role for RD."""
         if self.access:
             return self.access.role
 
 
 def role_related_obj_change_cache_handler(sender=None, instance=None, using=None, **kwargs):
+    """Signal handler for invalidating Principal cache on Role object change."""
     logger.info('Handling signal for added/removed/changed role-related object %s - '
                 'invalidating associated user cache keys', instance)
     cache = AccessCache(connections[using].schema_name)

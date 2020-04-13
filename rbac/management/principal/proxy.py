@@ -113,7 +113,8 @@ class PrincipalProxy:  # pylint: disable=too-few-public-methods
         }
         return proxy_conn_info
 
-    def _request_principals(self, url, account=None, account_filter=False, method=requests.get, params=None, data=None):
+    def _request_principals(self, url, account=None, account_filter=False, method=requests.get,  # noqa: C901
+                            params=None, data=None):
         """Send request to proxy service."""
         if settings.BYPASS_BOP_VERIFICATION:
             to_return = []

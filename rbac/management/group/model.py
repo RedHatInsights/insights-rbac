@@ -19,7 +19,7 @@
 import logging
 from uuid import uuid4
 
-from django.db import models, connections
+from django.db import connections, models
 from django.db.models import signals
 from django.utils import timezone
 from management.cache import AccessCache
@@ -29,6 +29,7 @@ from management.role.model import Role
 
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
+
 
 class Group(models.Model):
     """A group."""
@@ -66,15 +67,19 @@ class Group(models.Model):
     class Meta:
         ordering = ['name', 'modified']
 
+
 def group_deleted_cache_handler(sender=None, instance=None, using=None, **kwargs):
+    """Signal handler to purge principal caches when a Group is deleted."""
     logger.info('Handling signal for deleted group %s - invalidating policy cache for users in group', instance)
     cache = AccessCache(connections[using].schema_name)
     for principal in instance.principals.all():
         cache.delete_policy(principal.uuid)
 
-def principals_to_groups_cache_handler(sender=None, instance=None, action=None, 
+
+def principals_to_groups_cache_handler(sender=None, instance=None, action=None,
                                        reverse=None, model=None, pk_set=None, using=None,
                                        **kwargs):
+    """Signal handler to purge caches when Group membership changes."""
     cache = AccessCache(connections[using].schema_name)
     if action in ('post_add', 'pre_remove'):
         logger.info('Handling signal for %s group membership change - invalidating policy cache', instance)
@@ -95,7 +100,7 @@ def principals_to_groups_cache_handler(sender=None, instance=None, action=None,
             # All groups are being removed from this principal
             cache.delete_policy(instance.uuid)
 
-            
+
 signals.pre_delete.connect(group_deleted_cache_handler, sender=Group)
-signals.m2m_changed.connect(principals_to_groups_cache_handler, 
+signals.m2m_changed.connect(principals_to_groups_cache_handler,
                             sender=Group.principals.through)

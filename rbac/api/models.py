@@ -30,6 +30,7 @@ class Tenant(TenantMixin):
     auto_drop_schema = True
 
     def __str__(self):
+        """Get string representation of Tenant."""
         return f'Tenant ({self.schema_name})'
 
 

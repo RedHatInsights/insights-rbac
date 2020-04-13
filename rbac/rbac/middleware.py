@@ -20,9 +20,8 @@ import binascii
 import logging
 from json.decoder import JSONDecodeError
 
-from django.contrib.auth.models import AnonymousUser
 from django.db import connections
-from django.http import HttpResponse, Http404
+from django.http import Http404, HttpResponse
 from django.utils.deprecation import MiddlewareMixin
 from tenant_schemas.middleware import BaseTenantMiddleware
 
@@ -48,6 +47,7 @@ def is_no_auth(request):
     no_auth = any(no_auth_path in request.path for no_auth_path in no_auth_list)
     return no_auth
 
+
 class HttpResponseUnauthorizedRequest(HttpResponse):
     """A subclass of HttpResponse to return a 401.
 
@@ -58,6 +58,7 @@ class HttpResponseUnauthorizedRequest(HttpResponse):
 
 
 TENANTS = dict()
+
 
 class IdentityHeaderMiddleware(BaseTenantMiddleware):
     """A subclass of RemoteUserMiddleware.
@@ -86,6 +87,7 @@ class IdentityHeaderMiddleware(BaseTenantMiddleware):
         return TENANTS[request.user.account]
 
     def hostname_from_request(self, request):
+        """Behold. The tenant_schemas expects to pivot schemas based on hostname. We're not."""
         return ''
 
     @staticmethod  # noqa: C901
@@ -110,7 +112,6 @@ class IdentityHeaderMiddleware(BaseTenantMiddleware):
         }
 
         return access
-
 
     def process_request(self, request):  # noqa: C901
         """Process request for identity middleware.
@@ -157,7 +158,6 @@ class IdentityHeaderMiddleware(BaseTenantMiddleware):
             # We are now in the database context of the tenant
             assert request.tenant
 
-
     def process_response(self, request, response):  # pylint: disable=no-self-use
         """Process response for identity middleware.
 
@@ -175,7 +175,7 @@ class IdentityHeaderMiddleware(BaseTenantMiddleware):
             query_string = '?{}'.format(request.META['QUERY_STRING'])
 
         if hasattr(request, 'user') and request.user:
-            username = request.user.username            
+            username = request.user.username
             if username:
                 # rbac.api.models.User has these fields
                 is_admin = request.user.admin
