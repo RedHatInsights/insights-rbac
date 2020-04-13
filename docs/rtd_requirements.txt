@@ -13,7 +13,7 @@ django-prometheus==2.0.0
 django-tenant-schemas==1.9.0
 django==3.0.5
 djangorestframework-csv==2.1.0
-djangorestframework==3.10.2
+djangorestframework==3.11.0
 docutils==0.15.2
 gunicorn==19.9.0
 idna==2.8
