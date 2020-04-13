@@ -47,6 +47,14 @@ class Access(models.Model):
     permission = models.TextField(null=False)
     role = models.ForeignKey(Role, null=True, on_delete=models.CASCADE, related_name='access')
 
+    def permission_application(self):
+        """Return the application name from the permission."""
+        return next(iter(self.split_permission()))
+
+    def split_permission(self):
+        """Split the permission."""
+        return self.permission.split(':')
+
 
 class ResourceDefinition(models.Model):
     """A resource definition."""
