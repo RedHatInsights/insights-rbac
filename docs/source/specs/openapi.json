@@ -105,7 +105,7 @@
               "type": "string",
               "enum": ["asc", "desc"]
             }
-          }          
+          }
         ],
         "responses": {
           "200": {
@@ -1663,7 +1663,7 @@
           {
             "name": "application",
             "in": "query",
-            "description": "The application name to obtain access for the principal",
+            "description": "The application name to obtain access for the principal. This is an exact match. When no application is supplied, all permissions for the principal are returned.",
             "required": true,
             "schema": {
               "type": "string"
