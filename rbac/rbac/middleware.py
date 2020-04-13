@@ -114,7 +114,7 @@ class IdentityHeaderMiddleware(BaseTenantMiddleware):
 
         return access
 
-    def process_request(self, request):  # noqa: C901
+    def process_request(self, request):  # noqa: C901, R1710
         """Process request for identity middleware.
 
         Args:
@@ -158,7 +158,6 @@ class IdentityHeaderMiddleware(BaseTenantMiddleware):
             super().process_request(request)
             # We are now in the database context of the tenant
             assert request.tenant
-        return None
 
     def process_response(self, request, response):  # pylint: disable=no-self-use
         """Process response for identity middleware.
