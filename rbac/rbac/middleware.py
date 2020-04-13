@@ -74,7 +74,8 @@ class IdentityHeaderMiddleware(BaseTenantMiddleware):
         if request.user.account not in TENANTS:
             if request.user.system:
                 try:
-                    tenant = Tenant.objects.get(schema_name=create_schema_name(request.user.account))
+                    tenant = Tenant.objects.get(
+                        schema_name=create_schema_name(request.user.account))
                 except Tenant.DoesNotExist:
                     raise Http404()
             else:
@@ -157,6 +158,7 @@ class IdentityHeaderMiddleware(BaseTenantMiddleware):
             super().process_request(request)
             # We are now in the database context of the tenant
             assert request.tenant
+        return None
 
     def process_response(self, request, response):  # pylint: disable=no-self-use
         """Process response for identity middleware.
