@@ -94,6 +94,46 @@ To run the local dev Django on a specific port use::
 
     make PORT=8111 serve
 
+Making Requests
+---------------
+
+You can make requests to RBAC locally to mimic traffic coming from the gateway, or locally within the same cluster from another internal service.
+
+Basic/JWT Auth with an Identity Header
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+By default, with the `DEVELOPMENT` variable set to `True`, the `dev_middleware.py` will be used.
+This will ensure that a mock identity header will be set on all requests for you.
+You can modify this header to add new users to your tenant by changing the `username`, create new tenants by changing the `account_number`, and toggling between admin/non-admins by flipping `is_org_admin` from `True` to `False`.
+
+This will allow you to simulate a JWT or basic-auth request from the gateway.
+
+Serivce to Service Requests
+^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+RBAC also allows for service-to-service requests. These requests require a PSK, and some additional headers in order to authorize the request as an "admin". To test this locally, do the following:
+
+First disable the local setting of the identity header in `dev_middleware.py` by [commenting this line out](https://github.com/RedHatInsights/insights-rbac/blob/master/rbac/rbac/dev_middleware.py#L53)
+
+Next, start the server with:
+```
+make serve SERVICE_PSKS='{"catalog": {"secret": "abc123"}}'
+```
+
+Verify that you cannot access any endpoints requiring auth:
+```
+curl http://localhost:8000/api/rbac/v1/roles/ -v
+```
+
+Verify that if you pass in the correct headers/values, you _can_ access the endpoint:
+```
+curl http://localhost:8000/api/rbac/v1/roles/ -v -H 'x-rh-rbac-psk: abc123' -H 'x-rh-rbac-account: 10001' -H 'x-rh-rbac-client-id: catalog'
+```
+
+Change the `x-rh-rbac-client-id`, `x-rh-rbac-psk` and `x-rh-rbac-account` header values to see that you should get back a 401 (or 400 with an account that doesn't exist).
+
+You can also send a request _with_ the identity header explicitly in the curl command along with the service-to-service headers to verify that the identity header will take precedence.
+
 API Documentation Generation
 ----------------------------
 
@@ -127,7 +167,7 @@ To lint the code base ::
     tox -e lint
 
 Caveats
--------------------
+-------
 
 For all requests to the Insights RBAC API, it is assumed and required that principal
 information for the request be sent in a header named: `x-rh-identity`. The information
@@ -163,7 +203,7 @@ After that, all your commited files will be linted. If the checks don’t succee
 make sure all checks pass before submitting a pull request. Thanks!
 
 Repositories of the roles to be seeded
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Default roles:
     https://github.com/RedHatInsights/rbac-config.git
