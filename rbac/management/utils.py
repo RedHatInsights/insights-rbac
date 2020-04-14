@@ -77,13 +77,13 @@ def roles_for_policies(policies):
     return roles
 
 
-def access_for_roles(roles, param_application):
-    """Gathers all access for the given roles and application."""
+def access_for_roles(roles, param_applications):
+    """Gathers all access for the given roles and application(s)."""
     access = []
     for role in set(roles):
         role_access = set(role.access.all())
         for access_item in role_access:
-            if param_application == access_item.permission_application() or param_application == '':
+            if (not param_applications) or (access_item.permission_application() in param_applications):
                 access.append(access_item)
     return access
 

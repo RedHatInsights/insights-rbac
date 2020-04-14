@@ -160,6 +160,37 @@ class AccessViewTests(IdentityRequest):
         self.assertEqual(len(response.data.get('data')), 2)
         self.assertEqual(response.data.get('meta').get('limit'), 1000)
 
+    def test_get_access_multiple_apps_supplied(self):
+        """Test that we return all permissions for multiple apps when supplied."""
+        role_name = 'roleA'
+        policy_name = 'policyA'
+        access_data = {
+            'permission': 'app:foo:bar',
+            'resourceDefinitions': [
+                {
+                    'attributeFilter': {
+                        'key': 'keyA',
+                        'operation': 'equal',
+                        'value': 'valueA'
+                    }
+                }
+            ]
+        }
+        response = self.create_role(role_name, access_data)
+        role_uuid = response.data.get('uuid')
+        role = Role.objects.get(uuid=role_uuid)
+        access = Access.objects.create(role=role, permission='app2:foo:bar')
+        self.create_policy(policy_name, self.group.uuid, [role_uuid])
+
+        url = '{}?application={}&username={}'.format(reverse('access'),
+                                                     'app,app2',
+                                                     self.principal.username)
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIsInstance(response.data.get('data'), list)
+        self.assertEqual(len(response.data.get('data')), 2)
+
     def test_get_access_no_partial_match(self):
         """Test that we can have a partial match on app/permission."""
         role_name = 'roleA'
