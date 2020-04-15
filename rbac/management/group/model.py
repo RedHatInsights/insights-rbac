@@ -85,7 +85,7 @@ def principals_to_groups_cache_handler(sender=None, instance=None, action=None,
         logger.info('Handling signal for %s group membership change - invalidating policy cache', instance)
         if isinstance(instance, Group):
             # One or more principals was added to/removed from the group
-            for principal in Principal.objects.filter(uuid__in=pk_set):
+            for principal in Principal.objects.filter(pk__in=pk_set):
                 cache.delete_policy(principal.uuid)
         elif isinstance(instance, Principal):
             # One or more groups was added to/removed from the principal

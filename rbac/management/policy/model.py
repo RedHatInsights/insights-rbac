@@ -50,7 +50,7 @@ class Policy(models.Model):
         ordering = ['name', 'modified']
 
 
-def policy_deleted_cache_handler(sender=None, instance=None, using=None, **kwargs):
+def policy_changed_cache_handler(sender=None, instance=None, using=None, **kwargs):
     """Signal handler for Principal cache expiry on Policy deletion."""
     logger.info('Handling signal for deleted policy %s - invalidating associated user cache keys', instance)
     cache = AccessCache(connections[using].schema_name)
@@ -86,9 +86,10 @@ def policy_to_roles_cache_handler(sender=None, instance=None, action=None,  # no
                     cache.delete_policy(principal.uuid)
         elif isinstance(instance, Role):
             # All policies are being removed from this role
-            for principal in Principal.objects.filter(group__policy__role__pk=instance.pk):
+            for principal in Principal.objects.filter(group__policies__roles__pk=instance.pk):
                 cache.delete_policy(principal.uuid)
 
 
-signals.pre_delete.connect(policy_deleted_cache_handler, sender=Policy)
+signals.post_save.connect(policy_changed_cache_handler, sender=Policy)
+signals.pre_delete.connect(policy_changed_cache_handler, sender=Policy)
 signals.m2m_changed.connect(policy_to_roles_cache_handler, sender=Policy.roles.through)
