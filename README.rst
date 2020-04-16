@@ -203,11 +203,9 @@ After that, all your commited files will be linted. If the checks don’t succee
 make sure all checks pass before submitting a pull request. Thanks!
 
 Repositories of the roles to be seeded
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+--------------------------------------
 
-Default roles:
-    https://github.com/RedHatInsights/rbac-config.git
-
+Default roles: https://github.com/RedHatInsights/rbac-config.git
 
 For additional information please refer to Contributing_.
 
