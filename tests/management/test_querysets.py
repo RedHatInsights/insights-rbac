@@ -102,7 +102,7 @@ class QuerySetTest(TestCase):
             }
         }
 
-        user = Mock(spec=User, admin=True, identity_header=identity_header)
+        user = Mock(spec=User, admin=True, account='00001', identity_header=identity_header)
         req = Mock(user=user, query_params={'username': 'test_user'})
         queryset = get_group_queryset(req)
         self.assertEquals(queryset.count(), 1)
@@ -122,7 +122,7 @@ class QuerySetTest(TestCase):
                 }
             }
         }
-        user = Mock(spec=User, admin=False, identity_header=identity_header)
+        user = Mock(spec=User, admin=False, account='00001', identity_header=identity_header)
         req = Mock(user=user, method='GET', query_params={'username': 'test_user'}, path=reverse('group-list'))
         queryset = get_group_queryset(req)
         self.assertEquals(queryset.count(), 1)
@@ -131,6 +131,7 @@ class QuerySetTest(TestCase):
         """Test get_group_queryset to get a users other users groups."""
         self._create_groups()
         principal = Principal.objects.create(username='test_user')
+        principal2 = Principal.objects.create(username='test_user2')
         group = Group.objects.first()
         group.principals.add(principal)
         identity_header = {
@@ -142,7 +143,7 @@ class QuerySetTest(TestCase):
                 }
             }
         }
-        user = Mock(spec=User, admin=False, identity_header=identity_header)
+        user = Mock(spec=User, admin=False, account='00001', identity_header=identity_header)
         req = Mock(user=user, method='GET', query_params={'username': 'test_user2'})
         queryset = get_group_queryset(req)
         self.assertEquals(queryset.count(), 0)
@@ -206,7 +207,7 @@ class QuerySetTest(TestCase):
             }
         }
 
-        user = Mock(spec=User, admin=True, identity_header=identity_header)
+        user = Mock(spec=User, admin=True, account='00001', identity_header=identity_header)
         req = Mock(user=user, method='GET', query_params={'username': 'test_user2'})
         queryset = get_role_queryset(req)
         role = queryset.last()
@@ -228,7 +229,7 @@ class QuerySetTest(TestCase):
             }
         }
 
-        user = Mock(spec=User, admin=True, identity_header=identity_header)
+        user = Mock(spec=User, admin=True, account='00001', identity_header=identity_header)
         req = Mock(user=user, method='GET', query_params={SCOPE_KEY: PRINCIPAL_SCOPE, 'username': 'test_user2'})
         queryset = get_role_queryset(req)
         role = queryset.last()
@@ -250,7 +251,7 @@ class QuerySetTest(TestCase):
             }
         }
 
-        user = Mock(spec=User, admin=True, identity_header=identity_header)
+        user = Mock(spec=User, admin=True, account='00001', identity_header=identity_header)
         req = Mock(user=user, method='GET', query_params={'username': 'test_user2'})
         queryset = get_role_queryset(req)
         self.assertEquals(list(queryset), [roles.first()])
