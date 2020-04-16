@@ -23,6 +23,7 @@ from management.policy.model import Policy
 from management.role.model import Access, Role
 from management.utils import (APPLICATION_KEY,
                               access_for_principal,
+                              get_principal,
                               get_principal_from_request,
                               groups_for_principal,
                               policies_for_principal,
@@ -65,15 +66,11 @@ def get_group_queryset(request):
 
     username = request.query_params.get('username')
     if username:
-        decoded = request.user.identity_header.get('decoded', {})
-        identity_username = decoded.get('identity', {}).get('user', {}).get('username')
-        if username != identity_username and not request.user.admin:
-            return Group.objects.none()
-        else:
-            return Group.objects.filter(principals__username=username)
+        get_principal(username, request.user.account)
+        return Group.objects.filter(principals__username=username) | Group.platform_default_set()
 
     if has_group_all_access(request):
-        return get_annotated_groups()
+        return get_annotated_groups() | Group.platform_default_set()
 
     return Group.objects.none()
 

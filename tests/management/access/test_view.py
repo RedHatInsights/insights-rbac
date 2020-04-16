@@ -19,6 +19,7 @@
 import random
 from decimal import Decimal
 from uuid import uuid4
+from unittest.mock import patch
 
 from django.urls import reverse
 from rest_framework import status
@@ -252,7 +253,9 @@ class AccessViewTests(IdentityRequest):
         response = client.get(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
-    def test_missing_invalid_username(self):
+    @patch('management.principal.proxy.PrincipalProxy.request_filtered_principals',
+           return_value={'status_code': 200, 'data': []})
+    def test_missing_invalid_username(self, mock_request):
         """Test that we get expected failure when missing required query params."""
         url = '{}?application={}&username={}'.format(reverse('access'),
                                                      'app',
