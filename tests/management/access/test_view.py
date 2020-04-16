@@ -27,7 +27,7 @@ from rest_framework.test import APIClient
 from tenant_schemas.utils import tenant_context
 
 from api.models import User
-from management.models import Group, Principal, Policy, Role
+from management.models import Group, Principal, Policy, Role, Access
 from tests.identity_request import IdentityRequest
 
 
@@ -111,6 +111,8 @@ class AccessViewTests(IdentityRequest):
         response = self.create_role(role_name)
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         role_uuid = response.data.get('uuid')
+        role = Role.objects.get(uuid=role_uuid)
+        access = Access.objects.create(role=role, permission='app2:foo:bar')
         policy_name = 'policyA'
         response = self.create_policy(policy_name, self.group.uuid, [role_uuid])
 
@@ -126,6 +128,38 @@ class AccessViewTests(IdentityRequest):
         self.assertEqual(len(response.data.get('data')), 1)
         self.assertEqual(response.data.get('meta').get('limit'), 1000)
         self.assertEqual(self.access_data, response.data.get('data')[0])
+
+    def test_get_access_no_app_supplied(self):
+        """Test that we return all permissions when no app supplied."""
+        role_name = 'roleA'
+        policy_name = 'policyA'
+        access_data = {
+            'permission': 'app:foo:bar',
+            'resourceDefinitions': [
+                {
+                    'attributeFilter': {
+                        'key': 'keyA',
+                        'operation': 'equal',
+                        'value': 'valueA'
+                    }
+                }
+            ]
+        }
+        response = self.create_role(role_name, access_data)
+        role_uuid = response.data.get('uuid')
+        role = Role.objects.get(uuid=role_uuid)
+        access = Access.objects.create(role=role, permission='app2:foo:bar')
+        self.create_policy(policy_name, self.group.uuid, [role_uuid])
+
+        url = '{}?application=&username={}'.format(reverse('access'),
+                                                     self.principal.username)
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIsNotNone(response.data.get('data'))
+        self.assertIsInstance(response.data.get('data'), list)
+        self.assertEqual(len(response.data.get('data')), 2)
+        self.assertEqual(response.data.get('meta').get('limit'), 1000)
 
     def test_get_access_no_partial_match(self):
         """Test that we can have a partial match on app/permission."""
