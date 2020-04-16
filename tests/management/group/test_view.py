@@ -49,6 +49,8 @@ class GroupViewsetTests(IdentityRequest):
             self.principal.save()
             self.principalB = Principal(username='mock_user')
             self.principalB.save()
+            self.principalC = Principal(username='user_not_attaced_to_group_explicitly')
+            self.principalC.save()
             self.group = Group(name='groupA')
             self.group.save()
             self.role = Role.objects.create(name='roleA', description='A role for a group.')
@@ -406,25 +408,26 @@ class GroupViewsetTests(IdentityRequest):
     @patch('management.principal.proxy.PrincipalProxy.request_filtered_principals',
            return_value={'status_code': 200, 'data': []})
     def test_get_group_by_username(self, mock_request):
-        """Test that getting groups for a principalreturns successfully."""
-        url = reverse('group-principals', kwargs={'uuid': self.group.uuid})
-        client = APIClient()
-        new_username = uuid4()
-        test_data = {'principals': [{'username': self.principal.username}, {'username': new_username}]}
-        response = client.post(url, test_data, format='json', **self.headers)
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-
+        """Test that getting groups for a principal returns successfully."""
         url = reverse('group-list')
         url = '{}?username={}'.format(url, self.principal.username)
         client = APIClient()
         response = client.get(url, **self.headers)
         self.assertEqual(response.data.get('meta').get('count'), 3)
 
+        # User who is not added to a group explicitly will return platform default group
+        url = reverse('group-list')
+        url = '{}?username={}'.format(url, self.principalC.username)
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        self.assertEqual(response.data.get('meta').get('count'), 1)
+
+        # Return bad request when user does not exist
         url = reverse('group-list')
         url = '{}?username={}'.format(url, uuid4())
         client = APIClient()
         response = client.get(url, **self.headers)
-        self.assertEqual(response.data.get('meta').get('count'), 1)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
     def test_get_group_roles_success(self):
         """Test that getting roles for a group returns successfully."""
