@@ -21,6 +21,7 @@ import os
 from django.core.exceptions import PermissionDenied
 from django.utils.translation import gettext as _
 from management.models import Group, Principal
+from management.principal.proxy import PrincipalProxy
 from rest_framework import serializers
 
 USERNAME_KEY = 'username'
@@ -50,12 +51,28 @@ def get_principal_from_request(request):
     if not username:
         username = current_user
 
+    return get_principal(username, request.user.account)
+
+
+def get_principal(username, account):
+    """Get principals from username."""
+    # First check if principal exist on our side,
+    # if not call BOP to check if user exist in the account.
     try:
         principal = Principal.objects.get(username__iexact=username)
     except Principal.DoesNotExist:
-        key = 'detail'
-        message = 'No data found for principal with username {}.'.format(username)
-        raise serializers.ValidationError({key: _(message)})
+        proxy = PrincipalProxy()
+        resp = proxy.request_filtered_principals([username], account)
+        if isinstance(resp, dict) and 'errors' in resp:
+            raise Exception('Dependency error: request to get users from dependent service failed.')
+
+        if resp.get('data') == []:
+            key = 'detail'
+            message = 'No data found for principal with username {}.'.format(username)
+            raise serializers.ValidationError({key: _(message)})
+
+        return Principal.objects.create(username=username)
+
     return principal
 
 
@@ -77,13 +94,13 @@ def roles_for_policies(policies):
     return roles
 
 
-def access_for_roles(roles, param_application):
-    """Gathers all access for the given roles and application."""
+def access_for_roles(roles, param_applications):
+    """Gathers all access for the given roles and application(s)."""
     access = []
     for role in set(roles):
         role_access = set(role.access.all())
         for access_item in role_access:
-            if param_application == access_item.permission_application() or param_application == '':
+            if (not param_applications) or (access_item.permission_application() in param_applications):
                 access.append(access_item)
     return access
 
