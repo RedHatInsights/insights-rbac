@@ -174,9 +174,18 @@ class PrincipalProxy:  # pylint: disable=too-few-public-methods
             resp['errors'] = [error]
         return resp
 
-    def request_principals(self, account, limit=None, offset=None, sort_order=None):
+    def request_principals(self, account, email=None, limit=None, offset=None, sort_order=None):
         """Request principals for an account."""
-        account_principals_path = '/v2/accounts/{}/users'.format(account)
+        if email:
+            account_principals_path = f'/v1/accounts/{account}/usersBy'
+            payload = {
+                'primaryEmail': email
+            }
+            method = requests.post
+        else:
+            account_principals_path = f'/v2/accounts/{account}/users'
+            method = requests.get
+            payload = None
 
         params = self._create_params(limit=limit, offset=offset, sort_order=sort_order)
         url = '{}://{}:{}{}{}'.format(self.protocol,
@@ -186,7 +195,7 @@ class PrincipalProxy:  # pylint: disable=too-few-public-methods
                                       account_principals_path)
 
         # For v2 account users endpoints are already filtered by account
-        return self._request_principals(url, params=params, account_filter=False)
+        return self._request_principals(url, params=params, account_filter=False, method=method, data=payload)
 
     def request_filtered_principals(self, principals, account=None, limit=None, offset=None, sort_order=None):
         """Request specific principals for an account."""

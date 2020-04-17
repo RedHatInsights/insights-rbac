@@ -105,6 +105,15 @@
               "type": "string",
               "enum": ["asc", "desc"]
             }
+          },
+          {
+            "name": "email",
+            "in": "query",
+            "description": "Exact e-mail address of principal to search for",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
