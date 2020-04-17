@@ -93,11 +93,8 @@ class RolesTenantMiddleware(BaseTenantMiddleware):
             user = User.objects.get(username=request.user.username)
             tenant = user.tenant
             schema_name = tenant.schema_name
-        try:
-            tenant = model.objects.get(schema_name=schema_name)
-        except model.DoesNotExist:
-            tenant = model(schema_name=schema_name)
-            tenant.save()
+
+        tenant, _ = model.objects.get_or_create(schema_name=schema_name)
         return tenant
 
 
@@ -122,9 +119,9 @@ class IdentityHeaderMiddleware(MiddlewareMixin):  # pylint: disable=R0903
         """
         schema_name = create_schema_name(account)
         try:
-            with transaction.atomic():
-                tenant = Tenant(schema_name=schema_name)
-                tenant.save()
+            tenant, created = Tenant.objects.get_or_create(schema_name=schema_name)
+
+            if created:
                 logger.info('Created new tenant from account_id %s.', account)
                 seed_roles(tenant=tenant, update=False)
                 seed_group(tenant=tenant)
@@ -253,10 +250,10 @@ class IdentityHeaderMiddleware(MiddlewareMixin):  # pylint: disable=R0903
                                                              request)
 
             with tenant_context(tenant):
-                try:
-                    Principal.objects.get(username__iexact=username)
-                except Principal.DoesNotExist:
-                    Principal.objects.create(username=username)
+                _, created = Principal.objects.get_or_create(
+                    defaults={'username': username},
+                    username__iexact=username)
+                if created:
                     logger.info('Created new principal %s for account %s.', username, account)
 
             user.identity_header = {
