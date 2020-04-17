@@ -53,19 +53,13 @@ ROLE_DISCRIMINATOR_KEY = 'role_discriminator'
 VALID_EXCLUDE_VALUES = ['true', 'false']
 VALID_GROUP_ROLE_FILTERS = ['role_name', 'role_description']
 VALID_GROUP_PRINCIPAL_FILTERS = ['principal_username']
+VALID_PRINCIPAL_ORDER_FIELDS = ['username']
 VALID_ROLE_ROLE_DISCRIMINATOR = ['all', 'any']
-
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 
 class GroupFilter(filters.FilterSet):
     """Filter for group."""
-
-    def username_filter(self, queryset, field, value):
-        """Filter for group username lookup."""
-        filters = {'{}__username__icontains'.format(field): value}
-        filtered_set = queryset.filter(**filters)
-        return filtered_set | Group.platform_default_set()
 
     def uuid_filter(self, queryset, field, values):
         """Filter for group uuid lookup."""
@@ -106,13 +100,12 @@ class GroupFilter(filters.FilterSet):
         return queryset
 
     name = filters.CharFilter(field_name='name', lookup_expr='icontains')
-    username = filters.CharFilter(field_name='principals', method='username_filter')
     role_names = filters.CharFilter(field_name='role_names', method='roles_filter')
     uuid = filters.CharFilter(field_name='uuid', method='uuid_filter')
 
     class Meta:
         model = Group
-        fields = ['name', 'principals', 'role_names', 'uuid']
+        fields = ['name', 'role_names', 'uuid']
 
 
 class GroupViewSet(mixins.CreateModelMixin,
@@ -451,7 +444,13 @@ class GroupViewSet(mixins.CreateModelMixin,
             else:
                 username_list = []
             proxy = PrincipalProxy()
-            resp = proxy.request_filtered_principals(username_list, account)
+            all_valid_fields = VALID_PRINCIPAL_ORDER_FIELDS + ['-' + field for field in VALID_PRINCIPAL_ORDER_FIELDS]
+            if request.query_params.get(ORDERING_PARAM):
+                sort_field = validate_and_get_key(request.query_params, ORDERING_PARAM, all_valid_fields, 'username')
+                sort_order = 'des' if sort_field == '-username' else 'asc'
+            else:
+                sort_order = None
+            resp = proxy.request_filtered_principals(username_list, account, sort_order=sort_order)
             if isinstance(resp, dict) and 'errors' in resp:
                 return Response(status=resp.get('status_code'), data=resp.get('errors'))
             response = self.get_paginated_response(resp.get('data'))

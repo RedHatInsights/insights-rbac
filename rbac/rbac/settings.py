@@ -302,6 +302,7 @@ if CW_AWS_ACCESS_KEY_ID:
         'log_group': CW_LOG_GROUP,
         'stream_name': NAMESPACE,
         'formatter': LOGGING_FORMATTER,
+        'use_queues': False,
     }
     LOGGING['handlers']['watchtower'] = WATCHTOWER_HANDLER
 

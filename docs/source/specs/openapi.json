@@ -78,6 +78,7 @@
           "Principal"
         ],
         "summary": "List the principals for a tenant",
+        "description": "By default, responses are sorted in ascending order by username",
         "operationId": "listPrincipals",
         "parameters": [
           {
@@ -104,7 +105,7 @@
               "type": "string",
               "enum": ["asc", "desc"]
             }
-          }          
+          }
         ],
         "responses": {
           "200": {
@@ -202,6 +203,7 @@
           "Group"
         ],
         "summary": "List the groups for a tenant",
+        "description": "By default, responses are sorted in ascending order by group name",
         "operationId": "listGroups",
         "parameters": [
           {
@@ -578,6 +580,7 @@
           "Group"
         ],
         "summary": "Get a list of principals from a group in the tenant",
+        "description": "By default, responses are sorted in ascending order by username",
         "operationId": "getPrincipalsFromGroup",
         "parameters": [
           {
@@ -597,6 +600,16 @@
             "description": "Parameter for filtering group principals by principal `username` using string contains search.",
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "order_by",
+            "required": false,
+            "description": "Parameter for ordering principals by value. For inverse ordering, supply '-' before the param value, such as: ?order_by=-username",
+            "schema": {
+              "type": "string",
+              "enum": ["username"]
             }
           }
         ],
@@ -715,6 +728,7 @@
           "Group"
         ],
         "summary": "List the roles for a group in the tenant",
+        "description": "By default, responses are sorted in ascending order by role name",
         "operationId": "listRolesForGroup",
         "parameters": [
           {
@@ -1022,6 +1036,7 @@
           "Role"
         ],
         "summary": "List the roles for a tenant",
+        "description": "By default, responses are sorted in ascending order by role name",
         "operationId": "listRoles",
         "parameters": [
           {
@@ -1416,6 +1431,7 @@
           "Policy"
         ],
         "summary": "List the policies in the tenant",
+        "description": "By default, responses are sorted in ascending order by policy name",
         "operationId": "listPolicies",
         "parameters": [
           {
@@ -1641,12 +1657,13 @@
           "Access"
         ],
         "summary": "Get the permitted access for a principal in the tenant (defaults to principal from the identity header)",
+        "description": "Access responses are sorted in ascending order by an ID internal to the database",
         "operationId": "getPrincipalAccess",
         "parameters": [
           {
             "name": "application",
             "in": "query",
-            "description": "The application name to obtain access for the principal",
+            "description": "The application name(s) to obtain access for the principal. This is an exact match. When no application is supplied, all permissions for the principal are returned. You may also use a comma-separated list to match on multiple applications.",
             "required": true,
             "schema": {
               "type": "string"
