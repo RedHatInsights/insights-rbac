@@ -67,7 +67,7 @@ def get_group_queryset(request):
     username = request.query_params.get('username')
     if username:
         get_principal(username, request.user.account)
-        return Group.objects.filter(principals__username=username) | Group.platform_default_set()
+        return Group.objects.filter(principals__username__iexact=username) | Group.platform_default_set()
 
     if has_group_all_access(request):
         return get_annotated_groups() | Group.platform_default_set()

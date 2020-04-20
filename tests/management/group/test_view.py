@@ -429,6 +429,15 @@ class GroupViewsetTests(IdentityRequest):
         response = client.get(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
+    def test_get_group_by_username_with_capitalization(self):
+        """Test that getting groups for a user name with capitalization returns successfully."""
+        url = reverse('group-list')
+        username = "".join(random.choice([k.upper(), k]) for k in self.principal.username)
+        url = '{}?username={}'.format(url, username)
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        self.assertEqual(response.data.get('meta').get('count'), 3)
+
     def test_get_group_roles_success(self):
         """Test that getting roles for a group returns successfully."""
         url = reverse('group-roles', kwargs={'uuid': self.group.uuid})
