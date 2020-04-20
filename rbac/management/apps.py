@@ -72,6 +72,10 @@ class ManagementConfig(AppConfig):
         # noqa: E402 pylint: disable=C0413
         from api.models import Tenant
         from management.group.definer import seed_group
+        from rbac.settings import GROUP_SEEDING_ENABLED
+
+        if not GROUP_SEEDING_ENABLED:
+            return
 
         logger.info('Start goup seed changes check.')
         try:
