@@ -212,7 +212,7 @@ class RoleDynamicSerializer(DynamicFieldsModelSerializer):
 
     def get_groups_in(self, obj):
         """Get the groups where the role is in."""
-        return obtain_groups_in(obj).values('name', 'uuid')
+        return obtain_groups_in(obj).values('name', 'uuid', 'description')
 
 
 def obtain_applications(obj):

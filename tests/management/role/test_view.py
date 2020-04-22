@@ -26,7 +26,7 @@ from rest_framework.test import APIClient
 from tenant_schemas.utils import tenant_context
 
 from api.models import User
-from management.models import Group, Principal, Role, Access
+from management.models import Group, Principal, Role, Access, Policy
 from tests.identity_request import IdentityRequest
 
 
@@ -58,9 +58,11 @@ class RoleViewsetTests(IdentityRequest):
         with tenant_context(self.tenant):
             self.principal = Principal(username=self.user_data['username'])
             self.principal.save()
-            self.group = Group(name='groupA')
+            self.policy = Policy.objects.create(name='policyA')
+            self.group = Group(name='groupA', description='groupA description')
             self.group.save()
             self.group.principals.add(self.principal)
+            self.group.policies.add(self.policy)
             self.group.save()
 
             self.sysRole = Role(**sys_role_config)
@@ -68,6 +70,9 @@ class RoleViewsetTests(IdentityRequest):
 
             self.defRole = Role(**def_role_config)
             self.defRole.save()
+            self.defRole.save()
+
+            self.policy.roles.add(self.defRole, self.sysRole)
 
             self.access = Access.objects.create(permission='app:*:*', role=self.defRole)
 
@@ -291,8 +296,6 @@ class RoleViewsetTests(IdentityRequest):
         new_diaplay_fields = self.display_fields
         new_diaplay_fields.add(field_1)
         new_diaplay_fields.add(field_2)
-        response = self.create_role(role_name)
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
 
         # list a role
         url = '{}?add_fields={},{}'.format(reverse('role-list'), field_1, field_2)
@@ -304,7 +307,6 @@ class RoleViewsetTests(IdentityRequest):
         for keyname in ['meta', 'links', 'data']:
             self.assertIn(keyname, response.data)
         self.assertIsInstance(response.data.get('data'), list)
-        self.assertEqual(len(response.data.get('data')), 3)
 
         role = None
 
@@ -315,7 +317,9 @@ class RoleViewsetTests(IdentityRequest):
                 self.assertEqual(iterRole.get('accessCount'), 1)
                 role = iterRole
 
-        self.assertEqual(role.get('name'), role_name)
+            self.assertIsNotNone(iterRole.get('groups_in')[0]['name'])
+            self.assertIsNotNone(iterRole.get('groups_in')[0]['uuid'])
+            self.assertIsNotNone(iterRole.get('groups_in')[0]['description'])
 
     def test_list_role_with_invalid_additional_fields(self):
         """Test that invalid additional fields will raise exception."""
