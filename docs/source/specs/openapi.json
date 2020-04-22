@@ -603,6 +603,12 @@
             }
           },
           {
+            "$ref": "#/components/parameters/QueryLimit"
+          },
+          {
+            "$ref": "#/components/parameters/QueryOffset"
+          },
+          {
             "in": "query",
             "name": "order_by",
             "required": false,
