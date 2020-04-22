@@ -88,7 +88,7 @@ class PrincipalViewsetTests(IdentityRequest):
             self.assertIn(keyname, response.data)
         self.assertIsInstance(response.data.get('data'), list)
         self.assertEqual(len(response.data.get('data')), 1)
-        self.assertEqual(response.data.get('meta').get('count'), None)
+        self.assertEqual(response.data.get('meta').get('count'), 1)
 
         principal = response.data.get('data')[0]
         self.assertIsNotNone(principal.get('username'))
@@ -137,7 +137,7 @@ class PrincipalViewsetTests(IdentityRequest):
         for keyname in ['meta', 'links', 'data']:
             self.assertIn(keyname, response.data)
         self.assertIsInstance(response.data.get('data'), list)
-        self.assertEqual(response.data.get('meta').get('count'), None)
+        self.assertEqual(response.data.get('meta').get('count'), 1)
         resp = proxy._process_data(response.data.get('data'), account='1234', account_filter=True)
         self.assertEqual(len(resp), 1)
 
@@ -174,7 +174,7 @@ class PrincipalViewsetTests(IdentityRequest):
         for keyname in ['meta', 'links', 'data']:
             self.assertIn(keyname, response.data)
         self.assertIsInstance(response.data.get('data'), list)
-        self.assertEqual(response.data.get('meta').get('count'), None)
+        self.assertEqual(response.data.get('meta').get('count'), 1)
         resp = proxy._process_data(response.data.get('data'), account='1234', account_filter=False)
         self.assertEqual(len(resp), 1)
 
@@ -192,8 +192,8 @@ class PrincipalViewsetTests(IdentityRequest):
         for keyname in ['meta', 'links', 'data']:
             self.assertIn(keyname, response.data)
         self.assertIsInstance(response.data.get('data'), list)
-        self.assertEqual(response.data.get('meta').get('count'), None)
-        resp = proxy._process_data(response.data.get('data'), account='1234', account_filter=False)
+        self.assertEqual(response.data.get('meta').get('count'), 1)
+        resp = proxy._process_data(response.data.get('data'), account='54321', account_filter=False)
         self.assertEqual(len(resp), 1)
 
         mock_request.assert_called_once_with(ANY, email='test_user@example.com', limit=10, offset=0, sort_order='asc')

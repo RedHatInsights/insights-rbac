@@ -137,6 +137,8 @@ class PrincipalView(APIView):
             if isinstance(data, dict):
                 count = data.get('userCount')
                 data = data.get('users')
+            elif isinstance(data, list):
+                count = len(data)
             else:
                 count = None
             response_data['meta'] = {
