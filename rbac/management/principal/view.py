@@ -26,6 +26,7 @@ from .proxy import PrincipalProxy
 from ..permissions.admin_access import AdminAccessPermission
 
 USERNAMES_KEY = 'usernames'
+EMAIL_KEY = 'email'
 SORTORDER_KEY = 'sort_order'
 VALID_SORTORDER_VALUE = ['asc', 'desc']
 
@@ -90,6 +91,7 @@ class PrincipalView(APIView):
             limit = int(query_params.get('limit', default_limit))
             offset = int(query_params.get('offset', 0))
             usernames = query_params.get(USERNAMES_KEY)
+            email = query_params.get(EMAIL_KEY)
             sort_order = validate_and_get_key(
                 query_params,
                 SORTORDER_KEY,
@@ -112,11 +114,17 @@ class PrincipalView(APIView):
         if usernames:
             principals = usernames.split(',')
             resp = proxy.request_filtered_principals(principals,
-                                                     user.account,
+                                                     account=user.account,
                                                      limit=limit,
                                                      offset=offset,
                                                      sort_order=sort_order)
             usernames_filter = f'&usernames={usernames}'
+        elif email:
+            resp = proxy.request_principals(user.account,
+                                            email=email,
+                                            limit=limit,
+                                            offset=offset,
+                                            sort_order=sort_order)
         else:
             resp = proxy.request_principals(user.account,
                                             limit=limit,
@@ -129,6 +137,8 @@ class PrincipalView(APIView):
             if isinstance(data, dict):
                 count = data.get('userCount')
                 data = data.get('users')
+            elif isinstance(data, list):
+                count = len(data)
             else:
                 count = None
             response_data['meta'] = {
