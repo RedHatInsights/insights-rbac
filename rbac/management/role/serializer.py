@@ -18,6 +18,7 @@
 """Serializer for role management."""
 from django.utils.translation import gettext as _
 from management.group.model import Group
+from management.utils import get_principal_from_request
 from rest_framework import serializers
 from rest_framework.validators import UniqueValidator
 
@@ -208,11 +209,13 @@ class RoleDynamicSerializer(DynamicFieldsModelSerializer):
 
     def get_groups_in_count(self, obj):
         """Get the totoal count of groups where the role is in."""
-        return obtain_groups_in(obj).count()
+        request = self.context.get('request')
+        return obtain_groups_in(obj, request).count()
 
     def get_groups_in(self, obj):
         """Get the groups where the role is in."""
-        return obtain_groups_in(obj).values('name', 'uuid', 'description')
+        request = self.context.get('request')
+        return obtain_groups_in(obj, request).values('name', 'uuid', 'description')
 
 
 def obtain_applications(obj):
@@ -226,8 +229,15 @@ def obtain_applications(obj):
     return list(set(apps))
 
 
-def obtain_groups_in(obj):
+def obtain_groups_in(obj, request):
     """Shared function to get the groups the roles is in."""
+    scope_param = request.query_params.get('scope')
+    username_param = request.query_params.get('username')
     policy_ids = list(obj.policies.values_list('id', flat=True))
+
+    if scope_param == 'principal' or username_param:
+        principal = get_principal_from_request(request)
+        assigned_groups = Group.objects.filter(policies__in=policy_ids, principals__in=[principal])
+        return (assigned_groups | Group.platform_default_set()).distinct()
 
     return Group.objects.filter(policies__in=policy_ids).distinct()
