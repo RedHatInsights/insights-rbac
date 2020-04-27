@@ -2053,6 +2053,10 @@
             "type": "string",
             "example": "GroupA"
           },
+          "description": {
+            "type": "string",
+            "example": "GroupA Description"
+          },
           "uuid": {
             "type": "string",
             "example": "234df936-abb4-4238-a1c9-d91fc540c702"
