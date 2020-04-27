@@ -74,9 +74,6 @@ class RoleViewsetTests(IdentityRequest):
             self.defRole.save()
 
             self.policy.roles.add(self.defRole, self.sysRole)
-
-            self.policy = Policy.objects.create(name='policyA', group=self.group)
-            self.policy.roles.add(self.sysRole)
             self.policy.save()
 
             self.access = Access.objects.create(permission='app:*:*', role=self.defRole)
@@ -338,7 +335,7 @@ class RoleViewsetTests(IdentityRequest):
         client = APIClient()
         response = client.get(url, **self.headers)
 
-        self.assertEqual(len(response.data.get('data')), 1)
+        self.assertEqual(len(response.data.get('data')), 2)
 
         role = response.data.get('data')[0]
         self.assertEqual(new_diaplay_fields, set(role.keys()))
@@ -356,7 +353,7 @@ class RoleViewsetTests(IdentityRequest):
         client = APIClient()
         response = client.get(url, **self.headers)
 
-        self.assertEqual(len(response.data.get('data')), 1)
+        self.assertEqual(len(response.data.get('data')), 2)
 
         role = response.data.get('data')[0]
         self.assertEqual(new_diaplay_fields, set(role.keys()))
