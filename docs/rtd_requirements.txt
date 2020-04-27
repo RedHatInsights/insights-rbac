@@ -20,7 +20,7 @@ idna==2.9
 importlib-metadata==1.6.0
 jinja2==2.11.2
 jmespath==0.9.5
-kombu==4.6.4
+kombu==4.6.8
 markupsafe==1.1.1
 more-itertools==7.2.0
 prometheus-client==0.7.1
