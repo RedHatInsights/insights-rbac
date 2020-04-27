@@ -82,13 +82,13 @@ class PrincipalViewsetTests(IdentityRequest):
         client = APIClient()
         response = client.get(url, **self.headers)
 
-        mock_request.assert_called_once_with(['test_user'], ANY, limit=10, offset=30, sort_order='asc')
+        mock_request.assert_called_once_with(['test_user'], account=ANY, limit=10, offset=30, sort_order='asc')
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         for keyname in ['meta', 'links', 'data']:
             self.assertIn(keyname, response.data)
         self.assertIsInstance(response.data.get('data'), list)
         self.assertEqual(len(response.data.get('data')), 1)
-        self.assertEqual(response.data.get('meta').get('count'), None)
+        self.assertEqual(response.data.get('meta').get('count'), 1)
 
         principal = response.data.get('data')[0]
         self.assertIsNotNone(principal.get('username'))
@@ -132,12 +132,12 @@ class PrincipalViewsetTests(IdentityRequest):
         proxy = PrincipalProxy()
         response = client.get(url, **self.headers)
 
-        mock_request.assert_called_once_with(['test_user'], ANY, limit=10, offset=30, sort_order='desc')
+        mock_request.assert_called_once_with(['test_user'], account=ANY, limit=10, offset=30, sort_order='desc')
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         for keyname in ['meta', 'links', 'data']:
             self.assertIn(keyname, response.data)
         self.assertIsInstance(response.data.get('data'), list)
-        self.assertEqual(response.data.get('meta').get('count'), None)
+        self.assertEqual(response.data.get('meta').get('count'), 1)
         resp = proxy._process_data(response.data.get('data'), account='1234', account_filter=True)
         self.assertEqual(len(resp), 1)
 
@@ -174,8 +174,28 @@ class PrincipalViewsetTests(IdentityRequest):
         for keyname in ['meta', 'links', 'data']:
             self.assertIn(keyname, response.data)
         self.assertIsInstance(response.data.get('data'), list)
-        self.assertEqual(response.data.get('meta').get('count'), None)
+        self.assertEqual(response.data.get('meta').get('count'), 1)
         resp = proxy._process_data(response.data.get('data'), account='1234', account_filter=False)
         self.assertEqual(len(resp), 1)
+
+        self.assertEqual(resp[0]['username'], 'test_user')
+
+    @patch('management.principal.proxy.PrincipalProxy.request_principals',
+           return_value={'status_code': 200, 'data': [{'username': 'test_user', 'account_number': '54321'}]})
+    def test_read_principal_list_by_email(self, mock_request):
+        """Test that we can handle a request with an email address"""
+        url = f'{reverse("principals")}?email=test_user@example.com'
+        client = APIClient()
+        proxy = PrincipalProxy()
+        response = client.get(url, **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        for keyname in ['meta', 'links', 'data']:
+            self.assertIn(keyname, response.data)
+        self.assertIsInstance(response.data.get('data'), list)
+        self.assertEqual(response.data.get('meta').get('count'), 1)
+        resp = proxy._process_data(response.data.get('data'), account='54321', account_filter=False)
+        self.assertEqual(len(resp), 1)
+
+        mock_request.assert_called_once_with(ANY, email='test_user@example.com', limit=10, offset=0, sort_order='asc')
 
         self.assertEqual(resp[0]['username'], 'test_user')
