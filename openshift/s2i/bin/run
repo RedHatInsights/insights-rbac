@@ -76,7 +76,7 @@ APP_HOME=${APP_HOME:-.}
 # Look for 'manage.py' in the directory specified by APP_HOME, or the current direcotry
 manage_file=$APP_HOME/manage.py
 
-if is_django_installed || is_init_container; then
+if is_django_installed && is_init_container; then
   if [[ -f "$manage_file" ]]; then
     echo "---> Migrating database ..."
     python "$manage_file" migrate_schemas --noinput
