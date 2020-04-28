@@ -27,10 +27,6 @@ function should_migrate() {
   is_django_installed && [[ -z "$DISABLE_MIGRATE" ]]
 }
 
-function is_init_container() {
-  [[ -n "$INIT_CONTAINER" ]]
-}
-
 # Guess the number of workers according to the number of cores
 function get_default_web_concurrency() {
   limit_vars=$(cgroup-limits)
@@ -76,7 +72,7 @@ APP_HOME=${APP_HOME:-.}
 # Look for 'manage.py' in the directory specified by APP_HOME, or the current direcotry
 manage_file=$APP_HOME/manage.py
 
-if is_django_installed && is_init_container; then
+if should_migrate; then
   if [[ -f "$manage_file" ]]; then
     echo "---> Migrating database ..."
     python "$manage_file" migrate_schemas --noinput
@@ -97,7 +93,7 @@ if is_gunicorn_installed; then
     APP_MODULE="$(python setup.py --name)"
   fi
 
-  if [[ "$APP_MODULE" ]] && ! is_init_container; then
+  if [[ "$APP_MODULE" ]]; then
     export WEB_CONCURRENCY=${WEB_CONCURRENCY:-$(get_default_web_concurrency)}
 
     echo "---> Serving application with gunicorn ($APP_MODULE) ..."
