@@ -65,6 +65,7 @@ class RoleViewsetTests(IdentityRequest):
             self.group.policies.add(self.policy)
             self.group.save()
 
+
             self.sysRole = Role(**sys_role_config)
             self.sysRole.save()
 
@@ -73,6 +74,7 @@ class RoleViewsetTests(IdentityRequest):
             self.defRole.save()
 
             self.policy.roles.add(self.defRole, self.sysRole)
+            self.policy.save()
 
             self.access = Access.objects.create(permission='app:*:*', role=self.defRole)
 
@@ -320,6 +322,42 @@ class RoleViewsetTests(IdentityRequest):
             self.assertIsNotNone(iterRole.get('groups_in')[0]['name'])
             self.assertIsNotNone(iterRole.get('groups_in')[0]['uuid'])
             self.assertIsNotNone(iterRole.get('groups_in')[0]['description'])
+
+    def test_list_role_with_additional_fields_username_success(self):
+        """Test that we can read a list of roles and add fields for username."""
+        field_1 = 'groups_in_count'
+        field_2 = 'groups_in'
+        new_diaplay_fields = self.display_fields
+        new_diaplay_fields.add(field_1)
+        new_diaplay_fields.add(field_2)
+
+        url = '{}?add_fields={},{}&username={}'.format(reverse('role-list'), field_1, field_2, self.user_data['username'])
+        client = APIClient()
+        response = client.get(url, **self.headers)
+
+        self.assertEqual(len(response.data.get('data')), 2)
+
+        role = response.data.get('data')[0]
+        self.assertEqual(new_diaplay_fields, set(role.keys()))
+        self.assertEqual(role['groups_in_count'], 1)
+
+    def test_list_role_with_additional_fields_principal_success(self):
+        """Test that we can read a list of roles and add fields for principal."""
+        field_1 = 'groups_in_count'
+        field_2 = 'groups_in'
+        new_diaplay_fields = self.display_fields
+        new_diaplay_fields.add(field_1)
+        new_diaplay_fields.add(field_2)
+
+        url = '{}?add_fields={},{}&scope=principal'.format(reverse('role-list'), field_1, field_2)
+        client = APIClient()
+        response = client.get(url, **self.headers)
+
+        self.assertEqual(len(response.data.get('data')), 2)
+
+        role = response.data.get('data')[0]
+        self.assertEqual(new_diaplay_fields, set(role.keys()))
+        self.assertEqual(role['groups_in_count'], 1)
 
     def test_list_role_with_invalid_additional_fields(self):
         """Test that invalid additional fields will raise exception."""
