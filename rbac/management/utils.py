@@ -72,7 +72,8 @@ def get_principal(username, account, verify_principal=True):
                 message = 'No data found for principal with username {}.'.format(username)
                 raise serializers.ValidationError({key: _(message)})
 
-        return Principal.objects.create(username=username)
+        # Avoid possible race condition if the user was created while checking BOP
+        principal, created = Principal.objects.get_or_create(username=username)  # pylint: disable=unused-variable
 
     return principal
 
