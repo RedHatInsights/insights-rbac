@@ -23,6 +23,7 @@ import requests
 from django.conf import settings
 from rest_framework import status
 
+from management.models import Principal
 from rbac.env import ENVIRONMENT
 
 
@@ -118,9 +119,19 @@ class PrincipalProxy:  # pylint: disable=too-few-public-methods
         """Send request to proxy service."""
         if settings.BYPASS_BOP_VERIFICATION:
             to_return = []
-            for principal in data['users']:
-                to_return.append(dict(username=principal))
-            return dict(data=to_return)
+            if data is None:
+                for principal in Principal.objects.all():
+                    to_return.append(dict(username=principal.username))
+            elif 'users' in data:
+                for principal in data['users']:
+                    to_return.append(dict(username=principal))
+            elif 'primaryEmail' in data:
+                # We can't fake a lookup for an email address, so we won't try.
+                pass
+            return dict(
+                data=to_return,
+                status_code=200,
+                userCount=len(to_return))
         headers = {
             USER_ENV_HEADER: self.user_env,
             CLIENT_ID_HEADER: self.client_id,
