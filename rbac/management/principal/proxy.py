@@ -21,9 +21,9 @@ import os
 
 import requests
 from django.conf import settings
+from management.models import Principal
 from rest_framework import status
 
-from management.models import Principal
 from rbac.env import ENVIRONMENT
 
 
