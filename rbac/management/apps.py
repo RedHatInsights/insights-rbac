@@ -15,12 +15,14 @@
 #    along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Management application configuration module."""
-import concurrent.futures
 import logging
 import sys
 
 from django.apps import AppConfig
 from django.db.utils import OperationalError, ProgrammingError
+from rbac.settings import ROLE_SEEDING_ENABLED
+from rbac.settings import GROUP_SEEDING_ENABLED
+from management.seeds import role_seeding, group_seeding
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
@@ -36,8 +38,11 @@ class ManagementConfig(AppConfig):
         if 'manage.py' in sys.argv[0] and 'runserver' not in sys.argv:
             return
         try:
-            self.role_seeding()
-            self.group_seeding()
+            if ROLE_SEEDING_ENABLED:
+                role_seeding()
+
+            if GROUP_SEEDING_ENABLED:
+                group_seeding()
         except (OperationalError, ProgrammingError) as op_error:
             if 'no such table' in str(op_error) or \
                     'does not exist' in str(op_error):
@@ -45,45 +50,3 @@ class ManagementConfig(AppConfig):
                 return
             else:
                 logger.error('Error: %s.', op_error)
-
-    def role_seeding(self):  # pylint: disable=R0201
-        """Update any roles at startup."""
-        # noqa: E402 pylint: disable=C0413
-        from api.models import Tenant
-        from management.role.definer import seed_roles
-        from rbac.settings import ROLE_SEEDING_ENABLED
-
-        if not ROLE_SEEDING_ENABLED:
-            return
-
-        logger.info('Start role seed changes check.')
-        try:
-            with concurrent.futures.ThreadPoolExecutor() as executor:
-                for tenant in list(Tenant.objects.all()):
-                    if tenant.schema_name != 'public':
-                        logger.info('Checking for role seed changes for tenant %s.', tenant.schema_name)
-                        future = executor.submit(seed_roles, tenant, update=True)
-                        logger.info('Completed role seed changes for tenant %s.', future.result().schema_name)
-        except Exception as exc:
-            logger.error('Error encountered during role seeding %s.', exc)
-
-    def group_seeding(self):  # pylint: disable=R0201
-        """Update platform group at startup."""
-        # noqa: E402 pylint: disable=C0413
-        from api.models import Tenant
-        from management.group.definer import seed_group
-        from rbac.settings import GROUP_SEEDING_ENABLED
-
-        if not GROUP_SEEDING_ENABLED:
-            return
-
-        logger.info('Start goup seed changes check.')
-        try:
-            with concurrent.futures.ThreadPoolExecutor() as executor:
-                for tenant in list(Tenant.objects.all()):
-                    if tenant.schema_name != 'public':
-                        logger.info('Checking for group seed changes for tenant %s.', tenant.schema_name)
-                        future = executor.submit(seed_group, tenant)
-                        logger.info('Completed group seed changes for tenant %s.', future.result().schema_name)
-        except Exception as exc:
-            logger.error('Error encountered during group seeding %s.', exc)
