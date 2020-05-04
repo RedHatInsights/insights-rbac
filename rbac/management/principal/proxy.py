@@ -21,6 +21,7 @@ import os
 
 import requests
 from django.conf import settings
+from management.models import Principal
 from rest_framework import status
 
 from rbac.env import ENVIRONMENT
@@ -113,8 +114,24 @@ class PrincipalProxy:  # pylint: disable=too-few-public-methods
         }
         return proxy_conn_info
 
-    def _request_principals(self, url, account=None, account_filter=False, method=requests.get, params=None, data=None):
+    def _request_principals(self, url, account=None, account_filter=False, method=requests.get,  # noqa: C901
+                            params=None, data=None):
         """Send request to proxy service."""
+        if settings.BYPASS_BOP_VERIFICATION:
+            to_return = []
+            if data is None:
+                for principal in Principal.objects.all():
+                    to_return.append(dict(username=principal.username))
+            elif 'users' in data:
+                for principal in data['users']:
+                    to_return.append(dict(username=principal))
+            elif 'primaryEmail' in data:
+                # We can't fake a lookup for an email address, so we won't try.
+                pass
+            return dict(
+                data=to_return,
+                status_code=200,
+                userCount=len(to_return))
         headers = {
             USER_ENV_HEADER: self.user_env,
             CLIENT_ID_HEADER: self.client_id,

@@ -40,5 +40,4 @@ class RoleAccessPermission(permissions.BasePermission):
             role_write = request.user.access.get('role', {}).get('write', [])
             if role_write:
                 return True
-
         return False

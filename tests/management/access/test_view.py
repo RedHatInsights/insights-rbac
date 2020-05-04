@@ -38,9 +38,9 @@ class AccessViewTests(IdentityRequest):
         """Set up the access view tests."""
         super().setUp()
         request = self.request_context['request']
-        user = User(username=self.user_data['username'],
-                    tenant=self.tenant)
-        user.save()
+        user = User()
+        user.username = self.user_data['username']
+        user.account = self.customer_data['account_id']
         request.user = user
 
         self.access_data = {
@@ -67,7 +67,6 @@ class AccessViewTests(IdentityRequest):
 
     def tearDown(self):
         """Tear down access view tests."""
-        User.objects.all().delete()
         with tenant_context(self.tenant):
             Group.objects.all().delete()
             Principal.objects.all().delete()

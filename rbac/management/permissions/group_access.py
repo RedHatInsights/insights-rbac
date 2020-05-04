@@ -36,9 +36,7 @@ class GroupAccessPermission(permissions.BasePermission):
                 return True
             username = request.query_params.get('username')
             if username:
-                decoded = request.user.identity_header.get('decoded', {})
-                identity_username = decoded.get('identity', {}).get('user', {}).get('username')
-                return username == identity_username
+                return username == request.user.username
             else:
                 group_read = request.user.access.get('group', {}).get('read', [])
                 if group_read:

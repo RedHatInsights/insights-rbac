@@ -92,17 +92,7 @@ class QuerySetTest(TestCase):
         principal = Principal.objects.create(username='test_user')
         group = Group.objects.first()
         group.principals.add(principal)
-        identity_header = {
-            'decoded': {
-                'identity': {
-                    'user': {
-                        'username': 'test_user'
-                    }
-                }
-            }
-        }
-
-        user = Mock(spec=User, admin=True, account='00001', identity_header=identity_header)
+        user = Mock(spec=User, admin=True, account='00001', username='test_user')
         req = Mock(user=user, query_params={'username': 'test_user'})
         queryset = get_group_queryset(req)
         self.assertEquals(queryset.count(), 1)
@@ -113,16 +103,7 @@ class QuerySetTest(TestCase):
         principal = Principal.objects.create(username='test_user')
         group = Group.objects.first()
         group.principals.add(principal)
-        identity_header = {
-            'decoded': {
-                'identity': {
-                    'user': {
-                        'username': 'test_user'
-                    }
-                }
-            }
-        }
-        user = Mock(spec=User, admin=False, account='00001', identity_header=identity_header)
+        user = Mock(spec=User, admin=False, account='00001', username='test_user')
         req = Mock(user=user, method='GET', query_params={'username': 'test_user'}, path=reverse('group-list'))
         queryset = get_group_queryset(req)
         self.assertEquals(queryset.count(), 1)
@@ -134,16 +115,7 @@ class QuerySetTest(TestCase):
         principal2 = Principal.objects.create(username='test_user2')
         group = Group.objects.first()
         group.principals.add(principal)
-        identity_header = {
-            'decoded': {
-                'identity': {
-                    'user': {
-                        'username': 'test_user'
-                    }
-                }
-            }
-        }
-        user = Mock(spec=User, admin=False, account='00001', identity_header=identity_header)
+        user = Mock(spec=User, admin=False, account='00001', username='test_user')
         req = Mock(user=user, method='GET', query_params={'username': 'test_user2'})
         queryset = get_group_queryset(req)
         self.assertEquals(queryset.count(), 0)
@@ -160,17 +132,8 @@ class QuerySetTest(TestCase):
     def test_get_role_queryset_non_admin_username(self):
         """Test get_role_queryset as a non-admin supplying a username."""
         roles = self._setup_roles_for_role_username_queryset_tests()
-        identity_header = {
-            'decoded': {
-                'identity': {
-                    'user': {
-                        'username': 'test_user2'
-                    }
-                }
-            }
-        }
-
-        user = Mock(spec=User, admin=False, identity_header=identity_header)
+        
+        user = Mock(spec=User, admin=False, username='test_user2')
         req = Mock(user=user, method='GET', query_params={'username': 'test_user2'})
         with self.assertRaises(PermissionDenied):
             get_role_queryset(req)
@@ -178,17 +141,8 @@ class QuerySetTest(TestCase):
     def test_get_role_queryset_non_admin_username_different(self):
         """Test get_role_queryset as a non-admin supplying a different username."""
         roles = self._setup_roles_for_role_username_queryset_tests()
-        identity_header = {
-            'decoded': {
-                'identity': {
-                    'user': {
-                        'username': 'test_user'
-                    }
-                }
-            }
-        }
-
-        user = Mock(spec=User, admin=False, identity_header=identity_header)
+        
+        user = Mock(spec=User, admin=False, username='test_user')
         req = Mock(user=user, method='GET', query_params={'username': 'test_user2'})
         queryset = get_role_queryset(req)
         self.assertEquals(list(queryset), [])
@@ -197,17 +151,8 @@ class QuerySetTest(TestCase):
     def test_get_role_queryset_admin_username(self):
         """Test get_role_queryset as an admin supplying a username."""
         roles = self._setup_roles_for_role_username_queryset_tests()
-        identity_header = {
-            'decoded': {
-                'identity': {
-                    'user': {
-                        'username': 'test_user2'
-                    }
-                }
-            }
-        }
-
-        user = Mock(spec=User, admin=True, account='00001', identity_header=identity_header)
+        
+        user = Mock(spec=User, admin=True, account='00001', username='test_user2')
         req = Mock(user=user, method='GET', query_params={'username': 'test_user2'})
         queryset = get_role_queryset(req)
         role = queryset.last()
@@ -219,17 +164,8 @@ class QuerySetTest(TestCase):
     def test_get_role_queryset_principal_scope(self):
         """Test get_role_queryset with principal scope."""
         roles = self._setup_roles_for_role_username_queryset_tests()
-        identity_header = {
-            'decoded': {
-                'identity': {
-                    'user': {
-                        'username': 'test_user2'
-                    }
-                }
-            }
-        }
 
-        user = Mock(spec=User, admin=True, account='00001', identity_header=identity_header)
+        user = Mock(spec=User, admin=True, account='00001', username='test_user2')
         req = Mock(user=user, method='GET', query_params={SCOPE_KEY: PRINCIPAL_SCOPE, 'username': 'test_user2'})
         queryset = get_role_queryset(req)
         role = queryset.last()
@@ -241,17 +177,7 @@ class QuerySetTest(TestCase):
     def test_get_role_queryset_admin_username_different(self):
         """Test get_role_queryset as an admin supplying a different username."""
         roles = self._setup_roles_for_role_username_queryset_tests()
-        identity_header = {
-            'decoded': {
-                'identity': {
-                    'user': {
-                        'username': 'admin'
-                    }
-                }
-            }
-        }
-
-        user = Mock(spec=User, admin=True, account='00001', identity_header=identity_header)
+        user = Mock(spec=User, admin=True, account='00001', username='admin')
         req = Mock(user=user, method='GET', query_params={'username': 'test_user2'})
         queryset = get_role_queryset(req)
         self.assertEquals(list(queryset), [roles.first()])

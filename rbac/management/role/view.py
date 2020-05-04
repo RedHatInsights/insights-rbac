@@ -344,7 +344,7 @@ class RoleViewSet(mixins.CreateModelMixin,
         try:
             role = Role.objects.get(uuid=uuid)
         except (Role.DoesNotExist, ValidationError):
-            raise Http404
+            raise Http404()
 
         access = AccessSerializer(role.access, many=True).data
         page = self.paginate_queryset(access)

@@ -15,9 +15,6 @@
 #    along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """API models for import organization."""
-from uuid import uuid4
-
-from django.db import models
 from tenant_schemas.models import TenantMixin
 
 from api.status.model import Status  # noqa: F401
@@ -32,25 +29,17 @@ class Tenant(TenantMixin):
     # Delete all schemas when a tenant is removed
     auto_drop_schema = True
 
+    def __str__(self):
+        """Get string representation of Tenant."""
+        return f'Tenant ({self.schema_name})'
 
-class User(models.Model):
+
+class User:
     """A request User."""
 
-    uuid = models.UUIDField(default=uuid4, editable=False,
-                            unique=True, null=False)
-    username = models.CharField(max_length=150, unique=True)
-    is_active = models.NullBooleanField(default=True)
-    tenant = models.ForeignKey('Tenant', null=True, on_delete=models.CASCADE)
-
-    def __init__(self, *args, **kwargs):
-        """Initialize non-persisted user properties."""
-        super().__init__(*args, **kwargs)
-        self.account = None
-        self.admin = False
-        self.access = None
-        self.identity_header = None
-        self.req_id = None
-        self.system = False
-
-    class Meta:
-        ordering = ['username']
+    username = None
+    account = None
+    admin = False
+    access = {}
+    system = False
+    is_active = True

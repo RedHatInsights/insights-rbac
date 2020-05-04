@@ -170,7 +170,7 @@ class GroupAccessPermissionTest(TestCase):
                 }
             }
         }
-        user = Mock(spec=User, admin=False, access=access, identity_header=identity_header)
+        user = Mock(spec=User, admin=False, access=access, username='test_user')
         req = Mock(user=user, method='GET', query_params={'username': 'test_user'})
         accessPerm = GroupAccessPermission()
         result = accessPerm.has_permission(request=req, view=None)
@@ -199,7 +199,7 @@ class GroupAccessPermissionTest(TestCase):
                 }
             }
         }
-        user = Mock(spec=User, admin=False, access=access, identity_header=identity_header)
+        user = Mock(spec=User, admin=False, access=access, username='test_user')
         req = Mock(user=user, method='GET', query_params={'username': 'test_user2'})
         accessPerm = GroupAccessPermission()
         result = accessPerm.has_permission(request=req, view=None)

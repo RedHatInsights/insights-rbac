@@ -7,8 +7,10 @@ services:
       working_dir: /rbac
       entrypoint: 'tox -r'
       environment:
-        - POSTGRES_SQL_SERVICE_HOST=db
-        - POSTGRES_SQL_SERVICE_PORT=5432
+        - DATABASE_HOST=db
+        - DATABASE_PORT=15432
+        - ACCESS_CACHE_ENABLED=False
+        - BYPASS_BOP_VERIFICATION=True
       volumes:
         - '.:/rbac/'
       links:
