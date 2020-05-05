@@ -23,23 +23,22 @@ from celery import Celery
 from celery.schedules import crontab
 
 # set the default Django settings module for the 'celery' program.
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'rbac.settings')
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "rbac.settings")
 
-app = Celery('rbac')  # pylint: disable=invalid-name
+app = Celery("rbac")  # pylint: disable=invalid-name
 
 # Using a string here means the worker doesn't have to serialize
 # the configuration object to child processes.
 # - namespace='CELERY' means all celery-related configuration keys
 #   should have a `CELERY_` prefix.
-app.config_from_object('django.conf:settings', namespace='CELERY')
+app.config_from_object("django.conf:settings", namespace="CELERY")
 
 app.conf.beat_schedule = {
-    'principal-cleanup-every-sevenish-days': {
-        'task': 'management.tasks.principal_cleanup',
-        'schedule':
-        crontab(0, 0, day_of_month='7-28/7'),
-        'args': [],
-    },
+    "principal-cleanup-every-sevenish-days": {
+        "task": "management.tasks.principal_cleanup",
+        "schedule": crontab(0, 0, day_of_month="7-28/7"),
+        "args": [],
+    }
 }
 
 # Load task modules from all registered Django app configs.

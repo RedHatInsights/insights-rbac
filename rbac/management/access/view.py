@@ -96,14 +96,14 @@ class AccessView(APIView):
 
         if page is not None:
             return self.get_paginated_response(access_policy)
-        return Response({'data': access_policy})
+        return Response({"data": access_policy})
 
     @property
     def paginator(self):
         """Return the paginator instance associated with the view, or `None`."""
-        if not hasattr(self, '_paginator'):
+        if not hasattr(self, "_paginator"):
             self._paginator = self.pagination_class()
-            if self.pagination_class is None or 'limit' not in self.request.query_params:
+            if self.pagination_class is None or "limit" not in self.request.query_params:
                 self._paginator.default_limit = self._paginator.max_limit
         return self._paginator
 

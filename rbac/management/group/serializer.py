@@ -28,9 +28,9 @@ class GroupInputSerializer(serializers.ModelSerializer):
     """Serializer for Group input model."""
 
     uuid = serializers.UUIDField(read_only=True)
-    name = serializers.CharField(required=True,
-                                 max_length=150,
-                                 validators=[UniqueValidator(queryset=Group.objects.all())])
+    name = serializers.CharField(
+        required=True, max_length=150, validators=[UniqueValidator(queryset=Group.objects.all())]
+    )
     description = serializers.CharField(allow_null=True, required=False)
     principalCount = serializers.IntegerField(read_only=True)
     platform_default = serializers.BooleanField(read_only=True)
@@ -47,9 +47,17 @@ class GroupInputSerializer(serializers.ModelSerializer):
         """Metadata for the serializer."""
 
         model = Group
-        fields = ('uuid', 'name', 'description',
-                  'principalCount', 'platform_default',
-                  'roleCount', 'created', 'modified', 'system')
+        fields = (
+            "uuid",
+            "name",
+            "description",
+            "principalCount",
+            "platform_default",
+            "roleCount",
+            "created",
+            "modified",
+            "system",
+        )
 
 
 class GroupSerializer(serializers.ModelSerializer):
@@ -70,21 +78,29 @@ class GroupSerializer(serializers.ModelSerializer):
         """Metadata for the serializer."""
 
         model = Group
-        fields = ('uuid', 'name',
-                  'description', 'principals',
-                  'platform_default', 'created',
-                  'modified', 'roles', 'roleCount', 'system')
+        fields = (
+            "uuid",
+            "name",
+            "description",
+            "principals",
+            "platform_default",
+            "created",
+            "modified",
+            "roles",
+            "roleCount",
+            "system",
+        )
 
     def to_representation(self, obj):
         """Convert representation to dictionary object."""
         proxy = PrincipalProxy()
         formatted = super().to_representation(obj)
-        principals = formatted.pop('principals')
-        users = [principal.get('username') for principal in principals]
+        principals = formatted.pop("principals")
+        users = [principal.get("username") for principal in principals]
         resp = proxy.request_filtered_principals(users, limit=len(users))
-        if resp.get('status_code') == status.HTTP_200_OK:
-            principals = resp.get('data')
-        formatted['principals'] = principals
+        if resp.get("status_code") == status.HTTP_200_OK:
+            principals = resp.get("data")
+        formatted["principals"] = principals
         return formatted
 
     def get_roleCount(self, obj):
@@ -105,7 +121,7 @@ class GroupPrincipalInputSerializer(serializers.Serializer):
     class Meta:
         """Metadata for the serializer."""
 
-        fields = ('principals',)
+        fields = ("principals",)
 
 
 class GroupRoleSerializerOut(serializers.Serializer):
@@ -124,4 +140,4 @@ class GroupRoleSerializerIn(serializers.Serializer):
     def to_representation(self, obj):
         """Convert representation to dictionary object."""
         serialized_roles = [RoleMinimumSerializer(role).data for role in obj.roles_with_access()]
-        return {'data': serialized_roles}
+        return {"data": serialized_roles}

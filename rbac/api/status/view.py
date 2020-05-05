@@ -25,7 +25,7 @@ from api.status.model import Status
 from api.status.serializer import StatusSerializer
 
 
-@api_view(['GET', 'HEAD'])
+@api_view(["GET", "HEAD"])
 @permission_classes((permissions.AllowAny,))
 def status(request):
     """Provide the server status information.
@@ -75,5 +75,5 @@ def status(request):
     status_info = Status()
     serializer = StatusSerializer(status_info)
     server_info = serializer.data
-    server_info['server_address'] = request.META.get('HTTP_HOST', 'localhost')
+    server_info["server_address"] = request.META.get("HTTP_HOST", "localhost")
     return Response(server_info)

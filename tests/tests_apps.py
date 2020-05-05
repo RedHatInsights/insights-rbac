@@ -40,25 +40,26 @@ class AppsModelTest(TestCase):
         # restore filters on logging
         logging.disable(logging.CRITICAL)
 
-    @patch('management.apps.sys.argv', ['manage.py', 'test'])
-    @patch('management.apps.ManagementConfig.role_seeding')
+    @patch("management.apps.sys.argv", ["manage.py", "test"])
+    @patch("management.apps.ManagementConfig.role_seeding")
     def test_ready_silent_run(self, mock_status):
         """Test that ready functions are not called."""
         mock_status.assert_not_called()
 
     def test_role_seeding(self):
         """Test the server role seeding startup."""
-        with self.assertLogs('management.apps', level='INFO') as logger:
-            mgmt_config = apps.get_app_config('management')
+        with self.assertLogs("management.apps", level="INFO") as logger:
+            mgmt_config = apps.get_app_config("management")
             mgmt_config.role_seeding()
             self.assertNotEqual(logger.output, [])
 
     # patching a method called by ManagementConfig.ready()
-    @patch.object(ManagementConfig, 'role_seeding',
-                  lambda x: exec('raise OperationalError("This is a Test Exception")'))
+    @patch.object(
+        ManagementConfig, "role_seeding", lambda x: exec('raise OperationalError("This is a Test Exception")')
+    )
     def test_catch_operational_error(self):
         """Test that we handle exceptions thrown when tables are missing."""
-        mgmt_config = apps.get_app_config('management')
+        mgmt_config = apps.get_app_config("management")
 
         # the real test
         mgmt_config.ready()

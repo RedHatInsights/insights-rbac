@@ -18,9 +18,9 @@
 
 from rest_framework import permissions
 
-SCOPE_KEY = 'scope'
-ACCOUNT_SCOPE = 'account'
-PRINCIPAL_SCOPE = 'principal'
+SCOPE_KEY = "scope"
+ACCOUNT_SCOPE = "account"
+PRINCIPAL_SCOPE = "principal"
 VALID_SCOPES = [ACCOUNT_SCOPE, PRINCIPAL_SCOPE]
 
 

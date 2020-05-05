@@ -35,36 +35,43 @@ def clean_tenant_principals(tenant):
     with tenant_context(tenant):
         removed_principals = []
         principals = list(Principal.objects.all())
-        logger.info('Running clean up on %d principals for tenant %s.',
-                    len(principals), tenant.schema_name)
+        logger.info("Running clean up on %d principals for tenant %s.", len(principals), tenant.schema_name)
         for principal in principals:
-            logger.debug('Checking for username %s for tenant %s.',
-                         principal.username, tenant.schema_name)
+            logger.debug("Checking for username %s for tenant %s.", principal.username, tenant.schema_name)
             resp = proxy.request_filtered_principals([principal.username])
-            status_code = resp.get('status_code')
-            data = resp.get('data')
+            status_code = resp.get("status_code")
+            data = resp.get("data")
             if status_code == status.HTTP_200_OK and data:
-                logger.debug('Username %s found for tenant %s, no change needed.',
-                             principal.username, tenant.schema_name)
+                logger.debug(
+                    "Username %s found for tenant %s, no change needed.", principal.username, tenant.schema_name
+                )
             elif status_code == status.HTTP_200_OK and not data:
                 removed_principals.append(principal.username)
                 principal.delete()
-                logger.info('Username %s not found for tenant %s, principal removed.',
-                            principal.username, tenant.schema_name)
+                logger.info(
+                    "Username %s not found for tenant %s, principal removed.", principal.username, tenant.schema_name
+                )
             else:
-                logger.warn('Unknown status %d when checking username %s'
-                            ' for tenant %s, no change needed.',
-                            status_code, principal.username, tenant.schema_name)
-        logger.info('Completed clean up of %d principals for tenant %s, %d removed.',
-                    len(principals), tenant.schema_name, len(removed_principals))
+                logger.warn(
+                    "Unknown status %d when checking username %s" " for tenant %s, no change needed.",
+                    status_code,
+                    principal.username,
+                    tenant.schema_name,
+                )
+        logger.info(
+            "Completed clean up of %d principals for tenant %s, %d removed.",
+            len(principals),
+            tenant.schema_name,
+            len(removed_principals),
+        )
 
 
 def clean_tenants_principals():
     """Update any roles at startup."""
-    logger.info('Start principal clean up.')
+    logger.info("Start principal clean up.")
 
     for tenant in list(Tenant.objects.all()):
-        if tenant.schema_name != 'public':
-            logger.info('Running principal clean up for tenant %s.', tenant.schema_name)
+        if tenant.schema_name != "public":
+            logger.info("Running principal clean up for tenant %s.", tenant.schema_name)
             clean_tenant_principals(tenant)
-            logger.info('Completed principal clean up for tenant %s.', tenant.schema_name)
+            logger.info("Completed principal clean up for tenant %s.", tenant.schema_name)

@@ -35,9 +35,9 @@ class PolicyInputSerializer(serializers.ModelSerializer):
     """Serializer for the policy model."""
 
     uuid = serializers.UUIDField(read_only=True)
-    name = serializers.CharField(required=True,
-                                 max_length=150,
-                                 validators=[UniqueValidator(queryset=Policy.objects.all())])
+    name = serializers.CharField(
+        required=True, max_length=150, validators=[UniqueValidator(queryset=Policy.objects.all())]
+    )
     description = serializers.CharField(allow_null=True, required=False)
     group = serializers.UUIDField(required=True)
     roles = UUIDListField(required=True)
@@ -48,19 +48,19 @@ class PolicyInputSerializer(serializers.ModelSerializer):
         """Metadata for the serializer."""
 
         model = Policy
-        fields = ('uuid', 'name', 'description', 'group', 'roles', 'created', 'modified')
+        fields = ("uuid", "name", "description", "group", "roles", "created", "modified")
 
     def create(self, validated_data):
         """Create the policy object in the database."""
-        name = validated_data.pop('name')
-        description = validated_data.pop('description', None)
-        group_uuid = validated_data.pop('group')
-        role_uuids = validated_data.pop('roles')
+        name = validated_data.pop("name")
+        description = validated_data.pop("description", None)
+        group_uuid = validated_data.pop("group")
+        role_uuids = validated_data.pop("roles")
         try:
             group = Group.objects.get(uuid=group_uuid)
         except Group.DoesNotExist:
-            msg = 'Group with uuid {} could not be found.'
-            error = {'detail': msg.format(group_uuid)}
+            msg = "Group with uuid {} could not be found."
+            error = {"detail": msg.format(group_uuid)}
             raise serializers.ValidationError(error)
 
         policy = Policy(name=name, description=description, group=group)
@@ -70,12 +70,12 @@ class PolicyInputSerializer(serializers.ModelSerializer):
                 role = Role.objects.get(uuid=role_uuid)
                 roles.append(role)
             except Role.DoesNotExist:
-                msg = 'Role with uuid {} could not be found.'
-                error = {'detail': msg.format(role_uuid)}
+                msg = "Role with uuid {} could not be found."
+                error = {"detail": msg.format(role_uuid)}
                 raise serializers.ValidationError(error)
         if len(roles) == 0:
-            msg = 'Policy must have at least one role.'
-            error = {'detail': msg}
+            msg = "Policy must have at least one role."
+            error = {"detail": msg}
             raise serializers.ValidationError(error)
         policy.save()
         for role in roles:
@@ -85,34 +85,33 @@ class PolicyInputSerializer(serializers.ModelSerializer):
 
     def update(self, instance, validated_data):
         """Update the policy object in the database."""
-        instance.name = validated_data.get('name', instance.name)
-        instance.description = validated_data.get('description',
-                                                  instance.description)
-        group_uuid = validated_data.pop('group')
+        instance.name = validated_data.get("name", instance.name)
+        instance.description = validated_data.get("description", instance.description)
+        group_uuid = validated_data.pop("group")
         if instance.group.uuid != group_uuid:
             try:
                 group = Group.objects.get(uuid=group_uuid)
                 instance.group = group
                 instance.save()
             except Group.DoesNotExist:
-                msg = 'Group with uuid {} could not be found.'
-                error = {'detail': msg.format(group_uuid)}
+                msg = "Group with uuid {} could not be found."
+                error = {"detail": msg.format(group_uuid)}
                 raise serializers.ValidationError(error)
 
-        role_uuids = validated_data.pop('roles')
+        role_uuids = validated_data.pop("roles")
         roles = []
         for role_uuid in role_uuids:
             try:
                 role = Role.objects.get(uuid=role_uuid)
                 roles.append(role)
             except Role.DoesNotExist:
-                msg = 'Role with uuid {} could not be found.'
-                error = {'detail': msg.format(role_uuid)}
+                msg = "Role with uuid {} could not be found."
+                error = {"detail": msg.format(role_uuid)}
                 raise serializers.ValidationError(error)
 
         if len(roles) == 0:
-            msg = 'Policy must have at least one role.'
-            error = {'detail': msg}
+            msg = "Policy must have at least one role."
+            error = {"detail": msg}
             raise serializers.ValidationError(error)
 
         instance.roles.clear()
@@ -129,13 +128,13 @@ class PolicyInputSerializer(serializers.ModelSerializer):
             serializer = RoleMinimumSerializer(role)
             roles.append(serializer.data)
         return {
-            'uuid': obj.uuid,
-            'name': obj.name,
-            'description': obj.description,
-            'group': group.data,
-            'roles': roles,
-            'created': obj.created,
-            'modified': obj.modified,
+            "uuid": obj.uuid,
+            "name": obj.name,
+            "description": obj.description,
+            "group": group.data,
+            "roles": roles,
+            "created": obj.created,
+            "modified": obj.modified,
         }
 
 
@@ -154,8 +153,7 @@ class PolicySerializer(serializers.ModelSerializer):
         """Metadata for the serializer."""
 
         model = Policy
-        fields = ('uuid', 'name', 'description',
-                  'group', 'roles', 'created', 'modified')
+        fields = ("uuid", "name", "description", "group", "roles", "created", "modified")
 
     def to_representation(self, obj):
         """Convert representation to dictionary object."""
@@ -165,11 +163,11 @@ class PolicySerializer(serializers.ModelSerializer):
             serializer = RoleMinimumSerializer(role)
             roles.append(serializer.data)
         return {
-            'uuid': obj.uuid,
-            'name': obj.name,
-            'description': obj.description,
-            'group': group.data,
-            'roles': roles,
-            'created': obj.created,
-            'modified': obj.modified
+            "uuid": obj.uuid,
+            "name": obj.name,
+            "description": obj.description,
+            "group": group.data,
+            "roles": roles,
+            "created": obj.created,
+            "modified": obj.modified,
         }

@@ -49,113 +49,103 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # SECURITY WARNING: keep the secret key used in production secret!
 # The SECRET_KEY is provided via an environment variable in OpenShift
 SECRET_KEY = os.getenv(
-    'DJANGO_SECRET_KEY',
+    "DJANGO_SECRET_KEY",
     # safe value used for development when DJANGO_SECRET_KEY might not be set
-    'asvuhxowz)zjbo4%7pc$ek1nbfh_-#%$bq_x8tkh=#e24825=5'
+    "asvuhxowz)zjbo4%7pc$ek1nbfh_-#%$bq_x8tkh=#e24825=5",
 )
 
 # SECURITY WARNING: don't run with debug turned on in production!
 # Default value: False
-DEBUG = False if os.getenv('DJANGO_DEBUG', 'False') == 'False' else True  # pylint: disable=R1719
+DEBUG = False if os.getenv("DJANGO_DEBUG", "False") == "False" else True  # pylint: disable=R1719
 
-ALLOWED_HOSTS = ['*']
+ALLOWED_HOSTS = ["*"]
 
 
 # Application definition
 
 INSTALLED_APPS = [
-    'tenant_schemas',
+    "tenant_schemas",
     # django
     # 'django.contrib.admin',
-    'django.contrib.auth',
-    'django.contrib.contenttypes',
-    'django.contrib.sessions',
-    'django.contrib.messages',
-    'django.contrib.staticfiles',
-
+    "django.contrib.auth",
+    "django.contrib.contenttypes",
+    "django.contrib.sessions",
+    "django.contrib.messages",
+    "django.contrib.staticfiles",
     # third-party
-    'rest_framework',
-    'django_filters',
-    'corsheaders',
-    'django_prometheus',
-    'django_extensions',
-
+    "rest_framework",
+    "django_filters",
+    "corsheaders",
+    "django_prometheus",
+    "django_extensions",
     # local apps
-    'api',
-    'management',
+    "api",
+    "management",
 ]
 
 SHARED_APPS = (
-    'tenant_schemas',
-    'api',
-    'django.contrib.contenttypes',
+    "tenant_schemas",
+    "api",
+    "django.contrib.contenttypes",
     # 'django.contrib.admin',
-    'django.contrib.auth',
-    'django.contrib.sessions',
-    'django.contrib.messages',
-    'rest_framework',
-    'django_extensions'
+    "django.contrib.auth",
+    "django.contrib.sessions",
+    "django.contrib.messages",
+    "rest_framework",
+    "django_extensions",
 )
 
-TENANT_APPS = (
-    'management',
-)
+TENANT_APPS = ("management",)
 
-DEFAULT_FILE_STORAGE = 'tenant_schemas.storage.TenantFileSystemStorage'
+DEFAULT_FILE_STORAGE = "tenant_schemas.storage.TenantFileSystemStorage"
 
 MIDDLEWARE = [
-    'django_prometheus.middleware.PrometheusBeforeMiddleware',
-    'corsheaders.middleware.CorsMiddleware',
-    'rbac.middleware.DisableCSRF',
-    'django.middleware.security.SecurityMiddleware',
-    'django.middleware.common.CommonMiddleware',
-    'rbac.middleware.IdentityHeaderMiddleware',
-    'django.middleware.clickjacking.XFrameOptionsMiddleware',
-    'whitenoise.middleware.WhiteNoiseMiddleware',
-    'django_prometheus.middleware.PrometheusAfterMiddleware',
+    "django_prometheus.middleware.PrometheusBeforeMiddleware",
+    "corsheaders.middleware.CorsMiddleware",
+    "rbac.middleware.DisableCSRF",
+    "django.middleware.security.SecurityMiddleware",
+    "django.middleware.common.CommonMiddleware",
+    "rbac.middleware.IdentityHeaderMiddleware",
+    "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    "whitenoise.middleware.WhiteNoiseMiddleware",
+    "django_prometheus.middleware.PrometheusAfterMiddleware",
 ]
 
-DEVELOPMENT = ENVIRONMENT.bool('DEVELOPMENT', default=False)
+DEVELOPMENT = ENVIRONMENT.bool("DEVELOPMENT", default=False)
 if DEVELOPMENT:
-    MIDDLEWARE.insert(5, 'rbac.dev_middleware.DevelopmentIdentityHeaderMiddleware')
+    MIDDLEWARE.insert(5, "rbac.dev_middleware.DevelopmentIdentityHeaderMiddleware")
 # Don't try to go verify Principals against the BOP user service
-BYPASS_BOP_VERIFICATION = ENVIRONMENT.bool('BYPASS_BOP_VERIFICATION', default=False)
+BYPASS_BOP_VERIFICATION = ENVIRONMENT.bool("BYPASS_BOP_VERIFICATION", default=False)
 
-AUTHENTICATION_BACKENDS = [
-    'django.contrib.auth.backends.AllowAllUsersModelBackend',
-]
+AUTHENTICATION_BACKENDS = ["django.contrib.auth.backends.AllowAllUsersModelBackend"]
 
 
-ROOT_URLCONF = 'rbac.urls'
+ROOT_URLCONF = "rbac.urls"
 
 TEMPLATES = [
     {
-        'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [os.path.join(BASE_DIR, 'templates')],
-        'APP_DIRS': True,
-        'OPTIONS': {
-            'context_processors': [
-                'django.template.context_processors.debug',
-                'django.template.context_processors.request',
-                'django.contrib.auth.context_processors.auth',
-                'django.contrib.messages.context_processors.messages',
-            ],
+        "BACKEND": "django.template.backends.django.DjangoTemplates",
+        "DIRS": [os.path.join(BASE_DIR, "templates")],
+        "APP_DIRS": True,
+        "OPTIONS": {
+            "context_processors": [
+                "django.template.context_processors.debug",
+                "django.template.context_processors.request",
+                "django.contrib.auth.context_processors.auth",
+                "django.contrib.messages.context_processors.messages",
+            ]
         },
-    },
+    }
 ]
 
-WSGI_APPLICATION = 'rbac.wsgi.application'
+WSGI_APPLICATION = "rbac.wsgi.application"
 
-DATABASES = {
-    'default': database.config()
-}
+DATABASES = {"default": database.config()}
 
-DATABASE_ROUTERS = (
-    'tenant_schemas.routers.TenantSyncRouter',
-)
+DATABASE_ROUTERS = ("tenant_schemas.routers.TenantSyncRouter",)
 
 #
-TENANT_MODEL = 'api.Tenant'
+TENANT_MODEL = "api.Tenant"
 
 PROMETHEUS_EXPORT_MIGRATIONS = False
 
@@ -163,27 +153,19 @@ PROMETHEUS_EXPORT_MIGRATIONS = False
 # https://docs.djangoproject.com/en/2.0/ref/settings/#auth-password-validators
 
 AUTH_PASSWORD_VALIDATORS = [
-    {
-        'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator',
-    },
-    {
-        'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator',
-    },
-    {
-        'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator',
-    },
-    {
-        'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator',
-    },
+    {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
+    {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator"},
+    {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
+    {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
 ]
 
 
 # Internationalization
 # https://docs.djangoproject.com/en/2.0/topics/i18n/
 
-LANGUAGE_CODE = 'en-us'
+LANGUAGE_CODE = "en-us"
 
-TIME_ZONE = 'UTC'
+TIME_ZONE = "UTC"
 
 USE_I18N = True
 
@@ -195,40 +177,36 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/2.0/howto/static-files/
 
-STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
+STATIC_ROOT = os.path.join(BASE_DIR, "staticfiles")
 
-API_PATH_PREFIX = os.getenv('API_PATH_PREFIX', '/')
+API_PATH_PREFIX = os.getenv("API_PATH_PREFIX", "/")
 STATIC_API_PATH_PREFIX = API_PATH_PREFIX
-if STATIC_API_PATH_PREFIX != '' and (not STATIC_API_PATH_PREFIX.endswith('/')):
-    STATIC_API_PATH_PREFIX = STATIC_API_PATH_PREFIX + '/'
+if STATIC_API_PATH_PREFIX != "" and (not STATIC_API_PATH_PREFIX.endswith("/")):
+    STATIC_API_PATH_PREFIX = STATIC_API_PATH_PREFIX + "/"
 
-STATIC_URL = '{}apidoc/'.format(STATIC_API_PATH_PREFIX)
+STATIC_URL = "{}apidoc/".format(STATIC_API_PATH_PREFIX)
 
-STATICFILES_DIRS = [
-    os.path.join(BASE_DIR, '..', 'apidoc'),
-]
+STATICFILES_DIRS = [os.path.join(BASE_DIR, "..", "apidoc")]
 
-STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
+STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
 
-INTERNAL_IPS = ['127.0.0.1']
+INTERNAL_IPS = ["127.0.0.1"]
 
-DEFAULT_PAGINATION_CLASS = 'api.common.pagination.StandardResultsSetPagination'
-DEFAULT_EXCEPTION_HANDLER = 'api.common.exception_handler.custom_exception_handler'
+DEFAULT_PAGINATION_CLASS = "api.common.pagination.StandardResultsSetPagination"
+DEFAULT_EXCEPTION_HANDLER = "api.common.exception_handler.custom_exception_handler"
 
 # django rest_framework settings
 REST_FRAMEWORK = {
     # Use Django's standard `django.contrib.auth` permissions,
     # or allow read-only access for unauthenticated users.
-    'DEFAULT_PERMISSION_CLASSES': [
-        'rest_framework.permissions.DjangoModelPermissionsOrAnonReadOnly'
-    ],
-    'DEFAULT_PAGINATION_CLASS': DEFAULT_PAGINATION_CLASS,
-    'DEFAULT_RENDERER_CLASSES': (
-        'rest_framework.renderers.JSONRenderer',
-        'rest_framework.renderers.BrowsableAPIRenderer',
+    "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.DjangoModelPermissionsOrAnonReadOnly"],
+    "DEFAULT_PAGINATION_CLASS": DEFAULT_PAGINATION_CLASS,
+    "DEFAULT_RENDERER_CLASSES": (
+        "rest_framework.renderers.JSONRenderer",
+        "rest_framework.renderers.BrowsableAPIRenderer",
     ),
-    'EXCEPTION_HANDLER': DEFAULT_EXCEPTION_HANDLER,
-    'ORDERING_PARAM': 'order_by'
+    "EXCEPTION_HANDLER": DEFAULT_EXCEPTION_HANDLER,
+    "ORDERING_PARAM": "order_by",
 }
 
 CW_AWS_ACCESS_KEY_ID = ENVIRONMENT.get_value('CW_AWS_ACCESS_KEY_ID', default=None)
@@ -237,68 +215,50 @@ CW_AWS_REGION = ENVIRONMENT.get_value('CW_AWS_REGION', default='us-east-1')
 CW_LOG_GROUP = ENVIRONMENT.get_value('CW_LOG_GROUP', default='platform-dev')
 CW_CREATE_LOG_GROUP = ENVIRONMENT.bool('CW_CREATE_LOG_GROUP', default=False)
 
-LOGGING_FORMATTER = os.getenv('DJANGO_LOG_FORMATTER', 'simple')
-DJANGO_LOGGING_LEVEL = os.getenv('DJANGO_LOG_LEVEL', 'INFO')
-RBAC_LOGGING_LEVEL = os.getenv('RBAC_LOG_LEVEL', 'INFO')
-LOGGING_HANDLERS = os.getenv('DJANGO_LOG_HANDLERS', 'console').split(',')
-VERBOSE_FORMATTING = '%(levelname)s %(asctime)s %(module)s ' \
-    '%(process)d %(thread)d %(message)s'
+LOGGING_FORMATTER = os.getenv("DJANGO_LOG_FORMATTER", "simple")
+DJANGO_LOGGING_LEVEL = os.getenv("DJANGO_LOG_LEVEL", "INFO")
+RBAC_LOGGING_LEVEL = os.getenv("RBAC_LOG_LEVEL", "INFO")
+LOGGING_HANDLERS = os.getenv("DJANGO_LOG_HANDLERS", "console").split(",")
+VERBOSE_FORMATTING = "%(levelname)s %(asctime)s %(module)s " "%(process)d %(thread)d %(message)s"
 
-LOG_DIRECTORY = os.getenv('LOG_DIRECTORY', BASE_DIR)
-DEFAULT_LOG_FILE = os.path.join(LOG_DIRECTORY, 'app.log')
-LOGGING_FILE = os.getenv('DJANGO_LOG_FILE', DEFAULT_LOG_FILE)
+LOG_DIRECTORY = os.getenv("LOG_DIRECTORY", BASE_DIR)
+DEFAULT_LOG_FILE = os.path.join(LOG_DIRECTORY, "app.log")
+LOGGING_FILE = os.getenv("DJANGO_LOG_FILE", DEFAULT_LOG_FILE)
 
 if CW_AWS_ACCESS_KEY_ID:
-    LOGGING_HANDLERS += ['watchtower']
+    LOGGING_HANDLERS += ["watchtower"]
 
 LOGGING = {
-    'version': 1,
-    'disable_existing_loggers': False,
-    'formatters': {
-        'verbose': {
-            'format': VERBOSE_FORMATTING
-        },
-        'simple': {
-            'format': '[%(asctime)s] %(levelname)s: %(message)s'
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "verbose": {"format": VERBOSE_FORMATTING},
+        "simple": {"format": "[%(asctime)s] %(levelname)s: %(message)s"},
+    },
+    "handlers": {
+        "console": {"class": "logging.StreamHandler", "formatter": LOGGING_FORMATTER},
+        "file": {
+            "level": RBAC_LOGGING_LEVEL,
+            "class": "logging.FileHandler",
+            "filename": LOGGING_FILE,
+            "formatter": LOGGING_FORMATTER,
         },
     },
-    'handlers': {
-        'console': {
-            'class': 'logging.StreamHandler',
-            'formatter': LOGGING_FORMATTER
-        },
-        'file': {
-            'level': RBAC_LOGGING_LEVEL,
-            'class': 'logging.FileHandler',
-            'filename': LOGGING_FILE,
-            'formatter': LOGGING_FORMATTER
-        },
-    },
-    'loggers': {
-        'django': {
-            'handlers': LOGGING_HANDLERS,
-            'level': DJANGO_LOGGING_LEVEL,
-        },
-        'api': {
-            'handlers': LOGGING_HANDLERS,
-            'level': RBAC_LOGGING_LEVEL,
-        },
-        'rbac': {
-            'handlers': LOGGING_HANDLERS,
-            'level': RBAC_LOGGING_LEVEL,
-        },
-        'management': {
-            'handlers': LOGGING_HANDLERS,
-            'level': RBAC_LOGGING_LEVEL,
-        },
+    "loggers": {
+        "django": {"handlers": LOGGING_HANDLERS, "level": DJANGO_LOGGING_LEVEL},
+        "api": {"handlers": LOGGING_HANDLERS, "level": RBAC_LOGGING_LEVEL},
+        "rbac": {"handlers": LOGGING_HANDLERS, "level": RBAC_LOGGING_LEVEL},
+        "management": {"handlers": LOGGING_HANDLERS, "level": RBAC_LOGGING_LEVEL},
     },
 }
 
 if CW_AWS_ACCESS_KEY_ID:
-    NAMESPACE = ENVIRONMENT.get_value('APP_NAMESPACE', default='unknown')
-    BOTO3_SESSION = Session(aws_access_key_id=CW_AWS_ACCESS_KEY_ID,
-                            aws_secret_access_key=CW_AWS_SECRET_ACCESS_KEY,
-                            region_name=CW_AWS_REGION)
+    NAMESPACE = ENVIRONMENT.get_value("APP_NAMESPACE", default="unknown")
+    BOTO3_SESSION = Session(
+        aws_access_key_id=CW_AWS_ACCESS_KEY_ID,
+        aws_secret_access_key=CW_AWS_SECRET_ACCESS_KEY,
+        region_name=CW_AWS_REGION,
+    )
     WATCHTOWER_HANDLER = {
         'level': RBAC_LOGGING_LEVEL,
         'class': 'watchtower.CloudWatchLogHandler',
@@ -309,41 +269,31 @@ if CW_AWS_ACCESS_KEY_ID:
         'use_queues': False,
         'create_log_group': CW_CREATE_LOG_GROUP,
     }
-    LOGGING['handlers']['watchtower'] = WATCHTOWER_HANDLER
+    LOGGING["handlers"]["watchtower"] = WATCHTOWER_HANDLER
 
 # Cors Setup
 # See https://github.com/ottoyiu/django-cors-headers
 CORS_ORIGIN_ALLOW_ALL = True
 
-CORS_ALLOW_HEADERS = default_headers + (
-    'x-rh-identity',
-    'HTTP_X_RH_IDENTITY',
-)
+CORS_ALLOW_HEADERS = default_headers + ("x-rh-identity", "HTTP_X_RH_IDENTITY")
 
 APPEND_SLASH = False
 
 # Celery settings
 
-REDIS_HOST = ENVIRONMENT.get_value('REDIS_HOST',
-                                   default='localhost')
-REDIS_PORT = ENVIRONMENT.get_value('REDIS_PORT',
-                                   default='6379')
-DEFAULT_REDIS_URL = f'redis://{REDIS_HOST}:{REDIS_PORT}/0'
+REDIS_HOST = ENVIRONMENT.get_value("REDIS_HOST", default="localhost")
+REDIS_PORT = ENVIRONMENT.get_value("REDIS_PORT", default="6379")
+DEFAULT_REDIS_URL = f"redis://{REDIS_HOST}:{REDIS_PORT}/0"
 
-CELERY_BROKER_URL = ENVIRONMENT.get_value('CELERY_BROKER_URL',
-                                          default=DEFAULT_REDIS_URL)
+CELERY_BROKER_URL = ENVIRONMENT.get_value("CELERY_BROKER_URL", default=DEFAULT_REDIS_URL)
 
 ACCESS_CACHE_DB = 1
 ACCESS_CACHE_LIFETIME = 10 * 60
 
 REDIS_CACHE_CONNECTION_PARAMS = dict(
-    host=REDIS_HOST,
-    port=REDIS_PORT,
-    db=ACCESS_CACHE_DB,
-    socket_connect_timeout=0.1,
-    socket_timeout=0.1
+    host=REDIS_HOST, port=REDIS_PORT, db=ACCESS_CACHE_DB, socket_connect_timeout=0.1, socket_timeout=0.1
 )
-ACCESS_CACHE_ENABLED = ENVIRONMENT.bool('ACCESS_CACHE_ENABLED', default=True)
+ACCESS_CACHE_ENABLED = ENVIRONMENT.bool("ACCESS_CACHE_ENABLED", default=True)
 
 # Seeding Setup
 ROLE_SEEDING_ENABLED = ENVIRONMENT.bool('ROLE_SEEDING_ENABLED', default=True)
@@ -351,13 +301,9 @@ GROUP_SEEDING_ENABLED = ENVIRONMENT.bool('GROUP_SEEDING_ENABLED', default=True)
 MAX_SEED_THREADS = ENVIRONMENT.int('MAX_SEED_THREADS', default=None)
 
 # disable log messages less than CRITICAL when running unit tests.
-if len(sys.argv) > 1 and sys.argv[1] == 'test':
+if len(sys.argv) > 1 and sys.argv[1] == "test":
     logging.disable(logging.CRITICAL)
 
 # Optionally log all DB queries
-if ENVIRONMENT.bool('LOG_DATABASE_QUERIES', default=False):
-    LOGGING['loggers']['django.db.backends'] = {
-        'handlers': ['console'],
-        'level': 'DEBUG',
-        'propagate': False
-    }
+if ENVIRONMENT.bool("LOG_DATABASE_QUERIES", default=False):
+    LOGGING["loggers"]["django.db.backends"] = {"handlers": ["console"], "level": "DEBUG", "propagate": False}

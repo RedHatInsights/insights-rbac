@@ -22,6 +22,7 @@ from tests.identity_request import IdentityRequest
 from tenant_schemas.utils import tenant_context
 from management.models import Group, Role
 
+
 class GroupDefinerTests(IdentityRequest):
     """Test the group definer functions."""
 
@@ -38,7 +39,7 @@ class GroupDefinerTests(IdentityRequest):
             self.assertEqual(group.platform_default, True)
             self.assertEqual(group.system, True)
             self.assertEqual(group.name, "Default user access")
-            self.assertEqual(group.policies.get(name='System Policy for Group {}'.format(group.uuid)).system, True)
+            self.assertEqual(group.policies.get(name="System Policy for Group {}".format(group.uuid)).system, True)
             # only platform_default roles would be assigned to the default group
             for role in group.roles():
                 self.assertTrue(role.platform_default)
@@ -51,7 +52,7 @@ class GroupDefinerTests(IdentityRequest):
         try:
             seed_group(self.tenant)
         except Exception:
-            self.fail(msg='update seed_group encountered an exception')
+            self.fail(msg="update seed_group encountered an exception")
 
         with tenant_context(self.tenant):
             group = Group.objects.get(platform_default=True)
@@ -65,7 +66,7 @@ class GroupDefinerTests(IdentityRequest):
         try:
             seed_group(self.tenant)
         except Exception:
-            self.fail(msg='update seed_group encountered an exception')
+            self.fail(msg="update seed_group encountered an exception")
 
         with tenant_context(self.tenant):
             group = Group.objects.get(platform_default=True)
@@ -78,7 +79,7 @@ class GroupDefinerTests(IdentityRequest):
         """ Add a role to the default group and/or change the system flag"""
         with tenant_context(self.tenant):
             group = Group.objects.get(platform_default=True)
-            roles = Role.objects.filter(name="RBAC Administrator").values_list('uuid', flat=True)
+            roles = Role.objects.filter(name="RBAC Administrator").values_list("uuid", flat=True)
             add_roles(group, roles)
 
             group.system = system
