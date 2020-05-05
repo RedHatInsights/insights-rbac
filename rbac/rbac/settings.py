@@ -235,6 +235,7 @@ CW_AWS_ACCESS_KEY_ID = ENVIRONMENT.get_value('CW_AWS_ACCESS_KEY_ID', default=Non
 CW_AWS_SECRET_ACCESS_KEY = ENVIRONMENT.get_value('CW_AWS_SECRET_ACCESS_KEY', default=None)
 CW_AWS_REGION = ENVIRONMENT.get_value('CW_AWS_REGION', default='us-east-1')
 CW_LOG_GROUP = ENVIRONMENT.get_value('CW_LOG_GROUP', default='platform-dev')
+CW_CREATE_LOG_GROUP = ENVIRONMENT.bool('CW_CREATE_LOG_GROUP', default=False)
 
 LOGGING_FORMATTER = os.getenv('DJANGO_LOG_FORMATTER', 'simple')
 DJANGO_LOGGING_LEVEL = os.getenv('DJANGO_LOG_LEVEL', 'INFO')
@@ -306,6 +307,7 @@ if CW_AWS_ACCESS_KEY_ID:
         'stream_name': NAMESPACE,
         'formatter': LOGGING_FORMATTER,
         'use_queues': False,
+        'create_log_group': CW_CREATE_LOG_GROUP,
     }
     LOGGING['handlers']['watchtower'] = WATCHTOWER_HANDLER
 
