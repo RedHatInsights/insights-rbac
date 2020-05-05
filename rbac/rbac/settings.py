@@ -209,11 +209,11 @@ REST_FRAMEWORK = {
     "ORDERING_PARAM": "order_by",
 }
 
-CW_AWS_ACCESS_KEY_ID = ENVIRONMENT.get_value('CW_AWS_ACCESS_KEY_ID', default=None)
-CW_AWS_SECRET_ACCESS_KEY = ENVIRONMENT.get_value('CW_AWS_SECRET_ACCESS_KEY', default=None)
-CW_AWS_REGION = ENVIRONMENT.get_value('CW_AWS_REGION', default='us-east-1')
-CW_LOG_GROUP = ENVIRONMENT.get_value('CW_LOG_GROUP', default='platform-dev')
-CW_CREATE_LOG_GROUP = ENVIRONMENT.bool('CW_CREATE_LOG_GROUP', default=False)
+CW_AWS_ACCESS_KEY_ID = ENVIRONMENT.get_value("CW_AWS_ACCESS_KEY_ID", default=None)
+CW_AWS_SECRET_ACCESS_KEY = ENVIRONMENT.get_value("CW_AWS_SECRET_ACCESS_KEY", default=None)
+CW_AWS_REGION = ENVIRONMENT.get_value("CW_AWS_REGION", default="us-east-1")
+CW_LOG_GROUP = ENVIRONMENT.get_value("CW_LOG_GROUP", default="platform-dev")
+CW_CREATE_LOG_GROUP = ENVIRONMENT.bool("CW_CREATE_LOG_GROUP", default=False)
 
 LOGGING_FORMATTER = os.getenv("DJANGO_LOG_FORMATTER", "simple")
 DJANGO_LOGGING_LEVEL = os.getenv("DJANGO_LOG_LEVEL", "INFO")
@@ -260,14 +260,14 @@ if CW_AWS_ACCESS_KEY_ID:
         region_name=CW_AWS_REGION,
     )
     WATCHTOWER_HANDLER = {
-        'level': RBAC_LOGGING_LEVEL,
-        'class': 'watchtower.CloudWatchLogHandler',
-        'boto3_session': BOTO3_SESSION,
-        'log_group': CW_LOG_GROUP,
-        'stream_name': NAMESPACE,
-        'formatter': LOGGING_FORMATTER,
-        'use_queues': False,
-        'create_log_group': CW_CREATE_LOG_GROUP,
+        "level": RBAC_LOGGING_LEVEL,
+        "class": "watchtower.CloudWatchLogHandler",
+        "boto3_session": BOTO3_SESSION,
+        "log_group": CW_LOG_GROUP,
+        "stream_name": NAMESPACE,
+        "formatter": LOGGING_FORMATTER,
+        "use_queues": False,
+        "create_log_group": CW_CREATE_LOG_GROUP,
     }
     LOGGING["handlers"]["watchtower"] = WATCHTOWER_HANDLER
 
