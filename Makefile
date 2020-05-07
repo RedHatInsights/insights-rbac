@@ -86,8 +86,8 @@ html:
 lint:
 	tox -elint
 
-reinitdb: 
-	make stop-compose 
+reinitdb:
+	make stop-compose
 	make remove-db
 	make start-db
 	sleep 5
@@ -100,7 +100,7 @@ make-migrations:
 	DJANGO_READ_DOT_ENV_FILE=True $(PYTHON) $(PYDIR)/manage.py makemigrations api management
 
 run-migrations:
-	DJANGO_READ_DOT_ENV_FILE=True $(PYTHON) $(PYDIR)/manage.py migrate_schemas
+	DJANGO_READ_DOT_ENV_FILE=True $(PYTHON) $(PYDIR)/manage.py migrate_schemas --executor=parallel
 
 create-test-db-file: run-migrations
 	sleep 1

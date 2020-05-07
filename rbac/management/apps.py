@@ -20,6 +20,7 @@ import logging
 import sys
 
 from django.apps import AppConfig
+from django.db import connections
 from django.db.utils import OperationalError, ProgrammingError
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
@@ -46,23 +47,28 @@ class ManagementConfig(AppConfig):
             else:
                 logger.error('Error: %s.', op_error)
 
+    def on_complete(self, future):
+        """Explicitly close the connection for the thread."""
+        connections.close_all()
+
     def role_seeding(self):  # pylint: disable=R0201
         """Update any roles at startup."""
         # noqa: E402 pylint: disable=C0413
         from api.models import Tenant
         from management.role.definer import seed_roles
-        from rbac.settings import ROLE_SEEDING_ENABLED
+        from rbac.settings import ROLE_SEEDING_ENABLED, MAX_SEED_THREADS
 
         if not ROLE_SEEDING_ENABLED:
             return
 
         logger.info('Start role seed changes check.')
         try:
-            with concurrent.futures.ThreadPoolExecutor() as executor:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_SEED_THREADS) as executor:
                 for tenant in list(Tenant.objects.all()):
                     if tenant.schema_name != 'public':
                         logger.info('Checking for role seed changes for tenant %s.', tenant.schema_name)
                         future = executor.submit(seed_roles, tenant, update=True)
+                        future.add_done_callback(self.on_complete)
                         logger.info('Completed role seed changes for tenant %s.', future.result().schema_name)
         except Exception as exc:
             logger.error('Error encountered during role seeding %s.', exc)
@@ -72,18 +78,19 @@ class ManagementConfig(AppConfig):
         # noqa: E402 pylint: disable=C0413
         from api.models import Tenant
         from management.group.definer import seed_group
-        from rbac.settings import GROUP_SEEDING_ENABLED
+        from rbac.settings import GROUP_SEEDING_ENABLED, MAX_SEED_THREADS
 
         if not GROUP_SEEDING_ENABLED:
             return
 
         logger.info('Start goup seed changes check.')
         try:
-            with concurrent.futures.ThreadPoolExecutor() as executor:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_SEED_THREADS) as executor:
                 for tenant in list(Tenant.objects.all()):
                     if tenant.schema_name != 'public':
                         logger.info('Checking for group seed changes for tenant %s.', tenant.schema_name)
                         future = executor.submit(seed_group, tenant)
+                        future.add_done_callback(self.on_complete)
                         logger.info('Completed group seed changes for tenant %s.', future.result().schema_name)
         except Exception as exc:
             logger.error('Error encountered during group seeding %s.', exc)
