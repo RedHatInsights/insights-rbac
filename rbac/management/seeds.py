@@ -17,15 +17,17 @@
 """Seeds module."""
 import concurrent.futures
 import logging
+from functools import partial
 
 from django.db import connections
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 
-def on_complete(future):
+def on_complete(completed_log_message, future):
     """Explicitly close the connection for the thread."""
     connections.close_all()
+    logger.info(completed_log_message)
 
 
 def role_seeding():
@@ -35,18 +37,19 @@ def role_seeding():
     from management.role.definer import seed_roles
     from rbac.settings import MAX_SEED_THREADS
 
-    logger.info('Start role seed changes check.')
     try:
         with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_SEED_THREADS) as executor:
-            for tenant in list(Tenant.objects.all()):
+            tenants = Tenant.objects.all()
+            tenant_count = tenants.count()
+            for idx, tenant in enumerate(list(tenants)):
                 if tenant.schema_name != 'public':
-                    logger.info('Checking for role seed changes for tenant %s.', tenant.schema_name)
+                    logger.info(f'Seeding role changes for tenant {tenant.schema_name} [{idx + 1} of {tenant_count}].')
                     future = executor.submit(seed_roles, tenant, update=True)
-                    future.add_done_callback(on_complete)
-                    logger.info('Completed role seed changes for tenant %s.', future.result().schema_name)
+                    completed_log_message = 'Finished seeding role changes for tenant '\
+                                            f'{tenant.schema_name} [{idx + 1} of {tenant_count}].'
+                    future.add_done_callback(partial(on_complete, completed_log_message))
     except Exception as exc:
-        print('bam!!!')
-        logger.error('Error encountered during role seeding %s.', exc)
+        logger.error(f'Error encountered during role seeding {exc}.')
 
 
 def group_seeding():
@@ -56,14 +59,16 @@ def group_seeding():
     from management.group.definer import seed_group
     from rbac.settings import MAX_SEED_THREADS
 
-    logger.info('Start group seed changes check.')
     try:
         with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_SEED_THREADS) as executor:
-            for tenant in list(Tenant.objects.all()):
+            tenants = Tenant.objects.all()
+            tenant_count = tenants.count()
+            for idx, tenant in enumerate(list(tenants)):
                 if tenant.schema_name != 'public':
-                    logger.info('Checking for group seed changes for tenant %s.', tenant.schema_name)
+                    logger.info(f'Seeding group changes for tenant {tenant.schema_name} [{idx + 1} of {tenant_count}].')
                     future = executor.submit(seed_group, tenant)
-                    future.add_done_callback(on_complete)
-                    logger.info('Completed group seed changes for tenant %s.', future.result().schema_name)
+                    completed_log_message = 'Finished seeding group changes for tenant '\
+                                            f'{tenant.schema_name} [{idx + 1} of {tenant_count}].'
+                    future.add_done_callback(partial(on_complete, completed_log_message))
     except Exception as exc:
-        logger.error('Error encountered during group seeding %s.', exc)
+        logger.error(f'Error encountered during group seeding {exc}.')

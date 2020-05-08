@@ -30,5 +30,10 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         """Handle method for command."""
+        logger.info('*** Seeding roles... ***')
         role_seeding()
+        logger.info('*** Role seeding completed. ***\n')
+
+        logger.info('*** Seeding groups... ***')
         group_seeding()
+        logger.info('*** Group seeding completed. ***\n')
