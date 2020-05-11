@@ -28,12 +28,19 @@ class Command(BaseCommand):
 
     help = 'Runs the seeding for roles and groups'
 
+    def add_arguments(self, parser):
+        """Add arguments to command."""
+        parser.add_argument('--roles-only', action='store_true')
+        parser.add_argument('--groups-only', action='store_true')
+
     def handle(self, *args, **options):
         """Handle method for command."""
-        logger.info('*** Seeding roles... ***')
-        role_seeding()
-        logger.info('*** Role seeding completed. ***\n')
+        if not options['groups_only']:
+            logger.info('*** Seeding roles... ***')
+            role_seeding()
+            logger.info('*** Role seeding completed. ***\n')
 
-        logger.info('*** Seeding groups... ***')
-        group_seeding()
-        logger.info('*** Group seeding completed. ***\n')
+        if not options['roles_only']:
+            logger.info('*** Seeding groups... ***')
+            group_seeding()
+            logger.info('*** Group seeding completed. ***\n')

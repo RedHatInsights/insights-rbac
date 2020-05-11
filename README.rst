@@ -95,7 +95,7 @@ Locally these are sourced from `/rbac/management/role/definitions/*.json`, while
 
 You can also execute the following Django command to run seeds manually: ::
 
-  rbac/manage.py seeds
+  rbac/manage.py seeds [--roles-only|--groups-only]
 
 Server
 ^^^^^^
