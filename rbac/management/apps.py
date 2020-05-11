@@ -68,7 +68,7 @@ class ManagementConfig(AppConfig):
                         logger.info("Checking for role seed changes for tenant %s.", tenant.schema_name)
                         future = executor.submit(seed_roles, tenant, update=True)
                         future.add_done_callback(self.on_complete)
-                        logger.info('Completed role seed changes for tenant %s.', future.result().schema_name)
+                        logger.info("Completed role seed changes for tenant %s.", future.result().schema_name)
         except Exception as exc:
             logger.error("Error encountered during role seeding %s.", exc)
 
@@ -90,6 +90,6 @@ class ManagementConfig(AppConfig):
                         logger.info("Checking for group seed changes for tenant %s.", tenant.schema_name)
                         future = executor.submit(seed_group, tenant)
                         future.add_done_callback(self.on_complete)
-                        logger.info('Completed group seed changes for tenant %s.', future.result().schema_name)
+                        logger.info("Completed group seed changes for tenant %s.", future.result().schema_name)
         except Exception as exc:
             logger.error("Error encountered during group seeding %s.", exc)
