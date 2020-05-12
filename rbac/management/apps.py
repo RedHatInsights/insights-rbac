@@ -29,23 +29,22 @@ logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 class ManagementConfig(AppConfig):
     """Management application configuration."""
 
-    name = 'management'
+    name = "management"
 
     def ready(self):
         """Determine if app is ready on application startup."""
         # Don't run on Django tab completion commands
-        if 'manage.py' in sys.argv[0] and 'runserver' not in sys.argv:
+        if "manage.py" in sys.argv[0] and "runserver" not in sys.argv:
             return
         try:
             self.role_seeding()
             self.group_seeding()
         except (OperationalError, ProgrammingError) as op_error:
-            if 'no such table' in str(op_error) or \
-                    'does not exist' in str(op_error):
+            if "no such table" in str(op_error) or "does not exist" in str(op_error):
                 # skip this if we haven't created tables yet.
                 return
             else:
-                logger.error('Error: %s.', op_error)
+                logger.error("Error: %s.", op_error)
 
     def on_complete(self, future):
         """Explicitly close the connection for the thread."""
@@ -61,17 +60,17 @@ class ManagementConfig(AppConfig):
         if not ROLE_SEEDING_ENABLED:
             return
 
-        logger.info('Start role seed changes check.')
+        logger.info("Start role seed changes check.")
         try:
             with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_SEED_THREADS) as executor:
                 for tenant in list(Tenant.objects.all()):
-                    if tenant.schema_name != 'public':
-                        logger.info('Checking for role seed changes for tenant %s.', tenant.schema_name)
+                    if tenant.schema_name != "public":
+                        logger.info("Checking for role seed changes for tenant %s.", tenant.schema_name)
                         future = executor.submit(seed_roles, tenant, update=True)
                         future.add_done_callback(self.on_complete)
-                        logger.info('Completed role seed changes for tenant %s.', future.result().schema_name)
+                        logger.info("Completed role seed changes for tenant %s.", future.result().schema_name)
         except Exception as exc:
-            logger.error('Error encountered during role seeding %s.', exc)
+            logger.error("Error encountered during role seeding %s.", exc)
 
     def group_seeding(self):  # pylint: disable=R0201
         """Update platform group at startup."""
@@ -83,14 +82,14 @@ class ManagementConfig(AppConfig):
         if not GROUP_SEEDING_ENABLED:
             return
 
-        logger.info('Start goup seed changes check.')
+        logger.info("Start goup seed changes check.")
         try:
             with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_SEED_THREADS) as executor:
                 for tenant in list(Tenant.objects.all()):
-                    if tenant.schema_name != 'public':
-                        logger.info('Checking for group seed changes for tenant %s.', tenant.schema_name)
+                    if tenant.schema_name != "public":
+                        logger.info("Checking for group seed changes for tenant %s.", tenant.schema_name)
                         future = executor.submit(seed_group, tenant)
                         future.add_done_callback(self.on_complete)
-                        logger.info('Completed group seed changes for tenant %s.', future.result().schema_name)
+                        logger.info("Completed group seed changes for tenant %s.", future.result().schema_name)
         except Exception as exc:
-            logger.error('Error encountered during group seeding %s.', exc)
+            logger.error("Error encountered during group seeding %s.", exc)

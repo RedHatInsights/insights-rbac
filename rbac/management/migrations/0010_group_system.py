@@ -5,14 +5,6 @@ from django.db import migrations, models
 
 class Migration(migrations.Migration):
 
-    dependencies = [
-        ('management', '0009_role_platform_default'),
-    ]
+    dependencies = [("management", "0009_role_platform_default")]
 
-    operations = [
-        migrations.AddField(
-            model_name='group',
-            name='system',
-            field=models.BooleanField(default=False),
-        ),
-    ]
+    operations = [migrations.AddField(model_name="group", name="system", field=models.BooleanField(default=False))]

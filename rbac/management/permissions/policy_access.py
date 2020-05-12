@@ -26,18 +26,18 @@ class PolicyAccessPermission(permissions.BasePermission):
 
     def has_permission(self, request, view):
         """Check permission based on the defined access."""
-        if ENVIRONMENT.get_value('ALLOW_ANY', default=False, cast=bool):
+        if ENVIRONMENT.get_value("ALLOW_ANY", default=False, cast=bool):
             return True
         if request.user.admin:
             return True
         if request.method in permissions.SAFE_METHODS:
             if is_scope_principal(request):
                 return True
-            policy_read = request.user.access.get('policy', {}).get('read', [])
+            policy_read = request.user.access.get("policy", {}).get("read", [])
             if policy_read:
                 return True
         else:
-            policy_write = request.user.access.get('policy', {}).get('write', [])
+            policy_write = request.user.access.get("policy", {}).get("write", [])
             if policy_write:
                 return True
 

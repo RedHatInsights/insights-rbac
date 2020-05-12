@@ -21,12 +21,7 @@ from unittest.mock import patch
 from django.db import connection
 from django.test import TestCase
 
-from management.models import (Access,
-                               Group,
-                               Policy,
-                               Principal,
-                               ResourceDefinition,
-                               Role)
+from management.models import Access, Group, Policy, Principal, ResourceDefinition, Role
 from api.models import Tenant
 
 
@@ -34,21 +29,21 @@ class AccessCacheTest(TestCase):
     def setUp(self):
         """Set up AccessCache tests."""
         super().setUp()
-        self.tenant = Tenant.objects.create(schema_name='acct12345')
-        connection.set_schema('acct12345')
-        self.principal_a = Principal.objects.create(username='principal_a')
-        self.principal_b = Principal.objects.create(username='principal_b')
-        self.group_a = Group.objects.create(name='group_a')
-        self.group_b = Group.objects.create(name='group_b')
-        self.policy_a = Policy.objects.create(name='policy_a')
-        self.policy_b = Policy.objects.create(name='policy_b')
-        self.role_a = Role.objects.create(name='role_a')
-        self.role_b = Role.objects.create(name='role_b')
+        self.tenant = Tenant.objects.create(schema_name="acct12345")
+        connection.set_schema("acct12345")
+        self.principal_a = Principal.objects.create(username="principal_a")
+        self.principal_b = Principal.objects.create(username="principal_b")
+        self.group_a = Group.objects.create(name="group_a")
+        self.group_b = Group.objects.create(name="group_b")
+        self.policy_a = Policy.objects.create(name="policy_a")
+        self.policy_b = Policy.objects.create(name="policy_b")
+        self.role_a = Role.objects.create(name="role_a")
+        self.role_b = Role.objects.create(name="role_b")
 
     def tearDown(self):
         connection.set_schema_to_public()
 
-    @patch('management.group.model.AccessCache.delete_policy')
+    @patch("management.group.model.AccessCache.delete_policy")
     def test_group_cache_add_remove_signals(self, cache):
         """Test signals attached to Groups"""
         cache.reset_mock()
@@ -57,64 +52,50 @@ class AccessCacheTest(TestCase):
         self.group_a.principals.add(self.principal_a)
 
         cache.assert_called_once()
-        cache.assert_called_once_with(
-            self.principal_a.uuid
-        )
+        cache.assert_called_once_with(self.principal_a.uuid)
 
         cache.reset_mock()
         # If a Group is added to a Principal
         self.principal_b.group.add(self.group_a)
         cache.asset_called_once()
-        cache.asset_called_once_with(
-            self.principal_b.uuid
-        )
+        cache.asset_called_once_with(self.principal_b.uuid)
 
         cache.reset_mock()
         # If a Principal is removed from a group
         self.group_a.principals.remove(self.principal_a)
         cache.assert_called_once()
-        cache.assert_called_once_with(
-            self.principal_a.uuid
-        )
+        cache.assert_called_once_with(self.principal_a.uuid)
 
         cache.reset_mock()
         # If a Group is removed from a Principal
         self.principal_b.group.remove(self.group_a)
         cache.asset_called_once()
-        cache.asset_called_once_with(
-            self.principal_b.uuid
-        )
+        cache.asset_called_once_with(self.principal_b.uuid)
 
-    @patch('management.group.model.AccessCache.delete_policy')
+    @patch("management.group.model.AccessCache.delete_policy")
     def test_group_cache_clear_signals(self, cache):
         # If all groups are removed from a Principal
         self.group_a.principals.add(self.principal_a, self.principal_b)
         cache.reset_mock()
         self.principal_a.group.clear()
         cache.assert_called_once()
-        cache.assert_called_once_with(
-            self.principal_a.uuid
-        )
+        cache.assert_called_once_with(self.principal_a.uuid)
 
         cache.reset_mock()
         # If all Principals are removed from a Group
         self.group_a.principals.clear()
         cache.asset_called_once()
-        cache.asset_called_once_with(
-            self.principal_b.uuid
-        )
+        cache.asset_called_once_with(self.principal_b.uuid)
 
-    @patch('management.group.model.AccessCache.delete_policy')
+    @patch("management.group.model.AccessCache.delete_policy")
     def test_group_cache_delete_group_signal(self, cache):
         self.group_a.principals.add(self.principal_a)
         cache.reset_mock()
         self.group_a.delete()
         cache.assert_called_once()
-        cache.assert_called_once_with(
-            self.principal_a.uuid
-        )
+        cache.assert_called_once_with(self.principal_a.uuid)
 
-    @patch('management.policy.model.AccessCache.delete_policy')
+    @patch("management.policy.model.AccessCache.delete_policy")
     def test_policy_cache_group_signals(self, cache):
         """Test signals attached to Groups"""
         self.group_a.principals.add(self.principal_a)
@@ -125,28 +106,22 @@ class AccessCacheTest(TestCase):
         self.policy_a.group = self.group_a
         self.policy_a.save()
         cache.assert_called_once()
-        cache.assert_called_once_with(
-            self.principal_a.uuid
-        )
+        cache.assert_called_once_with(self.principal_a.uuid)
 
         cache.reset_mock()
         # If a policy has its group changed
         self.policy_a.group = self.group_b
         self.policy_a.save()
         cache.asset_called_once()
-        cache.asset_called_once_with(
-            self.principal_b.uuid
-        )
+        cache.asset_called_once_with(self.principal_b.uuid)
 
         cache.reset_mock()
         # If a policy is deleted
         self.policy_a.delete()
         cache.assert_called_once()
-        cache.assert_called_once_with(
-            self.principal_b.uuid
-        )
-    
-    @patch('management.policy.model.AccessCache.delete_policy')
+        cache.assert_called_once_with(self.principal_b.uuid)
+
+    @patch("management.policy.model.AccessCache.delete_policy")
     def test_policy_cache_add_remove_roles_signals(self, cache):
         """Test signals attached to Policy/Roles"""
         self.group_a.principals.add(self.principal_a)
@@ -156,39 +131,31 @@ class AccessCacheTest(TestCase):
         self.policy_b.group = self.group_b
         self.policy_b.save()
         cache.reset_mock()
-        
+
         # If a Role is added to a policy
         self.policy_a.roles.add(self.role_a)
         cache.assert_called_once()
-        cache.assert_called_once_with(
-            self.principal_a.uuid
-        )
+        cache.assert_called_once_with(self.principal_a.uuid)
 
         cache.reset_mock()
         # If a Policy is added to a Role
         self.role_b.policies.add(self.policy_a)
         cache.asset_called_once()
-        cache.asset_called_once_with(
-            self.principal_b.uuid
-        )
+        cache.asset_called_once_with(self.principal_b.uuid)
 
         cache.reset_mock()
         # If a Role is removed from a Policy
         self.policy_a.roles.remove(self.role_a)
         cache.assert_called_once()
-        cache.assert_called_once_with(
-            self.principal_a.uuid
-        )
+        cache.assert_called_once_with(self.principal_a.uuid)
 
         cache.reset_mock()
         # If a Policy is removed from a Role
         self.role_b.policies.remove(self.policy_b)
         cache.asset_called_once()
-        cache.asset_called_once_with(
-            self.principal_b.uuid
-        )
+        cache.asset_called_once_with(self.principal_b.uuid)
 
-    @patch('management.policy.model.AccessCache.delete_policy')
+    @patch("management.policy.model.AccessCache.delete_policy")
     def test_policy_cache_clear_signals(self, cache):
         self.group_a.principals.add(self.principal_a)
         self.group_b.principals.add(self.principal_b)
@@ -203,19 +170,15 @@ class AccessCacheTest(TestCase):
         # If all policies are removed from a role
         self.role_a.policies.clear()
         cache.assert_called_once()
-        cache.assert_called_once_with(
-            self.principal_a.uuid
-        )
+        cache.assert_called_once_with(self.principal_a.uuid)
 
         cache.reset_mock()
         # If all Roles are removed from a Policy
         self.policy_b.roles.clear()
         cache.asset_called_once()
-        cache.asset_called_once_with(
-            self.principal_b.uuid
-        )
+        cache.asset_called_once_with(self.principal_b.uuid)
 
-    @patch('management.role.model.AccessCache.delete_policy')
+    @patch("management.role.model.AccessCache.delete_policy")
     def test_policy_cache_change_delete_roles_signals(self, cache):
         self.group_a.principals.add(self.principal_a)
         self.group_b.principals.add(self.principal_b)
@@ -231,46 +194,34 @@ class AccessCacheTest(TestCase):
         self.role_a.version += 1
         self.role_a.save()
         cache.assert_called_once()
-        cache.assert_called_once_with(
-            self.principal_a.uuid
-        )
+        cache.assert_called_once_with(self.principal_a.uuid)
 
         cache.reset_mock()
         # If Access is added
-        self.access_a = Access.objects.create(permission='foo:*:*', role=self.role_a)
+        self.access_a = Access.objects.create(permission="foo:*:*", role=self.role_a)
         cache.assert_called_once()
-        cache.assert_called_once_with(
-            self.principal_a.uuid
-        )
+        cache.assert_called_once_with(self.principal_a.uuid)
 
         cache.reset_mock()
         # If ResourceDefinition is added
         self.rd_a = ResourceDefinition.objects.create(access=self.access_a)
         cache.assert_called_once()
-        cache.assert_called_once_with(
-            self.principal_a.uuid
-        )
+        cache.assert_called_once_with(self.principal_a.uuid)
 
         cache.reset_mock()
         # If ResourceDefinition is destroyed
         self.rd_a.delete()
         cache.assert_called_once()
-        cache.assert_called_once_with(
-            self.principal_a.uuid
-        )
+        cache.assert_called_once_with(self.principal_a.uuid)
 
         cache.reset_mock()
         # If Access is destroyed
         self.access_a.delete()
         cache.assert_called_once()
-        cache.assert_called_once_with(
-            self.principal_a.uuid
-        )
+        cache.assert_called_once_with(self.principal_a.uuid)
 
         cache.reset_mock()
         # If Role is destroyed
         self.role_a.delete()
         cache.assert_called_once()
-        cache.assert_called_once_with(
-            self.principal_a.uuid
-        )
+        cache.assert_called_once_with(self.principal_a.uuid)

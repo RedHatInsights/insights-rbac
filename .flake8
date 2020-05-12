@@ -1,0 +1,8 @@
+[flake8]
+ignore = Q000,D106,D212,W503,C901
+max-complexity = 10
+max-line-length = 120
+exclude =
+  **/migrations/*.py
+  **/manage.py
+  **/settings.py

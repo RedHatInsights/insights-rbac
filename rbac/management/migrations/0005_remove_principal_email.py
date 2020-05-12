@@ -5,13 +5,6 @@ from django.db import migrations
 
 class Migration(migrations.Migration):
 
-    dependencies = [
-        ('management', '0004_auto_20190318_2359'),
-    ]
+    dependencies = [("management", "0004_auto_20190318_2359")]
 
-    operations = [
-        migrations.RemoveField(
-            model_name='principal',
-            name='email',
-        ),
-    ]
+    operations = [migrations.RemoveField(model_name="principal", name="email")]

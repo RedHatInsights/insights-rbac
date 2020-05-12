@@ -70,4 +70,4 @@ class RoleDefinerTests(IdentityRequest):
         try:
             seed_roles(self.tenant, update=False)
         except Exception:
-            self.fail(msg='seed_roles encountered an exception')
+            self.fail(msg="seed_roles encountered an exception")

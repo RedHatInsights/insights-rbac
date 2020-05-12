@@ -29,9 +29,7 @@ logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 def error_obj(key, message):
     """Create an error object."""
-    error = {
-        key: [_(message)]
-    }
+    error = {key: [_(message)]}
     return error
 
 
@@ -43,7 +41,7 @@ def add_padding(encoded_header):
     Returns:
         Encoded(str): Base64 header with padding
     """
-    return encoded_header + '=' * (-len(encoded_header) % 4)
+    return encoded_header + "=" * (-len(encoded_header) % 4)
 
 
 def extract_header(request, header):
@@ -61,9 +59,9 @@ def extract_header(request, header):
     try:
         decoded_rh_auth = b64decode(rh_auth_header)
     except binascii.Error as err:
-        logger.warning('Could not decode header: %s.', err)
+        logger.warning("Could not decode header: %s.", err)
         logger.warning(rh_auth_header)
-        logger.warning('Trying adding padding to header for decode ...')
+        logger.warning("Trying adding padding to header for decode ...")
         rh_auth_header = add_padding(rh_auth_header)
         decoded_rh_auth = b64decode(rh_auth_header)
     json_rh_auth = json_loads(decoded_rh_auth)
@@ -72,4 +70,4 @@ def extract_header(request, header):
 
 def create_schema_name(account):
     """Create a database schema name."""
-    return f'acct{account}'
+    return f"acct{account}"

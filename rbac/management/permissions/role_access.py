@@ -26,18 +26,18 @@ class RoleAccessPermission(permissions.BasePermission):
 
     def has_permission(self, request, view):
         """Check permission based on the defined access."""
-        if ENVIRONMENT.get_value('ALLOW_ANY', default=False, cast=bool):
+        if ENVIRONMENT.get_value("ALLOW_ANY", default=False, cast=bool):
             return True
         if request.user.admin:
             return True
         if request.method in permissions.SAFE_METHODS:
             if is_scope_principal(request):
                 return True
-            role_read = request.user.access.get('role', {}).get('read', [])
+            role_read = request.user.access.get("role", {}).get("read", [])
             if role_read:
                 return True
         else:
-            role_write = request.user.access.get('role', {}).get('write', [])
+            role_write = request.user.access.get("role", {}).get("write", [])
             if role_write:
                 return True
         return False

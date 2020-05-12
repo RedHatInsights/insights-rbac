@@ -26,16 +26,16 @@ from rest_framework.response import Response
 
 from rbac.settings import STATIC_ROOT
 
-OPENAPI_FILE_PATH_DEFAULT = 'rbac/staticfiles'
-OPENAPI_FILE_NAME = 'openapi.json.gz'
+OPENAPI_FILE_PATH_DEFAULT = "rbac/staticfiles"
+OPENAPI_FILE_NAME = "openapi.json.gz"
 
 
-@api_view(['GET'])
+@api_view(["GET"])
 @permission_classes((permissions.AllowAny,))
 @renderer_classes((JSONRenderer,))
 def openapi(request):
     """Provide the openapi information."""
-    openapidoc = '{}/{}'.format(STATIC_ROOT, OPENAPI_FILE_NAME)
+    openapidoc = "{}/{}".format(STATIC_ROOT, OPENAPI_FILE_NAME)
     with gzip.open(openapidoc) as api_file:
         data = json.load(api_file)
         return Response(data)

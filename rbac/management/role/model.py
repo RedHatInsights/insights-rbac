@@ -34,8 +34,7 @@ logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 class Role(models.Model):
     """A role."""
 
-    uuid = models.UUIDField(default=uuid4, editable=False,
-                            unique=True, null=False)
+    uuid = models.UUIDField(default=uuid4, editable=False, unique=True, null=False)
     name = models.CharField(max_length=150, unique=True)
     description = models.TextField(null=True)
     system = models.BooleanField(default=False)
@@ -50,14 +49,14 @@ class Role(models.Model):
         return self
 
     class Meta:
-        ordering = ['name', 'modified']
+        ordering = ["name", "modified"]
 
 
 class Access(models.Model):
     """An access object."""
 
     permission = models.TextField(null=False)
-    role = models.ForeignKey(Role, null=True, on_delete=models.CASCADE, related_name='access')
+    role = models.ForeignKey(Role, null=True, on_delete=models.CASCADE, related_name="access")
 
     def permission_application(self):
         """Return the application name from the permission."""
@@ -65,15 +64,14 @@ class Access(models.Model):
 
     def split_permission(self):
         """Split the permission."""
-        return self.permission.split(':')
+        return self.permission.split(":")
 
 
 class ResourceDefinition(models.Model):
     """A resource definition."""
 
     attributeFilter = JSONField(default=dict)
-    access = models.ForeignKey(Access, null=True, on_delete=models.CASCADE,
-                               related_name='resourceDefinitions')
+    access = models.ForeignKey(Access, null=True, on_delete=models.CASCADE, related_name="resourceDefinitions")
 
     @property
     def role(self):
@@ -84,8 +82,11 @@ class ResourceDefinition(models.Model):
 
 def role_related_obj_change_cache_handler(sender=None, instance=None, using=None, **kwargs):
     """Signal handler for invalidating Principal cache on Role object change."""
-    logger.info('Handling signal for added/removed/changed role-related object %s - '
-                'invalidating associated user cache keys', instance)
+    logger.info(
+        "Handling signal for added/removed/changed role-related object %s - "
+        "invalidating associated user cache keys",
+        instance,
+    )
     cache = AccessCache(connections[using].schema_name)
     if instance.role:
         for principal in Principal.objects.filter(group__policies__roles__pk=instance.role.pk):

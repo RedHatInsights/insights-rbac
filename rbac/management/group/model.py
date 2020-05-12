@@ -34,11 +34,10 @@ logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 class Group(models.Model):
     """A group."""
 
-    uuid = models.UUIDField(default=uuid4, editable=False,
-                            unique=True, null=False)
+    uuid = models.UUIDField(default=uuid4, editable=False, unique=True, null=False)
     name = models.CharField(max_length=150, unique=True)
     description = models.TextField(null=True)
-    principals = models.ManyToManyField(Principal, related_name='group')
+    principals = models.ManyToManyField(Principal, related_name="group")
     created = models.DateTimeField(default=timezone.now)
     modified = AutoDateTimeField(default=timezone.now)
     platform_default = models.BooleanField(default=False)
@@ -50,7 +49,7 @@ class Group(models.Model):
 
     def roles_with_access(self):
         """Queryset for roles with access data prefetched."""
-        return self.roles().prefetch_related('access')
+        return self.roles().prefetch_related("access")
 
     def role_count(self):
         """Role count for a group."""
@@ -62,27 +61,27 @@ class Group(models.Model):
 
     def __policy_ids(self):
         """Policy IDs for a group."""
-        return self.policies.values_list('id', flat=True)
+        return self.policies.values_list("id", flat=True)
 
     class Meta:
-        ordering = ['name', 'modified']
+        ordering = ["name", "modified"]
 
 
 def group_deleted_cache_handler(sender=None, instance=None, using=None, **kwargs):
     """Signal handler to purge principal caches when a Group is deleted."""
-    logger.info('Handling signal for deleted group %s - invalidating policy cache for users in group', instance)
+    logger.info("Handling signal for deleted group %s - invalidating policy cache for users in group", instance)
     cache = AccessCache(connections[using].schema_name)
     for principal in instance.principals.all():
         cache.delete_policy(principal.uuid)
 
 
-def principals_to_groups_cache_handler(sender=None, instance=None, action=None,
-                                       reverse=None, model=None, pk_set=None, using=None,
-                                       **kwargs):
+def principals_to_groups_cache_handler(
+    sender=None, instance=None, action=None, reverse=None, model=None, pk_set=None, using=None, **kwargs
+):
     """Signal handler to purge caches when Group membership changes."""
     cache = AccessCache(connections[using].schema_name)
-    if action in ('post_add', 'pre_remove'):
-        logger.info('Handling signal for %s group membership change - invalidating policy cache', instance)
+    if action in ("post_add", "pre_remove"):
+        logger.info("Handling signal for %s group membership change - invalidating policy cache", instance)
         if isinstance(instance, Group):
             # One or more principals was added to/removed from the group
             for principal in Principal.objects.filter(pk__in=pk_set):
@@ -90,8 +89,8 @@ def principals_to_groups_cache_handler(sender=None, instance=None, action=None,
         elif isinstance(instance, Principal):
             # One or more groups was added to/removed from the principal
             cache.delete_policy(instance.uuid)
-    elif action == 'pre_clear':
-        logger.info('Handling signal for %s group membership clearing - invalidating policy cache', instance)
+    elif action == "pre_clear":
+        logger.info("Handling signal for %s group membership clearing - invalidating policy cache", instance)
         if isinstance(instance, Group):
             # All principals are being removed from this group
             for principal in instance.principals.all():
@@ -102,5 +101,4 @@ def principals_to_groups_cache_handler(sender=None, instance=None, action=None,
 
 
 signals.pre_delete.connect(group_deleted_cache_handler, sender=Group)
-signals.m2m_changed.connect(principals_to_groups_cache_handler,
-                            sender=Group.principals.through)
+signals.m2m_changed.connect(principals_to_groups_cache_handler, sender=Group.principals.through)

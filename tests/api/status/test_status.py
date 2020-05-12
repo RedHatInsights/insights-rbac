@@ -45,71 +45,69 @@ class StatusModelTest(TestCase):
     def setUp(self):
         """Create test case setup."""
         super().setUp()
-        Tenant.objects.get_or_create(schema_name='public')
+        Tenant.objects.get_or_create(schema_name="public")
 
-    @patch('os.environ')
+    @patch("os.environ")
     def test_commit_with_env(self, mock_os):
         """Test the commit method via environment."""
-        expected = 'buildnum'
+        expected = "buildnum"
         mock_os.get.return_value = expected
         result = self.status_info.commit
         self.assertEqual(result, expected)
 
-    @patch('subprocess.run')
-    @patch('api.status.model.os.environ')
+    @patch("subprocess.run")
+    @patch("api.status.model.os.environ")
     def test_commit_with_subprocess(self, mock_os, mock_subprocess):
         """Test the commit method via subprocess."""
-        expected = 'buildnum'
+        expected = "buildnum"
         run = Mock()
-        run.stdout = b'buildnum'
+        run.stdout = b"buildnum"
         mock_subprocess.return_value = run
         mock_os.get.return_value = None
         result = self.status_info.commit
         self.assertEqual(result, expected)
 
-    @patch('platform.uname')
+    @patch("platform.uname")
     def test_platform_info(self, mock_platform):
         """Test the platform_info method."""
-        platform_record = namedtuple('Platform', ['os', 'version'])
-        a_plat = platform_record('Red Hat', '7.4')
+        platform_record = namedtuple("Platform", ["os", "version"])
+        a_plat = platform_record("Red Hat", "7.4")
         mock_platform.return_value = a_plat
         result = self.status_info.platform_info
-        self.assertEqual(result['os'], 'Red Hat')
-        self.assertEqual(result['version'], '7.4')
+        self.assertEqual(result["os"], "Red Hat")
+        self.assertEqual(result["version"], "7.4")
 
-    @patch('sys.version')
+    @patch("sys.version")
     def test_python_version(self, mock_sys_ver):
         """Test the python_version method."""
-        expected = 'Python 3.6'
+        expected = "Python 3.6"
         mock_sys_ver.replace.return_value = expected
         result = self.status_info.python_version
         self.assertEqual(result, expected)
 
-    @patch('sys.modules')
+    @patch("sys.modules")
     def test_modules(self, mock_modules):
         """Test the modules method."""
-        expected = {'module1': 'version1',
-                    'module2': 'version2'}
-        mod1 = Mock(__version__='version1')
-        mod2 = Mock(__version__='version2')
-        mock_modules.items.return_value = (('module1', mod1),
-                                           ('module2', mod2))
+        expected = {"module1": "version1", "module2": "version2"}
+        mod1 = Mock(__version__="version1")
+        mod2 = Mock(__version__="version2")
+        mock_modules.items.return_value = (("module1", mod1), ("module2", mod2))
         result = self.status_info.modules
         self.assertEqual(result, expected)
 
-    @patch('api.status.model.logger.info')
+    @patch("api.status.model.logger.info")
     def test_startup_with_modules(self, mock_logger):  # pylint: disable=no-self-use
         """Test the startup method with a module list."""
         self.status_info.startup()
         mock_logger.assert_called_with(ANY, ANY)
 
-    @patch('api.status.model.Status.modules', new_callable=PropertyMock)
+    @patch("api.status.model.Status.modules", new_callable=PropertyMock)
     def test_startup_without_modules(self, mock_mods):  # pylint: disable=no-self-use
         """Test the startup method without a module list."""
         mock_mods.return_value = {}
-        expected = 'INFO:api.status.model:Modules: None'
+        expected = "INFO:api.status.model:Modules: None"
 
-        with self.assertLogs('api.status.model', level='INFO') as logger:
+        with self.assertLogs("api.status.model", level="INFO") as logger:
             self.status_info.startup()
             self.assertIn(expected, logger.output)
 
@@ -119,7 +117,7 @@ class StatusViewTest(TestCase):
 
     def test_status_endpoint(self):
         """Test the status endpoint."""
-        url = reverse('server-status')
+        url = reverse("server-status")
         response = self.client.get(url)
         self.assertEqual(response.status_code, 200)
         # json_result = response.json()

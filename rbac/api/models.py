@@ -31,7 +31,7 @@ class Tenant(TenantMixin):
 
     def __str__(self):
         """Get string representation of Tenant."""
-        return f'Tenant ({self.schema_name})'
+        return f"Tenant ({self.schema_name})"
 
 
 class User:

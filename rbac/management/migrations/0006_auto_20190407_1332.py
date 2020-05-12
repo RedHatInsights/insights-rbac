@@ -5,19 +5,9 @@ from django.db import migrations, models
 
 class Migration(migrations.Migration):
 
-    dependencies = [
-        ('management', '0005_remove_principal_email'),
-    ]
+    dependencies = [("management", "0005_remove_principal_email")]
 
     operations = [
-        migrations.AddField(
-            model_name='role',
-            name='system',
-            field=models.BooleanField(default=False),
-        ),
-        migrations.AddField(
-            model_name='role',
-            name='version',
-            field=models.PositiveIntegerField(default=1),
-        ),
+        migrations.AddField(model_name="role", name="system", field=models.BooleanField(default=False)),
+        migrations.AddField(model_name="role", name="version", field=models.PositiveIntegerField(default=1)),
     ]

@@ -19,7 +19,7 @@ services:
         - DJANGO_READ_DOT_ENV_FILE=True
         - DEVELOPMENT=${DEVELOPMENT-False}
         - DJANGO_DEBUG=${DJANGO_DEBUG-True}
-      privileged: true        
+      privileged: true
       ports:
           - 9080:8000
       volumes:
@@ -41,7 +41,7 @@ services:
           - redis
       depends_on:
           - redis
-  
+
   rbac-scheduler:
       container_name: rbac_scheduler
       build:

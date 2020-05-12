@@ -10,84 +10,93 @@ class Migration(migrations.Migration):
 
     initial = True
 
-    dependencies = [
-    ]
+    dependencies = []
 
     operations = [
         migrations.CreateModel(
-            name='Access',
+            name="Access",
             fields=[
-                ('id', models.AutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('permission', models.TextField()),
+                ("id", models.AutoField(auto_created=True, primary_key=True, serialize=False, verbose_name="ID")),
+                ("permission", models.TextField()),
             ],
         ),
         migrations.CreateModel(
-            name='Group',
+            name="Group",
             fields=[
-                ('id', models.AutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('uuid', models.UUIDField(default=uuid.uuid4, editable=False, unique=True)),
-                ('name', models.CharField(max_length=150, unique=True)),
+                ("id", models.AutoField(auto_created=True, primary_key=True, serialize=False, verbose_name="ID")),
+                ("uuid", models.UUIDField(default=uuid.uuid4, editable=False, unique=True)),
+                ("name", models.CharField(max_length=150, unique=True)),
             ],
-            options={
-                'ordering': ['name'],
-            },
+            options={"ordering": ["name"]},
         ),
         migrations.CreateModel(
-            name='Policy',
+            name="Policy",
             fields=[
-                ('id', models.AutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('uuid', models.UUIDField(default=uuid.uuid4, editable=False, unique=True)),
-                ('name', models.CharField(max_length=150, unique=True)),
-                ('group', models.ForeignKey(null=True, on_delete=django.db.models.deletion.CASCADE, related_name='policies', to='management.Group')),
+                ("id", models.AutoField(auto_created=True, primary_key=True, serialize=False, verbose_name="ID")),
+                ("uuid", models.UUIDField(default=uuid.uuid4, editable=False, unique=True)),
+                ("name", models.CharField(max_length=150, unique=True)),
+                (
+                    "group",
+                    models.ForeignKey(
+                        null=True,
+                        on_delete=django.db.models.deletion.CASCADE,
+                        related_name="policies",
+                        to="management.Group",
+                    ),
+                ),
             ],
-            options={
-                'ordering': ['name'],
-            },
+            options={"ordering": ["name"]},
         ),
         migrations.CreateModel(
-            name='Principal',
+            name="Principal",
             fields=[
-                ('id', models.AutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('uuid', models.UUIDField(default=uuid.uuid4, editable=False, unique=True)),
-                ('username', models.CharField(max_length=150, unique=True)),
-                ('email', models.EmailField(blank=True, max_length=254)),
+                ("id", models.AutoField(auto_created=True, primary_key=True, serialize=False, verbose_name="ID")),
+                ("uuid", models.UUIDField(default=uuid.uuid4, editable=False, unique=True)),
+                ("username", models.CharField(max_length=150, unique=True)),
+                ("email", models.EmailField(blank=True, max_length=254)),
             ],
-            options={
-                'ordering': ['username'],
-            },
+            options={"ordering": ["username"]},
         ),
         migrations.CreateModel(
-            name='ResourceDefinition',
+            name="ResourceDefinition",
             fields=[
-                ('id', models.AutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('attributeFilter', django.contrib.postgres.fields.jsonb.JSONField(default=dict)),
-                ('access', models.ForeignKey(null=True, on_delete=django.db.models.deletion.CASCADE, related_name='resourceDefinition', to='management.Access')),
+                ("id", models.AutoField(auto_created=True, primary_key=True, serialize=False, verbose_name="ID")),
+                ("attributeFilter", django.contrib.postgres.fields.jsonb.JSONField(default=dict)),
+                (
+                    "access",
+                    models.ForeignKey(
+                        null=True,
+                        on_delete=django.db.models.deletion.CASCADE,
+                        related_name="resourceDefinition",
+                        to="management.Access",
+                    ),
+                ),
             ],
         ),
         migrations.CreateModel(
-            name='Role',
+            name="Role",
             fields=[
-                ('id', models.AutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('uuid', models.UUIDField(default=uuid.uuid4, editable=False, unique=True)),
-                ('name', models.CharField(max_length=150, unique=True)),
+                ("id", models.AutoField(auto_created=True, primary_key=True, serialize=False, verbose_name="ID")),
+                ("uuid", models.UUIDField(default=uuid.uuid4, editable=False, unique=True)),
+                ("name", models.CharField(max_length=150, unique=True)),
             ],
-            options={
-                'ordering': ['name'],
-            },
+            options={"ordering": ["name"]},
         ),
         migrations.AddField(
-            model_name='policy',
-            name='roles',
-            field=models.ManyToManyField(related_name='policies', to='management.Role'),
+            model_name="policy",
+            name="roles",
+            field=models.ManyToManyField(related_name="policies", to="management.Role"),
         ),
         migrations.AddField(
-            model_name='group',
-            name='principals',
-            field=models.ManyToManyField(related_name='group', to='management.Principal'),
+            model_name="group",
+            name="principals",
+            field=models.ManyToManyField(related_name="group", to="management.Principal"),
         ),
         migrations.AddField(
-            model_name='access',
-            name='role',
-            field=models.ForeignKey(null=True, on_delete=django.db.models.deletion.CASCADE, related_name='access', to='management.Role'),
+            model_name="access",
+            name="role",
+            field=models.ForeignKey(
+                null=True, on_delete=django.db.models.deletion.CASCADE, related_name="access", to="management.Role"
+            ),
         ),
     ]
