@@ -33,7 +33,7 @@ class AccessCacheTest(TestCase):
         connection.set_schema("acct12345")
         self.principal_a = Principal.objects.create(username="principal_a")
         self.principal_b = Principal.objects.create(username="principal_b")
-        self.group_a = Group.objects.create(name="group_a")
+        self.group_a = Group.objects.create(name="group_a", platform_default=True)
         self.group_b = Group.objects.create(name="group_b")
         self.policy_a = Policy.objects.create(name="policy_a")
         self.policy_b = Policy.objects.create(name="policy_b")
@@ -105,8 +105,9 @@ class AccessCacheTest(TestCase):
         # If a policy has its group set
         self.policy_a.group = self.group_a
         self.policy_a.save()
-        cache.assert_called_once()
-        cache.assert_called_once_with(self.principal_a.uuid)
+        cache.assert_any_call(self.principal_a.uuid)
+        cache.assert_any_call(self.principal_b.uuid)
+        self.assertEqual(cache.call_count, 2)
 
         cache.reset_mock()
         # If a policy has its group changed
@@ -124,7 +125,6 @@ class AccessCacheTest(TestCase):
     @patch("management.policy.model.AccessCache.delete_policy")
     def test_policy_cache_add_remove_roles_signals(self, cache):
         """Test signals attached to Policy/Roles"""
-        self.group_a.principals.add(self.principal_a)
         self.group_b.principals.add(self.principal_b)
         self.policy_a.group = self.group_a
         self.policy_a.save()
@@ -132,10 +132,12 @@ class AccessCacheTest(TestCase):
         self.policy_b.save()
         cache.reset_mock()
 
-        # If a Role is added to a policy
+        # If a Role is added to a platform default group's Policy
         self.policy_a.roles.add(self.role_a)
-        cache.assert_called_once()
-        cache.assert_called_once_with(self.principal_a.uuid)
+        self.policy_a.save()
+        cache.assert_any_call(self.principal_a.uuid)
+        cache.assert_any_call(self.principal_b.uuid)
+        self.assertEqual(cache.call_count, 2)
 
         cache.reset_mock()
         # If a Policy is added to a Role
@@ -144,10 +146,18 @@ class AccessCacheTest(TestCase):
         cache.asset_called_once_with(self.principal_b.uuid)
 
         cache.reset_mock()
-        # If a Role is removed from a Policy
+        # If a Role is removed from a platform default group's Policy
         self.policy_a.roles.remove(self.role_a)
+        self.policy_a.save()
+        cache.assert_any_call(self.principal_a.uuid)
+        cache.assert_any_call(self.principal_b.uuid)
+        self.assertEqual(cache.call_count, 2)
+
+        cache.reset_mock()
+        # If a Role is removed from a Policy
+        self.policy_b.roles.remove(self.role_b)
         cache.assert_called_once()
-        cache.assert_called_once_with(self.principal_a.uuid)
+        cache.assert_called_once_with(self.principal_b.uuid)
 
         cache.reset_mock()
         # If a Policy is removed from a Role
