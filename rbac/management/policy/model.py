@@ -53,7 +53,10 @@ def policy_changed_cache_handler(sender=None, instance=None, using=None, **kwarg
     logger.info("Handling signal for deleted policy %s - invalidating associated user cache keys", instance)
     cache = AccessCache(connections[using].schema_name)
     if instance.group:
-        for principal in instance.group.principals.all():
+        principals = instance.group.principals.all()
+        if instance.group.platform_default:
+            cache.delete_all_policies_for_tenant()
+        for principal in principals:
             cache.delete_policy(principal.uuid)
 
 

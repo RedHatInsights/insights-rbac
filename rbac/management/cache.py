@@ -1,5 +1,6 @@
 """Redis-based caching of per-Principal per-app access policy."""
 
+import contextlib
 import json
 import logging
 
@@ -49,15 +50,31 @@ class AccessCache:
             logger.exception("Error querying policy for uuid %s", uuid)
         return None
 
-    def delete_policy(self, uuid):
-        """Purge the given user's policy from the cache."""
+    @contextlib.contextmanager
+    def delete_handler(self, err_msg):
+        """Handle policy delete events."""
         if not settings.ACCESS_CACHE_ENABLED:
             return
         try:
+            yield
+        except exceptions.RedisError:
+            logger.exception(err_msg)
+
+    def delete_policy(self, uuid):
+        """Purge the given user's policy from the cache."""
+        err_msg = f"Error deleting policy for uuid {uuid}"
+        with self.delete_handler(err_msg):
             logger.info("Deleting policy cache for uuid %s", uuid)
             self.connection.delete(self.key_for(uuid))
-        except exceptions.RedisError:
-            logger.exception("Error deleting policy for uuid %s", uuid)
+
+    def delete_all_policies_for_tenant(self):
+        """Purge users' policies for a given tenant from the cache."""
+        err_msg = f"Error deleting all policies for tenant {self.tenant}"
+        with self.delete_handler(err_msg):
+            logger.info("Deleting entire policy cache for tenant %s", self.tenant)
+            keys = self.connection.keys(self.key_for("*"))
+            if keys:
+                self.connection.delete(*keys)
 
     def save_policy(self, uuid, application, policy):
         """Write the policy for a given user for a given app to Redis."""
