@@ -5,8 +5,8 @@ from django.db import migrations, models
 
 def remove_rbac_roles(apps, schema_editor):
     # get all permissions/access objects for RBAC
-    Access = apps.get_model('management', 'Access')
-    rbac_permissions = Access.objects.filter(permission__contains='rbac:')
+    Access = apps.get_model("management", "Access")
+    rbac_permissions = Access.objects.filter(permission__contains="rbac:")
 
     # iterate through all RBAC permissions
     for rbac_permission in rbac_permissions:
@@ -14,7 +14,7 @@ def remove_rbac_roles(apps, schema_editor):
         role = rbac_permission.role
 
         # check to see if there are any access objects that are not RBAC
-        non_rbac_permissions = role.access.exclude(permission__contains='rbac:')
+        non_rbac_permissions = role.access.exclude(permission__contains="rbac:")
 
         # if so, just delete the access object we know is RBAC, and leave the role
         if non_rbac_permissions:
@@ -27,10 +27,6 @@ def remove_rbac_roles(apps, schema_editor):
 
 class Migration(migrations.Migration):
 
-    dependencies = [
-        ('management', '0011_group_naming'),
-    ]
+    dependencies = [("management", "0011_group_naming")]
 
-    operations = [
-        migrations.RunPython(remove_rbac_roles)
-    ]
+    operations = [migrations.RunPython(remove_rbac_roles)]

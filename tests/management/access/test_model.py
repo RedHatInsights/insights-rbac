@@ -17,6 +17,7 @@
 """Test the group model."""
 from django.test import TestCase
 from tenant_schemas.utils import tenant_context
+
 # from unittest.mock import Mock
 
 from management.models import Access
@@ -31,7 +32,7 @@ class AccessModelTests(IdentityRequest):
         super().setUp()
 
         with tenant_context(self.tenant):
-            self.access = Access.objects.create(permission='app:*:*')
+            self.access = Access.objects.create(permission="app:*:*")
 
     def tearDown(self):
         """Tear down access model tests."""
@@ -41,9 +42,9 @@ class AccessModelTests(IdentityRequest):
     def test_permission_application(self):
         """Test we get back the application name of the permission."""
         with tenant_context(self.tenant):
-            self.assertEqual(self.access.permission_application(), 'app')
+            self.assertEqual(self.access.permission_application(), "app")
 
     def test_split_permission(self):
         """Test we split the permission."""
         with tenant_context(self.tenant):
-            self.assertEqual(self.access.split_permission(), ['app', '*', '*'])
+            self.assertEqual(self.access.split_permission(), ["app", "*", "*"])

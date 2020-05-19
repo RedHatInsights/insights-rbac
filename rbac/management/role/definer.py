@@ -30,17 +30,17 @@ logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 def _make_role(tenant, data, update=False):
     """Create the role object in the database."""
     with tenant_context(tenant):
-        name = data.pop('name')
-        description = data.pop('description', None)
-        access_list = data.pop('access')
-        version = data.pop('version', 1)
+        name = data.pop("name")
+        description = data.pop("description", None)
+        access_list = data.pop("access")
+        version = data.pop("version", 1)
         version_diff = False
-        is_platform_default = data.pop('platform_default', False)
+        is_platform_default = data.pop("platform_default", False)
         if update:
             role, created = Role.objects.filter(name=name).get_or_create(name=name)
             version_diff = version != role.version
             if created or (not created and version_diff):
-                logger.info('Updating role %s for tenant %s.', name, tenant.schema_name)
+                logger.info("Updating role %s for tenant %s.", name, tenant.schema_name)
                 role.description = description
                 role.system = True
                 role.version = version
@@ -48,15 +48,13 @@ def _make_role(tenant, data, update=False):
                 role.save()
                 role.access.all().delete()
         else:
-            role = Role.objects.create(name=name,
-                                       description=description,
-                                       system=True,
-                                       version=version,
-                                       platform_default=is_platform_default)
-            logger.info('Creating role %s for tenant %s.', name, tenant.schema_name)
+            role = Role.objects.create(
+                name=name, description=description, system=True, version=version, platform_default=is_platform_default
+            )
+            logger.info("Creating role %s for tenant %s.", name, tenant.schema_name)
         if not update or (update and version_diff):
             for access_item in access_list:
-                resource_def_list = access_item.pop('resourceDefinitions', [])
+                resource_def_list = access_item.pop("resourceDefinitions", [])
                 access_obj = Access.objects.create(**access_item, role=role)
                 access_obj.save()
                 for resource_def_item in resource_def_list:
@@ -73,13 +71,16 @@ def _update_or_create_roles(tenant, roles, update=False):
 
 def seed_roles(tenant, update=False):
     """For a tenant update or create system defined roles."""
-    roles_directory = os.path.join(settings.BASE_DIR, 'management', 'role', 'definitions')
-    role_files = [f for f in os.listdir(roles_directory)
-                  if os.path.isfile(os.path.join(roles_directory, f)) and f.endswith('.json')]
+    roles_directory = os.path.join(settings.BASE_DIR, "management", "role", "definitions")
+    role_files = [
+        f
+        for f in os.listdir(roles_directory)
+        if os.path.isfile(os.path.join(roles_directory, f)) and f.endswith(".json")
+    ]
     for role_file_name in role_files:
         role_file_path = os.path.join(roles_directory, role_file_name)
         with open(role_file_path) as json_file:
             data = json.load(json_file)
-            role_list = data.get('roles')
+            role_list = data.get("roles")
             _update_or_create_roles(tenant, role_list, update)
     return tenant

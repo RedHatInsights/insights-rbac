@@ -35,4 +35,4 @@ class StatusSerializer(serializers.Serializer):
         """Metadata for the serializer."""
 
         model = Status
-        fields = '__all__'
+        fields = "__all__"

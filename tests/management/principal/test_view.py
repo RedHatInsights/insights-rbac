@@ -38,14 +38,14 @@ class PrincipalViewsetTests(IdentityRequest):
     def setUp(self):
         """Set up the principal viewset tests."""
         super().setUp()
-        request = self.request_context['request']
+        request = self.request_context["request"]
         user = User()
-        user.username = self.user_data['username']
-        user.account = self.customer_data['account_id']
+        user.username = self.user_data["username"]
+        user.account = self.customer_data["account_id"]
         request.user = user
 
         with tenant_context(self.tenant):
-            self.principal = Principal(username='test_user')
+            self.principal = Principal(username="test_user")
             self.principal.save()
 
     def tearDown(self):
@@ -53,45 +53,49 @@ class PrincipalViewsetTests(IdentityRequest):
         with tenant_context(self.tenant):
             Principal.objects.all().delete()
 
-    @patch('management.principal.proxy.PrincipalProxy.request_principals',
-           return_value={'status_code': 200, 'data': {'userCount': '1', "users": [{'username': 'test_user'}]}})
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_principals",
+        return_value={"status_code": 200, "data": {"userCount": "1", "users": [{"username": "test_user"}]}},
+    )
     def test_read_principal_list_success(self, mock_request):
         """Test that we can read a list of principals."""
-        url = reverse('principals')
+        url = reverse("principals")
         client = APIClient()
         response = client.get(url, **self.headers)
 
-        mock_request.assert_called_once_with(ANY, limit=10, offset=0, sort_order='asc')
+        mock_request.assert_called_once_with(ANY, limit=10, offset=0, sort_order="asc")
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        for keyname in ['meta', 'links', 'data']:
+        for keyname in ["meta", "links", "data"]:
             self.assertIn(keyname, response.data)
-        self.assertIsInstance(response.data.get('data'), list)
-        self.assertEqual(int(response.data.get('meta').get('count')), 1)
-        self.assertEqual(len(response.data.get('data')), 1)
+        self.assertIsInstance(response.data.get("data"), list)
+        self.assertEqual(int(response.data.get("meta").get("count")), 1)
+        self.assertEqual(len(response.data.get("data")), 1)
 
-        principal = response.data.get('data')[0]
-        self.assertIsNotNone(principal.get('username'))
-        self.assertEqual(principal.get('username'), self.principal.username)
+        principal = response.data.get("data")[0]
+        self.assertIsNotNone(principal.get("username"))
+        self.assertEqual(principal.get("username"), self.principal.username)
 
-    @patch('management.principal.proxy.PrincipalProxy.request_filtered_principals',
-           return_value={'status_code': 200, 'data': [{'username': 'test_user'}]})
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={"status_code": 200, "data": [{"username": "test_user"}]},
+    )
     def test_read_principal_filtered_list_success(self, mock_request):
         """Test that we can read a filtered list of principals."""
         url = f'{reverse("principals")}?usernames=test_user&offset=30'
         client = APIClient()
         response = client.get(url, **self.headers)
 
-        mock_request.assert_called_once_with(['test_user'], account=ANY, limit=10, offset=30, sort_order='asc')
+        mock_request.assert_called_once_with(["test_user"], account=ANY, limit=10, offset=30, sort_order="asc")
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        for keyname in ['meta', 'links', 'data']:
+        for keyname in ["meta", "links", "data"]:
             self.assertIn(keyname, response.data)
-        self.assertIsInstance(response.data.get('data'), list)
-        self.assertEqual(len(response.data.get('data')), 1)
-        self.assertEqual(response.data.get('meta').get('count'), 1)
+        self.assertIsInstance(response.data.get("data"), list)
+        self.assertEqual(len(response.data.get("data")), 1)
+        self.assertEqual(response.data.get("meta").get("count"), 1)
 
-        principal = response.data.get('data')[0]
-        self.assertIsNotNone(principal.get('username'))
-        self.assertEqual(principal.get('username'), 'test_user')
+        principal = response.data.get("data")[0]
+        self.assertIsNotNone(principal.get("username"))
+        self.assertEqual(principal.get("username"), "test_user")
 
     def test_bad_query_param(self):
         """Test handling of bad query params."""
@@ -109,21 +113,24 @@ class PrincipalViewsetTests(IdentityRequest):
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
-    @patch('management.principal.proxy.PrincipalProxy.request_principals',
-           return_value={'status_code': status.HTTP_500_INTERNAL_SERVER_ERROR,
-                         'errors': [{'detail': 'error'}]})
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_principals",
+        return_value={"status_code": status.HTTP_500_INTERNAL_SERVER_ERROR, "errors": [{"detail": "error"}]},
+    )
     def test_read_principal_list_fail(self, mock_request):
         """Test that we can handle a failure with listing principals."""
-        url = reverse('principals')
+        url = reverse("principals")
         client = APIClient()
         response = client.get(url, **self.headers)
 
         self.assertEqual(response.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
-        error = response.data.get('errors')[0]
-        self.assertIsNotNone(error.get('detail'))
+        error = response.data.get("errors")[0]
+        self.assertIsNotNone(error.get("detail"))
 
-    @patch('management.principal.proxy.PrincipalProxy.request_filtered_principals',
-           return_value={'status_code': 200, 'data': [{'username': 'test_user', 'account_number': '1234'}]})
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={"status_code": 200, "data": [{"username": "test_user", "account_number": "1234"}]},
+    )
     def test_read_principal_list_account(self, mock_request):
         """Test that we can handle a request with matching accounts"""
         url = f'{reverse("principals")}?usernames=test_user&offset=30&sort_order=desc'
@@ -131,19 +138,21 @@ class PrincipalViewsetTests(IdentityRequest):
         proxy = PrincipalProxy()
         response = client.get(url, **self.headers)
 
-        mock_request.assert_called_once_with(['test_user'], account=ANY, limit=10, offset=30, sort_order='desc')
+        mock_request.assert_called_once_with(["test_user"], account=ANY, limit=10, offset=30, sort_order="desc")
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        for keyname in ['meta', 'links', 'data']:
+        for keyname in ["meta", "links", "data"]:
             self.assertIn(keyname, response.data)
-        self.assertIsInstance(response.data.get('data'), list)
-        self.assertEqual(response.data.get('meta').get('count'), 1)
-        resp = proxy._process_data(response.data.get('data'), account='1234', account_filter=True)
+        self.assertIsInstance(response.data.get("data"), list)
+        self.assertEqual(response.data.get("meta").get("count"), 1)
+        resp = proxy._process_data(response.data.get("data"), account="1234", account_filter=True)
         self.assertEqual(len(resp), 1)
 
-        self.assertEqual(resp[0]['username'], 'test_user')
+        self.assertEqual(resp[0]["username"], "test_user")
 
-    @patch('management.principal.proxy.PrincipalProxy.request_filtered_principals',
-           return_value={'status_code': 200, 'data': [{'username': 'test_user', 'account_number': '54321'}]})
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={"status_code": 200, "data": [{"username": "test_user", "account_number": "54321"}]},
+    )
     def test_read_principal_list_account_fail(self, mock_request):
         """Test that we can handle a request with matching accounts"""
         url = f'{reverse("principals")}?usernames=test_user&offset=30'
@@ -152,16 +161,18 @@ class PrincipalViewsetTests(IdentityRequest):
         response = client.get(url, **self.headers)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        for keyname in ['meta', 'links', 'data']:
+        for keyname in ["meta", "links", "data"]:
             self.assertIn(keyname, response.data)
-        self.assertIsInstance(response.data.get('data'), list)
-        resp = proxy._process_data(response.data.get('data'), account='1234', account_filter=True)
+        self.assertIsInstance(response.data.get("data"), list)
+        resp = proxy._process_data(response.data.get("data"), account="1234", account_filter=True)
         self.assertEqual(len(resp), 0)
 
-        self.assertNotEqual(resp, 'test_user')
+        self.assertNotEqual(resp, "test_user")
 
-    @patch('management.principal.proxy.PrincipalProxy.request_filtered_principals',
-           return_value={'status_code': 200, 'data': [{'username': 'test_user', 'account_number': '54321'}]})
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={"status_code": 200, "data": [{"username": "test_user", "account_number": "54321"}]},
+    )
     def test_read_principal_list_account_filter(self, mock_request):
         """Test that we can handle a request with matching accounts"""
         url = f'{reverse("principals")}?usernames=test_user&offset=30'
@@ -170,17 +181,19 @@ class PrincipalViewsetTests(IdentityRequest):
         response = client.get(url, **self.headers)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        for keyname in ['meta', 'links', 'data']:
+        for keyname in ["meta", "links", "data"]:
             self.assertIn(keyname, response.data)
-        self.assertIsInstance(response.data.get('data'), list)
-        self.assertEqual(response.data.get('meta').get('count'), 1)
-        resp = proxy._process_data(response.data.get('data'), account='1234', account_filter=False)
+        self.assertIsInstance(response.data.get("data"), list)
+        self.assertEqual(response.data.get("meta").get("count"), 1)
+        resp = proxy._process_data(response.data.get("data"), account="1234", account_filter=False)
         self.assertEqual(len(resp), 1)
 
-        self.assertEqual(resp[0]['username'], 'test_user')
+        self.assertEqual(resp[0]["username"], "test_user")
 
-    @patch('management.principal.proxy.PrincipalProxy.request_principals',
-           return_value={'status_code': 200, 'data': [{'username': 'test_user', 'account_number': '54321'}]})
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_principals",
+        return_value={"status_code": 200, "data": [{"username": "test_user", "account_number": "54321"}]},
+    )
     def test_read_principal_list_by_email(self, mock_request):
         """Test that we can handle a request with an email address"""
         url = f'{reverse("principals")}?email=test_user@example.com'
@@ -188,13 +201,13 @@ class PrincipalViewsetTests(IdentityRequest):
         proxy = PrincipalProxy()
         response = client.get(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        for keyname in ['meta', 'links', 'data']:
+        for keyname in ["meta", "links", "data"]:
             self.assertIn(keyname, response.data)
-        self.assertIsInstance(response.data.get('data'), list)
-        self.assertEqual(response.data.get('meta').get('count'), 1)
-        resp = proxy._process_data(response.data.get('data'), account='54321', account_filter=False)
+        self.assertIsInstance(response.data.get("data"), list)
+        self.assertEqual(response.data.get("meta").get("count"), 1)
+        resp = proxy._process_data(response.data.get("data"), account="54321", account_filter=False)
         self.assertEqual(len(resp), 1)
 
-        mock_request.assert_called_once_with(ANY, email='test_user@example.com', limit=10, offset=0, sort_order='asc')
+        mock_request.assert_called_once_with(ANY, email="test_user@example.com", limit=10, offset=0, sort_order="asc")
 
-        self.assertEqual(resp[0]['username'], 'test_user')
+        self.assertEqual(resp[0]["username"], "test_user")

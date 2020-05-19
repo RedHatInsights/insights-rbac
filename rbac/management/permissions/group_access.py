@@ -27,22 +27,22 @@ class GroupAccessPermission(permissions.BasePermission):
 
     def has_permission(self, request, view):
         """Check permission based on the defined access."""
-        if ENVIRONMENT.get_value('ALLOW_ANY', default=False, cast=bool):
+        if ENVIRONMENT.get_value("ALLOW_ANY", default=False, cast=bool):
             return True
         if request.user.admin:
             return True
         if request.method in permissions.SAFE_METHODS:
-            if is_scope_principal(request) or request._request.path == reverse('group-list'):
+            if is_scope_principal(request) or request._request.path == reverse("group-list"):
                 return True
-            username = request.query_params.get('username')
+            username = request.query_params.get("username")
             if username:
                 return username == request.user.username
             else:
-                group_read = request.user.access.get('group', {}).get('read', [])
+                group_read = request.user.access.get("group", {}).get("read", [])
                 if group_read:
                     return True
         else:
-            group_write = request.user.access.get('group', {}).get('write', [])
+            group_write = request.user.access.get("group", {}).get("write", [])
             if group_write:
                 return True
 

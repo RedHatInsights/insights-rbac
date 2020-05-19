@@ -28,7 +28,7 @@ class PrincipalSerializer(serializers.ModelSerializer):
         """Metadata for the serializer."""
 
         model = Principal
-        fields = ('username',)
+        fields = ("username",)
 
 
 class PrincipalInputSerializer(serializers.Serializer):
@@ -39,4 +39,4 @@ class PrincipalInputSerializer(serializers.Serializer):
     class Meta:
         """Metadata for the serializer."""
 
-        fields = ('username',)
+        fields = ("username",)

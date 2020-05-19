@@ -30,20 +30,20 @@ class AccessPermissionUtilitiesTest(TestCase):
     def test_has_scoped_principal_get(self):
         """Test that a user can execute if query param scope=principal is present for GET."""
         user = Mock(spec=User)
-        req = Mock(user=user, method='GET', query_params={SCOPE_KEY: PRINCIPAL_SCOPE})
+        req = Mock(user=user, method="GET", query_params={SCOPE_KEY: PRINCIPAL_SCOPE})
         result = is_scope_principal(request=req)
         self.assertTrue(result)
 
     def test_has_scoped_principal_post(self):
         """Test that a user cannot execute if query param scope=principal is present for POST."""
         user = Mock(spec=User)
-        req = Mock(user=user, method='POST', query_params={SCOPE_KEY: PRINCIPAL_SCOPE})
+        req = Mock(user=user, method="POST", query_params={SCOPE_KEY: PRINCIPAL_SCOPE})
         result = is_scope_principal(request=req)
         self.assertFalse(result)
 
     def test_has_scoped_not_principal_get(self):
         """Test that a user cannot execute if query param scope!=principal is present for GET."""
         user = Mock(spec=User)
-        req = Mock(user=user, method='GET', query_params={SCOPE_KEY: 'bad'})
+        req = Mock(user=user, method="GET", query_params={SCOPE_KEY: "bad"})
         result = is_scope_principal(request=req)
         self.assertFalse(result)

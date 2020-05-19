@@ -29,16 +29,21 @@ django-extensions = "==2.2.9"
 
 [dev-packages]
 astroid = "==2.2.5"
-pylint = "==2.3.1"
 sphinx-rtd-theme = ">=0.3.0"
 sphinx = ">=1.7.0"
 tox = ">=3.0.0"
 coverage = ">=4.5.0"
 codecov = ">=2.0.0"
 faker = ">=0.8.14"
-pylint-django = "==2.0.11"
 pre-commit = "*"
+black = "*"
 flake8 = "*"
+flake8-docstrings = "*"
+flake8-import-order = "*"
+flake8-quotes = "*"
 
 [requires]
 python_version = "3.6"
+
+[pipenv]
+allow_prereleases = true

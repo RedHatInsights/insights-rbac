@@ -25,11 +25,7 @@ from django.http import Http404, HttpResponse
 from django.utils.deprecation import MiddlewareMixin
 from tenant_schemas.middleware import BaseTenantMiddleware
 
-from api.common import (RH_IDENTITY_HEADER,
-                        RH_INSIGHTS_REQUEST_ID,
-                        RH_RBAC_ACCOUNT,
-                        RH_RBAC_CLIENT_ID,
-                        RH_RBAC_PSK)
+from api.common import RH_IDENTITY_HEADER, RH_INSIGHTS_REQUEST_ID, RH_RBAC_ACCOUNT, RH_RBAC_CLIENT_ID, RH_RBAC_PSK
 from api.models import Tenant, User
 from api.serializers import create_schema_name, extract_header
 
@@ -43,7 +39,7 @@ logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 def is_no_auth(request):
     """Check condition for needing to authenticate the user."""
-    no_auth_list = ['status', 'apidoc', 'metrics', 'openapi.json']
+    no_auth_list = ["status", "apidoc", "metrics", "openapi.json"]
     no_auth = any(no_auth_path in request.path for no_auth_path in no_auth_list)
     return no_auth
 
@@ -70,17 +66,15 @@ class IdentityHeaderMiddleware(BaseTenantMiddleware):
 
     def get_tenant(self, model, hostname, request):
         """Override the tenant selection logic."""
-        connections['default'].set_schema_to_public()
+        connections["default"].set_schema_to_public()
         if request.user.account not in TENANTS:
             if request.user.system:
                 try:
-                    tenant = Tenant.objects.get(
-                        schema_name=create_schema_name(request.user.account))
+                    tenant = Tenant.objects.get(schema_name=create_schema_name(request.user.account))
                 except Tenant.DoesNotExist:
                     raise Http404()
             else:
-                tenant, created = Tenant.objects.get_or_create(
-                    schema_name=create_schema_name(request.user.account))
+                tenant, created = Tenant.objects.get_or_create(schema_name=create_schema_name(request.user.account))
                 if created:
                     seed_roles(tenant=tenant, update=False)
                     seed_group(tenant=tenant)
@@ -89,7 +83,7 @@ class IdentityHeaderMiddleware(BaseTenantMiddleware):
 
     def hostname_from_request(self, request):
         """Behold. The tenant_schemas expects to pivot schemas based on hostname. We're not."""
-        return ''
+        return ""
 
     @staticmethod  # noqa: C901
     def _get_access_for_user():  # pylint: disable=too-many-locals,too-many-branches
@@ -98,18 +92,9 @@ class IdentityHeaderMiddleware(BaseTenantMiddleware):
         Stubbed out to begin removal of RBAC on RBAC, with minimal disruption
         """
         access = {
-            'group': {
-                'read': [],
-                'write': []
-            },
-            'role': {
-                'read': [],
-                'write': []
-            },
-            'policy': {
-                'read': [],
-                'write': []
-            }
+            "group": {"read": [], "write": []},
+            "role": {"read": [], "write": []},
+            "policy": {"read": [], "write": []},
         }
 
         return access
@@ -129,9 +114,9 @@ class IdentityHeaderMiddleware(BaseTenantMiddleware):
         user = User()
         try:
             _, json_rh_auth = extract_header(request, self.header)
-            user.username = json_rh_auth.get('identity', {}).get('user', {})['username']
-            user.account = json_rh_auth.get('identity', {})['account_number']
-            user.admin = json_rh_auth.get('identity', {}).get('user', {}).get('is_org_admin')
+            user.username = json_rh_auth.get("identity", {}).get("user", {})["username"]
+            user.account = json_rh_auth.get("identity", {})["account_number"]
+            user.admin = json_rh_auth.get("identity", {}).get("user", {}).get("is_org_admin")
             user.system = False
             if not user.admin:
                 user.access = IdentityHeaderMiddleware._get_access_for_user()
@@ -147,10 +132,10 @@ class IdentityHeaderMiddleware(BaseTenantMiddleware):
                 user.admin = True
                 user.system = True
             else:
-                logger.error('Could not obtain identity on request.')
+                logger.error("Could not obtain identity on request.")
                 return HttpResponseUnauthorizedRequest()
         except binascii.Error as error:
-            logger.error('Could not decode header: %s.', error)
+            logger.error("Could not decode header: %s.", error)
             raise error
         if user.username and user.account:
             request.user = user
@@ -166,16 +151,16 @@ class IdentityHeaderMiddleware(BaseTenantMiddleware):
             request (object): The request object
             response (object): The response object
         """
-        query_string = ''
+        query_string = ""
         is_admin = False
         is_system = False
         account = None
         username = None
-        req_id = getattr(request, 'req_id', None)
-        if request.META.get('QUERY_STRING'):
-            query_string = '?{}'.format(request.META['QUERY_STRING'])
+        req_id = getattr(request, "req_id", None)
+        if request.META.get("QUERY_STRING"):
+            query_string = "?{}".format(request.META["QUERY_STRING"])
 
-        if hasattr(request, 'user') and request.user:
+        if hasattr(request, "user") and request.user:
             username = request.user.username
             if username:
                 # rbac.api.models.User has these fields
@@ -188,14 +173,14 @@ class IdentityHeaderMiddleware(BaseTenantMiddleware):
                 account = None
 
         log_object = {
-            'method': request.method,
-            'path': request.path + query_string,
-            'status': response.status_code,
-            'request_id': req_id,
-            'account': account,
-            'username': username,
-            'is_admin': is_admin,
-            'is_system': is_system,
+            "method": request.method,
+            "path": request.path + query_string,
+            "status": response.status_code,
+            "request_id": req_id,
+            "account": account,
+            "username": username,
+            "is_admin": is_admin,
+            "is_system": is_system,
         }
 
         logger.info(log_object)
@@ -212,4 +197,4 @@ class DisableCSRF(MiddlewareMixin):  # pylint: disable=too-few-public-methods
             request (object): The request object
 
         """
-        setattr(request, '_dont_enforce_csrf_checks', True)
+        setattr(request, "_dont_enforce_csrf_checks", True)

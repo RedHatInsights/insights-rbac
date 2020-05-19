@@ -7,51 +7,34 @@ import management.utils
 
 class Migration(migrations.Migration):
 
-    dependencies = [
-        ('management', '0003_auto_20190313_1200'),
-    ]
+    dependencies = [("management", "0003_auto_20190313_1200")]
 
     operations = [
-        migrations.AlterModelOptions(
-            name='group',
-            options={'ordering': ['name', 'modified']},
-        ),
-        migrations.AlterModelOptions(
-            name='policy',
-            options={'ordering': ['name', 'modified']},
-        ),
-        migrations.AlterModelOptions(
-            name='role',
-            options={'ordering': ['name', 'modified']},
+        migrations.AlterModelOptions(name="group", options={"ordering": ["name", "modified"]}),
+        migrations.AlterModelOptions(name="policy", options={"ordering": ["name", "modified"]}),
+        migrations.AlterModelOptions(name="role", options={"ordering": ["name", "modified"]}),
+        migrations.AddField(
+            model_name="group", name="created", field=models.DateTimeField(default=django.utils.timezone.now)
         ),
         migrations.AddField(
-            model_name='group',
-            name='created',
-            field=models.DateTimeField(default=django.utils.timezone.now),
-        ),
-        migrations.AddField(
-            model_name='group',
-            name='modified',
+            model_name="group",
+            name="modified",
             field=management.rbac_fields.AutoDateTimeField(default=django.utils.timezone.now),
         ),
         migrations.AddField(
-            model_name='policy',
-            name='created',
-            field=models.DateTimeField(default=django.utils.timezone.now),
+            model_name="policy", name="created", field=models.DateTimeField(default=django.utils.timezone.now)
         ),
         migrations.AddField(
-            model_name='policy',
-            name='modified',
+            model_name="policy",
+            name="modified",
             field=management.rbac_fields.AutoDateTimeField(default=django.utils.timezone.now),
         ),
         migrations.AddField(
-            model_name='role',
-            name='created',
-            field=models.DateTimeField(default=django.utils.timezone.now),
+            model_name="role", name="created", field=models.DateTimeField(default=django.utils.timezone.now)
         ),
         migrations.AddField(
-            model_name='role',
-            name='modified',
+            model_name="role",
+            name="modified",
             field=management.rbac_fields.AutoDateTimeField(default=django.utils.timezone.now),
         ),
     ]

@@ -27,4 +27,4 @@ logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 class ApiConfig(AppConfig):
     """API application configuration."""
 
-    name = 'api'
+    name = "api"

@@ -792,7 +792,7 @@ parameters:
   name: PRINCIPAL_PROXY_SERVICE_SSL_VERIFY
 - displayName: Use source certifcate for principal proxy interaction
   value: 'False'
-  name: PRINCIPAL_PROXY_SERVICE_SOURCE_CERT  
+  name: PRINCIPAL_PROXY_SERVICE_SOURCE_CERT
 - displayName: Cloud Watch Amazon Web Services Access ID
   required: false
   name: CW_AWS_ACCESS_KEY_ID

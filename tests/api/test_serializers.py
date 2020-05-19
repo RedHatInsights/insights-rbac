@@ -22,7 +22,8 @@ from django.test import TestCase
 from api.serializers import extract_header
 
 
-BAD_PADDING_HEADER = 'eyJpZGVudGl0eSI6eyJhY2NvdW50X251bWJlciI6IjYwODk3MTkiLCJ0eXBlIjoiVXNlciIsInVzZXIiOnsidXNlcm5hbWUiOiJzeXNhZG1pbiIsImVtYWlsIjoic3lzYWRtaW4iLCJmaXJzdF9uYW1lIjoic3lzYWRtaW4iLCJsYXN0X25hbWUiOiJzeXNhZG1pbiIsImlzX2FjdGl2ZSI6dHJ1ZSwiaXNfb3JnX2FkbWluIjp0cnVlLCJpc19pbnRlcm5hbCI6ZmFsc2UsImxvY2FsZSI6ImVuX1VTIn0sImludGVybmFsIjp7Im9yZ19pZCI6IjExNzg5NzcyIiwiYXV0aF90eXBlIjoiand0LWF1dGgiLCJhdXRoX3RpbWUiOjB9fSwidXNlciI6eyJ1c2VybmFtZSI6InN5c2FkbWluIiwiZW1haWwiOiJzeXNhZG1pbiIsImZpcnN0X25hbWUiOiJzeXNhZG1pbiIsImxhc3RfbmFtZSI6InN5c2FkbWluIiwiaXNfYWN0aXZlIjp0cnVlLCJpc19vcmdfYWRtaW4iOnRydWUsImlzX2ludGVybmFsIjpmYWxzZSwibG9jYWxlIjoiZW5fVVMifX0'
+BAD_PADDING_HEADER = "eyJpZGVudGl0eSI6eyJhY2NvdW50X251bWJlciI6IjYwODk3MTkiLCJ0eXBlIjoiVXNlciIsInVzZXIiOnsidXNlcm5hbWUiOiJzeXNhZG1pbiIsImVtYWlsIjoic3lzYWRtaW4iLCJmaXJzdF9uYW1lIjoic3lzYWRtaW4iLCJsYXN0X25hbWUiOiJzeXNhZG1pbiIsImlzX2FjdGl2ZSI6dHJ1ZSwiaXNfb3JnX2FkbWluIjp0cnVlLCJpc19pbnRlcm5hbCI6ZmFsc2UsImxvY2FsZSI6ImVuX1VTIn0sImludGVybmFsIjp7Im9yZ19pZCI6IjExNzg5NzcyIiwiYXV0aF90eXBlIjoiand0LWF1dGgiLCJhdXRoX3RpbWUiOjB9fSwidXNlciI6eyJ1c2VybmFtZSI6InN5c2FkbWluIiwiZW1haWwiOiJzeXNhZG1pbiIsImZpcnN0X25hbWUiOiJzeXNhZG1pbiIsImxhc3RfbmFtZSI6InN5c2FkbWluIiwiaXNfYWN0aXZlIjp0cnVlLCJpc19vcmdfYWRtaW4iOnRydWUsImlzX2ludGVybmFsIjpmYWxzZSwibG9jYWxlIjoiZW5fVVMifX0"
+
 
 class SerializersTest(TestCase):
     """Tests against the serializera functions."""
@@ -30,8 +31,8 @@ class SerializersTest(TestCase):
     def test_handle_bad_padding(self):
         """Test the handling of bad padding."""
         request = Mock()
-        request.META = {'header1': BAD_PADDING_HEADER}
+        request.META = {"header1": BAD_PADDING_HEADER}
         try:
-            extract_header(request, 'header1')
+            extract_header(request, "header1")
         except Exception:
-            self.fail('Should handle padding error.')
+            self.fail("Should handle padding error.")

@@ -37,30 +37,22 @@ class AccessViewTests(IdentityRequest):
     def setUp(self):
         """Set up the access view tests."""
         super().setUp()
-        request = self.request_context['request']
+        request = self.request_context["request"]
         user = User()
-        user.username = self.user_data['username']
-        user.account = self.customer_data['account_id']
+        user.username = self.user_data["username"]
+        user.account = self.customer_data["account_id"]
         request.user = user
 
         self.access_data = {
-            'permission': 'app:*:*',
-            'resourceDefinitions': [
-                {
-                    'attributeFilter': {
-                        'key': 'key1',
-                        'operation': 'equal',
-                        'value': 'value1'
-                    }
-                }
-            ]
+            "permission": "app:*:*",
+            "resourceDefinitions": [{"attributeFilter": {"key": "key1", "operation": "equal", "value": "value1"}}],
         }
         with tenant_context(self.tenant):
-            self.principal = Principal(username=self.user_data['username'])
+            self.principal = Principal(username=self.user_data["username"])
             self.principal.save()
             self.admin_principal = Principal(username="user_admin")
             self.admin_principal.save()
-            self.group = Group(name='groupA')
+            self.group = Group(name="groupA")
             self.group.save()
             self.group.principals.add(self.principal)
             self.group.save()
@@ -78,218 +70,168 @@ class AccessViewTests(IdentityRequest):
         access_data = self.access_data
         if in_access_data:
             access_data = in_access_data
-        test_data = {
-            'name': role_name,
-            'access': [access_data]
-        }
+        test_data = {"name": role_name, "access": [access_data]}
 
         # create a role
-        url = reverse('role-list')
+        url = reverse("role-list")
         client = APIClient()
-        response = client.post(url, test_data, format='json', **self.headers)
+        response = client.post(url, test_data, format="json", **self.headers)
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         return response
 
     def create_policy(self, policy_name, group, roles, status=status.HTTP_201_CREATED):
         """Create a policy."""
         # create a policy
-        test_data = {
-            'name': policy_name,
-            'group': group,
-            'roles': roles
-        }
-        url = reverse('policy-list')
+        test_data = {"name": policy_name, "group": group, "roles": roles}
+        url = reverse("policy-list")
         client = APIClient()
-        response = client.post(url, test_data, format='json', **self.headers)
+        response = client.post(url, test_data, format="json", **self.headers)
         self.assertEqual(response.status_code, status)
         return response
 
     def test_get_access_success(self):
         """Test that we can obtain the expected access without pagination."""
-        role_name = 'roleA'
+        role_name = "roleA"
         response = self.create_role(role_name)
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        role_uuid = response.data.get('uuid')
+        role_uuid = response.data.get("uuid")
         role = Role.objects.get(uuid=role_uuid)
-        access = Access.objects.create(role=role, permission='app2:foo:bar')
-        policy_name = 'policyA'
+        access = Access.objects.create(role=role, permission="app2:foo:bar")
+        policy_name = "policyA"
         response = self.create_policy(policy_name, self.group.uuid, [role_uuid])
 
         # test that we can retrieve the principal access
-        url = '{}?application={}&username={}'.format(reverse('access'),
-                                                     'app',
-                                                     self.principal.username)
+        url = "{}?application={}&username={}".format(reverse("access"), "app", self.principal.username)
         client = APIClient()
         response = client.get(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertIsNotNone(response.data.get('data'))
-        self.assertIsInstance(response.data.get('data'), list)
-        self.assertEqual(len(response.data.get('data')), 1)
-        self.assertEqual(response.data.get('meta').get('limit'), 1000)
-        self.assertEqual(self.access_data, response.data.get('data')[0])
+        self.assertIsNotNone(response.data.get("data"))
+        self.assertIsInstance(response.data.get("data"), list)
+        self.assertEqual(len(response.data.get("data")), 1)
+        self.assertEqual(response.data.get("meta").get("limit"), 1000)
+        self.assertEqual(self.access_data, response.data.get("data")[0])
 
     def test_get_access_no_app_supplied(self):
         """Test that we return all permissions when no app supplied."""
-        role_name = 'roleA'
-        policy_name = 'policyA'
+        role_name = "roleA"
+        policy_name = "policyA"
         access_data = {
-            'permission': 'app:foo:bar',
-            'resourceDefinitions': [
-                {
-                    'attributeFilter': {
-                        'key': 'keyA',
-                        'operation': 'equal',
-                        'value': 'valueA'
-                    }
-                }
-            ]
+            "permission": "app:foo:bar",
+            "resourceDefinitions": [{"attributeFilter": {"key": "keyA", "operation": "equal", "value": "valueA"}}],
         }
         response = self.create_role(role_name, access_data)
-        role_uuid = response.data.get('uuid')
+        role_uuid = response.data.get("uuid")
         role = Role.objects.get(uuid=role_uuid)
-        access = Access.objects.create(role=role, permission='app2:foo:bar')
+        access = Access.objects.create(role=role, permission="app2:foo:bar")
         self.create_policy(policy_name, self.group.uuid, [role_uuid])
 
-        url = '{}?application=&username={}'.format(reverse('access'),
-                                                     self.principal.username)
+        url = "{}?application=&username={}".format(reverse("access"), self.principal.username)
         client = APIClient()
         response = client.get(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertIsNotNone(response.data.get('data'))
-        self.assertIsInstance(response.data.get('data'), list)
-        self.assertEqual(len(response.data.get('data')), 2)
-        self.assertEqual(response.data.get('meta').get('limit'), 1000)
+        self.assertIsNotNone(response.data.get("data"))
+        self.assertIsInstance(response.data.get("data"), list)
+        self.assertEqual(len(response.data.get("data")), 2)
+        self.assertEqual(response.data.get("meta").get("limit"), 1000)
 
     def test_get_access_multiple_apps_supplied(self):
         """Test that we return all permissions for multiple apps when supplied."""
-        role_name = 'roleA'
-        policy_name = 'policyA'
+        role_name = "roleA"
+        policy_name = "policyA"
         access_data = {
-            'permission': 'app:foo:bar',
-            'resourceDefinitions': [
-                {
-                    'attributeFilter': {
-                        'key': 'keyA',
-                        'operation': 'equal',
-                        'value': 'valueA'
-                    }
-                }
-            ]
+            "permission": "app:foo:bar",
+            "resourceDefinitions": [{"attributeFilter": {"key": "keyA", "operation": "equal", "value": "valueA"}}],
         }
         response = self.create_role(role_name, access_data)
-        role_uuid = response.data.get('uuid')
+        role_uuid = response.data.get("uuid")
         role = Role.objects.get(uuid=role_uuid)
-        access = Access.objects.create(role=role, permission='app2:foo:bar')
+        access = Access.objects.create(role=role, permission="app2:foo:bar")
         self.create_policy(policy_name, self.group.uuid, [role_uuid])
 
-        url = '{}?application={}&username={}'.format(reverse('access'),
-                                                     'app,app2',
-                                                     self.principal.username)
+        url = "{}?application={}&username={}".format(reverse("access"), "app,app2", self.principal.username)
         client = APIClient()
         response = client.get(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertIsInstance(response.data.get('data'), list)
-        self.assertEqual(len(response.data.get('data')), 2)
+        self.assertIsInstance(response.data.get("data"), list)
+        self.assertEqual(len(response.data.get("data")), 2)
 
     def test_get_access_no_partial_match(self):
         """Test that we can have a partial match on app/permission."""
-        role_name = 'roleA'
-        policy_name = 'policyA'
+        role_name = "roleA"
+        policy_name = "policyA"
         access_data = {
-            'permission': 'app:foo:bar',
-            'resourceDefinitions': [
-                {
-                    'attributeFilter': {
-                          'key': 'keyA',
-                          'operation': 'equal',
-                        'value': 'valueA'
-                    }
-                }
-            ]
+            "permission": "app:foo:bar",
+            "resourceDefinitions": [{"attributeFilter": {"key": "keyA", "operation": "equal", "value": "valueA"}}],
         }
         response = self.create_role(role_name, access_data)
-        role_uuid = response.data.get('uuid')
+        role_uuid = response.data.get("uuid")
         self.create_policy(policy_name, self.group.uuid, [role_uuid])
 
-        url = '{}?application={}&username={}'.format(reverse('access'),
-                                                     'ap',
-                                                     self.principal.username)
+        url = "{}?application={}&username={}".format(reverse("access"), "ap", self.principal.username)
         client = APIClient()
         response = client.get(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertIsNotNone(response.data.get('data'))
-        self.assertIsInstance(response.data.get('data'), list)
-        self.assertEqual(len(response.data.get('data')), 0)
-        self.assertEqual(response.data.get('meta').get('limit'), 1000)
+        self.assertIsNotNone(response.data.get("data"))
+        self.assertIsInstance(response.data.get("data"), list)
+        self.assertEqual(len(response.data.get("data")), 0)
+        self.assertEqual(response.data.get("meta").get("limit"), 1000)
 
     def test_get_access_no_match(self):
         """Test that we only match on the application name of the permission data."""
-        role_name = 'roleA'
-        policy_name = 'policyA'
+        role_name = "roleA"
+        policy_name = "policyA"
         access_data = {
-            'permission': 'app:foo:bar',
-            'resourceDefinitions': [
-                {
-                    'attributeFilter': {
-                          'key': 'keyA',
-                          'operation': 'equal',
-                        'value': 'valueA'
-                    }
-                }
-            ]
+            "permission": "app:foo:bar",
+            "resourceDefinitions": [{"attributeFilter": {"key": "keyA", "operation": "equal", "value": "valueA"}}],
         }
         response = self.create_role(role_name, access_data)
-        role_uuid = response.data.get('uuid')
+        role_uuid = response.data.get("uuid")
         self.create_policy(policy_name, self.group.uuid, [role_uuid])
 
-        url = '{}?application={}&username={}'.format(reverse('access'),
-                                                     'foo',
-                                                     self.principal.username)
+        url = "{}?application={}&username={}".format(reverse("access"), "foo", self.principal.username)
         client = APIClient()
         response = client.get(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertIsNotNone(response.data.get('data'))
-        self.assertIsInstance(response.data.get('data'), list)
-        self.assertEqual(len(response.data.get('data')), 0)
-        self.assertEqual(response.data.get('meta').get('limit'), 1000)
+        self.assertIsNotNone(response.data.get("data"))
+        self.assertIsInstance(response.data.get("data"), list)
+        self.assertEqual(len(response.data.get("data")), 0)
+        self.assertEqual(response.data.get("meta").get("limit"), 1000)
 
     def test_get_access_with_limit(self):
         """Test that we can obtain the expected access with pagination."""
-        role_name = 'roleA'
+        role_name = "roleA"
         response = self.create_role(role_name)
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        role_uuid = response.data.get('uuid')
-        policy_name = 'policyA'
+        role_uuid = response.data.get("uuid")
+        policy_name = "policyA"
         response = self.create_policy(policy_name, self.group.uuid, [role_uuid])
 
         # test that we can retrieve the principal access
-        url = '{}?application={}&username={}&limit=1'.format(reverse('access'),
-                                                     'app',
-                                                     self.principal.username)
+        url = "{}?application={}&username={}&limit=1".format(reverse("access"), "app", self.principal.username)
         client = APIClient()
         response = client.get(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertIsNotNone(response.data.get('data'))
-        self.assertIsInstance(response.data.get('data'), list)
-        self.assertEqual(len(response.data.get('data')), 1)
-        self.assertEqual(response.data.get('meta').get('count'), 1)
-        self.assertEqual(response.data.get('meta').get('limit'), 1)
-        self.assertEqual(self.access_data, response.data.get('data')[0])
+        self.assertIsNotNone(response.data.get("data"))
+        self.assertIsInstance(response.data.get("data"), list)
+        self.assertEqual(len(response.data.get("data")), 1)
+        self.assertEqual(response.data.get("meta").get("count"), 1)
+        self.assertEqual(response.data.get("meta").get("limit"), 1)
+        self.assertEqual(self.access_data, response.data.get("data")[0])
 
     def test_missing_query_params(self):
         """Test that we get expected failure when missing required query params."""
-        url = '{}?page={}'.format(reverse('access'), '3')
+        url = "{}?page={}".format(reverse("access"), "3")
         client = APIClient()
         response = client.get(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
-    @patch('management.principal.proxy.PrincipalProxy.request_filtered_principals',
-           return_value={'status_code': 200, 'data': []})
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={"status_code": 200, "data": []},
+    )
     def test_missing_invalid_username(self, mock_request):
         """Test that we get expected failure when missing required query params."""
-        url = '{}?application={}&username={}'.format(reverse('access'),
-                                                     'app',
-                                                     uuid4())
+        url = "{}?application={}&username={}".format(reverse("access"), "app", uuid4())
         client = APIClient()
         response = client.get(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)

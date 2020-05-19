@@ -36,18 +36,14 @@ class DevelopmentIdentityHeaderMiddleware(MiddlewareMixin):  # pylint: disable=t
             request (object): The request object
 
         """
-        if hasattr(request, 'META'):
-            identity_header = {'identity':
-                               {
-                                   'account_number': '10001',
-                                   'type': 'User',
-                                   'user': {
-                                       'username': 'user_dev',
-                                       'email': 'user_dev@foo.com',
-                                       'is_org_admin': True
-                                   }
-                               }
-                               }
+        if hasattr(request, "META"):
+            identity_header = {
+                "identity": {
+                    "account_number": "10001",
+                    "type": "User",
+                    "user": {"username": "user_dev", "email": "user_dev@foo.com", "is_org_admin": True},
+                }
+            }
             json_identity = json_dumps(identity_header)
-            dev_header = b64encode(json_identity.encode('utf-8'))
+            dev_header = b64encode(json_identity.encode("utf-8"))
             request.META[self.header] = dev_header
