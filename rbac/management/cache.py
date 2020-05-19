@@ -62,14 +62,14 @@ class AccessCache:
 
     def delete_policy(self, uuid):
         """Purge the given user's policy from the cache."""
-        err_msg = "Error deleting policy for uuid %s", uuid
+        err_msg = f"Error deleting policy for uuid {uuid}"
         with self.delete_handler(err_msg):
             logger.info("Deleting policy cache for uuid %s", uuid)
             self.connection.delete(self.key_for(uuid))
 
     def delete_all_policies_for_tenant(self):
         """Purge users' policies for a given tenant from the cache."""
-        err_msg = "Error deleting all policies for tenant %s", self.tenant
+        err_msg = f"Error deleting all policies for tenant {self.tenant}"
         with self.delete_handler(err_msg):
             logger.info("Deleting entire policy cache for tenant %s", self.tenant)
             keys = self.connection.keys(self.key_for("*"))
