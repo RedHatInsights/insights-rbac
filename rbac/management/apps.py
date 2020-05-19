@@ -47,4 +47,4 @@ class ManagementConfig(AppConfig):
                 # skip this if we haven't created tables yet.
                 return
             else:
-                logger.error('Error: %s.', op_error)
+                logger.error("Error: %s.", op_error)

@@ -42,14 +42,16 @@ def role_seeding():
             tenants = Tenant.objects.all()
             tenant_count = tenants.count()
             for idx, tenant in enumerate(list(tenants)):
-                if tenant.schema_name != 'public':
-                    logger.info(f'Seeding role changes for tenant {tenant.schema_name} [{idx + 1} of {tenant_count}].')
+                if tenant.schema_name != "public":
+                    logger.info(f"Seeding role changes for tenant {tenant.schema_name} [{idx + 1} of {tenant_count}].")
                     future = executor.submit(seed_roles, tenant, update=True)
-                    completed_log_message = 'Finished seeding role changes for tenant '\
-                                            f'{tenant.schema_name} [{idx + 1} of {tenant_count}].'
+                    completed_log_message = (
+                        "Finished seeding role changes for tenant "
+                        f"{tenant.schema_name} [{idx + 1} of {tenant_count}]."
+                    )
                     future.add_done_callback(partial(on_complete, completed_log_message))
     except Exception as exc:
-        logger.error(f'Error encountered during role seeding {exc}.')
+        logger.error(f"Error encountered during role seeding {exc}.")
 
 
 def group_seeding():
@@ -64,11 +66,15 @@ def group_seeding():
             tenants = Tenant.objects.all()
             tenant_count = tenants.count()
             for idx, tenant in enumerate(list(tenants)):
-                if tenant.schema_name != 'public':
-                    logger.info(f'Seeding group changes for tenant {tenant.schema_name} [{idx + 1} of {tenant_count}].')
+                if tenant.schema_name != "public":
+                    logger.info(
+                        f"Seeding group changes for tenant {tenant.schema_name} [{idx + 1} of {tenant_count}]."
+                    )
                     future = executor.submit(seed_group, tenant)
-                    completed_log_message = 'Finished seeding group changes for tenant '\
-                                            f'{tenant.schema_name} [{idx + 1} of {tenant_count}].'
+                    completed_log_message = (
+                        "Finished seeding group changes for tenant "
+                        f"{tenant.schema_name} [{idx + 1} of {tenant_count}]."
+                    )
                     future.add_done_callback(partial(on_complete, completed_log_message))
     except Exception as exc:
-        logger.error(f'Error encountered during group seeding {exc}.')
+        logger.error(f"Error encountered during group seeding {exc}.")

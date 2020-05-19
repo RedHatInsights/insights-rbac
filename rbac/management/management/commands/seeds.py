@@ -26,21 +26,21 @@ logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 class Command(BaseCommand):
     """Command class for running seeds."""
 
-    help = 'Runs the seeding for roles and groups'
+    help = "Runs the seeding for roles and groups"
 
     def add_arguments(self, parser):
         """Add arguments to command."""
-        parser.add_argument('--roles-only', action='store_true')
-        parser.add_argument('--groups-only', action='store_true')
+        parser.add_argument("--roles-only", action="store_true")
+        parser.add_argument("--groups-only", action="store_true")
 
     def handle(self, *args, **options):
         """Handle method for command."""
-        if not options['groups_only']:
-            logger.info('*** Seeding roles... ***')
+        if not options["groups_only"]:
+            logger.info("*** Seeding roles... ***")
             role_seeding()
-            logger.info('*** Role seeding completed. ***\n')
+            logger.info("*** Role seeding completed. ***\n")
 
-        if not options['roles_only']:
-            logger.info('*** Seeding groups... ***')
+        if not options["roles_only"]:
+            logger.info("*** Seeding groups... ***")
             group_seeding()
-            logger.info('*** Group seeding completed. ***\n')
+            logger.info("*** Group seeding completed. ***\n")

@@ -48,9 +48,9 @@ class AppsModelTest(TestCase):
         mock_role_seeding.assert_not_called()
         mock_group_seeding.assert_not_called()
 
-    @patch('management.apps.sys.argv', ['manage.py', 'runserver'])
-    @patch('management.apps.role_seeding')
-    @patch('management.apps.group_seeding')
+    @patch("management.apps.sys.argv", ["manage.py", "runserver"])
+    @patch("management.apps.role_seeding")
+    @patch("management.apps.group_seeding")
     def test_role_seeding(self, mock_role_seeding, mock_group_seeding):
         """Test the server role seeding startup."""
         mgmt_config = apps.get_app_config("management")
