@@ -95,75 +95,71 @@ class AccessCacheTest(TestCase):
         cache.assert_called_once()
         cache.assert_called_once_with(self.principal_a.uuid)
 
+    @patch("management.policy.model.AccessCache.delete_all_policies_for_tenant")
     @patch("management.policy.model.AccessCache.delete_policy")
-    def test_policy_cache_group_signals(self, cache):
+    def test_policy_cache_group_signals(self, cache_delete, cache_delete_all):
         """Test signals attached to Groups"""
         self.group_a.principals.add(self.principal_a)
         self.group_b.principals.add(self.principal_b)
-        cache.reset_mock()
+        cache_delete.reset_mock()
 
         # If a policy has its group set
         self.policy_a.group = self.group_a
         self.policy_a.save()
-        cache.assert_any_call(self.principal_a.uuid)
-        cache.assert_any_call(self.principal_b.uuid)
-        self.assertEqual(cache.call_count, 2)
+        cache_delete_all.asset_called_once()
 
-        cache.reset_mock()
+        cache_delete.reset_mock()
         # If a policy has its group changed
         self.policy_a.group = self.group_b
         self.policy_a.save()
-        cache.asset_called_once()
-        cache.asset_called_once_with(self.principal_b.uuid)
+        cache_delete.asset_called_once()
+        cache_delete.asset_called_once_with(self.principal_b.uuid)
 
-        cache.reset_mock()
+        cache_delete.reset_mock()
         # If a policy is deleted
         self.policy_a.delete()
-        cache.assert_called_once()
-        cache.assert_called_once_with(self.principal_b.uuid)
+        cache_delete.assert_called_once()
+        cache_delete.assert_called_once_with(self.principal_b.uuid)
 
+    @patch("management.policy.model.AccessCache.delete_all_policies_for_tenant")
     @patch("management.policy.model.AccessCache.delete_policy")
-    def test_policy_cache_add_remove_roles_signals(self, cache):
+    def test_policy_cache_add_remove_roles_signals(self, cache_delete, cache_delete_all):
         """Test signals attached to Policy/Roles"""
         self.group_b.principals.add(self.principal_b)
         self.policy_a.group = self.group_a
         self.policy_a.save()
         self.policy_b.group = self.group_b
         self.policy_b.save()
-        cache.reset_mock()
+        cache_delete.reset_mock()
 
         # If a Role is added to a platform default group's Policy
         self.policy_a.roles.add(self.role_a)
         self.policy_a.save()
-        cache.assert_any_call(self.principal_a.uuid)
-        cache.assert_any_call(self.principal_b.uuid)
-        self.assertEqual(cache.call_count, 2)
+        cache_delete_all.asset_called_once()
 
-        cache.reset_mock()
+        cache_delete.reset_mock()
         # If a Policy is added to a Role
         self.role_b.policies.add(self.policy_a)
-        cache.asset_called_once()
-        cache.asset_called_once_with(self.principal_b.uuid)
+        cache_delete.asset_called_once()
+        cache_delete.asset_called_once_with(self.principal_b.uuid)
 
-        cache.reset_mock()
+        cache_delete.reset_mock()
         # If a Role is removed from a platform default group's Policy
         self.policy_a.roles.remove(self.role_a)
         self.policy_a.save()
-        cache.assert_any_call(self.principal_a.uuid)
-        cache.assert_any_call(self.principal_b.uuid)
-        self.assertEqual(cache.call_count, 2)
+        cache_delete_all.asset_called_once()
 
-        cache.reset_mock()
+        cache_delete.reset_mock()
         # If a Role is removed from a Policy
         self.policy_b.roles.remove(self.role_b)
-        cache.assert_called_once()
-        cache.assert_called_once_with(self.principal_b.uuid)
+        cache_delete.assert_called_once()
+        cache_delete.assert_called_once_with(self.principal_b.uuid)
 
-        cache.reset_mock()
+        cache_delete.reset_mock()
         # If a Policy is removed from a Role
         self.role_b.policies.remove(self.policy_b)
-        cache.asset_called_once()
-        cache.asset_called_once_with(self.principal_b.uuid)
+        cache_delete.asset_called_once()
+        cache_delete.asset_called_once_with(self.principal_b.uuid)
 
     @patch("management.policy.model.AccessCache.delete_policy")
     def test_policy_cache_clear_signals(self, cache):

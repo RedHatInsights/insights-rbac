@@ -55,7 +55,7 @@ def policy_changed_cache_handler(sender=None, instance=None, using=None, **kwarg
     if instance.group:
         principals = instance.group.principals.all()
         if instance.group.platform_default:
-            principals = Principal.objects.all()
+            cache.delete_all_policies_for_tenant()
         for principal in principals:
             cache.delete_policy(principal.uuid)
 
