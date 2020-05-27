@@ -24,12 +24,14 @@ from django.utils.translation import gettext as _
 from django_filters import rest_framework as filters
 from management.group.definer import add_roles, remove_roles, set_system_flag_post_update
 from management.group.model import Group
-from management.group.serializer import (GroupInputSerializer,
-                                         GroupPrincipalInputSerializer,
-                                         GroupRoleSerializerIn,
-                                         GroupRoleSerializerOut,
-                                         GroupSerializer,
-                                         RoleMinimumSerializer)
+from management.group.serializer import (
+    GroupInputSerializer,
+    GroupPrincipalInputSerializer,
+    GroupRoleSerializerIn,
+    GroupRoleSerializerOut,
+    GroupSerializer,
+    RoleMinimumSerializer,
+)
 from management.permissions import GroupAccessPermission
 from management.principal.model import Principal
 from management.principal.proxy import PrincipalProxy
@@ -44,17 +46,17 @@ from rest_framework.filters import OrderingFilter
 from rest_framework.response import Response
 
 
-USERNAMES_KEY = 'usernames'
-ROLES_KEY = 'roles'
-EXCLUDE_KEY = 'exclude'
-ORDERING_PARAM = 'order_by'
+USERNAMES_KEY = "usernames"
+ROLES_KEY = "roles"
+EXCLUDE_KEY = "exclude"
+ORDERING_PARAM = "order_by"
 VALID_ROLE_ORDER_FIELDS = list(RoleViewSet.ordering_fields)
-ROLE_DISCRIMINATOR_KEY = 'role_discriminator'
-VALID_EXCLUDE_VALUES = ['true', 'false']
-VALID_GROUP_ROLE_FILTERS = ['role_name', 'role_description']
-VALID_GROUP_PRINCIPAL_FILTERS = ['principal_username']
-VALID_PRINCIPAL_ORDER_FIELDS = ['username']
-VALID_ROLE_ROLE_DISCRIMINATOR = ['all', 'any']
+ROLE_DISCRIMINATOR_KEY = "role_discriminator"
+VALID_EXCLUDE_VALUES = ["true", "false"]
+VALID_GROUP_ROLE_FILTERS = ["role_name", "role_description"]
+VALID_GROUP_PRINCIPAL_FILTERS = ["principal_username"]
+VALID_PRINCIPAL_ORDER_FIELDS = ["username"]
+VALID_ROLE_ROLE_DISCRIMINATOR = ["all", "any"]
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 
@@ -63,57 +65,55 @@ class GroupFilter(filters.FilterSet):
 
     def uuid_filter(self, queryset, field, values):
         """Filter for group uuid lookup."""
-        uuids = values.split(',')
+        uuids = values.split(",")
         for uuid in uuids:
             try:
                 UUID(uuid)
             except ValueError:
-                key = 'groups uuid filter'
-                message = f'{uuid} is not a valid UUID.'
+                key = "groups uuid filter"
+                message = f"{uuid} is not a valid UUID."
                 raise serializers.ValidationError({key: _(message)})
-        filters = {f'{field}__in': uuids}
+        filters = {f"{field}__in": uuids}
         filtered_set = queryset.filter(**filters)
         return filtered_set
 
     def roles_filter(self, queryset, field, values):
         """Filter for group to lookup list of role name."""
         if not values:
-            key = 'groups_filter'
-            message = 'No value of roles provided to filter groups!'
-            error = {
-                key: [_(message)]
-            }
+            key = "groups_filter"
+            message = "No value of roles provided to filter groups!"
+            error = {key: [_(message)]}
             raise serializers.ValidationError(error)
-        roles_list = [value.lower() for value in values.split(',')]
+        roles_list = [value.lower() for value in values.split(",")]
 
         discriminator = validate_and_get_key(
-            self.request.query_params,
-            ROLE_DISCRIMINATOR_KEY,
-            VALID_ROLE_ROLE_DISCRIMINATOR,
-            'any')
+            self.request.query_params, ROLE_DISCRIMINATOR_KEY, VALID_ROLE_ROLE_DISCRIMINATOR, "any"
+        )
 
-        if discriminator == 'any':
-            return queryset.filter(policies__roles__name__iregex=r'(' + '|'.join(roles_list) + ')')
+        if discriminator == "any":
+            return queryset.filter(policies__roles__name__iregex=r"(" + "|".join(roles_list) + ")")
 
         for role_name in roles_list:
             queryset = queryset.filter(policies__roles__name__icontains=role_name)
         return queryset
 
-    name = filters.CharFilter(field_name='name', lookup_expr='icontains')
-    role_names = filters.CharFilter(field_name='role_names', method='roles_filter')
-    uuid = filters.CharFilter(field_name='uuid', method='uuid_filter')
+    name = filters.CharFilter(field_name="name", lookup_expr="icontains")
+    role_names = filters.CharFilter(field_name="role_names", method="roles_filter")
+    uuid = filters.CharFilter(field_name="uuid", method="uuid_filter")
 
     class Meta:
         model = Group
-        fields = ['name', 'role_names', 'uuid']
+        fields = ["name", "role_names", "uuid"]
 
 
-class GroupViewSet(mixins.CreateModelMixin,
-                   mixins.DestroyModelMixin,
-                   mixins.ListModelMixin,
-                   mixins.RetrieveModelMixin,
-                   mixins.UpdateModelMixin,
-                   viewsets.GenericViewSet):
+class GroupViewSet(
+    mixins.CreateModelMixin,
+    mixins.DestroyModelMixin,
+    mixins.ListModelMixin,
+    mixins.RetrieveModelMixin,
+    mixins.UpdateModelMixin,
+    viewsets.GenericViewSet,
+):
     """Group View.
 
     A viewset that provides default `create()`, `destroy`, `retrieve()`,
@@ -121,14 +121,15 @@ class GroupViewSet(mixins.CreateModelMixin,
 
     """
 
-    queryset = Group.objects.annotate(principalCount=Count('principals', distinct=True),
-                                      policyCount=Count('policies', distinct=True))
+    queryset = Group.objects.annotate(
+        principalCount=Count("principals", distinct=True), policyCount=Count("policies", distinct=True)
+    )
     permission_classes = (GroupAccessPermission,)
-    lookup_field = 'uuid'
+    lookup_field = "uuid"
     filter_backends = (filters.DjangoFilterBackend, OrderingFilter)
     filterset_class = GroupFilter
-    ordering_fields = ('name', 'modified', 'principalCount', 'policyCount')
-    ordering = ('name',)
+    ordering_fields = ("name", "modified", "principalCount", "policyCount")
+    ordering = ("name",)
     proxy = PrincipalProxy()
 
     def get_queryset(self):
@@ -137,15 +138,15 @@ class GroupViewSet(mixins.CreateModelMixin,
 
     def get_serializer_class(self):
         """Get serializer based on route."""
-        if 'principals' in self.request.path:
+        if "principals" in self.request.path:
             return GroupPrincipalInputSerializer
-        if ROLES_KEY in self.request.path and self.request.method == 'GET':
+        if ROLES_KEY in self.request.path and self.request.method == "GET":
             return GroupRoleSerializerOut
         if ROLES_KEY in self.request.path:
             return GroupRoleSerializerIn
-        if self.request.method in ('POST', 'PUT'):
+        if self.request.method in ("POST", "PUT"):
             return GroupInputSerializer
-        if self.request.path.endswith('groups/') and self.request.method == 'GET':
+        if self.request.path.endswith("groups/") and self.request.method == "GET":
             return GroupInputSerializer
         return GroupSerializer
 
@@ -153,11 +154,9 @@ class GroupViewSet(mixins.CreateModelMixin,
         """Deny modifications on platform_default groups."""
         group = self.get_object()
         if group.platform_default:
-            key = 'group'
-            message = '{} cannot be performed on platform default groups.'.format(action.upper())
-            error = {
-                key: [_(message)]
-            }
+            key = "group"
+            message = "{} cannot be performed on platform default groups.".format(action.upper())
+            error = {key: [_(message)]}
             raise serializers.ValidationError(error)
 
     def create(self, request, *args, **kwargs):
@@ -287,7 +286,7 @@ class GroupViewSet(mixins.CreateModelMixin,
         @apiSuccessExample {json} Success-Response:
             HTTP/1.1 204 NO CONTENT
         """
-        self.protect_default_groups('delete')
+        self.protect_default_groups("delete")
         return super().destroy(request=request, args=args, kwargs=kwargs)
 
     def update(self, request, *args, **kwargs):
@@ -312,22 +311,22 @@ class GroupViewSet(mixins.CreateModelMixin,
                 "name": "GroupA"
             }
         """
-        self.protect_default_groups('update')
+        self.protect_default_groups("update")
         return super().update(request=request, args=args, kwargs=kwargs)
 
     def add_principals(self, group, principals, account):
         """Process list of principals and add them to the group."""
-        users = [principal.get('username') for principal in principals]
+        users = [principal.get("username") for principal in principals]
         resp = self.proxy.request_filtered_principals(users, account, limit=len(users))
-        if 'errors' in resp:
+        if "errors" in resp:
             return resp
-        for item in resp.get('data', []):
-            username = item['username']
+        for item in resp.get("data", []):
+            username = item["username"]
             try:
                 principal = Principal.objects.get(username__iexact=username)
             except Principal.DoesNotExist:
                 principal = Principal.objects.create(username=username)
-                logger.info('Created new principal %s for account_id %s.', username, account)
+                logger.info("Created new principal %s for account_id %s.", username, account)
             group.principals.add(principal)
         group.save()
         return group
@@ -338,13 +337,13 @@ class GroupViewSet(mixins.CreateModelMixin,
             try:
                 principal = Principal.objects.get(username__iexact=username)
             except Principal.DoesNotExist:
-                logger.info('No principal %s found for account %s.', username, account)
+                logger.info("No principal %s found for account %s.", username, account)
             if principal:
                 group.principals.remove(principal)
         group.save()
         return group
 
-    @action(detail=True, methods=['get', 'post', 'delete'])
+    @action(detail=True, methods=["get", "post", "delete"])
     def principals(self, request, uuid=None):
         """Get, add or remove principals from a group."""
         """
@@ -425,47 +424,47 @@ class GroupViewSet(mixins.CreateModelMixin,
         principals = []
         group = self.get_object()
         account = self.request.user.account
-        if request.method == 'POST':
+        if request.method == "POST":
             serializer = GroupPrincipalInputSerializer(data=request.data)
             if serializer.is_valid(raise_exception=True):
-                principals = serializer.data.pop('principals')
+                principals = serializer.data.pop("principals")
             resp = self.add_principals(group, principals, account)
-            if isinstance(resp, dict) and 'errors' in resp:
-                return Response(status=resp['status_code'], data=resp['errors'])
+            if isinstance(resp, dict) and "errors" in resp:
+                return Response(status=resp["status_code"], data=resp["errors"])
             output = GroupSerializer(resp)
             response = Response(status=status.HTTP_200_OK, data=output.data)
-        elif request.method == 'GET':
+        elif request.method == "GET":
             principals_from_params = self.filtered_principals(group, request)
             page = self.paginate_queryset(principals_from_params)
             serializer = PrincipalSerializer(page, many=True)
             principal_data = serializer.data
             if principal_data:
-                username_list = [principal['username'] for principal in principal_data]
+                username_list = [principal["username"] for principal in principal_data]
             else:
                 username_list = []
             proxy = PrincipalProxy()
-            all_valid_fields = VALID_PRINCIPAL_ORDER_FIELDS + ['-' + field for field in VALID_PRINCIPAL_ORDER_FIELDS]
+            all_valid_fields = VALID_PRINCIPAL_ORDER_FIELDS + ["-" + field for field in VALID_PRINCIPAL_ORDER_FIELDS]
             if request.query_params.get(ORDERING_PARAM):
-                sort_field = validate_and_get_key(request.query_params, ORDERING_PARAM, all_valid_fields, 'username')
-                sort_order = 'des' if sort_field == '-username' else 'asc'
+                sort_field = validate_and_get_key(request.query_params, ORDERING_PARAM, all_valid_fields, "username")
+                sort_order = "des" if sort_field == "-username" else "asc"
             else:
                 sort_order = None
             resp = proxy.request_filtered_principals(username_list, account, sort_order=sort_order)
-            if isinstance(resp, dict) and 'errors' in resp:
-                return Response(status=resp.get('status_code'), data=resp.get('errors'))
-            response = self.get_paginated_response(resp.get('data'))
+            if isinstance(resp, dict) and "errors" in resp:
+                return Response(status=resp.get("status_code"), data=resp.get("errors"))
+            response = self.get_paginated_response(resp.get("data"))
         else:
             if USERNAMES_KEY not in request.query_params:
-                key = 'detail'
-                message = 'Query parameter {} is required.'.format(USERNAMES_KEY)
+                key = "detail"
+                message = "Query parameter {} is required.".format(USERNAMES_KEY)
                 raise serializers.ValidationError({key: _(message)})
-            username = request.query_params.get(USERNAMES_KEY, '')
-            principals = [name.strip() for name in username.split(',')]
+            username = request.query_params.get(USERNAMES_KEY, "")
+            principals = [name.strip() for name in username.split(",")]
             self.remove_principals(group, principals, account)
             response = Response(status=status.HTTP_204_NO_CONTENT)
         return response
 
-    @action(detail=True, methods=['get', 'post', 'delete'])
+    @action(detail=True, methods=["get", "post", "delete"])
     def roles(self, request, uuid=None):
         """Get, add or remove roles from a group."""
         """
@@ -550,26 +549,26 @@ class GroupViewSet(mixins.CreateModelMixin,
         """
         roles = []
         group = self.get_object()
-        if request.method == 'POST':
+        if request.method == "POST":
             serializer = GroupRoleSerializerIn(data=request.data)
             if serializer.is_valid(raise_exception=True):
                 roles = request.data.pop(ROLES_KEY, [])
             add_roles(group, roles)
             set_system_flag_post_update(group)
             response_data = GroupRoleSerializerIn(group)
-        elif request.method == 'GET':
+        elif request.method == "GET":
             serialized_roles = self.obtain_roles(request, group)
             page = self.paginate_queryset(serialized_roles)
             serializer = self.get_serializer(page, many=True)
             return self.get_paginated_response(serializer.data)
         else:
             if ROLES_KEY not in request.query_params:
-                key = 'detail'
-                message = 'Query parameter {} is required.'.format(ROLES_KEY)
+                key = "detail"
+                message = "Query parameter {} is required.".format(ROLES_KEY)
                 raise serializers.ValidationError({key: _(message)})
 
-            role_ids = request.query_params.get(ROLES_KEY, '').split(',')
-            serializer = GroupRoleSerializerIn(data={'roles': role_ids})
+            role_ids = request.query_params.get(ROLES_KEY, "").split(",")
+            serializer = GroupRoleSerializerIn(data={"roles": role_ids})
             if serializer.is_valid(raise_exception=True):
                 remove_roles(group, role_ids)
                 set_system_flag_post_update(group)
@@ -580,22 +579,22 @@ class GroupViewSet(mixins.CreateModelMixin,
 
     def order_queryset(self, queryset, valid_fields, order_field):
         """Return queryset ordered according to order_by query param."""
-        all_valid_fields = valid_fields + ['-' + field for field in valid_fields]
+        all_valid_fields = valid_fields + ["-" + field for field in valid_fields]
         if order_field in all_valid_fields:
             return queryset.order_by(order_field)
         else:
-            key = 'detail'
-            message = f'{order_field} is not a valid ordering field. Valid values are {all_valid_fields}'
+            key = "detail"
+            message = f"{order_field} is not a valid ordering field. Valid values are {all_valid_fields}"
             raise serializers.ValidationError({key: _(message)})
 
     def filtered_roles(self, roles, request):
         """Return filtered roles for group from query params."""
-        role_filters = self.filters_from_params(VALID_GROUP_ROLE_FILTERS, 'role', request)
+        role_filters = self.filters_from_params(VALID_GROUP_ROLE_FILTERS, "role", request)
         return roles.filter(**role_filters)
 
     def filtered_principals(self, group, request):
         """Return filtered principals for group from query params."""
-        principal_filters = self.filters_from_params(VALID_GROUP_PRINCIPAL_FILTERS, 'principal', request)
+        principal_filters = self.filters_from_params(VALID_GROUP_PRINCIPAL_FILTERS, "principal", request)
         return group.principals.filter(**principal_filters)
 
     def filters_from_params(self, valid_filters, model_name, request):
@@ -603,39 +602,38 @@ class GroupViewSet(mixins.CreateModelMixin,
         filters = {}
         for param_name, param_value in request.query_params.items():
             if param_name in valid_filters:
-                attr_filter_name = param_name.replace(f'{model_name}_', '')
-                filters[f'{attr_filter_name}__icontains'] = param_value
+                attr_filter_name = param_name.replace(f"{model_name}_", "")
+                filters[f"{attr_filter_name}__icontains"] = param_value
         return filters
 
     def obtain_roles(self, request, group):
         """Obtain roles based on request, supports exclusion."""
-        exclude = validate_and_get_key(
-            request.query_params,
-            EXCLUDE_KEY,
-            VALID_EXCLUDE_VALUES,
-            'false')
+        exclude = validate_and_get_key(request.query_params, EXCLUDE_KEY, VALID_EXCLUDE_VALUES, "false")
 
-        roles = (group.roles_with_access() if exclude == 'false'
-                 else self.obtain_roles_with_exclusion(request, group))
+        roles = group.roles_with_access() if exclude == "false" else self.obtain_roles_with_exclusion(request, group)
 
         filtered_roles = self.filtered_roles(roles, request)
 
-        annotated_roles = filtered_roles.annotate(policyCount=Count('policies', distinct=True))
+        annotated_roles = filtered_roles.annotate(policyCount=Count("policies", distinct=True))
 
         if ORDERING_PARAM in request.query_params:
-            ordered_roles = self.order_queryset(annotated_roles, VALID_ROLE_ORDER_FIELDS,
-                                                request.query_params.get(ORDERING_PARAM))
+            ordered_roles = self.order_queryset(
+                annotated_roles, VALID_ROLE_ORDER_FIELDS, request.query_params.get(ORDERING_PARAM)
+            )
 
             return [RoleMinimumSerializer(role).data for role in ordered_roles]
         return [RoleMinimumSerializer(role).data for role in annotated_roles]
 
     def obtain_roles_with_exclusion(self, request, group):
         """Obtain the queryset for roles based on scope."""
-        scope = request.query_params.get('scope', 'account')
+        scope = request.query_params.get("scope", "account")
         # Get roles in principal or account scope
-        roles = (get_object_principal_queryset(request, scope, Role) if scope == 'principal'
-                 else Role.objects.all().prefetch_related('access'))
+        roles = (
+            get_object_principal_queryset(request, scope, Role)
+            if scope == "principal"
+            else Role.objects.all().prefetch_related("access")
+        )
 
         # Exclude the roles in the group
-        roles_for_group = group.roles().values('uuid')
+        roles_for_group = group.roles().values("uuid")
         return roles.exclude(uuid__in=roles_for_group)

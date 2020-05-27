@@ -105,6 +105,15 @@
               "type": "string",
               "enum": ["asc", "desc"]
             }
+          },
+          {
+            "name": "email",
+            "in": "query",
+            "description": "Exact e-mail address of principal to search for",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -601,6 +610,12 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "$ref": "#/components/parameters/QueryLimit"
+          },
+          {
+            "$ref": "#/components/parameters/QueryOffset"
           },
           {
             "in": "query",
@@ -2037,6 +2052,10 @@
           "name": {
             "type": "string",
             "example": "GroupA"
+          },
+          "description": {
+            "type": "string",
+            "example": "GroupA Description"
           },
           "uuid": {
             "type": "string",

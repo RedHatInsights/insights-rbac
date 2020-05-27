@@ -21,41 +21,46 @@ from django.utils.translation import gettext as _
 from management.group.model import Group
 from management.policy.model import Policy
 from management.role.model import Access, Role
-from management.utils import (APPLICATION_KEY,
-                              access_for_principal,
-                              get_principal,
-                              get_principal_from_request,
-                              groups_for_principal,
-                              policies_for_principal,
-                              queryset_by_id,
-                              roles_for_principal)
+from management.utils import (
+    APPLICATION_KEY,
+    access_for_principal,
+    get_principal,
+    get_principal_from_request,
+    groups_for_principal,
+    policies_for_principal,
+    queryset_by_id,
+    roles_for_principal,
+)
 from rest_framework import permissions, serializers
 
 from rbac.env import ENVIRONMENT
 
-SCOPE_KEY = 'scope'
-ACCOUNT_SCOPE = 'account'
-PRINCIPAL_SCOPE = 'principal'
+SCOPE_KEY = "scope"
+ACCOUNT_SCOPE = "account"
+PRINCIPAL_SCOPE = "principal"
 VALID_SCOPES = [ACCOUNT_SCOPE, PRINCIPAL_SCOPE]
 PRINCIPAL_QUERYSET_MAP = {
     Access.__name__: access_for_principal,
     Group.__name__: groups_for_principal,
     Policy.__name__: policies_for_principal,
-    Role.__name__: roles_for_principal
+    Role.__name__: roles_for_principal,
 }
 
 
 def get_annotated_groups():
     """Return an annotated set of groups for the tenant."""
-    return Group.objects.annotate(principalCount=Count('principals', distinct=True),
-                                  policyCount=Count('policies', distinct=True))
+    return Group.objects.annotate(
+        principalCount=Count("principals", distinct=True), policyCount=Count("policies", distinct=True)
+    )
 
 
 def has_group_all_access(request):
     """Quick check to determine if a request should have access to all groups on a tenant."""
-    return (ENVIRONMENT.get_value('ALLOW_ANY', default=False, cast=bool)
-            or request.user.admin
-            or (request.path == reverse('group-list') and request.method == 'GET'))
+    return (
+        ENVIRONMENT.get_value("ALLOW_ANY", default=False, cast=bool)
+        or request.user.admin
+        or (request.path == reverse("group-list") and request.method == "GET")
+    )
 
 
 def get_group_queryset(request):
@@ -64,10 +69,10 @@ def get_group_queryset(request):
     if scope != ACCOUNT_SCOPE:
         return get_object_principal_queryset(request, scope, Group)
 
-    username = request.query_params.get('username')
+    username = request.query_params.get("username")
     if username:
         get_principal(username, request.user.account)
-        return Group.objects.filter(principals__username=username) | Group.platform_default_set()
+        return Group.objects.filter(principals__username__iexact=username) | Group.platform_default_set()
 
     if has_group_all_access(request):
         return get_annotated_groups() | Group.platform_default_set()
@@ -77,46 +82,49 @@ def get_group_queryset(request):
 
 def annotate_roles_with_counts(queryset):
     """Annotate the queryset for roles with counts."""
-    return queryset.annotate(policyCount=Count('policies', distinct=True),
-                             accessCount=Count('access', distinct=True))
+    return queryset.annotate(policyCount=Count("policies", distinct=True), accessCount=Count("access", distinct=True))
 
 
 def get_role_queryset(request):
     """Obtain the queryset for roles."""
     scope = request.query_params.get(SCOPE_KEY, ACCOUNT_SCOPE)
-    base_query = annotate_roles_with_counts(Role.objects.prefetch_related('access'))
+    base_query = annotate_roles_with_counts(Role.objects.prefetch_related("access"))
 
     if scope != ACCOUNT_SCOPE:
-        queryset = get_object_principal_queryset(request, scope, Role,
-                                                 **{'prefetch_lookups_for_ids': 'access',
-                                                    'prefetch_lookups_for_groups': 'policies__roles'})
+        queryset = get_object_principal_queryset(
+            request,
+            scope,
+            Role,
+            **{"prefetch_lookups_for_ids": "access", "prefetch_lookups_for_groups": "policies__roles"},
+        )
         return annotate_roles_with_counts(queryset)
 
-    username = request.query_params.get('username')
+    username = request.query_params.get("username")
     if username:
-        decoded = request.user.identity_header.get('decoded', {})
-        identity_username = decoded.get('identity', {}).get('user', {}).get('username')
-        if username != identity_username and not request.user.admin:
+        if username != request.user.username and not request.user.admin:
             return Role.objects.none()
         else:
-            queryset = get_object_principal_queryset(request, PRINCIPAL_SCOPE, Role,
-                                                     **{'prefetch_lookups_for_ids': 'access',
-                                                        'prefetch_lookups_for_groups': 'policies__roles'})
+            queryset = get_object_principal_queryset(
+                request,
+                PRINCIPAL_SCOPE,
+                Role,
+                **{"prefetch_lookups_for_ids": "access", "prefetch_lookups_for_groups": "policies__roles"},
+            )
 
             return annotate_roles_with_counts(queryset)
 
-    if ENVIRONMENT.get_value('ALLOW_ANY', default=False, cast=bool):
+    if ENVIRONMENT.get_value("ALLOW_ANY", default=False, cast=bool):
         return base_query
     if request.user.admin:
         return base_query
     access = request.user.access
-    access_op = 'read'
-    if request.method in ('POST', 'PUT'):
-        access_op = 'write'
-    res_list = access.get('role', {}).get(access_op, [])
+    access_op = "read"
+    if request.method in ("POST", "PUT"):
+        access_op = "write"
+    res_list = access.get("role", {}).get(access_op, [])
     if not res_list:
         return Role.objects.none()
-    if '*' in res_list:
+    if "*" in res_list:
         return base_query
     return base_query.filter(uuid__in=res_list)
 
@@ -127,18 +135,18 @@ def get_policy_queryset(request):
     if scope != ACCOUNT_SCOPE:
         return get_object_principal_queryset(request, scope, Policy)
 
-    if ENVIRONMENT.get_value('ALLOW_ANY', default=False, cast=bool):
+    if ENVIRONMENT.get_value("ALLOW_ANY", default=False, cast=bool):
         return Policy.objects.all()
     if request.user.admin:
         return Policy.objects.all()
     access = request.user.access
-    access_op = 'read'
-    if request.method in ('POST', 'PUT'):
-        access_op = 'write'
-    res_list = access.get('policy', {}).get(access_op, [])
+    access_op = "read"
+    if request.method in ("POST", "PUT"):
+        access_op = "write"
+    res_list = access.get("policy", {}).get(access_op, [])
     if not res_list:
         return Policy.objects.none()
-    if '*' in res_list:
+    if "*" in res_list:
         return Policy.objects.all()
     return Policy.objects.filter(uuid__in=res_list)
 
@@ -149,27 +157,30 @@ def get_access_queryset(request):
     have_parameters = all(param in request.query_params for param in required_parameters)
 
     if not have_parameters:
-        key = 'detail'
-        message = 'Query parameters [{}] are required.'.format(', '.join(required_parameters))
+        key = "detail"
+        message = "Query parameters [{}] are required.".format(", ".join(required_parameters))
         raise serializers.ValidationError({key: _(message)})
 
     app = request.query_params.get(APPLICATION_KEY)
-    return get_object_principal_queryset(request,
-                                         PRINCIPAL_SCOPE,
-                                         Access,
-                                         **{APPLICATION_KEY: app,
-                                            'prefetch_lookups_for_ids': 'resourceDefinitions',
-                                            'prefetch_lookups_for_groups': 'policies__roles__access'})
+    return get_object_principal_queryset(
+        request,
+        PRINCIPAL_SCOPE,
+        Access,
+        **{
+            APPLICATION_KEY: app,
+            "prefetch_lookups_for_ids": "resourceDefinitions",
+            "prefetch_lookups_for_groups": "policies__roles__access",
+        },
+    )
 
 
 def get_object_principal_queryset(request, scope, clazz, **kwargs):
     """Get the query set for the specific object for principal scope."""
     if scope not in VALID_SCOPES:
-        key = 'detail'
-        message = '{} query parameter value {} is invalid. [{}] are valid inputs.'.format(
-            SCOPE_KEY,
-            scope,
-            ', '.join(VALID_SCOPES))
+        key = "detail"
+        message = "{} query parameter value {} is invalid. [{}] are valid inputs.".format(
+            SCOPE_KEY, scope, ", ".join(VALID_SCOPES)
+        )
         raise serializers.ValidationError({key: _(message)})
 
     if request.method not in permissions.SAFE_METHODS:

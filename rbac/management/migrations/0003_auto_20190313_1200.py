@@ -6,14 +6,17 @@ import django.db.models.deletion
 
 class Migration(migrations.Migration):
 
-    dependencies = [
-        ('management', '0002_auto_20190219_2356'),
-    ]
+    dependencies = [("management", "0002_auto_20190219_2356")]
 
     operations = [
         migrations.AlterField(
-            model_name='resourcedefinition',
-            name='access',
-            field=models.ForeignKey(null=True, on_delete=django.db.models.deletion.CASCADE, related_name='resourceDefinitions', to='management.Access'),
-        ),
+            model_name="resourcedefinition",
+            name="access",
+            field=models.ForeignKey(
+                null=True,
+                on_delete=django.db.models.deletion.CASCADE,
+                related_name="resourceDefinitions",
+                to="management.Access",
+            ),
+        )
     ]

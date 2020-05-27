@@ -34,12 +34,22 @@ from rest_framework.filters import OrderingFilter
 from .model import Role
 from .serializer import RoleSerializer
 
-TESTING_APP = os.getenv('TESTING_APPLICATION')
-APP_WHITELIST = ['cost-management', 'remediations']
-ADDITIONAL_FIELDS_KEY = 'add_fields'
-VALID_FIELD_VALUES = ['groups_in_count', 'groups_in']
-LIST_ROLE_FIELDS = ['uuid', 'name', 'description', 'created', 'modified', 'policyCount',
-                    'accessCount', 'applications', 'system', 'platform_default']
+TESTING_APP = os.getenv("TESTING_APPLICATION")
+APP_WHITELIST = ["cost-management", "remediations"]
+ADDITIONAL_FIELDS_KEY = "add_fields"
+VALID_FIELD_VALUES = ["groups_in_count", "groups_in"]
+LIST_ROLE_FIELDS = [
+    "uuid",
+    "name",
+    "description",
+    "created",
+    "modified",
+    "policyCount",
+    "accessCount",
+    "applications",
+    "system",
+    "platform_default",
+]
 
 if TESTING_APP:
     APP_WHITELIST.append(TESTING_APP)
@@ -48,19 +58,21 @@ if TESTING_APP:
 class RoleFilter(filters.FilterSet):
     """Filter for role."""
 
-    name = filters.CharFilter(field_name='name', lookup_expr='icontains')
+    name = filters.CharFilter(field_name="name", lookup_expr="icontains")
 
     class Meta:
         model = Role
-        fields = ['name']
+        fields = ["name"]
 
 
-class RoleViewSet(mixins.CreateModelMixin,
-                  mixins.DestroyModelMixin,
-                  mixins.ListModelMixin,
-                  mixins.RetrieveModelMixin,
-                  mixins.UpdateModelMixin,
-                  viewsets.GenericViewSet):
+class RoleViewSet(
+    mixins.CreateModelMixin,
+    mixins.DestroyModelMixin,
+    mixins.ListModelMixin,
+    mixins.RetrieveModelMixin,
+    mixins.UpdateModelMixin,
+    viewsets.GenericViewSet,
+):
     """Role View.
 
     A viewset that provides default `create()`, `destroy`, `retrieve()`,
@@ -68,14 +80,14 @@ class RoleViewSet(mixins.CreateModelMixin,
 
     """
 
-    queryset = Role.objects.annotate(policyCount=Count('policies', distinct=True))
+    queryset = Role.objects.annotate(policyCount=Count("policies", distinct=True))
     serializer_class = RoleSerializer
     permission_classes = (RoleAccessPermission,)
-    lookup_field = 'uuid'
+    lookup_field = "uuid"
     filter_backends = (filters.DjangoFilterBackend, OrderingFilter)
     filterset_class = RoleFilter
-    ordering_fields = ('name', 'modified', 'policyCount')
-    ordering = ('name',)
+    ordering_fields = ("name", "modified", "policyCount")
+    ordering = ("name",)
 
     def get_queryset(self):
         """Obtain queryset for requesting user based on access."""
@@ -83,17 +95,17 @@ class RoleViewSet(mixins.CreateModelMixin,
 
     def get_serializer_class(self):
         """Get serializer class based on route."""
-        if self.request.path.endswith('roles/') and self.request.method == 'GET':
+        if self.request.path.endswith("roles/") and self.request.method == "GET":
             return RoleDynamicSerializer
         return RoleSerializer
 
     def get_serializer(self, *args, **kwargs):
         """Get serializer."""
         serializer_class = self.get_serializer_class()
-        kwargs['context'] = self.get_serializer_context()
+        kwargs["context"] = self.get_serializer_context()
 
-        if self.action == 'list':
-            kwargs['fields'] = self.validate_and_get_additional_field_key(self.request.query_params)
+        if self.action == "list":
+            kwargs["fields"] = self.validate_and_get_additional_field_key(self.request.query_params)
 
         return serializer_class(*args, **kwargs)
 
@@ -154,13 +166,11 @@ class RoleViewSet(mixins.CreateModelMixin,
         """
         access_list = self.validate_and_get_access_list(request.data)
         for perm in access_list:
-            app = perm.get('permission').split(':')[0]
+            app = perm.get("permission").split(":")[0]
             if app not in APP_WHITELIST:
-                key = 'role'
-                message = 'Custom roles cannot be created for {}'.format(app)
-                error = {
-                    key: [_(message)]
-                }
+                key = "role"
+                message = "Custom roles cannot be created for {}".format(app)
+                error = {key: [_(message)]}
                 raise serializers.ValidationError(error)
         return super().create(request=request, args=args, kwargs=kwargs)
 
@@ -266,11 +276,9 @@ class RoleViewSet(mixins.CreateModelMixin,
         """
         role = self.get_object()
         if role.system or role.platform_default:
-            key = 'role'
-            message = 'System roles cannot be deleted.'
-            error = {
-                key: [_(message)]
-            }
+            key = "role"
+            message = "System roles cannot be deleted."
+            error = {key: [_(message)]}
             raise serializers.ValidationError(error)
         with transaction.atomic():
             policies = role.policies.all()
@@ -338,13 +346,13 @@ class RoleViewSet(mixins.CreateModelMixin,
         """
         return super().update(request=request, args=args, kwargs=kwargs)
 
-    @action(detail=True, methods=['get'])
+    @action(detail=True, methods=["get"])
     def access(self, request, uuid=None):
         """Return access objects for specified role."""
         try:
             role = Role.objects.get(uuid=uuid)
         except (Role.DoesNotExist, ValidationError):
-            raise Http404
+            raise Http404()
 
         access = AccessSerializer(role.access, many=True).data
         page = self.paginate_queryset(access)
@@ -352,13 +360,11 @@ class RoleViewSet(mixins.CreateModelMixin,
 
     def validate_and_get_access_list(self, data):
         """Validate if input data contains valid access list and return."""
-        access_list = data.get('access')
+        access_list = data.get("access")
         if not isinstance(access_list, list):
-            key = 'access'
-            message = 'A list of access is expected, but {} is found.'.format(type(access_list).__name__)
-            error = {
-                key: [_(message)]
-            }
+            key = "access"
+            message = "A list of access is expected, but {} is found.".format(type(access_list).__name__)
+            error = {key: [_(message)]}
             raise serializers.ValidationError(error)
         for access in access_list:
             AccessSerializer(data=access).is_valid(raise_exception=True)
@@ -370,14 +376,13 @@ class RoleViewSet(mixins.CreateModelMixin,
         if fields is None:
             return LIST_ROLE_FIELDS
 
-        field_list = fields.split(',')
+        field_list = fields.split(",")
         for field in field_list:
             if field not in VALID_FIELD_VALUES:
-                key = 'detail'
-                message = '{} query parameter value {} is invalid. Valid inputs are {}.'.format(
-                    ADDITIONAL_FIELDS_KEY,
-                    field,
-                    VALID_FIELD_VALUES)
+                key = "detail"
+                message = "{} query parameter value {} is invalid. Valid inputs are {}.".format(
+                    ADDITIONAL_FIELDS_KEY, field, VALID_FIELD_VALUES
+                )
                 raise serializers.ValidationError({key: _(message)})
 
         return LIST_ROLE_FIELDS + field_list

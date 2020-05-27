@@ -24,9 +24,8 @@ from django.db import models
 class Principal(models.Model):
     """A principal."""
 
-    uuid = models.UUIDField(default=uuid4, editable=False,
-                            unique=True, null=False)
+    uuid = models.UUIDField(default=uuid4, editable=False, unique=True, null=False)
     username = models.CharField(max_length=150, unique=True)
 
     class Meta:
-        ordering = ['username']
+        ordering = ["username"]

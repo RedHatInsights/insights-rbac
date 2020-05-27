@@ -38,21 +38,12 @@ class GroupAccessPermissionTest(TestCase):
     def test_no_perm_not_admin_get(self):
         """Test that a user with no access cannot execute a GET."""
         access = {
-            'group': {
-                'read': [],
-                'write': []
-            },
-            'role': {
-                'read': [],
-                'write': []
-            },
-            'policy': {
-                'read': [],
-                'write': []
-            }
+            "group": {"read": [], "write": []},
+            "role": {"read": [], "write": []},
+            "policy": {"read": [], "write": []},
         }
         user = Mock(spec=User, admin=False, access=access, identity_header={})
-        req = Mock(user=user, method='GET')
+        req = Mock(user=user, method="GET")
         accessPerm = GroupAccessPermission()
         result = accessPerm.has_permission(request=req, view=None)
         self.assertFalse(result)
@@ -60,21 +51,12 @@ class GroupAccessPermissionTest(TestCase):
     def test_no_perm_not_admin_post(self):
         """Test that a user with no access cannot execute a POST."""
         access = {
-            'group': {
-                'read': [],
-                'write': []
-            },
-            'role': {
-                'read': [],
-                'write': []
-            },
-            'policy': {
-                'read': [],
-                'write': []
-            }
+            "group": {"read": [], "write": []},
+            "role": {"read": [], "write": []},
+            "policy": {"read": [], "write": []},
         }
         user = Mock(spec=User, admin=False, access=access, identity_header={})
-        req = Mock(user=user, method='POST')
+        req = Mock(user=user, method="POST")
         accessPerm = GroupAccessPermission()
         result = accessPerm.has_permission(request=req, view=None)
         self.assertFalse(result)
@@ -82,21 +64,12 @@ class GroupAccessPermissionTest(TestCase):
     def test_has_perm_not_admin_post(self):
         """Test that a user with read access cannot execute a POST."""
         access = {
-            'group': {
-                'read': ['*'],
-                'write': []
-            },
-            'role': {
-                'read': [],
-                'write': []
-            },
-            'policy': {
-                'read': [],
-                'write': []
-            }
+            "group": {"read": ["*"], "write": []},
+            "role": {"read": [], "write": []},
+            "policy": {"read": [], "write": []},
         }
         user = Mock(spec=User, admin=False, access=access, identity_header={})
-        req = Mock(user=user, method='POST')
+        req = Mock(user=user, method="POST")
         accessPerm = GroupAccessPermission()
         result = accessPerm.has_permission(request=req, view=None)
         self.assertFalse(result)
@@ -104,21 +77,12 @@ class GroupAccessPermissionTest(TestCase):
     def test_has_perm_not_admin_post_success(self):
         """Test that a user with read access can execute a POST."""
         access = {
-            'group': {
-                'read': ['*'],
-                'write': ['*']
-            },
-            'role': {
-                'read': [],
-                'write': []
-            },
-            'policy': {
-                'read': [],
-                'write': []
-            }
+            "group": {"read": ["*"], "write": ["*"]},
+            "role": {"read": [], "write": []},
+            "policy": {"read": [], "write": []},
         }
         user = Mock(spec=User, admin=False, access=access, identity_header={})
-        req = Mock(user=user, method='POST')
+        req = Mock(user=user, method="POST")
         accessPerm = GroupAccessPermission()
         result = accessPerm.has_permission(request=req, view=None)
         self.assertTrue(result)
@@ -126,21 +90,12 @@ class GroupAccessPermissionTest(TestCase):
     def test_has_perm_not_admin_get(self):
         """Test that a user with read access can execute a GET."""
         access = {
-            'group': {
-                'read': ['*'],
-                'write': []
-            },
-            'role': {
-                'read': [],
-                'write': []
-            },
-            'policy': {
-                'read': [],
-                'write': []
-            }
+            "group": {"read": ["*"], "write": []},
+            "role": {"read": [], "write": []},
+            "policy": {"read": [], "write": []},
         }
         user = Mock(spec=User, admin=False, access=access, identity_header={})
-        req = Mock(user=user, method='GET', query_params={})
+        req = Mock(user=user, method="GET", query_params={})
         accessPerm = GroupAccessPermission()
         result = accessPerm.has_permission(request=req, view=None)
         self.assertTrue(result)
@@ -148,30 +103,13 @@ class GroupAccessPermissionTest(TestCase):
     def test_no_perm_not_admin_get_own_groups(self):
         """Test that a user without access can obtain the list of groups they are a member of."""
         access = {
-            'group': {
-                'read': [],
-                'write': []
-            },
-            'role': {
-                'read': [],
-                'write': []
-            },
-            'policy': {
-                'read': [],
-                'write': []
-            }
+            "group": {"read": [], "write": []},
+            "role": {"read": [], "write": []},
+            "policy": {"read": [], "write": []},
         }
-        identity_header = {
-            'decoded': {
-                'identity': {
-                    'user': {
-                        'username': 'test_user'
-                    }
-                }
-            }
-        }
-        user = Mock(spec=User, admin=False, access=access, identity_header=identity_header)
-        req = Mock(user=user, method='GET', query_params={'username': 'test_user'})
+        identity_header = {"decoded": {"identity": {"user": {"username": "test_user"}}}}
+        user = Mock(spec=User, admin=False, access=access, username="test_user")
+        req = Mock(user=user, method="GET", query_params={"username": "test_user"})
         accessPerm = GroupAccessPermission()
         result = accessPerm.has_permission(request=req, view=None)
         self.assertTrue(result)
@@ -179,28 +117,13 @@ class GroupAccessPermissionTest(TestCase):
     def test_no_perm_not_admin_get_others_groups(self):
         """Test that a user cannot obtain the list of groups another user is a member of."""
         access = {
-            'group': {
-                'read': [],
-                'write': []
-            },
-            'role': {
-                'read': [],
-                'write': []
-            },
-            'policy': {
-                'read': [],
-                'write': []
-            }
+            "group": {"read": [], "write": []},
+            "role": {"read": [], "write": []},
+            "policy": {"read": [], "write": []},
         }
-        identity_header = {
-            'identity': {
-                'user': {
-                    'username': 'test_user'
-                }
-            }
-        }
-        user = Mock(spec=User, admin=False, access=access, identity_header=identity_header)
-        req = Mock(user=user, method='GET', query_params={'username': 'test_user2'})
+        identity_header = {"identity": {"user": {"username": "test_user"}}}
+        user = Mock(spec=User, admin=False, access=access, username="test_user")
+        req = Mock(user=user, method="GET", query_params={"username": "test_user2"})
         accessPerm = GroupAccessPermission()
         result = accessPerm.has_permission(request=req, view=None)
         self.assertFalse(result)

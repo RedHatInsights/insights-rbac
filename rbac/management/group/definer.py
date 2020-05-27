@@ -30,46 +30,41 @@ logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 def seed_group(tenant):
     """For a tenant create or update default group."""
     with tenant_context(tenant):
-        name = 'Default user access'
+        name = "Default user access"
         group_description = (
-            'This group contains the roles that all users inherit by default. '
-            'Adding or removing roles in this group will affect permissions for all users in your organization.'
+            "This group contains the roles that all users inherit by default. "
+            "Adding or removing roles in this group will affect permissions for all users in your organization."
         )
 
         group, group_created = Group.objects.get_or_create(
-            platform_default=True,
-            defaults={
-                'description': group_description,
-                'name': name,
-                'system': True
-            }
+            platform_default=True, defaults={"description": group_description, "name": name, "system": True}
         )
 
         if group.system:
-            platform_roles = Role.objects.filter(platform_default=True).values_list('uuid', flat=True)
+            platform_roles = Role.objects.filter(platform_default=True).values_list("uuid", flat=True)
             add_roles(group, platform_roles, replace=True)
-            logger.info('Finished seeding default group %s for tenant %s.', name, tenant.schema_name)
+            logger.info("Finished seeding default group %s for tenant %s.", name, tenant.schema_name)
         else:
-            logger.info('Default group %s is managed by tenant %s.', name, tenant.schema_name)
+            logger.info("Default group %s is managed by tenant %s.", name, tenant.schema_name)
     return tenant
 
 
 def set_system_flag_post_update(group):
     """Update system flag on default groups."""
     if group.system:
-        group.name = 'Custom default user access'
+        group.name = "Custom default user access"
     group.system = False
     group.save()
 
 
 def add_roles(group, roles, replace=False):
     """Process list of roles and add them to the group."""
-    system_policy_name = 'System Policy for Group {}'.format(group.uuid)
-    system_policy, system_policy_created = Policy.objects.get_or_create(system=True,
-                                                                        group=group,
-                                                                        name=system_policy_name)
+    system_policy_name = "System Policy for Group {}".format(group.uuid)
+    system_policy, system_policy_created = Policy.objects.get_or_create(
+        system=True, group=group, name=system_policy_name
+    )
     if system_policy_created:
-        logger.info('Created new system policy for tenant.')
+        logger.info("Created new system policy for tenant.")
     else:
         if replace:
             system_policy.roles.clear()
@@ -79,7 +74,7 @@ def add_roles(group, roles, replace=False):
             role = Role.objects.get(uuid=role_id)
             system_policy.roles.add(role)
         except (Role.DoesNotExist, ValidationError):
-            logger.info('No role with id %s to save to group.', role_id)
+            logger.info("No role with id %s to save to group.", role_id)
 
     system_policy.save()
 
@@ -92,7 +87,7 @@ def remove_roles(group, role_ids):
             role = Role.objects.get(uuid=role_id)
             roles.append(role)
         except (Role.DoesNotExist, ValidationError):
-            logger.info('No role with id %s to delete from group.', role_id)
+            logger.info("No role with id %s to delete from group.", role_id)
 
     for policy in group.policies.all():
         policy.roles.remove(*roles)

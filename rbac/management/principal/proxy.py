@@ -21,24 +21,25 @@ import os
 
 import requests
 from django.conf import settings
+from management.models import Principal
 from rest_framework import status
 
 from rbac.env import ENVIRONMENT
 
 
 LOGGER = logging.getLogger(__name__)
-PROTOCOL = 'protocol'
-HOST = 'host'
-PORT = 'port'
-PATH = 'path'
-SSL_VERIFY = 'ssl_verify'
-SOURCE_CERT = 'source_cert'
-USER_ENV = 'env'
-CLIENT_ID = 'clientid'
-API_TOKEN = 'apitoken'
-USER_ENV_HEADER = 'x-rh-insights-env'
-CLIENT_ID_HEADER = 'x-rh-clientid'
-API_TOKEN_HEADER = 'x-rh-apitoken'
+PROTOCOL = "protocol"
+HOST = "host"
+PORT = "port"
+PATH = "path"
+SSL_VERIFY = "ssl_verify"
+SOURCE_CERT = "source_cert"
+USER_ENV = "env"
+CLIENT_ID = "clientid"
+API_TOKEN = "apitoken"
+USER_ENV_HEADER = "x-rh-insights-env"
+CLIENT_ID_HEADER = "x-rh-clientid"
+API_TOKEN_HEADER = "x-rh-apitoken"
 
 
 class PrincipalProxy:  # pylint: disable=too-few-public-methods
@@ -56,21 +57,21 @@ class PrincipalProxy:  # pylint: disable=too-few-public-methods
         self.user_env = proxy_conn_info.get(USER_ENV)
         self.client_id = proxy_conn_info.get(CLIENT_ID)
         self.api_token = proxy_conn_info.get(API_TOKEN)
-        self.client_cert = os.path.join(settings.BASE_DIR, 'management', 'principal', 'certs', 'client.pem')
+        self.client_cert = os.path.join(settings.BASE_DIR, "management", "principal", "certs", "client.pem")
 
     @staticmethod
     def _create_params(limit=None, offset=None, sort_order=None):
         """Create query parameters."""
         params = {}
         if limit:
-            params['limit'] = limit
+            params["limit"] = limit
         if offset:
-            params['offset'] = offset
+            params["offset"] = offset
         if sort_order:
             # BOP only accepts 'des'
-            if sort_order == 'desc':
-                sort_order = 'des'
-            params['sortOrder'] = sort_order
+            if sort_order == "desc":
+                sort_order = "des"
+            params["sortOrder"] = sort_order
 
         return params
 
@@ -79,7 +80,7 @@ class PrincipalProxy:  # pylint: disable=too-few-public-methods
         processed_data = []
         for item in data:
             if account_filter:
-                if account == item.get('account_number'):
+                if account == item.get("account_number"):
                     processed_data.append(self._call_item(item))
             else:
                 processed_data.append(self._call_item(item))
@@ -89,104 +90,102 @@ class PrincipalProxy:  # pylint: disable=too-few-public-methods
     @staticmethod
     def _call_item(item):
         processed_item = {
-            'username': item.get('username'),
-            'email': item.get('email'),
-            'first_name': item.get('first_name'),
-            'last_name': item.get('last_name'),
-            'is_active': item.get('is_active')
+            "username": item.get("username"),
+            "email": item.get("email"),
+            "first_name": item.get("first_name"),
+            "last_name": item.get("last_name"),
+            "is_active": item.get("is_active"),
         }
         return processed_item
 
     def _get_proxy_service(self):  # pylint: disable=no-self-use
         """Get proxy service host and port info from environment."""
         proxy_conn_info = {
-            PROTOCOL: ENVIRONMENT.get_value('PRINCIPAL_PROXY_SERVICE_PROTOCOL', default='https'),
-            HOST: ENVIRONMENT.get_value('PRINCIPAL_PROXY_SERVICE_HOST', default='localhost'),
-            PORT: ENVIRONMENT.get_value('PRINCIPAL_PROXY_SERVICE_PORT', default='443'),
-            PATH: ENVIRONMENT.get_value('PRINCIPAL_PROXY_SERVICE_PATH',
-                                        default='/r/insights-services'),
-            SOURCE_CERT: ENVIRONMENT.bool('PRINCIPAL_PROXY_SERVICE_SOURCE_CERT', default=False),
-            SSL_VERIFY: ENVIRONMENT.bool('PRINCIPAL_PROXY_SERVICE_SSL_VERIFY', default=True),
-            USER_ENV: ENVIRONMENT.get_value('PRINCIPAL_PROXY_USER_ENV', default='env'),
-            CLIENT_ID: ENVIRONMENT.get_value('PRINCIPAL_PROXY_CLIENT_ID', default='client_id'),
-            API_TOKEN: ENVIRONMENT.get_value('PRINCIPAL_PROXY_API_TOKEN', default='token')
+            PROTOCOL: ENVIRONMENT.get_value("PRINCIPAL_PROXY_SERVICE_PROTOCOL", default="https"),
+            HOST: ENVIRONMENT.get_value("PRINCIPAL_PROXY_SERVICE_HOST", default="localhost"),
+            PORT: ENVIRONMENT.get_value("PRINCIPAL_PROXY_SERVICE_PORT", default="443"),
+            PATH: ENVIRONMENT.get_value("PRINCIPAL_PROXY_SERVICE_PATH", default="/r/insights-services"),
+            SOURCE_CERT: ENVIRONMENT.bool("PRINCIPAL_PROXY_SERVICE_SOURCE_CERT", default=False),
+            SSL_VERIFY: ENVIRONMENT.bool("PRINCIPAL_PROXY_SERVICE_SSL_VERIFY", default=True),
+            USER_ENV: ENVIRONMENT.get_value("PRINCIPAL_PROXY_USER_ENV", default="env"),
+            CLIENT_ID: ENVIRONMENT.get_value("PRINCIPAL_PROXY_CLIENT_ID", default="client_id"),
+            API_TOKEN: ENVIRONMENT.get_value("PRINCIPAL_PROXY_API_TOKEN", default="token"),
         }
         return proxy_conn_info
 
-    def _request_principals(self, url, account=None, account_filter=False, method=requests.get, params=None, data=None):
+    def _request_principals(
+        self, url, account=None, account_filter=False, method=requests.get, params=None, data=None  # noqa: C901
+    ):
         """Send request to proxy service."""
-        headers = {
-            USER_ENV_HEADER: self.user_env,
-            CLIENT_ID_HEADER: self.client_id,
-            API_TOKEN_HEADER: self.api_token
-        }
+        if settings.BYPASS_BOP_VERIFICATION:
+            to_return = []
+            if data is None:
+                for principal in Principal.objects.all():
+                    to_return.append(dict(username=principal.username))
+            elif "users" in data:
+                for principal in data["users"]:
+                    to_return.append(dict(username=principal))
+            elif "primaryEmail" in data:
+                # We can't fake a lookup for an email address, so we won't try.
+                pass
+            return dict(data=to_return, status_code=200, userCount=len(to_return))
+        headers = {USER_ENV_HEADER: self.user_env, CLIENT_ID_HEADER: self.client_id, API_TOKEN_HEADER: self.api_token}
         unexpected_error = {
-            'detail': 'Unexpected error.',
-            'status': status.HTTP_500_INTERNAL_SERVER_ERROR,
-            'source': 'principals'
+            "detail": "Unexpected error.",
+            "status": status.HTTP_500_INTERNAL_SERVER_ERROR,
+            "source": "principals",
         }
         try:
-            kwargs = {
-                'headers': headers,
-                'params': params,
-                'json': data,
-                'verify': self.ssl_verify
-            }
+            kwargs = {"headers": headers, "params": params, "json": data, "verify": self.ssl_verify}
             if self.source_cert:
-                kwargs['verify'] = self.client_cert
+                kwargs["verify"] = self.client_cert
             response = method(url, **kwargs)
         except requests.exceptions.ConnectionError as conn:
-            LOGGER.error('Unable to connect for URL %s with error: %s', url, conn)
-            resp = {
-                'status_code': status.HTTP_500_INTERNAL_SERVER_ERROR,
-                'errors': [unexpected_error]
-            }
+            LOGGER.error("Unable to connect for URL %s with error: %s", url, conn)
+            resp = {"status_code": status.HTTP_500_INTERNAL_SERVER_ERROR, "errors": [unexpected_error]}
             return resp
 
         error = None
-        resp = {
-            'status_code': response.status_code
-        }
+        resp = {"status_code": response.status_code}
         if response.status_code == status.HTTP_200_OK:
             """ Testing if account numbers match """
             try:
                 data = response.json()
                 if isinstance(data, dict):
-                    userList = self._process_data(data.get('users'), account, account_filter)
-                    resp['data'] = {'userCount': data.get('userCount'), 'users': userList}
+                    userList = self._process_data(data.get("users"), account, account_filter)
+                    resp["data"] = {"userCount": data.get("userCount"), "users": userList}
                 else:
                     userList = self._process_data(data, account, account_filter)
-                    resp['data'] = userList
+                    resp["data"] = userList
             except ValueError:
-                resp['status_code'] = status.HTTP_500_INTERNAL_SERVER_ERROR
+                resp["status_code"] = status.HTTP_500_INTERNAL_SERVER_ERROR
                 error = unexpected_error
         elif response.status_code == status.HTTP_404_NOT_FOUND:
-            error = {
-                'detail': 'Not Found.',
-                'status': response.status_code,
-                'source': 'principals'
-            }
+            error = {"detail": "Not Found.", "status": response.status_code, "source": "principals"}
         else:
-            LOGGER.error('Error calling URL %s -- status=%d', url, response.status_code)
+            LOGGER.error("Error calling URL %s -- status=%d", url, response.status_code)
             error = unexpected_error
-            error['status'] = response.status_code
+            error["status"] = response.status_code
         if error:
-            resp['errors'] = [error]
+            resp["errors"] = [error]
         return resp
 
-    def request_principals(self, account, limit=None, offset=None, sort_order=None):
+    def request_principals(self, account, email=None, limit=None, offset=None, sort_order=None):
         """Request principals for an account."""
-        account_principals_path = '/v2/accounts/{}/users'.format(account)
+        if email:
+            account_principals_path = f"/v1/accounts/{account}/usersBy"
+            payload = {"primaryEmail": email}
+            method = requests.post
+        else:
+            account_principals_path = f"/v2/accounts/{account}/users"
+            method = requests.get
+            payload = None
 
         params = self._create_params(limit=limit, offset=offset, sort_order=sort_order)
-        url = '{}://{}:{}{}{}'.format(self.protocol,
-                                      self.host,
-                                      self.port,
-                                      self.path,
-                                      account_principals_path)
+        url = "{}://{}:{}{}{}".format(self.protocol, self.host, self.port, self.path, account_principals_path)
 
         # For v2 account users endpoints are already filtered by account
-        return self._request_principals(url, params=params, account_filter=False)
+        return self._request_principals(url, params=params, account_filter=False, method=method, data=payload)
 
     def request_filtered_principals(self, principals, account=None, limit=None, offset=None, sort_order=None):
         """Request specific principals for an account."""
@@ -195,21 +194,11 @@ class PrincipalProxy:  # pylint: disable=too-few-public-methods
         else:
             account_filter = True
         if not principals:
-            return {'status_code': status.HTTP_200_OK, 'data': []}
-        filtered_principals_path = '/v1/users'
+            return {"status_code": status.HTTP_200_OK, "data": []}
+        filtered_principals_path = "/v1/users"
         params = self._create_params(limit=limit, offset=offset, sort_order=sort_order)
-        payload = {
-            'users': principals,
-            'include_permissions': False
-        }
-        url = '{}://{}:{}{}{}'.format(self.protocol,
-                                      self.host,
-                                      self.port,
-                                      self.path,
-                                      filtered_principals_path)
-        return self._request_principals(url,
-                                        account=account,
-                                        account_filter=account_filter,
-                                        method=requests.post,
-                                        params=params,
-                                        data=payload)
+        payload = {"users": principals, "include_permissions": False}
+        url = "{}://{}:{}{}{}".format(self.protocol, self.host, self.port, self.path, filtered_principals_path)
+        return self._request_principals(
+            url, account=account, account_filter=account_filter, method=requests.post, params=params, data=payload
+        )

@@ -10,32 +10,34 @@ class Migration(migrations.Migration):
 
     initial = True
 
-    dependencies = [
-    ]
+    dependencies = []
 
     operations = [
         migrations.CreateModel(
-            name='Tenant',
+            name="Tenant",
             fields=[
-                ('id', models.AutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('schema_name', models.CharField(max_length=63, unique=True, validators=[tenant_schemas.postgresql_backend.base._check_schema_name])),
+                ("id", models.AutoField(auto_created=True, primary_key=True, serialize=False, verbose_name="ID")),
+                (
+                    "schema_name",
+                    models.CharField(
+                        max_length=63,
+                        unique=True,
+                        validators=[tenant_schemas.postgresql_backend.base._check_schema_name],
+                    ),
+                ),
             ],
-            options={
-                'abstract': False,
-            },
+            options={"abstract": False},
         ),
         migrations.CreateModel(
-            name='User',
+            name="User",
             fields=[
-                ('id', models.AutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('uuid', models.UUIDField(default=uuid.uuid4, editable=False, unique=True)),
-                ('username', models.CharField(max_length=150, unique=True)),
-                ('email', models.EmailField(blank=True, max_length=254)),
-                ('is_active', models.NullBooleanField(default=True)),
-                ('tenant', models.ForeignKey(null=True, on_delete=django.db.models.deletion.CASCADE, to='api.Tenant')),
+                ("id", models.AutoField(auto_created=True, primary_key=True, serialize=False, verbose_name="ID")),
+                ("uuid", models.UUIDField(default=uuid.uuid4, editable=False, unique=True)),
+                ("username", models.CharField(max_length=150, unique=True)),
+                ("email", models.EmailField(blank=True, max_length=254)),
+                ("is_active", models.NullBooleanField(default=True)),
+                ("tenant", models.ForeignKey(null=True, on_delete=django.db.models.deletion.CASCADE, to="api.Tenant")),
             ],
-            options={
-                'ordering': ['username'],
-            },
+            options={"ordering": ["username"]},
         ),
     ]

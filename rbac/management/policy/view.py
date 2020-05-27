@@ -29,21 +29,23 @@ from .serializer import PolicyInputSerializer, PolicySerializer
 class PolicyFilter(filters.FilterSet):
     """Filter for policy."""
 
-    name = filters.CharFilter(field_name='name', lookup_expr='icontains')
-    group_name = filters.CharFilter(field_name='group', lookup_expr='name__icontains')
-    group_uuid = filters.UUIDFilter(field_name='group', lookup_expr='uuid__exact')
+    name = filters.CharFilter(field_name="name", lookup_expr="icontains")
+    group_name = filters.CharFilter(field_name="group", lookup_expr="name__icontains")
+    group_uuid = filters.UUIDFilter(field_name="group", lookup_expr="uuid__exact")
 
     class Meta:
         model = Policy
-        fields = ['name', 'group_name', 'group_uuid']
+        fields = ["name", "group_name", "group_uuid"]
 
 
-class PolicyViewSet(mixins.CreateModelMixin,
-                    mixins.DestroyModelMixin,
-                    mixins.ListModelMixin,
-                    mixins.RetrieveModelMixin,
-                    mixins.UpdateModelMixin,
-                    viewsets.GenericViewSet):
+class PolicyViewSet(
+    mixins.CreateModelMixin,
+    mixins.DestroyModelMixin,
+    mixins.ListModelMixin,
+    mixins.RetrieveModelMixin,
+    mixins.UpdateModelMixin,
+    viewsets.GenericViewSet,
+):
     """Policy View.
 
     A viewset that provides default `create()`, `destroy`, `retrieve()`,
@@ -53,11 +55,11 @@ class PolicyViewSet(mixins.CreateModelMixin,
 
     queryset = Policy.objects.all()
     permission_classes = (PolicyAccessPermission,)
-    lookup_field = 'uuid'
+    lookup_field = "uuid"
     filter_backends = (filters.DjangoFilterBackend, OrderingFilter)
     filterset_class = PolicyFilter
-    ordering_fields = ('name', 'modified')
-    ordering = ('name',)
+    ordering_fields = ("name", "modified")
+    ordering = ("name",)
 
     def get_queryset(self):
         """Obtain queryset for requesting user based on access."""
@@ -65,7 +67,7 @@ class PolicyViewSet(mixins.CreateModelMixin,
 
     def get_serializer_class(self):
         """Get serializer based on route."""
-        if self.request.method in ('POST', 'PUT'):
+        if self.request.method in ("POST", "PUT"):
             return PolicyInputSerializer
         return PolicySerializer
 

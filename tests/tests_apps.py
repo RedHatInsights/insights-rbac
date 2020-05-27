@@ -40,29 +40,28 @@ class AppsModelTest(TestCase):
         # restore filters on logging
         logging.disable(logging.CRITICAL)
 
-    @patch('management.apps.sys.argv', ['manage.py', 'test'])
-    @patch('management.apps.ManagementConfig.role_seeding')
-    def test_ready_silent_run(self, mock_status):
+    @patch("management.apps.sys.argv", ["manage.py", "test"])
+    @patch("management.apps.role_seeding")
+    @patch("management.apps.group_seeding")
+    def test_ready_silent_run(self, mock_role_seeding, mock_group_seeding):
         """Test that ready functions are not called."""
-        mock_status.assert_not_called()
+        mock_role_seeding.assert_not_called()
+        mock_group_seeding.assert_not_called()
 
-    def test_role_seeding(self):
+    @patch("management.apps.sys.argv", ["manage.py", "runserver"])
+    @patch("management.apps.role_seeding")
+    @patch("management.apps.group_seeding")
+    def test_role_seeding(self, mock_role_seeding, mock_group_seeding):
         """Test the server role seeding startup."""
-        with self.assertLogs('management.apps', level='INFO') as logger:
-            mgmt_config = apps.get_app_config('management')
-            mgmt_config.role_seeding()
-            self.assertNotEqual(logger.output, [])
+        mgmt_config = apps.get_app_config("management")
 
-    # patching a method called by ManagementConfig.ready()
-    @patch.object(ManagementConfig, 'role_seeding',
-                  lambda x: exec('raise OperationalError("This is a Test Exception")'))
+        mgmt_config.ready()
+        mock_role_seeding.assert_called()
+        mock_group_seeding.assert_called()
+
     def test_catch_operational_error(self):
         """Test that we handle exceptions thrown when tables are missing."""
-        mgmt_config = apps.get_app_config('management')
+        mgmt_config = apps.get_app_config("management")
 
         # the real test
         mgmt_config.ready()
-
-        # sanity-checking that the mocked object is raising the expected error
-        with self.assertRaises(OperationalError):
-            mgmt_config.role_seeding()

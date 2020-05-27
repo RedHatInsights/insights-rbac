@@ -16,8 +16,10 @@
 #
 
 """View for principal access."""
+from management.cache import AccessCache
 from management.querysets import get_access_queryset
 from management.role.serializer import AccessSerializer
+from management.utils import APPLICATION_KEY, get_principal_from_request
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.settings import api_settings
@@ -82,20 +84,26 @@ class AccessView(APIView):
 
     def get(self, request):
         """Provide access data for prinicpal."""
-        queryset = self.get_queryset()
-        page = self.paginate_queryset(queryset)
-        if page is not None:
-            serializer = self.serializer_class(page, many=True)
-            return self.get_paginated_response(serializer.data)
+        app = request.query_params.get(APPLICATION_KEY)
+        principal = get_principal_from_request(request)
+        cache = AccessCache(request.tenant.schema_name)
+        access_policy = cache.get_policy(principal.uuid, app)
+        if access_policy is None:
+            queryset = self.get_queryset()
+            access_policy = self.serializer_class(queryset, many=True).data
+            cache.save_policy(principal.uuid, app, access_policy)
+        page = self.paginate_queryset(access_policy)
 
-        return Response({'data': self.serializer_class(queryset, many=True).data})
+        if page is not None:
+            return self.get_paginated_response(access_policy)
+        return Response({"data": access_policy})
 
     @property
     def paginator(self):
         """Return the paginator instance associated with the view, or `None`."""
-        if not hasattr(self, '_paginator'):
+        if not hasattr(self, "_paginator"):
             self._paginator = self.pagination_class()
-            if self.pagination_class is None or 'limit' not in self.request.query_params:
+            if self.pagination_class is None or "limit" not in self.request.query_params:
                 self._paginator.default_limit = self._paginator.max_limit
         return self._paginator
 

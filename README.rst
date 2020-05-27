@@ -83,6 +83,20 @@ If a docker container running Postgres is not feasible, it is possible to run Po
 
     make run-migrations
 
+Seeds
+^^^^^
+
+Default roles and groups are automatically seeded when the application starts by default unless either of the following environment variables are set to 'False' respectively: ::
+
+  ROLE_SEEDING_ENABLED
+  GROUP_SEEDING_ENABLED
+
+Locally these are sourced from `/rbac/management/role/definitions/*.json`, while the config maps in deployed instances are source from our `RBAC config repo`_. **If any changes to default roles/groups are required, they should be make there.**
+
+You can also execute the following Django command to run seeds manually: ::
+
+  rbac/manage.py seeds [--roles-only|--groups-only]
+
 Server
 ^^^^^^
 
@@ -115,22 +129,19 @@ RBAC also allows for service-to-service requests. These requests require a PSK, 
 
 First disable the local setting of the identity header in `dev_middleware.py` by [commenting this line out](https://github.com/RedHatInsights/insights-rbac/blob/master/rbac/rbac/dev_middleware.py#L53)
 
-Next, start the server with:
-```
-make serve SERVICE_PSKS='{"catalog": {"secret": "abc123"}}'
-```
+Next, start the server with: ::
 
-Verify that you cannot access any endpoints requiring auth:
-```
-curl http://localhost:8000/api/rbac/v1/roles/ -v
-```
+  make serve SERVICE_PSKS='{"catalog": {"secret": "abc123"}}'
 
-Verify that if you pass in the correct headers/values, you _can_ access the endpoint:
-```
-curl http://localhost:8000/api/rbac/v1/roles/ -v -H 'x-rh-rbac-psk: abc123' -H 'x-rh-rbac-account: 10001' -H 'x-rh-rbac-client-id: catalog'
-```
+Verify that you cannot access any endpoints requiring auth: ::
 
-Change the `x-rh-rbac-client-id`, `x-rh-rbac-psk` and `x-rh-rbac-account` header values to see that you should get back a 401 (or 400 with an account that doesn't exist).
+  curl http://localhost:8000/api/rbac/v1/roles/ -v
+
+Verify that if you pass in the correct headers/values, you _can_ access the endpoint: ::
+
+  curl http://localhost:8000/api/rbac/v1/roles/ -v -H 'x-rh-rbac-psk: abc123' -H 'x-rh-rbac-account: 10001' -H 'x-rh-rbac-client-id: catalog'
+
+Change the 'x-rh-rbac-client-id', 'x-rh-rbac-psk' and 'x-rh-rbac-account' header values to see that you should get back a 401 (or 400 with an account that doesn't exist).
 
 You can also send a request _with_ the identity header explicitly in the curl command along with the service-to-service headers to verify that the identity header will take precedence.
 
@@ -195,9 +206,7 @@ afterwards. Other formats and text files are linted as well.
 
 Install pre-commit hooks to your local repository by running:
 
-```bash
-$ pre-commit install
-```
+  $ pre-commit install
 
 After that, all your commited files will be linted. If the checks don’t succeed, the commit will be rejected. Please
 make sure all checks pass before submitting a pull request. Thanks!
@@ -205,7 +214,7 @@ make sure all checks pass before submitting a pull request. Thanks!
 Repositories of the roles to be seeded
 --------------------------------------
 
-Default roles: https://github.com/RedHatInsights/rbac-config.git
+Default roles can be found in the `RBAC config repo`_.
 
 For additional information please refer to Contributing_.
 
@@ -228,3 +237,4 @@ For additional information please refer to Contributing_.
    :target: https://pyup.io/repos/github/RedHatInsights/insights-rbac/
 .. |Docs| image:: https://readthedocs.org/projects/insights-rbac/badge/
    :target: https://insights-rbac.readthedocs.io/en/latest/
+.. _`RBAC config repo`: https://github.com/RedHatInsights/rbac-config.git

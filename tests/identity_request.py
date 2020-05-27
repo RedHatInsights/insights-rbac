@@ -40,14 +40,11 @@ class IdentityRequest(TestCase):
 
         cls.customer_data = cls._create_customer_data()
         cls.user_data = cls._create_user_data()
-        cls.request_context = cls._create_request_context(
-            cls.customer_data,
-            cls.user_data
-        )
-        cls.schema_name = cls.customer_data.get('schema_name')
+        cls.request_context = cls._create_request_context(cls.customer_data, cls.user_data)
+        cls.schema_name = cls.customer_data.get("schema_name")
         cls.tenant = Tenant(schema_name=cls.schema_name)
         cls.tenant.save()
-        cls.headers = cls.request_context['request'].META
+        cls.headers = cls.request_context["request"].META
 
     @classmethod
     def tearDownClass(cls):
@@ -60,16 +57,14 @@ class IdentityRequest(TestCase):
     def _create_customer_data(cls):
         """Create customer data."""
         account = cls.fake.ean8()
-        schema = f'acct{account}'
-        customer = {'account_id': account,
-                    'schema_name': schema}
+        schema = f"acct{account}"
+        customer = {"account_id": account, "schema_name": schema}
         return customer
 
     @classmethod
     def _create_user_data(cls):
         """Create user data."""
-        user_data = {'username': cls.fake.user_name(),
-                     'email': cls.fake.email()}
+        user_data = {"username": cls.fake.user_name(), "email": cls.fake.email()}
         return user_data
 
     @classmethod
@@ -92,32 +87,24 @@ class IdentityRequest(TestCase):
         return tenant
 
     @classmethod
-    def _create_request_context(cls, customer_data, user_data,
-                                create_customer=True, create_tenant=False,
-                                is_org_admin=True):
+    def _create_request_context(
+        cls, customer_data, user_data, create_customer=True, create_tenant=False, is_org_admin=True
+    ):
         """Create the request context for a user."""
         customer = customer_data
-        account = customer.get('account_id')
+        account = customer.get("account_id")
         if create_customer:
-            cls.customer = cls._create_customer(
-                account,
-                create_tenant=create_tenant
-            )
+            cls.customer = cls._create_customer(account, create_tenant=create_tenant)
         identity = {
-            'identity': {
-                'account_number': account,
-                'type': 'User',
-                'user': {
-                    'username': user_data['username'],
-                    'email': user_data['email'],
-                    'is_org_admin': is_org_admin
-                }
+            "identity": {
+                "account_number": account,
+                "type": "User",
+                "user": {"username": user_data["username"], "email": user_data["email"], "is_org_admin": is_org_admin},
             }
         }
         json_identity = json_dumps(identity)
-        mock_header = b64encode(json_identity.encode('utf-8'))
+        mock_header = b64encode(json_identity.encode("utf-8"))
         request = Mock()
         request.META = {RH_IDENTITY_HEADER: mock_header}
-        request.user = user_data['username']
-        request_context = {'request': request}
+        request_context = {"request": request}
         return request_context

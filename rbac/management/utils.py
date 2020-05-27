@@ -24,16 +24,16 @@ from management.models import Group, Principal
 from management.principal.proxy import PrincipalProxy
 from rest_framework import serializers
 
-USERNAME_KEY = 'username'
-APPLICATION_KEY = 'application'
+USERNAME_KEY = "username"
+APPLICATION_KEY = "application"
 
 
 def validate_psk(psk, client_id):
     """Validate the PSK for the client."""
-    psks = json.loads(os.environ.get('SERVICE_PSKS', '{}'))
+    psks = json.loads(os.environ.get("SERVICE_PSKS", "{}"))
     client_config = psks.get(client_id, {})
-    primary_key = client_config.get('secret')
-    alt_key = client_config.get('alt-secret')
+    primary_key = client_config.get("secret")
+    alt_key = client_config.get("alt-secret")
 
     if psks:
         return psk == primary_key or psk == alt_key
@@ -44,34 +44,35 @@ def validate_psk(psk, client_id):
 def get_principal_from_request(request):
     """Obtain principal from the request object."""
     current_user = request.user.username
-    username = request.query_params.get(USERNAME_KEY)
+    qs_user = request.query_params.get(USERNAME_KEY)
 
-    if username and not request.user.admin:
+    if qs_user and not request.user.admin:
         raise PermissionDenied()
-    if not username:
-        username = current_user
+    username = qs_user if qs_user else current_user
 
-    return get_principal(username, request.user.account)
+    return get_principal(username, request.user.account, verify_principal=bool(qs_user))
 
 
-def get_principal(username, account):
+def get_principal(username, account, verify_principal=True):
     """Get principals from username."""
     # First check if principal exist on our side,
     # if not call BOP to check if user exist in the account.
     try:
         principal = Principal.objects.get(username__iexact=username)
     except Principal.DoesNotExist:
-        proxy = PrincipalProxy()
-        resp = proxy.request_filtered_principals([username], account)
-        if isinstance(resp, dict) and 'errors' in resp:
-            raise Exception('Dependency error: request to get users from dependent service failed.')
+        if verify_principal:
+            proxy = PrincipalProxy()
+            resp = proxy.request_filtered_principals([username], account)
+            if isinstance(resp, dict) and "errors" in resp:
+                raise Exception("Dependency error: request to get users from dependent service failed.")
 
-        if resp.get('data') == []:
-            key = 'detail'
-            message = 'No data found for principal with username {}.'.format(username)
-            raise serializers.ValidationError({key: _(message)})
+            if resp.get("data") == []:
+                key = "detail"
+                message = "No data found for principal with username {}.".format(username)
+                raise serializers.ValidationError({key: _(message)})
 
-        return Principal.objects.create(username=username)
+        # Avoid possible race condition if the user was created while checking BOP
+        principal, created = Principal.objects.get_or_create(username=username)  # pylint: disable=unused-variable
 
     return principal
 
@@ -109,7 +110,7 @@ def groups_for_principal(principal, **kwargs):
     """Gathers all groups for a principal, including the default."""
     assigned_group_set = principal.group.all()
     platform_default_group_set = Group.platform_default_set()
-    prefetch_lookups = kwargs.get('prefetch_lookups_for_groups')
+    prefetch_lookups = kwargs.get("prefetch_lookups_for_groups")
 
     if prefetch_lookups:
         assigned_group_set = assigned_group_set.prefetch_related(prefetch_lookups)
@@ -141,8 +142,8 @@ def access_for_principal(principal, **kwargs):
 def queryset_by_id(objects, clazz, **kwargs):
     """Return a queryset of from the class ordered by id."""
     wanted_ids = [obj.id for obj in objects]
-    prefetch_lookups = kwargs.get('prefetch_lookups_for_ids')
-    query = clazz.objects.filter(id__in=wanted_ids).order_by('id')
+    prefetch_lookups = kwargs.get("prefetch_lookups_for_ids")
+    query = clazz.objects.filter(id__in=wanted_ids).order_by("id")
 
     if prefetch_lookups:
         query = query.prefetch_related(prefetch_lookups)
@@ -154,10 +155,7 @@ def validate_and_get_key(params, query_key, valid_values, default_value):
     """Validate the key."""
     value = params.get(query_key, default_value).lower()
     if value not in valid_values:
-        key = 'detail'
-        message = '{} query parameter value {} is invalid. {} are valid inputs.'.format(
-            query_key,
-            value,
-            valid_values)
+        key = "detail"
+        message = "{} query parameter value {} is invalid. {} are valid inputs.".format(query_key, value, valid_values)
         raise serializers.ValidationError({key: _(message)})
     return value

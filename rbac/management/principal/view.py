@@ -25,9 +25,10 @@ from api.common.pagination import StandardResultsSetPagination
 from .proxy import PrincipalProxy
 from ..permissions.admin_access import AdminAccessPermission
 
-USERNAMES_KEY = 'usernames'
-SORTORDER_KEY = 'sort_order'
-VALID_SORTORDER_VALUE = ['asc', 'desc']
+USERNAMES_KEY = "usernames"
+EMAIL_KEY = "email"
+SORTORDER_KEY = "sort_order"
+VALID_SORTORDER_VALUE = ["asc", "desc"]
 
 
 class PrincipalView(APIView):
@@ -85,64 +86,58 @@ class PrincipalView(APIView):
         query_params = self.request.query_params
         default_limit = StandardResultsSetPagination.default_limit
         usernames = None
-        usernames_filter = ''
+        usernames_filter = ""
         try:
-            limit = int(query_params.get('limit', default_limit))
-            offset = int(query_params.get('offset', 0))
+            limit = int(query_params.get("limit", default_limit))
+            offset = int(query_params.get("offset", 0))
             usernames = query_params.get(USERNAMES_KEY)
-            sort_order = validate_and_get_key(
-                query_params,
-                SORTORDER_KEY,
-                VALID_SORTORDER_VALUE,
-                'asc')
+            email = query_params.get(EMAIL_KEY)
+            sort_order = validate_and_get_key(query_params, SORTORDER_KEY, VALID_SORTORDER_VALUE, "asc")
         except ValueError:
             error = {
-                'detail': 'Values for limit and offset must be positive numbers.',
-                'source': 'principals',
-                'status': status.HTTP_400_BAD_REQUEST
+                "detail": "Values for limit and offset must be positive numbers.",
+                "source": "principals",
+                "status": status.HTTP_400_BAD_REQUEST,
             }
-            errors = {
-                'errors': [error]
-            }
+            errors = {"errors": [error]}
             return Response(status=status.HTTP_400_BAD_REQUEST, data=errors)
 
         previous_offset = 0
         if offset - limit > 0:
             previous_offset = offset - limit
         if usernames:
-            principals = usernames.split(',')
-            resp = proxy.request_filtered_principals(principals,
-                                                     user.account,
-                                                     limit=limit,
-                                                     offset=offset,
-                                                     sort_order=sort_order)
-            usernames_filter = f'&usernames={usernames}'
+            principals = usernames.split(",")
+            resp = proxy.request_filtered_principals(
+                principals, account=user.account, limit=limit, offset=offset, sort_order=sort_order
+            )
+            usernames_filter = f"&usernames={usernames}"
+        elif email:
+            resp = proxy.request_principals(
+                user.account, email=email, limit=limit, offset=offset, sort_order=sort_order
+            )
         else:
-            resp = proxy.request_principals(user.account,
-                                            limit=limit,
-                                            offset=offset,
-                                            sort_order=sort_order)
-        status_code = resp.get('status_code')
+            resp = proxy.request_principals(user.account, limit=limit, offset=offset, sort_order=sort_order)
+        status_code = resp.get("status_code")
         response_data = {}
         if status_code == status.HTTP_200_OK:
-            data = resp.get('data', [])
+            data = resp.get("data", [])
             if isinstance(data, dict):
-                count = data.get('userCount')
-                data = data.get('users')
+                count = data.get("userCount")
+                data = data.get("users")
+            elif isinstance(data, list):
+                count = len(data)
             else:
                 count = None
-            response_data['meta'] = {
-                'count': count
+            response_data["meta"] = {"count": count}
+            response_data["links"] = {
+                "first": f"{path}?limit={limit}&offset=0{usernames_filter}",
+                "next": f"{path}?limit={limit}&offset={offset + limit}{usernames_filter}",
+                "previous": f"{path}?limit={limit}&offset={previous_offset}{usernames_filter}",
+                "last": None,
             }
-            response_data['links'] = {
-                'first': f'{path}?limit={limit}&offset=0{usernames_filter}',
-                'next': f'{path}?limit={limit}&offset={offset + limit}{usernames_filter}',
-                'previous': f'{path}?limit={limit}&offset={previous_offset}{usernames_filter}',
-                'last': None,
-            }
-            response_data['data'] = data
+            response_data["data"] = data
         else:
             response_data = resp
-            del response_data['status_code']
+            del response_data["status_code"]
 
         return Response(status=status_code, data=response_data)

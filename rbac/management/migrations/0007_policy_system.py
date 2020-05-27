@@ -5,14 +5,6 @@ from django.db import migrations, models
 
 class Migration(migrations.Migration):
 
-    dependencies = [
-        ('management', '0006_auto_20190407_1332'),
-    ]
+    dependencies = [("management", "0006_auto_20190407_1332")]
 
-    operations = [
-        migrations.AddField(
-            model_name='policy',
-            name='system',
-            field=models.BooleanField(default=False),
-        ),
-    ]
+    operations = [migrations.AddField(model_name="policy", name="system", field=models.BooleanField(default=False))]

@@ -18,10 +18,7 @@
 from tenant_schemas.utils import tenant_context
 
 from management.models import Group, Principal, Policy, Role, Access
-from management.utils import (access_for_principal,
-                              groups_for_principal,
-                              policies_for_principal,
-                              roles_for_principal)
+from management.utils import access_for_principal, groups_for_principal, policies_for_principal, roles_for_principal
 from tests.identity_request import IdentityRequest
 
 
@@ -34,34 +31,33 @@ class UtilsTests(IdentityRequest):
 
         with tenant_context(self.tenant):
             # setup principal
-            self.principal = Principal.objects.create(username='principalA')
+            self.principal = Principal.objects.create(username="principalA")
 
             # setup data for the principal
-            self.roleA = Role.objects.create(name='roleA')
-            self.accessA = Access.objects.create(permission='app:*:*', role=self.roleA)
-            self.policyA = Policy.objects.create(name='policyA')
+            self.roleA = Role.objects.create(name="roleA")
+            self.accessA = Access.objects.create(permission="app:*:*", role=self.roleA)
+            self.policyA = Policy.objects.create(name="policyA")
             self.policyA.roles.add(self.roleA)
-            self.groupA = Group.objects.create(name='groupA')
+            self.groupA = Group.objects.create(name="groupA")
             self.groupA.policies.add(self.policyA)
             self.groupA.principals.add(self.principal)
 
             # setup data the principal does not have access to
-            self.roleB = Role.objects.create(name='roleB')
-            self.accessB = Access.objects.create(permission='app:*:*', role=self.roleB)
-            self.policyB = Policy.objects.create(name='policyB')
+            self.roleB = Role.objects.create(name="roleB")
+            self.accessB = Access.objects.create(permission="app:*:*", role=self.roleB)
+            self.policyB = Policy.objects.create(name="policyB")
             self.policyB.roles.add(self.roleB)
-            self.groupB = Group.objects.create(name='groupB')
+            self.groupB = Group.objects.create(name="groupB")
             self.groupB.policies.add(self.policyB)
 
             # setup default group/role which all tenant users
             # should inherit without explicit association
-            self.default_role = Role.objects.create(name='default role', platform_default=True, system=True)
-            self.default_access = Access.objects.create(permission='app:*:*', role=self.default_role)
-            self.default_policy = Policy.objects.create(name='default policy', system=True)
+            self.default_role = Role.objects.create(name="default role", platform_default=True, system=True)
+            self.default_access = Access.objects.create(permission="app:*:*", role=self.default_role)
+            self.default_policy = Policy.objects.create(name="default policy", system=True)
             self.default_policy.roles.add(self.default_role)
-            self.default_group = Group.objects.create(name='default group', system=True, platform_default=True)
+            self.default_group = Group.objects.create(name="default group", system=True, platform_default=True)
             self.default_group.policies.add(self.default_policy)
-
 
     def tearDown(self):
         """Tear down the utils tests."""
@@ -75,7 +71,7 @@ class UtilsTests(IdentityRequest):
     def test_access_for_principal(self):
         """Test that we get the correct access for a principal."""
         with tenant_context(self.tenant):
-            kwargs = {'application': 'app'}
+            kwargs = {"application": "app"}
             access = access_for_principal(self.principal, **kwargs)
             self.assertCountEqual(access, [self.accessA, self.default_access])
 

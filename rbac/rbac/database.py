@@ -21,19 +21,18 @@ from .env import ENVIRONMENT
 def config():
     """Database config."""
     db_obj = {
-        'ENGINE': 'tenant_schemas.postgresql_backend',
-        'NAME': ENVIRONMENT.get_value('DATABASE_NAME', default=None),
-        'USER': ENVIRONMENT.get_value('DATABASE_USER', default=None),
-        'PASSWORD': ENVIRONMENT.get_value('DATABASE_PASSWORD', default=None),
-        'HOST': ENVIRONMENT.get_value('DATABASE_HOST', default=None),
-        'PORT': ENVIRONMENT.get_value('DATABASE_PORT', default=None),
+        "ENGINE": "tenant_schemas.postgresql_backend",
+        "NAME": ENVIRONMENT.get_value("DATABASE_NAME", default=None),
+        "USER": ENVIRONMENT.get_value("DATABASE_USER", default=None),
+        "PASSWORD": ENVIRONMENT.get_value("DATABASE_PASSWORD", default=None),
+        "HOST": ENVIRONMENT.get_value("DATABASE_HOST", default=None),
+        "PORT": ENVIRONMENT.get_value("DATABASE_PORT", default=None),
     }
 
     db_options = {
-        'OPTIONS': {
-            'sslmode': ENVIRONMENT.get_value('PGSSLMODE', default='prefer'),
-            'sslrootcert': ENVIRONMENT.get_value('PGSSLROOTCERT',
-                                                 default='/etc/rds-certs/rds-cacert')
+        "OPTIONS": {
+            "sslmode": ENVIRONMENT.get_value("PGSSLMODE", default="prefer"),
+            "sslrootcert": ENVIRONMENT.get_value("PGSSLROOTCERT", default="/etc/rds-certs/rds-cacert"),
         }
     }
     db_obj.update(db_options)
