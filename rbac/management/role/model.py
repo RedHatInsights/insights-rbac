@@ -52,6 +52,23 @@ class Role(models.Model):
         ordering = ["name", "modified"]
 
 
+class Permission(models.Model):
+    """Permission for access."""
+
+    app = models.TextField(null=False)
+    resource = models.TextField(null=False)
+    operation = models.TextField(null=False)
+    permission = models.TextField(null=False, unique=True)
+
+    def save(self, *args, **kwargs):
+        """Populate the app, resource and operation field before saving."""
+        context = self.permission.split(":")
+        self.app = context[0]
+        self.resource = context[1]
+        self.operation = context[2]
+        super(Permission, self).save(*args, **kwargs)
+
+
 class Access(models.Model):
     """An access object."""
 
