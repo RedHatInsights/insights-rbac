@@ -72,7 +72,8 @@ class Permission(models.Model):
 class Access(models.Model):
     """An access object."""
 
-    permission = models.TextField(null=False)
+    perm = models.TextField(null=False)
+    permission = models.ForeignKey(Permission, null=True, on_delete=models.CASCADE, related_name="access")
     role = models.ForeignKey(Role, null=True, on_delete=models.CASCADE, related_name="access")
 
     def permission_application(self):
@@ -81,7 +82,14 @@ class Access(models.Model):
 
     def split_permission(self):
         """Split the permission."""
-        return self.permission.split(":")
+        return self.perm.split(":")
+
+    def save(self, *args, **kwargs):
+        """When new Access object get created, populate the permission field."""
+        # This could be removed when current Access creation logic is modified in future
+        if self.perm:
+            self.permission, created = Permission.objects.get_or_create(permission=self.perm)
+        super(Access, self).save(*args, **kwargs)
 
 
 class ResourceDefinition(models.Model):

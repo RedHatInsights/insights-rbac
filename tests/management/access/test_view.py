@@ -96,7 +96,7 @@ class AccessViewTests(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         role_uuid = response.data.get("uuid")
         role = Role.objects.get(uuid=role_uuid)
-        access = Access.objects.create(role=role, permission="app2:foo:bar")
+        access = Access.objects.create(role=role, perm="app2:foo:bar")
         policy_name = "policyA"
         response = self.create_policy(policy_name, self.group.uuid, [role_uuid])
 
@@ -122,7 +122,7 @@ class AccessViewTests(IdentityRequest):
         response = self.create_role(role_name, access_data)
         role_uuid = response.data.get("uuid")
         role = Role.objects.get(uuid=role_uuid)
-        access = Access.objects.create(role=role, permission="app2:foo:bar")
+        access = Access.objects.create(role=role, perm="app2:foo:bar")
         self.create_policy(policy_name, self.group.uuid, [role_uuid])
 
         url = "{}?application=&username={}".format(reverse("access"), self.principal.username)
@@ -145,7 +145,7 @@ class AccessViewTests(IdentityRequest):
         response = self.create_role(role_name, access_data)
         role_uuid = response.data.get("uuid")
         role = Role.objects.get(uuid=role_uuid)
-        access = Access.objects.create(role=role, permission="app2:foo:bar")
+        access = Access.objects.create(role=role, perm="app2:foo:bar")
         self.create_policy(policy_name, self.group.uuid, [role_uuid])
 
         url = "{}?application={}&username={}".format(reverse("access"), "app,app2", self.principal.username)

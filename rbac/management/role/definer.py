@@ -55,7 +55,8 @@ def _make_role(tenant, data, update=False):
         if not update or (update and version_diff):
             for access_item in access_list:
                 resource_def_list = access_item.pop("resourceDefinitions", [])
-                access_obj = Access.objects.create(**access_item, role=role)
+                permission = access_item.pop("permission")
+                access_obj = Access.objects.create(perm=permission, role=role)
                 access_obj.save()
                 for resource_def_item in resource_def_list:
                     res_def = ResourceDefinition.objects.create(**resource_def_item, access=access_obj)
