@@ -18,7 +18,7 @@
 import logging
 
 from django.core.management.base import BaseCommand
-from management.seeds import group_seeding, role_seeding
+from management.seeds import group_seeding, permission_seeding, role_seeding
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
@@ -26,21 +26,29 @@ logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 class Command(BaseCommand):
     """Command class for running seeds."""
 
-    help = "Runs the seeding for roles and groups"
+    help = "Runs the seeding for roles, permissions and groups"
 
     def add_arguments(self, parser):
         """Add arguments to command."""
-        parser.add_argument("--roles-only", action="store_true")
-        parser.add_argument("--groups-only", action="store_true")
+        parser.add_argument("--permissions", action="store_true")
+        parser.add_argument("--roles", action="store_true")
+        parser.add_argument("--groups", action="store_true")
 
     def handle(self, *args, **options):
         """Handle method for command."""
-        if not options["groups_only"]:
+        seed_all = not (options["permissions"] or options["roles"] or options["groups"])
+
+        if options["permissions"] or seed_all:
+            logger.info("*** Seeding permissions... ***")
+            permission_seeding()
+            logger.info("*** Permission seeding completed. ***\n")
+
+        if options["roles"] or seed_all:
             logger.info("*** Seeding roles... ***")
             role_seeding()
             logger.info("*** Role seeding completed. ***\n")
 
-        if not options["roles_only"]:
+        if options["groups"] or seed_all:
             logger.info("*** Seeding groups... ***")
             group_seeding()
             logger.info("*** Group seeding completed. ***\n")

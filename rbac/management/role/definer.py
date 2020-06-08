@@ -22,7 +22,7 @@ import os
 
 from django.conf import settings
 from django.db import transaction
-from management.role.model import Access, ResourceDefinition, Role
+from management.role.model import Access, Permission, ResourceDefinition, Role
 from tenant_schemas.utils import tenant_context
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
@@ -83,4 +83,41 @@ def seed_roles(tenant, update=False):
                     data = json.load(json_file)
                     role_list = data.get("roles")
                     _update_or_create_roles(tenant, role_list, update)
+    return tenant
+
+
+def seed_permissions(tenant):
+    """For a tenant update or create defined permissions."""
+    permission_directory = os.path.join(settings.BASE_DIR, "management", "role", "permissions")
+    permission_files = [
+        f
+        for f in os.listdir(permission_directory)
+        if os.path.isfile(os.path.join(permission_directory, f)) and f.endswith(".json")
+    ]
+    # current_permission_ids = set()
+
+    with tenant_context(tenant):
+        with transaction.atomic():
+            for permission_file_name in permission_files:
+                permission_file_path = os.path.join(permission_directory, permission_file_name)
+                app_name = os.path.splitext(permission_file_name)[0]
+                with open(permission_file_path) as json_file:
+                    data = json.load(json_file)
+                    for resource, operations in data.items():
+                        for operation in operations:
+                            permission, created = Permission.objects.update_or_create(
+                                permission=f"{app_name}:{resource}:{operation}"
+                            )
+                            if created:
+                                logger.info(
+                                    f"Created permission {permission.permission} \
+                                    for tenant {tenant.schema_name}."
+                                )
+                            # current_permission_ids.add(permission.id)
+
+            # TODO: Remove permissions that are no longer exist, could enable later after enforcing
+            # all available permission from the permissions files (there might be some custom ones for
+            # Costmanagement or Remediations currently)
+            # Permission.objects.exclude(id__in=current_permission_ids).delete()
+            # Override delete methods for Permission to remove the related Access objects
     return tenant

@@ -92,6 +92,7 @@ Seeds
 
 Default roles and groups are automatically seeded when the application starts by default unless either of the following environment variables are set to 'False' respectively: ::
 
+  PERMISSION_SEEDING_ENABLED
   ROLE_SEEDING_ENABLED
   GROUP_SEEDING_ENABLED
 
@@ -99,7 +100,7 @@ Locally these are sourced from `/rbac/management/role/definitions/*.json`, while
 
 You can also execute the following Django command to run seeds manually. It's recommended that you disable caching while running seeds with `ACCESS_CACHE_ENABLED=False`. Caching will be busted after seeding for each set (roles/groups) has processed. You may also specify the number of concurrent threads in which seeds should be run, by setting `MAX_SEED_THREADS` either in the process, or the app environment. The default value is 2. *Be mindful of the fact that bumping this value will consume more database connections:* ::
 
-    ACCESS_CACHE_ENABLED=False MAX_SEED_THREADS=2 ./rbac/manage.py seeds [--roles-only|--groups-only]
+  ACCESS_CACHE_ENABLED=False MAX_SEED_THREADS=2 ./rbac/manage.py seeds [--roles|--groups|--permissions]
 
 Server
 ^^^^^^

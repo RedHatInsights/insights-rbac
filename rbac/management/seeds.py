@@ -44,15 +44,20 @@ def group_seeding():
     run_seeds("group")
 
 
+def permission_seeding():
+    """Execute permission seeding."""
+    run_seeds("permission")
+
+
 def run_seeds(seed_type):
-    """Update platform group at startup."""
+    """Update platform objects at startup."""
     # noqa: E402 pylint: disable=C0413
     from api.models import Tenant
     from management.group.definer import seed_group
-    from management.role.definer import seed_roles
+    from management.role.definer import seed_roles, seed_permissions
     from rbac.settings import MAX_SEED_THREADS
 
-    seed_functions = {"role": partial(seed_roles, update=True), "group": seed_group}
+    seed_functions = {"role": partial(seed_roles, update=True), "group": seed_group, "permission": seed_permissions}
 
     try:
         with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_SEED_THREADS) as executor:

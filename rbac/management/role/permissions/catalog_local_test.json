@@ -1,0 +1,8 @@
+{
+    "approval_requests": ["read", "write"],
+    "orders": ["read", "write", "order"],
+    "orders_items": ["read", "write", "order"],
+    "portfolios": ["create", "read", "update", "delete", "order"],
+    "portfolio_items": ["create", "read", "update", "delete", "order"],
+    "progress_messages": ["read", "write"]
+}
