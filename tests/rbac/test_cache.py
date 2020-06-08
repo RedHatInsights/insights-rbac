@@ -204,7 +204,7 @@ class AccessCacheTest(TestCase):
 
         cache.reset_mock()
         # If Access is added
-        self.access_a = Access.objects.create(permission="foo:*:*", role=self.role_a)
+        self.access_a = Access.objects.create(perm="foo:*:*", role=self.role_a)
         cache.assert_called_once()
         cache.assert_called_once_with(self.principal_a.uuid)
 
