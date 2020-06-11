@@ -20,7 +20,7 @@ import binascii
 import logging
 from json.decoder import JSONDecodeError
 
-from django.db import connections
+from django.db import connections, transaction
 from django.http import Http404, HttpResponse
 from django.utils.deprecation import MiddlewareMixin
 from tenant_schemas.middleware import BaseTenantMiddleware
@@ -74,10 +74,13 @@ class IdentityHeaderMiddleware(BaseTenantMiddleware):
                 except Tenant.DoesNotExist:
                     raise Http404()
             else:
-                tenant, created = Tenant.objects.get_or_create(schema_name=create_schema_name(request.user.account))
-                if created:
-                    seed_roles(tenant=tenant, update=False)
-                    seed_group(tenant=tenant)
+                with transaction.atomic():
+                    tenant, created = Tenant.objects.get_or_create(
+                        schema_name=create_schema_name(request.user.account)
+                    )
+                    if created:
+                        seed_roles(tenant=tenant, update=False)
+                        seed_group(tenant=tenant)
             TENANTS[request.user.account] = tenant
         return TENANTS[request.user.account]
 
