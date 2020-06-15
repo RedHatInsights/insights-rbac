@@ -52,10 +52,28 @@ class Role(models.Model):
         ordering = ["name", "modified"]
 
 
+class Permission(models.Model):
+    """Permission for access."""
+
+    app = models.TextField(null=False)
+    resource = models.TextField(null=False)
+    operation = models.TextField(null=False)
+    permission = models.TextField(null=False, unique=True)
+
+    def save(self, *args, **kwargs):
+        """Populate the app, resource and operation field before saving."""
+        context = self.permission.split(":")
+        self.app = context[0]
+        self.resource = context[1]
+        self.operation = context[2]
+        super(Permission, self).save(*args, **kwargs)
+
+
 class Access(models.Model):
     """An access object."""
 
-    permission = models.TextField(null=False)
+    perm = models.TextField(null=False)
+    permission = models.ForeignKey(Permission, null=True, on_delete=models.CASCADE, related_name="access")
     role = models.ForeignKey(Role, null=True, on_delete=models.CASCADE, related_name="access")
 
     def permission_application(self):
@@ -64,7 +82,14 @@ class Access(models.Model):
 
     def split_permission(self):
         """Split the permission."""
-        return self.permission.split(":")
+        return self.perm.split(":")
+
+    def save(self, *args, **kwargs):
+        """When new Access object get created, populate the permission field."""
+        # This could be removed when current Access creation logic is modified in future
+        if self.perm:
+            self.permission, created = Permission.objects.get_or_create(permission=self.perm)
+        super(Access, self).save(*args, **kwargs)
 
 
 class ResourceDefinition(models.Model):
