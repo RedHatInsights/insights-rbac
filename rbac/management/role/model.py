@@ -19,6 +19,7 @@
 import logging
 from uuid import uuid4
 
+from django.conf import settings
 from django.contrib.postgres.fields import JSONField
 from django.db import connections, models
 from django.db.models import signals
@@ -118,9 +119,10 @@ def role_related_obj_change_cache_handler(sender=None, instance=None, using=None
             cache.delete_policy(principal.uuid)
 
 
-signals.pre_delete.connect(role_related_obj_change_cache_handler, sender=Role)
-signals.pre_delete.connect(role_related_obj_change_cache_handler, sender=Access)
-signals.pre_delete.connect(role_related_obj_change_cache_handler, sender=ResourceDefinition)
-signals.post_save.connect(role_related_obj_change_cache_handler, sender=Role)
-signals.post_save.connect(role_related_obj_change_cache_handler, sender=Access)
-signals.post_save.connect(role_related_obj_change_cache_handler, sender=ResourceDefinition)
+if settings.ACCESS_CACHE_ENABLED:
+    signals.pre_delete.connect(role_related_obj_change_cache_handler, sender=Role)
+    signals.pre_delete.connect(role_related_obj_change_cache_handler, sender=Access)
+    signals.pre_delete.connect(role_related_obj_change_cache_handler, sender=ResourceDefinition)
+    signals.post_save.connect(role_related_obj_change_cache_handler, sender=Role)
+    signals.post_save.connect(role_related_obj_change_cache_handler, sender=Access)
+    signals.post_save.connect(role_related_obj_change_cache_handler, sender=ResourceDefinition)
