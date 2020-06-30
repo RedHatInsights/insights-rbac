@@ -40,7 +40,6 @@ class ResourceDefinitionSerializer(serializers.ModelSerializer):
 class AccessSerializer(serializers.ModelSerializer):
     """Serializer for the Access model."""
 
-    permission = serializers.CharField(source="perm")
     resourceDefinitions = ResourceDefinitionSerializer(many=True)
 
     def validate_permission(self, value):
@@ -109,8 +108,7 @@ class RoleSerializer(serializers.ModelSerializer):
         role.save()
         for access_item in access_list:
             resource_def_list = access_item.pop("resourceDefinitions")
-            permission = access_item.pop("perm")
-            access_obj = Access.objects.create(perm=permission, role=role)
+            access_obj = Access.objects.create(**access_item, role=role)
             access_obj.save()
             for resource_def_item in resource_def_list:
                 res_def = ResourceDefinition.objects.create(**resource_def_item, access=access_obj)
@@ -132,8 +130,7 @@ class RoleSerializer(serializers.ModelSerializer):
 
         for access_item in access_list:
             resource_def_list = access_item.pop("resourceDefinitions")
-            permission = access_item.pop("perm")
-            access_obj = Access.objects.create(perm=permission, role=instance)
+            access_obj = Access.objects.create(**access_item, role=instance)
             access_obj.save()
             for resource_def_item in resource_def_list:
                 res_def = ResourceDefinition.objects.create(**resource_def_item, access=access_obj)
@@ -251,7 +248,7 @@ def obtain_applications(obj):
     """Shared function to get the list of applications in the role."""
     apps = []
     for access_item in obj.access.all():
-        perm_list = access_item.perm.split(":")
+        perm_list = access_item.permission.split(":")
         perm_len = len(perm_list)
         if perm_len == 3:
             apps.append(perm_list[0])
