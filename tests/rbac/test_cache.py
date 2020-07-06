@@ -16,7 +16,9 @@
 #
 """Test the caching system."""
 
+from unittest import skipIf
 from unittest.mock import patch
+from rbac.settings import ACCESS_CACHE_ENABLED
 
 from django.db import connection
 from django.test import TestCase
@@ -25,6 +27,7 @@ from management.models import Access, Group, Policy, Principal, ResourceDefiniti
 from api.models import Tenant
 
 
+@skipIf(not ACCESS_CACHE_ENABLED, "Caching is disabled.")
 class AccessCacheTest(TestCase):
     def setUp(self):
         """Set up AccessCache tests."""
