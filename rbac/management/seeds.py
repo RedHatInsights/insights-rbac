@@ -19,7 +19,7 @@ import concurrent.futures
 import logging
 from functools import partial
 
-from django.db import connections, connection
+from django.db import connection, connections
 from management.cache import AccessCache
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
@@ -32,10 +32,12 @@ def on_complete(completed_log_message, future):
 
 
 def role_seeding():
+    """Execute role seeding."""
     run_seeds("role")
 
 
 def group_seeding():
+    """Execute group seeding."""
     run_seeds("group")
 
 
