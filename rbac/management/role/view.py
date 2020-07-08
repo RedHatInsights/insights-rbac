@@ -27,6 +27,7 @@ from django_filters import rest_framework as filters
 from management.permissions import RoleAccessPermission
 from management.querysets import get_role_queryset
 from management.role.serializer import AccessSerializer, RoleDynamicSerializer
+from management.utils import validate_and_get_key
 from rest_framework import mixins, serializers, viewsets
 from rest_framework.decorators import action
 from rest_framework.filters import OrderingFilter
@@ -37,6 +38,8 @@ from .serializer import RoleSerializer
 TESTING_APP = os.getenv("TESTING_APPLICATION")
 APP_WHITELIST = ["cost-management", "remediations"]
 ADDITIONAL_FIELDS_KEY = "add_fields"
+NAME_MATCH_KEY = "name_match"
+VALID_NAME_MATCHES = ["partial", "exact"]
 VALID_FIELD_VALUES = ["groups_in_count", "groups_in"]
 LIST_ROLE_FIELDS = [
     "uuid",
@@ -58,7 +61,16 @@ if TESTING_APP:
 class RoleFilter(filters.FilterSet):
     """Filter for role."""
 
-    name = filters.CharFilter(field_name="name", lookup_expr="icontains")
+    def name_filter(self, queryset, field, value):
+        """Filter for role to lookup name, partial or exact."""
+        match_criteria = validate_and_get_key(self.request.query_params, NAME_MATCH_KEY, VALID_NAME_MATCHES, "partial")
+
+        if match_criteria == "partial":
+            return queryset.filter(name__icontains=value)
+        elif match_criteria == "exact":
+            return queryset.filter(name__iexact=value)
+
+    name = filters.CharFilter(field_name="name", method="name_filter")
 
     class Meta:
         model = Role

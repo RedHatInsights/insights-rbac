@@ -225,10 +225,10 @@
             "$ref": "#/components/parameters/NameFilter"
           },
           {
-            "$ref": "#/components/parameters/ScopeFilter"
+            "$ref": "#/components/parameters/NameMatchCriteria"
           },
           {
-            "$ref": "#/components/parameters/NameMatchCriteria"
+            "$ref": "#/components/parameters/ScopeFilter"
           },
           {
             "name": "username",
@@ -1065,6 +1065,9 @@
           },
           {
             "$ref": "#/components/parameters/NameFilter"
+          },
+          {
+            "$ref": "#/components/parameters/NameMatchCriteria"
           },
           {
             "$ref": "#/components/parameters/ScopeFilter"
