@@ -52,11 +52,13 @@ EXCLUDE_KEY = "exclude"
 ORDERING_PARAM = "order_by"
 VALID_ROLE_ORDER_FIELDS = list(RoleViewSet.ordering_fields)
 ROLE_DISCRIMINATOR_KEY = "role_discriminator"
+NAME_MATCH_KEY = "name_match"
 VALID_EXCLUDE_VALUES = ["true", "false"]
 VALID_GROUP_ROLE_FILTERS = ["role_name", "role_description"]
 VALID_GROUP_PRINCIPAL_FILTERS = ["principal_username"]
 VALID_PRINCIPAL_ORDER_FIELDS = ["username"]
 VALID_ROLE_ROLE_DISCRIMINATOR = ["all", "any"]
+VALID_NAME_MATCHES = ["partial", "exact"]
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 
@@ -97,7 +99,16 @@ class GroupFilter(filters.FilterSet):
             queryset = queryset.filter(policies__roles__name__icontains=role_name)
         return queryset
 
-    name = filters.CharFilter(field_name="name", lookup_expr="icontains")
+    def name_filter(self, queryset, field, value):
+        """Filter for group to lookup name, partial or exact."""
+        match_criteria = validate_and_get_key(self.request.query_params, NAME_MATCH_KEY, VALID_NAME_MATCHES, "partial")
+
+        if match_criteria == "partial":
+            return queryset.filter(name__icontains=value)
+        elif match_criteria == "exact":
+            return queryset.filter(name__iexact=value)
+
+    name = filters.CharFilter(field_name="name", method="name_filter")
     role_names = filters.CharFilter(field_name="role_names", method="roles_filter")
     uuid = filters.CharFilter(field_name="uuid", method="uuid_filter")
 

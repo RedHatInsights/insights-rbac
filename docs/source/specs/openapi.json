@@ -228,6 +228,9 @@
             "$ref": "#/components/parameters/ScopeFilter"
           },
           {
+            "$ref": "#/components/parameters/NameMatchCriteria"
+          },
+          {
             "name": "username",
             "in": "query",
             "description": "A username for a principal to filter for groups",
@@ -1817,6 +1820,16 @@
             "principal"
           ],
           "default": "account"
+        }
+      },
+      "NameMatchCriteria": {
+        "in": "query",
+        "name": "name_match",
+        "required": false,
+        "description": "Parameter for specifying the matching criteria for an object's name.",
+        "schema": {
+          "type": "string",
+          "enum": ["partial", "exact"]
         }
       }
     },
