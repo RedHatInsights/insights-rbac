@@ -22,6 +22,7 @@ from uuid import UUID
 from django.db.models.aggregates import Count
 from django.utils.translation import gettext as _
 from django_filters import rest_framework as filters
+from management.filters import CommonFilters
 from management.group.definer import add_roles, remove_roles, set_system_flag_post_update
 from management.group.model import Group
 from management.group.serializer import (
@@ -32,7 +33,6 @@ from management.group.serializer import (
     GroupSerializer,
     RoleMinimumSerializer,
 )
-from management.filters import CommonFilters
 from management.permissions import GroupAccessPermission
 from management.principal.model import Principal
 from management.principal.proxy import PrincipalProxy
