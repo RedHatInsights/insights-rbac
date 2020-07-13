@@ -53,23 +53,6 @@ class Role(models.Model):
         ordering = ["name", "modified"]
 
 
-class Permission(models.Model):
-    """Permission for access."""
-
-    application = models.TextField(null=False)
-    resource_type = models.TextField(null=False)
-    verb = models.TextField(null=False)
-    permission = models.TextField(null=False, unique=True)
-
-    def save(self, *args, **kwargs):
-        """Populate the application, resource_type and verb field before saving."""
-        context = self.permission.split(":")
-        self.application = context[0]
-        self.resource_type = context[1]
-        self.verb = context[2]
-        super(Permission, self).save(*args, **kwargs)
-
-
 class CustomManager(models.Manager):
     """Control which fields to query."""
 

@@ -15,12 +15,16 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 
-"""API views for import organization"""
-# flake8: noqa
-# pylint: disable=unused-import
-from management.principal.view import PrincipalView
-from management.group.view import GroupViewSet
-from management.role.view import RoleViewSet
-from management.policy.view import PolicyViewSet
-from management.access.view import AccessView
-from management.permission.view import PermissionViewSet
+"""Serializer for permission management."""
+from management.models import Permission
+from rest_framework import serializers
+
+
+class PermissionSerializer(serializers.ModelSerializer):
+    """Serializer for the Permission model."""
+
+    class Meta:
+        """Metadata for the serializer."""
+
+        model = Permission
+        fields = ("app", "resource", "operation", "permission")
