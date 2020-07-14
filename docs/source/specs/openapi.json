@@ -1742,6 +1742,98 @@
           }
         }
       }
+    },
+    "/permissions/": {
+      "get": {
+        "tags": [
+          "Permission"
+        ],
+        "summary": "List the permissions for a tenant",
+        "description": "By default, responses are sorted in ascending order by permission application.",
+        "operationId": "listPermissions",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/QueryLimit"
+          },
+          {
+            "$ref": "#/components/parameters/QueryOffset"
+          },
+          {
+            "$ref": "#/components/parameters/OrderByFilter"
+          },
+          {
+            "name": "application",
+            "in": "query",
+            "description": "Partial match for the application name of a permission.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "resource",
+            "in": "query",
+            "description": "Partial match for the resource name of a permission.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "operation",
+            "in": "query",
+            "description": "Partial match for the operation name of a permission.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "permission",
+            "in": "query",
+            "description": "Partial match for the aggregate permission value name of a permission object.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A paginated list of permission objects",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PermissionPagination"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Insufficient permissions to list permissions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error403"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "servers": [
@@ -2659,6 +2751,47 @@
             }
           }
         }
+      },
+      "Permission": {
+        "properties": {
+          "app": {
+            "type": "string",
+            "example": "rbac"
+          },
+          "resource": {
+            "type": "string",
+            "example": "group"
+          },
+          "operation": {
+            "type": "string",
+            "example": "read"
+          },
+          "permission": {
+            "type": "string",
+            "example": "rbac:group:read"
+          }
+        }
+      },
+      "PermissionPagination": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ListPagination"
+          },
+          {
+            "type": "object",
+            "required": [
+              "data"
+            ],
+            "properties": {
+              "data": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Permission"
+                }
+              }
+            }
+          }
+        ]
       }
     }
   }
