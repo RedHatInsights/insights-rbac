@@ -208,6 +208,48 @@ class GroupViewsetTests(IdentityRequest):
         self.assertIsNotNone(group.get("name"))
         self.assertEqual(group.get("name"), self.group.name)
 
+    def test_get_group_by_partial_name_by_default(self):
+        """Test that getting groups by name returns partial match by default."""
+        url = reverse("group-list")
+        url = "{}?name={}".format(url, "group")
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        self.assertEqual(response.data.get("meta").get("count"), 5)
+
+    def test_get_group_by_partial_name_explicit(self):
+        """Test that getting groups by name returns partial match when specified."""
+        url = reverse("group-list")
+        url = "{}?name={}&name_match={}".format(url, "group", "partial")
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        self.assertEqual(response.data.get("meta").get("count"), 5)
+
+    def test_get_group_by_name_invalid_criteria(self):
+        """Test that getting groups by name fails with invalid name_match."""
+        url = reverse("group-list")
+        url = "{}?name={}&name_match={}".format(url, "group", "bad_criteria")
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_get_group_by_exact_name_match(self):
+        """Test that getting groups by name returns exact match."""
+        url = reverse("group-list")
+        url = "{}?name={}&name_match={}".format(url, self.group.name, "exact")
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        self.assertEqual(response.data.get("meta").get("count"), 1)
+        group = response.data.get("data")[0]
+        self.assertEqual(group.get("name"), self.group.name)
+
+    def test_get_group_by_exact_name_no_match(self):
+        """Test that getting groups by name returns no results with exact match."""
+        url = reverse("group-list")
+        url = "{}?name={}&name_match={}".format(url, "group", "exact")
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        self.assertEqual(response.data.get("meta").get("count"), 0)
+
     def test_filter_group_list_by_uuid_success(self):
         """Test that we can filter a list of groups by uuid."""
         url = f"{reverse('group-list')}?uuid={self.group.uuid}"
