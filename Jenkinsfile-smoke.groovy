@@ -4,6 +4,8 @@
 
 @Library("github.com/RedHatInsights/insights-pipeline-lib@v3") _
 
+def options = [vaultEnabled: true, settingsFromGit: true]
+
 if (env.CHANGE_ID) {
     execSmokeTest (
         ocDeployerBuilderPath: "rbac/rbac",
@@ -11,6 +13,6 @@ if (env.CHANGE_ID) {
         ocDeployerServiceSets: "rbac",
         iqePlugins: ["iqe-rbac-plugin"],
         pytestMarker: "rbac_smoke",
-        configFileCredentialsId: "settings_rbac_smoke"
+        appConfigs: [rbac: [plugins: ["rbac"]]]
     )
 }
