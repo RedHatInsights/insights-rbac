@@ -37,6 +37,7 @@ class Role(models.Model):
 
     uuid = models.UUIDField(default=uuid4, editable=False, unique=True, null=False)
     name = models.CharField(max_length=150, unique=True)
+    display_name = models.CharField(max_length=150, unique=True, default='')
     description = models.TextField(null=True)
     system = models.BooleanField(default=False)
     platform_default = models.BooleanField(default=False)

@@ -31,6 +31,7 @@ def _make_role(tenant, data, update=False):
     """Create the role object in the database."""
     with tenant_context(tenant):
         name = data.pop("name")
+        display_name = data.pop("display_name", name)
         description = data.pop("description", None)
         access_list = data.pop("access")
         version = data.pop("version", 1)
@@ -41,6 +42,7 @@ def _make_role(tenant, data, update=False):
             version_diff = version != role.version
             if created or (not created and version_diff):
                 logger.info("Updating role %s for tenant %s.", name, tenant.schema_name)
+                role.display_name = display_name
                 role.description = description
                 role.system = True
                 role.version = version
@@ -49,7 +51,12 @@ def _make_role(tenant, data, update=False):
                 role.access.all().delete()
         else:
             role = Role.objects.create(
-                name=name, description=description, system=True, version=version, platform_default=is_platform_default
+                name=name,
+                display_name=display_name,
+                description=description,
+                system=True,
+                version=version,
+                platform_default=is_platform_default
             )
             logger.info("Creating role %s for tenant %s.", name, tenant.schema_name)
         if not update or (update and version_diff):

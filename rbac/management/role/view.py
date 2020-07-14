@@ -41,6 +41,7 @@ VALID_FIELD_VALUES = ["groups_in_count", "groups_in"]
 LIST_ROLE_FIELDS = [
     "uuid",
     "name",
+    "display_name"
     "description",
     "created",
     "modified",
@@ -86,7 +87,7 @@ class RoleViewSet(
     lookup_field = "uuid"
     filter_backends = (filters.DjangoFilterBackend, OrderingFilter)
     filterset_class = RoleFilter
-    ordering_fields = ("name", "modified", "policyCount")
+    ordering_fields = ("name", "display_name", "modified", "policyCount")
     ordering = ("name",)
 
     def get_queryset(self):
@@ -125,6 +126,7 @@ class RoleViewSet(
         @apiParamExample {json} Request Body:
             {
                 "name": "RoleA",
+                "display_name": "ARoleName",
                 "access": [
                     {
                     "permission": "app:*:read",
@@ -148,6 +150,7 @@ class RoleViewSet(
             {
                 "uuid": "16fd2706-8baf-433b-82eb-8c7fada847da",
                 "name": "RoleA",
+                "display_name": "ARoleName",
                 "access": [
                     {
                     "permission": "app:*:read",
@@ -240,6 +243,7 @@ class RoleViewSet(
             {
                 "uuid": "16fd2706-8baf-433b-82eb-8c7fada847da",
                 "name": "RoleA",
+                "display_name": "ARoleName",
                 "access": [
                     {
                     "permission": "app:*:read",
@@ -305,6 +309,7 @@ class RoleViewSet(
         @apiParamExample {json} Request Body:
             {
                 "name": "RoleA",
+                "display_name": "ARoleName",
                 "access": [
                     {
                     "permission": "app:*:read",
