@@ -41,7 +41,7 @@ VALID_FIELD_VALUES = ["groups_in_count", "groups_in"]
 LIST_ROLE_FIELDS = [
     "uuid",
     "name",
-    "display_name"
+    "display_name",
     "description",
     "created",
     "modified",

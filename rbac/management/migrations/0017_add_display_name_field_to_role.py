@@ -13,17 +13,16 @@ def update_display_name(apps, schema_editor):
         role.display_name = role.name
         role.save()
 
+
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('management', '0016_make_bridge_for_migration'),
+        ("management", "0016_make_bridge_for_migration"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='role',
-            name='display_name',
-            field=models.CharField(max_length=150, null=True, unique=True),
+            model_name="role", name="display_name", field=models.CharField(max_length=150, null=True, unique=True),
         ),
         migrations.RunPython(update_display_name),
     ]

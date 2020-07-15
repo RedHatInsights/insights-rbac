@@ -56,7 +56,7 @@ def _make_role(tenant, data, update=False):
                 description=description,
                 system=True,
                 version=version,
-                platform_default=is_platform_default
+                platform_default=is_platform_default,
             )
             logger.info("Creating role %s for tenant %s.", name, tenant.schema_name)
         if not update or (update and version_diff):
