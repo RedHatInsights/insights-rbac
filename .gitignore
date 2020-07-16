@@ -118,4 +118,6 @@ rbac/staticfiles/
 scripts/aws_cost_usage/
 scripts/aws_pricing/
 
+# vscode files
 .vscode/
+.idea/
