@@ -110,14 +110,39 @@ class RoleViewsetTests(IdentityRequest):
     def test_create_role_success(self):
         """Test that we can create a role."""
         role_name = "roleA"
-        role_display = "TestA"
         access_data = [
             {
                 "permission": "app:*:*",
                 "resourceDefinitions": [{"attributeFilter": {"key": "keyA", "operation": "equal", "value": "valueA"}}],
             }
         ]
-        response = self.create_role(role_name, role_display, access_data)
+        response = self.create_role(role_name, in_access_data=access_data)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+        # test that we can retrieve the role
+        url = reverse("role-detail", kwargs={"uuid": response.data.get("uuid")})
+        client = APIClient()
+        response = client.get(url, **self.headers)
+
+        self.assertIsNotNone(response.data.get("uuid"))
+        self.assertIsNotNone(response.data.get("name"))
+        self.assertEqual(role_name, response.data.get("name"))
+        self.assertIsNotNone(response.data.get("display_name"))
+        self.assertEqual(role_name, response.data.get("display_name"))
+        self.assertIsInstance(response.data.get("access"), list)
+        self.assertEqual(access_data, response.data.get("access"))
+
+    def test_create_role_with_display_success(self):
+        """Test that we can create a role."""
+        role_name = "roleD"
+        role_display = "display name for roleD"
+        access_data = [
+            {
+                "permission": "app:*:*",
+                "resourceDefinitions": [{"attributeFilter": {"key": "keyA", "operation": "equal", "value": "valueA"}}],
+            }
+        ]
+        response = self.create_role(role_name, role_display=role_display, in_access_data=access_data)
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
 
         # test that we can retrieve the role
@@ -234,7 +259,8 @@ class RoleViewsetTests(IdentityRequest):
     def test_read_role_list_success(self):
         """Test that we can read a list of roles."""
         role_name = "roleA"
-        response = self.create_role(role_name)
+        role_display = "Display name for roleA"
+        response = self.create_role(role_name, role_display=role_display)
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         role_uuid = response.data.get("uuid")
 
@@ -260,6 +286,7 @@ class RoleViewsetTests(IdentityRequest):
                 self.assertEqual(iterRole.get("accessCount"), 1)
                 role = iterRole
         self.assertEqual(role.get("name"), role_name)
+        self.assertEqual(role.get("display_name"), role_display)
 
     def test_list_role_with_additional_fields_success(self):
         """Test that we can read a list of roles and add fields."""
