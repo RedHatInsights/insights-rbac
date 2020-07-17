@@ -129,7 +129,8 @@ def role_related_obj_change_cache_handler(sender=None, instance=None, using=None
             cache.delete_policy(principal.uuid)
 
 
-if settings.ACCESS_CACHE_ENABLED:
+if settings.ACCESS_CACHE_ENABLED and settings.ACCESS_CACHE_CONNECT_SIGNALS:
+
     signals.pre_delete.connect(role_related_obj_change_cache_handler, sender=Role)
     signals.pre_delete.connect(role_related_obj_change_cache_handler, sender=Access)
     signals.pre_delete.connect(role_related_obj_change_cache_handler, sender=ResourceDefinition)

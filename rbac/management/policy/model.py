@@ -92,7 +92,8 @@ def policy_to_roles_cache_handler(
                 cache.delete_policy(principal.uuid)
 
 
-if settings.ACCESS_CACHE_ENABLED:
+if settings.ACCESS_CACHE_ENABLED and settings.ACCESS_CACHE_CONNECT_SIGNALS:
+
     signals.post_save.connect(policy_changed_cache_handler, sender=Policy)
     signals.pre_delete.connect(policy_changed_cache_handler, sender=Policy)
     signals.m2m_changed.connect(policy_to_roles_cache_handler, sender=Policy.roles.through)
