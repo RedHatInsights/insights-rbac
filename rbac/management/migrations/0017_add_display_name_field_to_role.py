@@ -22,7 +22,7 @@ class Migration(migrations.Migration):
 
     operations = [
         migrations.AddField(
-            model_name="role", name="display_name", field=models.CharField(max_length=150, null=True, unique=True),
+            model_name="role", name="display_name", field=models.CharField(default="", max_length=150, unique=True),
         ),
         migrations.RunPython(update_display_name),
     ]
