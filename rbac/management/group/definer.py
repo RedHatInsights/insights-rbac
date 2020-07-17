@@ -18,8 +18,8 @@
 """Handler for system defined group."""
 import logging
 
-from django.db.models.query import QuerySet
 from django.db import transaction
+from django.db.models.query import QuerySet
 from management.group.model import Group
 from management.policy.model import Policy
 from management.role.model import Role
