@@ -49,7 +49,7 @@ def run_seeds(seed_type):
     from management.role.definer import seed_roles
     from rbac.settings import MAX_SEED_THREADS
 
-    seed_functions = {"role": seed_roles, "group": seed_group}
+    seed_functions = {"role": partial(seed_roles, update=True), "group": seed_group}
 
     try:
         with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_SEED_THREADS) as executor:
