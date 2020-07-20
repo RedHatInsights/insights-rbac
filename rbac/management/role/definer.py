@@ -43,7 +43,6 @@ def _make_role(tenant, data, update=False):
     role, created = Role.objects.get_or_create(name=name, defaults=defaults)
     version_diff = defaults["version"] != role.version
     if created or (not created and version_diff):
-        logger.info("Updating role %s for tenant %s.", name, tenant.schema_name)
         for attr, value in defaults.items():
             setattr(role, attr, value)
         role.save(force_update=True)
