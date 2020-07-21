@@ -39,9 +39,14 @@ def _make_role(tenant, data, update=False):
         version=data.get("version", 1),
         platform_default=data.get("platform_default", False),
     )
-    logger.info("%s role %s for tenant %s.", "Updating" if update else "Creating", name, tenant.schema_name)
     role, created = Role.objects.get_or_create(name=name, defaults=defaults)
     version_diff = defaults["version"] != role.version
+    if created:
+        logger.info("Created role %s for tenant %s.", name, tenant.schema_name)
+    elif version_diff:
+        logger.info("Updated role %s for tenant %s.", name, tenant.schema_name)
+    else:
+        logger.info("No change in role %s for tenant %s", name, tenant.schema_name)
     if created or (not created and version_diff):
         for attr, value in defaults.items():
             setattr(role, attr, value)

@@ -29,9 +29,7 @@ def on_complete(completed_log_message, tenant, future):
     """Explicitly close the connection for the thread."""
     logger.info("Purging policy cache.")
     cache = AccessCache(tenant.schema_name)
-    keys = cache.connection.keys(cache.key_for("*", "*"))
-    if keys:
-        cache.connection.delete(*keys)
+    cache.delete_all_policies_for_tenant()
     connections.close_all()
     logger.info(completed_log_message)
 
