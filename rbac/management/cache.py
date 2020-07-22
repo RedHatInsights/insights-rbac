@@ -34,11 +34,9 @@ class AccessCache:
                 raise
         return self._connection
 
-    def key_for(self, uuid, tenant=None):
+    def key_for(self, uuid):
         """Redis key for a given user policy."""
-        if not tenant:
-            tenant = self.tenant
-        return f"rbac::policy::tenant={tenant}::user={uuid}"
+        return f"rbac::policy::tenant={self.tenant}::user={uuid}"
 
     def get_policy(self, uuid, application):
         """Get the given user's policy for the given application."""

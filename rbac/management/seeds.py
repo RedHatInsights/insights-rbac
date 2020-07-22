@@ -19,14 +19,17 @@ import concurrent.futures
 import logging
 from functools import partial
 
-from django.db import connection, connections
+from django.db import connections
 from management.cache import AccessCache
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 
-def on_complete(completed_log_message, future):
+def on_complete(completed_log_message, tenant, future):
     """Explicitly close the connection for the thread."""
+    logger.info("Purging policy cache.")
+    cache = AccessCache(tenant.schema_name)
+    cache.delete_all_policies_for_tenant()
     connections.close_all()
     logger.info(completed_log_message)
 
@@ -49,7 +52,7 @@ def run_seeds(seed_type):
     from management.role.definer import seed_roles
     from rbac.settings import MAX_SEED_THREADS
 
-    seed_functions = {"role": seed_roles, "group": seed_group}
+    seed_functions = {"role": partial(seed_roles, update=True), "group": seed_group}
 
     try:
         with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_SEED_THREADS) as executor:
@@ -65,12 +68,6 @@ def run_seeds(seed_type):
                         f"Finished seeding {seed_type} changes for tenant "
                         f"{tenant.schema_name} [{idx + 1} of {tenant_count}]."
                     )
-                    future.add_done_callback(partial(on_complete, completed_log_message))
+                    future.add_done_callback(partial(on_complete, completed_log_message, tenant))
     except Exception as exc:
         logger.error(f"Error encountered during {seed_type} seeding {exc}.")
-    finally:
-        logger.info("Purging policy cache.")
-        cache = AccessCache(connection.schema_name)
-        keys = cache.connection.keys(cache.key_for("*", "*"))
-        if keys:
-            cache.connection.delete(*keys)
