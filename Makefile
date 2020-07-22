@@ -87,14 +87,13 @@ lint:
 	tox -elint
 
 reinitdb:
-	make stop-compose
-	make remove-db
 	make start-db
-	sleep 5
+	make reset-db
 	make run-migrations
 
-remove-db:
-	$(PREFIX) rm -rf $(TOPDIR)/pg_data
+reset-db:
+	docker-compose exec -u postgres db dropdb postgres
+	docker-compose exec -u postgres db createdb -Eutf8 -Ttemplate0 -Opostgres postgres
 
 make-migrations:
 	DJANGO_READ_DOT_ENV_FILE=True $(PYTHON) $(PYDIR)/manage.py makemigrations api management
