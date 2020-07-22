@@ -17,9 +17,10 @@
 """Test the role definer."""
 from tenant_schemas.utils import tenant_context
 
-from management.role.definer import seed_roles
+from management.role.definer import seed_roles, seed_permissions
 from tests.identity_request import IdentityRequest
 from management.models import Role
+from management.role.model import Permission
 
 
 class RoleDefinerTests(IdentityRequest):
@@ -71,3 +72,22 @@ class RoleDefinerTests(IdentityRequest):
             seed_roles(self.tenant, update=False)
         except Exception:
             self.fail(msg="seed_roles encountered an exception")
+
+    def try_seed_permissions(self):
+        """ Test permission seeding. """
+        with tenant_context(self.tenant):
+            self.assertFalse(len(Permission.objects.all()))
+
+        try:
+            seed_permissions(self.tenant)
+        except Exception:
+            self.fail(msg="seed_permissions encountered an exception")
+
+        with tenant_context(self.tenant):
+            self.assertTrue(len(Permission.objects.all()))
+
+            permission = Permission.objects.first()
+            self.assertTrue(permission.application)
+            self.assertTrue(permission.resource_type)
+            self.assertTrue(permission.verb)
+            self.assertTrue(permission.permission)
