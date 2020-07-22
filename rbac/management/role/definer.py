@@ -40,7 +40,7 @@ def _make_role(tenant, data, update=False):
         platform_default=data.get("platform_default", False),
     )
     role, created = Role.objects.get_or_create(name=name, defaults=defaults)
-    version_diff = defaults["version"] != role.version
+    version_diff = (defaults["version"] != role.version) or created
     if created:
         logger.info("Created role %s for tenant %s.", name, tenant.schema_name)
     elif version_diff:
