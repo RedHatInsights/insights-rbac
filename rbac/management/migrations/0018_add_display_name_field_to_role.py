@@ -17,7 +17,7 @@ def update_display_name(apps, schema_editor):
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("management", "0016_make_bridge_for_migration"),
+        ("management", "0017_auto_20200717_1842.py"),
     ]
 
     operations = [
