@@ -51,13 +51,15 @@ class AppsModelTest(TestCase):
     @patch("management.apps.sys.argv", ["manage.py", "runserver"])
     @patch("management.apps.role_seeding")
     @patch("management.apps.group_seeding")
-    def test_role_seeding(self, mock_role_seeding, mock_group_seeding):
-        """Test the server role seeding startup."""
+    @patch("management.apps.permission_seeding")
+    def test_objects_seeding(self, mock_role_seeding, mock_group_seeding, mock_permission_seeding):
+        """Test the server objects seeding startup."""
         mgmt_config = apps.get_app_config("management")
 
         mgmt_config.ready()
         mock_role_seeding.assert_called()
         mock_group_seeding.assert_called()
+        mock_permission_seeding.assert_called()
 
     def test_catch_operational_error(self):
         """Test that we handle exceptions thrown when tables are missing."""

@@ -30,7 +30,7 @@ from api.models import Tenant, User
 from api.serializers import create_schema_name, extract_header
 
 from management.group.definer import seed_group  # noqa: I100, I201
-from management.role.definer import seed_roles
+from management.role.definer import seed_permissions, seed_roles
 from management.utils import validate_psk
 
 
@@ -79,6 +79,7 @@ class IdentityHeaderMiddleware(BaseTenantMiddleware):
                         schema_name=create_schema_name(request.user.account)
                     )
                     if created:
+                        seed_permissions(tenant=tenant)
                         seed_roles(tenant=tenant, update=False)
                         seed_group(tenant=tenant)
             TENANTS[request.user.account] = tenant

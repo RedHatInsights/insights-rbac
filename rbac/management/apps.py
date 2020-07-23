@@ -20,9 +20,9 @@ import sys
 
 from django.apps import AppConfig
 from django.db.utils import OperationalError, ProgrammingError
-from management.seeds import group_seeding, role_seeding
+from management.seeds import group_seeding, permission_seeding, role_seeding
 
-from rbac.settings import GROUP_SEEDING_ENABLED, ROLE_SEEDING_ENABLED
+from rbac.settings import GROUP_SEEDING_ENABLED, PERMISSION_SEEDING_ENABLED, ROLE_SEEDING_ENABLED
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
@@ -38,6 +38,8 @@ class ManagementConfig(AppConfig):
         if "manage.py" in sys.argv[0] and "runserver" not in sys.argv:
             return
         try:
+            if PERMISSION_SEEDING_ENABLED:
+                permission_seeding()
             if ROLE_SEEDING_ENABLED:
                 role_seeding()
             if GROUP_SEEDING_ENABLED:

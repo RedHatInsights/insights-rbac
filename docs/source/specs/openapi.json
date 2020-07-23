@@ -225,6 +225,9 @@
             "$ref": "#/components/parameters/NameFilter"
           },
           {
+            "$ref": "#/components/parameters/NameMatchCriteria"
+          },
+          {
             "$ref": "#/components/parameters/ScopeFilter"
           },
           {
@@ -1064,6 +1067,9 @@
             "$ref": "#/components/parameters/NameFilter"
           },
           {
+            "$ref": "#/components/parameters/NameMatchCriteria"
+          },
+          {
             "$ref": "#/components/parameters/ScopeFilter"
           },
           {
@@ -1817,6 +1823,16 @@
             "principal"
           ],
           "default": "account"
+        }
+      },
+      "NameMatchCriteria": {
+        "in": "query",
+        "name": "name_match",
+        "required": false,
+        "description": "Parameter for specifying the matching criteria for an object's name.",
+        "schema": {
+          "type": "string",
+          "enum": ["partial", "exact"]
         }
       }
     },

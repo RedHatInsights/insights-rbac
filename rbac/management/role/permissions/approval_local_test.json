@@ -1,0 +1,6 @@
+{
+    "actions": ["create", "read"],
+    "requests": ["create", "read"],
+    "templates": ["read"],
+    "workflows": ["create", "read", "update", "delete", "link", "unlink"]
+}

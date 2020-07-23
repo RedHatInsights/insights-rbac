@@ -22,6 +22,7 @@ from uuid import UUID
 from django.db.models.aggregates import Count
 from django.utils.translation import gettext as _
 from django_filters import rest_framework as filters
+from management.filters import CommonFilters
 from management.group.definer import add_roles, remove_roles, set_system_flag_post_update
 from management.group.model import Group
 from management.group.serializer import (
@@ -60,7 +61,7 @@ VALID_ROLE_ROLE_DISCRIMINATOR = ["all", "any"]
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 
-class GroupFilter(filters.FilterSet):
+class GroupFilter(CommonFilters):
     """Filter for group."""
 
     def uuid_filter(self, queryset, field, values):
@@ -97,7 +98,7 @@ class GroupFilter(filters.FilterSet):
             queryset = queryset.filter(policies__roles__name__icontains=role_name)
         return queryset
 
-    name = filters.CharFilter(field_name="name", lookup_expr="icontains")
+    name = filters.CharFilter(field_name="name", method="name_filter")
     role_names = filters.CharFilter(field_name="role_names", method="roles_filter")
     uuid = filters.CharFilter(field_name="uuid", method="uuid_filter")
 

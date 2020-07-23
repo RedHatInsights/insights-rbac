@@ -21,7 +21,8 @@ import logging
 import os
 
 from django.conf import settings
-from management.role.model import Access, ResourceDefinition, Role
+from django.db import transaction
+from management.role.model import Access, Permission, ResourceDefinition, Role
 from tenant_schemas.utils import tenant_context
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
@@ -29,37 +30,34 @@ logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 def _make_role(tenant, data, update=False):
     """Create the role object in the database."""
-    with tenant_context(tenant):
-        name = data.pop("name")
-        description = data.pop("description", None)
-        access_list = data.pop("access")
-        version = data.pop("version", 1)
-        version_diff = False
-        is_platform_default = data.pop("platform_default", False)
-        if update:
-            role, created = Role.objects.filter(name=name).get_or_create(name=name)
-            version_diff = version != role.version
-            if created or (not created and version_diff):
-                logger.info("Updating role %s for tenant %s.", name, tenant.schema_name)
-                role.description = description
-                role.system = True
-                role.version = version
-                role.platform_default = is_platform_default
-                role.save()
-                role.access.all().delete()
-        else:
-            role = Role.objects.create(
-                name=name, description=description, system=True, version=version, platform_default=is_platform_default
-            )
-            logger.info("Creating role %s for tenant %s.", name, tenant.schema_name)
-        if not update or (update and version_diff):
-            for access_item in access_list:
-                resource_def_list = access_item.pop("resourceDefinitions", [])
-                access_obj = Access.objects.create(**access_item, role=role)
-                access_obj.save()
-                for resource_def_item in resource_def_list:
-                    res_def = ResourceDefinition.objects.create(**resource_def_item, access=access_obj)
-                    res_def.save()
+    name = data.pop("name")
+    version_diff = False
+    access_list = data.get("access")
+    defaults = dict(
+        description=data.get("description", None),
+        system=True,
+        version=data.get("version", 1),
+        platform_default=data.get("platform_default", False),
+    )
+    role, created = Role.objects.get_or_create(name=name, defaults=defaults)
+    version_diff = defaults["version"] != role.version
+    if created:
+        logger.info("Created role %s for tenant %s.", name, tenant.schema_name)
+    elif version_diff:
+        logger.info("Updated role %s for tenant %s.", name, tenant.schema_name)
+    else:
+        logger.info("No change in role %s for tenant %s", name, tenant.schema_name)
+    if created or (not created and version_diff):
+        for attr, value in defaults.items():
+            setattr(role, attr, value)
+        role.save(force_update=True)
+        role.access.all().delete()
+    if not update or (update and version_diff):
+        for access_item in access_list:
+            resource_def_list = access_item.pop("resourceDefinitions", [])
+            access_obj = Access.objects.create(**access_item, role=role)
+            for resource_def_item in resource_def_list:
+                ResourceDefinition.objects.create(**resource_def_item, access=access_obj)
     return role
 
 
@@ -77,10 +75,49 @@ def seed_roles(tenant, update=False):
         for f in os.listdir(roles_directory)
         if os.path.isfile(os.path.join(roles_directory, f)) and f.endswith(".json")
     ]
-    for role_file_name in role_files:
-        role_file_path = os.path.join(roles_directory, role_file_name)
-        with open(role_file_path) as json_file:
-            data = json.load(json_file)
-            role_list = data.get("roles")
-            _update_or_create_roles(tenant, role_list, update)
+    with tenant_context(tenant):
+        with transaction.atomic():
+            for role_file_name in role_files:
+                role_file_path = os.path.join(roles_directory, role_file_name)
+                with open(role_file_path) as json_file:
+                    data = json.load(json_file)
+                    role_list = data.get("roles")
+                    _update_or_create_roles(tenant, role_list, update)
+    return tenant
+
+
+def seed_permissions(tenant):
+    """For a tenant update or create defined permissions."""
+    permission_directory = os.path.join(settings.BASE_DIR, "management", "role", "permissions")
+    permission_files = [
+        f
+        for f in os.listdir(permission_directory)
+        if os.path.isfile(os.path.join(permission_directory, f)) and f.endswith(".json")
+    ]
+    # current_permission_ids = set()
+
+    with tenant_context(tenant):
+        with transaction.atomic():
+            for permission_file_name in permission_files:
+                permission_file_path = os.path.join(permission_directory, permission_file_name)
+                app_name = os.path.splitext(permission_file_name)[0]
+                with open(permission_file_path) as json_file:
+                    data = json.load(json_file)
+                    for resource, operations in data.items():
+                        for operation in operations:
+                            permission, created = Permission.objects.update_or_create(
+                                permission=f"{app_name}:{resource}:{operation}"
+                            )
+                            if created:
+                                logger.info(
+                                    f"Created permission {permission.permission} \
+                                    for tenant {tenant.schema_name}."
+                                )
+                            # current_permission_ids.add(permission.id)
+
+            # TODO: Remove permissions that are no longer exist, could enable later after enforcing
+            # all available permission from the permissions files (there might be some custom ones for
+            # Costmanagement or Remediations currently)
+            # Permission.objects.exclude(id__in=current_permission_ids).delete()
+            # Override delete methods for Permission to remove the related Access objects
     return tenant

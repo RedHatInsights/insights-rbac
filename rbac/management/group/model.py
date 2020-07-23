@@ -101,6 +101,6 @@ def principals_to_groups_cache_handler(
             cache.delete_policy(instance.uuid)
 
 
-if settings.ACCESS_CACHE_ENABLED:
+if settings.ACCESS_CACHE_ENABLED and settings.ACCESS_CACHE_CONNECT_SIGNALS:
     signals.pre_delete.connect(group_deleted_cache_handler, sender=Group)
     signals.m2m_changed.connect(principals_to_groups_cache_handler, sender=Group.principals.through)
