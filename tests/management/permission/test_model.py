@@ -43,8 +43,8 @@ class PermissionModelTests(IdentityRequest):
     def test_permission_has_attributes(self):
         """Test the permission has expected attributes."""
         with tenant_context(self.tenant):
-            self.assertEqual(self.permission.app, "rbac")
-            self.assertEqual(self.permission.resource, "roles")
-            self.assertEqual(self.permission.operation, "read")
+            self.assertEqual(self.permission.application, "rbac")
+            self.assertEqual(self.permission.resource_type, "roles")
+            self.assertEqual(self.permission.verb, "read")
             self.assertEqual(self.permission.permission, "rbac:roles:read")
             self.assertEqual(len(Permission._meta.fields), 5)

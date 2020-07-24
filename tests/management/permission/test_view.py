@@ -38,7 +38,7 @@ class PermissionViewsetTests(IdentityRequest):
         user.account = self.customer_data["account_id"]
         request.user = user
 
-        self.display_fields = {"app", "resource", "operation", "permission"}
+        self.display_fields = {"application", "resource_type", "verb", "permission"}
 
         with tenant_context(self.tenant):
             self.permissionA = Permission.objects.create(permission="rbac:roles:read")
@@ -65,9 +65,9 @@ class PermissionViewsetTests(IdentityRequest):
         self.assertEqual(len(response.data.get("data")), 4)
 
         for perm in response.data.get("data"):
-            self.assertIsNotNone(perm.get("app"))
-            self.assertIsNotNone(perm.get("resource"))
-            self.assertIsNotNone(perm.get("operation"))
+            self.assertIsNotNone(perm.get("application"))
+            self.assertIsNotNone(perm.get("resource_type"))
+            self.assertIsNotNone(perm.get("verb"))
             self.assertIsNotNone(perm.get("permission"))
             self.assertEqual(self.display_fields, set(perm.keys()))
 
@@ -81,10 +81,10 @@ class PermissionViewsetTests(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data.get("data")), 2)
 
-    def test_read_permission_list_resource_filter(self):
-        """Test that we can filter a list of permissions by resource."""
+    def test_read_permission_list_resource_type_filter(self):
+        """Test that we can filter a list of permissions by resource_type."""
         url = reverse("permission-list")
-        url = f"{url}?resource=roles"
+        url = f"{url}?resource_type=roles"
         client = APIClient()
         response = client.get(url, **self.headers)
 
@@ -92,10 +92,10 @@ class PermissionViewsetTests(IdentityRequest):
         self.assertEqual(len(response.data.get("data")), 1)
         self.assertEqual(response.data.get("data")[0].get("permission"), self.permissionA.permission)
 
-    def test_read_permission_list_operation_filter(self):
-        """Test that we can filter a list of permissions by operation."""
+    def test_read_permission_list_verb_filter(self):
+        """Test that we can filter a list of permissions by verb."""
         url = reverse("permission-list")
-        url = f"{url}?operation=read"
+        url = f"{url}?verb=read"
         client = APIClient()
         response = client.get(url, **self.headers)
 

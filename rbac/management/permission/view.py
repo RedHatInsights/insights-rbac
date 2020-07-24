@@ -27,9 +27,9 @@ from rest_framework.filters import OrderingFilter
 class PermissionFilter(filters.FilterSet):
     """Filter for role."""
 
-    application = filters.CharFilter(field_name="app", lookup_expr="icontains")
-    resource = filters.CharFilter(field_name="resource", lookup_expr="icontains")
-    operation = filters.CharFilter(field_name="operation", lookup_expr="icontains")
+    application = filters.CharFilter(field_name="application", lookup_expr="icontains")
+    resource_type = filters.CharFilter(field_name="resource_type", lookup_expr="icontains")
+    verb = filters.CharFilter(field_name="verb", lookup_expr="icontains")
     permission = filters.CharFilter(field_name="permission", lookup_expr="icontains")
 
 
@@ -45,8 +45,8 @@ class PermissionViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
     filter_backends = (filters.DjangoFilterBackend, OrderingFilter)
     serializer_class = PermissionSerializer
     filterset_class = PermissionFilter
-    ordering_fields = ("app", "resource", "operation", "permission")
-    ordering = ("app",)
+    ordering_fields = ("application", "resource_type", "verb", "permission")
+    ordering = ("application",)
 
     def list(self, request, *args, **kwargs):
         """Obtain the list of permissions for the tenant.
@@ -59,9 +59,9 @@ class PermissionViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
 
         @apiHeader {String} token User authorization token
 
-        @apiParam (Query) {String} app Filter by permission name.
-        @apiParam (Query) {String} resource Filter by permission name.
-        @apiParam (Query) {String} operation Filter by permission name.
+        @apiParam (Query) {String} application Filter by permission name.
+        @apiParam (Query) {String} resource_type Filter by permission name.
+        @apiParam (Query) {String} verb Filter by permission name.
         @apiParam (Query) {Number} offset Parameter for selecting the start of data (default is 0).
         @apiParam (Query) {Number} limit Parameter for selecting the amount of data (default is 10).
 
@@ -83,9 +83,9 @@ class PermissionViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
           },
           "data": [
             {
-              "app": "rbac",
-              "resource": "*",
-              "operation": "read",
+              "application": "rbac",
+              "resource_type": "*",
+              "verb": "read",
               "permission": "rbac:*:read"
             }
           ]

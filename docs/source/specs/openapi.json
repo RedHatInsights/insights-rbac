@@ -1771,18 +1771,18 @@
             }
           },
           {
-            "name": "resource",
+            "name": "resource_type",
             "in": "query",
-            "description": "Partial match for the resource name of a permission.",
+            "description": "Partial match for the resource type name of a permission.",
             "required": false,
             "schema": {
               "type": "string"
             }
           },
           {
-            "name": "operation",
+            "name": "verb",
             "in": "query",
-            "description": "Partial match for the operation name of a permission.",
+            "description": "Partial match for the operation verb name of a permission.",
             "required": false,
             "schema": {
               "type": "string"
@@ -2754,15 +2754,15 @@
       },
       "Permission": {
         "properties": {
-          "app": {
+          "application": {
             "type": "string",
             "example": "rbac"
           },
-          "resource": {
+          "resource_type": {
             "type": "string",
             "example": "group"
           },
-          "operation": {
+          "verb": {
             "type": "string",
             "example": "read"
           },
