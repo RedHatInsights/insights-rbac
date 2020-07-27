@@ -80,7 +80,7 @@ class IdentityHeaderMiddleware(BaseTenantMiddleware):
                     )
                     if created:
                         seed_permissions(tenant=tenant)
-                        seed_roles(tenant=tenant, update=False)
+                        seed_roles(tenant=tenant)
                         seed_group(tenant=tenant)
             TENANTS[request.user.account] = tenant
         return TENANTS[request.user.account]
