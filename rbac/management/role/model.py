@@ -55,7 +55,7 @@ class Role(models.Model):
 
     def save(self, *args, **kwargs):
         """Ensure that display_name is populated on save."""
-        if not self.display_name or self.display_name != self.name:
+        if not self.display_name or (self.display_name != self.name and not self.system):
             self.display_name = self.name
         super(Role, self).save(*args, **kwargs)
 
