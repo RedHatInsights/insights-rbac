@@ -29,7 +29,7 @@ class GroupDefinerTests(IdentityRequest):
     def setUp(self):
         """Set up the group definer tests."""
         super().setUp()
-        seed_roles(self.tenant, update=True)
+        seed_roles(self.tenant)
         seed_group(self.tenant)
 
     def test_default_group_seeding_properly(self):
