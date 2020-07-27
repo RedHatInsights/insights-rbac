@@ -32,7 +32,7 @@ class RoleModelTests(IdentityRequest):
 
         with tenant_context(self.tenant):
             self.roleA = Role.objects.create(name="roleA")
-            self.roleB = Role.objects.create(name="roleB")
+            self.roleB = Role.objects.create(name="roleB", system=True)
             self.roleA.save()
             self.roleB.save()
 
@@ -54,3 +54,11 @@ class RoleModelTests(IdentityRequest):
             self.roleA.save()
             self.assertEqual(self.roleA.name, "ARole")
             self.assertEqual(self.roleA.display_name, "ARole")
+
+    def test_display_name_for_updated_system_roles(self):
+        """Test that display_name is not updated on system role update."""
+        with tenant_context(self.tenant):
+            self.roleB.display_name = "BRole"
+            self.roleB.save()
+            self.assertEqual(self.roleB.name, "roleB")
+            self.assertEqual(self.roleB.display_name, "BRole")
