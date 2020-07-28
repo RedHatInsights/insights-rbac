@@ -1157,6 +1157,9 @@
               "type": "string",
               "format": "uuid"
             }
+          },
+          {
+            "$ref": "#/components/parameters/ScopeFilter"
           }
         ],
         "responses": {
