@@ -19,6 +19,7 @@
 import logging
 from uuid import uuid4
 
+from django.conf import settings
 from django.db import connections, models
 from django.db.models import signals
 from django.utils import timezone
@@ -100,5 +101,6 @@ def principals_to_groups_cache_handler(
             cache.delete_policy(instance.uuid)
 
 
-signals.pre_delete.connect(group_deleted_cache_handler, sender=Group)
-signals.m2m_changed.connect(principals_to_groups_cache_handler, sender=Group.principals.through)
+if settings.ACCESS_CACHE_ENABLED and settings.ACCESS_CACHE_CONNECT_SIGNALS:
+    signals.pre_delete.connect(group_deleted_cache_handler, sender=Group)
+    signals.m2m_changed.connect(principals_to_groups_cache_handler, sender=Group.principals.through)

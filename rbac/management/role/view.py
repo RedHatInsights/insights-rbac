@@ -24,6 +24,7 @@ from django.db.models.aggregates import Count
 from django.http import Http404
 from django.utils.translation import gettext as _
 from django_filters import rest_framework as filters
+from management.filters import CommonFilters
 from management.permissions import RoleAccessPermission
 from management.querysets import get_role_queryset
 from management.role.serializer import AccessSerializer, RoleDynamicSerializer
@@ -55,10 +56,10 @@ if TESTING_APP:
     APP_WHITELIST.append(TESTING_APP)
 
 
-class RoleFilter(filters.FilterSet):
+class RoleFilter(CommonFilters):
     """Filter for role."""
 
-    name = filters.CharFilter(field_name="name", lookup_expr="icontains")
+    name = filters.CharFilter(field_name="name", method="name_filter")
 
     class Meta:
         model = Role

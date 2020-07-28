@@ -57,7 +57,7 @@ class AccessSerializer(serializers.ModelSerializer):
         """Metadata for the serializer."""
 
         model = Access
-        fields = ("permission", "resourceDefinitions")
+        fields = ("resourceDefinitions", "permission")
 
 
 class RoleSerializer(serializers.ModelSerializer):
