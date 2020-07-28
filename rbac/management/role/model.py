@@ -19,6 +19,7 @@
 import logging
 from uuid import uuid4
 
+from django.conf import settings
 from django.contrib.postgres.fields import JSONField
 from django.db import connections, models
 from django.db.models import signals
@@ -52,11 +53,39 @@ class Role(models.Model):
         ordering = ["name", "modified"]
 
 
+class Permission(models.Model):
+    """Permission for access."""
+
+    application = models.TextField(null=False)
+    resource_type = models.TextField(null=False)
+    verb = models.TextField(null=False)
+    permission = models.TextField(null=False, unique=True)
+
+    def save(self, *args, **kwargs):
+        """Populate the application, resource_type and verb field before saving."""
+        context = self.permission.split(":")
+        self.application = context[0]
+        self.resource_type = context[1]
+        self.verb = context[2]
+        super(Permission, self).save(*args, **kwargs)
+
+
+class CustomManager(models.Manager):
+    """Control which fields to query."""
+
+    def get_queryset(self):
+        """Override default get_queryset to defer fields."""
+        return super(CustomManager, self).get_queryset().defer("perm")
+
+
 class Access(models.Model):
     """An access object."""
 
+    perm = models.TextField(null=False)
     permission = models.TextField(null=False)
     role = models.ForeignKey(Role, null=True, on_delete=models.CASCADE, related_name="access")
+
+    objects = CustomManager()
 
     def permission_application(self):
         """Return the application name from the permission."""
@@ -65,6 +94,13 @@ class Access(models.Model):
     def split_permission(self):
         """Split the permission."""
         return self.permission.split(":")
+
+    def save(self, *args, **kwargs):
+        """When new Access object get created, populate the permission field."""
+        # This could be removed when current Access creation logic is modified in future
+        if self.permission:
+            self.perm = self.permission
+        super(Access, self).save(*args, **kwargs)
 
 
 class ResourceDefinition(models.Model):
@@ -93,9 +129,11 @@ def role_related_obj_change_cache_handler(sender=None, instance=None, using=None
             cache.delete_policy(principal.uuid)
 
 
-signals.pre_delete.connect(role_related_obj_change_cache_handler, sender=Role)
-signals.pre_delete.connect(role_related_obj_change_cache_handler, sender=Access)
-signals.pre_delete.connect(role_related_obj_change_cache_handler, sender=ResourceDefinition)
-signals.post_save.connect(role_related_obj_change_cache_handler, sender=Role)
-signals.post_save.connect(role_related_obj_change_cache_handler, sender=Access)
-signals.post_save.connect(role_related_obj_change_cache_handler, sender=ResourceDefinition)
+if settings.ACCESS_CACHE_ENABLED and settings.ACCESS_CACHE_CONNECT_SIGNALS:
+
+    signals.pre_delete.connect(role_related_obj_change_cache_handler, sender=Role)
+    signals.pre_delete.connect(role_related_obj_change_cache_handler, sender=Access)
+    signals.pre_delete.connect(role_related_obj_change_cache_handler, sender=ResourceDefinition)
+    signals.post_save.connect(role_related_obj_change_cache_handler, sender=Role)
+    signals.post_save.connect(role_related_obj_change_cache_handler, sender=Access)
+    signals.post_save.connect(role_related_obj_change_cache_handler, sender=ResourceDefinition)

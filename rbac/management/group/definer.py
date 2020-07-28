@@ -18,7 +18,8 @@
 """Handler for system defined group."""
 import logging
 
-from django.core.exceptions import ValidationError
+from django.db import transaction
+from django.db.models.query import QuerySet
 from management.group.model import Group
 from management.policy.model import Policy
 from management.role.model import Role
@@ -30,22 +31,23 @@ logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 def seed_group(tenant):
     """For a tenant create or update default group."""
     with tenant_context(tenant):
-        name = "Default user access"
-        group_description = (
-            "This group contains the roles that all users inherit by default. "
-            "Adding or removing roles in this group will affect permissions for all users in your organization."
-        )
+        with transaction.atomic():
+            name = "Default user access"
+            group_description = (
+                "This group contains the roles that all users inherit by default. "
+                "Adding or removing roles in this group will affect permissions for all users in your organization."
+            )
 
-        group, group_created = Group.objects.get_or_create(
-            platform_default=True, defaults={"description": group_description, "name": name, "system": True}
-        )
+            group, group_created = Group.objects.get_or_create(
+                platform_default=True, defaults={"description": group_description, "name": name, "system": True}
+            )
 
-        if group.system:
-            platform_roles = Role.objects.filter(platform_default=True).values_list("uuid", flat=True)
-            add_roles(group, platform_roles, replace=True)
-            logger.info("Finished seeding default group %s for tenant %s.", name, tenant.schema_name)
-        else:
-            logger.info("Default group %s is managed by tenant %s.", name, tenant.schema_name)
+            if group.system:
+                platform_roles = Role.objects.filter(platform_default=True)
+                add_roles(group, platform_roles, replace=True)
+                logger.info("Finished seeding default group %s for tenant %s.", name, tenant.schema_name)
+            else:
+                logger.info("Default group %s is managed by tenant %s.", name, tenant.schema_name)
     return tenant
 
 
@@ -57,7 +59,7 @@ def set_system_flag_post_update(group):
     group.save()
 
 
-def add_roles(group, roles, replace=False):
+def add_roles(group, roles_or_role_ids, replace=False):
     """Process list of roles and add them to the group."""
     system_policy_name = "System Policy for Group {}".format(group.uuid)
     system_policy, system_policy_created = Policy.objects.get_or_create(
@@ -69,26 +71,21 @@ def add_roles(group, roles, replace=False):
         if replace:
             system_policy.roles.clear()
 
-    for role_id in roles:
-        try:
-            role = Role.objects.get(uuid=role_id)
-            system_policy.roles.add(role)
-        except (Role.DoesNotExist, ValidationError):
-            logger.info("No role with id %s to save to group.", role_id)
+    if not isinstance(roles_or_role_ids, QuerySet):
+        # If given an iterable of UUIDs, get the corresponding objects
+        roles = Role.objects.filter(uuid__in=roles_or_role_ids)
+    else:
+        roles = roles_or_role_ids
+
+    for role in roles:
+        system_policy.roles.add(role)
 
     system_policy.save()
 
 
 def remove_roles(group, role_ids):
     """Process list of roles and remove them from the group."""
-    roles = []
-    for role_id in role_ids:
-        try:
-            role = Role.objects.get(uuid=role_id)
-            roles.append(role)
-        except (Role.DoesNotExist, ValidationError):
-            logger.info("No role with id %s to delete from group.", role_id)
+    roles = Role.objects.filter(uuid__in=role_ids)
 
     for policy in group.policies.all():
         policy.roles.remove(*roles)
-        policy.save()
