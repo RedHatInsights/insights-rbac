@@ -29,10 +29,9 @@ from tenant_schemas.utils import tenant_context
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 
-def _make_role(tenant, data, update=False):
+def _make_role(tenant, data):
     """Create the role object in the database."""
     name = data.pop("name")
-    version_diff = False
     access_list = data.get("access")
     defaults = dict(
         description=data.get("description", None),
@@ -41,34 +40,31 @@ def _make_role(tenant, data, update=False):
         platform_default=data.get("platform_default", False),
     )
     role, created = Role.objects.get_or_create(name=name, defaults=defaults)
-    version_diff = defaults["version"] != role.version
     if created:
         logger.info("Created role %s for tenant %s.", name, tenant.schema_name)
-    elif version_diff:
-        logger.info("Updated role %s for tenant %s.", name, tenant.schema_name)
     else:
-        logger.info("No change in role %s for tenant %s", name, tenant.schema_name)
-    if created or (not created and version_diff):
-        for attr, value in defaults.items():
-            setattr(role, attr, value)
-        role.save(force_update=True)
-        role.access.all().delete()
-    if not update or (update and version_diff):
-        for access_item in access_list:
-            resource_def_list = access_item.pop("resourceDefinitions", [])
-            access_obj = Access.objects.create(**access_item, role=role)
-            for resource_def_item in resource_def_list:
-                ResourceDefinition.objects.create(**resource_def_item, access=access_obj)
+        if role.version != defaults["version"]:
+            Role.objects.filter(name=name).update(**defaults)
+            logger.info("Updated role %s for tenant %s.", name, tenant.schema_name)
+            role.access.all().delete()
+        else:
+            logger.info("No change in role %s for tenant %s", name, tenant.schema_name)
+            return role
+    for access_item in access_list:
+        resource_def_list = access_item.pop("resourceDefinitions", [])
+        access_obj = Access.objects.create(**access_item, role=role)
+        for resource_def_item in resource_def_list:
+            ResourceDefinition.objects.create(**resource_def_item, access=access_obj)
     return role
 
 
-def _update_or_create_roles(tenant, roles, update=False):
+def _update_or_create_roles(tenant, roles):
     """Update or create roles from list."""
     for role_json in roles:
-        _make_role(tenant, role_json, update)
+        _make_role(tenant, role_json)
 
 
-def seed_roles(tenant, update=False):
+def seed_roles(tenant):
     """For a tenant update or create system defined roles."""
     roles_directory = os.path.join(settings.BASE_DIR, "management", "role", "definitions")
     role_files = [
@@ -83,7 +79,7 @@ def seed_roles(tenant, update=False):
                 with open(role_file_path) as json_file:
                     data = json.load(json_file)
                     role_list = data.get("roles")
-                    _update_or_create_roles(tenant, role_list, update)
+                    _update_or_create_roles(tenant, role_list)
     return tenant
 
 

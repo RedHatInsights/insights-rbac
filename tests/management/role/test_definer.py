@@ -48,7 +48,7 @@ class RoleDefinerTests(IdentityRequest):
             roles = Role.objects.filter(platform_default=True)
             self.assertFalse(len(roles))
 
-            seed_roles(self.tenant, update=True)
+            seed_roles(self.tenant)
             roles = Role.objects.filter(platform_default=True)
             self.assertTrue(len(roles))
 
@@ -61,14 +61,14 @@ class RoleDefinerTests(IdentityRequest):
             roles = Role.objects.filter(platform_default=True).update(version=0, platform_default=False)
             self.assertFalse(len(Role.objects.filter(platform_default=True)))
 
-            seed_roles(self.tenant, update=True)
+            seed_roles(self.tenant)
             roles = Role.objects.filter(platform_default=True)
             self.assertTrue(len(roles))
 
     def try_seed_roles(self):
         """ Try to seed roles """
         try:
-            seed_roles(self.tenant, update=False)
+            seed_roles(self.tenant)
         except Exception:
             self.fail(msg="seed_roles encountered an exception")
 
