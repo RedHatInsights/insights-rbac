@@ -19,8 +19,7 @@ from tenant_schemas.utils import tenant_context
 
 from management.role.definer import seed_roles, seed_permissions
 from tests.identity_request import IdentityRequest
-from management.models import Role
-from management.role.model import Permission
+from management.models import Role, Permission
 
 
 class RoleDefinerTests(IdentityRequest):

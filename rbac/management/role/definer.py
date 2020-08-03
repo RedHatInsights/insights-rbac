@@ -22,7 +22,8 @@ import os
 
 from django.conf import settings
 from django.db import transaction
-from management.role.model import Access, Permission, ResourceDefinition, Role
+from management.permission.model import Permission
+from management.role.model import Access, ResourceDefinition, Role
 from tenant_schemas.utils import tenant_context
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name

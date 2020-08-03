@@ -15,12 +15,22 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 
-"""API views for import organization"""
-# flake8: noqa
-# pylint: disable=unused-import
-from management.principal.view import PrincipalView
-from management.group.view import GroupViewSet
-from management.role.view import RoleViewSet
-from management.policy.view import PolicyViewSet
-from management.access.view import AccessView
-from management.permission.view import PermissionViewSet
+"""Model for permission management."""
+from django.db import models
+
+
+class Permission(models.Model):
+    """A Permission."""
+
+    application = models.TextField(null=False)
+    resource_type = models.TextField(null=False)
+    verb = models.TextField(null=False)
+    permission = models.TextField(null=False, unique=True)
+
+    def save(self, *args, **kwargs):
+        """Populate the application, resource_type and verb field before saving."""
+        context = self.permission.split(":")
+        self.application = context[0]
+        self.resource_type = context[1]
+        self.verb = context[2]
+        super(Permission, self).save(*args, **kwargs)

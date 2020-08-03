@@ -21,3 +21,4 @@ from management.principal.model import Principal
 from management.group.model import Group
 from management.role.model import Access, ResourceDefinition, Role
 from management.policy.model import Policy
+from management.permission.model import Permission
