@@ -32,6 +32,7 @@ logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 def _make_role(tenant, data):
     """Create the role object in the database."""
     name = data.pop("name")
+    display_name = data.pop("display_name", name)
     access_list = data.get("access")
     defaults = dict(
         description=data.get("description", None),
@@ -39,7 +40,7 @@ def _make_role(tenant, data):
         version=data.get("version", 1),
         platform_default=data.get("platform_default", False),
     )
-    role, created = Role.objects.get_or_create(name=name, defaults=defaults)
+    role, created = Role.objects.get_or_create(name=name, display_name=display_name, defaults=defaults)
     if created:
         logger.info("Created role %s for tenant %s.", name, tenant.schema_name)
     else:
