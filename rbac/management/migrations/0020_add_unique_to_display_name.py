@@ -17,19 +17,15 @@ def update_display_name(apps, schema_editor):
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('management', '0019_recreate_display_name_field'),
+        ("management", "0019_recreate_display_name_field"),
     ]
 
     operations = [
         migrations.AlterField(
-            model_name='role',
-            name='display_name',
-            field=models.CharField(default='', max_length=150),
+            model_name="role", name="display_name", field=models.CharField(default="", max_length=150)
         ),
         migrations.RunPython(update_display_name),
         migrations.AlterField(
-            model_name='role',
-            name='display_name',
-            field=models.CharField(default='', max_length=150, unique=True)
+            model_name="role", name="display_name", field=models.CharField(default="", max_length=150, unique=True)
         ),
     ]

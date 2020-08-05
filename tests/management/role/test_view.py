@@ -42,15 +42,16 @@ class RoleViewsetTests(IdentityRequest):
         user.account = self.customer_data["account_id"]
         request.user = user
 
-        sys_role_config = {"name": "system_role", "system": True}
+        sys_role_config = {"name": "system_role", "display_name": "system", "system": True}
 
-        def_role_config = {"name": "default_role", "platform_default": True}
+        def_role_config = {"name": "default_role", "display_name": "default", "platform_default": True}
 
         self.display_fields = {
             "applications",
             "description",
             "uuid",
             "name",
+            "display_name",
             "system",
             "created",
             "policyCount",
@@ -88,7 +89,7 @@ class RoleViewsetTests(IdentityRequest):
             Principal.objects.all().delete()
             Role.objects.all().delete()
 
-    def create_role(self, role_name, in_access_data=None):
+    def create_role(self, role_name, role_display="", in_access_data=None):
         """Create a role."""
         access_data = [
             {
@@ -98,7 +99,7 @@ class RoleViewsetTests(IdentityRequest):
         ]
         if in_access_data:
             access_data = in_access_data
-        test_data = {"name": role_name, "access": access_data}
+        test_data = {"name": role_name, "display_name": role_display, "access": access_data}
 
         # create a role
         url = reverse("role-list")
@@ -115,7 +116,7 @@ class RoleViewsetTests(IdentityRequest):
                 "resourceDefinitions": [{"attributeFilter": {"key": "keyA", "operation": "equal", "value": "valueA"}}],
             }
         ]
-        response = self.create_role(role_name, access_data)
+        response = self.create_role(role_name, in_access_data=access_data)
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
 
         # test that we can retrieve the role
@@ -126,6 +127,34 @@ class RoleViewsetTests(IdentityRequest):
         self.assertIsNotNone(response.data.get("uuid"))
         self.assertIsNotNone(response.data.get("name"))
         self.assertEqual(role_name, response.data.get("name"))
+        self.assertIsNotNone(response.data.get("display_name"))
+        self.assertEqual(role_name, response.data.get("display_name"))
+        self.assertIsInstance(response.data.get("access"), list)
+        self.assertEqual(access_data, response.data.get("access"))
+
+    def test_create_role_with_display_success(self):
+        """Test that we can create a role."""
+        role_name = "roleD"
+        role_display = "display name for roleD"
+        access_data = [
+            {
+                "permission": "app:*:*",
+                "resourceDefinitions": [{"attributeFilter": {"key": "keyA", "operation": "equal", "value": "valueA"}}],
+            }
+        ]
+        response = self.create_role(role_name, role_display=role_display, in_access_data=access_data)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+        # test that we can retrieve the role
+        url = reverse("role-detail", kwargs={"uuid": response.data.get("uuid")})
+        client = APIClient()
+        response = client.get(url, **self.headers)
+
+        self.assertIsNotNone(response.data.get("uuid"))
+        self.assertIsNotNone(response.data.get("name"))
+        self.assertEqual(role_name, response.data.get("name"))
+        self.assertIsNotNone(response.data.get("display_name"))
+        self.assertEqual(role_display, response.data.get("display_name"))
         self.assertIsInstance(response.data.get("access"), list)
         self.assertEqual(access_data, response.data.get("access"))
 
@@ -154,7 +183,7 @@ class RoleViewsetTests(IdentityRequest):
                 "resourceDefinitions": [{"attributeFilter": {"key": "keyA", "operation": "equal", "value": "valueA"}}],
             }
         ]
-        response = self.create_role(role_name, access_data)
+        response = self.create_role(role_name, in_access_data=access_data)
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
 
         # test that we can retrieve the role
@@ -177,21 +206,21 @@ class RoleViewsetTests(IdentityRequest):
                 "resourceDefinitions": [{"attributeFilter": {"key": "keyA", "operation": "equal", "value": "valueA"}}],
             }
         ]
-        response = self.create_role(role_name, access_data)
+        response = self.create_role(role_name, in_access_data=access_data)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
     def test_create_role_fail_with_access_not_list(self):
         """Test that we cannot create a role for a non-whitelisted app."""
         role_name = "AccessNotList"
         access_data = "some data"
-        response = self.create_role(role_name, access_data)
+        response = self.create_role(role_name, in_access_data=access_data)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
     def test_create_role_fail_with_invalid_access(self):
         """Test that we cannot create a role for invalid access data."""
         role_name = "AccessInvalid"
         access_data = [{"per": "some data"}]
-        response = self.create_role(role_name, access_data)
+        response = self.create_role(role_name, in_access_data=access_data)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
     def test_read_role_invalid(self):
@@ -230,7 +259,8 @@ class RoleViewsetTests(IdentityRequest):
     def test_read_role_list_success(self):
         """Test that we can read a list of roles."""
         role_name = "roleA"
-        response = self.create_role(role_name)
+        role_display = "Display name for roleA"
+        response = self.create_role(role_name, role_display=role_display)
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         role_uuid = response.data.get("uuid")
 
@@ -256,48 +286,7 @@ class RoleViewsetTests(IdentityRequest):
                 self.assertEqual(iterRole.get("accessCount"), 1)
                 role = iterRole
         self.assertEqual(role.get("name"), role_name)
-
-    def test_get_role_by_partial_name_by_default(self):
-        """Test that getting roles by name returns partial match by default."""
-        url = reverse("role-list")
-        url = "{}?name={}".format(url, "role")
-        client = APIClient()
-        response = client.get(url, **self.headers)
-        self.assertEqual(response.data.get("meta").get("count"), 2)
-
-    def test_get_role_by_partial_name_explicit(self):
-        """Test that getting roles by name returns partial match when specified."""
-        url = reverse("role-list")
-        url = "{}?name={}&name_match={}".format(url, "role", "partial")
-        client = APIClient()
-        response = client.get(url, **self.headers)
-        self.assertEqual(response.data.get("meta").get("count"), 2)
-
-    def test_get_role_by_name_invalid_criteria(self):
-        """Test that getting roles by name fails with invalid name_match."""
-        url = reverse("role-list")
-        url = "{}?name={}&name_match={}".format(url, "role", "bad_criteria")
-        client = APIClient()
-        response = client.get(url, **self.headers)
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-
-    def test_get_role_by_exact_name_match(self):
-        """Test that getting roles by name returns exact match."""
-        url = reverse("role-list")
-        url = "{}?name={}&name_match={}".format(url, self.sysRole.name, "exact")
-        client = APIClient()
-        response = client.get(url, **self.headers)
-        self.assertEqual(response.data.get("meta").get("count"), 1)
-        role = response.data.get("data")[0]
-        self.assertEqual(role.get("name"), self.sysRole.name)
-
-    def test_get_role_by_exact_name_no_match(self):
-        """Test that getting roles by name returns no results with exact match."""
-        url = reverse("role-list")
-        url = "{}?name={}&name_match={}".format(url, "role", "exact")
-        client = APIClient()
-        response = client.get(url, **self.headers)
-        self.assertEqual(response.data.get("meta").get("count"), 0)
+        self.assertEqual(role.get("display_name"), role_display)
 
     def test_list_role_with_additional_fields_success(self):
         """Test that we can read a list of roles and add fields."""
