@@ -71,6 +71,8 @@ def policy_to_roles_cache_handler(
         if isinstance(instance, Policy):
             # One or more roles was added to/removed from the policy
             if instance.group:
+                if instance.group.platform_default:
+                    cache.delete_all_policies_for_tenant()
                 for principal in instance.group.principals.all():
                     cache.delete_policy(principal.uuid)
         elif isinstance(instance, Role):
