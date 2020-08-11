@@ -288,6 +288,48 @@ class RoleViewsetTests(IdentityRequest):
         self.assertEqual(role.get("name"), role_name)
         self.assertEqual(role.get("display_name"), role_display)
 
+    def test_get_role_by_partial_name_by_default(self):
+        """Test that getting roles by name returns partial match by default."""
+        url = reverse("role-list")
+        url = "{}?name={}".format(url, "role")
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        self.assertEqual(response.data.get("meta").get("count"), 2)
+
+    def test_get_role_by_partial_name_explicit(self):
+        """Test that getting roles by name returns partial match when specified."""
+        url = reverse("role-list")
+        url = "{}?name={}&name_match={}".format(url, "role", "partial")
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        self.assertEqual(response.data.get("meta").get("count"), 2)
+
+    def test_get_role_by_name_invalid_criteria(self):
+        """Test that getting roles by name fails with invalid name_match."""
+        url = reverse("role-list")
+        url = "{}?name={}&name_match={}".format(url, "role", "bad_criteria")
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_get_role_by_exact_name_match(self):
+        """Test that getting roles by name returns exact match."""
+        url = reverse("role-list")
+        url = "{}?name={}&name_match={}".format(url, self.sysRole.name, "exact")
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        self.assertEqual(response.data.get("meta").get("count"), 1)
+        role = response.data.get("data")[0]
+        self.assertEqual(role.get("name"), self.sysRole.name)
+
+    def test_get_role_by_exact_name_no_match(self):
+        """Test that getting roles by name returns no results with exact match."""
+        url = reverse("role-list")
+        url = "{}?name={}&name_match={}".format(url, "role", "exact")
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        self.assertEqual(response.data.get("meta").get("count"), 0)
+
     def test_list_role_with_additional_fields_success(self):
         """Test that we can read a list of roles and add fields."""
         role_name = "roleA"
