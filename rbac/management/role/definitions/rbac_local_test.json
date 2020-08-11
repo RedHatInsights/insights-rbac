@@ -1,10 +1,9 @@
 {
     "roles": [{
         "name": "RBAC Administrator Local Test",
-        "display_name": "Jenny",
         "description": "A administrator role that grants read and write permissions for groups, roles and policies, just for testing locally.",
         "system": true,
-        "version": 6,
+        "version": 2,
         "access": [{
             "permission": "rbac:*:*"
         }]
