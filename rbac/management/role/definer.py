@@ -44,6 +44,7 @@ def _make_role(tenant, data):
     if created:
         if role.display_name != display_name:
             role.display_name = display_name
+            role.save()
         logger.info("Created role %s for tenant %s.", name, tenant.schema_name)
     else:
         if role.version != defaults["version"]:
