@@ -127,6 +127,53 @@ class PermissionViewsetTests(IdentityRequest):
         response = client.delete(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_405_METHOD_NOT_ALLOWED)
 
+    def test_filters_multiple_appliation_values(self):
+        """Test that we can filter permissions with multiple application values."""
+        with tenant_context(self.tenant):
+            expected_permissions = list(Permission.objects.values_list("permission", flat=True))
+
+        url = reverse("permission-list")
+        url = f"{url}?application=rbac,acme"
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        response_permissions = [p.get("permission") for p in response.data.get("data")]
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data.get("data")), 4)
+        self.assertCountEqual(expected_permissions, response_permissions)
+
+    def test_filters_multiple_resource_type_values(self):
+        """Test that we can filter permissions with multiple resource_type values."""
+        with tenant_context(self.tenant):
+            expected_permissions = list(Permission.objects.values_list("permission", flat=True))
+
+        url = reverse("permission-list")
+        url = f"{url}?resource_type=roles,*"
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        response_permissions = [p.get("permission") for p in response.data.get("data")]
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data.get("data")), 4)
+        self.assertCountEqual(expected_permissions, response_permissions)
+
+    def test_filters_multiple_verb_values(self):
+        """Test that we can filter permissions with multiple verb values."""
+        with tenant_context(self.tenant):
+            expected_permissions = list(
+                Permission.objects.values_list("permission", flat=True).filter(verb__in=["read", "write"])
+            )
+
+        url = reverse("permission-list")
+        url = f"{url}?verb=read,write"
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        response_permissions = [p.get("permission") for p in response.data.get("data")]
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data.get("data")), 2)
+        self.assertCountEqual(expected_permissions, response_permissions)
+
 
 class PermissionViewsetTestsNonAdmin(IdentityRequest):
     """Test the permission viewset."""
