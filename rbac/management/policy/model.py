@@ -71,12 +71,16 @@ def policy_to_roles_cache_handler(
         if isinstance(instance, Policy):
             # One or more roles was added to/removed from the policy
             if instance.group:
+                if instance.group.platform_default:
+                    cache.delete_all_policies_for_tenant()
                 for principal in instance.group.principals.all():
                     cache.delete_policy(principal.uuid)
         elif isinstance(instance, Role):
             # One or more policies was added to/removed from the role
             for policy in Policy.objects.filter(pk__in=pk_set):
                 if policy.group:
+                    if policy.group.platform_default:
+                        cache.delete_all_policies_for_tenant()
                     for principal in policy.group.principals.all():
                         cache.delete_policy(principal.uuid)
     elif action == "pre_clear":
@@ -84,6 +88,8 @@ def policy_to_roles_cache_handler(
         if isinstance(instance, Policy):
             # All roles are being removed from this policy
             if instance.group:
+                if instance.group.platform_default:
+                    cache.delete_all_policies_for_tenant()
                 for principal in instance.group.principals.all():
                     cache.delete_policy(principal.uuid)
         elif isinstance(instance, Role):
