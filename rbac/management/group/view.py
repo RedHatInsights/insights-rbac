@@ -74,9 +74,7 @@ class GroupFilter(CommonFilters):
                 key = "groups uuid filter"
                 message = f"{uuid} is not a valid UUID."
                 raise serializers.ValidationError({key: _(message)})
-        filters = {f"{field}__in": uuids}
-        filtered_set = queryset.filter(**filters)
-        return filtered_set
+        return CommonFilters.multiple_values_in(self, queryset, field, values)
 
     def roles_filter(self, queryset, field, values):
         """Filter for group to lookup list of role name."""
