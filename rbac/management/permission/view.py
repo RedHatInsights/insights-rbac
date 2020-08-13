@@ -17,6 +17,7 @@
 
 """View for permission management."""
 from django_filters import rest_framework as filters
+from management.filters import CommonFilters
 from management.models import Permission
 from management.permission.serializer import PermissionSerializer
 from management.permissions.admin_access import AdminAccessPermission
@@ -24,12 +25,12 @@ from rest_framework import mixins, viewsets
 from rest_framework.filters import OrderingFilter
 
 
-class PermissionFilter(filters.FilterSet):
+class PermissionFilter(CommonFilters):
     """Filter for role."""
 
-    application = filters.CharFilter(field_name="application", lookup_expr="icontains")
-    resource_type = filters.CharFilter(field_name="resource_type", lookup_expr="icontains")
-    verb = filters.CharFilter(field_name="verb", lookup_expr="icontains")
+    application = filters.CharFilter(field_name="application", method="multiple_values_in")
+    resource_type = filters.CharFilter(field_name="resource_type", method="multiple_values_in")
+    verb = filters.CharFilter(field_name="verb", method="multiple_values_in")
     permission = filters.CharFilter(field_name="permission", lookup_expr="icontains")
 
 

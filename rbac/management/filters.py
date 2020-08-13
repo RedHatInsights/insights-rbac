@@ -34,3 +34,11 @@ class CommonFilters(filters.FilterSet):
             return queryset.filter(name__icontains=value)
         elif match_criteria == "exact":
             return queryset.filter(name__iexact=value)
+
+    def multiple_values_in(self, queryset, field, values):
+        """Filter for multiple value lookup."""
+        if isinstance(values, str):
+            values = values.split(",")
+
+        filters = {f"{field}__in": values}
+        return queryset.filter(**filters)
