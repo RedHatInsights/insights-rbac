@@ -32,6 +32,7 @@ logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 def _make_role(tenant, data):
     """Create the role object in the database."""
     name = data.pop("name")
+    display_name = data.get("display_name", name)
     access_list = data.get("access")
     defaults = dict(
         description=data.get("description", None),
@@ -41,10 +42,13 @@ def _make_role(tenant, data):
     )
     role, created = Role.objects.get_or_create(name=name, defaults=defaults)
     if created:
+        if role.display_name != display_name:
+            role.display_name = display_name
+            role.save()
         logger.info("Created role %s for tenant %s.", name, tenant.schema_name)
     else:
         if role.version != defaults["version"]:
-            Role.objects.filter(name=name).update(**defaults)
+            Role.objects.filter(name=name).update(**defaults, display_name=display_name)
             logger.info("Updated role %s for tenant %s.", name, tenant.schema_name)
             role.access.all().delete()
         else:

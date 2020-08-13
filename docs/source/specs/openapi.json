@@ -2399,6 +2399,10 @@
             "type": "string",
             "example": "RoleA"
           },
+          "display_name": {
+            "type": "string",
+            "example": "ARoleName"
+          },
           "description": {
             "type": "string",
             "example": "A description of RoleA"
