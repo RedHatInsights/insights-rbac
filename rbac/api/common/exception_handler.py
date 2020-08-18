@@ -65,9 +65,9 @@ def custom_exception_handler(exc, context):
         errors = []
         data = copy.deepcopy(response.data)
         if isinstance(data, dict):
-            errors += _generate_errors_from_dict(data, **{"status_code": response.status_code})
+            errors += _generate_errors_from_dict(data, **{"status_code": str(response.status_code)})
         elif isinstance(data, list):
-            errors += _generate_errors_from_list(data, **{"status_code": response.status_code})
+            errors += _generate_errors_from_list(data, **{"status_code": str(response.status_code)})
         error_response = {"errors": errors}
         response.data = error_response
 

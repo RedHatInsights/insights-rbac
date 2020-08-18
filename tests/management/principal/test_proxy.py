@@ -131,7 +131,7 @@ class PrincipalProxyTest(TestCase):
         """Test request with expected 404."""
         proxy = PrincipalProxy()
         result = proxy._request_principals(url="http://localhost:8080/v1/users", method=mocked_requests_get_404_json)
-        expected = {"status_code": 404, "errors": [{"detail": "Not Found.", "status": 404, "source": "principals"}]}
+        expected = {"status_code": 404, "errors": [{"detail": "Not Found.", "status": "404", "source": "principals"}]}
         self.assertEqual(expected, result)
 
     def test__request_principals_500(self):
@@ -140,7 +140,7 @@ class PrincipalProxyTest(TestCase):
         result = proxy._request_principals(url="http://localhost:8080/v1/users", method=mocked_requests_get_500_json)
         expected = {
             "status_code": 500,
-            "errors": [{"detail": "Unexpected error.", "status": 500, "source": "principals"}],
+            "errors": [{"detail": "Unexpected error.", "status": "500", "source": "principals"}],
         }
         self.assertEqual(expected, result)
 
@@ -150,7 +150,7 @@ class PrincipalProxyTest(TestCase):
         result = proxy._request_principals(url="http://localhost:8080/v1/users", method=mocked_requests_get_500_except)
         expected = {
             "status_code": 500,
-            "errors": [{"detail": "Unexpected error.", "status": 500, "source": "principals"}],
+            "errors": [{"detail": "Unexpected error.", "status": "500", "source": "principals"}],
         }
         self.assertEqual(expected, result)
 
@@ -197,6 +197,6 @@ class PrincipalProxyTest(TestCase):
         result = proxy._request_principals(url="http://localhost:8080/v1/users", method=mocked_requests_get_200_except)
         expected = {
             "status_code": 500,
-            "errors": [{"detail": "Unexpected error.", "status": 500, "source": "principals"}],
+            "errors": [{"detail": "Unexpected error.", "status": "500", "source": "principals"}],
         }
         self.assertEqual(expected, result)

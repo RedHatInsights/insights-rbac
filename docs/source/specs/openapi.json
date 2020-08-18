@@ -1972,9 +1972,6 @@
             "type": "array",
             "items": {
               "type": "object",
-              "required": [
-                "status"
-              ],
               "properties": {
                 "detail": {
                   "type": "string",
@@ -1984,6 +1981,7 @@
                   "type": "string",
                   "example": "403"
                 }
+              }
             }
           }
         }
@@ -1997,9 +1995,6 @@
             "type": "array",
             "items": {
               "type": "object",
-              "required": [
-                "status"
-              ],
               "properties": {
                 "detail": {
                   "type": "string",
