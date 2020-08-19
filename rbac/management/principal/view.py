@@ -79,7 +79,7 @@ class PrincipalView(APIView):
     permission_classes = (AdminAccessPermission,)
 
     def get(self, request):
-        """List prinicpals for account."""
+        """List principals for account."""
         proxy = PrincipalProxy()
         user = self.request.user
         path = self.request.path
@@ -97,7 +97,7 @@ class PrincipalView(APIView):
             error = {
                 "detail": "Values for limit and offset must be positive numbers.",
                 "source": "principals",
-                "status": status.HTTP_400_BAD_REQUEST,
+                "status": str(status.HTTP_400_BAD_REQUEST),
             }
             errors = {"errors": [error]}
             return Response(status=status.HTTP_400_BAD_REQUEST, data=errors)

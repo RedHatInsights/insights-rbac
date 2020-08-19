@@ -1972,9 +1972,15 @@
             "type": "array",
             "items": {
               "type": "object",
-              "example": {
-                "detail": "Not Found.",
-                "status": 404
+              "properties": {
+                "detail": {
+                  "type": "string",
+                  "example": "Not found."
+                },
+                "status": {
+                  "type": "string",
+                  "example": "403"
+                }
               }
             }
           }
@@ -1989,10 +1995,19 @@
             "type": "array",
             "items": {
               "type": "object",
-              "example": {
-                "detail": "You do not have permission to perform this action.",
-                "source": "detail",
-                "status": 403
+              "properties": {
+                "detail": {
+                  "type": "string",
+                  "example": "You do not have permission to perform this action."
+                },
+                "source": {
+                  "type": "string",
+                  "example": "detail"
+                },
+                "status": {
+                  "type": "string",
+                  "example": "403"
+                }
               }
             }
           }

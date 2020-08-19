@@ -26,7 +26,6 @@ from rest_framework import status
 
 from rbac.env import ENVIRONMENT
 
-
 LOGGER = logging.getLogger(__name__)
 PROTOCOL = "protocol"
 HOST = "host"
@@ -133,7 +132,7 @@ class PrincipalProxy:  # pylint: disable=too-few-public-methods
         headers = {USER_ENV_HEADER: self.user_env, CLIENT_ID_HEADER: self.client_id, API_TOKEN_HEADER: self.api_token}
         unexpected_error = {
             "detail": "Unexpected error.",
-            "status": status.HTTP_500_INTERNAL_SERVER_ERROR,
+            "status": str(status.HTTP_500_INTERNAL_SERVER_ERROR),
             "source": "principals",
         }
         try:
@@ -162,11 +161,11 @@ class PrincipalProxy:  # pylint: disable=too-few-public-methods
                 resp["status_code"] = status.HTTP_500_INTERNAL_SERVER_ERROR
                 error = unexpected_error
         elif response.status_code == status.HTTP_404_NOT_FOUND:
-            error = {"detail": "Not Found.", "status": response.status_code, "source": "principals"}
+            error = {"detail": "Not Found.", "status": str(response.status_code), "source": "principals"}
         else:
             LOGGER.error("Error calling URL %s -- status=%d", url, response.status_code)
             error = unexpected_error
-            error["status"] = response.status_code
+            error["status"] = str(response.status_code)
         if error:
             resp["errors"] = [error]
         return resp
