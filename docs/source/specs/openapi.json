@@ -2113,6 +2113,9 @@
           },
           "is_active": {
             "type": "boolean"
+          },
+          "is_org_admin": {
+            "type": "boolean"
           }
         }
       },
