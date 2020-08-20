@@ -37,6 +37,7 @@ class Role(models.Model):
 
     uuid = models.UUIDField(default=uuid4, editable=False, unique=True, null=False)
     name = models.CharField(max_length=150, unique=True)
+    display_name = models.CharField(max_length=150, default="")
     description = models.TextField(null=True)
     system = models.BooleanField(default=False)
     platform_default = models.BooleanField(default=False)
@@ -52,22 +53,11 @@ class Role(models.Model):
     class Meta:
         ordering = ["name", "modified"]
 
-
-class Permission(models.Model):
-    """Permission for access."""
-
-    application = models.TextField(null=False)
-    resource_type = models.TextField(null=False)
-    verb = models.TextField(null=False)
-    permission = models.TextField(null=False, unique=True)
-
     def save(self, *args, **kwargs):
-        """Populate the application, resource_type and verb field before saving."""
-        context = self.permission.split(":")
-        self.application = context[0]
-        self.resource_type = context[1]
-        self.verb = context[2]
-        super(Permission, self).save(*args, **kwargs)
+        """Ensure that display_name is populated on save."""
+        if not self.display_name:
+            self.display_name = self.name
+        super(Role, self).save(*args, **kwargs)
 
 
 class CustomManager(models.Manager):

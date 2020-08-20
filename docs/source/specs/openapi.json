@@ -1745,6 +1745,98 @@
           }
         }
       }
+    },
+    "/permissions/": {
+      "get": {
+        "tags": [
+          "Permission"
+        ],
+        "summary": "List the permissions for a tenant",
+        "description": "By default, responses are sorted in ascending order by permission application.",
+        "operationId": "listPermissions",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/QueryLimit"
+          },
+          {
+            "$ref": "#/components/parameters/QueryOffset"
+          },
+          {
+            "$ref": "#/components/parameters/OrderByFilter"
+          },
+          {
+            "name": "application",
+            "in": "query",
+            "description": "Exact match for the application name of a permission. You may also use a comma-separated list to match on multiple applications.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "resource_type",
+            "in": "query",
+            "description": "Exact match for the resource type name of a permission. You may also use a comma-separated list to match on multiple resource_types.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "verb",
+            "in": "query",
+            "description": "Exact match for the operation verb name of a permission You may also use a comma-separated list to match on multiple verbs.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "permission",
+            "in": "query",
+            "description": "Partial match for the aggregate permission value name of a permission object.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A paginated list of permission objects",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PermissionPagination"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Insufficient permissions to list permissions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error403"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "servers": [
@@ -1880,9 +1972,15 @@
             "type": "array",
             "items": {
               "type": "object",
-              "example": {
-                "detail": "Not Found.",
-                "status": 404
+              "properties": {
+                "detail": {
+                  "type": "string",
+                  "example": "Not found."
+                },
+                "status": {
+                  "type": "string",
+                  "example": "403"
+                }
               }
             }
           }
@@ -1897,10 +1995,19 @@
             "type": "array",
             "items": {
               "type": "object",
-              "example": {
-                "detail": "You do not have permission to perform this action.",
-                "source": "detail",
-                "status": 403
+              "properties": {
+                "detail": {
+                  "type": "string",
+                  "example": "You do not have permission to perform this action."
+                },
+                "source": {
+                  "type": "string",
+                  "example": "detail"
+                },
+                "status": {
+                  "type": "string",
+                  "example": "403"
+                }
               }
             }
           }
@@ -2005,6 +2112,9 @@
             "example": "Smith"
           },
           "is_active": {
+            "type": "boolean"
+          },
+          "is_org_admin": {
             "type": "boolean"
           }
         }
@@ -2306,6 +2416,10 @@
           "name": {
             "type": "string",
             "example": "RoleA"
+          },
+          "display_name": {
+            "type": "string",
+            "example": "ARoleName"
           },
           "description": {
             "type": "string",
@@ -2662,6 +2776,47 @@
             }
           }
         }
+      },
+      "Permission": {
+        "properties": {
+          "application": {
+            "type": "string",
+            "example": "rbac"
+          },
+          "resource_type": {
+            "type": "string",
+            "example": "group"
+          },
+          "verb": {
+            "type": "string",
+            "example": "read"
+          },
+          "permission": {
+            "type": "string",
+            "example": "rbac:group:read"
+          }
+        }
+      },
+      "PermissionPagination": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ListPagination"
+          },
+          {
+            "type": "object",
+            "required": [
+              "data"
+            ],
+            "properties": {
+              "data": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Permission"
+                }
+              }
+            }
+          }
+        ]
       }
     }
   }

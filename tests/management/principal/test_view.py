@@ -76,6 +76,39 @@ class PrincipalViewsetTests(IdentityRequest):
         self.assertEqual(principal.get("username"), self.principal.username)
 
     @patch(
+        "management.principal.proxy.PrincipalProxy.request_principals",
+        return_value={
+            "status_code": 200,
+            "data": {
+                "userCount": "2",
+                "users": [
+                    {"username": "test_user1", "is_org_admin": "true"},
+                    {"username": "test_user2", "is_org_admin": "false"},
+                ],
+            },
+        },
+    )
+    def test_check_principal_admin(self, mock_request):
+        """Test that we can read a list of principals."""
+        url = reverse("principals")
+        client = APIClient()
+        response = client.get(url, **self.headers)
+
+        mock_request.assert_called_once_with(ANY, limit=10, offset=0, sort_order="asc")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        for keyname in ["meta", "links", "data"]:
+            self.assertIn(keyname, response.data)
+        self.assertIsInstance(response.data.get("data"), list)
+        self.assertEqual(int(response.data.get("meta").get("count")), 2)
+        self.assertEqual(len(response.data.get("data")), 2)
+
+        principal = response.data.get("data")[0]
+        self.assertIsNotNone(principal.get("username"))
+        self.assertEqual(principal.get("username"), "test_user1")
+        self.assertIsNotNone(principal.get("is_org_admin"))
+        self.assertTrue(principal.get("is_org_admin"))
+
+    @patch(
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
         return_value={"status_code": 200, "data": [{"username": "test_user"}]},
     )

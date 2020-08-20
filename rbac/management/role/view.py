@@ -36,12 +36,17 @@ from .model import Role
 from .serializer import RoleSerializer
 
 TESTING_APP = os.getenv("TESTING_APPLICATION")
-APP_WHITELIST = ["cost-management", "remediations"]
+APP_WHITELIST = [
+    "cost-management",
+    "remediations",
+    "inventory",
+]
 ADDITIONAL_FIELDS_KEY = "add_fields"
 VALID_FIELD_VALUES = ["groups_in_count", "groups_in"]
 LIST_ROLE_FIELDS = [
     "uuid",
     "name",
+    "display_name",
     "description",
     "created",
     "modified",
@@ -87,7 +92,7 @@ class RoleViewSet(
     lookup_field = "uuid"
     filter_backends = (filters.DjangoFilterBackend, OrderingFilter)
     filterset_class = RoleFilter
-    ordering_fields = ("name", "modified", "policyCount")
+    ordering_fields = ("name", "display_name", "modified", "policyCount")
     ordering = ("name",)
 
     def get_queryset(self):
@@ -149,6 +154,7 @@ class RoleViewSet(
             {
                 "uuid": "16fd2706-8baf-433b-82eb-8c7fada847da",
                 "name": "RoleA",
+                "display_name": "RoleA",
                 "access": [
                     {
                     "permission": "app:*:read",
@@ -241,6 +247,7 @@ class RoleViewSet(
             {
                 "uuid": "16fd2706-8baf-433b-82eb-8c7fada847da",
                 "name": "RoleA",
+                "display_name": "RoleA",
                 "access": [
                     {
                     "permission": "app:*:read",
@@ -329,6 +336,7 @@ class RoleViewSet(
             {
                 "uuid": "16fd2706-8baf-433b-82eb-8c7fada847da",
                 "name": "RoleA",
+                "display_name": "RoleA",
                 "access": [
                     {
                     "permission": "app:*:read",
