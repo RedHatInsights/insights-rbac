@@ -2,10 +2,10 @@ FROM centos/python-36-centos7
 
 EXPOSE 8080
 
-ENV NODEJS_VERSION=8 \
-    NODEJS_SCL=rh-nodejs8 \
+ENV NODEJS_VERSION=10 \
+    NODEJS_SCL=rh-nodejs10 \
     NPM_RUN=start \
-    NODEJS_SCL=rh-nodejs8 \
+    NODEJS_SCL=rh-nodejs10 \
     NPM_CONFIG_PREFIX=$HOME/.npm-global \
     PATH=$HOME/.local/bin/:$HOME/node_modules/.bin/:$HOME/.npm-global/bin/:$PATH \
     LC_ALL=en_US.UTF-8 \
@@ -28,7 +28,7 @@ LABEL summary="$SUMMARY" \
 
 USER root
 
-# replace nodejs 6 with nodejs 8
+# replace nodejs 8 with nodejs 10
 RUN INSTALL_PKGS="${NODEJS_SCL} \
                   ${NODEJS_SCL}-npm \
                   ${NODEJS_SCL}-nodejs-nodemon \
@@ -36,7 +36,7 @@ RUN INSTALL_PKGS="${NODEJS_SCL} \
     yum-config-manager --enable centos-sclo-rh-testing && \
     yum -y --setopt=tsflags=nodocs install --enablerepo=centosplus $INSTALL_PKGS && \
     rpm -V $INSTALL_PKGS && \
-    yum remove -y rh-nodejs6\* && \
+    yum remove -y rh-nodejs8\* && \
     ln -s /usr/lib/node_modules/nodemon/bin/nodemon.js /usr/bin/nodemon && \
     yum -y clean all --enablerepo='*'
 
