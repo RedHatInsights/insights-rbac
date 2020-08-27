@@ -267,6 +267,7 @@ class GroupViewSet(
                 ]
             }
         """
+        self.validate_guid(request.path.split("/")[4])
         return super().retrieve(request=request, args=args, kwargs=kwargs)
 
     def destroy(self, request, *args, **kwargs):
@@ -285,6 +286,7 @@ class GroupViewSet(
         @apiSuccessExample {json} Success-Response:
             HTTP/1.1 204 NO CONTENT
         """
+        self.validate_guid(request.path.split("/")[4])
         self.protect_default_groups("delete")
         return super().destroy(request=request, args=args, kwargs=kwargs)
 
@@ -310,6 +312,7 @@ class GroupViewSet(
                 "name": "GroupA"
             }
         """
+        self.validate_guid(request.path.split("/")[4])
         self.protect_default_groups("update")
         return super().update(request=request, args=args, kwargs=kwargs)
 
@@ -421,6 +424,7 @@ class GroupViewSet(
             HTTP/1.1 204 NO CONTENT
         """
         principals = []
+        self.validate_guid(request.path.split("/")[4])
         group = self.get_object()
         account = self.request.user.account
         if request.method == "POST":
@@ -547,6 +551,7 @@ class GroupViewSet(
             HTTP/1.1 204 NO CONTENT
         """
         roles = []
+        self.validate_guid(request.path.split("/")[4])
         group = self.get_object()
         if request.method == "POST":
             serializer = GroupRoleSerializerIn(data=request.data)
@@ -604,6 +609,16 @@ class GroupViewSet(
                 attr_filter_name = param_name.replace(f"{model_name}_", "")
                 filters[f"{attr_filter_name}__icontains"] = param_value
         return filters
+
+    def validate_guid(self, uuid):
+        """Verify GUID provided is valid before attempting to retrieve it."""
+        try:
+            UUID(uuid)
+        except ValueError:
+            key = "groups uuid validation"
+            message = f"{uuid} is not a valid UUID."
+            raise serializers.ValidationError({key: _(message)})
+        return
 
     def obtain_roles(self, request, group):
         """Obtain roles based on request, supports exclusion."""
