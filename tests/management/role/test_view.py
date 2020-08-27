@@ -230,6 +230,22 @@ class RoleViewsetTests(IdentityRequest):
         response = client.get(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
+    def test_read_role_valid(self):
+        """Test that reading a valid role returns expected fields/values."""
+        url = reverse("role-detail", kwargs={"uuid": self.defRole.uuid})
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        response_data = response.data
+        expected_fields = self.display_fields
+        expected_fields.add("access")
+        self.assertEqual(expected_fields, set(response_data.keys()))
+        self.assertEqual(response_data.get("uuid"), str(self.defRole.uuid))
+        self.assertEqual(response_data.get("name"), self.defRole.name)
+        self.assertEqual(response_data.get("display_name"), self.defRole.display_name)
+        self.assertEqual(response_data.get("description"), self.defRole.description)
+        self.assertEqual(response_data.get("applications"), ["app"])
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
     def test_read_role_access_success(self):
         """Test that reading a valid role returns access."""
         url = reverse("role-access", kwargs={"uuid": self.defRole.uuid})

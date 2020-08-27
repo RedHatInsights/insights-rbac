@@ -99,7 +99,7 @@ class RoleSerializer(serializers.ModelSerializer):
 
     def get_applications(self, obj):
         """Get the list of applications in the role."""
-        obtain_applications(obj)
+        return obtain_applications(obj)
 
     def create(self, validated_data):
         """Create the role object in the database."""
