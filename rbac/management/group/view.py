@@ -267,7 +267,7 @@ class GroupViewSet(
                 ]
             }
         """
-        self.validate_guid(request.path.split("/")[4])
+        self.validate_guid(kwargs.get("uuid"))
         return super().retrieve(request=request, args=args, kwargs=kwargs)
 
     def destroy(self, request, *args, **kwargs):
@@ -286,7 +286,7 @@ class GroupViewSet(
         @apiSuccessExample {json} Success-Response:
             HTTP/1.1 204 NO CONTENT
         """
-        self.validate_guid(request.path.split("/")[4])
+        self.validate_guid(kwargs.get("uuid"))
         self.protect_default_groups("delete")
         return super().destroy(request=request, args=args, kwargs=kwargs)
 
@@ -312,7 +312,7 @@ class GroupViewSet(
                 "name": "GroupA"
             }
         """
-        self.validate_guid(request.path.split("/")[4])
+        self.validate_guid(kwargs.get("uuid"))
         self.protect_default_groups("update")
         return super().update(request=request, args=args, kwargs=kwargs)
 
@@ -424,7 +424,7 @@ class GroupViewSet(
             HTTP/1.1 204 NO CONTENT
         """
         principals = []
-        self.validate_guid(request.path.split("/")[4])
+        self.validate_guid(uuid)
         group = self.get_object()
         account = self.request.user.account
         if request.method == "POST":
@@ -551,7 +551,7 @@ class GroupViewSet(
             HTTP/1.1 204 NO CONTENT
         """
         roles = []
-        self.validate_guid(request.path.split("/")[4])
+        self.validate_guid(uuid)
         group = self.get_object()
         if request.method == "POST":
             serializer = GroupRoleSerializerIn(data=request.data)
