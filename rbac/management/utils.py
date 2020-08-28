@@ -17,6 +17,7 @@
 """Helper utilities for management module."""
 import json
 import os
+from uuid import UUID
 
 from django.core.exceptions import PermissionDenied
 from django.utils.translation import gettext as _
@@ -159,3 +160,13 @@ def validate_and_get_key(params, query_key, valid_values, default_value):
         message = "{} query parameter value {} is invalid. {} are valid inputs.".format(query_key, value, valid_values)
         raise serializers.ValidationError({key: _(message)})
     return value
+
+
+def validate_uuid(uuid, key="UUID Validation"):
+    """Verify UUID provided is valid."""
+    try:
+        UUID(uuid)
+    except ValueError:
+        key = key
+        message = f"{uuid} is not a valid UUID."
+        raise serializers.ValidationError({key: _(message)})

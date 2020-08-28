@@ -28,6 +28,7 @@ from management.filters import CommonFilters
 from management.permissions import RoleAccessPermission
 from management.querysets import get_role_queryset
 from management.role.serializer import AccessSerializer, RoleDynamicSerializer
+from management.utils import validate_uuid
 from rest_framework import mixins, serializers, viewsets
 from rest_framework.decorators import action
 from rest_framework.filters import OrderingFilter
@@ -264,6 +265,7 @@ class RoleViewSet(
                 ]
             }
         """
+        validate_uuid(kwargs.get("uuid"), "role uuid validation")
         return super().retrieve(request=request, args=args, kwargs=kwargs)
 
     def destroy(self, request, *args, **kwargs):
@@ -282,6 +284,7 @@ class RoleViewSet(
         @apiSuccessExample {json} Success-Response:
             HTTP/1.1 204 NO CONTENT
         """
+        validate_uuid(kwargs.get("uuid"), "role uuid validation")
         role = self.get_object()
         if role.system or role.platform_default:
             key = "role"
@@ -353,11 +356,13 @@ class RoleViewSet(
                 ]
             }
         """
+        validate_uuid(kwargs.get("uuid"), "role uuid validation")
         return super().update(request=request, args=args, kwargs=kwargs)
 
     @action(detail=True, methods=["get"])
     def access(self, request, uuid=None):
         """Return access objects for specified role."""
+        validate_uuid(uuid, "role uuid validation")
         try:
             role = Role.objects.get(uuid=uuid)
         except (Role.DoesNotExist, ValidationError):
