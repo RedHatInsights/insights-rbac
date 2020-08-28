@@ -21,8 +21,13 @@ from management.filters import CommonFilters
 from management.models import Permission
 from management.permission.serializer import PermissionSerializer
 from management.permissions.admin_access import AdminAccessPermission
+from management.utils import validate_and_get_key
 from rest_framework import mixins, viewsets
+from rest_framework.decorators import action
 from rest_framework.filters import OrderingFilter
+
+PERMISSION_FIELD_KEYS = {"application", "resource_type", "verb"}
+QUERY_FIELD = "field"
 
 
 class PermissionFilter(CommonFilters):
@@ -93,3 +98,45 @@ class PermissionViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
         }
         """
         return super().list(request=request, args=args, kwargs=kwargs)
+
+    @action(detail=False)
+    def options(self, request):
+        """Get options of applications."""
+        """
+        @api {get} /api/v1/permissions/options/   Get option of permission
+        @apiName getPermissionOption
+        @apiGroup Permission
+        @apiVersion 1.0.0
+        @apiDescription Get option of permission
+
+        @apiHeader {String} token User authorization token
+
+        @apiParam (Query) {String} field The field to return.
+
+        @apiParam (Query) {String} application Filter by permission name.
+        @apiParam (Query) {String} resource_type Filter by resource_type.
+        @apiParam (Query) {String} verb Filter by verb.
+
+        @apiSuccess {Object[]} data  The array of results.
+
+            HTTP/1.1 200 OK
+        {
+          "data": [
+            catalog, approval
+          ]
+        }
+        """
+        filters = {}
+        query_field = validate_and_get_key(request.query_params, QUERY_FIELD, PERMISSION_FIELD_KEYS, None)
+
+        for key in PERMISSION_FIELD_KEYS:
+            context = request.query_params.get(key)
+            if context:
+                filters[f"{key}__in"] = context.split(",")
+
+        query_set = Permission.objects.distinct(query_field).filter(**filters).values_list(query_field, flat=True)
+
+        if "limit" not in self.request.query_params:
+            self.paginator.default_limit = self.paginator.max_limit
+        page = self.paginate_queryset(query_set)
+        return self.get_paginated_response(page)
