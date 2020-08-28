@@ -263,7 +263,7 @@ class RoleViewsetTests(IdentityRequest):
         url = reverse("role-access", kwargs={"uuid": "abc-123"})
         client = APIClient()
         response = client.get(url, **self.headers)
-        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
     def test_read_role_access_not_found_uuid(self):
         """Test that reading an invalid role uuid returns an error."""
