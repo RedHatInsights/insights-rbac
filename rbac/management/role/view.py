@@ -20,6 +20,7 @@ import os
 
 from django.core.exceptions import ValidationError
 from django.db import transaction
+from django.db.models import Q
 from django.db.models.aggregates import Count
 from django.http import Http404
 from django.utils.translation import gettext as _
@@ -37,11 +38,7 @@ from .model import Role
 from .serializer import RoleSerializer
 
 TESTING_APP = os.getenv("TESTING_APPLICATION")
-APP_WHITELIST = [
-    "cost-management",
-    "remediations",
-    "inventory",
-]
+APP_WHITELIST = ["cost-management", "remediations", "inventory"]
 ADDITIONAL_FIELDS_KEY = "add_fields"
 VALID_FIELD_VALUES = ["groups_in_count", "groups_in"]
 LIST_ROLE_FIELDS = [
@@ -65,7 +62,16 @@ if TESTING_APP:
 class RoleFilter(CommonFilters):
     """Filter for role."""
 
+    def application_filter(self, queryset, field, values):
+        """Filter to lookup role by application(s) in permissions."""
+        applications = values.split(",")
+        query = Q()
+        for application in applications:
+            query = query | Q(access__permission__istartswith=f"{application}:")
+        return queryset.distinct().filter(query)
+
     name = filters.CharFilter(field_name="name", method="name_filter")
+    application = filters.CharFilter(field_name="application", method="application_filter")
 
     class Meta:
         model = Role

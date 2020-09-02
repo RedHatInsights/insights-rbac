@@ -1101,6 +1101,15 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "application",
+            "in": "query",
+            "description": "The application name(s) to filter roles by, from permissions. This is an exact match. You may also use a comma-separated list to match on multiple applications.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
