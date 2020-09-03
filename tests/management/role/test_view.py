@@ -81,6 +81,9 @@ class RoleViewsetTests(IdentityRequest):
             self.policy.save()
 
             self.access = Access.objects.create(permission="app:*:*", role=self.defRole)
+            self.access2 = Access.objects.create(permission="app2:*:*", role=self.defRole)
+
+            self.access3 = Access.objects.create(permission="app2:*:*", role=self.sysRole)
 
     def tearDown(self):
         """Tear down role viewset tests."""
@@ -243,7 +246,7 @@ class RoleViewsetTests(IdentityRequest):
         self.assertEqual(response_data.get("name"), self.defRole.name)
         self.assertEqual(response_data.get("display_name"), self.defRole.display_name)
         self.assertEqual(response_data.get("description"), self.defRole.description)
-        self.assertEqual(response_data.get("applications"), ["app"])
+        self.assertCountEqual(response_data.get("applications"), ["app", "app2"])
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
     def test_read_role_access_success(self):
@@ -255,7 +258,7 @@ class RoleViewsetTests(IdentityRequest):
         for keyname in ["meta", "links", "data"]:
             self.assertIn(keyname, response.data)
         self.assertIsInstance(response.data.get("data"), list)
-        self.assertEqual(len(response.data.get("data")), 1)
+        self.assertEqual(len(response.data.get("data")), 2)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
     def test_read_role_access_invalid_uuid(self):
@@ -303,6 +306,43 @@ class RoleViewsetTests(IdentityRequest):
                 role = iterRole
         self.assertEqual(role.get("name"), role_name)
         self.assertEqual(role.get("display_name"), role_display)
+
+    def test_get_role_by_application_single(self):
+        """Test that getting roles by application returns roles based on permissions."""
+        url = reverse("role-list")
+        url = "{}?application={}".format(url, "app")
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        self.assertEqual(response.data.get("meta").get("count"), 1)
+        self.assertEqual(response.data.get("data")[0].get("name"), self.defRole.name)
+
+    def test_get_role_by_application_multiple(self):
+        """Test that getting roles by multiple applications returns roles based on permissions."""
+        url = reverse("role-list")
+        url = "{}?application={}".format(url, "app2")
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        role_names = [role.get("name") for role in response.data.get("data")]
+        self.assertEqual(response.data.get("meta").get("count"), 2)
+        self.assertCountEqual(role_names, [self.defRole.name, self.sysRole.name])
+
+    def test_get_role_by_application_duplicate_role(self):
+        """Test that getting roles by application with permissions in the same role only returns the roles once."""
+        url = reverse("role-list")
+        url = "{}?application={}".format(url, "app,app2")
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        role_names = [role.get("name") for role in response.data.get("data")]
+        self.assertEqual(response.data.get("meta").get("count"), 2)
+        self.assertCountEqual(role_names, [self.defRole.name, self.sysRole.name])
+
+    def test_get_role_by_application_does_not_exist(self):
+        """Test that getting roles by application returns nothing when there is no match."""
+        url = reverse("role-list")
+        url = "{}?application={}".format(url, "foo")
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        self.assertEqual(response.data.get("meta").get("count"), 0)
 
     def test_get_role_by_partial_name_by_default(self):
         """Test that getting roles by name returns partial match by default."""
