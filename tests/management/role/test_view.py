@@ -490,7 +490,30 @@ class RoleViewsetTests(IdentityRequest):
         url = reverse("role-detail", kwargs={"uuid": uuid4()})
         client = APIClient()
         response = client.put(url, {}, format="json", **self.headers)
-        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_update_role_invalid_permission(self):
+        """Test that updating a role with an invalid permission returns an error."""
+        # Set up
+        role_name = "permRole"
+        access_data = [
+            {
+                "permission": "cost-management:*:*",
+                "resourceDefinitions": [{"attributeFilter": {"key": "keyA", "operation": "equal", "value": "valueA"}}],
+            }
+        ]
+        response = self.create_role(role_name, in_access_data=access_data)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        role_uuid = response.data.get("uuid")
+        test_data = response.data
+        test_data.get("access")[0]["permission"] = "foo:*:read"
+        test_data["applications"] = ["foo"]
+
+        # Test update failure
+        url = reverse("role-detail", kwargs={"uuid": role_uuid})
+        client = APIClient()
+        response = client.put(url, test_data, format="json", **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
     def test_delete_role_success(self):
         """Test that we can delete an existing role."""

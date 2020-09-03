@@ -363,6 +363,15 @@ class RoleViewSet(
             }
         """
         validate_uuid(kwargs.get("uuid"), "role uuid validation")
+        access_list = self.validate_and_get_access_list(request.data)
+        if access_list:
+            for perm in access_list:
+                app = perm.get("permission").split(":")[0]
+                if app not in APP_WHITELIST:
+                    key = "role"
+                    message = "Custom roles cannot be created for {}".format(app)
+                    error = {key: [_(message)]}
+                    raise serializers.ValidationError(error)
         return super().update(request=request, args=args, kwargs=kwargs)
 
     @action(detail=True, methods=["get"])
