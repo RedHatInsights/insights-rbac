@@ -17,6 +17,7 @@
 """API models for import organization."""
 from tenant_schemas.models import TenantMixin
 
+from api.cross_access.model import CrossAccountRequest  # noqa: F401
 from api.status.model import Status  # noqa: F401
 
 
