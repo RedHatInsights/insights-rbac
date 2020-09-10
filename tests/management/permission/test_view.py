@@ -25,6 +25,8 @@ from api.models import User
 from management.models import Permission
 from tests.identity_request import IdentityRequest
 
+OPTION_URL = reverse("permission-options")
+
 
 class PermissionViewsetTests(IdentityRequest):
     """Test the permission viewset."""
@@ -127,7 +129,7 @@ class PermissionViewsetTests(IdentityRequest):
         response = client.delete(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_405_METHOD_NOT_ALLOWED)
 
-    def test_filters_multiple_appliation_values(self):
+    def test_filters_multiple_application_values(self):
         """Test that we can filter permissions with multiple application values."""
         with tenant_context(self.tenant):
             expected_permissions = list(Permission.objects.values_list("permission", flat=True))
@@ -174,6 +176,120 @@ class PermissionViewsetTests(IdentityRequest):
         self.assertEqual(len(response.data.get("data")), 2)
         self.assertCountEqual(expected_permissions, response_permissions)
 
+    def test_query_invalid_field_fail(self):
+        """Test that query invalid field fail."""
+
+        url = f"{OPTION_URL}?field=invalid"
+        client = APIClient()
+        response = client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_query_without_field_fail(self):
+        """Test that query invalid field fail."""
+
+        url = f"{OPTION_URL}"
+        client = APIClient()
+        response = client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_get_fields_with_limit(self):
+        """Test that we can obtain the expected field with pagination."""
+        url = f"{OPTION_URL}?field=application&limit=1"
+        client = APIClient()
+        response = client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIsNotNone(response.data.get("data"))
+        self.assertIsInstance(response.data.get("data"), list)
+        self.assertEqual(len(response.data.get("data")), 1)
+        self.assertEqual(response.data.get("meta").get("count"), 2)
+        self.assertEqual(response.data.get("meta").get("limit"), 1)
+
+    def test_get_fields_without_limit(self):
+        """Test that we can obtain the expected field without pagination."""
+
+        url = f"{OPTION_URL}?field=application"
+        client = APIClient()
+        response = client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIsNotNone(response.data.get("data"))
+        self.assertIsInstance(response.data.get("data"), list)
+        self.assertEqual(response.data.get("meta").get("limit"), 1000)
+
+    def test_return_options_of_application(self):
+        """Test that we can return options of application."""
+        with tenant_context(self.tenant):
+            expected_all = Permission.objects.values_list("application", flat=True).distinct()
+            expected_filtered = (
+                Permission.objects.filter(verb__in=["read", "write"]).values_list("application", flat=True).distinct()
+            )
+
+        url_all = f"{OPTION_URL}?field=application"
+        url_filtered = f"{OPTION_URL}?field=application&verb=read,write"
+        client = APIClient()
+        response_all = client.get(url_all, **self.headers)
+        response_filtered = client.get(url_filtered, **self.headers)
+
+        self.assertEqual(response_all.status_code, status.HTTP_200_OK)
+        self.assertEqual(response_filtered.status_code, status.HTTP_200_OK)
+        self.assertCountEqual(expected_all, response_all.data.get("data"))
+        self.assertCountEqual(expected_filtered, response_filtered.data.get("data"))
+
+    def test_return_options_of_resource_type(self):
+        """Test that we can return options of resource_type."""
+        with tenant_context(self.tenant):
+            expected_all = Permission.objects.values_list("resource_type", flat=True).distinct()
+            expected_filtered = (
+                Permission.objects.filter(application="acme").values_list("resource_type", flat=True).distinct()
+            )
+
+        url_all = f"{OPTION_URL}?field=resource_type"
+        url_filtered = f"{OPTION_URL}?field=resource_type&application=acme"
+        client = APIClient()
+        response_all = client.get(url_all, **self.headers)
+        response_filtered = client.get(url_filtered, **self.headers)
+
+        self.assertEqual(response_all.status_code, status.HTTP_200_OK)
+        self.assertEqual(response_filtered.status_code, status.HTTP_200_OK)
+        self.assertCountEqual(expected_all, response_all.data.get("data"))
+        self.assertCountEqual(expected_filtered, response_filtered.data.get("data"))
+
+    def test_return_options_of_verb(self):
+        """Test that we can return options of verb."""
+        with tenant_context(self.tenant):
+            expected_all = Permission.objects.values_list("verb", flat=True).distinct()
+            expected_filtered = (
+                Permission.objects.filter(resource_type="roles").values_list("verb", flat=True).distinct()
+            )
+
+        url_all = f"{OPTION_URL}?field=verb"
+        url_filtered = f"{OPTION_URL}?field=verb&resource_type=roles"
+        client = APIClient()
+        response_all = client.get(url_all, **self.headers)
+        response_filtered = client.get(url_filtered, **self.headers)
+
+        self.assertEqual(response_all.status_code, status.HTTP_200_OK)
+        self.assertEqual(response_filtered.status_code, status.HTTP_200_OK)
+        self.assertCountEqual(expected_all, response_all.data.get("data"))
+        self.assertCountEqual(expected_filtered, response_filtered.data.get("data"))
+
+    def test_return_options_with_comma_separated_filter(self):
+        """Test that we can return options with comma separated filter."""
+        with tenant_context(self.tenant):
+            expected = (
+                Permission.objects.filter(resource_type__in=["roles", "*"]).values_list("verb", flat=True).distinct()
+            )
+
+        url = f"{OPTION_URL}?field=verb&resource_type=roles,*"
+        client = APIClient()
+        response = client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertCountEqual(expected, response.data.get("data"))
+
 
 class PermissionViewsetTestsNonAdmin(IdentityRequest):
     """Test the permission viewset."""
@@ -201,6 +317,13 @@ class PermissionViewsetTestsNonAdmin(IdentityRequest):
     def test_read_permission_list_fail(self):
         """Test that we can not read a list of permissions as a non-admin."""
         url = reverse("permission-list")
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_read_permission_options_list_fail(self):
+        """Test that we can not read a list of filed options of permissions  as a non-admin."""
+        url = f"{OPTION_URL}?field=application"
         client = APIClient()
         response = client.get(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)

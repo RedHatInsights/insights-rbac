@@ -1846,6 +1846,100 @@
           }
         }
       }
+    },
+    "/permissions/options/": {
+      "get": {
+        "tags": [
+          "Permission"
+        ],
+        "summary": "List the available options for fields of permissions for a tenant",
+        "description": "By default, options of application is returned. And could be resource_type or verb on demand.",
+        "operationId": "listPermissionOptions",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/QueryLimit"
+          },
+          {
+            "$ref": "#/components/parameters/QueryOffset"
+          },
+          {
+            "name": "field",
+            "in": "query",
+            "description": "specify which fields of permission to display",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "application",
+                "resource_type",
+                "verb"
+              ]
+            }
+          },
+          {
+            "name": "application",
+            "in": "query",
+            "description": "Filter returned options based on application. You may also use a comma-separated list to filter on multiple applications.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "resource_type",
+            "in": "query",
+            "description": "Filter returned options based on resource_type. You may also use a comma-separated list to filter on multiple resource_types.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "verb",
+            "in": "query",
+            "description": "Filter returned options based on verb. You may also use a comma-separated list to filter on multiple verbs.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A list of options for field of permission",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PermissionOptionsPagination"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Insufficient permissions to list permissions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error403"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "servers": [
@@ -2821,6 +2915,27 @@
                 "type": "array",
                 "items": {
                   "$ref": "#/components/schemas/Permission"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "PermissionOptionsPagination": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ListPagination"
+          },
+          {
+            "type": "object",
+            "required": [
+              "data"
+            ],
+            "properties": {
+              "data": {
+                "type": "array",
+                "items": {
+                  "type": "string"
                 }
               }
             }
