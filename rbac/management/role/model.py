@@ -72,7 +72,7 @@ class Access(models.Model):
     """An access object."""
 
     perm = models.TextField(null=False)
-    permission = models.TextField(null=False,  default="*:*:*")
+    permission = models.TextField(null=False, default="*:*:*")
     role = models.ForeignKey(Role, null=True, on_delete=models.CASCADE, related_name="access")
 
     objects = CustomManager()
