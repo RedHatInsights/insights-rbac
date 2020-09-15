@@ -177,8 +177,8 @@ class RoleViewsetTests(IdentityRequest):
         response = client.post(url, test_data, format="json", **self.headers)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
-    def test_create_role_whitelist(self):
-        """Test that we can create a role in a whitelisted application via API."""
+    def test_create_role_allow_list(self):
+        """Test that we can create a role in an allow_listed application via API."""
         role_name = "C-MRole"
         access_data = [
             {
@@ -200,8 +200,8 @@ class RoleViewsetTests(IdentityRequest):
         self.assertIsInstance(response.data.get("access"), list)
         self.assertEqual(access_data, response.data.get("access"))
 
-    def test_create_role_whitelist_fail(self):
-        """Test that we cannot create a role for a non-whitelisted app."""
+    def test_create_role_allow_list_fail(self):
+        """Test that we cannot create a role for a non-allow_listed app."""
         role_name = "roleFail"
         access_data = [
             {
@@ -213,7 +213,7 @@ class RoleViewsetTests(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
     def test_create_role_fail_with_access_not_list(self):
-        """Test that we cannot create a role for a non-whitelisted app."""
+        """Test that we cannot create a role for a non-allow_listed app."""
         role_name = "AccessNotList"
         access_data = "some data"
         response = self.create_role(role_name, in_access_data=access_data)
