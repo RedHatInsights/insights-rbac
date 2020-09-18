@@ -20,6 +20,7 @@ import os
 
 from django.core.exceptions import ValidationError
 from django.db import transaction
+from django.db.models import Q
 from django.db.models.aggregates import Count
 from django.http import Http404
 from django.utils.translation import gettext as _
@@ -28,6 +29,7 @@ from management.filters import CommonFilters
 from management.permissions import RoleAccessPermission
 from management.querysets import get_role_queryset
 from management.role.serializer import AccessSerializer, RoleDynamicSerializer
+from management.utils import validate_uuid
 from rest_framework import mixins, serializers, viewsets
 from rest_framework.decorators import action
 from rest_framework.filters import OrderingFilter
@@ -36,11 +38,7 @@ from .model import Role
 from .serializer import RoleSerializer
 
 TESTING_APP = os.getenv("TESTING_APPLICATION")
-APP_WHITELIST = [
-    "cost-management",
-    "remediations",
-    "inventory",
-]
+APP_ALLOW_LIST = ["cost-management", "remediations", "inventory", "drift", "policies"]
 ADDITIONAL_FIELDS_KEY = "add_fields"
 VALID_FIELD_VALUES = ["groups_in_count", "groups_in"]
 LIST_ROLE_FIELDS = [
@@ -58,13 +56,22 @@ LIST_ROLE_FIELDS = [
 ]
 
 if TESTING_APP:
-    APP_WHITELIST.append(TESTING_APP)
+    APP_ALLOW_LIST.append(TESTING_APP)
 
 
 class RoleFilter(CommonFilters):
     """Filter for role."""
 
+    def application_filter(self, queryset, field, values):
+        """Filter to lookup role by application(s) in permissions."""
+        applications = values.split(",")
+        query = Q()
+        for application in applications:
+            query = query | Q(access__permission__istartswith=f"{application}:")
+        return queryset.distinct().filter(query)
+
     name = filters.CharFilter(field_name="name", method="name_filter")
+    application = filters.CharFilter(field_name="application", method="application_filter")
 
     class Meta:
         model = Role
@@ -174,7 +181,7 @@ class RoleViewSet(
         access_list = self.validate_and_get_access_list(request.data)
         for perm in access_list:
             app = perm.get("permission").split(":")[0]
-            if app not in APP_WHITELIST:
+            if app not in APP_ALLOW_LIST:
                 key = "role"
                 message = "Custom roles cannot be created for {}".format(app)
                 error = {key: [_(message)]}
@@ -264,6 +271,7 @@ class RoleViewSet(
                 ]
             }
         """
+        validate_uuid(kwargs.get("uuid"), "role uuid validation")
         return super().retrieve(request=request, args=args, kwargs=kwargs)
 
     def destroy(self, request, *args, **kwargs):
@@ -282,6 +290,7 @@ class RoleViewSet(
         @apiSuccessExample {json} Success-Response:
             HTTP/1.1 204 NO CONTENT
         """
+        validate_uuid(kwargs.get("uuid"), "role uuid validation")
         role = self.get_object()
         if role.system or role.platform_default:
             key = "role"
@@ -353,11 +362,22 @@ class RoleViewSet(
                 ]
             }
         """
+        validate_uuid(kwargs.get("uuid"), "role uuid validation")
+        access_list = self.validate_and_get_access_list(request.data)
+        if access_list:
+            for perm in access_list:
+                app = perm.get("permission").split(":")[0]
+                if app not in APP_ALLOW_LIST:
+                    key = "role"
+                    message = "Custom roles cannot be created for {}".format(app)
+                    error = {key: [_(message)]}
+                    raise serializers.ValidationError(error)
         return super().update(request=request, args=args, kwargs=kwargs)
 
     @action(detail=True, methods=["get"])
     def access(self, request, uuid=None):
         """Return access objects for specified role."""
+        validate_uuid(uuid, "role uuid validation")
         try:
             role = Role.objects.get(uuid=uuid)
         except (Role.DoesNotExist, ValidationError):

@@ -81,6 +81,9 @@ class RoleViewsetTests(IdentityRequest):
             self.policy.save()
 
             self.access = Access.objects.create(permission="app:*:*", role=self.defRole)
+            self.access2 = Access.objects.create(permission="app2:*:*", role=self.defRole)
+
+            self.access3 = Access.objects.create(permission="app2:*:*", role=self.sysRole)
 
     def tearDown(self):
         """Tear down role viewset tests."""
@@ -174,8 +177,8 @@ class RoleViewsetTests(IdentityRequest):
         response = client.post(url, test_data, format="json", **self.headers)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
-    def test_create_role_whitelist(self):
-        """Test that we can create a role in a whitelisted application via API."""
+    def test_create_role_allow_list(self):
+        """Test that we can create a role in an allow_listed application via API."""
         role_name = "C-MRole"
         access_data = [
             {
@@ -197,8 +200,8 @@ class RoleViewsetTests(IdentityRequest):
         self.assertIsInstance(response.data.get("access"), list)
         self.assertEqual(access_data, response.data.get("access"))
 
-    def test_create_role_whitelist_fail(self):
-        """Test that we cannot create a role for a non-whitelisted app."""
+    def test_create_role_allow_list_fail(self):
+        """Test that we cannot create a role for a non-allow_listed app."""
         role_name = "roleFail"
         access_data = [
             {
@@ -210,7 +213,7 @@ class RoleViewsetTests(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
     def test_create_role_fail_with_access_not_list(self):
-        """Test that we cannot create a role for a non-whitelisted app."""
+        """Test that we cannot create a role for a non-allow_listed app."""
         role_name = "AccessNotList"
         access_data = "some data"
         response = self.create_role(role_name, in_access_data=access_data)
@@ -230,6 +233,22 @@ class RoleViewsetTests(IdentityRequest):
         response = client.get(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
+    def test_read_role_valid(self):
+        """Test that reading a valid role returns expected fields/values."""
+        url = reverse("role-detail", kwargs={"uuid": self.defRole.uuid})
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        response_data = response.data
+        expected_fields = self.display_fields
+        expected_fields.add("access")
+        self.assertEqual(expected_fields, set(response_data.keys()))
+        self.assertEqual(response_data.get("uuid"), str(self.defRole.uuid))
+        self.assertEqual(response_data.get("name"), self.defRole.name)
+        self.assertEqual(response_data.get("display_name"), self.defRole.display_name)
+        self.assertEqual(response_data.get("description"), self.defRole.description)
+        self.assertCountEqual(response_data.get("applications"), ["app", "app2"])
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
     def test_read_role_access_success(self):
         """Test that reading a valid role returns access."""
         url = reverse("role-access", kwargs={"uuid": self.defRole.uuid})
@@ -239,7 +258,7 @@ class RoleViewsetTests(IdentityRequest):
         for keyname in ["meta", "links", "data"]:
             self.assertIn(keyname, response.data)
         self.assertIsInstance(response.data.get("data"), list)
-        self.assertEqual(len(response.data.get("data")), 1)
+        self.assertEqual(len(response.data.get("data")), 2)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
     def test_read_role_access_invalid_uuid(self):
@@ -247,7 +266,7 @@ class RoleViewsetTests(IdentityRequest):
         url = reverse("role-access", kwargs={"uuid": "abc-123"})
         client = APIClient()
         response = client.get(url, **self.headers)
-        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
     def test_read_role_access_not_found_uuid(self):
         """Test that reading an invalid role uuid returns an error."""
@@ -287,6 +306,43 @@ class RoleViewsetTests(IdentityRequest):
                 role = iterRole
         self.assertEqual(role.get("name"), role_name)
         self.assertEqual(role.get("display_name"), role_display)
+
+    def test_get_role_by_application_single(self):
+        """Test that getting roles by application returns roles based on permissions."""
+        url = reverse("role-list")
+        url = "{}?application={}".format(url, "app")
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        self.assertEqual(response.data.get("meta").get("count"), 1)
+        self.assertEqual(response.data.get("data")[0].get("name"), self.defRole.name)
+
+    def test_get_role_by_application_multiple(self):
+        """Test that getting roles by multiple applications returns roles based on permissions."""
+        url = reverse("role-list")
+        url = "{}?application={}".format(url, "app2")
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        role_names = [role.get("name") for role in response.data.get("data")]
+        self.assertEqual(response.data.get("meta").get("count"), 2)
+        self.assertCountEqual(role_names, [self.defRole.name, self.sysRole.name])
+
+    def test_get_role_by_application_duplicate_role(self):
+        """Test that getting roles by application with permissions in the same role only returns the roles once."""
+        url = reverse("role-list")
+        url = "{}?application={}".format(url, "app,app2")
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        role_names = [role.get("name") for role in response.data.get("data")]
+        self.assertEqual(response.data.get("meta").get("count"), 2)
+        self.assertCountEqual(role_names, [self.defRole.name, self.sysRole.name])
+
+    def test_get_role_by_application_does_not_exist(self):
+        """Test that getting roles by application returns nothing when there is no match."""
+        url = reverse("role-list")
+        url = "{}?application={}".format(url, "foo")
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        self.assertEqual(response.data.get("meta").get("count"), 0)
 
     def test_get_role_by_partial_name_by_default(self):
         """Test that getting roles by name returns partial match by default."""
@@ -434,7 +490,30 @@ class RoleViewsetTests(IdentityRequest):
         url = reverse("role-detail", kwargs={"uuid": uuid4()})
         client = APIClient()
         response = client.put(url, {}, format="json", **self.headers)
-        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_update_role_invalid_permission(self):
+        """Test that updating a role with an invalid permission returns an error."""
+        # Set up
+        role_name = "permRole"
+        access_data = [
+            {
+                "permission": "cost-management:*:*",
+                "resourceDefinitions": [{"attributeFilter": {"key": "keyA", "operation": "equal", "value": "valueA"}}],
+            }
+        ]
+        response = self.create_role(role_name, in_access_data=access_data)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        role_uuid = response.data.get("uuid")
+        test_data = response.data
+        test_data.get("access")[0]["permission"] = "foo:*:read"
+        test_data["applications"] = ["foo"]
+
+        # Test update failure
+        url = reverse("role-detail", kwargs={"uuid": role_uuid})
+        client = APIClient()
+        response = client.put(url, test_data, format="json", **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
     def test_delete_role_success(self):
         """Test that we can delete an existing role."""

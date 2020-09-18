@@ -17,6 +17,7 @@
 """Helper utilities for management module."""
 import json
 import os
+from uuid import UUID
 
 from django.core.exceptions import PermissionDenied
 from django.utils.translation import gettext as _
@@ -153,9 +154,26 @@ def queryset_by_id(objects, clazz, **kwargs):
 
 def validate_and_get_key(params, query_key, valid_values, default_value):
     """Validate the key."""
-    value = params.get(query_key, default_value).lower()
-    if value not in valid_values:
+    value = params.get(query_key, default_value)
+    if not value:
         key = "detail"
-        message = "{} query parameter value {} is invalid. {} are valid inputs.".format(query_key, value, valid_values)
+        message = "Query parameter '{}' is required.".format(query_key)
         raise serializers.ValidationError({key: _(message)})
-    return value
+
+    if value.lower() not in valid_values:
+        key = "detail"
+        message = "{} query parameter value '{}' is invalid. {} are valid inputs.".format(
+            query_key, value, valid_values
+        )
+        raise serializers.ValidationError({key: _(message)})
+    return value.lower()
+
+
+def validate_uuid(uuid, key="UUID Validation"):
+    """Verify UUID provided is valid."""
+    try:
+        UUID(uuid)
+    except ValueError:
+        key = key
+        message = f"{uuid} is not a valid UUID."
+        raise serializers.ValidationError({key: _(message)})

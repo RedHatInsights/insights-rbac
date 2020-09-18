@@ -192,6 +192,13 @@ class GroupViewsetTests(IdentityRequest):
         response = client.get(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
+    def test_read_group_nonguid(self):
+        """Test that reading a group with an invalid UUID returns an error."""
+        url = reverse("group-detail", kwargs={"uuid": "potato"})
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
     def test_read_group_list_success(self):
         """Test that we can read a list of groups."""
         url = reverse("group-list")
