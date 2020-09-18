@@ -129,6 +129,20 @@
               ],
               "default": "enabled"
             }
+          },
+          {
+            "name": "admin_only",
+            "in": "query",
+            "description": "Get only admin users within an account. Setting this would ignore the parameters: usernames, email",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ],
+              "default": "false"
+            }
           }
         ],
         "responses": {
