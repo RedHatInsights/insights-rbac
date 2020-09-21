@@ -36,8 +36,6 @@ logger = logging.getLogger(__name__)
 def destructive_ok():
     """Determine if it's ok to run destructive operations."""
     now = datetime.datetime.utcnow().replace(tzinfo=pytz.UTC)
-    print(f"now: {now}")
-    print(f"INTERNAL_DESTRUCTIVE_API_OK_UNTIL: {settings.INTERNAL_DESTRUCTIVE_API_OK_UNTIL}")
     return now < settings.INTERNAL_DESTRUCTIVE_API_OK_UNTIL
 
 
