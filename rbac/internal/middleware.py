@@ -50,6 +50,8 @@ class InternalIdentityHeaderMiddleware(MiddlewareMixin):
 
         user = User()
         try:
+            if not json_rh_auth["identity"]["type"] == "Associate":
+                return HttpResponseForbidden()
             user.username = json_rh_auth["identity"]["associate"]["email"]
             user.admin = True
         except KeyError:
