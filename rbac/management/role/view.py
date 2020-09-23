@@ -19,6 +19,7 @@
 import os
 
 from django.core.exceptions import ValidationError
+from django.conf import settings
 from django.db import transaction
 from django.db.models import Q
 from django.db.models.aggregates import Count
@@ -38,7 +39,6 @@ from .model import Role
 from .serializer import RoleSerializer
 
 TESTING_APP = os.getenv("TESTING_APPLICATION")
-APP_ALLOW_LIST = ["cost-management", "remediations", "inventory", "drift", "policies"]
 ADDITIONAL_FIELDS_KEY = "add_fields"
 VALID_FIELD_VALUES = ["groups_in_count", "groups_in"]
 LIST_ROLE_FIELDS = [
@@ -56,7 +56,7 @@ LIST_ROLE_FIELDS = [
 ]
 
 if TESTING_APP:
-    APP_ALLOW_LIST.append(TESTING_APP)
+    settings.ROLE_CREATE_ALLOW_LIST.append(TESTING_APP)
 
 
 class RoleFilter(CommonFilters):
@@ -181,7 +181,7 @@ class RoleViewSet(
         access_list = self.validate_and_get_access_list(request.data)
         for perm in access_list:
             app = perm.get("permission").split(":")[0]
-            if app not in APP_ALLOW_LIST:
+            if app not in settings.ROLE_CREATE_ALLOW_LIST:
                 key = "role"
                 message = "Custom roles cannot be created for {}".format(app)
                 error = {key: [_(message)]}
@@ -367,7 +367,7 @@ class RoleViewSet(
         if access_list:
             for perm in access_list:
                 app = perm.get("permission").split(":")[0]
-                if app not in APP_ALLOW_LIST:
+                if app not in settings.ROLE_CREATE_ALLOW_LIST:
                     key = "role"
                     message = "Custom roles cannot be created for {}".format(app)
                     error = {key: [_(message)]}
