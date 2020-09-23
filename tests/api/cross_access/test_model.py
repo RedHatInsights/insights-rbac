@@ -59,6 +59,38 @@ class CrossAccountRequestModelTests(IdentityRequest):
         self.assertEqual(self.request.endDate, self.ref_time + timedelta(10))
         self.assertEqual(self.request.status, "requested")
 
+    def test_request_with_invalid_dates(self):
+        """Confirm that an invalid start or end date is rejected."""
+        # Invalid start date, omitted end date
+        self.assertRaises(
+            Exception,
+            CrossAccountRequest.objects.create,
+            target_account="123456",
+            employee=self.employee,
+            startDate="ABC123"
+        )
+
+        # Invalid endDate, omitted start date
+        self.assertRaises(
+            Exception,
+            CrossAccountRequest.objects.create,
+            target_account="33823827",
+            employee=self.employee,
+            endDate="RSTLNE118"
+        )
+
+        # Invalid start and end date
+        self.assertRaises(
+            Exception,
+            CrossAccountRequest.objects.create,
+            target_account="8888888",
+            employee=self.employee,
+            startDate="INVALID",
+            endDate="INVALID"
+        )
+
+        # TODO: Can we be more specific about the exception that we want raised?
+
     def test_request_with_unknown_status_fail(self):
         """Test the creation of cross account request with unknown status fail."""
         # Can't create
