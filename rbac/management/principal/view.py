@@ -29,6 +29,8 @@ USERNAMES_KEY = "usernames"
 EMAIL_KEY = "email"
 SORTORDER_KEY = "sort_order"
 VALID_SORTORDER_VALUE = ["asc", "desc"]
+STATUS_KEY = "status"
+VALID_STATUS_VALUE = ["enabled", "disabled", "all"]
 
 
 class PrincipalView(APIView):
@@ -93,6 +95,7 @@ class PrincipalView(APIView):
             usernames = query_params.get(USERNAMES_KEY)
             email = query_params.get(EMAIL_KEY)
             sort_order = validate_and_get_key(query_params, SORTORDER_KEY, VALID_SORTORDER_VALUE, "asc")
+            principal_status = validate_and_get_key(query_params, STATUS_KEY, VALID_STATUS_VALUE, "enabled")
         except ValueError:
             error = {
                 "detail": "Values for limit and offset must be positive numbers.",
@@ -116,7 +119,9 @@ class PrincipalView(APIView):
                 user.account, email=email, limit=limit, offset=offset, sort_order=sort_order
             )
         else:
-            resp = proxy.request_principals(user.account, limit=limit, offset=offset, sort_order=sort_order)
+            resp = proxy.request_principals(
+                user.account, limit=limit, offset=offset, sort_order=sort_order, status=principal_status
+            )
         status_code = resp.get("status_code")
         response_data = {}
         if status_code == status.HTTP_200_OK:

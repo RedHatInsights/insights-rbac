@@ -59,7 +59,7 @@ class PrincipalProxy:  # pylint: disable=too-few-public-methods
         self.client_cert = os.path.join(settings.BASE_DIR, "management", "principal", "certs", "client.pem")
 
     @staticmethod
-    def _create_params(limit=None, offset=None, sort_order=None):
+    def _create_params(limit=None, offset=None, sort_order=None, status=None):
         """Create query parameters."""
         params = {}
         if limit:
@@ -71,6 +71,8 @@ class PrincipalProxy:  # pylint: disable=too-few-public-methods
             if sort_order == "desc":
                 sort_order = "des"
             params["sortOrder"] = sort_order
+        if status:
+            params["status"] = status
 
         return params
 
@@ -170,7 +172,7 @@ class PrincipalProxy:  # pylint: disable=too-few-public-methods
             resp["errors"] = [error]
         return resp
 
-    def request_principals(self, account, email=None, limit=None, offset=None, sort_order=None):
+    def request_principals(self, account, email=None, limit=None, offset=None, sort_order=None, status=None):
         """Request principals for an account."""
         if email:
             account_principals_path = f"/v1/accounts/{account}/usersBy"
@@ -181,7 +183,7 @@ class PrincipalProxy:  # pylint: disable=too-few-public-methods
             method = requests.get
             payload = None
 
-        params = self._create_params(limit=limit, offset=offset, sort_order=sort_order)
+        params = self._create_params(limit=limit, offset=offset, sort_order=sort_order, status=status)
         url = "{}://{}:{}{}{}".format(self.protocol, self.host, self.port, self.path, account_principals_path)
 
         # For v2 account users endpoints are already filtered by account
