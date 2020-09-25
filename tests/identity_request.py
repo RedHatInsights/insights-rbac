@@ -96,13 +96,6 @@ class IdentityRequest(TestCase):
         if create_customer:
             cls.customer = cls._create_customer(account, create_tenant=create_tenant)
 
-        identity = {
-            "identity": {
-                "account_number": account,
-                "type": "User",
-                "user": {"username": user_data["username"], "email": user_data["email"], "is_org_admin": is_org_admin},
-            }
-        }
         json_identity = json_dumps(cls._build_identity(user_data, account, is_org_admin, is_internal))
         mock_header = b64encode(json_identity.encode("utf-8"))
         request = Mock()
