@@ -29,7 +29,7 @@ from management.models import Group, Policy, Role
 from tests.identity_request import IdentityRequest
 
 
-class GroupViewsetTests(IdentityRequest):
+class InternalViewsetTests(IdentityRequest):
     """Test the internal viewset."""
 
     def valid_destructive_time():
