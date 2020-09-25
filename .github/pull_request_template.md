@@ -23,3 +23,35 @@ Is any special local setup required?
 
 - [ ] is there known, direct impact to dependent teams/components?
   -  if yes, how will this be handled?
+
+## Secure Coding Practices Checklist Link
+- https://github.com/xxlhacker/secure-code-checklist
+
+## Secure Code Practices Checklist
+- [ ] Input Validation
+
+- [ ] Output Encoding
+
+- [ ] Authentication and Password Management
+
+- [ ] Session Management
+
+- [ ] Access Control
+
+- [ ] Cryptographic Practices
+
+- [ ] Error Handling and Logging
+
+- [ ] Data Protection
+
+- [ ] Communication Security
+
+- [ ] System Configuration
+
+- [ ] Database Security
+
+- [ ] File Management
+
+- [ ] Memory Management
+
+- [ ] General Coding Practices
