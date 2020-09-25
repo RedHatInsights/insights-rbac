@@ -27,7 +27,7 @@ Is any special local setup required?
 ## Secure Coding Practices Checklist Link
 - https://github.com/xxlhacker/secure-code-checklist
 
-## Secure Code Practices Checklist
+## Secure Coding Practices Checklist
 - [ ] Input Validation
 
 - [ ] Output Encoding
