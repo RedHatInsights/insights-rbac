@@ -151,5 +151,9 @@ class InternalViewsetTests(IdentityRequest):
 
         response = self.client.get(f"/_private/api/tenant/unmodified/", **self.request.META)
         response_data = json.loads(response.content)
-        self.assertCountEqual(response_data, [self.tenant.schema_name, unmodified_tenant_2.schema_name])
+        self.assertCountEqual(
+            response_data["unmodified_tenants"], [self.tenant.schema_name, unmodified_tenant_2.schema_name]
+        )
+        self.assertEqual(response_data["unmodified_tenants_count"], 2)
+        self.assertEqual(response_data["total_tenants_count"], 4)
         self.assertEqual(Tenant.objects.count(), 4)
