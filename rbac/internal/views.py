@@ -59,7 +59,12 @@ def list_unmodified_tenants(request):
         with tenant_context(tenant_obj):
             if tenant_is_unmodified():
                 to_return.append(tenant_obj.schema_name)
-    return HttpResponse(json.dumps(to_return), content_type="application/json")
+    payload = {
+        "unmodified_tenants": to_return,
+        "unmodified_tenants_count": len(to_return),
+        "total_tenants_count": tenant_qs.count(),
+    }
+    return HttpResponse(json.dumps(payload), content_type="application/json")
 
 
 def tenant_view(request, tenant_schema_name):
