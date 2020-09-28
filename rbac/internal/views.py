@@ -41,11 +41,13 @@ def destructive_ok():
 
 def tenant_is_unmodified():
     """Determine whether or not the tenant has been modified."""
-    group_qs = Group.objects.filter(system=True).count()
-    role_qs = Role.objects.filter(system=True).count()
-    only_system_group = group_qs and Group.objects.count() == 1
-    only_system_roles = role_qs and Role.objects.count() == role_qs
-    return only_system_group and only_system_roles
+    if Role.objects.filter(system=True).count() != Role.objects.count():
+        return False
+    if Group.objects.count() != 1:
+        return False
+    if Group.objects.filter(system=True).count() != 1:
+        return False
+    return True
 
 
 def list_unmodified_tenants(request):
