@@ -25,7 +25,7 @@ Is any special local setup required?
   -  if yes, how will this be handled?
 
 ## Secure Coding Practices Checklist Link
-- https://github.com/xxlhacker/secure-code-checklist
+- https://github.com/RedHatInsights/secure-coding-checklist
 
 ## Secure Coding Practices Checklist
 - [ ] Input Validation
