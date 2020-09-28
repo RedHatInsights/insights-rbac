@@ -27,11 +27,14 @@ https://docs.djangoproject.com/en/2.0/ref/settings/
 """
 import os
 
+import datetime
 import sys
 import logging
+import pytz
 
 from boto3.session import Session
 from corsheaders.defaults import default_headers
+from dateutil.parser import parse as parse_dt
 
 # Database
 # https://docs.djangoproject.com/en/2.0/ref/settings/#databases
@@ -106,6 +109,7 @@ MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
     "django.middleware.common.CommonMiddleware",
     "rbac.middleware.IdentityHeaderMiddleware",
+    "internal.middleware.InternalIdentityHeaderMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
     "django_prometheus.middleware.PrometheusAfterMiddleware",
@@ -315,3 +319,13 @@ if len(sys.argv) > 1 and sys.argv[1] == "test":
 # Optionally log all DB queries
 if ENVIRONMENT.bool("LOG_DATABASE_QUERIES", default=False):
     LOGGING["loggers"]["django.db.backends"] = {"handlers": ["console"], "level": "DEBUG", "propagate": False}
+
+# Internal API Configuration
+INTERNAL_API_PATH_PREFIXES = ["/_private/"]
+
+try:
+    INTERNAL_DESTRUCTIVE_API_OK_UNTIL = parse_dt(os.environ.get("RBAC_DESTRUCTIVE_ENABLED", "not-a-real-time"))
+    if INTERNAL_DESTRUCTIVE_API_OK_UNTIL.tzinfo is None:
+        INTERNAL_DESTRUCTIVE_API_OK_UNTIL = INTERNAL_DESTRUCTIVE_API_OK_UNTIL.replace(tzinfo=pytz.UTC)
+except ValueError as e:
+    INTERNAL_DESTRUCTIVE_API_OK_UNTIL = datetime.datetime(1970, 1, 1, tzinfo=pytz.UTC)
