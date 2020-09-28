@@ -325,7 +325,7 @@ INTERNAL_API_PATH_PREFIXES = ["/_private/"]
 
 try:
     INTERNAL_DESTRUCTIVE_API_OK_UNTIL = parse_dt(
-        os.environ.get("RBAC_DESTRUCTIVE_ENABLED", "not-a-real-time"), tzinfos={"UTC": pytz.UTC}
-    )
+        os.environ.get("RBAC_DESTRUCTIVE_ENABLED", "not-a-real-time")
+    ).replace(tzinfo=pytz.UTC)
 except ValueError as e:
     INTERNAL_DESTRUCTIVE_API_OK_UNTIL = datetime.datetime(1970, 1, 1, tzinfo=pytz.UTC)
