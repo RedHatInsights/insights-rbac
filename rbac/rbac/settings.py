@@ -324,7 +324,7 @@ if ENVIRONMENT.bool("LOG_DATABASE_QUERIES", default=False):
 INTERNAL_API_PATH_PREFIXES = ["/_private/"]
 
 try:
-    INTERNAL_DESTRUCTIVE_API_OK_UNTIL = parse_dt(os.environ.get("RBAC_DESTRUCTIVE_ENABLED", "not-a-real-time"))
+    INTERNAL_DESTRUCTIVE_API_OK_UNTIL = parse_dt(os.environ.get("RBAC_DESTRUCTIVE_ENABLED_UNTIL", "not-a-real-time"))
     if INTERNAL_DESTRUCTIVE_API_OK_UNTIL.tzinfo is None:
         INTERNAL_DESTRUCTIVE_API_OK_UNTIL = INTERNAL_DESTRUCTIVE_API_OK_UNTIL.replace(tzinfo=pytz.UTC)
 except ValueError as e:
