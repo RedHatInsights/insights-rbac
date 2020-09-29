@@ -29,6 +29,10 @@ USERNAMES_KEY = "usernames"
 EMAIL_KEY = "email"
 SORTORDER_KEY = "sort_order"
 VALID_SORTORDER_VALUE = ["asc", "desc"]
+STATUS_KEY = "status"
+VALID_STATUS_VALUE = ["enabled", "disabled", "all"]
+ADMIN_ONLY_KEY = "admin_only"
+VALID_ADMIN_ONLY_VALUE = ["true", "false"]
 
 
 class PrincipalView(APIView):
@@ -87,12 +91,15 @@ class PrincipalView(APIView):
         default_limit = StandardResultsSetPagination.default_limit
         usernames = None
         usernames_filter = ""
+        options = {}
         try:
             limit = int(query_params.get("limit", default_limit))
             offset = int(query_params.get("offset", 0))
             usernames = query_params.get(USERNAMES_KEY)
             email = query_params.get(EMAIL_KEY)
-            sort_order = validate_and_get_key(query_params, SORTORDER_KEY, VALID_SORTORDER_VALUE, "asc")
+            options["sort_order"] = validate_and_get_key(query_params, SORTORDER_KEY, VALID_SORTORDER_VALUE, "asc")
+            options["status"] = validate_and_get_key(query_params, STATUS_KEY, VALID_STATUS_VALUE, "enabled")
+            options["admin_only"] = validate_and_get_key(query_params, ADMIN_ONLY_KEY, VALID_ADMIN_ONLY_VALUE, "false")
         except ValueError:
             error = {
                 "detail": "Values for limit and offset must be positive numbers.",
@@ -108,15 +115,15 @@ class PrincipalView(APIView):
         if usernames:
             principals = usernames.split(",")
             resp = proxy.request_filtered_principals(
-                principals, account=user.account, limit=limit, offset=offset, sort_order=sort_order
+                principals, account=user.account, limit=limit, offset=offset, sort_order=options["sort_order"]
             )
             usernames_filter = f"&usernames={usernames}"
         elif email:
             resp = proxy.request_principals(
-                user.account, email=email, limit=limit, offset=offset, sort_order=sort_order
+                user.account, email=email, limit=limit, offset=offset, options={"sort_order": options["sort_order"]}
             )
         else:
-            resp = proxy.request_principals(user.account, limit=limit, offset=offset, sort_order=sort_order)
+            resp = proxy.request_principals(user.account, limit=limit, offset=offset, options=options)
         status_code = resp.get("status_code")
         response_data = {}
         if status_code == status.HTTP_200_OK:

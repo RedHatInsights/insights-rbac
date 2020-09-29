@@ -63,7 +63,9 @@ class PrincipalViewsetTests(IdentityRequest):
         client = APIClient()
         response = client.get(url, **self.headers)
 
-        mock_request.assert_called_once_with(ANY, limit=10, offset=0, sort_order="asc")
+        mock_request.assert_called_once_with(
+            ANY, limit=10, offset=0, options={"sort_order": "asc", "status": "enabled", "admin_only": "false"}
+        )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         for keyname in ["meta", "links", "data"]:
             self.assertIn(keyname, response.data)
@@ -94,7 +96,9 @@ class PrincipalViewsetTests(IdentityRequest):
         client = APIClient()
         response = client.get(url, **self.headers)
 
-        mock_request.assert_called_once_with(ANY, limit=10, offset=0, sort_order="asc")
+        mock_request.assert_called_once_with(
+            ANY, limit=10, offset=0, options={"sort_order": "asc", "status": "enabled", "admin_only": "false"}
+        )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         for keyname in ["meta", "links", "data"]:
             self.assertIn(keyname, response.data)
@@ -241,6 +245,68 @@ class PrincipalViewsetTests(IdentityRequest):
         resp = proxy._process_data(response.data.get("data"), account="54321", account_filter=False)
         self.assertEqual(len(resp), 1)
 
-        mock_request.assert_called_once_with(ANY, email="test_user@example.com", limit=10, offset=0, sort_order="asc")
+        mock_request.assert_called_once_with(
+            ANY, email="test_user@example.com", limit=10, offset=0, options={"sort_order": "asc"}
+        )
 
         self.assertEqual(resp[0]["username"], "test_user")
+
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_principals",
+        return_value={
+            "status_code": 200,
+            "data": {"userCount": "1", "users": [{"username": "test_user", "is_org_admin": "true"}]},
+        },
+    )
+    def test_read_users_of_desired_status(self, mock_request):
+        """Test that we can return users of desired status within an account"""
+        url = f'{reverse("principals")}?status=disabled'
+        client = APIClient()
+        proxy = PrincipalProxy()
+        response = client.get(url, **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        for keyname in ["meta", "links", "data"]:
+            self.assertIn(keyname, response.data)
+        self.assertIsInstance(response.data.get("data"), list)
+        self.assertEqual(response.data.get("meta").get("count"), "1")
+        mock_request.assert_called_once_with(
+            ANY, limit=10, offset=0, options={"sort_order": "asc", "status": "disabled", "admin_only": "false"}
+        )
+
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_principals",
+        return_value={
+            "status_code": 200,
+            "data": {"userCount": "1", "users": [{"username": "test_user", "is_org_admin": "true"}]},
+        },
+    )
+    def test_read_list_of_admins(self, mock_request):
+        """Test that we can return only org admins within an account"""
+        url = f'{reverse("principals")}?admin_only=true'
+        client = APIClient()
+        proxy = PrincipalProxy()
+        response = client.get(url, **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        for keyname in ["meta", "links", "data"]:
+            self.assertIn(keyname, response.data)
+        self.assertIsInstance(response.data.get("data"), list)
+        self.assertEqual(response.data.get("meta").get("count"), "1")
+        mock_request.assert_called_once_with(
+            ANY, limit=10, offset=0, options={"sort_order": "asc", "status": "enabled", "admin_only": "true"}
+        )
+
+    def test_read_users_with_invalid_status_value(self):
+        """Test that reading user with invalid status value returns 400"""
+        url = f'{reverse("principals")}?status=invalid'
+        client = APIClient()
+        proxy = PrincipalProxy()
+        response = client.get(url, **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_read_users_with_invalid_admin_only_value(self):
+        """Test that reading user with invalid status value returns 400"""
+        url = f'{reverse("principals")}?admin_only=invalid'
+        client = APIClient()
+        proxy = PrincipalProxy()
+        response = client.get(url, **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
