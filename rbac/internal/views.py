@@ -53,13 +53,18 @@ def tenant_is_unmodified():
 def list_unmodified_tenants(request):
     """List unmodified tenants."""
     logger.info(f"Unmodified tenants requested by: {request.user.username}")
-    tenant_qs = Tenant.objects.all()
+    tenant_qs = Tenant.objects.exclude(schema_name="public")
     to_return = []
     for tenant_obj in tenant_qs:
         with tenant_context(tenant_obj):
             if tenant_is_unmodified():
                 to_return.append(tenant_obj.schema_name)
-    return HttpResponse(json.dumps(to_return), content_type="application/json")
+    payload = {
+        "unmodified_tenants": to_return,
+        "unmodified_tenants_count": len(to_return),
+        "total_tenants_count": tenant_qs.count(),
+    }
+    return HttpResponse(json.dumps(payload), content_type="application/json")
 
 
 def tenant_view(request, tenant_schema_name):
