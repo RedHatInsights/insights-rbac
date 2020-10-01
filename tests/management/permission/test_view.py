@@ -26,6 +26,8 @@ from management.models import Permission
 from tests.identity_request import IdentityRequest
 
 OPTION_URL = reverse("permission-options")
+LIST_URL = reverse("permission-list")
+CLIENT = APIClient()
 
 
 class PermissionViewsetTests(IdentityRequest):
@@ -47,6 +49,11 @@ class PermissionViewsetTests(IdentityRequest):
             self.permissionB = Permission.objects.create(permission="rbac:*:*")
             self.permissionC = Permission.objects.create(permission="acme:*:*")
             self.permissionD = Permission.objects.create(permission="acme:*:write")
+            self.permissionE = Permission.objects.create(permission="*:*:*")
+            self.permissionF = Permission.objects.create(permission="*:bar:*")
+            self.permissionG = Permission.objects.create(permission="*:*:baz")
+            self.permissionH = Permission.objects.create(permission="*:bar:baz")
+            self.permissionI = Permission.objects.create(permission="foo:bar:*")
 
     def tearDown(self):
         """Tear down permission viewset tests."""
@@ -55,16 +62,14 @@ class PermissionViewsetTests(IdentityRequest):
 
     def test_read_permission_list_success(self):
         """Test that we can read a list of permissions."""
-        url = reverse("permission-list")
-        client = APIClient()
-        response = client.get(url, **self.headers)
+        response = CLIENT.get(LIST_URL, **self.headers)
 
         # three parts in response: meta, links and data
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         for keyname in ["meta", "links", "data"]:
             self.assertIn(keyname, response.data)
         self.assertIsInstance(response.data.get("data"), list)
-        self.assertEqual(len(response.data.get("data")), 4)
+        self.assertEqual(len(response.data.get("data")), 9)
 
         for perm in response.data.get("data"):
             self.assertIsNotNone(perm.get("application"))
@@ -75,20 +80,18 @@ class PermissionViewsetTests(IdentityRequest):
 
     def test_read_permission_list_application_filter(self):
         """Test that we can filter a list of permissions by application."""
-        url = reverse("permission-list")
+        url = LIST_URL
         url = f"{url}?application=rbac"
-        client = APIClient()
-        response = client.get(url, **self.headers)
+        response = CLIENT.get(url, **self.headers)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data.get("data")), 2)
 
     def test_read_permission_list_resource_type_filter(self):
         """Test that we can filter a list of permissions by resource_type."""
-        url = reverse("permission-list")
+        url = LIST_URL
         url = f"{url}?resource_type=roles"
-        client = APIClient()
-        response = client.get(url, **self.headers)
+        response = CLIENT.get(url, **self.headers)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data.get("data")), 1)
@@ -96,10 +99,9 @@ class PermissionViewsetTests(IdentityRequest):
 
     def test_read_permission_list_verb_filter(self):
         """Test that we can filter a list of permissions by verb."""
-        url = reverse("permission-list")
+        url = LIST_URL
         url = f"{url}?verb=read"
-        client = APIClient()
-        response = client.get(url, **self.headers)
+        response = CLIENT.get(url, **self.headers)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data.get("data")), 1)
@@ -107,10 +109,9 @@ class PermissionViewsetTests(IdentityRequest):
 
     def test_read_permission_list_permission_filter(self):
         """Test that we can filter a list of permissions by permission."""
-        url = reverse("permission-list")
+        url = LIST_URL
         url = f"{url}?permission=rbac:*:*"
-        client = APIClient()
-        response = client.get(url, **self.headers)
+        response = CLIENT.get(url, **self.headers)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data.get("data")), 1)
@@ -118,26 +119,25 @@ class PermissionViewsetTests(IdentityRequest):
 
     def test_get_list_is_the_only_valid_method(self):
         """Test GET on /permissions/ is the only valid method."""
-        url = reverse("permission-list")
-        client = APIClient()
-        response = client.post(url, **self.headers)
+        response = CLIENT.post(LIST_URL, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_405_METHOD_NOT_ALLOWED)
 
-        response = client.put(url, **self.headers)
+        response = CLIENT.put(LIST_URL, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_405_METHOD_NOT_ALLOWED)
 
-        response = client.delete(url, **self.headers)
+        response = CLIENT.delete(LIST_URL, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_405_METHOD_NOT_ALLOWED)
 
     def test_filters_multiple_application_values(self):
         """Test that we can filter permissions with multiple application values."""
         with tenant_context(self.tenant):
-            expected_permissions = list(Permission.objects.values_list("permission", flat=True))
+            expected_permissions = list(
+                Permission.objects.filter(application__in=["rbac", "acme"]).values_list("permission", flat=True)
+            )
 
-        url = reverse("permission-list")
+        url = LIST_URL
         url = f"{url}?application=rbac,acme"
-        client = APIClient()
-        response = client.get(url, **self.headers)
+        response = CLIENT.get(url, **self.headers)
         response_permissions = [p.get("permission") for p in response.data.get("data")]
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -147,16 +147,17 @@ class PermissionViewsetTests(IdentityRequest):
     def test_filters_multiple_resource_type_values(self):
         """Test that we can filter permissions with multiple resource_type values."""
         with tenant_context(self.tenant):
-            expected_permissions = list(Permission.objects.values_list("permission", flat=True))
+            expected_permissions = list(
+                Permission.objects.filter(resource_type__in=["roles", "*"]).values_list("permission", flat=True)
+            )
 
-        url = reverse("permission-list")
+        url = LIST_URL
         url = f"{url}?resource_type=roles,*"
-        client = APIClient()
-        response = client.get(url, **self.headers)
+        response = CLIENT.get(url, **self.headers)
         response_permissions = [p.get("permission") for p in response.data.get("data")]
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(response.data.get("data")), 4)
+        self.assertEqual(len(response.data.get("data")), 6)
         self.assertCountEqual(expected_permissions, response_permissions)
 
     def test_filters_multiple_verb_values(self):
@@ -166,10 +167,9 @@ class PermissionViewsetTests(IdentityRequest):
                 Permission.objects.values_list("permission", flat=True).filter(verb__in=["read", "write"])
             )
 
-        url = reverse("permission-list")
+        url = LIST_URL
         url = f"{url}?verb=read,write"
-        client = APIClient()
-        response = client.get(url, **self.headers)
+        response = CLIENT.get(url, **self.headers)
         response_permissions = [p.get("permission") for p in response.data.get("data")]
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -180,8 +180,7 @@ class PermissionViewsetTests(IdentityRequest):
         """Test that query invalid field fail."""
 
         url = f"{OPTION_URL}?field=invalid"
-        client = APIClient()
-        response = client.get(url, **self.headers)
+        response = CLIENT.get(url, **self.headers)
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
@@ -189,30 +188,27 @@ class PermissionViewsetTests(IdentityRequest):
         """Test that query invalid field fail."""
 
         url = f"{OPTION_URL}"
-        client = APIClient()
-        response = client.get(url, **self.headers)
+        response = CLIENT.get(url, **self.headers)
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
     def test_get_fields_with_limit(self):
         """Test that we can obtain the expected field with pagination."""
         url = f"{OPTION_URL}?field=application&limit=1"
-        client = APIClient()
-        response = client.get(url, **self.headers)
+        response = CLIENT.get(url, **self.headers)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertIsNotNone(response.data.get("data"))
         self.assertIsInstance(response.data.get("data"), list)
         self.assertEqual(len(response.data.get("data")), 1)
-        self.assertEqual(response.data.get("meta").get("count"), 2)
+        self.assertEqual(response.data.get("meta").get("count"), 4)
         self.assertEqual(response.data.get("meta").get("limit"), 1)
 
     def test_get_fields_without_limit(self):
         """Test that we can obtain the expected field without pagination."""
 
         url = f"{OPTION_URL}?field=application"
-        client = APIClient()
-        response = client.get(url, **self.headers)
+        response = CLIENT.get(url, **self.headers)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertIsNotNone(response.data.get("data"))
@@ -229,9 +225,8 @@ class PermissionViewsetTests(IdentityRequest):
 
         url_all = f"{OPTION_URL}?field=application"
         url_filtered = f"{OPTION_URL}?field=application&verb=read,write"
-        client = APIClient()
-        response_all = client.get(url_all, **self.headers)
-        response_filtered = client.get(url_filtered, **self.headers)
+        response_all = CLIENT.get(url_all, **self.headers)
+        response_filtered = CLIENT.get(url_filtered, **self.headers)
 
         self.assertEqual(response_all.status_code, status.HTTP_200_OK)
         self.assertEqual(response_filtered.status_code, status.HTTP_200_OK)
@@ -248,9 +243,8 @@ class PermissionViewsetTests(IdentityRequest):
 
         url_all = f"{OPTION_URL}?field=resource_type"
         url_filtered = f"{OPTION_URL}?field=resource_type&application=acme"
-        client = APIClient()
-        response_all = client.get(url_all, **self.headers)
-        response_filtered = client.get(url_filtered, **self.headers)
+        response_all = CLIENT.get(url_all, **self.headers)
+        response_filtered = CLIENT.get(url_filtered, **self.headers)
 
         self.assertEqual(response_all.status_code, status.HTTP_200_OK)
         self.assertEqual(response_filtered.status_code, status.HTTP_200_OK)
@@ -267,9 +261,8 @@ class PermissionViewsetTests(IdentityRequest):
 
         url_all = f"{OPTION_URL}?field=verb"
         url_filtered = f"{OPTION_URL}?field=verb&resource_type=roles"
-        client = APIClient()
-        response_all = client.get(url_all, **self.headers)
-        response_filtered = client.get(url_filtered, **self.headers)
+        response_all = CLIENT.get(url_all, **self.headers)
+        response_filtered = CLIENT.get(url_filtered, **self.headers)
 
         self.assertEqual(response_all.status_code, status.HTTP_200_OK)
         self.assertEqual(response_filtered.status_code, status.HTTP_200_OK)
@@ -284,11 +277,54 @@ class PermissionViewsetTests(IdentityRequest):
             )
 
         url = f"{OPTION_URL}?field=verb&resource_type=roles,*"
-        client = APIClient()
-        response = client.get(url, **self.headers)
+        response = CLIENT.get(url, **self.headers)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertCountEqual(expected, response.data.get("data"))
+
+    def test_exclude_globals_filters_any_globals_out_when_true(self):
+        """Test that we filter out any global permissions when exclude_globals=true."""
+        with tenant_context(self.tenant):
+            expected = list(
+                Permission.objects.filter(permission=self.permissionA.permission).values_list("permission", flat=True)
+            )
+
+        response = CLIENT.get(f"{LIST_URL}?exclude_globals=true", **self.headers)
+        response_permissions = [p.get("permission") for p in response.data.get("data")]
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data.get("data")), 1)
+        self.assertCountEqual(expected, response_permissions)
+
+    def test_exclude_globals_filters_no_globals_out_when_false(self):
+        """Test that we do not filter out any global permissions when exclude_globals=false."""
+        with tenant_context(self.tenant):
+            expected = list(Permission.objects.values_list("permission", flat=True))
+
+        response = CLIENT.get(f"{LIST_URL}?exclude_globals=false", **self.headers)
+        response_permissions = [p.get("permission") for p in response.data.get("data")]
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data.get("data")), 9)
+        self.assertCountEqual(expected, response_permissions)
+
+    def test_exclude_globals_filters_no_globals_out_by_default(self):
+        """Test that we do not filter out any global permissions when exclude_globals is unset."""
+        with tenant_context(self.tenant):
+            expected = list(Permission.objects.values_list("permission", flat=True))
+
+        response = CLIENT.get(LIST_URL, **self.headers)
+        response_permissions = [p.get("permission") for p in response.data.get("data")]
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data.get("data")), 9)
+        self.assertCountEqual(expected, response_permissions)
+
+    def test_exclude_globals_fails_with_invalid_value(self):
+        """Test that we return a 400 when exclude_globals is not a supported value."""
+        response = CLIENT.get(f"{LIST_URL}?exclude_globals=foo", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
 
 class PermissionViewsetTestsNonAdmin(IdentityRequest):
@@ -316,14 +352,11 @@ class PermissionViewsetTestsNonAdmin(IdentityRequest):
 
     def test_read_permission_list_fail(self):
         """Test that we can not read a list of permissions as a non-admin."""
-        url = reverse("permission-list")
-        client = APIClient()
-        response = client.get(url, **self.headers)
+        response = CLIENT.get(LIST_URL, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
     def test_read_permission_options_list_fail(self):
         """Test that we can not read a list of filed options of permissions  as a non-admin."""
         url = f"{OPTION_URL}?field=application"
-        client = APIClient()
-        response = client.get(url, **self.headers)
+        response = CLIENT.get(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
