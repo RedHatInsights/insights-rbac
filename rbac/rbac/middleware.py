@@ -20,6 +20,7 @@ import binascii
 import logging
 from json.decoder import JSONDecodeError
 
+from django.conf import settings
 from django.db import connections, transaction
 from django.http import Http404, HttpResponse
 from django.utils.deprecation import MiddlewareMixin
@@ -113,6 +114,10 @@ class IdentityHeaderMiddleware(BaseTenantMiddleware):
         # Get request ID
         request.req_id = request.META.get(RH_INSIGHTS_REQUEST_ID)
 
+        if any([request.path.startswith(prefix) for prefix in settings.INTERNAL_API_PATH_PREFIXES]):
+            # This request is for a private API endpoint
+            return
+
         if is_no_auth(request):
             return
         user = User()
@@ -155,6 +160,10 @@ class IdentityHeaderMiddleware(BaseTenantMiddleware):
             request (object): The request object
             response (object): The response object
         """
+        if any([request.path.startswith(prefix) for prefix in settings.INTERNAL_API_PATH_PREFIXES]):
+            # This request is for a private API endpoint
+            return response
+
         query_string = ""
         is_admin = False
         is_system = False
