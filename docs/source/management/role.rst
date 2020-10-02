@@ -23,12 +23,14 @@ Operation defines the application logic action, for example::
 - write
 - order
 
-Note that in any of the above stanzas, a '*' is taked to mean 'all'.
+Note that in any of the above stanzas, ``*`` is taked to mean "all".
 
 
 Resource Definitions
 ********************
-Resource Definitions are a somewhat trickier aspect of our implementation of RBAC. In general, ALL roles should be created with a resourceDefinitions stanza of '[]'. This is taken to mean "no additional filtering" and will generally result in the expected behavior. 
+Resource Definitions are a somewhat trickier aspect of our implementation of RBAC currently only used by the cost-management service.
+
+In general, ALL roles should be created with a resourceDefinitions stanza of ``[]``. This is taken to mean "no additional filtering" and will generally result in the expected behavior. 
 
 In specific cases where the application logic has been written to handle them, however, resource access can be limited by specifing an attribute filter in the resourceDefinitions stanza as below.
 
