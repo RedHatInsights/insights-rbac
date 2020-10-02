@@ -18,6 +18,8 @@
 from rest_framework import status
 from rest_framework.test import APIClient
 from tenant_schemas.utils import tenant_context
+from unittest.mock import patch
+from django.db.migrations.recorder import MigrationRecorder
 from django.test import TestCase, override_settings
 from datetime import datetime, timedelta
 from unittest.mock import patch
@@ -157,3 +159,40 @@ class InternalViewsetTests(IdentityRequest):
         self.assertEqual(response_data["unmodified_tenants_count"], 2)
         self.assertEqual(response_data["total_tenants_count"], 4)
         self.assertEqual(Tenant.objects.count(), 4)
+
+    @patch("management.tasks.run_migrations_in_worker.delay")
+    def test_run_migrations(self, migration_mock):
+        """Test that we can trigger migrations."""
+        response = self.client.post(f"/_private/api/migrations/run/", **self.request.META)
+        migration_mock.assert_called_once()
+        self.assertEqual(response.status_code, status.HTTP_202_ACCEPTED)
+        self.assertEqual(response.content.decode(), "Migrations are running in a background worker.")
+
+    def test_list_migration_progress(self):
+        """Test that we can get the status of migrations."""
+        migration_name = "foo_migration"
+        app_name = "foo_app"
+        tenant_migrations_complete = Tenant.objects.create(schema_name="acctcomplete")
+        tenant_migrations_incomplete = Tenant.objects.create(schema_name="acctincomplete")
+
+        with tenant_context(tenant_migrations_complete):
+            migrations_have_run = MigrationRecorder.Migration.objects.create(name=migration_name, app=app_name)
+
+        url = f"/_private/api/migrations/progress/?migration_name={migration_name}&app={app_name}"
+        response = self.client.get(url, **self.request.META)
+        response_data = json.loads(response.content)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response_data["migration_name"], migration_name)
+        self.assertEqual(response_data["app_name"], app_name)
+        self.assertEqual(response_data["tenants_completed_count"], 1)
+        self.assertEqual(response_data["percent_completed"], 33)
+        self.assertIn("acctincomplete", response_data["incomplete_tenants"])
+        self.assertNotIn("acctcomplete", response_data["incomplete_tenants"])
+        self.assertEqual(len(response_data["incomplete_tenants"]), 2)
+
+    def test_list_migration_progress_without_migration_name(self):
+        """Test that we get a 400 when no migration name supplied."""
+        url = f"/_private/api/migrations/progress/"
+        response = self.client.get(url, **self.request.META)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.content.decode(), "Please specify a migration name in the `?migration_name=` param.")
