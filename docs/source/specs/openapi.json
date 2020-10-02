@@ -1135,6 +1135,15 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "permission",
+            "in": "query",
+            "description": "The permission(s) to filter roles by. This is an exact match. You may also use a comma-separated list to match on multiple permissions.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -1564,6 +1573,20 @@
             "required": false,
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "name": "exclude_globals",
+            "in": "query",
+            "description": "If set to 'true', this will exclude any permission with a global allowance on either 'application', 'resource_type' or 'verb'. The default is 'false'.",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "false",
+              "enum": [
+                "true",
+                "false"
+              ]
             }
           }
         ],
