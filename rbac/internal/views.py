@@ -25,6 +25,7 @@ from django.conf import settings
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from management.models import Group, Role
+from management.tasks import run_migrations_in_worker
 from tenant_schemas.utils import tenant_context
 
 from api.models import Tenant
@@ -82,4 +83,13 @@ def tenant_view(request, tenant_schema_name):
                 return HttpResponse(status=204)
             else:
                 return HttpResponse("Tenant cannot be deleted.", status=400)
+    return HttpResponse(status=405)
+
+
+def run_migrations(request):
+    """View method for running migrations."""
+    if request.method == "POST":
+        logger.info(f"Running migrations: {request.method} {request.user.username}")
+        run_migrations_in_worker.delay()
+        return HttpResponse("Migrations are running in a background worker.", status=202)
     return HttpResponse(status=405)

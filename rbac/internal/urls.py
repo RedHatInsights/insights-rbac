@@ -23,4 +23,5 @@ from . import views
 urlpatterns = [
     path("api/tenant/unmodified/", views.list_unmodified_tenants),
     path("api/tenant/<str:tenant_schema_name>/", views.tenant_view),
+    path("api/run_migrations/", views.run_migrations),
 ]
