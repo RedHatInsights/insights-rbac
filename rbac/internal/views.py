@@ -22,6 +22,7 @@ import logging
 
 import pytz
 from django.conf import settings
+from django.db.migrations.recorder import MigrationRecorder
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from management.models import Group, Role
@@ -92,4 +93,30 @@ def run_migrations(request):
         logger.info(f"Running migrations: {request.method} {request.user.username}")
         run_migrations_in_worker.delay()
         return HttpResponse("Migrations are running in a background worker.", status=202)
+    return HttpResponse(status=405)
+
+
+def migration_progress(request):
+    """View method for checking migration progress."""
+    if request.method == "GET":
+        migration_name = request.GET.get("migration_name")
+        app = request.GET.get("app", "management")
+        if not migration_name:
+            return HttpResponse("Please specify a migration name in the `?migration_name=` param.", status=400)
+        tenants_completed = 0
+        tenant_qs = Tenant.objects.exclude(schema_name="public")
+        tenant_count = tenant_qs.count()
+        for idx, tenant in enumerate(list(tenant_qs)):
+            with tenant_context(tenant):
+                migrations_have_run = MigrationRecorder.Migration.objects.filter(name=migration_name, app=app).exists()
+                if migrations_have_run:
+                    tenants_completed += 1
+        payload = {
+            "migration_name": migration_name,
+            "tenants_completed": tenants_completed,
+            "total_tenants_count": tenant_count,
+            "percent_completed": int((tenants_completed / tenant_count) * 100),
+        }
+
+        return HttpResponse(json.dumps(payload), status=200)
     return HttpResponse(status=405)
