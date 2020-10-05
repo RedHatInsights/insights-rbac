@@ -15,7 +15,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 
-"""Describes the urls and patterns for internal routess."""
+"""Describes the urls and patterns for internal routes."""
 from django.urls import path
 
 from . import views
@@ -23,4 +23,6 @@ from . import views
 urlpatterns = [
     path("api/tenant/unmodified/", views.list_unmodified_tenants),
     path("api/tenant/<str:tenant_schema_name>/", views.tenant_view),
+    path("api/migrations/run/", views.run_migrations),
+    path("api/migrations/progress/", views.migration_progress),
 ]
