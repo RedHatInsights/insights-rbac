@@ -15,7 +15,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 
-"""Describes the urls and patterns for internal routess."""
+"""Describes the urls and patterns for internal routes."""
 from django.urls import path
 
 from . import views

@@ -84,7 +84,7 @@ def tenant_view(request, tenant_schema_name):
                 return HttpResponse(status=204)
             else:
                 return HttpResponse("Tenant cannot be deleted.", status=400)
-    return HttpResponse(status=405)
+    return HttpResponse(f'Method "{request.method}" not allowed.', status=405)
 
 
 def run_migrations(request):
@@ -93,7 +93,7 @@ def run_migrations(request):
         logger.info(f"Running migrations: {request.method} {request.user.username}")
         run_migrations_in_worker.delay()
         return HttpResponse("Migrations are running in a background worker.", status=202)
-    return HttpResponse(status=405)
+    return HttpResponse(f'Method "{request.method}" not allowed.', status=405)
 
 
 def migration_progress(request):
@@ -126,4 +126,4 @@ def migration_progress(request):
         }
 
         return HttpResponse(json.dumps(payload), content_type="application/json")
-    return HttpResponse(status=405)
+    return HttpResponse(f'Method "{request.method}" not allowed.', status=405)
