@@ -32,3 +32,9 @@ def principal_cleanup():
 def run_migrations_in_worker():
     """Celery task to run migrations."""
     call_command("migrate_schemas")
+
+
+@shared_task
+def run_seeds_in_worker(kwargs):
+    """Celery task to run seeds."""
+    call_command("seeds", **kwargs)

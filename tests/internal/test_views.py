@@ -196,3 +196,29 @@ class InternalViewsetTests(IdentityRequest):
         response = self.client.get(url, **self.request.META)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(response.content.decode(), "Please specify a migration name in the `?migration_name=` param.")
+
+    @patch("management.tasks.run_seeds_in_worker.delay")
+    def test_run_seeds_with_defaults(self, seed_mock):
+        """Test that we can trigger seeds with defaults."""
+        response = self.client.post(f"/_private/api/seeds/run/", **self.request.META)
+        seed_mock.assert_called_once_with({})
+        self.assertEqual(response.status_code, status.HTTP_202_ACCEPTED)
+        self.assertEqual(response.content.decode(), "Seeds are running in a background worker.")
+
+    @patch("management.tasks.run_seeds_in_worker.delay")
+    def test_run_seeds_with_options(self, seed_mock):
+        """Test that we can trigger seeds with options."""
+        response = self.client.post(f"/_private/api/seeds/run/?seed_types=roles,groups", **self.request.META)
+        seed_mock.assert_called_once_with({"roles": True, "groups": True})
+        self.assertEqual(response.status_code, status.HTTP_202_ACCEPTED)
+        self.assertEqual(response.content.decode(), "Seeds are running in a background worker.")
+
+    @patch("management.tasks.run_seeds_in_worker.delay")
+    def test_run_seeds_with_invalid_options(self, seed_mock):
+        """Test that we get a 400 when invalid option supplied."""
+        response = self.client.post(f"/_private/api/seeds/run/?seed_types=foo,bar", **self.request.META)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        seed_mock.assert_not_called()
+        self.assertEqual(
+            response.content.decode(), "Valid options for \"seed_types\": ['permissions', 'roles', 'groups']."
+        )

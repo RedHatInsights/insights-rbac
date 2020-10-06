@@ -26,7 +26,7 @@ from django.db.migrations.recorder import MigrationRecorder
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from management.models import Group, Role
-from management.tasks import run_migrations_in_worker
+from management.tasks import run_migrations_in_worker, run_seeds_in_worker
 from tenant_schemas.utils import tenant_context
 
 from api.models import Tenant
@@ -53,7 +53,10 @@ def tenant_is_unmodified():
 
 
 def list_unmodified_tenants(request):
-    """List unmodified tenants."""
+    """List unmodified tenants.
+
+    GET /_private/api/tenant/unmodified/
+    """
     logger.info(f"Unmodified tenants requested by: {request.user.username}")
     tenant_qs = Tenant.objects.exclude(schema_name="public")
     to_return = []
@@ -70,7 +73,10 @@ def list_unmodified_tenants(request):
 
 
 def tenant_view(request, tenant_schema_name):
-    """View method for internal tenant requests."""
+    """View method for internal tenant requests.
+
+    DELETE /_private/api/tenant/<schema_name>/
+    """
     logger.info(f"Tenant view: {request.method} {request.user.username}")
     if request.method == "DELETE":
         if not destructive_ok():
@@ -88,7 +94,10 @@ def tenant_view(request, tenant_schema_name):
 
 
 def run_migrations(request):
-    """View method for running migrations."""
+    """View method for running migrations.
+
+    POST /_private/api/migrations/run/
+    """
     if request.method == "POST":
         logger.info(f"Running migrations: {request.method} {request.user.username}")
         run_migrations_in_worker.delay()
@@ -97,7 +106,10 @@ def run_migrations(request):
 
 
 def migration_progress(request):
-    """View method for checking migration progress."""
+    """View method for checking migration progress.
+
+    GET /_private/api/migrations/progress/?migration_name=<migration_name>
+    """
     if request.method == "GET":
         migration_name = request.GET.get("migration_name")
         app_name = request.GET.get("app", "management")
@@ -126,4 +138,25 @@ def migration_progress(request):
         }
 
         return HttpResponse(json.dumps(payload), content_type="application/json")
+    return HttpResponse(f'Method "{request.method}" not allowed.', status=405)
+
+
+def run_seeds(request):
+    """View method for running seeds.
+
+    POST /_private/api/seeds/run/?seed_types=permissions,rolese,groups
+    """
+    if request.method == "POST":
+        args = {}
+        option_key = "seed_types"
+        valid_values = ["permissions", "roles", "groups"]
+        seed_types_param = request.GET.get(option_key)
+        if seed_types_param:
+            seed_types = seed_types_param.split(",")
+            if not all([value in valid_values for value in seed_types]):
+                return HttpResponse(f'Valid options for "{option_key}": {valid_values}.', status=400)
+            args = {type: True for type in seed_types}
+        logger.info(f"Running seeds: {request.method} {request.user.username}")
+        run_seeds_in_worker.delay(args)
+        return HttpResponse("Seeds are running in a background worker.", status=202)
     return HttpResponse(f'Method "{request.method}" not allowed.', status=405)
