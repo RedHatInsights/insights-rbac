@@ -253,6 +253,33 @@ class ServiceToService(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
 
+class InternalIdentityHeaderMiddleware(IdentityRequest):
+    """Tests against the internal api middleware"""
+
+    def setUp(self):
+        """Set up middleware tests."""
+        super().setUp()
+        self.user_data = self._create_user_data()
+        self.customer = self._create_customer_data()
+        self.internal_request_context = self._create_request_context(
+            self.customer, self.user_data, create_customer=False, is_internal=True
+        )
+
+    def test_internal_user_can_access_private_api(self):
+        request = self.internal_request_context["request"]
+        client = APIClient()
+        response = client.get("/_private/api/tenant/unmodified/", **request.META)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+    def test_external_user_cannot_access_private_api(self):
+        request = self.request_context["request"]
+        client = APIClient()
+        response = client.get("/_private/api/tenant/unmodified/", **request.META)
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+
 class AccessHandlingTest(TestCase):
     """Tests against getting user access in the IdentityHeaderMiddleware."""
 

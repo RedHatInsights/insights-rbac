@@ -88,23 +88,37 @@ class IdentityRequest(TestCase):
 
     @classmethod
     def _create_request_context(
-        cls, customer_data, user_data, create_customer=True, create_tenant=False, is_org_admin=True
+        cls, customer_data, user_data, create_customer=True, create_tenant=False, is_org_admin=True, is_internal=False
     ):
         """Create the request context for a user."""
         customer = customer_data
         account = customer.get("account_id")
         if create_customer:
             cls.customer = cls._create_customer(account, create_tenant=create_tenant)
-        identity = {
-            "identity": {
-                "account_number": account,
-                "type": "User",
-                "user": {"username": user_data["username"], "email": user_data["email"], "is_org_admin": is_org_admin},
-            }
-        }
-        json_identity = json_dumps(identity)
+
+        json_identity = json_dumps(cls._build_identity(user_data, account, is_org_admin, is_internal))
         mock_header = b64encode(json_identity.encode("utf-8"))
         request = Mock()
         request.META = {RH_IDENTITY_HEADER: mock_header}
         request_context = {"request": request}
         return request_context
+
+    @classmethod
+    def _build_identity(cls, user_data, account, is_org_admin, is_internal):
+        identity = {
+            "identity": {
+                "account_number": account,
+                "user": {"username": user_data["username"], "email": user_data["email"], "is_org_admin": is_org_admin},
+            }
+        }
+        if is_internal:
+            identity["identity"]["type"] = "Associate"
+            identity["identity"]["associate"] = {"email": user_data["email"]}
+        else:
+            identity["identity"]["type"] = "User"
+            identity["identity"]["user"] = {
+                "username": user_data["username"],
+                "email": user_data["email"],
+                "is_org_admin": is_org_admin,
+            }
+        return identity
