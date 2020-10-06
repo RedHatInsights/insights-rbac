@@ -83,10 +83,10 @@ class RoleViewsetTests(IdentityRequest):
             self.policy.roles.add(self.defRole, self.sysRole)
             self.policy.save()
 
-            self.access = Access.objects.create(permission="app:*:*", role=self.defRole)
-            self.access2 = Access.objects.create(permission="app2:*:*", role=self.defRole)
+            self.access = Access.objects.create(perm="app:*:*", role=self.defRole)
+            self.access2 = Access.objects.create(perm="app2:*:*", role=self.defRole)
 
-            self.access3 = Access.objects.create(permission="app2:*:*", role=self.sysRole)
+            self.access3 = Access.objects.create(perm="app2:*:*", role=self.sysRole)
 
     def tearDown(self):
         """Tear down role viewset tests."""

@@ -56,6 +56,7 @@ def _make_role(tenant, data):
             return role
     for access_item in access_list:
         resource_def_list = access_item.pop("resourceDefinitions", [])
+        access_item["perm"] = access_item.pop("permission")
         access_obj = Access.objects.create(**access_item, role=role)
         for resource_def_item in resource_def_list:
             ResourceDefinition.objects.create(**resource_def_item, access=access_obj)
