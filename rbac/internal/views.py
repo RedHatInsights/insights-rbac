@@ -55,10 +55,16 @@ def tenant_is_unmodified():
 def list_unmodified_tenants(request):
     """List unmodified tenants.
 
-    GET /_private/api/tenant/unmodified/
+    GET /_private/api/tenant/unmodified/?limit=<limit>&offset=<offset>
     """
     logger.info(f"Unmodified tenants requested by: {request.user.username}")
-    tenant_qs = Tenant.objects.exclude(schema_name="public")
+    limit = int(request.GET.get("limit", 0))
+    offset = int(request.GET.get("offset", 0))
+
+    if limit:
+        tenant_qs = Tenant.objects.exclude(schema_name="public")[offset : (limit + offset)]  # noqa: E203
+    else:
+        tenant_qs = Tenant.objects.exclude(schema_name="public")
     to_return = []
     for tenant_obj in tenant_qs:
         with tenant_context(tenant_obj):
