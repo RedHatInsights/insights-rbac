@@ -20,3 +20,4 @@
 # pylint: disable=unused-import
 from api.status.view import status
 from api.openapi.view import openapi
+from api.cross_access.view import CrossAccountRequestViewSet

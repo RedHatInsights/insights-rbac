@@ -17,9 +17,10 @@
 from django.conf.urls import include, url
 from rest_framework.routers import DefaultRouter
 
-from api.views import openapi, status
+from api.views import CrossAccountRequestViewSet, openapi, status
 
 ROUTER = DefaultRouter()
+ROUTER.register(r"cross-account-requests", CrossAccountRequestViewSet, basename="cross")
 
 # pylint: disable=invalid-name
 urlpatterns = [

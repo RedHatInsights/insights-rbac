@@ -23,7 +23,8 @@ from django.core.exceptions import PermissionDenied
 from django.utils.translation import gettext as _
 from management.models import Group, Principal
 from management.principal.proxy import PrincipalProxy
-from rest_framework import serializers
+from rest_framework import serializers, status
+
 
 USERNAME_KEY = "username"
 APPLICATION_KEY = "application"
@@ -177,3 +178,14 @@ def validate_uuid(uuid, key="UUID Validation"):
         key = key
         message = f"{uuid} is not a valid UUID."
         raise serializers.ValidationError({key: _(message)})
+
+
+def validate_limit_and_offset(query_params):
+    """Limit and offset should not be negative number."""
+    if (int(query_params.get("limit", 10)) < 0) | (int(query_params.get("offset", 0)) < 0):
+        error = {
+            "detail": "Values for limit and offset must be positive numbers.",
+            "source": "CrossAccountRequest",
+            "status": str(status.HTTP_400_BAD_REQUEST),
+        }
+        return {"errors": [error]}
