@@ -157,3 +157,11 @@ class InternalViewsetTests(IdentityRequest):
         self.assertEqual(response_data["unmodified_tenants_count"], 2)
         self.assertEqual(response_data["total_tenants_count"], 4)
         self.assertEqual(Tenant.objects.count(), 4)
+
+        response = self.client.get(f"/_private/api/tenant/unmodified/?limit=2", **self.request.META)
+        response_data = json.loads(response.content)
+        self.assertEqual(response_data["total_tenants_count"], 2)
+
+        response = self.client.get(f"/_private/api/tenant/unmodified/?limit=2&offset=3", **self.request.META)
+        response_data = json.loads(response.content)
+        self.assertEqual(response_data["total_tenants_count"], 1)
