@@ -1,12 +1,12 @@
 Managing Roles
 ###############
-A role defines a set of access control lists (ACLs). These ACLs define permissions and resource definitions.
+A Role defines a set of access control lists (ACLs). These ACLs define Permissions and contain Resource Definitions.
 
 Permissions
 ********************
-A permission is a three part object: application, resource type, operation
+A Permission is a three part object: application, resource type, operation
 
-Application specifies the specific domain for the resource control, for example::
+Application specifies the service or domain for the resource, for example::
 
 - catalog
 - approval
@@ -23,12 +23,18 @@ Operation defines the application logic action, for example::
 - write
 - order
 
+Note that in any of the above stanzas, ``*`` is taked to mean "all".
+
 
 Resource Definitions
 ********************
-If an empty array is supplied for resource definitions then this is implied to mean all access. However, resource access can be limited by specifing an attribute filter.
+Resource Definitions are a somewhat trickier aspect of our implementation of RBAC currently only used by the cost-management service.
 
-To specify a single resource with an attribute filter you would supply the following::
+In general, ALL roles should be created with a resourceDefinitions stanza of ``[]``. This is taken to mean "no additional filtering" and will generally result in the expected behavior. 
+
+In specific cases where the application logic has been written to handle them, however, resource access can be limited by specifing an attribute filter in the resourceDefinitions stanza as below.
+
+Specifying a single resource with an attribute filter::
 
     "resourceDefinitions": [
         {
@@ -55,5 +61,5 @@ While you can specify resources individually you can also specify a multiple res
 
 Permissions for Role API access
 ********************************
-Only administrator can view (read) roles or create/update (write) roles.
+Only an account administrator can view (read) roles or create/update (write) roles.
 Non-administrator can view (read) roles within their scope with scope specified in the API call -``?scope=principal``.

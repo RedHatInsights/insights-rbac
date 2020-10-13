@@ -1,7 +1,7 @@
 Welcome to Insights RBAC service's documentation!
 =================================================
 
-RBAC, accessed through the application program interface (API), is a role based access control tool. It is designed to identify principals, define and associate them with groups, define roles, and define policies that relate a group and roles.
+RBAC, accessed through the application program interface (API), is a role based access control tool. It is designed to identify principals, define roles containing permissions for related principals, and define groups of principals to which those roles apply.
 
 .. toctree::
    :maxdepth: 2
