@@ -122,7 +122,9 @@ class PrincipalViewsetTests(IdentityRequest):
         client = APIClient()
         response = client.get(url, **self.headers)
 
-        mock_request.assert_called_once_with(["test_user"], account=ANY, limit=10, offset=30, sort_order="asc")
+        mock_request.assert_called_once_with(
+            ["test_user"], account=ANY, limit=10, offset=30, options={"sort_order": "asc"}
+        )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         for keyname in ["meta", "links", "data"]:
             self.assertIn(keyname, response.data)
@@ -203,7 +205,9 @@ class PrincipalViewsetTests(IdentityRequest):
         proxy = PrincipalProxy()
         response = client.get(url, **self.headers)
 
-        mock_request.assert_called_once_with(["test_user"], account=ANY, limit=10, offset=30, sort_order="desc")
+        mock_request.assert_called_once_with(
+            ["test_user"], account=ANY, limit=10, offset=30, options={"sort_order": "desc"}
+        )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         for keyname in ["meta", "links", "data"]:
             self.assertIn(keyname, response.data)

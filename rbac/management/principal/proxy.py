@@ -76,6 +76,11 @@ class PrincipalProxy:  # pylint: disable=too-few-public-methods
             params["status"] = options["status"]
         if "admin_only" in options:
             params["admin_only"] = options["admin_only"]
+        if "query_by" in options:
+            if options["query_by"] == "user_id":
+                params["queryBy"] = "userId"
+            else:
+                params["queryBy"] = options["query_by"]
 
         return params
 
@@ -197,7 +202,7 @@ class PrincipalProxy:  # pylint: disable=too-few-public-methods
         # For v2 account users endpoints are already filtered by account
         return self._request_principals(url, params=params, account_filter=False, method=method, data=payload)
 
-    def request_filtered_principals(self, principals, account=None, limit=None, offset=None, sort_order=None):
+    def request_filtered_principals(self, principals, account=None, limit=None, offset=None, options={}):
         """Request specific principals for an account."""
         if account is None:
             account_filter = False
@@ -206,7 +211,7 @@ class PrincipalProxy:  # pylint: disable=too-few-public-methods
         if not principals:
             return {"status_code": status.HTTP_200_OK, "data": []}
         filtered_principals_path = "/v1/users"
-        params = self._create_params(limit, offset, {"sort_order": sort_order})
+        params = self._create_params(limit, offset, options)
         payload = {"users": principals, "include_permissions": False}
         url = "{}://{}:{}{}{}".format(self.protocol, self.host, self.port, self.path, filtered_principals_path)
         return self._request_principals(

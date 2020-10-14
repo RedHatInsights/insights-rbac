@@ -123,7 +123,11 @@ class PrincipalView(APIView):
                 )
             else:
                 resp = proxy.request_filtered_principals(
-                    principals, account=user.account, limit=limit, offset=offset, sort_order=options["sort_order"]
+                    principals,
+                    account=user.account,
+                    limit=limit,
+                    offset=offset,
+                    options={"sort_order": options["sort_order"]},
                 )
                 usernames_filter = f"&usernames={usernames}"
         elif email:
