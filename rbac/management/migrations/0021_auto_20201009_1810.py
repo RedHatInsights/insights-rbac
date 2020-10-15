@@ -5,7 +5,7 @@ from django.db import migrations
 
 def update_default_group_name(apps, schema_editor):
     Group = apps.get_model("management", "Group")
-    for group in Group.objects.all(platform_default=True):
+    for group in Group.objects.filter(platform_default=True):
         if group.system and group.platform_default:
             group.name = "Default access"
         elif group.platform_default:
