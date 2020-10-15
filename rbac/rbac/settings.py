@@ -31,6 +31,7 @@ import datetime
 import sys
 import logging
 import pytz
+import ecs_logging
 
 from boto3.session import Session
 from corsheaders.defaults import default_headers
@@ -225,6 +226,13 @@ RBAC_LOGGING_LEVEL = os.getenv("RBAC_LOG_LEVEL", "INFO")
 LOGGING_HANDLERS = os.getenv("DJANGO_LOG_HANDLERS", "console").split(",")
 VERBOSE_FORMATTING = "%(levelname)s %(asctime)s %(module)s " "%(process)d %(thread)d %(message)s"
 
+if DEBUG and "ecs" in LOGGING_HANDLERS:
+    DEBUG_LOG_HANDLERS = [v for v in LOGGING_HANDLERS if v != "ecs"]
+    if DEBUG_LOG_HANDLERS == []:
+        DEBUG_LOG_HANDLERS = ["console"]
+else:
+    DEBUG_LOG_HANDLERS = LOGGING_HANDLERS
+
 LOG_DIRECTORY = os.getenv("LOG_DIRECTORY", BASE_DIR)
 DEFAULT_LOG_FILE = os.path.join(LOG_DIRECTORY, "app.log")
 LOGGING_FILE = os.getenv("DJANGO_LOG_FILE", DEFAULT_LOG_FILE)
@@ -238,6 +246,7 @@ LOGGING = {
     "formatters": {
         "verbose": {"format": VERBOSE_FORMATTING},
         "simple": {"format": "[%(asctime)s] %(levelname)s: %(message)s"},
+        "ecs_formatter": {"()": "ecs_logging.StdlibFormatter",},
     },
     "handlers": {
         "console": {"class": "logging.StreamHandler", "formatter": LOGGING_FORMATTER},
@@ -247,9 +256,12 @@ LOGGING = {
             "filename": LOGGING_FILE,
             "formatter": LOGGING_FORMATTER,
         },
+        "ecs": {"class": "logging.StreamHandler", "formatter": "ecs_formatter",},
     },
     "loggers": {
         "django": {"handlers": LOGGING_HANDLERS, "level": DJANGO_LOGGING_LEVEL},
+        "django.server": {"handlers": DEBUG_LOG_HANDLERS, "level": DJANGO_LOGGING_LEVEL},
+        "django.request": {"handlers": DEBUG_LOG_HANDLERS, "level": DJANGO_LOGGING_LEVEL},
         "api": {"handlers": LOGGING_HANDLERS, "level": RBAC_LOGGING_LEVEL},
         "rbac": {"handlers": LOGGING_HANDLERS, "level": RBAC_LOGGING_LEVEL},
         "management": {"handlers": LOGGING_HANDLERS, "level": RBAC_LOGGING_LEVEL},
