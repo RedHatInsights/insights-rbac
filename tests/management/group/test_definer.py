@@ -38,7 +38,7 @@ class GroupDefinerTests(IdentityRequest):
             group = Group.objects.get(platform_default=True)
             self.assertEqual(group.platform_default, True)
             self.assertEqual(group.system, True)
-            self.assertEqual(group.name, "Default user access")
+            self.assertEqual(group.name, "Default access")
             self.assertEqual(group.policies.get(name="System Policy for Group {}".format(group.uuid)).system, True)
             # only platform_default roles would be assigned to the default group
             for role in group.roles():
