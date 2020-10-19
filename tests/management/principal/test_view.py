@@ -196,7 +196,7 @@ class PrincipalViewsetTests(IdentityRequest):
 
     @patch(
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
-        return_value={"status_code": 200, "data": [{"username": "test_user", "account_number": "1234"}]},
+        return_value={"status_code": 200, "data": [{"username": "test_user", "account_number": "1234", "id": "5678"}]},
     )
     def test_read_principal_list_account(self, mock_request):
         """Test that we can handle a request with matching accounts"""
@@ -213,10 +213,11 @@ class PrincipalViewsetTests(IdentityRequest):
             self.assertIn(keyname, response.data)
         self.assertIsInstance(response.data.get("data"), list)
         self.assertEqual(response.data.get("meta").get("count"), 1)
-        resp = proxy._process_data(response.data.get("data"), account="1234", account_filter=True)
+        resp = proxy._process_data(response.data.get("data"), account="1234", account_filter=True, return_id=True)
         self.assertEqual(len(resp), 1)
 
         self.assertEqual(resp[0]["username"], "test_user")
+        self.assertEqual(resp[0]["user_id"], "5678")
 
     @patch(
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
