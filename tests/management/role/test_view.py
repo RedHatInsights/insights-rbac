@@ -30,6 +30,9 @@ from management.models import Group, Principal, Role, Access, Policy
 from tests.identity_request import IdentityRequest
 
 
+URL = reverse("role-list")
+
+
 class RoleViewsetTests(IdentityRequest):
     """Test the role viewset."""
 
@@ -80,10 +83,10 @@ class RoleViewsetTests(IdentityRequest):
             self.policy.roles.add(self.defRole, self.sysRole)
             self.policy.save()
 
-            self.access = Access.objects.create(permission="app:*:*", role=self.defRole)
-            self.access2 = Access.objects.create(permission="app2:*:*", role=self.defRole)
+            self.access = Access.objects.create(perm="app:*:*", role=self.defRole)
+            self.access2 = Access.objects.create(perm="app2:*:*", role=self.defRole)
 
-            self.access3 = Access.objects.create(permission="app2:*:*", role=self.sysRole)
+            self.access3 = Access.objects.create(perm="app2:*:*", role=self.sysRole)
 
     def tearDown(self):
         """Tear down role viewset tests."""
@@ -105,9 +108,8 @@ class RoleViewsetTests(IdentityRequest):
         test_data = {"name": role_name, "display_name": role_display, "access": access_data}
 
         # create a role
-        url = reverse("role-list")
         client = APIClient()
-        response = client.post(url, test_data, format="json", **self.headers)
+        response = client.post(URL, test_data, format="json", **self.headers)
         return response
 
     def test_create_role_success(self):
@@ -164,17 +166,15 @@ class RoleViewsetTests(IdentityRequest):
     def test_create_role_invalid(self):
         """Test that creating an invalid role returns an error."""
         test_data = {}
-        url = reverse("role-list")
         client = APIClient()
-        response = client.post(url, test_data, format="json", **self.headers)
+        response = client.post(URL, test_data, format="json", **self.headers)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
     def test_create_role_invalid_permission(self):
         """Test that creating an invalid role returns an error."""
         test_data = {"name": "role1", "access": [{"permission": "foo:bar", "resourceDefinitions": []}]}
-        url = reverse("role-list")
         client = APIClient()
-        response = client.post(url, test_data, format="json", **self.headers)
+        response = client.post(URL, test_data, format="json", **self.headers)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
     def test_create_role_allow_list(self):
@@ -284,9 +284,8 @@ class RoleViewsetTests(IdentityRequest):
         role_uuid = response.data.get("uuid")
 
         # list a role
-        url = reverse("role-list")
         client = APIClient()
-        response = client.get(url, **self.headers)
+        response = client.get(URL, **self.headers)
 
         # three parts in response: meta, links and data
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -309,8 +308,7 @@ class RoleViewsetTests(IdentityRequest):
 
     def test_get_role_by_application_single(self):
         """Test that getting roles by application returns roles based on permissions."""
-        url = reverse("role-list")
-        url = "{}?application={}".format(url, "app")
+        url = "{}?application={}".format(URL, "app")
         client = APIClient()
         response = client.get(url, **self.headers)
         self.assertEqual(response.data.get("meta").get("count"), 1)
@@ -318,8 +316,7 @@ class RoleViewsetTests(IdentityRequest):
 
     def test_get_role_by_application_multiple(self):
         """Test that getting roles by multiple applications returns roles based on permissions."""
-        url = reverse("role-list")
-        url = "{}?application={}".format(url, "app2")
+        url = "{}?application={}".format(URL, "app2")
         client = APIClient()
         response = client.get(url, **self.headers)
         role_names = [role.get("name") for role in response.data.get("data")]
@@ -328,8 +325,7 @@ class RoleViewsetTests(IdentityRequest):
 
     def test_get_role_by_application_duplicate_role(self):
         """Test that getting roles by application with permissions in the same role only returns the roles once."""
-        url = reverse("role-list")
-        url = "{}?application={}".format(url, "app,app2")
+        url = "{}?application={}".format(URL, "app,app2")
         client = APIClient()
         response = client.get(url, **self.headers)
         role_names = [role.get("name") for role in response.data.get("data")]
@@ -338,40 +334,68 @@ class RoleViewsetTests(IdentityRequest):
 
     def test_get_role_by_application_does_not_exist(self):
         """Test that getting roles by application returns nothing when there is no match."""
-        url = reverse("role-list")
-        url = "{}?application={}".format(url, "foo")
+        url = "{}?application={}".format(URL, "foo")
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        self.assertEqual(response.data.get("meta").get("count"), 0)
+
+    def test_get_role_by_permission_single(self):
+        """Test that getting roles by permission returns roles based on permissions."""
+        url = "{}?permission={}".format(URL, "app:*:*")
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        self.assertEqual(response.data.get("meta").get("count"), 1)
+        self.assertEqual(response.data.get("data")[0].get("name"), self.defRole.name)
+
+    def test_get_role_by_duplicate_permission(self):
+        """Test that getting roles by duplicate permissions in the same role only returns the roles once."""
+        url = "{}?permission={}".format(URL, "app2:*:*")
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        role_names = [role.get("name") for role in response.data.get("data")]
+        self.assertEqual(response.data.get("meta").get("count"), 2)
+        self.assertCountEqual(role_names, [self.defRole.name, self.sysRole.name])
+
+    def test_get_role_by_permission_multiple(self):
+        """Test that getting roles by permissions ."""
+        url = "{}?permission={}".format(URL, "app:*:*,app2:*:*")
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        role_names = [role.get("name") for role in response.data.get("data")]
+        self.assertEqual(response.data.get("meta").get("count"), 2)
+        self.assertCountEqual(role_names, [self.defRole.name, self.sysRole.name])
+
+    def test_get_role_by_permission_does_not_exist(self):
+        """Test that getting roles by permission returns nothing when there is no match."""
+        url = "{}?permission={}".format(URL, "foo:foo:foo")
         client = APIClient()
         response = client.get(url, **self.headers)
         self.assertEqual(response.data.get("meta").get("count"), 0)
 
     def test_get_role_by_partial_name_by_default(self):
         """Test that getting roles by name returns partial match by default."""
-        url = reverse("role-list")
-        url = "{}?name={}".format(url, "role")
+        url = "{}?name={}".format(URL, "role")
         client = APIClient()
         response = client.get(url, **self.headers)
         self.assertEqual(response.data.get("meta").get("count"), 2)
 
     def test_get_role_by_partial_name_explicit(self):
         """Test that getting roles by name returns partial match when specified."""
-        url = reverse("role-list")
-        url = "{}?name={}&name_match={}".format(url, "role", "partial")
+        url = "{}?name={}&name_match={}".format(URL, "role", "partial")
         client = APIClient()
         response = client.get(url, **self.headers)
         self.assertEqual(response.data.get("meta").get("count"), 2)
 
     def test_get_role_by_name_invalid_criteria(self):
         """Test that getting roles by name fails with invalid name_match."""
-        url = reverse("role-list")
-        url = "{}?name={}&name_match={}".format(url, "role", "bad_criteria")
+        url = "{}?name={}&name_match={}".format(URL, "role", "bad_criteria")
         client = APIClient()
         response = client.get(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
     def test_get_role_by_exact_name_match(self):
         """Test that getting roles by name returns exact match."""
-        url = reverse("role-list")
-        url = "{}?name={}&name_match={}".format(url, self.sysRole.name, "exact")
+        url = "{}?name={}&name_match={}".format(URL, self.sysRole.name, "exact")
         client = APIClient()
         response = client.get(url, **self.headers)
         self.assertEqual(response.data.get("meta").get("count"), 1)
@@ -380,8 +404,7 @@ class RoleViewsetTests(IdentityRequest):
 
     def test_get_role_by_exact_name_no_match(self):
         """Test that getting roles by name returns no results with exact match."""
-        url = reverse("role-list")
-        url = "{}?name={}&name_match={}".format(url, "role", "exact")
+        url = "{}?name={}&name_match={}".format(URL, "role", "exact")
         client = APIClient()
         response = client.get(url, **self.headers)
         self.assertEqual(response.data.get("meta").get("count"), 0)
@@ -396,7 +419,7 @@ class RoleViewsetTests(IdentityRequest):
         new_diaplay_fields.add(field_2)
 
         # list a role
-        url = "{}?add_fields={},{}".format(reverse("role-list"), field_1, field_2)
+        url = "{}?add_fields={},{}".format(URL, field_1, field_2)
         client = APIClient()
         response = client.get(url, **self.headers)
 
@@ -427,9 +450,7 @@ class RoleViewsetTests(IdentityRequest):
         new_diaplay_fields.add(field_1)
         new_diaplay_fields.add(field_2)
 
-        url = "{}?add_fields={},{}&username={}".format(
-            reverse("role-list"), field_1, field_2, self.user_data["username"]
-        )
+        url = "{}?add_fields={},{}&username={}".format(URL, field_1, field_2, self.user_data["username"])
         client = APIClient()
         response = client.get(url, **self.headers)
 
@@ -447,7 +468,7 @@ class RoleViewsetTests(IdentityRequest):
         new_diaplay_fields.add(field_1)
         new_diaplay_fields.add(field_2)
 
-        url = "{}?add_fields={},{}&scope=principal".format(reverse("role-list"), field_1, field_2)
+        url = "{}?add_fields={},{}&scope=principal".format(URL, field_1, field_2)
         client = APIClient()
         response = client.get(url, **self.headers)
 
@@ -462,7 +483,7 @@ class RoleViewsetTests(IdentityRequest):
         add_field = "invalid_field"
 
         # list a role
-        url = "{}?add_fields={}".format(reverse("role-list"), add_field)
+        url = "{}?add_fields={}".format(URL, add_field)
         client = APIClient()
         response = client.get(url, **self.headers)
 

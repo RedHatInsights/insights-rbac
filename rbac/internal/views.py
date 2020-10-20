@@ -22,9 +22,11 @@ import logging
 
 import pytz
 from django.conf import settings
+from django.db.migrations.recorder import MigrationRecorder
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from management.models import Group, Role
+from management.tasks import run_migrations_in_worker, run_seeds_in_worker
 from tenant_schemas.utils import tenant_context
 
 from api.models import Tenant
@@ -77,7 +79,10 @@ def list_unmodified_tenants(request):
 
 
 def tenant_view(request, tenant_schema_name):
-    """View method for internal tenant requests."""
+    """View method for internal tenant requests.
+
+    DELETE /_private/api/tenant/<schema_name>/
+    """
     logger.info(f"Tenant view: {request.method} {request.user.username}")
     if request.method == "DELETE":
         if not destructive_ok():
@@ -91,4 +96,73 @@ def tenant_view(request, tenant_schema_name):
                 return HttpResponse(status=204)
             else:
                 return HttpResponse("Tenant cannot be deleted.", status=400)
-    return HttpResponse(status=405)
+    return HttpResponse(f'Method "{request.method}" not allowed.', status=405)
+
+
+def run_migrations(request):
+    """View method for running migrations.
+
+    POST /_private/api/migrations/run/
+    """
+    if request.method == "POST":
+        logger.info(f"Running migrations: {request.method} {request.user.username}")
+        run_migrations_in_worker.delay()
+        return HttpResponse("Migrations are running in a background worker.", status=202)
+    return HttpResponse(f'Method "{request.method}" not allowed.', status=405)
+
+
+def migration_progress(request):
+    """View method for checking migration progress.
+
+    GET /_private/api/migrations/progress/?migration_name=<migration_name>
+    """
+    if request.method == "GET":
+        migration_name = request.GET.get("migration_name")
+        app_name = request.GET.get("app", "management")
+        if not migration_name:
+            return HttpResponse("Please specify a migration name in the `?migration_name=` param.", status=400)
+        tenants_completed_count = 0
+        incomplete_tenants = []
+        tenant_qs = Tenant.objects.exclude(schema_name="public")
+        tenant_count = tenant_qs.count()
+        for idx, tenant in enumerate(list(tenant_qs)):
+            with tenant_context(tenant):
+                migrations_have_run = MigrationRecorder.Migration.objects.filter(
+                    name=migration_name, app=app_name
+                ).exists()
+                if migrations_have_run:
+                    tenants_completed_count += 1
+                else:
+                    incomplete_tenants.append(tenant.schema_name)
+        payload = {
+            "migration_name": migration_name,
+            "app_name": app_name,
+            "tenants_completed_count": tenants_completed_count,
+            "total_tenants_count": tenant_count,
+            "incomplete_tenants": incomplete_tenants,
+            "percent_completed": int((tenants_completed_count / tenant_count) * 100),
+        }
+
+        return HttpResponse(json.dumps(payload), content_type="application/json")
+    return HttpResponse(f'Method "{request.method}" not allowed.', status=405)
+
+
+def run_seeds(request):
+    """View method for running seeds.
+
+    POST /_private/api/seeds/run/?seed_types=permissions,rolese,groups
+    """
+    if request.method == "POST":
+        args = {}
+        option_key = "seed_types"
+        valid_values = ["permissions", "roles", "groups"]
+        seed_types_param = request.GET.get(option_key)
+        if seed_types_param:
+            seed_types = seed_types_param.split(",")
+            if not all([value in valid_values for value in seed_types]):
+                return HttpResponse(f'Valid options for "{option_key}": {valid_values}.', status=400)
+            args = {type: True for type in seed_types}
+        logger.info(f"Running seeds: {request.method} {request.user.username}")
+        run_seeds_in_worker.delay(args)
+        return HttpResponse("Seeds are running in a background worker.", status=202)
+    return HttpResponse(f'Method "{request.method}" not allowed.', status=405)

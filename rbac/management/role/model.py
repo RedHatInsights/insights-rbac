@@ -83,14 +83,7 @@ class Access(models.Model):
 
     def split_permission(self):
         """Split the permission."""
-        return self.permission.split(":")
-
-    def save(self, *args, **kwargs):
-        """When new Access object get created, populate the permission field."""
-        # This could be removed when current Access creation logic is modified in future
-        if self.permission:
-            self.perm = self.permission
-        super(Access, self).save(*args, **kwargs)
+        return self.perm.split(":")
 
 
 class ResourceDefinition(models.Model):

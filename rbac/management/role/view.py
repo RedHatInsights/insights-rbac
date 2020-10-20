@@ -67,11 +67,18 @@ class RoleFilter(CommonFilters):
         applications = values.split(",")
         query = Q()
         for application in applications:
-            query = query | Q(access__permission__istartswith=f"{application}:")
+            query = query | Q(access__perm__istartswith=f"{application}:")
         return queryset.distinct().filter(query)
+
+    def permission_filter(self, queryset, field, values):
+        """Filter to lookup role by application(s) in permissions."""
+        permissions = values.split(",")
+
+        return queryset.filter(access__perm__in=permissions).distinct()
 
     name = filters.CharFilter(field_name="name", method="name_filter")
     application = filters.CharFilter(field_name="application", method="application_filter")
+    permission = filters.CharFilter(field_name="permission", method="permission_filter")
 
     class Meta:
         model = Role

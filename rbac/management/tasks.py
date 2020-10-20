@@ -18,6 +18,7 @@
 from __future__ import absolute_import, unicode_literals
 
 from celery import shared_task
+from django.core.management import call_command
 from management.principal.cleaner import clean_tenants_principals
 
 
@@ -25,3 +26,15 @@ from management.principal.cleaner import clean_tenants_principals
 def principal_cleanup():
     """Celery task to clean up principals no longer existing."""
     clean_tenants_principals()
+
+
+@shared_task
+def run_migrations_in_worker():
+    """Celery task to run migrations."""
+    call_command("migrate_schemas")
+
+
+@shared_task
+def run_seeds_in_worker(kwargs):
+    """Celery task to run seeds."""
+    call_command("seeds", **kwargs)

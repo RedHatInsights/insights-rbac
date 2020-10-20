@@ -41,6 +41,7 @@ class AccessSerializer(serializers.ModelSerializer):
     """Serializer for the Access model."""
 
     resourceDefinitions = ResourceDefinitionSerializer(many=True)
+    permission = serializers.CharField(source="perm")
 
     def validate_permission(self, value):
         """Validate the permissions input."""
@@ -256,7 +257,7 @@ def obtain_applications(obj):
     """Shared function to get the list of applications in the role."""
     apps = []
     for access_item in obj.access.all():
-        perm_list = access_item.permission.split(":")
+        perm_list = access_item.perm.split(":")
         perm_len = len(perm_list)
         if perm_len == 3:
             apps.append(perm_list[0])
