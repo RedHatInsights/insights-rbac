@@ -53,7 +53,7 @@ class PermissionViewsetTests(IdentityRequest):
             self.permissionF = Permission.objects.create(permission="*:bar:*")
             self.permissionG = Permission.objects.create(permission="*:*:baz")
             self.permissionH = Permission.objects.create(permission="*:bar:baz")
-            self.permissionI = Permission.objects.create(permission="foo:bar:*")
+            self.permissionI = Permission.objects.create(permission="foo:bar:*", description="Description test.")
 
     def tearDown(self):
         """Tear down permission viewset tests."""
@@ -76,7 +76,10 @@ class PermissionViewsetTests(IdentityRequest):
             self.assertIsNotNone(perm.get("resource_type"))
             self.assertIsNotNone(perm.get("verb"))
             self.assertIsNotNone(perm.get("permission"))
-            self.assertEqual(self.display_fields, set(perm.keys()))
+            if perm["permission"] == "foo:bar:*":
+                self.assertEqual(perm["description"], "Description test.")
+            else:
+                self.assertEqual(self.display_fields, set(perm.keys()))
 
     def test_read_permission_list_application_filter(self):
         """Test that we can filter a list of permissions by application."""

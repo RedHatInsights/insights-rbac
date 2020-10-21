@@ -16,6 +16,8 @@
 #
 
 """Serializer for permission management."""
+from collections import OrderedDict
+
 from management.models import Permission
 from rest_framework import serializers
 
@@ -27,4 +29,9 @@ class PermissionSerializer(serializers.ModelSerializer):
         """Metadata for the serializer."""
 
         model = Permission
-        fields = ("application", "resource_type", "verb", "permission")
+        fields = ("application", "resource_type", "verb", "permission", "description")
+
+    def to_representation(self, obj):
+        """Modify the response data."""
+        result = super().to_representation(obj)
+        return OrderedDict([(key, result[key]) for key in result if result[key] != ""])
