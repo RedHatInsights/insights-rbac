@@ -15,6 +15,6 @@ def update_default_group_name(apps, schema_editor):
 
 class Migration(migrations.Migration):
 
-    dependencies = [("management", "0020_add_unique_to_display_name")]
+    dependencies = [("management", "0021_auto_20201008_1419")]
 
     operations = [migrations.RunPython(update_default_group_name)]
