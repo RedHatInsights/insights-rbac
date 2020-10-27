@@ -6,7 +6,7 @@ import django.db.models.deletion
 
 class Migration(migrations.Migration):
 
-    dependencies = [("management", "0022_remove_access_permission")]
+    dependencies = [("management", "0023_remove_access_permission")]
 
     operations = [
         migrations.AddField(
