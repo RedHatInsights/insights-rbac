@@ -25,7 +25,7 @@ from django.db import connections, models
 from django.db.models import signals
 from django.utils import timezone
 from management.cache import AccessCache
-from management.models import Permission, Principal
+from management.models import Principal
 from management.rbac_fields import AutoDateTimeField
 
 
@@ -71,8 +71,8 @@ class CustomManager(models.Manager):
 class Access(models.Model):
     """An access object."""
 
-    perm = models.TextField(null=False)
-    permission = models.ForeignKey(Permission, null=True, on_delete=models.CASCADE, related_name="accesses")
+    perm = models.TextField(null=True)
+    permission = models.TextField(default="*:*:*")
     role = models.ForeignKey(Role, null=True, on_delete=models.CASCADE, related_name="access")
 
     objects = CustomManager()
