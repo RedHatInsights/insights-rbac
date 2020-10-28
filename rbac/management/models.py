@@ -17,8 +17,8 @@
 """API models for import organization."""
 # flake8: noqa
 # pylint: disable=unused-import
+from management.permission.model import Permission
 from management.principal.model import Principal
 from management.group.model import Group
 from management.role.model import Access, ResourceDefinition, Role
 from management.policy.model import Policy
-from management.permission.model import Permission
