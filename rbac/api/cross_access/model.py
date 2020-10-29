@@ -33,10 +33,10 @@ class CrossAccountRequest(models.Model):
 
     request_id = models.UUIDField(default=uuid4, editable=False, unique=True, null=False, primary_key=True)
     target_account = models.CharField(max_length=15, default=None)
-    userId = models.CharField(max_length=15, default=None)
+    user_id = models.CharField(max_length=15, default=None)
     created = models.DateTimeField(default=timezone.now)
-    startDate = models.DateTimeField(default=timezone.now)
-    endDate = models.DateTimeField(null=False, blank=False, default=None)
+    start_date = models.DateTimeField(default=timezone.now)
+    end_date = models.DateTimeField(null=False, blank=False, default=None)
     modified = AutoDateTimeField(default=timezone.now)
     status = models.CharField(max_length=10, default="pending")
 
@@ -45,13 +45,13 @@ class CrossAccountRequest(models.Model):
         if self.status not in STATUS_LIST:
             raise ValidationError(f'Unknown status "{self.status}" specified, {STATUS_LIST} are valid inputs.')
 
-        if isinstance(self.endDate, datetime.datetime) and self.endDate <= timezone.now():
+        if isinstance(self.end_date, datetime.datetime) and self.end_date <= timezone.now():
             raise ValidationError("Please verify the end date, it should not be a past value.")
 
         if (
-            isinstance(self.endDate, datetime.datetime)
-            and isinstance(self.startDate, datetime.datetime)
-            and self.startDate >= self.endDate
+            isinstance(self.end_date, datetime.datetime)
+            and isinstance(self.start_date, datetime.datetime)
+            and self.start_date >= self.end_date
         ):
             raise ValidationError("Start date must be earlier than end date.")
 
