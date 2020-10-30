@@ -116,7 +116,7 @@ def seed_permissions(tenant):
                             for operation_object in operation_objects:
                                 # There are some old configs, e.g., cost-management still stay in CI
                                 if not isinstance(operation_object, str):
-                                    permission_description = operation_object.get("description")
+                                    permission_description = operation_object.get("description", "")
                                     operation = operation_object.get("verb")
                                     permission, created = Permission.objects.update_or_create(
                                         permission=f"{app_name}:{resource}:{operation}",
