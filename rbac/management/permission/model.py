@@ -26,6 +26,7 @@ class Permission(models.Model):
     resource_type = models.TextField(null=False)
     verb = models.TextField(null=False)
     permission = models.TextField(null=False, unique=True)
+    description = models.TextField(default="")
 
     def save(self, *args, **kwargs):
         """Populate the application, resource_type and verb field before saving."""

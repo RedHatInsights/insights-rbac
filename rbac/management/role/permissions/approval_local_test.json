@@ -1,6 +1,6 @@
 {
-    "actions": ["create", "read"],
-    "requests": ["create", "read"],
-    "templates": ["read"],
-    "workflows": ["create", "read", "update", "delete", "link", "unlink"]
+    "actions": [{"verb": "create"}, {"verb": "read"}],
+    "requests": [{"verb": "create"}, {"verb": "read"}],
+    "templates": [{"verb": "read", "description": "Approval local test templates read."}],
+    "workflows": [{"verb": "create"}, {"verb": "read"}, {"verb":"update"}, {"verb":"delete"}, {"verb":"link"}, {"verb":"unlink"}]
 }
