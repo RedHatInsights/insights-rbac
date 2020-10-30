@@ -5,6 +5,6 @@ from django.db import migrations, models
 
 class Migration(migrations.Migration):
 
-    dependencies = [("management", "0024_access_permission")]
+    dependencies = [("management", "0025_auto_20201028_1619")]
 
     operations = [migrations.AddField(model_name="permission", name="description", field=models.TextField(default=""))]
