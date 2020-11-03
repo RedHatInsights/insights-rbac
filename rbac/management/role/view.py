@@ -76,9 +76,14 @@ class RoleFilter(CommonFilters):
 
         return queryset.filter(access__perm__in=permissions).distinct()
 
+    def display_name_filter(self, queryset, field, value):
+        """Filter to lookup role by display_name."""
+        return queryset.filter(display_name__icontains=value)
+
     name = filters.CharFilter(field_name="name", method="name_filter")
     application = filters.CharFilter(field_name="application", method="application_filter")
     permission = filters.CharFilter(field_name="permission", method="permission_filter")
+    display_name = filters.CharFilter(field_name="display_name", method="display_name_filter")
 
     class Meta:
         model = Role

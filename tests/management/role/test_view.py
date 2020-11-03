@@ -372,6 +372,41 @@ class RoleViewsetTests(IdentityRequest):
         response = client.get(url, **self.headers)
         self.assertEqual(response.data.get("meta").get("count"), 0)
 
+    def test_get_role_by_partial_display_name_match(self):
+        """Test that getting roles by permission returns roles based on display name."""
+        role_name_1 = "roleA"
+        display_name_1 = "DisplayTestA"
+        role_name_2 = "roleB"
+        display_name_2 = "DisplayTestB"
+        access_data = [
+            {
+                "permission": "app:*:*",
+                "resourceDefinitions": [{"attributeFilter": {"key": "keyA", "operation": "equal", "value": "valueA"}}],
+            }
+        ]
+        response = self.create_role(role_name_1, role_display=display_name_1, in_access_data=access_data)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        response = self.create_role(role_name_2, role_display=display_name_2, in_access_data=access_data)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+        url = "{}?display_name={}".format(URL, "Display")
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        self.assertEqual(response.data.get("meta").get("count"), 2)
+
+        url = "{}?display_name={}".format(URL, display_name_1)
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        self.assertEqual(response.data.get("meta").get("count"), 1)
+        self.assertEqual(response.data.get("data")[0].get("display_name"), display_name_1)
+
+    def test_get_role_by_display_name_no_match(self):
+        """Test that getting roles by permission returns roles based on permissions."""
+        url = "{}?display_name={}".format(URL, "no_match")
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        self.assertEqual(response.data.get("meta").get("count"), 0)
+
     def test_get_role_by_partial_name_by_default(self):
         """Test that getting roles by name returns partial match by default."""
         url = "{}?name={}".format(URL, "role")

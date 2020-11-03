@@ -1148,6 +1148,15 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "display_name",
+            "in": "query",
+            "description": "The display_name to filter roles by. This is a partial match.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
