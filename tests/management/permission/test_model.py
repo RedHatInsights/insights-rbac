@@ -47,4 +47,4 @@ class PermissionModelTests(IdentityRequest):
             self.assertEqual(self.permission.resource_type, "roles")
             self.assertEqual(self.permission.verb, "read")
             self.assertEqual(self.permission.permission, "rbac:roles:read")
-            self.assertEqual(len(Permission._meta.fields), 6)
+            self.assertEqual(len(Permission._meta.fields), 5)
