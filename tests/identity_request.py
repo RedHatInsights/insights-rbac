@@ -105,20 +105,18 @@ class IdentityRequest(TestCase):
 
     @classmethod
     def _build_identity(cls, user_data, account, is_org_admin, is_internal):
-        identity = {
-            "identity": {
-                "account_number": account,
-                "user": {"username": user_data["username"], "email": user_data["email"], "is_org_admin": is_org_admin},
-            }
-        }
-        if is_internal:
-            identity["identity"]["type"] = "Associate"
-            identity["identity"]["associate"] = {"email": user_data["email"]}
-        else:
-            identity["identity"]["type"] = "User"
+        identity = {"identity": {"account_number": account}}
+        if user_data is not None:
             identity["identity"]["user"] = {
-                "username": user_data["username"],
-                "email": user_data["email"],
+                "username": user_data.get("username"),
+                "email": user_data.get("email"),
                 "is_org_admin": is_org_admin,
             }
+
+        if is_internal:
+            identity["identity"]["type"] = "Associate"
+            identity["identity"]["associate"] = {"email": user_data.get("email")}
+        else:
+            identity["identity"]["type"] = "User"
+
         return identity
