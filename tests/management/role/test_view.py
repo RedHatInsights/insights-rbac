@@ -212,6 +212,18 @@ class RoleViewsetTests(IdentityRequest):
         response = self.create_role(role_name, in_access_data=access_data)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
+    def test_create_role_operation_fail(self):
+        """Test that we cannot create a role with an invalid operation."""
+        role_name = "operationFail"
+        access_data = [
+            {
+                "permission": "cost-management:*:*",
+                "resourceDefinitions": [{"attributeFilter": {"key": "keyA", "operation": "boop", "value": "valueA"}}],
+            }
+        ]
+        response = self.create_role(role_name, in_access_data=access_data)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
     def test_create_role_fail_with_access_not_list(self):
         """Test that we cannot create a role for a non-allow_listed app."""
         role_name = "AccessNotList"
