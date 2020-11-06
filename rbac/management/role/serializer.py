@@ -25,6 +25,7 @@ from rest_framework.validators import UniqueValidator
 from .model import Access, ResourceDefinition, Role
 
 ALLOWED_OPERATIONS = ["in", "equal"]
+FILTER_FIELDS = set(["key", "value", "operation"])
 
 
 class ResourceDefinitionSerializer(serializers.ModelSerializer):
@@ -34,8 +35,14 @@ class ResourceDefinitionSerializer(serializers.ModelSerializer):
 
     def validate_attributeFilter(self, value):
         """Validate the given attributeFilter."""
+        if value.keys() != FILTER_FIELDS:
+            key = "format"
+            message = f"attributeFilter fields must be {FILTER_FIELDS}"
+            error = {key: [_(message)]}
+            raise serializers.ValidationError(error)
+
         op = value.get("operation")
-        if op and op not in ALLOWED_OPERATIONS:
+        if op not in ALLOWED_OPERATIONS:
             key = "format"
             message = f"attributeFilter operation must be one of {ALLOWED_OPERATIONS}"
             error = {key: [_(message)]}
