@@ -3,6 +3,7 @@
 import contextlib
 import json
 import logging
+import pickle
 
 from django.conf import settings
 from redis import BlockingConnectionPool, exceptions
@@ -14,12 +15,11 @@ _connection_pool = BlockingConnectionPool(
 )
 
 
-class AccessCache:
-    """Redis-based caching of per-Principal per-app access policy."""  # noqa: D204
+class BasicCache:
+    """Basic cache class to be inherited."""
 
-    def __init__(self, tenant):
-        """tenant: The name of the database schema for this tenant."""
-        self.tenant = tenant
+    def __init__(self):
+        """Init the class."""
         self._connection = None
 
     @property
@@ -34,6 +34,96 @@ class AccessCache:
                 raise
         return self._connection
 
+    @contextlib.contextmanager
+    def delete_handler(self, err_msg):
+        """Handle delete events."""
+        try:
+            yield
+        except exceptions.RedisError:
+            logger.exception(err_msg)
+
+    def get_from_redis(self, index):
+        """Get object from redis based on index."""
+        obj = self.connection.hget(*(self.key_for(index[0]), index[1]))
+        if obj:
+            return json.loads(obj)
+
+    def get_cached(self, index, error_message):
+        """Get cached object from redis, throw error if there is any."""
+        try:
+            return self.get_from_redis(index)
+        except exceptions.RedisError:
+            logger.exception(error_message)
+        return None
+
+    def delete_cached(self, index, obj_name):
+        """Delete cache from redis."""
+        err_msg = f"Error deleting {obj_name} for {index}"
+        with self.delete_handler(err_msg):
+            logger.info(f"Deleting {obj_name} cache for {index}")
+            self.connection.delete(self.key_for(index))
+
+    def set_cache(self, pipe, index, item):
+        """Set cache to redis."""
+        pipe.hset(self.key_for(index[0]), index[1], json.dumps(item))
+        pipe.expire(self.key_for(index[0]), settings.ACCESS_CACHE_LIFETIME)
+        pipe.execute()
+
+    def save(self, index, item, obj_name):
+        """Save cache including exception handler."""
+        try:
+            logger.info(f"Caching {obj_name} for {index}")
+            with self.connection.pipeline() as pipe:
+                self.set_cache(pipe, index, item)
+        except exceptions.RedisError:
+            logger.exception(f"Error writing {obj_name} for {index}")
+        finally:
+            try:
+                pipe.reset()
+            except:  # noqa: E722
+                pass
+
+
+class TenantCache(BasicCache):
+    """Redis-based caching of tenant."""
+
+    def key_for(self, schema_name):
+        """Redis key for a given tenant."""
+        return f"rbac::tenant::schema={schema_name}"
+
+    def get_from_redis(self, index):
+        """Override the method to get tenant based on index."""
+        obj = self.connection.get(self.key_for(index))
+        if obj:
+            return pickle.loads(obj)
+
+    def get_tenant(self, schema_name):
+        """Get the tenant by schema_name."""
+        return super().get_cached(schema_name, f"Error querying tenant {schema_name}")
+
+    def set_cache(self, pipe, index, item):
+        """Override the method to set tenant to cache."""
+        pipe.set(self.key_for(index), pickle.dumps(item))
+        pipe.expire(self.key_for(index), settings.ACCESS_CACHE_LIFETIME)
+        pipe.execute()
+
+    def save_tenant(self, tenant):
+        """Write the tenant for a request to Redis."""
+        super().save(tenant.schema_name, tenant, "tenant")
+
+    def delete_tenant(self, schema_name):
+        """Purge the given tenant from the cache."""
+        super().delete_cached(schema_name, "tenant")
+
+
+class AccessCache(BasicCache):
+    """Redis-based caching of per-Principal per-app access policy."""  # noqa: D204
+
+    def __init__(self, tenant):
+        """tenant: The name of the database schema for this tenant."""
+        self.tenant = tenant
+        super().__init__()
+
     def key_for(self, uuid):
         """Redis key for a given user policy."""
         return f"rbac::policy::tenant={self.tenant}::user={uuid}"
@@ -42,33 +132,16 @@ class AccessCache:
         """Get the given user's policy for the given application."""
         if not settings.ACCESS_CACHE_ENABLED:
             return None
-        try:
-            policy_string = self.connection.hget(self.key_for(uuid), application)
-            if policy_string:
-                return json.loads(policy_string)
-        except exceptions.RedisError:
-            logger.exception("Error querying policy for uuid %s", uuid)
-        return None
-
-    @contextlib.contextmanager
-    def delete_handler(self, err_msg):
-        """Handle policy delete events."""
-        if not settings.ACCESS_CACHE_ENABLED:
-            return
-        try:
-            yield
-        except exceptions.RedisError:
-            logger.exception(err_msg)
+        return super().get_cached((uuid, application), f"Error querying policy for uuid {uuid}")
 
     def delete_policy(self, uuid):
         """Purge the given user's policy from the cache."""
-        err_msg = f"Error deleting policy for uuid {uuid}"
-        with self.delete_handler(err_msg):
-            logger.info("Deleting policy cache for uuid %s", uuid)
-            self.connection.delete(self.key_for(uuid))
+        super().delete_cached(uuid, "policy")
 
     def delete_all_policies_for_tenant(self):
         """Purge users' policies for a given tenant from the cache."""
+        if not settings.ACCESS_CACHE_ENABLED:
+            return
         err_msg = f"Error deleting all policies for tenant {self.tenant}"
         with self.delete_handler(err_msg):
             logger.info("Deleting entire policy cache for tenant %s", self.tenant)
@@ -80,16 +153,4 @@ class AccessCache:
         """Write the policy for a given user for a given app to Redis."""
         if not settings.ACCESS_CACHE_ENABLED:
             return
-        try:
-            logger.info("Caching policy for uuid %s", uuid)
-            with self.connection.pipeline() as pipe:
-                pipe.hset(self.key_for(uuid), application, json.dumps(policy))
-                pipe.expire(self.key_for(uuid), settings.ACCESS_CACHE_LIFETIME)
-                pipe.execute()
-        except exceptions.RedisError:
-            logger.exception("Error writing policy for uuid %s", uuid)
-        finally:
-            try:
-                pipe.reset()
-            except:  # noqa: E722
-                pass
+        super().save((uuid, application), policy, "policy")
