@@ -68,7 +68,8 @@ class IdentityHeaderMiddleware(BaseTenantMiddleware):
         """Override the tenant selection logic."""
         connections["default"].set_schema_to_public()
         tenant_schema = create_schema_name(request.user.account)
-        if TENANTS.get_tenant(tenant_schema) is None:
+        tenant = TENANTS.get_tenant(tenant_schema)
+        if tenant is None:
             if request.user.system:
                 try:
                     tenant = Tenant.objects.get(schema_name=tenant_schema)
@@ -82,7 +83,7 @@ class IdentityHeaderMiddleware(BaseTenantMiddleware):
                         seed_roles(tenant=tenant)
                         seed_group(tenant=tenant)
             TENANTS.save_tenant(tenant)
-        return TENANTS.get_tenant(tenant_schema)
+        return tenant
 
     def hostname_from_request(self, request):
         """Behold. The tenant_schemas expects to pivot schemas based on hostname. We're not."""
