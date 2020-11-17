@@ -143,6 +143,16 @@
               ],
               "default": "false"
             }
+          },
+          {
+            "in": "query",
+            "name": "order_by",
+            "required": false,
+            "description": "Parameter for ordering principals by value. For inverse ordering, supply '-' before the param value, such as: ?order_by=-username",
+            "schema": {
+              "type": "string",
+              "enum": ["username"]
+            }
           }
         ],
         "responses": {
@@ -307,7 +317,19 @@
             }
           },
           {
-            "$ref": "#/components/parameters/OrderByFilter"
+            "in": "query",
+            "name": "order_by",
+            "required": false,
+            "description": "Parameter for ordering groups by value. For inverse ordering, supply '-' before the param value, such as: ?order_by=-name",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "name",
+                "modified",
+                "principalCount",
+                "policyCount"
+              ]
+            }
           }
         ],
         "responses": {
@@ -826,11 +848,12 @@
             "in": "query",
             "name": "order_by",
             "required": false,
-            "description": "Parameter for ordering resource by value. For inverse ordering, supply '-' before the param value, such as: ?order_by=-name",
+            "description": "Parameter for ordering roles by value. For inverse ordering, supply '-' before the param value, such as: ?order_by=-name",
             "schema": {
               "type": "string",
               "enum": [
                 "name",
+                "display_name",
                 "modified",
                 "policyCount"
               ]
@@ -1102,7 +1125,19 @@
             "$ref": "#/components/parameters/ScopeFilter"
           },
           {
-            "$ref": "#/components/parameters/OrderByFilter"
+            "in": "query",
+            "name": "order_by",
+            "required": false,
+            "description": "Parameter for ordering roles by value. For inverse ordering, supply '-' before the param value, such as: ?order_by=-name",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "name",
+                "display_name",
+                "modified",
+                "policyCount"
+              ]
+            }
           },
           {
             "name": "add_fields",
@@ -1809,7 +1844,19 @@
             "$ref": "#/components/parameters/QueryOffset"
           },
           {
-            "$ref": "#/components/parameters/OrderByFilter"
+            "in": "query",
+            "name": "order_by",
+            "required": false,
+            "description": "Parameter for ordering permissions by value. For inverse ordering, supply '-' before the param value, such as: ?order_by=-application",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "application",
+                "resource_type",
+                "verb",
+                "permission"
+              ]
+            }
           },
           {
             "name": "application",
