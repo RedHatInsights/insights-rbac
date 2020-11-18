@@ -99,7 +99,7 @@
           {
             "name": "sort_order",
             "in": "query",
-            "description": "The sort order of the query, either ascending or descending",
+            "description": "The sort order of the query, either ascending or descending. Defaults to ascending.",
             "required": false,
             "schema": {
               "type": "string",
@@ -1559,7 +1559,17 @@
             "$ref": "#/components/parameters/GroupUUIDFilter"
           },
           {
-            "$ref": "#/components/parameters/OrderByFilter"
+            "in": "query",
+            "name": "order_by",
+            "required": false,
+            "description": "Parameter for ordering policies by value. For inverse ordering, supply '-' before the param value, such as: ?order_by=-name",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "name",
+                "modified"
+              ]
+            }
           }
         ],
         "responses": {
