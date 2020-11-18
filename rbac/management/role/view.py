@@ -186,22 +186,7 @@ class RoleViewSet(
                 ]
             }
         """
-        access_list = self.validate_and_get_access_list(request.data)
-        for perm in access_list:
-            app, resource_type, verb = perm.get("permission").split(":")
-            if app not in settings.ROLE_CREATE_ALLOW_LIST:
-                key = "role"
-                message = "Custom roles cannot be created for {}".format(app)
-                error = {key: [_(message)]}
-                raise serializers.ValidationError(error)
-
-            db_permission = Permission.objects.filter(application=app, resource_type=resource_type, verb=verb).exists()
-
-            if not db_permission:
-                key = "role"
-                message = f"Permission does not exist: {perm.get('permission')}"
-                error = {key: [_(message)]}
-                raise serializers.ValidationError(error)
+        self.validate_role(request)
         return super().create(request=request, args=args, kwargs=kwargs)
 
     def list(self, request, *args, **kwargs):
@@ -379,15 +364,7 @@ class RoleViewSet(
             }
         """
         validate_uuid(kwargs.get("uuid"), "role uuid validation")
-        access_list = self.validate_and_get_access_list(request.data)
-        if access_list:
-            for perm in access_list:
-                app = perm.get("permission").split(":")[0]
-                if app not in settings.ROLE_CREATE_ALLOW_LIST:
-                    key = "role"
-                    message = "Custom roles cannot be created for {}".format(app)
-                    error = {key: [_(message)]}
-                    raise serializers.ValidationError(error)
+        self.validate_role(request)
         return super().update(request=request, args=args, kwargs=kwargs)
 
     @action(detail=True, methods=["get"])
@@ -431,3 +408,25 @@ class RoleViewSet(
                 raise serializers.ValidationError({key: _(message)})
 
         return LIST_ROLE_FIELDS + field_list
+
+    def validate_role(self, request):
+        """Validate the role request data."""
+        access_list = self.validate_and_get_access_list(request.data)
+        if access_list:
+            for perm in access_list:
+                app, resource_type, verb = perm.get("permission").split(":")
+                if app not in settings.ROLE_CREATE_ALLOW_LIST:
+                    key = "role"
+                    message = "Custom roles cannot be created for {}".format(app)
+                    error = {key: [_(message)]}
+                    raise serializers.ValidationError(error)
+
+                db_permission = Permission.objects.filter(
+                    application=app, resource_type=resource_type, verb=verb
+                ).exists()
+
+                if not db_permission:
+                    key = "role"
+                    message = f"Permission does not exist: {perm.get('permission')}"
+                    error = {key: [_(message)]}
+                    raise serializers.ValidationError(error)

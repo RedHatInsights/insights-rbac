@@ -552,6 +552,31 @@ class RoleViewsetTests(IdentityRequest):
         response = client.put(url, test_data, format="json", **self.headers)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
+    def test_update_role_permission_does_not_exist_fail(self):
+        """Test that we cannot update a role with a permission that doesn't exist."""
+        # Set up
+        role_name = "permRole"
+        permission = "cost-management:foo:bar"
+        access_data = [
+            {
+                "permission": "cost-management:*:*",
+                "resourceDefinitions": [{"attributeFilter": {"key": "keyA", "operation": "equal", "value": "valueA"}}],
+            }
+        ]
+        response = self.create_role(role_name, in_access_data=access_data)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        role_uuid = response.data.get("uuid")
+        test_data = response.data
+        test_data.get("access")[0]["permission"] = permission
+        test_data["applications"] = ["foo"]
+
+        # Test update failure
+        url = reverse("role-detail", kwargs={"uuid": role_uuid})
+        client = APIClient()
+        response = client.put(url, test_data, format="json", **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data.get("errors")[0].get("detail"), f"Permission does not exist: {permission}")
+
     def test_delete_role_success(self):
         """Test that we can delete an existing role."""
         role_name = "roleA"
