@@ -76,7 +76,12 @@ class RoleFilter(CommonFilters):
 
         return queryset.filter(access__perm__in=permissions).distinct()
 
+    def display_name_filter(self, queryset, field, value):
+        """Filter to lookup display_name, partial or exact."""
+        return self.name_filter(queryset, field, value, "display_name")
+
     name = filters.CharFilter(field_name="name", method="name_filter")
+    display_name = filters.CharFilter(field_name="display_name", method="display_name_filter")
     application = filters.CharFilter(field_name="application", method="application_filter")
     permission = filters.CharFilter(field_name="permission", method="permission_filter")
 
