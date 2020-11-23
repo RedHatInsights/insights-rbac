@@ -48,3 +48,8 @@ class AccessModelTests(IdentityRequest):
         """Test we split the permission."""
         with tenant_context(self.tenant):
             self.assertEqual(self.access.split_permission(), ["app", "*", "*"])
+
+    def test_perm_and_permission_are_synced(self):
+        """Test the permission field is populated when creating Access."""
+        with tenant_context(self.tenant):
+            self.assertEqual(self.access.permission.permission, "app:*:*")

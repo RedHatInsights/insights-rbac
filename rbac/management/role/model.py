@@ -25,7 +25,7 @@ from django.db import connections, models
 from django.db.models import signals
 from django.utils import timezone
 from management.cache import AccessCache
-from management.models import Principal
+from management.models import Permission, Principal
 from management.rbac_fields import AutoDateTimeField
 
 
@@ -72,7 +72,7 @@ class Access(models.Model):
     """An access object."""
 
     perm = models.TextField(null=True)
-    permission = models.TextField(default="*:*:*")
+    permission = models.ForeignKey(Permission, null=True, on_delete=models.CASCADE, related_name="accesses")
     role = models.ForeignKey(Role, null=True, on_delete=models.CASCADE, related_name="access")
 
     objects = CustomManager()
@@ -84,6 +84,13 @@ class Access(models.Model):
     def split_permission(self):
         """Split the permission."""
         return self.perm.split(":")
+
+    def save(self, *args, **kwargs):
+        """Save method that sync the perm field and permission."""
+        if not self.permission:
+            self.permission, created = Permission.objects.get_or_create(permission=self.perm)
+
+        super(Access, self).save(*args, **kwargs)
 
 
 class ResourceDefinition(models.Model):

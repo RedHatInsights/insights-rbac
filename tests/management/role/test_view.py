@@ -87,7 +87,6 @@ class RoleViewsetTests(IdentityRequest):
             self.access2 = Access.objects.create(perm="app2:*:*", role=self.defRole)
 
             self.access3 = Access.objects.create(perm="app2:*:*", role=self.sysRole)
-            Permission.objects.create(permission="app:*:*")
             Permission.objects.create(permission="cost-management:*:*")
 
     def tearDown(self):
