@@ -26,7 +26,7 @@ from rest_framework.test import APIClient
 from tenant_schemas.utils import tenant_context
 
 from api.models import User
-from management.models import Group, Principal, Role, Access, Policy
+from management.models import Group, Principal, Role, Access, Policy, Permission
 from tests.identity_request import IdentityRequest
 
 
@@ -87,6 +87,8 @@ class RoleViewsetTests(IdentityRequest):
             self.access2 = Access.objects.create(perm="app2:*:*", role=self.defRole)
 
             self.access3 = Access.objects.create(perm="app2:*:*", role=self.sysRole)
+            Permission.objects.create(permission="app:*:*")
+            Permission.objects.create(permission="cost-management:*:*")
 
     def tearDown(self):
         """Tear down role viewset tests."""
@@ -211,6 +213,20 @@ class RoleViewsetTests(IdentityRequest):
         ]
         response = self.create_role(role_name, in_access_data=access_data)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_create_role_permission_does_not_exist_fail(self):
+        """Test that we cannot create a role with a permission that doesn't exist."""
+        role_name = "roleFailPermission"
+        permission = "cost-management:foo:bar"
+        access_data = [
+            {
+                "permission": permission,
+                "resourceDefinitions": [{"attributeFilter": {"key": "keyA", "operation": "equal", "value": "valueA"}}],
+            }
+        ]
+        response = self.create_role(role_name, in_access_data=access_data)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data.get("errors")[0].get("detail"), f"Permission does not exist: {permission}")
 
     def test_create_role_fail_with_access_not_list(self):
         """Test that we cannot create a role for a non-allow_listed app."""
@@ -535,6 +551,31 @@ class RoleViewsetTests(IdentityRequest):
         client = APIClient()
         response = client.put(url, test_data, format="json", **self.headers)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_update_role_permission_does_not_exist_fail(self):
+        """Test that we cannot update a role with a permission that doesn't exist."""
+        # Set up
+        role_name = "permRole"
+        permission = "cost-management:foo:bar"
+        access_data = [
+            {
+                "permission": "cost-management:*:*",
+                "resourceDefinitions": [{"attributeFilter": {"key": "keyA", "operation": "equal", "value": "valueA"}}],
+            }
+        ]
+        response = self.create_role(role_name, in_access_data=access_data)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        role_uuid = response.data.get("uuid")
+        test_data = response.data
+        test_data.get("access")[0]["permission"] = permission
+        test_data["applications"] = ["foo"]
+
+        # Test update failure
+        url = reverse("role-detail", kwargs={"uuid": role_uuid})
+        client = APIClient()
+        response = client.put(url, test_data, format="json", **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data.get("errors")[0].get("detail"), f"Permission does not exist: {permission}")
 
     def test_delete_role_success(self):
         """Test that we can delete an existing role."""
