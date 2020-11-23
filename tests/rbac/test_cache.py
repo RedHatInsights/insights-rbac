@@ -23,7 +23,7 @@ from rbac.settings import ACCESS_CACHE_ENABLED
 from django.db import connection
 from django.test import TestCase
 
-from management.models import Access, Group, Policy, Principal, ResourceDefinition, Role
+from management.models import Access, Group, Permission, Policy, Principal, ResourceDefinition, Role
 from api.models import Tenant
 
 
@@ -207,7 +207,8 @@ class AccessCacheTest(TestCase):
 
         cache.reset_mock()
         # If Access is added
-        self.access_a = Access.objects.create(perm="foo:*:*", role=self.role_a)
+        self.permission = Permission.objects.create(permission="foo:*:*")
+        self.access_a = Access.objects.create(permission=self.permission, role=self.role_a)
         cache.assert_called_once()
         cache.assert_called_once_with(self.principal_a.uuid)
 
