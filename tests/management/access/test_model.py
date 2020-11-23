@@ -20,7 +20,7 @@ from tenant_schemas.utils import tenant_context
 
 # from unittest.mock import Mock
 
-from management.models import Access
+from management.models import Access, Permission
 from tests.identity_request import IdentityRequest
 
 
@@ -32,7 +32,8 @@ class AccessModelTests(IdentityRequest):
         super().setUp()
 
         with tenant_context(self.tenant):
-            self.access = Access.objects.create(perm="app:*:*")
+            self.permission = Permission.objects.create(permission="app:*:*")
+            self.access = Access.objects.create(permission=self.permission)
 
     def tearDown(self):
         """Tear down access model tests."""
@@ -43,11 +44,6 @@ class AccessModelTests(IdentityRequest):
         """Test we get back the application name of the permission."""
         with tenant_context(self.tenant):
             self.assertEqual(self.access.permission_application(), "app")
-
-    def test_split_permission(self):
-        """Test we split the permission."""
-        with tenant_context(self.tenant):
-            self.assertEqual(self.access.split_permission(), ["app", "*", "*"])
 
     def test_perm_and_permission_are_synced(self):
         """Test the permission field is populated when creating Access."""
