@@ -27,7 +27,7 @@ from rest_framework.test import APIClient
 from tenant_schemas.utils import tenant_context
 
 from api.models import User
-from management.models import Group, Principal, Policy, Role, Access
+from management.models import Group, Principal, Policy, Role, Access, Permission
 from tests.identity_request import IdentityRequest
 
 
@@ -56,6 +56,8 @@ class AccessViewTests(IdentityRequest):
             self.group.save()
             self.group.principals.add(self.principal)
             self.group.save()
+            Permission.objects.create(permission="app:foo:bar")
+            Permission.objects.create(permission="app:*:*")
 
     def tearDown(self):
         """Tear down access view tests."""

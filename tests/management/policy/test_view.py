@@ -26,7 +26,7 @@ from rest_framework.test import APIClient
 from tenant_schemas.utils import tenant_context
 
 from api.models import User
-from management.models import Group, Principal, Policy, Role
+from management.models import Group, Principal, Policy, Role, Permission
 from tests.identity_request import IdentityRequest
 
 
@@ -49,6 +49,7 @@ class PolicyViewsetTests(IdentityRequest):
             self.group.save()
             self.group.principals.add(self.principal)
             self.group.save()
+            Permission.objects.create(permission="app:*:*")
 
     def tearDown(self):
         """Tear down policy viewset tests."""
