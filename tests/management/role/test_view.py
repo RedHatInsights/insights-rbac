@@ -26,7 +26,7 @@ from rest_framework.test import APIClient
 from tenant_schemas.utils import tenant_context
 
 from api.models import User
-from management.models import Group, Principal, Role, Access, Policy, Permission
+from management.models import Group, Permission, Principal, Role, Access, Policy
 from tests.identity_request import IdentityRequest
 
 
@@ -83,10 +83,12 @@ class RoleViewsetTests(IdentityRequest):
             self.policy.roles.add(self.defRole, self.sysRole)
             self.policy.save()
 
-            self.access = Access.objects.create(perm="app:*:*", role=self.defRole)
-            self.access2 = Access.objects.create(perm="app2:*:*", role=self.defRole)
+            self.permission = Permission.objects.create(permission="app:*:*")
+            self.permission2 = Permission.objects.create(permission="app2:*:*")
+            self.access = Access.objects.create(permission=self.permission, role=self.defRole)
+            self.access2 = Access.objects.create(permission=self.permission2, role=self.defRole)
 
-            self.access3 = Access.objects.create(perm="app2:*:*", role=self.sysRole)
+            self.access3 = Access.objects.create(permission=self.permission2, role=self.sysRole)
             Permission.objects.create(permission="cost-management:*:*")
 
     def tearDown(self):
