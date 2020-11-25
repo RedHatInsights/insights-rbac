@@ -1,8 +1,0 @@
-kind: Secret
-apiVersion: v1
-metadata:
-  name: rbac-psks
-data:
-  psks.json: >-
-    ewogICJhZHZpc29yIjogewogICAgImFsdC1zZWNyZXQiOiAiOTRmMjQ5MjEyM2U2ZjYyMjBiMDZhMzc5ZGY0NDVkMTIiCiAgfSwKICAiYXBwcm92YWwiOiB7CiAgICAiYWx0LXNlY3JldCI6ICI0Y2QyOTFkMThmMzNkN2YwZTdmOTRkNWVkN2FhZmEzZSIKICB9Cn0K
-type: Opaque
