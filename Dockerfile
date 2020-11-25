@@ -10,7 +10,8 @@ ENV NODEJS_VERSION=10 \
     PATH=$HOME/.local/bin/:$HOME/node_modules/.bin/:$HOME/.npm-global/bin/:$PATH \
     LC_ALL=en_US.UTF-8 \
     LANG=en_US.UTF-8 \
-    PIP_NO_CACHE_DIR=off
+    PIP_NO_CACHE_DIR=off \
+    ENABLE_PIPENV=true
 
 ENV SUMMARY="Insights RBAC is a role based access control web server" \
     DESCRIPTION="Insights RBAC is a role based access control web server"

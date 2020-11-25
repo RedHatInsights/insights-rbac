@@ -35,6 +35,7 @@ import pytz
 from boto3.session import Session
 from corsheaders.defaults import default_headers
 from dateutil.parser import parse as parse_dt
+from app_common_python import LoadedConfig
 
 # Database
 # https://docs.djangoproject.com/en/2.0/ref/settings/#databases
@@ -213,10 +214,18 @@ REST_FRAMEWORK = {
     "ORDERING_PARAM": "order_by",
 }
 
-CW_AWS_ACCESS_KEY_ID = ENVIRONMENT.get_value("CW_AWS_ACCESS_KEY_ID", default=None)
-CW_AWS_SECRET_ACCESS_KEY = ENVIRONMENT.get_value("CW_AWS_SECRET_ACCESS_KEY", default=None)
-CW_AWS_REGION = ENVIRONMENT.get_value("CW_AWS_REGION", default="us-east-1")
-CW_LOG_GROUP = ENVIRONMENT.get_value("CW_LOG_GROUP", default="platform-dev")
+# CW settings
+if ENVIRONMENT.bool("CLOWDER_ENABLED", default=False):
+    CW_AWS_ACCESS_KEY_ID = LoadedConfig.logging.cloudwatch.accessKeyId
+    CW_AWS_SECRET_ACCESS_KEY = LoadedConfig.logging.cloudwatch.secretAccessKey
+    CW_AWS_REGION_NAME = LoadedConfig.logging.cloudwatch.region
+    CW_LOG_GROUP = LoadedConfig.logging.cloudwatch.logGroup
+else:
+    CW_AWS_ACCESS_KEY_ID = ENVIRONMENT.get_value("CW_AWS_ACCESS_KEY_ID", default=None)
+    CW_AWS_SECRET_ACCESS_KEY = ENVIRONMENT.get_value("CW_AWS_SECRET_ACCESS_KEY", default=None)
+    CW_AWS_REGION = ENVIRONMENT.get_value("CW_AWS_REGION", default="us-east-1")
+    CW_LOG_GROUP = ENVIRONMENT.get_value("CW_LOG_GROUP", default="platform-dev")
+
 CW_CREATE_LOG_GROUP = ENVIRONMENT.bool("CW_CREATE_LOG_GROUP", default=False)
 
 LOGGING_FORMATTER = os.getenv("DJANGO_LOG_FORMATTER", "simple")
@@ -284,9 +293,13 @@ CORS_ALLOW_HEADERS = default_headers + ("x-rh-identity", "HTTP_X_RH_IDENTITY")
 APPEND_SLASH = False
 
 # Celery settings
+if ENVIRONMENT.bool("CLOWDER_ENABLED", default=False):
+    REDIS_HOST = LoadedConfig.InMemoryDbConfig.hostname
+    REDIS_PORT = LoadedConfig.InMemoryDbConfig.port
+else:
+    REDIS_HOST = ENVIRONMENT.get_value("REDIS_HOST", default="localhost")
+    REDIS_PORT = ENVIRONMENT.get_value("REDIS_PORT", default="6379")
 
-REDIS_HOST = ENVIRONMENT.get_value("REDIS_HOST", default="localhost")
-REDIS_PORT = ENVIRONMENT.get_value("REDIS_PORT", default="6379")
 DEFAULT_REDIS_URL = f"redis://{REDIS_HOST}:{REDIS_PORT}/0"
 
 CELERY_BROKER_URL = ENVIRONMENT.get_value("CELERY_BROKER_URL", default=DEFAULT_REDIS_URL)

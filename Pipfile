@@ -27,6 +27,7 @@ redis = "==3.3.8"
 sqlparse = "==0.3.0"
 django-extensions = "==2.2.9"
 python-dateutil = "*"
+app-common-python = "~=0.1.2"
 
 [dev-packages]
 astroid = "==2.2.5"
