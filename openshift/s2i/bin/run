@@ -80,6 +80,7 @@ if should_migrate; then
     echo "WARNING: seems that you're using Django, but we could not find a 'manage.py' file."
     echo "Skipped 'python manage.py migrate'."
   fi
+  exit 0
 fi
 
 if is_gunicorn_installed; then
@@ -97,7 +98,7 @@ if is_gunicorn_installed; then
     export WEB_CONCURRENCY=${WEB_CONCURRENCY:-$(get_default_web_concurrency)}
 
     echo "---> Serving application with gunicorn ($APP_MODULE) ..."
-    exec gunicorn "$APP_MODULE" --chdir=$APP_HOME --bind=0.0.0.0:8080 --config "$APP_CONFIG" --preload
+    exec gunicorn "$APP_MODULE" --chdir=$APP_HOME --bind=0.0.0.0:8000 --config "$APP_CONFIG" --preload
   fi
 fi
 
@@ -106,7 +107,7 @@ if is_django_installed; then
     echo "---> Serving application with 'manage.py runserver' ..."
     echo "WARNING: this is NOT a recommended way to run you application in production!"
     echo "Consider using gunicorn or some other production web server."
-    exec python "$manage_file" runserver 0.0.0.0:8080
+    exec python "$manage_file" runserver 0.0.0.0:8000
   else
     echo "WARNING: seems that you're using Django, but we could not find a 'manage.py' file."
     echo "Skipped 'python manage.py runserver'."

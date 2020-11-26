@@ -29,12 +29,15 @@ def config():
             "HOST": LoadedConfig.database.hostname,
             "PORT": LoadedConfig.database.port,
         }
-        db_options = {
-            "OPTIONS": {
-                "sslmode": ENVIRONMENT.get_value("PGSSLMODE", default="prefer"),
-                "sslrootcert": LoadedConfig.rds_ca(),
+        if LoadedConfig.database.rdsCa:
+            db_options = {
+                "OPTIONS": {
+                    "sslmode": ENVIRONMENT.get_value("PGSSLMODE", default="prefer"),
+                    "sslrootcert": LoadedConfig.rds_ca(),
+                }
             }
-        }
+        else:
+            db_options = {}
     else:
         db_obj = {
             "ENGINE": "tenant_schemas.postgresql_backend",

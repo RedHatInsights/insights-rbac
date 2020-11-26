@@ -294,8 +294,8 @@ APPEND_SLASH = False
 
 # Celery settings
 if ENVIRONMENT.bool("CLOWDER_ENABLED", default=False):
-    REDIS_HOST = LoadedConfig.InMemoryDbConfig.hostname
-    REDIS_PORT = LoadedConfig.InMemoryDbConfig.port
+    REDIS_HOST = LoadedConfig.inMemoryDb.hostname
+    REDIS_PORT = LoadedConfig.inMemoryDb.port
 else:
     REDIS_HOST = ENVIRONMENT.get_value("REDIS_HOST", default="localhost")
     REDIS_PORT = ENVIRONMENT.get_value("REDIS_PORT", default="6379")

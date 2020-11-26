@@ -1,0 +1,11 @@
+FROM registry.redhat.io/ubi8/python-36
+USER 0
+COPY Pipfile Pipfile
+COPY Pipfile.lock Pipfile.lock
+COPY run_server.sh run_server.sh
+RUN yum install -y git gcc python3-devel && pip3 install pipenv pip pipenv-to-requirements && pip3 install -U pip && pipenv run pipenv_to_requirements -f \
+    && pip3 install -r requirements.txt && yum remove -y nodejs gcc python3-devel atlas && yum clean all
+COPY rbac rbac
+COPY scripts scripts
+COPY openshift/s2i/bin/run run
+ENTRYPOINT ["./run"]
