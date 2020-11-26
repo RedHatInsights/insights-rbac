@@ -1,0 +1,362 @@
+apiVersion: cloud.redhat.com/v1alpha1
+kind: ClowdApp
+metadata:
+  name: rbac
+spec:
+  database:
+    name: rbac
+  envName: ephem
+  inMemoryDb: true
+  pods:
+    - initContainers:
+        - env:
+            - name: DISABLE_MIGRATE
+              value : ""
+          inheritEnv: true
+      resources:
+        limits:
+          cpu: 700m
+          memory: 1Gi
+        requests:
+          cpu: 200m
+          memory: 256Mi
+      readinessProbe:
+        failureThreshold: 3
+        httpGet:
+          path: /
+          port: 8000
+          scheme: HTTP
+        initialDelaySeconds: 35
+        periodSeconds: 5
+        successThreshold: 1
+        timeoutSeconds: 120
+      name: service
+      livenessProbe:
+        failureThreshold: 3
+        httpGet:
+          path: /
+          port: 8000
+          scheme: HTTP
+        initialDelaySeconds: 35
+        periodSeconds: 5
+        successThreshold: 1
+        timeoutSeconds: 120
+      env:
+        - name: SERVICE_PSKS
+          valueFrom:
+            secretKeyRef:
+              key: psks.json
+              name: rbac-psks
+              optional: false
+        - name: PGSSLMODE
+          value: prefer
+        - name: DJANGO_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              key: django-secret-key
+              name: rbac-secret
+              optional: false
+        - name: PRINCIPAL_PROXY_SERVICE_PROTOCOL
+          valueFrom:
+            secretKeyRef:
+              key: principal-proxy-protocol
+              name: rbac-secret
+              optional: false
+        - name: PRINCIPAL_PROXY_SERVICE_HOST
+          valueFrom:
+            secretKeyRef:
+              key: principal-proxy-host
+              name: rbac-secret
+              optional: false
+        - name: PRINCIPAL_PROXY_SERVICE_PORT
+          valueFrom:
+            secretKeyRef:
+              key: principal-proxy-port
+              name: rbac-secret
+              optional: false
+        - name: PRINCIPAL_PROXY_SERVICE_PATH
+        - name: PRINCIPAL_PROXY_USER_ENV
+          valueFrom:
+            secretKeyRef:
+              key: principal-proxy-env
+              name: rbac-secret
+              optional: false
+        - name: PRINCIPAL_PROXY_CLIENT_ID
+          valueFrom:
+            secretKeyRef:
+              key: principal-proxy-client-id
+              name: rbac-secret
+              optional: false
+        - name: PRINCIPAL_PROXY_API_TOKEN
+          valueFrom:
+            secretKeyRef:
+              key: principal-proxy-api-token
+              name: rbac-secret
+              optional: false
+        - name: PRINCIPAL_PROXY_SERVICE_SSL_VERIFY
+          valueFrom:
+            secretKeyRef:
+              key: principal-proxy-ssl-verify
+              name: rbac-secret
+              optional: true
+        - name: PRINCIPAL_PROXY_SERVICE_SOURCE_CERT
+          valueFrom:
+            secretKeyRef:
+              key: principal-proxy-source-cert
+              name: rbac-secret
+              optional: true
+        - name: POD_CPU_LIMIT
+          value: "1"
+        - name: ACCESS_CACHE_ENABLED
+          value: 'True'
+        - name: APP_NAMESPACE
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.namespace
+        - name: DJANGO_DEBUG
+          value: 'false'
+        - name: API_PATH_PREFIX
+          value: /api/rbac
+        - name: DEVELOPMENT
+          value: 'false'
+        - name: RBAC_LOG_LEVEL
+          value: INFO
+        - name: DJANGO_LOG_LEVEL
+          value: INFO
+        - name: DJANGO_LOG_FORMATTER
+          value: simple
+        - name: DJANGO_LOG_HANDLERS
+          value: console
+        - name: DJANGO_LOG_DIRECTORY
+        - name: DJANGO_LOGGING_FILE
+        - name: PERMISSION_SEEDING_ENABLED
+          value: 'True'
+        - name: ROLE_SEEDING_ENABLED
+          value: 'True'
+        - name: GROUP_SEEDING_ENABLED
+          value: 'True'
+        - name: DISABLE_MIGRATE
+          value: 'True'
+        - name: BYPASS_BOP_VERIFICATION
+          value: 'False'
+        - name: ROLE_CREATE_ALLOW_LIST
+          value: >-
+            cost-management,remediations,inventory,drift,policies,advisor,catalog,approval,vulnerability,compliance,automation-analytics,notifications
+        - name: RBAC_DESTRUCTIVE_ENABLED_UNTIL
+        - name: CLOWDER_ENABLED
+          value: 'true'
+        - name: APP_CONFIG
+          value: /opt/app-root/src/rbac/gunicorn.py
+        - name: APP_HOME
+          value: /opt/app-root/src/rbac
+        - name: APP_MODULE
+          value: rbac.wsgi
+        - name: APP_NAMESPACE
+          value: rbac
+      minReplicas: 1
+      volumeMounts:
+        - mountPath: /opt/app-root/src/rbac/management/role/definitions
+          name: default-role-config
+        - mountPath: /opt/app-root/src/rbac/management/role/permissions
+          name: model-access-permissions
+      web: true
+      volumes:
+        - configMap:
+            defaultMode: 420
+            name: rbac-config
+          name: default-role-config
+        - configMap:
+            defaultMode: 420
+            name: model-access-permissions
+          name: model-access-permissions
+      image: '127.0.0.1:5000/rbac:pete7'
+    - resources:
+        limits:
+          cpu: 300m
+          memory: 512Mi
+        requests:
+          cpu: 100m
+          memory: 256Mi
+      readinessProbe:
+        exec:
+          command:
+            - /bin/bash
+            - '-c'
+            - >
+              PYTHONPATH=${PWD}/rbac/ celery inspect
+              ping -A rbac.celery
+        failureThreshold: 3
+        periodSeconds: 300
+        successThreshold: 1
+        timeoutSeconds: 10
+      name: worker
+      command:
+        - /bin/bash
+        - '-c'
+        - >
+          PYTHONPATH=${PWD}/rbac/ celery -A
+          rbac.celery worker -l $DJANGO_LOG_LEVEL
+      livenessProbe:
+        exec:
+          command:
+            - /bin/bash
+            - '-c'
+            - >
+              PYTHONPATH=${PWD}/rbac/ celery inspect
+              ping -A rbac.celery
+        failureThreshold: 3
+        initialDelaySeconds: 30
+        periodSeconds: 300
+        successThreshold: 1
+        timeoutSeconds: 10
+      env:
+        - name: DJANGO_LOG_LEVEL
+          value: INFO
+        - name: DJANGO_DEBUG
+          value: 'false'
+        - name: PERMISSION_SEEDING_ENABLED
+          value: 'False'
+        - name: ROLE_SEEDING_ENABLED
+          value: 'False'
+        - name: GROUP_SEEDING_ENABLED
+          value: 'False'
+        - name: DJANGO_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              key: django-secret-key
+              name: rbac-secret
+              optional: false
+        - name: PRINCIPAL_PROXY_SERVICE_PROTOCOL
+          valueFrom:
+            secretKeyRef:
+              key: principal-proxy-protocol
+              name: rbac-secret
+              optional: false
+        - name: PRINCIPAL_PROXY_SERVICE_HOST
+          valueFrom:
+            secretKeyRef:
+              key: principal-proxy-host
+              name: rbac-secret
+              optional: false
+        - name: PRINCIPAL_PROXY_SERVICE_PORT
+          valueFrom:
+            secretKeyRef:
+              key: principal-proxy-port
+              name: rbac-secret
+              optional: false
+        - name: PRINCIPAL_PROXY_SERVICE_PATH
+        - name: PRINCIPAL_PROXY_USER_ENV
+          valueFrom:
+            secretKeyRef:
+              key: principal-proxy-env
+              name: rbac-secret
+              optional: false
+        - name: PRINCIPAL_PROXY_CLIENT_ID
+          valueFrom:
+            secretKeyRef:
+              key: principal-proxy-client-id
+              name: rbac-secret
+              optional: false
+        - name: PRINCIPAL_PROXY_API_TOKEN
+          valueFrom:
+            secretKeyRef:
+              key: principal-proxy-api-token
+              name: rbac-secret
+              optional: false
+        - name: PRINCIPAL_PROXY_SERVICE_SSL_VERIFY
+          valueFrom:
+            secretKeyRef:
+              key: principal-proxy-ssl-verify
+              name: rbac-secret
+              optional: true
+        - name: PRINCIPAL_PROXY_SERVICE_SOURCE_CERT
+          valueFrom:
+            secretKeyRef:
+              key: principal-proxy-source-cert
+              name: rbac-secret
+              optional: true
+        - name: APP_NAMESPACE
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.namespace
+        - name: PGSSLMODE
+          value: prefer
+        - name: CLOWDER_ENABLED
+          value: 'true'
+      minReplicas: 1
+      volumeMounts:
+        - mountPath: /opt/app-root/src/rbac/management/role/definitions
+          name: default-role-config
+        - mountPath: /opt/app-root/src/rbac/management/role/permissions
+          name: model-access-permissions
+      volumes:
+        - configMap:
+            defaultMode: 420
+            name: rbac-config
+          name: default-role-config
+        - configMap:
+            defaultMode: 420
+            name: model-access-permissions
+          name: model-access-permissions
+      image: '127.0.0.1:5000/rbac:pete7'
+    - command:
+        - /bin/bash
+        - '-c'
+        - >
+          PYTHONPATH=${PWD}/rbac/ celery -A
+          rbac.celery beat -l $DJANGO_LOG_LEVEL
+      env:
+        - name: DJANGO_LOG_LEVEL
+          value: INFO
+        - name: DJANGO_DEBUG
+          value: 'false'
+        - name: APP_NAMESPACE
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.namespace
+        - name: PERMISSION_SEEDING_ENABLED
+          value: 'False'
+        - name: ROLE_SEEDING_ENABLED
+          value: 'False'
+        - name: GROUP_SEEDING_ENABLED
+          value: 'False'
+        - name: CLOWDER_ENABLED
+          value: 'true'
+      image: '127.0.0.1:5000/rbac:pete7'
+      livenessProbe:
+        exec:
+          command:
+            - /bin/bash
+            - '-c'
+            - >
+              PYTHONPATH=${PWD}/rbac/ celery inspect
+              ping -A rbac.celery
+        failureThreshold: 3
+        initialDelaySeconds: 30
+        periodSeconds: 300
+        successThreshold: 1
+        timeoutSeconds: 10
+      minReplicas: 1
+      name: scheduler
+      readinessProbe:
+        exec:
+          command:
+            - /bin/bash
+            - '-c'
+            - >
+              PYTHONPATH=${PWD}/rbac/ celery inspect
+              ping -A rbac.celery
+        failureThreshold: 3
+        periodSeconds: 300
+        successThreshold: 1
+        timeoutSeconds: 10
+      resources:
+        limits:
+          cpu: 300m
+          memory: 512Mi
+        requests:
+          cpu: 100m
+          memory: 256Mi
