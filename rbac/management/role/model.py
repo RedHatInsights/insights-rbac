@@ -63,7 +63,6 @@ class Role(models.Model):
 class Access(models.Model):
     """An access object."""
 
-    perm = models.TextField(null=True)
     permission = models.ForeignKey(Permission, null=True, on_delete=models.CASCADE, related_name="accesses")
     role = models.ForeignKey(Role, null=True, on_delete=models.CASCADE, related_name="access")
 
