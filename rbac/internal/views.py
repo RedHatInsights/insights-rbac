@@ -150,7 +150,7 @@ def migration_progress(request):
 def run_seeds(request):
     """View method for running seeds.
 
-    POST /_private/api/seeds/run/?seed_types=permissions,rolese,groups
+    POST /_private/api/seeds/run/?seed_types=permissions,roles,groups
     """
     if request.method == "POST":
         args = {}

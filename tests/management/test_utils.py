@@ -17,7 +17,7 @@
 """Test the utils module."""
 from tenant_schemas.utils import tenant_context
 
-from management.models import Group, Principal, Policy, Role, Access
+from management.models import Group, Permission, Principal, Policy, Role, Access
 from management.utils import access_for_principal, groups_for_principal, policies_for_principal, roles_for_principal
 from tests.identity_request import IdentityRequest
 
@@ -35,7 +35,8 @@ class UtilsTests(IdentityRequest):
 
             # setup data for the principal
             self.roleA = Role.objects.create(name="roleA")
-            self.accessA = Access.objects.create(perm="app:*:*", role=self.roleA)
+            self.permission = Permission.objects.create(permission="app:*:*")
+            self.accessA = Access.objects.create(permission=self.permission, role=self.roleA)
             self.policyA = Policy.objects.create(name="policyA")
             self.policyA.roles.add(self.roleA)
             self.groupA = Group.objects.create(name="groupA")
@@ -44,7 +45,7 @@ class UtilsTests(IdentityRequest):
 
             # setup data the principal does not have access to
             self.roleB = Role.objects.create(name="roleB")
-            self.accessB = Access.objects.create(perm="app:*:*", role=self.roleB)
+            self.accessB = Access.objects.create(permission=self.permission, role=self.roleB)
             self.policyB = Policy.objects.create(name="policyB")
             self.policyB.roles.add(self.roleB)
             self.groupB = Group.objects.create(name="groupB")
@@ -53,7 +54,7 @@ class UtilsTests(IdentityRequest):
             # setup default group/role which all tenant users
             # should inherit without explicit association
             self.default_role = Role.objects.create(name="default role", platform_default=True, system=True)
-            self.default_access = Access.objects.create(perm="app:*:*", role=self.default_role)
+            self.default_access = Access.objects.create(permission=self.permission, role=self.default_role)
             self.default_policy = Policy.objects.create(name="default policy", system=True)
             self.default_policy.roles.add(self.default_role)
             self.default_group = Group.objects.create(name="default group", system=True, platform_default=True)
