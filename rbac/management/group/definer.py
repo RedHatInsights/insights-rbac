@@ -32,7 +32,7 @@ def seed_group(tenant):
     """For a tenant create or update default group."""
     with tenant_context(tenant):
         with transaction.atomic():
-            name = "Default user access"
+            name = "Default access"
             group_description = (
                 "This group contains the roles that all users inherit by default. "
                 "Adding or removing roles in this group will affect permissions for all users in your organization."
@@ -54,7 +54,7 @@ def seed_group(tenant):
 def set_system_flag_post_update(group):
     """Update system flag on default groups."""
     if group.system:
-        group.name = "Custom default user access"
+        group.name = "Custom default access"
     group.system = False
     group.save()
 

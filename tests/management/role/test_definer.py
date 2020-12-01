@@ -90,3 +90,29 @@ class RoleDefinerTests(IdentityRequest):
             self.assertTrue(permission.resource_type)
             self.assertTrue(permission.verb)
             self.assertTrue(permission.permission)
+
+    def try_seed_permissions_update_description(self):
+        """ Test permission seeding update description, skip string configs. """
+        permission_string = "approval_local_test:templates:read"
+        with tenant_context(self.tenant):
+            self.assertFalse(len(Permission.objects.all()))
+            Permission.objects.create(permission=permission_string)
+
+        try:
+            seed_permissions(self.tenant)
+        except Exception:
+            self.fail(msg="seed_permissions encountered an exception")
+
+        with tenant_context(self.tenant):
+            self.assertEqual(
+                Permission.objects.exclude(permission=permission_string).values_list("description").distinct().first(),
+                (None,),
+            )
+
+            permission = Permission.objects.filter(permission=permission_string)
+            self.assertEqual(len(permission), 1)
+            self.assertEqual(permission.first().description, "Approval local test templates read.")
+            # Previous string verb still works
+            self.assertEqual(
+                Permission.objects.filter(permission="catalog_local_test:approval_requests:read").count(), 1
+            )

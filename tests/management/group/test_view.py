@@ -744,7 +744,7 @@ class GroupViewsetTests(IdentityRequest):
         response = client.post(url, test_data, format="json", **self.headers)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.defGroup.refresh_from_db()
-        self.assertEqual(self.defGroup.name, "Custom default user access")
+        self.assertEqual(self.defGroup.name, "Custom default access")
         self.assertFalse(self.defGroup.system)
 
     def test_system_flag_update_on_remove(self):
@@ -760,7 +760,7 @@ class GroupViewsetTests(IdentityRequest):
         response = client.delete(url, format="json", **self.headers)
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
         self.defGroup.refresh_from_db()
-        self.assertEqual(self.defGroup.name, "Custom default user access")
+        self.assertEqual(self.defGroup.name, "Custom default access")
         self.assertFalse(self.defGroup.system)
 
     def test_add_group_roles_system_policy_create_new_group_success(self):
