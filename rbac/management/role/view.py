@@ -27,6 +27,7 @@ from django.http import Http404
 from django.utils.translation import gettext as _
 from django_filters import rest_framework as filters
 from management.filters import CommonFilters
+from management.models import Permission
 from management.permissions import RoleAccessPermission
 from management.querysets import get_role_queryset
 from management.role.serializer import AccessSerializer, RoleDynamicSerializer
@@ -67,14 +68,14 @@ class RoleFilter(CommonFilters):
         applications = values.split(",")
         query = Q()
         for application in applications:
-            query = query | Q(access__perm__istartswith=f"{application}:")
+            query = query | Q(access__permission__permission__istartswith=f"{application}:")
         return queryset.distinct().filter(query)
 
     def permission_filter(self, queryset, field, values):
         """Filter to lookup role by application(s) in permissions."""
         permissions = values.split(",")
 
-        return queryset.filter(access__perm__in=permissions).distinct()
+        return queryset.filter(access__permission__permission__in=permissions).distinct()
 
     def display_name_filter(self, queryset, field, value):
         """Filter to lookup display_name, partial or exact."""
@@ -190,14 +191,7 @@ class RoleViewSet(
                 ]
             }
         """
-        access_list = self.validate_and_get_access_list(request.data)
-        for perm in access_list:
-            app = perm.get("permission").split(":")[0]
-            if app not in settings.ROLE_CREATE_ALLOW_LIST:
-                key = "role"
-                message = "Custom roles cannot be created for {}".format(app)
-                error = {key: [_(message)]}
-                raise serializers.ValidationError(error)
+        self.validate_role(request)
         return super().create(request=request, args=args, kwargs=kwargs)
 
     def list(self, request, *args, **kwargs):
@@ -375,15 +369,7 @@ class RoleViewSet(
             }
         """
         validate_uuid(kwargs.get("uuid"), "role uuid validation")
-        access_list = self.validate_and_get_access_list(request.data)
-        if access_list:
-            for perm in access_list:
-                app = perm.get("permission").split(":")[0]
-                if app not in settings.ROLE_CREATE_ALLOW_LIST:
-                    key = "role"
-                    message = "Custom roles cannot be created for {}".format(app)
-                    error = {key: [_(message)]}
-                    raise serializers.ValidationError(error)
+        self.validate_role(request)
         return super().update(request=request, args=args, kwargs=kwargs)
 
     @action(detail=True, methods=["get"])
@@ -427,3 +413,25 @@ class RoleViewSet(
                 raise serializers.ValidationError({key: _(message)})
 
         return LIST_ROLE_FIELDS + field_list
+
+    def validate_role(self, request):
+        """Validate the role request data."""
+        access_list = self.validate_and_get_access_list(request.data)
+        if access_list:
+            for perm in access_list:
+                app, resource_type, verb = perm.get("permission").split(":")
+                if app not in settings.ROLE_CREATE_ALLOW_LIST:
+                    key = "role"
+                    message = "Custom roles cannot be created for {}".format(app)
+                    error = {key: [_(message)]}
+                    raise serializers.ValidationError(error)
+
+                db_permission = Permission.objects.filter(
+                    application=app, resource_type=resource_type, verb=verb
+                ).exists()
+
+                if not db_permission:
+                    key = "role"
+                    message = f"Permission does not exist: {perm.get('permission')}"
+                    error = {key: [_(message)]}
+                    raise serializers.ValidationError(error)
