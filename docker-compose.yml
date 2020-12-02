@@ -16,6 +16,7 @@ services:
         - POSTGRES_SQL_SERVICE_PORT=5432
         - DATABASE_USER=postgres
         - DATABASE_PASSWORD=postgres
+        - DJANGO_LOG_HANDLERS=console
         - DJANGO_READ_DOT_ENV_FILE=True
         - DEVELOPMENT=${DEVELOPMENT-False}
         - DJANGO_DEBUG=${DJANGO_DEBUG-True}
