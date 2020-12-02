@@ -16,6 +16,7 @@
 #
 
 """View for role management."""
+import json
 import os
 import re
 
@@ -56,6 +57,7 @@ LIST_ROLE_FIELDS = [
     "system",
     "platform_default",
 ]
+VALID_PATCH_FIELDS = ["name", "display_name", "description"]
 
 if TESTING_APP:
     settings.ROLE_CREATE_ALLOW_LIST.append(TESTING_APP)
@@ -311,6 +313,13 @@ class RoleViewSet(
     def partial_update(self, request, *args, **kwargs):
         """Patch a role."""
         validate_uuid(kwargs.get("uuid"), "role uuid validation")
+        payload = json.loads(request.body)
+        for field in payload:
+            if field not in VALID_PATCH_FIELDS:
+                key = "role"
+                message = f"Field '{field}' is not supported. Please use one or more of: {VALID_PATCH_FIELDS}."
+                error = {key: [_(message)]}
+                raise serializers.ValidationError(error)
         return super().update(request=request, args=args, kwargs=kwargs)
 
     def update(self, request, *args, **kwargs):

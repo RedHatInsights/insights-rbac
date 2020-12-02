@@ -528,6 +528,23 @@ class RoleViewsetTests(IdentityRequest):
         self.assertEqual(updated_name, response.data.get("display_name"))
         self.assertEqual(updated_description, response.data.get("description"))
 
+    def test_patch_role_failure(self):
+        """Test that we return a 400 with invalid fields in the patch."""
+        role_name = "role"
+        response = self.create_role(role_name)
+        updated_name = role_name + "_update"
+        updated_description = role_name + "This is a test"
+        role_uuid = response.data.get("uuid")
+        url = reverse("role-detail", kwargs={"uuid": role_uuid})
+        client = APIClient()
+        response = client.patch(
+            url,
+            {"name": updated_name, "display_name": updated_name, "description": updated_description, "foo": "bar"},
+            format="json",
+            **self.headers,
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
     def test_update_role_success(self):
         """Test that we can update an existing role."""
         role_name = "roleA"

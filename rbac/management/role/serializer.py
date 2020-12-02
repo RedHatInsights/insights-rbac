@@ -259,6 +259,9 @@ class RolePatchSerializer(RoleSerializer):
     """Serializer for Role patch."""
 
     access = AccessSerializer(many=True, required=False)
+    name = serializers.CharField(
+        required=False, max_length=150, validators=[UniqueValidator(queryset=Role.objects.all())]
+    )
 
     def update(self, instance, validated_data):
         """Patch the role object."""
