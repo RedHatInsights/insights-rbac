@@ -25,7 +25,7 @@ from django.db import connections, models
 from django.db.models import signals
 from django.utils import timezone
 from management.cache import AccessCache
-from management.models import Principal
+from management.models import Permission, Principal
 from management.rbac_fields import AutoDateTimeField
 
 
@@ -60,30 +60,16 @@ class Role(models.Model):
         super(Role, self).save(*args, **kwargs)
 
 
-class CustomManager(models.Manager):
-    """Control which fields to query."""
-
-    def get_queryset(self):
-        """Override default get_queryset to defer fields."""
-        return super(CustomManager, self).get_queryset().defer("perm")
-
-
 class Access(models.Model):
     """An access object."""
 
     perm = models.TextField(null=True)
-    permission = models.TextField(default="*:*:*")
+    permission = models.ForeignKey(Permission, null=True, on_delete=models.CASCADE, related_name="accesses")
     role = models.ForeignKey(Role, null=True, on_delete=models.CASCADE, related_name="access")
-
-    objects = CustomManager()
 
     def permission_application(self):
         """Return the application name from the permission."""
-        return next(iter(self.split_permission()))
-
-    def split_permission(self):
-        """Split the permission."""
-        return self.perm.split(":")
+        return self.permission.application
 
 
 class ResourceDefinition(models.Model):

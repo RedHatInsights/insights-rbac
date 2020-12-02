@@ -22,7 +22,7 @@ from management.utils import get_principal_from_request
 from rest_framework import serializers
 from rest_framework.validators import UniqueValidator
 
-from .model import Access, ResourceDefinition, Role
+from .model import Access, Permission, ResourceDefinition, Role
 
 ALLOWED_OPERATIONS = ["in", "equal"]
 FILTER_FIELDS = set(["key", "value", "operation"])
@@ -60,7 +60,7 @@ class AccessSerializer(serializers.ModelSerializer):
     """Serializer for the Access model."""
 
     resourceDefinitions = ResourceDefinitionSerializer(many=True)
-    permission = serializers.CharField(source="perm")
+    permission = serializers.CharField(source="permission.permission")
 
     def validate_permission(self, value):
         """Validate the permissions input."""
@@ -131,11 +131,11 @@ class RoleSerializer(serializers.ModelSerializer):
         role.save()
         for access_item in access_list:
             resource_def_list = access_item.pop("resourceDefinitions")
-            access_obj = Access.objects.create(**access_item, role=role)
-            access_obj.save()
+            access_permission = access_item.pop("permission")
+            permission, created = Permission.objects.get_or_create(**access_permission)
+            access_obj = Access.objects.create(permission=permission, role=role)
             for resource_def_item in resource_def_list:
-                res_def = ResourceDefinition.objects.create(**resource_def_item, access=access_obj)
-                res_def.save()
+                ResourceDefinition.objects.create(**resource_def_item, access=access_obj)
         return role
 
     def update(self, instance, validated_data):
@@ -154,11 +154,11 @@ class RoleSerializer(serializers.ModelSerializer):
 
         for access_item in access_list:
             resource_def_list = access_item.pop("resourceDefinitions")
-            access_obj = Access.objects.create(**access_item, role=instance)
-            access_obj.save()
+            access_permission = access_item.pop("permission")
+            permission, created = Permission.objects.get_or_create(**access_permission)
+            access_obj = Access.objects.create(permission=permission, role=instance)
             for resource_def_item in resource_def_list:
-                res_def = ResourceDefinition.objects.create(**resource_def_item, access=access_obj)
-                res_def.save()
+                ResourceDefinition.objects.create(**resource_def_item, access=access_obj)
 
         instance.save()
         return instance
@@ -276,10 +276,7 @@ def obtain_applications(obj):
     """Shared function to get the list of applications in the role."""
     apps = []
     for access_item in obj.access.all():
-        perm_list = access_item.perm.split(":")
-        perm_len = len(perm_list)
-        if perm_len == 3:
-            apps.append(perm_list[0])
+        apps.append(access_item.permission.application)
     return list(set(apps))
 
 
