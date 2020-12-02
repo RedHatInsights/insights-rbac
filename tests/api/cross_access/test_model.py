@@ -20,14 +20,11 @@ from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
 from django.test import TestCase
 from django.utils import timezone
-from tenant_schemas.utils import tenant_context
 
 from datetime import timedelta
-from unittest.mock import Mock
-from tests.identity_request import IdentityRequest
 
 
-class CrossAccountRequestModelTests(IdentityRequest):
+class CrossAccountRequestModelTests(TestCase):
     """Test the cross account request model."""
 
     def setUp(self):

@@ -18,6 +18,8 @@
 from tenant_schemas.models import TenantMixin
 
 from api.cross_access.model import CrossAccountRequest  # noqa: F401
+from api.permission.model import Permission  # noqa: F401
+from api.role.model import Access, Role  # noqa: F401
 from api.status.model import Status  # noqa: F401
 
 
