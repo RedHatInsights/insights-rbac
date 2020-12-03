@@ -34,6 +34,17 @@ def on_complete(completed_log_message, tenant, future):
     logger.info(completed_log_message)
 
 
+def seed_public_schema(seed_type, executor):
+    """Run seeding for public schema."""
+    from api.definer import seed_roles, seed_permissions
+
+    if seed_type in ["role", "permission"]:
+        seed_functions = {"role": seed_roles, "permission": seed_permissions}
+        logger.info(f"Seeding {seed_type} changes for public schema.")
+        executor.submit(seed_functions[seed_type])
+        logger.info(f"Finished seeding {seed_type} changes for public schema.")
+
+
 def role_seeding():
     """Execute role seeding."""
     run_seeds("role")
@@ -61,6 +72,7 @@ def run_seeds(seed_type):
 
     try:
         with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_SEED_THREADS) as executor:
+            seed_public_schema(seed_type, executor)
             tenants = Tenant.objects.all()
             tenant_count = tenants.count()
             for idx, tenant in enumerate(list(tenants)):
