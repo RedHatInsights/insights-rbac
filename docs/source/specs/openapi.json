@@ -830,6 +830,15 @@
             }
           },
           {
+            "name": "role_display_name",
+            "in": "query",
+            "required": false,
+            "description": "Parameter for filtering group roles by role `display_name` using string contains search.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "name": "role_description",
             "in": "query",
             "required": false,
@@ -1117,6 +1126,15 @@
           },
           {
             "$ref": "#/components/parameters/NameFilter"
+          },
+          {
+            "in": "query",
+            "name": "display_name",
+            "required": false,
+            "description": "Parameter for filtering resource by display_name using string contains search.",
+            "schema": {
+              "type": "string"
+            }
           },
           {
             "$ref": "#/components/parameters/NameMatchCriteria"
@@ -2127,7 +2145,7 @@
         "in": "query",
         "name": "name_match",
         "required": false,
-        "description": "Parameter for specifying the matching criteria for an object's name.",
+        "description": "Parameter for specifying the matching criteria for an object's name or display_name.",
         "schema": {
           "type": "string",
           "enum": ["partial", "exact"]
