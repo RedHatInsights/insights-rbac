@@ -45,9 +45,9 @@ class RoleViewsetTests(IdentityRequest):
         user.account = self.customer_data["account_id"]
         request.user = user
 
-        sys_role_config = {"name": "system_role", "display_name": "system", "system": True}
+        sys_role_config = {"name": "system_role", "display_name": "system_display", "system": True}
 
-        def_role_config = {"name": "default_role", "display_name": "default", "platform_default": True}
+        def_role_config = {"name": "default_role", "display_name": "default_display", "platform_default": True}
 
         self.display_fields = {
             "applications",
@@ -422,6 +422,43 @@ class RoleViewsetTests(IdentityRequest):
     def test_get_role_by_exact_name_no_match(self):
         """Test that getting roles by name returns no results with exact match."""
         url = "{}?name={}&name_match={}".format(URL, "role", "exact")
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        self.assertEqual(response.data.get("meta").get("count"), 0)
+
+    def test_get_role_by_partial_display_name_by_default(self):
+        """Test that getting roles by display_name returns partial match by default."""
+        url = "{}?display_name={}".format(URL, "display")
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        self.assertEqual(response.data.get("meta").get("count"), 2)
+
+    def test_get_role_by_partial_display_name_explicit(self):
+        """Test that getting roles by display_name returns partial match when specified."""
+        url = "{}?display_name={}&name_match={}".format(URL, "display", "partial")
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        self.assertEqual(response.data.get("meta").get("count"), 2)
+
+    def test_get_role_by_display_name_invalid_criteria(self):
+        """Test that getting roles by display_name fails with invalid name_match."""
+        url = "{}?display_name={}&name_match={}".format(URL, "display", "bad_criteria")
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_get_role_by_exact_display_name_match(self):
+        """Test that getting roles by display_name returns exact match."""
+        url = "{}?display_name={}&name_match={}".format(URL, self.sysRole.display_name, "exact")
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        self.assertEqual(response.data.get("meta").get("count"), 1)
+        role = response.data.get("data")[0]
+        self.assertEqual(role.get("display_name"), self.sysRole.display_name)
+
+    def test_get_role_by_exact_display_name_no_match(self):
+        """Test that getting roles by display_name returns no results with exact match."""
+        url = "{}?display_name={}&name_match={}".format(URL, "display", "exact")
         client = APIClient()
         response = client.get(url, **self.headers)
         self.assertEqual(response.data.get("meta").get("count"), 0)
