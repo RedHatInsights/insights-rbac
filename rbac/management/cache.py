@@ -42,41 +42,37 @@ class BasicCache:
         except exceptions.RedisError:
             logger.exception(err_msg)
 
-    def get_from_redis(self, index):
-        """Get object from redis based on index."""
-        obj = self.connection.hget(*(self.key_for(index[0]), index[1]))
-        if obj:
-            return json.loads(obj)
+    def get_from_redis(self, key):
+        """Get object from redis based on key."""
+        raise Exception("Please override the get_from_redis method.")
 
-    def get_cached(self, index, error_message):
+    def get_cached(self, key, error_message):
         """Get cached object from redis, throw error if there is any."""
         try:
-            return self.get_from_redis(index)
+            return self.get_from_redis(key)
         except exceptions.RedisError:
             logger.exception(error_message)
         return None
 
-    def delete_cached(self, index, obj_name):
+    def delete_cached(self, key, obj_name):
         """Delete cache from redis."""
-        err_msg = f"Error deleting {obj_name} for {index}"
+        err_msg = f"Error deleting {obj_name} for {key}"
         with self.delete_handler(err_msg):
-            logger.info(f"Deleting {obj_name} cache for {index}")
-            self.connection.delete(self.key_for(index))
+            logger.info(f"Deleting {obj_name} cache for {key}")
+            self.connection.delete(self.key_for(key))
 
-    def set_cache(self, pipe, index, item):
+    def set_cache(self, pipe, key, item):
         """Set cache to redis."""
-        pipe.hset(self.key_for(index[0]), index[1], json.dumps(item))
-        pipe.expire(self.key_for(index[0]), settings.ACCESS_CACHE_LIFETIME)
-        pipe.execute()
+        raise Exception("Please override the set_cache method.")
 
-    def save(self, index, item, obj_name):
+    def save(self, key, item, obj_name):
         """Save cache including exception handler."""
         try:
-            logger.info(f"Caching {obj_name} for {index}")
+            logger.info(f"Caching {obj_name} for {key}")
             with self.connection.pipeline() as pipe:
-                self.set_cache(pipe, index, item)
+                self.set_cache(pipe, key, item)
         except exceptions.RedisError:
-            logger.exception(f"Error writing {obj_name} for {index}")
+            logger.exception(f"Error writing {obj_name} for {key}")
         finally:
             try:
                 pipe.reset()
@@ -91,9 +87,9 @@ class TenantCache(BasicCache):
         """Redis key for a given tenant."""
         return f"rbac::tenant::schema={schema_name}"
 
-    def get_from_redis(self, index):
-        """Override the method to get tenant based on index."""
-        obj = self.connection.get(self.key_for(index))
+    def get_from_redis(self, key):
+        """Override the method to get tenant based on key."""
+        obj = self.connection.get(self.key_for(key))
         if obj:
             return pickle.loads(obj)
 
@@ -101,10 +97,10 @@ class TenantCache(BasicCache):
         """Get the tenant by schema_name."""
         return super().get_cached(schema_name, f"Error querying tenant {schema_name}")
 
-    def set_cache(self, pipe, index, item):
+    def set_cache(self, pipe, key, item):
         """Override the method to set tenant to cache."""
-        pipe.set(self.key_for(index), pickle.dumps(item))
-        pipe.expire(self.key_for(index), settings.ACCESS_CACHE_LIFETIME)
+        pipe.set(self.key_for(key), pickle.dumps(item))
+        pipe.expire(self.key_for(key), settings.ACCESS_CACHE_LIFETIME)
         pipe.execute()
 
     def save_tenant(self, tenant):
@@ -127,6 +123,18 @@ class AccessCache(BasicCache):
     def key_for(self, uuid):
         """Redis key for a given user policy."""
         return f"rbac::policy::tenant={self.tenant}::user={uuid}"
+
+    def set_cache(self, pipe, args, item):
+        """Set cache to redis."""
+        pipe.hset(self.key_for(args[0]), args[1], json.dumps(item))
+        pipe.expire(self.key_for(args[0]), settings.ACCESS_CACHE_LIFETIME)
+        pipe.execute()
+
+    def get_from_redis(self, args):
+        """Get object from redis based on args."""
+        obj = self.connection.hget(*(self.key_for(args[0]), args[1]))
+        if obj:
+            return json.loads(obj)
 
     def get_policy(self, uuid, application):
         """Get the given user's policy for the given application."""
