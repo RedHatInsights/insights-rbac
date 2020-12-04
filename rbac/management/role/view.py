@@ -16,7 +16,9 @@
 #
 
 """View for role management."""
+import json
 import os
+import re
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
@@ -30,7 +32,7 @@ from management.filters import CommonFilters
 from management.models import Permission
 from management.permissions import RoleAccessPermission
 from management.querysets import get_role_queryset
-from management.role.serializer import AccessSerializer, RoleDynamicSerializer
+from management.role.serializer import AccessSerializer, RoleDynamicSerializer, RolePatchSerializer
 from management.utils import validate_uuid
 from rest_framework import mixins, serializers, viewsets
 from rest_framework.decorators import action
@@ -55,6 +57,7 @@ LIST_ROLE_FIELDS = [
     "system",
     "platform_default",
 ]
+VALID_PATCH_FIELDS = ["name", "display_name", "description"]
 
 if TESTING_APP:
     settings.ROLE_CREATE_ALLOW_LIST.append(TESTING_APP)
@@ -123,6 +126,8 @@ class RoleViewSet(
         """Get serializer class based on route."""
         if self.request.path.endswith("roles/") and self.request.method == "GET":
             return RoleDynamicSerializer
+        if self.request.method == "PATCH" and re.match(".*/roles/.*/$", self.request.path):
+            return RolePatchSerializer
         return RoleSerializer
 
     def get_serializer(self, *args, **kwargs):
@@ -310,8 +315,20 @@ class RoleViewSet(
                     policy.delete()
             return super().destroy(request=request, args=args, kwargs=kwargs)
 
+    def partial_update(self, request, *args, **kwargs):
+        """Patch a role."""
+        validate_uuid(kwargs.get("uuid"), "role uuid validation")
+        payload = json.loads(request.body)
+        for field in payload:
+            if field not in VALID_PATCH_FIELDS:
+                key = "role"
+                message = f"Field '{field}' is not supported. Please use one or more of: {VALID_PATCH_FIELDS}."
+                error = {key: [_(message)]}
+                raise serializers.ValidationError(error)
+        return super().update(request=request, args=args, kwargs=kwargs)
+
     def update(self, request, *args, **kwargs):
-        """Update a group.
+        """Update a role.
 
         @api {post} /api/v1/roles/:uuid   Update a role
         @apiName updateRole
