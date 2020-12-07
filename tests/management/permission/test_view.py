@@ -79,7 +79,7 @@ class PermissionViewsetTests(IdentityRequest):
             if perm["permission"] == "foo:bar:*":
                 self.assertEqual(perm["description"], "Description test.")
             else:
-                self.assertEqual(self.display_fields, set(perm.keys()))
+                self.assertEqual(perm["description"], "")
 
     def test_read_permission_list_application_filter(self):
         """Test that we can filter a list of permissions by application."""
