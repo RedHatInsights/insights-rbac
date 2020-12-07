@@ -5,6 +5,6 @@ from django.db import migrations
 
 class Migration(migrations.Migration):
 
-    dependencies = [("management", "0028_sync_perm_and_permission")]
+    dependencies = [("management", "0029_auto_20201204_1832")]
 
     operations = [migrations.RemoveField(model_name="access", name="perm")]
