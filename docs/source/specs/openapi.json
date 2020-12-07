@@ -3105,6 +3105,10 @@
           "permission": {
             "type": "string",
             "example": "rbac:group:read"
+          },
+          "description": {
+            "type": "string",
+            "example": "Describe the usage of permission."
           }
         }
       },
