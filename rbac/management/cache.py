@@ -44,7 +44,7 @@ class BasicCache:
 
     def get_from_redis(self, key):
         """Get object from redis based on key."""
-        raise Exception("Please override the get_from_redis method.")
+        raise NotImplementedError("Please override the get_from_redis method.")
 
     def get_cached(self, key, error_message):
         """Get cached object from redis, throw error if there is any."""
@@ -63,7 +63,7 @@ class BasicCache:
 
     def set_cache(self, pipe, key, item):
         """Set cache to redis."""
-        raise Exception("Please override the set_cache method.")
+        raise NotImplementedError("Please override the set_cache method.")
 
     def save(self, key, item, obj_name):
         """Save cache including exception handler."""
