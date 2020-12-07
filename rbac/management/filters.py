@@ -26,14 +26,14 @@ VALID_NAME_MATCHES = ["partial", "exact"]
 class CommonFilters(filters.FilterSet):
     """Common filters."""
 
-    def name_filter(self, queryset, field, value):
+    def name_filter(self, queryset, field, value, name_field="name"):
         """Filter to lookup name, partial or exact."""
         match_criteria = validate_and_get_key(self.request.query_params, NAME_MATCH_KEY, VALID_NAME_MATCHES, "partial")
 
         if match_criteria == "partial":
-            return queryset.filter(name__icontains=value)
+            return queryset.filter(**{f"{name_field}__icontains": value})
         elif match_criteria == "exact":
-            return queryset.filter(name__iexact=value)
+            return queryset.filter(**{f"{name_field}__iexact": value})
 
     def multiple_values_in(self, queryset, field, values):
         """Filter for multiple value lookup."""

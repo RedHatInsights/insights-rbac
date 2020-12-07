@@ -601,6 +601,29 @@ class GroupViewsetTests(IdentityRequest):
         self.assertEqual(len(roles), 1)
         self.assertEqual(roles[0].get("uuid"), str(self.role.uuid))
 
+    def test_role_display_name_filter_for_group_roles_no_match(self):
+        """Test role_display_name filter for getting roles for a group."""
+        url = reverse("group-roles", kwargs={"uuid": self.group.uuid})
+        url = "{}?role_display_name=test".format(url)
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        roles = response.data.get("data")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(roles), 0)
+
+    def test_role_display_name_filter_for_group_roles_match(self):
+        """Test role_display_name filter for getting roles for a group."""
+        url = reverse("group-roles", kwargs={"uuid": self.group.uuid})
+        url = "{}?role_display_name={}".format(url, self.role.name)
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        roles = response.data.get("data")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(roles), 1)
+        self.assertEqual(roles[0].get("uuid"), str(self.role.uuid))
+
     def test_role_description_filter_for_group_roles_no_match(self):
         """Test role_description filter for getting roles for a group."""
         url = reverse("group-roles", kwargs={"uuid": self.group.uuid})

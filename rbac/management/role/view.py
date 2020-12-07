@@ -16,7 +16,9 @@
 #
 
 """View for role management."""
+import json
 import os
+import re
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
@@ -27,9 +29,10 @@ from django.http import Http404
 from django.utils.translation import gettext as _
 from django_filters import rest_framework as filters
 from management.filters import CommonFilters
+from management.models import Permission
 from management.permissions import RoleAccessPermission
 from management.querysets import get_role_queryset
-from management.role.serializer import AccessSerializer, RoleDynamicSerializer
+from management.role.serializer import AccessSerializer, RoleDynamicSerializer, RolePatchSerializer
 from management.utils import validate_uuid
 from rest_framework import mixins, serializers, viewsets
 from rest_framework.decorators import action
@@ -54,6 +57,7 @@ LIST_ROLE_FIELDS = [
     "system",
     "platform_default",
 ]
+VALID_PATCH_FIELDS = ["name", "display_name", "description"]
 
 if TESTING_APP:
     settings.ROLE_CREATE_ALLOW_LIST.append(TESTING_APP)
@@ -67,16 +71,21 @@ class RoleFilter(CommonFilters):
         applications = values.split(",")
         query = Q()
         for application in applications:
-            query = query | Q(access__perm__istartswith=f"{application}:")
+            query = query | Q(access__permission__permission__istartswith=f"{application}:")
         return queryset.distinct().filter(query)
 
     def permission_filter(self, queryset, field, values):
         """Filter to lookup role by application(s) in permissions."""
         permissions = values.split(",")
 
-        return queryset.filter(access__perm__in=permissions).distinct()
+        return queryset.filter(access__permission__permission__in=permissions).distinct()
+
+    def display_name_filter(self, queryset, field, value):
+        """Filter to lookup display_name, partial or exact."""
+        return self.name_filter(queryset, field, value, "display_name")
 
     name = filters.CharFilter(field_name="name", method="name_filter")
+    display_name = filters.CharFilter(field_name="display_name", method="display_name_filter")
     application = filters.CharFilter(field_name="application", method="application_filter")
     permission = filters.CharFilter(field_name="permission", method="permission_filter")
 
@@ -117,6 +126,8 @@ class RoleViewSet(
         """Get serializer class based on route."""
         if self.request.path.endswith("roles/") and self.request.method == "GET":
             return RoleDynamicSerializer
+        if self.request.method == "PATCH" and re.match(".*/roles/.*/$", self.request.path):
+            return RolePatchSerializer
         return RoleSerializer
 
     def get_serializer(self, *args, **kwargs):
@@ -185,14 +196,7 @@ class RoleViewSet(
                 ]
             }
         """
-        access_list = self.validate_and_get_access_list(request.data)
-        for perm in access_list:
-            app = perm.get("permission").split(":")[0]
-            if app not in settings.ROLE_CREATE_ALLOW_LIST:
-                key = "role"
-                message = "Custom roles cannot be created for {}".format(app)
-                error = {key: [_(message)]}
-                raise serializers.ValidationError(error)
+        self.validate_role(request)
         return super().create(request=request, args=args, kwargs=kwargs)
 
     def list(self, request, *args, **kwargs):
@@ -311,8 +315,20 @@ class RoleViewSet(
                     policy.delete()
             return super().destroy(request=request, args=args, kwargs=kwargs)
 
+    def partial_update(self, request, *args, **kwargs):
+        """Patch a role."""
+        validate_uuid(kwargs.get("uuid"), "role uuid validation")
+        payload = json.loads(request.body)
+        for field in payload:
+            if field not in VALID_PATCH_FIELDS:
+                key = "role"
+                message = f"Field '{field}' is not supported. Please use one or more of: {VALID_PATCH_FIELDS}."
+                error = {key: [_(message)]}
+                raise serializers.ValidationError(error)
+        return super().update(request=request, args=args, kwargs=kwargs)
+
     def update(self, request, *args, **kwargs):
-        """Update a group.
+        """Update a role.
 
         @api {post} /api/v1/roles/:uuid   Update a role
         @apiName updateRole
@@ -370,15 +386,7 @@ class RoleViewSet(
             }
         """
         validate_uuid(kwargs.get("uuid"), "role uuid validation")
-        access_list = self.validate_and_get_access_list(request.data)
-        if access_list:
-            for perm in access_list:
-                app = perm.get("permission").split(":")[0]
-                if app not in settings.ROLE_CREATE_ALLOW_LIST:
-                    key = "role"
-                    message = "Custom roles cannot be created for {}".format(app)
-                    error = {key: [_(message)]}
-                    raise serializers.ValidationError(error)
+        self.validate_role(request)
         return super().update(request=request, args=args, kwargs=kwargs)
 
     @action(detail=True, methods=["get"])
@@ -422,3 +430,25 @@ class RoleViewSet(
                 raise serializers.ValidationError({key: _(message)})
 
         return LIST_ROLE_FIELDS + field_list
+
+    def validate_role(self, request):
+        """Validate the role request data."""
+        access_list = self.validate_and_get_access_list(request.data)
+        if access_list:
+            for perm in access_list:
+                app, resource_type, verb = perm.get("permission").split(":")
+                if app not in settings.ROLE_CREATE_ALLOW_LIST:
+                    key = "role"
+                    message = "Custom roles cannot be created for {}".format(app)
+                    error = {key: [_(message)]}
+                    raise serializers.ValidationError(error)
+
+                db_permission = Permission.objects.filter(
+                    application=app, resource_type=resource_type, verb=verb
+                ).exists()
+
+                if not db_permission:
+                    key = "role"
+                    message = f"Permission does not exist: {perm.get('permission')}"
+                    error = {key: [_(message)]}
+                    raise serializers.ValidationError(error)

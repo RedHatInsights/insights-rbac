@@ -22,13 +22,32 @@ from management.utils import get_principal_from_request
 from rest_framework import serializers
 from rest_framework.validators import UniqueValidator
 
-from .model import Access, ResourceDefinition, Role
+from .model import Access, Permission, ResourceDefinition, Role
+
+ALLOWED_OPERATIONS = ["in", "equal"]
+FILTER_FIELDS = set(["key", "value", "operation"])
 
 
 class ResourceDefinitionSerializer(serializers.ModelSerializer):
     """Serializer for the ResourceDefinition model."""
 
     attributeFilter = serializers.JSONField()
+
+    def validate_attributeFilter(self, value):
+        """Validate the given attributeFilter."""
+        if value.keys() != FILTER_FIELDS:
+            key = "format"
+            message = f"attributeFilter fields must be {FILTER_FIELDS}"
+            error = {key: [_(message)]}
+            raise serializers.ValidationError(error)
+
+        op = value.get("operation")
+        if op not in ALLOWED_OPERATIONS:
+            key = "format"
+            message = f"attributeFilter operation must be one of {ALLOWED_OPERATIONS}"
+            error = {key: [_(message)]}
+            raise serializers.ValidationError(error)
+        return value
 
     class Meta:
         """Metadata for the serializer."""
@@ -41,7 +60,7 @@ class AccessSerializer(serializers.ModelSerializer):
     """Serializer for the Access model."""
 
     resourceDefinitions = ResourceDefinitionSerializer(many=True)
-    permission = serializers.CharField(source="perm")
+    permission = serializers.CharField(source="permission.permission")
 
     def validate_permission(self, value):
         """Validate the permissions input."""
@@ -68,7 +87,9 @@ class RoleSerializer(serializers.ModelSerializer):
     name = serializers.CharField(
         required=True, max_length=150, validators=[UniqueValidator(queryset=Role.objects.all())]
     )
-    display_name = serializers.CharField(required=False, max_length=150, allow_blank=True)
+    display_name = serializers.CharField(
+        required=False, max_length=150, allow_blank=True, validators=[UniqueValidator(queryset=Role.objects.all())]
+    )
     description = serializers.CharField(allow_null=True, required=False)
     access = AccessSerializer(many=True)
     policyCount = serializers.IntegerField(read_only=True)
@@ -112,11 +133,11 @@ class RoleSerializer(serializers.ModelSerializer):
         role.save()
         for access_item in access_list:
             resource_def_list = access_item.pop("resourceDefinitions")
-            access_obj = Access.objects.create(**access_item, role=role)
-            access_obj.save()
+            access_permission = access_item.pop("permission")
+            permission, created = Permission.objects.get_or_create(**access_permission)
+            access_obj = Access.objects.create(permission=permission, role=role)
             for resource_def_item in resource_def_list:
-                res_def = ResourceDefinition.objects.create(**resource_def_item, access=access_obj)
-                res_def.save()
+                ResourceDefinition.objects.create(**resource_def_item, access=access_obj)
         return role
 
     def update(self, instance, validated_data):
@@ -135,11 +156,11 @@ class RoleSerializer(serializers.ModelSerializer):
 
         for access_item in access_list:
             resource_def_list = access_item.pop("resourceDefinitions")
-            access_obj = Access.objects.create(**access_item, role=instance)
-            access_obj.save()
+            access_permission = access_item.pop("permission")
+            permission, created = Permission.objects.get_or_create(**access_permission)
+            access_obj = Access.objects.create(permission=permission, role=instance)
             for resource_def_item in resource_def_list:
-                res_def = ResourceDefinition.objects.create(**resource_def_item, access=access_obj)
-                res_def.save()
+                ResourceDefinition.objects.create(**resource_def_item, access=access_obj)
 
         instance.save()
         return instance
@@ -253,14 +274,33 @@ class RoleDynamicSerializer(DynamicFieldsModelSerializer):
         return obtain_groups_in(obj, request).values("name", "uuid", "description")
 
 
+class RolePatchSerializer(RoleSerializer):
+    """Serializer for Role patch."""
+
+    access = AccessSerializer(many=True, required=False)
+    name = serializers.CharField(
+        required=False, max_length=150, validators=[UniqueValidator(queryset=Role.objects.all())]
+    )
+
+    def update(self, instance, validated_data):
+        """Patch the role object."""
+        if instance.system:
+            key = "role.update"
+            message = "System roles may not be updated."
+            error = {key: [_(message)]}
+            raise serializers.ValidationError(error)
+        instance.name = validated_data.get("name", instance.name)
+        instance.display_name = validated_data.get("display_name", instance.display_name)
+        instance.description = validated_data.get("description", instance.description)
+        instance.save()
+        return instance
+
+
 def obtain_applications(obj):
     """Shared function to get the list of applications in the role."""
     apps = []
     for access_item in obj.access.all():
-        perm_list = access_item.perm.split(":")
-        perm_len = len(perm_list)
-        if perm_len == 3:
-            apps.append(perm_list[0])
+        apps.append(access_item.permission.application)
     return list(set(apps))
 
 
