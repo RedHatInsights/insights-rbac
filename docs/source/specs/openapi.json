@@ -88,14 +88,30 @@
             "$ref": "#/components/parameters/QueryOffset"
           },
           {
-            "name": "usernames",
             "in": "query",
-            "description": "Usernames of principals to get",
+            "name": "match_criteria",
             "required": false,
+            "description": "Parameter for specifying the matching criteria for an object's name or email.",
             "schema": {
-              "type": "string"
+              "type": "string",
+              "enum": [
+                "partial",
+                "exact"
+              ],
+              "default": "exact"
             }
           },
+          {
+            "name": "usernames",
+            "in": "query",
+            "description": "Comma separated usernames of principals to get. If match_criteria is specified, only the first username will be picked up for search.",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "example": "userA,userB"
+            }
+          },
+
           {
             "name": "sort_order",
             "in": "query",
@@ -109,7 +125,7 @@
           {
             "name": "email",
             "in": "query",
-            "description": "Exact e-mail address of principal to search for",
+            "description": "E-mail address of principal to search for. Could be combined with match_criteria for searching.",
             "required": false,
             "schema": {
               "type": "string"
