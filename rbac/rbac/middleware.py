@@ -25,18 +25,19 @@ from django.conf import settings
 from django.db import connections, transaction
 from django.http import Http404, HttpResponse
 from django.utils.deprecation import MiddlewareMixin
+from management.cache import TenantCache
+from management.group.definer import seed_group  # noqa: I100, I201
+from management.role.definer import seed_permissions, seed_roles
+from management.utils import validate_psk
 from tenant_schemas.middleware import BaseTenantMiddleware
 
 from api.common import RH_IDENTITY_HEADER, RH_INSIGHTS_REQUEST_ID, RH_RBAC_ACCOUNT, RH_RBAC_CLIENT_ID, RH_RBAC_PSK
 from api.models import Tenant, User
 from api.serializers import create_schema_name, extract_header
 
-from management.group.definer import seed_group  # noqa: I100, I201
-from management.role.definer import seed_permissions, seed_roles
-from management.utils import validate_psk
-
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
+TENANTS = TenantCache()
 
 
 def is_no_auth(request):
@@ -55,9 +56,6 @@ class HttpResponseUnauthorizedRequest(HttpResponse):
     status_code = 401
 
 
-TENANTS = dict()
-
-
 class IdentityHeaderMiddleware(BaseTenantMiddleware):
     """A subclass of RemoteUserMiddleware.
 
@@ -69,23 +67,23 @@ class IdentityHeaderMiddleware(BaseTenantMiddleware):
     def get_tenant(self, model, hostname, request):
         """Override the tenant selection logic."""
         connections["default"].set_schema_to_public()
-        if request.user.account not in TENANTS:
+        tenant_schema = create_schema_name(request.user.account)
+        tenant = TENANTS.get_tenant(tenant_schema)
+        if tenant is None:
             if request.user.system:
                 try:
-                    tenant = Tenant.objects.get(schema_name=create_schema_name(request.user.account))
+                    tenant = Tenant.objects.get(schema_name=tenant_schema)
                 except Tenant.DoesNotExist:
                     raise Http404()
             else:
                 with transaction.atomic():
-                    tenant, created = Tenant.objects.get_or_create(
-                        schema_name=create_schema_name(request.user.account)
-                    )
+                    tenant, created = Tenant.objects.get_or_create(schema_name=tenant_schema)
                     if created:
                         seed_permissions(tenant=tenant)
                         seed_roles(tenant=tenant)
                         seed_group(tenant=tenant)
-            TENANTS[request.user.account] = tenant
-        return TENANTS[request.user.account]
+            TENANTS.save_tenant(tenant)
+        return tenant
 
     def hostname_from_request(self, request):
         """Behold. The tenant_schemas expects to pivot schemas based on hostname. We're not."""
@@ -172,7 +170,7 @@ class IdentityHeaderMiddleware(BaseTenantMiddleware):
         username = None
         req_id = getattr(request, "req_id", None)
         if request.META.get("QUERY_STRING"):
-            query_string = "?{}".format(request.META["QUERY_STRING"])
+            query_string = "?{}".format(request.META.get("QUERY_STRING"))
 
         if hasattr(request, "user") and request.user:
             username = request.user.username

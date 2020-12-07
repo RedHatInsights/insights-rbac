@@ -15,25 +15,32 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Test the caching system."""
+import pickle
 
 from unittest import skipIf
-from unittest.mock import patch
+from unittest.mock import call, MagicMock, patch
 from rbac.settings import ACCESS_CACHE_ENABLED
 
 from django.db import connection
 from django.test import TestCase
 
+from management.cache import TenantCache
 from management.models import Access, Group, Permission, Policy, Principal, ResourceDefinition, Role
 from api.models import Tenant
 
 
 @skipIf(not ACCESS_CACHE_ENABLED, "Caching is disabled.")
 class AccessCacheTest(TestCase):
+    @classmethod
+    def setUpClass(self):
+        """Set up the tenant."""
+        super().setUpClass()
+        self.tenant = Tenant.objects.create(schema_name="acct12345")
+        connection.set_schema("acct12345")
+
     def setUp(self):
         """Set up AccessCache tests."""
         super().setUp()
-        self.tenant = Tenant.objects.create(schema_name="acct12345")
-        connection.set_schema("acct12345")
         self.principal_a = Principal.objects.create(username="principal_a")
         self.principal_b = Principal.objects.create(username="principal_b")
         self.group_a = Group.objects.create(name="group_a", platform_default=True)
@@ -43,8 +50,11 @@ class AccessCacheTest(TestCase):
         self.role_a = Role.objects.create(name="role_a")
         self.role_b = Role.objects.create(name="role_b")
 
-    def tearDown(self):
+    @classmethod
+    def tearDownClass(self):
         connection.set_schema_to_public()
+        self.tenant.delete()
+        super().tearDownClass()
 
     @patch("management.group.model.AccessCache.delete_policy")
     def test_group_cache_add_remove_signals(self, cache):
@@ -235,3 +245,39 @@ class AccessCacheTest(TestCase):
         self.role_a.delete()
         cache.assert_called_once()
         cache.assert_called_once_with(self.principal_a.uuid)
+
+
+class TenantCacheTest(TestCase):
+    @classmethod
+    def setUpClass(self):
+        """Set up the tenant."""
+        super().setUpClass()
+        self.tenant = Tenant.objects.create(schema_name="acct67890")
+        connection.set_schema("acct67890")
+
+    @classmethod
+    def tearDownClass(self):
+        connection.set_schema_to_public()
+        self.tenant.delete()
+        super().tearDownClass()
+
+    @patch("management.cache.TenantCache.connection")
+    def test_tenant_cache_functions_success(self, redis_connection):
+        schema_name = self.tenant.schema_name
+        key = f"rbac::tenant::schema={schema_name}"
+        dump_content = pickle.dumps(self.tenant)
+
+        # Save tenant to cache
+        tenant_cache = TenantCache()
+        tenant_cache.save_tenant(self.tenant)
+        self.assertTrue(call().__enter__().set(key, dump_content) in redis_connection.pipeline.mock_calls)
+
+        redis_connection.get.return_value = dump_content
+        # Get tenant from cache
+        tenant = tenant_cache.get_tenant(schema_name)
+        redis_connection.get.assert_called_once_with(key)
+        self.assertEqual(tenant, self.tenant)
+
+        # Delete tenant from cache
+        tenant_cache.delete_tenant(schema_name)
+        redis_connection.delete.assert_called_once_with(key)
