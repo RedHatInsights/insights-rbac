@@ -190,7 +190,7 @@ class IdentityHeaderMiddleware(BaseTenantMiddleware):
             extras = {
                 "http": {
                     "request": {
-                        "body": {"bytes": sys.getsizeof(request.body), "content": request.body.decode("utf-8")},
+                        "body": {"bytes": sys.getsizeof(request.body)},
                         "bytes": sys.getsizeof(request),
                         "method": request.method,
                     },
