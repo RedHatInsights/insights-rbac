@@ -27,4 +27,4 @@ class PermissionSerializer(serializers.ModelSerializer):
         """Metadata for the serializer."""
 
         model = Permission
-        fields = ("application", "resource_type", "verb", "permission")
+        fields = ("application", "resource_type", "verb", "permission", "description")

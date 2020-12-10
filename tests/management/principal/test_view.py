@@ -134,6 +134,34 @@ class PrincipalViewsetTests(IdentityRequest):
         self.assertIsNotNone(principal.get("username"))
         self.assertEqual(principal.get("username"), "test_user")
 
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_principals",
+        return_value={"status_code": 200, "data": [{"username": "test_user"}]},
+    )
+    def test_read_principal_partial_matching(self, mock_request):
+        """Test that we can read a list of principals by partial matching."""
+        url = f'{reverse("principals")}?usernames=test_us,no_op&offset=30&match_criteria=partial'
+        client = APIClient()
+        response = client.get(url, **self.headers)
+
+        mock_request.assert_called_once_with(
+            ANY,
+            input="test_us",
+            limit=10,
+            offset=30,
+            options={"sort_order": "asc", "status": "enabled", "search_by": "partial_name"},
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        for keyname in ["meta", "links", "data"]:
+            self.assertIn(keyname, response.data)
+        self.assertIsInstance(response.data.get("data"), list)
+        self.assertEqual(len(response.data.get("data")), 1)
+        self.assertEqual(response.data.get("meta").get("count"), 1)
+
+        principal = response.data.get("data")[0]
+        self.assertIsNotNone(principal.get("username"))
+        self.assertEqual(principal.get("username"), "test_user")
+
     def test_bad_query_param(self):
         """Test handling of bad query params."""
         url = f'{reverse("principals")}?limit=foo'
@@ -246,7 +274,7 @@ class PrincipalViewsetTests(IdentityRequest):
         self.assertEqual(len(resp), 1)
 
         mock_request.assert_called_once_with(
-            ANY, email="test_user@example.com", limit=10, offset=0, options={"sort_order": "asc"}
+            ANY, input="test_user@example.com", limit=10, offset=0, options={"sort_order": "asc", "search_by": "email"}
         )
 
         self.assertEqual(resp[0]["username"], "test_user")
@@ -310,3 +338,34 @@ class PrincipalViewsetTests(IdentityRequest):
         proxy = PrincipalProxy()
         response = client.get(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_principals",
+        return_value={
+            "status_code": 200,
+            "data": [{"username": "test_user", "account_number": "54321", "email": "test_user@example.com"}],
+        },
+    )
+    def test_read_principal_list_by_email_partial_matching(self, mock_request):
+        """Test that we can handle a request with a partial email address"""
+        url = f'{reverse("principals")}?email=test_use&match_criteria=partial'
+        client = APIClient()
+        proxy = PrincipalProxy()
+        response = client.get(url, **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        for keyname in ["meta", "links", "data"]:
+            self.assertIn(keyname, response.data)
+        self.assertIsInstance(response.data.get("data"), list)
+        self.assertEqual(response.data.get("meta").get("count"), 1)
+        resp = proxy._process_data(response.data.get("data"), account="54321", account_filter=False)
+        self.assertEqual(len(resp), 1)
+
+        mock_request.assert_called_once_with(
+            ANY,
+            input="test_use",
+            limit=10,
+            offset=0,
+            options={"sort_order": "asc", "status": "enabled", "search_by": "partial_email"},
+        )
+
+        self.assertEqual(resp[0]["username"], "test_user")

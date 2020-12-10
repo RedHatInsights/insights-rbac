@@ -56,8 +56,8 @@ def _make_role(tenant, data):
             return role
     for access_item in access_list:
         resource_def_list = access_item.pop("resourceDefinitions", [])
-        access_item["perm"] = access_item.pop("permission")
-        access_obj = Access.objects.create(**access_item, role=role)
+        permission, created = Permission.objects.get_or_create(**access_item)
+        access_obj = Access.objects.create(permission=permission, role=role)
         for resource_def_item in resource_def_list:
             ResourceDefinition.objects.create(**resource_def_item, access=access_obj)
     return role
@@ -111,18 +111,27 @@ def seed_permissions(tenant):
                 app_name = os.path.splitext(permission_file_name)[0]
                 with open(permission_file_path) as json_file:
                     data = json.load(json_file)
-                    for resource, operations in data.items():
+                    for resource, operation_objects in data.items():
                         try:
-                            for operation in operations:
-                                permission, created = Permission.objects.update_or_create(
-                                    permission=f"{app_name}:{resource}:{operation}"
-                                )
+                            for operation_object in operation_objects:
+                                # There are some old configs, e.g., cost-management still stay in CI
+                                if not isinstance(operation_object, str):
+                                    permission_description = operation_object.get("description", "")
+                                    operation = operation_object.get("verb")
+                                    permission, created = Permission.objects.update_or_create(
+                                        permission=f"{app_name}:{resource}:{operation}",
+                                        defaults={"description": permission_description},
+                                    )
+                                else:
+                                    permission, created = Permission.objects.update_or_create(
+                                        permission=f"{app_name}:{resource}:{operation_object}"
+                                    )
                                 if created:
                                     logger.info(
                                         f"Created permission {permission.permission} "
                                         f"for tenant {tenant.schema_name}."
                                     )
-                                # current_permission_ids.add(permission.id)
+                                    # current_permission_ids.add(permission.id)
                         except Exception as e:
                             logger.error(
                                 f"Failed to update or create permissions for: "

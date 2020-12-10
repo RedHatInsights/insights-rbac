@@ -36,7 +36,7 @@ class CrossAccountRequestModelTests(IdentityRequest):
 
         self.ref_time = timezone.now()
         self.request = CrossAccountRequest.objects.create(
-            target_account="123456", userId="567890", endDate=self.ref_time + timedelta(10)
+            target_account="123456", user_id="567890", end_date=self.ref_time + timedelta(10)
         )
 
     def tearDown(self):
@@ -46,9 +46,9 @@ class CrossAccountRequestModelTests(IdentityRequest):
     def test_request_creation_success(self):
         """Test the creation of cross account request."""
         self.assertEqual(self.request.target_account, "123456")
-        self.assertEqual(self.request.userId, "567890")
-        self.assertIsNotNone(self.request.startDate)
-        self.assertEqual(self.request.endDate, self.ref_time + timedelta(10))
+        self.assertEqual(self.request.user_id, "567890")
+        self.assertIsNotNone(self.request.start_date)
+        self.assertEqual(self.request.end_date, self.ref_time + timedelta(10))
         self.assertEqual(self.request.status, "pending")
 
     def test_request_creation_fail_without_target(self):
@@ -57,8 +57,8 @@ class CrossAccountRequestModelTests(IdentityRequest):
             self.assertRaises(
                 IntegrityError,
                 CrossAccountRequest.objects.create,
-                userId="567890",
-                endDate=self.ref_time + timedelta(10),
+                user_id="567890",
+                end_date=self.ref_time + timedelta(10),
             )
 
     def test_request_with_unknown_status_fail(self):
@@ -68,8 +68,8 @@ class CrossAccountRequestModelTests(IdentityRequest):
             ValidationError,
             CrossAccountRequest.objects.create,
             target_account="123456",
-            userId="567890",
-            endDate=self.ref_time + timedelta(10),
+            user_id="567890",
+            end_date=self.ref_time + timedelta(10),
             status="unknown",
         )
         # Can't update
@@ -83,27 +83,27 @@ class CrossAccountRequestModelTests(IdentityRequest):
             ValidationError,
             CrossAccountRequest.objects.create,
             target_account="123456",
-            userId="567890",
-            endDate=self.ref_time - timedelta(10),
+            user_id="567890",
+            end_date=self.ref_time - timedelta(10),
         )
         # Can't update
-        self.request.endDate = self.ref_time - timedelta(10)
+        self.request.end_date = self.ref_time - timedelta(10)
         self.assertRaises(ValidationError, self.request.save)
 
         # Omitted end date
         with transaction.atomic():
             self.assertRaises(
-                IntegrityError, CrossAccountRequest.objects.create, target_account="123456", userId="567890"
+                IntegrityError, CrossAccountRequest.objects.create, target_account="123456", user_id="567890"
             )
 
-        # Invalid endDate, omitted start date
+        # Invalid end_date, omitted start date
         with transaction.atomic():
             self.assertRaises(
                 ValidationError,
                 CrossAccountRequest.objects.create,
                 target_account="33823827",
-                userId="567890",
-                endDate="RSTLNE118",
+                user_id="567890",
+                end_date="RSTLNE118",
             )
 
         # Invalid start and end date
@@ -112,9 +112,9 @@ class CrossAccountRequestModelTests(IdentityRequest):
                 ValidationError,
                 CrossAccountRequest.objects.create,
                 target_account="8888888",
-                userId="567890",
-                startDate="INVALID",
-                endDate="INVALID",
+                user_id="567890",
+                start_date="INVALID",
+                end_date="INVALID",
             )
 
         # End date earlier than now
@@ -122,6 +122,6 @@ class CrossAccountRequestModelTests(IdentityRequest):
             ValidationError,
             CrossAccountRequest.objects.create,
             target_account="8888888",
-            userId="567890",
-            endDate=timezone.now() - timedelta(1),
+            user_id="567890",
+            end_date=timezone.now() - timedelta(1),
         )

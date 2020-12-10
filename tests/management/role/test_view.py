@@ -26,7 +26,7 @@ from rest_framework.test import APIClient
 from tenant_schemas.utils import tenant_context
 
 from api.models import User
-from management.models import Group, Principal, Role, Access, Policy
+from management.models import Group, Permission, Principal, Role, Access, Policy
 from tests.identity_request import IdentityRequest
 
 
@@ -45,9 +45,17 @@ class RoleViewsetTests(IdentityRequest):
         user.account = self.customer_data["account_id"]
         request.user = user
 
-        sys_role_config = {"name": "system_role", "display_name": "system", "system": True}
+        sys_role_config = {
+            "name": "system_role",
+            "display_name": "system_display",
+            "system": True,
+        }
 
-        def_role_config = {"name": "default_role", "display_name": "default", "platform_default": True}
+        def_role_config = {
+            "name": "default_role",
+            "display_name": "default_display",
+            "platform_default": True,
+        }
 
         self.display_fields = {
             "applications",
@@ -83,10 +91,13 @@ class RoleViewsetTests(IdentityRequest):
             self.policy.roles.add(self.defRole, self.sysRole)
             self.policy.save()
 
-            self.access = Access.objects.create(perm="app:*:*", role=self.defRole)
-            self.access2 = Access.objects.create(perm="app2:*:*", role=self.defRole)
+            self.permission = Permission.objects.create(permission="app:*:*")
+            self.permission2 = Permission.objects.create(permission="app2:*:*")
+            self.access = Access.objects.create(permission=self.permission, role=self.defRole)
+            self.access2 = Access.objects.create(permission=self.permission2, role=self.defRole)
 
-            self.access3 = Access.objects.create(perm="app2:*:*", role=self.sysRole)
+            self.access3 = Access.objects.create(permission=self.permission2, role=self.sysRole)
+            Permission.objects.create(permission="cost-management:*:*")
 
     def tearDown(self):
         """Tear down role viewset tests."""
@@ -100,12 +111,18 @@ class RoleViewsetTests(IdentityRequest):
         access_data = [
             {
                 "permission": "app:*:*",
-                "resourceDefinitions": [{"attributeFilter": {"key": "key1", "operation": "equal", "value": "value1"}}],
+                "resourceDefinitions": [
+                    {"attributeFilter": {"key": "key1", "operation": "equal", "value": "value1",}}
+                ],
             }
         ]
         if in_access_data:
             access_data = in_access_data
-        test_data = {"name": role_name, "display_name": role_display, "access": access_data}
+        test_data = {
+            "name": role_name,
+            "display_name": role_display,
+            "access": access_data,
+        }
 
         # create a role
         client = APIClient()
@@ -118,7 +135,9 @@ class RoleViewsetTests(IdentityRequest):
         access_data = [
             {
                 "permission": "app:*:*",
-                "resourceDefinitions": [{"attributeFilter": {"key": "keyA", "operation": "equal", "value": "valueA"}}],
+                "resourceDefinitions": [
+                    {"attributeFilter": {"key": "keyA", "operation": "equal", "value": "valueA",}}
+                ],
             }
         ]
         response = self.create_role(role_name, in_access_data=access_data)
@@ -144,7 +163,9 @@ class RoleViewsetTests(IdentityRequest):
         access_data = [
             {
                 "permission": "app:*:*",
-                "resourceDefinitions": [{"attributeFilter": {"key": "keyA", "operation": "equal", "value": "valueA"}}],
+                "resourceDefinitions": [
+                    {"attributeFilter": {"key": "keyA", "operation": "equal", "value": "valueA",}}
+                ],
             }
         ]
         response = self.create_role(role_name, role_display=role_display, in_access_data=access_data)
@@ -172,7 +193,10 @@ class RoleViewsetTests(IdentityRequest):
 
     def test_create_role_invalid_permission(self):
         """Test that creating an invalid role returns an error."""
-        test_data = {"name": "role1", "access": [{"permission": "foo:bar", "resourceDefinitions": []}]}
+        test_data = {
+            "name": "role1",
+            "access": [{"permission": "foo:bar", "resourceDefinitions": []}],
+        }
         client = APIClient()
         response = client.post(URL, test_data, format="json", **self.headers)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
@@ -183,7 +207,9 @@ class RoleViewsetTests(IdentityRequest):
         access_data = [
             {
                 "permission": "cost-management:*:*",
-                "resourceDefinitions": [{"attributeFilter": {"key": "keyA", "operation": "equal", "value": "valueA"}}],
+                "resourceDefinitions": [
+                    {"attributeFilter": {"key": "keyA", "operation": "equal", "value": "valueA",}}
+                ],
             }
         ]
         response = self.create_role(role_name, in_access_data=access_data)
@@ -206,11 +232,55 @@ class RoleViewsetTests(IdentityRequest):
         access_data = [
             {
                 "permission": "someApp:*:*",
-                "resourceDefinitions": [{"attributeFilter": {"key": "keyA", "operation": "equal", "value": "valueA"}}],
+                "resourceDefinitions": [
+                    {"attributeFilter": {"key": "keyA", "operation": "equal", "value": "valueA",}}
+                ],
             }
         ]
         response = self.create_role(role_name, in_access_data=access_data)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_create_role_appfilter_fields_fail(self):
+        """Test that we cannot create a role with an invalid key in the attributeFilter object."""
+        role_name = "operationFail"
+        access_data = [
+            {
+                "permission": "cost-management:*:*",
+                "resourceDefinitions": [{"attributeFilter": {"key": "keyA", "operation": "in", "foo": "valueA",}}],
+            }
+        ]
+        response = self.create_role(role_name, in_access_data=access_data)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_create_role_appfilter_operation_fail(self):
+        """Test that we cannot create a role with an invalid operation."""
+        role_name = "operationFail"
+        access_data = [
+            {
+                "permission": "cost-management:*:*",
+                "resourceDefinitions": [{"attributeFilter": {"key": "keyA", "operation": "boop", "value": "valueA",}}],
+            }
+        ]
+        response = self.create_role(role_name, in_access_data=access_data)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_create_role_permission_does_not_exist_fail(self):
+        """Test that we cannot create a role with a permission that doesn't exist."""
+        role_name = "roleFailPermission"
+        permission = "cost-management:foo:bar"
+        access_data = [
+            {
+                "permission": permission,
+                "resourceDefinitions": [
+                    {"attributeFilter": {"key": "keyA", "operation": "equal", "value": "valueA",}}
+                ],
+            }
+        ]
+        response = self.create_role(role_name, in_access_data=access_data)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(
+            response.data.get("errors")[0].get("detail"), f"Permission does not exist: {permission}",
+        )
 
     def test_create_role_fail_with_access_not_list(self):
         """Test that we cannot create a role for a non-allow_listed app."""
@@ -409,6 +479,43 @@ class RoleViewsetTests(IdentityRequest):
         response = client.get(url, **self.headers)
         self.assertEqual(response.data.get("meta").get("count"), 0)
 
+    def test_get_role_by_partial_display_name_by_default(self):
+        """Test that getting roles by display_name returns partial match by default."""
+        url = "{}?display_name={}".format(URL, "display")
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        self.assertEqual(response.data.get("meta").get("count"), 2)
+
+    def test_get_role_by_partial_display_name_explicit(self):
+        """Test that getting roles by display_name returns partial match when specified."""
+        url = "{}?display_name={}&name_match={}".format(URL, "display", "partial")
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        self.assertEqual(response.data.get("meta").get("count"), 2)
+
+    def test_get_role_by_display_name_invalid_criteria(self):
+        """Test that getting roles by display_name fails with invalid name_match."""
+        url = "{}?display_name={}&name_match={}".format(URL, "display", "bad_criteria")
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_get_role_by_exact_display_name_match(self):
+        """Test that getting roles by display_name returns exact match."""
+        url = "{}?display_name={}&name_match={}".format(URL, self.sysRole.display_name, "exact")
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        self.assertEqual(response.data.get("meta").get("count"), 1)
+        role = response.data.get("data")[0]
+        self.assertEqual(role.get("display_name"), self.sysRole.display_name)
+
+    def test_get_role_by_exact_display_name_no_match(self):
+        """Test that getting roles by display_name returns no results with exact match."""
+        url = "{}?display_name={}&name_match={}".format(URL, "display", "exact")
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        self.assertEqual(response.data.get("meta").get("count"), 0)
+
     def test_list_role_with_additional_fields_success(self):
         """Test that we can read a list of roles and add fields."""
         role_name = "roleA"
@@ -489,6 +596,45 @@ class RoleViewsetTests(IdentityRequest):
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
+    def test_patch_role_success(self):
+        """Test that we can patch an existing role."""
+        role_name = "role"
+        response = self.create_role(role_name)
+        updated_name = role_name + "_update"
+        updated_description = role_name + "This is a test"
+        role_uuid = response.data.get("uuid")
+        url = reverse("role-detail", kwargs={"uuid": role_uuid})
+        client = APIClient()
+        response = client.patch(
+            url,
+            {"name": updated_name, "display_name": updated_name, "description": updated_description},
+            format="json",
+            **self.headers,
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        self.assertIsNotNone(response.data.get("uuid"))
+        self.assertEqual(updated_name, response.data.get("name"))
+        self.assertEqual(updated_name, response.data.get("display_name"))
+        self.assertEqual(updated_description, response.data.get("description"))
+
+    def test_patch_role_failure(self):
+        """Test that we return a 400 with invalid fields in the patch."""
+        role_name = "role"
+        response = self.create_role(role_name)
+        updated_name = role_name + "_update"
+        updated_description = role_name + "This is a test"
+        role_uuid = response.data.get("uuid")
+        url = reverse("role-detail", kwargs={"uuid": role_uuid})
+        client = APIClient()
+        response = client.patch(
+            url,
+            {"name": updated_name, "display_name": updated_name, "description": updated_description, "foo": "bar"},
+            format="json",
+            **self.headers,
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
     def test_update_role_success(self):
         """Test that we can update an existing role."""
         role_name = "roleA"
@@ -510,7 +656,12 @@ class RoleViewsetTests(IdentityRequest):
         """Test that updating an invalid role returns an error."""
         url = reverse("role-detail", kwargs={"uuid": uuid4()})
         client = APIClient()
-        response = client.put(url, {}, format="json", **self.headers)
+        response = client.put(
+            url,
+            {"name": "updated_name", "display_name": "updated_name", "description": "updated_description"},
+            format="json",
+            **self.headers,
+        )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
     def test_update_role_invalid_permission(self):
@@ -520,7 +671,9 @@ class RoleViewsetTests(IdentityRequest):
         access_data = [
             {
                 "permission": "cost-management:*:*",
-                "resourceDefinitions": [{"attributeFilter": {"key": "keyA", "operation": "equal", "value": "valueA"}}],
+                "resourceDefinitions": [
+                    {"attributeFilter": {"key": "keyA", "operation": "equal", "value": "valueA",}}
+                ],
             }
         ]
         response = self.create_role(role_name, in_access_data=access_data)
@@ -535,6 +688,35 @@ class RoleViewsetTests(IdentityRequest):
         client = APIClient()
         response = client.put(url, test_data, format="json", **self.headers)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_update_role_permission_does_not_exist_fail(self):
+        """Test that we cannot update a role with a permission that doesn't exist."""
+        # Set up
+        role_name = "permRole"
+        permission = "cost-management:foo:bar"
+        access_data = [
+            {
+                "permission": "cost-management:*:*",
+                "resourceDefinitions": [
+                    {"attributeFilter": {"key": "keyA", "operation": "equal", "value": "valueA",}}
+                ],
+            }
+        ]
+        response = self.create_role(role_name, in_access_data=access_data)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        role_uuid = response.data.get("uuid")
+        test_data = response.data
+        test_data.get("access")[0]["permission"] = permission
+        test_data["applications"] = ["foo"]
+
+        # Test update failure
+        url = reverse("role-detail", kwargs={"uuid": role_uuid})
+        client = APIClient()
+        response = client.put(url, test_data, format="json", **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(
+            response.data.get("errors")[0].get("detail"), f"Permission does not exist: {permission}",
+        )
 
     def test_delete_role_success(self):
         """Test that we can delete an existing role."""

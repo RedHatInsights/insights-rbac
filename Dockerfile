@@ -62,7 +62,13 @@ RUN source scl_source enable rh-python36 ${NODEJS_SCL} && \
     rpm-file-permissions && \
     $STI_SCRIPTS_PATH/assemble || true
 
+RUN curl -L -o /usr/bin/haberdasher \
+https://github.com/RedHatInsights/haberdasher/releases/latest/download/haberdasher_linux_amd64 && \
+chmod 755 /usr/bin/haberdasher
+
 USER 1001
+
+ENTRYPOINT ["/usr/bin/haberdasher"]
 
 # Set the default CMD to print the usage of the language image.
 CMD $STI_SCRIPTS_PATH/run
