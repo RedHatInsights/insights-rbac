@@ -20,6 +20,7 @@ from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
 from django.test import TestCase
 from django.utils import timezone
+from management.models import Role
 from tenant_schemas.utils import tenant_context
 
 from datetime import timedelta
@@ -125,3 +126,14 @@ class CrossAccountRequestModelTests(IdentityRequest):
             user_id="567890",
             end_date=timezone.now() - timedelta(1),
         )
+
+    def test_the_request_could_be_associated_with_role(self):
+        ROLE_NAME = "Test Role"
+        role = Role.objects.create(name=ROLE_NAME)
+        self.assertEqual(self.request.roles.count(), 0)
+        self.assertEqual(role.cross_requests.count(), 0)
+
+        # Add role
+        self.request.roles.add(role)
+        self.assertEqual(self.requests.roles.first(), role)
+        self.assertEqual(role.cross_requests.first(), self.request)

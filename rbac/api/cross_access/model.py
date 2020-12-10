@@ -39,6 +39,7 @@ class CrossAccountRequest(models.Model):
     end_date = models.DateTimeField(null=False, blank=False, default=None)
     modified = AutoDateTimeField(default=timezone.now)
     status = models.CharField(max_length=10, default="pending")
+    roles = models.ManyToManyField("management.Role", related_name="cross_requests")
 
     def validate_input_value(self):
         """Validate status is valid, and date is valid."""
