@@ -175,11 +175,16 @@ class PrincipalProxy:  # pylint: disable=too-few-public-methods
             resp["errors"] = [error]
         return resp
 
-    def request_principals(self, account, email=None, limit=None, offset=None, options={}):
+    def request_principals(self, account, input=None, limit=None, offset=None, options={}):
         """Request principals for an account."""
-        if email:
+        if input:
             account_principals_path = f"/v1/accounts/{account}/usersBy"
-            payload = {"primaryEmail": email}
+            if options["search_by"] == "partial_email":
+                payload = {"emailStartsWith": input}
+            elif options["search_by"] == "email":
+                payload = {"primaryEmail": input}
+            else:
+                payload = {"principalStartsWith": input}
             method = requests.post
         else:
             account_principals_path = f"/v2/accounts/{account}/users"

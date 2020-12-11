@@ -25,6 +25,7 @@ from django.conf import settings
 from django.db.migrations.recorder import MigrationRecorder
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
+from management.cache import TenantCache
 from management.models import Group, Role
 from management.tasks import run_migrations_in_worker, run_seeds_in_worker
 from tenant_schemas.utils import tenant_context
@@ -33,6 +34,7 @@ from api.models import Tenant
 
 
 logger = logging.getLogger(__name__)
+TENANTS = TenantCache()
 
 
 def destructive_ok():
@@ -92,6 +94,7 @@ def tenant_view(request, tenant_schema_name):
         with tenant_context(tenant_obj):
             if tenant_is_unmodified():
                 logger.warning(f"Deleting tenant {tenant_schema_name}. Requested by {request.user.username}")
+                TENANTS.delete_tenant(tenant_schema_name)
                 tenant_obj.delete()
                 return HttpResponse(status=204)
             else:

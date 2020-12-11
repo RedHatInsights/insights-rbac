@@ -88,18 +88,34 @@
             "$ref": "#/components/parameters/QueryOffset"
           },
           {
-            "name": "usernames",
             "in": "query",
-            "description": "Usernames of principals to get",
+            "name": "match_criteria",
             "required": false,
+            "description": "Parameter for specifying the matching criteria for an object's name or email.",
             "schema": {
-              "type": "string"
+              "type": "string",
+              "enum": [
+                "partial",
+                "exact"
+              ],
+              "default": "exact"
             }
           },
           {
+            "name": "usernames",
+            "in": "query",
+            "description": "Comma separated usernames of principals to get. If match_criteria is specified, only the first username will be picked up for search.",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "example": "userA,userB"
+            }
+          },
+
+          {
             "name": "sort_order",
             "in": "query",
-            "description": "The sort order of the query, either ascending or descending",
+            "description": "The sort order of the query, either ascending or descending. Defaults to ascending.",
             "required": false,
             "schema": {
               "type": "string",
@@ -109,7 +125,7 @@
           {
             "name": "email",
             "in": "query",
-            "description": "Exact e-mail address of principal to search for",
+            "description": "E-mail address of principal to search for. Could be combined with match_criteria for searching.",
             "required": false,
             "schema": {
               "type": "string"
@@ -142,6 +158,16 @@
                 "false"
               ],
               "default": "false"
+            }
+          },
+          {
+            "in": "query",
+            "name": "order_by",
+            "required": false,
+            "description": "Parameter for ordering principals by value. For inverse ordering, supply '-' before the param value, such as: ?order_by=-username",
+            "schema": {
+              "type": "string",
+              "enum": ["username"]
             }
           }
         ],
@@ -307,7 +333,19 @@
             }
           },
           {
-            "$ref": "#/components/parameters/OrderByFilter"
+            "in": "query",
+            "name": "order_by",
+            "required": false,
+            "description": "Parameter for ordering groups by value. For inverse ordering, supply '-' before the param value, such as: ?order_by=-name",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "name",
+                "modified",
+                "principalCount",
+                "policyCount"
+              ]
+            }
           }
         ],
         "responses": {
@@ -808,6 +846,15 @@
             }
           },
           {
+            "name": "role_display_name",
+            "in": "query",
+            "required": false,
+            "description": "Parameter for filtering group roles by role `display_name` using string contains search.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "name": "role_description",
             "in": "query",
             "required": false,
@@ -826,11 +873,12 @@
             "in": "query",
             "name": "order_by",
             "required": false,
-            "description": "Parameter for ordering resource by value. For inverse ordering, supply '-' before the param value, such as: ?order_by=-name",
+            "description": "Parameter for ordering roles by value. For inverse ordering, supply '-' before the param value, such as: ?order_by=-name",
             "schema": {
               "type": "string",
               "enum": [
                 "name",
+                "display_name",
                 "modified",
                 "policyCount"
               ]
@@ -1096,13 +1144,34 @@
             "$ref": "#/components/parameters/NameFilter"
           },
           {
+            "in": "query",
+            "name": "display_name",
+            "required": false,
+            "description": "Parameter for filtering resource by display_name using string contains search.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "$ref": "#/components/parameters/NameMatchCriteria"
           },
           {
             "$ref": "#/components/parameters/ScopeFilter"
           },
           {
-            "$ref": "#/components/parameters/OrderByFilter"
+            "in": "query",
+            "name": "order_by",
+            "required": false,
+            "description": "Parameter for ordering roles by value. For inverse ordering, supply '-' before the param value, such as: ?order_by=-name",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "name",
+                "display_name",
+                "modified",
+                "policyCount"
+              ]
+            }
           },
           {
             "name": "add_fields",
@@ -1379,6 +1448,80 @@
             }
           }
         }
+      },
+      "patch": {
+        "tags": [
+          "Role"
+        ],
+        "summary": "Patch a Role in the tenant",
+        "operationId": "patchRole",
+        "parameters": [
+          {
+            "name": "uuid",
+            "in": "path",
+            "description": "ID of role to update",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RolePatch"
+              }
+            }
+          },
+          "description": "Patch to a Role"
+        },
+        "responses": {
+          "200": {
+            "description": "Role patched",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoleWithAccess"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Insufficient permissions to patch role",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error403"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/roles/{uuid}/access/": {
@@ -1524,7 +1667,17 @@
             "$ref": "#/components/parameters/GroupUUIDFilter"
           },
           {
-            "$ref": "#/components/parameters/OrderByFilter"
+            "in": "query",
+            "name": "order_by",
+            "required": false,
+            "description": "Parameter for ordering policies by value. For inverse ordering, supply '-' before the param value, such as: ?order_by=-name",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "name",
+                "modified"
+              ]
+            }
           }
         ],
         "responses": {
@@ -1809,7 +1962,19 @@
             "$ref": "#/components/parameters/QueryOffset"
           },
           {
-            "$ref": "#/components/parameters/OrderByFilter"
+            "in": "query",
+            "name": "order_by",
+            "required": false,
+            "description": "Parameter for ordering permissions by value. For inverse ordering, supply '-' before the param value, such as: ?order_by=-application",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "application",
+                "resource_type",
+                "verb",
+                "permission"
+              ]
+            }
           },
           {
             "name": "application",
@@ -2052,15 +2217,6 @@
           "format": "uuid"
         }
       },
-      "OrderByFilter": {
-        "in": "query",
-        "name": "order_by",
-        "required": false,
-        "description": "Parameter for ordering resource by value. For inverse ordering, supply '-' before the param value, such as: ?order_by=-name",
-        "schema": {
-          "type": "string"
-        }
-      },
       "ScopeFilter": {
         "in": "query",
         "name": "scope",
@@ -2079,7 +2235,7 @@
         "in": "query",
         "name": "name_match",
         "required": false,
-        "description": "Parameter for specifying the matching criteria for an object's name.",
+        "description": "Parameter for specifying the matching criteria for an object's name or display_name.",
         "schema": {
           "type": "string",
           "enum": ["partial", "exact"]
@@ -2743,6 +2899,22 @@
           }
         ]
       },
+      "RolePatch": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "example": "RoleA"
+          },
+          "display_name": {
+            "type": "string",
+            "example": "ARoleName"
+          },
+          "description": {
+            "type": "string",
+            "example": "A description of RoleA"
+          }
+        }
+      },
       "RoleWithAccess": {
         "allOf": [
           {
@@ -2949,6 +3121,10 @@
           "permission": {
             "type": "string",
             "example": "rbac:group:read"
+          },
+          "description": {
+            "type": "string",
+            "example": "Describe the usage of permission."
           }
         }
       },

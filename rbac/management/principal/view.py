@@ -29,6 +29,8 @@ USERNAMES_KEY = "usernames"
 EMAIL_KEY = "email"
 SORTORDER_KEY = "sort_order"
 VALID_SORTORDER_VALUE = ["asc", "desc"]
+MATCH_CRITERIA_KEY = "match_criteria"
+VALID_MATCH_VALUE = ["partial", "exact"]
 STATUS_KEY = "status"
 VALID_STATUS_VALUE = ["enabled", "disabled", "all"]
 ADMIN_ONLY_KEY = "admin_only"
@@ -97,9 +99,9 @@ class PrincipalView(APIView):
             offset = int(query_params.get("offset", 0))
             usernames = query_params.get(USERNAMES_KEY)
             email = query_params.get(EMAIL_KEY)
+            match_criteria = validate_and_get_key(query_params, MATCH_CRITERIA_KEY, VALID_MATCH_VALUE, "exact")
             options["sort_order"] = validate_and_get_key(query_params, SORTORDER_KEY, VALID_SORTORDER_VALUE, "asc")
             options["status"] = validate_and_get_key(query_params, STATUS_KEY, VALID_STATUS_VALUE, "enabled")
-            options["admin_only"] = validate_and_get_key(query_params, ADMIN_ONLY_KEY, VALID_ADMIN_ONLY_VALUE, "false")
         except ValueError:
             error = {
                 "detail": "Values for limit and offset must be positive numbers.",
@@ -114,15 +116,30 @@ class PrincipalView(APIView):
             previous_offset = offset - limit
         if usernames:
             principals = usernames.split(",")
-            resp = proxy.request_filtered_principals(
-                principals, account=user.account, limit=limit, offset=offset, sort_order=options["sort_order"]
-            )
-            usernames_filter = f"&usernames={usernames}"
+            if match_criteria == "partial":
+                options["search_by"] = "partial_name"
+                resp = proxy.request_principals(
+                    user.account, input=principals[0], limit=limit, offset=offset, options=options
+                )
+            else:
+                resp = proxy.request_filtered_principals(
+                    principals, account=user.account, limit=limit, offset=offset, sort_order=options["sort_order"]
+                )
+                usernames_filter = f"&usernames={usernames}"
         elif email:
-            resp = proxy.request_principals(
-                user.account, email=email, limit=limit, offset=offset, options={"sort_order": options["sort_order"]}
-            )
+            if match_criteria == "partial":
+                options["search_by"] = "partial_email"
+                resp = proxy.request_principals(user.account, input=email, limit=limit, offset=offset, options=options)
+            else:
+                resp = proxy.request_principals(
+                    user.account,
+                    input=email,
+                    limit=limit,
+                    offset=offset,
+                    options={"sort_order": options["sort_order"], "search_by": "email"},
+                )
         else:
+            options["admin_only"] = validate_and_get_key(query_params, ADMIN_ONLY_KEY, VALID_ADMIN_ONLY_VALUE, "false")
             resp = proxy.request_principals(user.account, limit=limit, offset=offset, options=options)
         status_code = resp.get("status_code")
         response_data = {}

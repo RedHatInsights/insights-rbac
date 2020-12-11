@@ -24,11 +24,30 @@ from rest_framework.validators import UniqueValidator
 
 from .model import Access, Permission, ResourceDefinition, Role
 
+ALLOWED_OPERATIONS = ["in", "equal"]
+FILTER_FIELDS = set(["key", "value", "operation"])
+
 
 class ResourceDefinitionSerializer(serializers.ModelSerializer):
     """Serializer for the ResourceDefinition model."""
 
     attributeFilter = serializers.JSONField()
+
+    def validate_attributeFilter(self, value):
+        """Validate the given attributeFilter."""
+        if value.keys() != FILTER_FIELDS:
+            key = "format"
+            message = f"attributeFilter fields must be {FILTER_FIELDS}"
+            error = {key: [_(message)]}
+            raise serializers.ValidationError(error)
+
+        op = value.get("operation")
+        if op not in ALLOWED_OPERATIONS:
+            key = "format"
+            message = f"attributeFilter operation must be one of {ALLOWED_OPERATIONS}"
+            error = {key: [_(message)]}
+            raise serializers.ValidationError(error)
+        return value
 
     class Meta:
         """Metadata for the serializer."""
@@ -68,7 +87,9 @@ class RoleSerializer(serializers.ModelSerializer):
     name = serializers.CharField(
         required=True, max_length=150, validators=[UniqueValidator(queryset=Role.objects.all())]
     )
-    display_name = serializers.CharField(required=False, max_length=150, allow_blank=True)
+    display_name = serializers.CharField(
+        required=False, max_length=150, allow_blank=True, validators=[UniqueValidator(queryset=Role.objects.all())]
+    )
     description = serializers.CharField(allow_null=True, required=False)
     access = AccessSerializer(many=True)
     policyCount = serializers.IntegerField(read_only=True)
@@ -251,6 +272,28 @@ class RoleDynamicSerializer(DynamicFieldsModelSerializer):
         """Get the groups where the role is in."""
         request = self.context.get("request")
         return obtain_groups_in(obj, request).values("name", "uuid", "description")
+
+
+class RolePatchSerializer(RoleSerializer):
+    """Serializer for Role patch."""
+
+    access = AccessSerializer(many=True, required=False)
+    name = serializers.CharField(
+        required=False, max_length=150, validators=[UniqueValidator(queryset=Role.objects.all())]
+    )
+
+    def update(self, instance, validated_data):
+        """Patch the role object."""
+        if instance.system:
+            key = "role.update"
+            message = "System roles may not be updated."
+            error = {key: [_(message)]}
+            raise serializers.ValidationError(error)
+        instance.name = validated_data.get("name", instance.name)
+        instance.display_name = validated_data.get("display_name", instance.display_name)
+        instance.description = validated_data.get("description", instance.description)
+        instance.save()
+        return instance
 
 
 def obtain_applications(obj):
