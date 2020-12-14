@@ -89,6 +89,7 @@ INSTALLED_APPS = [
 
 SHARED_APPS = (
     "tenant_schemas",
+    "management",
     "api",
     "django.contrib.contenttypes",
     # 'django.contrib.admin',
@@ -246,7 +247,7 @@ LOGGING = {
     "formatters": {
         "verbose": {"format": VERBOSE_FORMATTING},
         "simple": {"format": "[%(asctime)s] %(levelname)s: %(message)s"},
-        "ecs_formatter": {"()": "ecs_logging.StdlibFormatter",},
+        "ecs_formatter": {"()": "ecs_logging.StdlibFormatter"},
     },
     "handlers": {
         "console": {"class": "logging.StreamHandler", "formatter": LOGGING_FORMATTER},
@@ -256,7 +257,7 @@ LOGGING = {
             "filename": LOGGING_FILE,
             "formatter": LOGGING_FORMATTER,
         },
-        "ecs": {"class": "logging.StreamHandler", "formatter": "ecs_formatter",},
+        "ecs": {"class": "logging.StreamHandler", "formatter": "ecs_formatter"},
     },
     "loggers": {
         "django": {"handlers": LOGGING_HANDLERS, "level": DJANGO_LOGGING_LEVEL},

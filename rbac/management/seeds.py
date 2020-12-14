@@ -64,15 +64,14 @@ def run_seeds(seed_type):
             tenants = Tenant.objects.all()
             tenant_count = tenants.count()
             for idx, tenant in enumerate(list(tenants)):
-                if tenant.schema_name != "public":
-                    logger.info(
-                        f"Seeding {seed_type} changes for tenant {tenant.schema_name} [{idx + 1} of {tenant_count}]."
-                    )
-                    future = executor.submit(seed_functions[seed_type], tenant)
-                    completed_log_message = (
-                        f"Finished seeding {seed_type} changes for tenant "
-                        f"{tenant.schema_name} [{idx + 1} of {tenant_count}]."
-                    )
-                    future.add_done_callback(partial(on_complete, completed_log_message, tenant))
+                logger.info(
+                    f"Seeding {seed_type} changes for tenant {tenant.schema_name} [{idx + 1} of {tenant_count}]."
+                )
+                future = executor.submit(seed_functions[seed_type], tenant)
+                completed_log_message = (
+                    f"Finished seeding {seed_type} changes for tenant "
+                    f"{tenant.schema_name} [{idx + 1} of {tenant_count}]."
+                )
+                future.add_done_callback(partial(on_complete, completed_log_message, tenant))
     except Exception as exc:
         logger.error(f"Error encountered during {seed_type} seeding {exc}.")

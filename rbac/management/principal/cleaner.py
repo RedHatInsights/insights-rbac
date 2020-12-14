@@ -71,7 +71,6 @@ def clean_tenants_principals():
     logger.info("Start principal clean up.")
 
     for tenant in list(Tenant.objects.all()):
-        if tenant.schema_name != "public":
-            logger.info("Running principal clean up for tenant %s.", tenant.schema_name)
-            clean_tenant_principals(tenant)
-            logger.info("Completed principal clean up for tenant %s.", tenant.schema_name)
+        logger.info("Running principal clean up for tenant %s.", tenant.schema_name)
+        clean_tenant_principals(tenant)
+        logger.info("Completed principal clean up for tenant %s.", tenant.schema_name)
