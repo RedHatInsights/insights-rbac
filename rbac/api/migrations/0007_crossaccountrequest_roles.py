@@ -11,6 +11,6 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name="crossaccountrequest",
             name="roles",
-            field=models.ManyToManyField(related_name="cross_requests", to="management.Role"),
+            field=models.ManyToManyField(related_name="cross_account_requests", to="management.Role"),
         )
     ]

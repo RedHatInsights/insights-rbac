@@ -131,9 +131,9 @@ class CrossAccountRequestModelTests(IdentityRequest):
         ROLE_NAME = "Test Role"
         role = Role.objects.create(name=ROLE_NAME)
         self.assertEqual(self.request.roles.count(), 0)
-        self.assertEqual(role.cross_requests.count(), 0)
+        self.assertEqual(role.cross_account_requests.count(), 0)
 
         # Add role
         self.request.roles.add(role)
         self.assertEqual(self.requests.roles.first(), role)
-        self.assertEqual(role.cross_requests.first(), self.request)
+        self.assertEqual(role.cross_account_requests.first(), self.request)
