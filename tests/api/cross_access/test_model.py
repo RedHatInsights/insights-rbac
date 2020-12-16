@@ -15,7 +15,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Test the cross account request model."""
-from api.models import CrossAccountRequest
+from api.models import CrossAccountRequest, CrossAccountRequestHistory
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
 from django.test import TestCase
@@ -36,9 +36,13 @@ class CrossAccountRequestModelTests(IdentityRequest):
         super().setUp()
 
         self.ref_time = timezone.now()
+        self.role_A = Role.objects.create(name="role_A")
+        self.role_B = Role.objects.create(name="role_B")
         self.request = CrossAccountRequest.objects.create(
             target_account="123456", user_id="567890", end_date=self.ref_time + timedelta(10)
         )
+        self.request.roles.add(self.role_A)
+        self.request.roles.add(self.role_B)
 
     def tearDown(self):
         """Tear down cross account request model tests."""
@@ -51,6 +55,7 @@ class CrossAccountRequestModelTests(IdentityRequest):
         self.assertIsNotNone(self.request.start_date)
         self.assertEqual(self.request.end_date, self.ref_time + timedelta(10))
         self.assertEqual(self.request.status, "pending")
+        self.assertEqual([role for role in self.request.roles.all()], [self.role_A, self.role_B])
 
     def test_request_creation_fail_without_target(self):
         """Test the creation of cross account request fail without target."""
@@ -127,13 +132,13 @@ class CrossAccountRequestModelTests(IdentityRequest):
             end_date=timezone.now() - timedelta(1),
         )
 
-    def test_the_request_could_be_associated_with_role(self):
-        ROLE_NAME = "Test Role"
-        role = Role.objects.create(name=ROLE_NAME)
-        self.assertEqual(self.request.roles.count(), 0)
-        self.assertEqual(role.cross_account_requests.count(), 0)
+    def test_the_request_history_create_success(self):
+        history = CrossAccountRequestHistory.objects.create(cross_account_request=self.request)
 
-        # Add role
-        self.request.roles.add(role)
-        self.assertEqual(self.requests.roles.first(), role)
-        self.assertEqual(role.cross_account_requests.first(), self.request)
+        self.assertEqual(history.cross_account_request, self.request)
+        self.assertEqual(history.target_account, self.request.target_account)
+        self.assertEqual(history.created, self.request.modified)
+        self.assertEqual(history.start_date, self.request.start_date)
+        self.assertEqual(history.end_date, self.request.end_date)
+        self.assertEqual(history.status, self.request.status)
+        self.assertEqual([role for role in history.roles.all()], [self.role_A, self.role_B])

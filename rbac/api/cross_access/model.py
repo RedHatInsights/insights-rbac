@@ -70,3 +70,35 @@ class RequestsRoles(models.Model):
     role = models.ForeignKey(
         "management.Role", on_delete=models.CASCADE, to_field="uuid", related_name="cross_account_requests"
     )
+
+
+class CrossAccountRequestHistory(models.Model):
+    """Cross account access request history."""
+
+    cross_account_request = models.ForeignKey(CrossAccountRequest, on_delete=models.CASCADE, related_name="histories")
+    target_account = models.CharField(max_length=15, default=None)
+    created = models.DateTimeField(default=timezone.now)
+    start_date = models.DateTimeField()
+    end_date = models.DateTimeField()
+    status = models.CharField(max_length=10)
+    roles = models.ManyToManyField("management.Role", through="RequestHistoriesRoles")
+
+    def save(self, *args, **kwargs):
+        """Override save method to get values from ."""
+        self.target_account = self.cross_account_request.target_account
+        self.created = self.cross_account_request.modified
+        self.start_date = self.cross_account_request.start_date
+        self.end_date = self.cross_account_request.end_date
+        self.status = self.cross_account_request.status
+
+        super(CrossAccountRequestHistory, self).save(*args, **kwargs)
+        self.roles.set(self.cross_account_request.roles.all())
+
+
+class RequestHistoriesRoles(models.Model):
+    """Model to associate the cross account access history request and role."""
+
+    cross_account_request = models.ForeignKey(CrossAccountRequestHistory, on_delete=models.CASCADE)
+    role = models.ForeignKey(
+        "management.Role", on_delete=models.CASCADE, to_field="uuid", related_name="cross_account_request_histories"
+    )
