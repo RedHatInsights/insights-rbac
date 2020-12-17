@@ -4,7 +4,7 @@
 
 @Library("github.com/RedHatInsights/insights-pipeline-lib@v3") _
 
-def options = [vaultEnabled: true, settingsFromGit: true, settingsGitPath: "configs/rbac-smoke-settings.yaml"]
+def options = [vaultEnabled: true]
 
 if (env.CHANGE_ID) {
     execSmokeTest (
