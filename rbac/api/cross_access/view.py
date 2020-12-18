@@ -24,9 +24,8 @@ from rest_framework import mixins, status, viewsets
 from rest_framework.response import Response
 
 from api.cross_access.access_control import CrossAccountRequestAccessPermission
-from api.cross_access.model import CrossAccountRequest
-from api.cross_access.serializer import CrossAccountRequestSerializer
-
+from api.cross_access.serializer import CrossAccountRequestDetailSerializer, CrossAccountRequestSerializer
+from api.models import CrossAccountRequest
 
 QUERY_BY_KEY = "query_by"
 ACCOUNT = "target_account"
@@ -57,14 +56,13 @@ class CrossAccountRequestFilter(filters.FilterSet):
         fields = ["account", "approved_only"]
 
 
-class CrossAccountRequestViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
+class CrossAccountRequestViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet):
     """Cross Account Request view set.
 
     A viewset that provides default `list()` actions.
 
     """
 
-    queryset = CrossAccountRequest.objects.all()
     permission_classes = (CrossAccountRequestAccessPermission,)
     filter_backends = (filters.DjangoFilterBackend,)
     filterset_class = CrossAccountRequestFilter
@@ -79,6 +77,7 @@ class CrossAccountRequestViewSet(mixins.ListModelMixin, viewsets.GenericViewSet)
         """Get serializer based on route."""
         if self.request.path.endswith("cross-account-requests/") and self.request.method == "GET":
             return CrossAccountRequestSerializer
+        return CrossAccountRequestDetailSerializer
 
     def list(self, request, *args, **kwargs):
         """List cross account requests for account/user_id."""
@@ -90,6 +89,26 @@ class CrossAccountRequestViewSet(mixins.ListModelMixin, viewsets.GenericViewSet)
         # The approver's view requires requester's info such as first name, last name, email address.
         if validate_and_get_key(self.request.query_params, QUERY_BY_KEY, VALID_QUERY_BY_KEY, ACCOUNT) == ACCOUNT:
             return self.replace_user_id_with_info(result)
+        return result
+
+    def retrieve(self, request, *args, **kwargs):
+        """Retrive cross account requests by request_id."""
+        result = super().retrieve(request=request, args=args, kwargs=kwargs)
+
+        if validate_and_get_key(self.request.query_params, QUERY_BY_KEY, VALID_QUERY_BY_KEY, ACCOUNT) == ACCOUNT:
+            user_id = result.data.pop("user_id")
+            principal = PROXY.request_filtered_principals(
+                [user_id], account=None, options={"query_by": "user_id", "return_id": True}
+            ).get("data")[0]
+
+            # Replace the user_id with user's info
+            result.data.update(
+                {
+                    "first_name": principal["first_name"],
+                    "last_name": principal["last_name"],
+                    "email": principal["email"],
+                }
+            )
         return result
 
     def replace_user_id_with_info(self, result):
