@@ -45,9 +45,9 @@ class CrossAccountRequestSerializer(serializers.ModelSerializer):
 class RoleSerializer(serializers.ModelSerializer):
     """Serializer for the roles of cross access request model."""
 
-    display_name = serializers.CharField(read_only=True)
-    description = serializers.CharField(read_only=True)
-    permissions = serializers.SerializerMethodField()
+    display_name = serializers.CharField(max_length=150)
+    description = serializers.CharField(max_length=150, read_only=True)
+    permissions = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         """Metadata for the serializer."""
@@ -69,9 +69,9 @@ class CrossAccountRequestDetailSerializer(serializers.ModelSerializer):
     user_id = serializers.CharField(max_length=15)
     start_date = serializers.DateTimeField(format="%m/%d/%Y")
     end_date = serializers.DateTimeField(format="%m/%d/%Y")
-    created = serializers.DateTimeField(format="%m/%d/%Y")
-    status = serializers.CharField(max_length=10)
-    roles = serializers.SerializerMethodField()
+    created = serializers.DateTimeField(format="%m/%d/%Y", read_only=True)
+    status = serializers.CharField(max_length=10, read_only=True)
+    roles = RoleSerializer(many=True)
 
     class Meta:
         """Metadata for the serializer."""
@@ -84,3 +84,14 @@ class CrossAccountRequestDetailSerializer(serializers.ModelSerializer):
         with tenant_context(Tenant.objects.get(schema_name="public")):
             serialized_roles = [RoleSerializer(role).data for role in obj.roles.all()]
         return serialized_roles
+
+    def create(self, validated_data):
+        """Override the create method to associate the roles to cross account request after it is created."""
+        role_data = validated_data.pop("roles")
+        display_names = [role["display_name"] for role in role_data]
+        request = CrossAccountRequest.objects.create(**validated_data)
+
+        roles = Role.objects.filter(display_name__in=display_names)
+        for role in roles:
+            request.roles.add(role)
+        return request

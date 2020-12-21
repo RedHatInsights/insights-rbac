@@ -23,7 +23,7 @@ from rest_framework import status
 from rest_framework.test import APIClient
 from tenant_schemas.utils import tenant_context
 
-from datetime import timedelta
+from datetime import datetime, timedelta
 from unittest.mock import patch
 from tests.identity_request import IdentityRequest
 
@@ -77,6 +77,12 @@ class CrossAccountRequestViewTests(IdentityRequest):
             self.request_4 = CrossAccountRequest.objects.create(
                 target_account=self.another_account, user_id="2222222", end_date=self.ref_time + timedelta(10)
             )
+        self.data4create = {
+            "target_account": "012345",
+            "start_date": "02/20/2021",
+            "end_date": "05/20/2021",
+            "roles": ["role_1", "role_2"],
+        }
 
     def tearDown(self):
         """Tear down cross account request model tests."""
@@ -263,3 +269,44 @@ class CrossAccountRequestViewTests(IdentityRequest):
 
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
         self.assertEqual(response.data["errors"][0]["detail"].code, "permission_denied")
+
+    def test_create_requests_success(self):
+        """Test the creation of cross account request success."""
+        client = APIClient()
+        response = client.post(
+            f"{URL_LIST}?", self.data4create, format="json", **self.associate_non_admin_request.META
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["target_account"], self.data4create["target_account"])
+        self.assertEqual(response.data["status"], "pending")
+        self.assertEqual(response.data["start_date"], self.data4create["start_date"])
+        self.assertEqual(response.data["end_date"], self.data4create["end_date"])
+        self.assertEqual(len(response.data["roles"]), 2)
+
+    def test_create_requests_fail_for_none_associate(self):
+        """Test the creation of cross account request fail for none red hat associate."""
+        client = APIClient()
+        response = client.post(f"{URL_LIST}?", self.data4create, format="json", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_create_requests_fail_for_over_a_year_period(self):
+        """Test the creation of cross account request fail for not supported period."""
+        self.data4create["end_date"] = "05/01/2022"
+        client = APIClient()
+        response = client.post(
+            f"{URL_LIST}?", self.data4create, format="json", **self.associate_non_admin_request.META
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_create_requests_fail_for_not_exist_role(self):
+        """Test the creation of cross account request fail for not supported period."""
+        self.data4create["roles"] = ["role_1", "role_3"]
+        client = APIClient()
+        response = client.post(
+            f"{URL_LIST}?", self.data4create, format="json", **self.associate_non_admin_request.META
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)

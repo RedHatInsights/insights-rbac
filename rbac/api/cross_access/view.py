@@ -16,21 +16,27 @@
 #
 
 """View for cross access request."""
+from datetime import datetime, timedelta
+
 from django.utils import timezone
 from django_filters import rest_framework as filters
+from management.models import Role
 from management.principal.proxy import PrincipalProxy
 from management.utils import validate_and_get_key, validate_limit_and_offset
-from rest_framework import mixins, status, viewsets
+from rest_framework import mixins, serializers, status, viewsets
 from rest_framework.response import Response
+from tenant_schemas.utils import tenant_context
 
 from api.cross_access.access_control import CrossAccountRequestAccessPermission
 from api.cross_access.serializer import CrossAccountRequestDetailSerializer, CrossAccountRequestSerializer
-from api.models import CrossAccountRequest
+from api.models import CrossAccountRequest, Tenant
 
 QUERY_BY_KEY = "query_by"
 ACCOUNT = "target_account"
 USER_ID = "user_id"
 VALID_QUERY_BY_KEY = [ACCOUNT, USER_ID]
+PARAMS_FOR_CREATION = ["target_account", "start_date", "end_date", "roles"]
+
 PROXY = PrincipalProxy()
 
 
@@ -56,10 +62,12 @@ class CrossAccountRequestFilter(filters.FilterSet):
         fields = ["account", "approved_only"]
 
 
-class CrossAccountRequestViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet):
+class CrossAccountRequestViewSet(
+    mixins.CreateModelMixin, mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet
+):
     """Cross Account Request view set.
 
-    A viewset that provides default `list()` actions.
+    A viewset that provides default `create(), list()` actions.
 
     """
 
@@ -79,6 +87,15 @@ class CrossAccountRequestViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixi
             return CrossAccountRequestSerializer
         return CrossAccountRequestDetailSerializer
 
+    def create(self, request, *args, **kwargs):
+        """Create cross account requests for associate."""
+        error = self.validate_and_get_input_for_creation(request.data)
+        if error:
+            return Response(status=status.HTTP_400_BAD_REQUEST, data=error)
+
+        with tenant_context(Tenant.objects.get(schema_name="public")):
+            return super().create(request=request, args=args, kwargs=kwargs)
+
     def list(self, request, *args, **kwargs):
         """List cross account requests for account/user_id."""
         errors = validate_limit_and_offset(self.request.query_params)
@@ -93,7 +110,8 @@ class CrossAccountRequestViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixi
 
     def retrieve(self, request, *args, **kwargs):
         """Retrive cross account requests by request_id."""
-        result = super().retrieve(request=request, args=args, kwargs=kwargs)
+        with tenant_context(Tenant.objects.get(schema_name="public")):
+            result = super().retrieve(request=request, args=args, kwargs=kwargs)
 
         if validate_and_get_key(self.request.query_params, QUERY_BY_KEY, VALID_QUERY_BY_KEY, ACCOUNT) == ACCOUNT:
             user_id = result.data.pop("user_id")
@@ -136,3 +154,35 @@ class CrossAccountRequestViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixi
             element.update(requestor_info)
 
         return result
+
+    def create_error_object(self, message):
+        """Create and return error object based on message."""
+        error = {"detail": message, "source": "CrossAccountRequest", "status": str(status.HTTP_400_BAD_REQUEST)}
+        return {"errors": [error]}
+
+    def validate_and_get_input_for_creation(self, request_data):
+        """Validate the create api input."""
+        target_account = request_data.get("target_account")
+        start_date = request_data.get("start_date")
+        end_date = request_data.get("end_date")
+        roles = request_data.get("roles")
+        if None in [target_account, start_date, end_date, roles]:
+            return {"error": self.create_error_object(f"{PARAMS_FOR_CREATION} must be all specified.")}
+
+        start_date = datetime.strptime(start_date, "%m/%d/%Y")
+        end_date = datetime.strptime(end_date, "%m/%d/%Y")
+        if end_date - start_date > timedelta(365):
+            return {"error": self.create_error_object(f"Access duration could not be longer than one year.")}
+
+        with tenant_context(Tenant.objects.get(schema_name="public")):
+            for role in roles:
+                try:
+                    Role.objects.get(display_name=role)
+                except Role.DoesNotExist:
+                    error = {"detail": f"Role {role} could not be found in public."}
+                    raise serializers.ValidationError(error)
+
+        request_data["start_date"] = start_date
+        request_data["end_date"] = end_date
+        request_data["user_id"] = self.request.user.user_id
+        request_data["roles"] = [{"display_name": role} for role in roles]
