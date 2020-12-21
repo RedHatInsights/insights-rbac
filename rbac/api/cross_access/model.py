@@ -39,6 +39,7 @@ class CrossAccountRequest(models.Model):
     end_date = models.DateTimeField(null=False, blank=False, default=None)
     modified = AutoDateTimeField(default=timezone.now)
     status = models.CharField(max_length=10, default="pending")
+    roles = models.ManyToManyField("management.Role", through="RequestsRoles")
 
     def validate_input_value(self):
         """Validate status is valid, and date is valid."""
@@ -60,3 +61,12 @@ class CrossAccountRequest(models.Model):
         self.validate_input_value()
 
         super(CrossAccountRequest, self).save(*args, **kwargs)
+
+
+class RequestsRoles(models.Model):
+    """Model to associate the cross account access request and role."""
+
+    cross_account_request = models.ForeignKey(CrossAccountRequest, on_delete=models.CASCADE)
+    role = models.ForeignKey(
+        "management.Role", on_delete=models.CASCADE, to_field="uuid", related_name="cross_account_requests"
+    )
