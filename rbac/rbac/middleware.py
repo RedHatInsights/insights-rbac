@@ -125,6 +125,8 @@ class IdentityHeaderMiddleware(BaseTenantMiddleware):
             user.username = json_rh_auth.get("identity", {}).get("user", {})["username"]
             user.account = json_rh_auth.get("identity", {})["account_number"]
             user.admin = json_rh_auth.get("identity", {}).get("user", {}).get("is_org_admin")
+            user.internal = json_rh_auth.get("identity", {}).get("user", {}).get("is_internal")
+            user.user_id = json_rh_auth.get("identity", {}).get("user", {}).get("user_id")
             user.system = False
             if not user.admin:
                 user.access = IdentityHeaderMiddleware._get_access_for_user()

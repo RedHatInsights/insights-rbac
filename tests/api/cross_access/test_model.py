@@ -25,10 +25,9 @@ from tenant_schemas.utils import tenant_context
 
 from datetime import timedelta
 from unittest.mock import Mock
-from tests.identity_request import IdentityRequest
 
 
-class CrossAccountRequestModelTests(IdentityRequest):
+class CrossAccountRequestModelTests(TestCase):
     """Test the cross account request model."""
 
     def setUp(self):
@@ -135,5 +134,5 @@ class CrossAccountRequestModelTests(IdentityRequest):
 
         # Add role
         self.request.roles.add(role)
-        self.assertEqual(self.requests.roles.first(), role)
-        self.assertEqual(role.cross_account_requests.first(), self.request)
+        self.assertEqual(self.request.roles.count(), 1)
+        self.assertEqual(self.request.roles.filter(name="Test Role").first(), role)

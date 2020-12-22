@@ -111,11 +111,13 @@ class IdentityRequest(TestCase):
                 "username": user_data.get("username"),
                 "email": user_data.get("email"),
                 "is_org_admin": is_org_admin,
+                "user_id": "1111111",
             }
 
         if is_internal:
             identity["identity"]["type"] = "Associate"
-            identity["identity"]["associate"] = {"email": user_data.get("email")}
+            identity["identity"]["associate"] = {"email": user_data["email"]}
+            identity["identity"]["user"]["is_internal"] = True
         else:
             identity["identity"]["type"] = "User"
 

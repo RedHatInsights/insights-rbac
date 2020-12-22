@@ -122,7 +122,9 @@ class PrincipalViewsetTests(IdentityRequest):
         client = APIClient()
         response = client.get(url, **self.headers)
 
-        mock_request.assert_called_once_with(["test_user"], account=ANY, limit=10, offset=30, sort_order="asc")
+        mock_request.assert_called_once_with(
+            ["test_user"], account=ANY, limit=10, offset=30, options={"sort_order": "asc"}
+        )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         for keyname in ["meta", "links", "data"]:
             self.assertIn(keyname, response.data)
@@ -194,7 +196,7 @@ class PrincipalViewsetTests(IdentityRequest):
 
     @patch(
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
-        return_value={"status_code": 200, "data": [{"username": "test_user", "account_number": "1234"}]},
+        return_value={"status_code": 200, "data": [{"username": "test_user", "account_number": "1234", "id": "5678"}]},
     )
     def test_read_principal_list_account(self, mock_request):
         """Test that we can handle a request with matching accounts"""
@@ -203,16 +205,19 @@ class PrincipalViewsetTests(IdentityRequest):
         proxy = PrincipalProxy()
         response = client.get(url, **self.headers)
 
-        mock_request.assert_called_once_with(["test_user"], account=ANY, limit=10, offset=30, sort_order="desc")
+        mock_request.assert_called_once_with(
+            ["test_user"], account=ANY, limit=10, offset=30, options={"sort_order": "desc"}
+        )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         for keyname in ["meta", "links", "data"]:
             self.assertIn(keyname, response.data)
         self.assertIsInstance(response.data.get("data"), list)
         self.assertEqual(response.data.get("meta").get("count"), 1)
-        resp = proxy._process_data(response.data.get("data"), account="1234", account_filter=True)
+        resp = proxy._process_data(response.data.get("data"), account="1234", account_filter=True, return_id=True)
         self.assertEqual(len(resp), 1)
 
         self.assertEqual(resp[0]["username"], "test_user")
+        self.assertEqual(resp[0]["user_id"], "5678")
 
     @patch(
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
