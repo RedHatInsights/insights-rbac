@@ -153,6 +153,11 @@ class CrossAccountRequestViewSet(
 
         return result
 
+    def throw_validation_error(self, source, message):
+        """Construct a validation error and raise the error."""
+        error = {source: [message]}
+        raise ValidationError(error)
+
     def validate_and_get_input_for_creation(self, request_data):
         """Validate the create api input."""
         target_account = request_data.get("target_account")
@@ -160,23 +165,29 @@ class CrossAccountRequestViewSet(
         end_date = request_data.get("end_date")
         roles = request_data.get("roles")
         if None in [target_account, start_date, end_date, roles]:
-            raise ValidationError(f"{PARAMS_FOR_CREATION} must be all specified.")
+            self.throw_validation_error("cross-account-create", f"{PARAMS_FOR_CREATION} must be all specified.")
 
         try:
             start_date = datetime.strptime(start_date, "%m/%d/%Y")
             end_date = datetime.strptime(end_date, "%m/%d/%Y")
         except ValueError:
-            raise ValidationError(f"start_date or end_date does not match format '%m/%d/%Y'.")
+            raise self.throw_validation_error(
+                "cross-account-create", f"start_date or end_date does not match format '%m/%d/%Y'."
+            )
 
         if end_date - start_date > timedelta(365):
-            raise ValidationError(f"Access duration could not be longer than one year.")
+            raise self.throw_validation_error(
+                "cross-account-create", f"Access duration could not be longer than one year."
+            )
 
         with tenant_context(Tenant.objects.get(schema_name="public")):
             for role in roles:
                 try:
                     Role.objects.get(display_name=role)
                 except Role.DoesNotExist:
-                    raise ValidationError(f"Role {role} could not be found in public.")
+                    raise self.throw_validation_error(
+                        "cross-account-create", f"Role {role} could not be found in public."
+                    )
 
         request_data["start_date"] = start_date
         request_data["end_date"] = end_date
