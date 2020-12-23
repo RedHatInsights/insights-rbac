@@ -16,21 +16,27 @@
 #
 
 """View for cross access request."""
+from datetime import datetime, timedelta
+
 from django.utils import timezone
 from django_filters import rest_framework as filters
+from management.models import Role
 from management.principal.proxy import PrincipalProxy
 from management.utils import validate_and_get_key, validate_limit_and_offset
-from rest_framework import mixins, status, viewsets
-from rest_framework.response import Response
+from rest_framework import mixins, viewsets
+from rest_framework.serializers import ValidationError
+from tenant_schemas.utils import tenant_context
 
 from api.cross_access.access_control import CrossAccountRequestAccessPermission
 from api.cross_access.serializer import CrossAccountRequestDetailSerializer, CrossAccountRequestSerializer
-from api.models import CrossAccountRequest
+from api.models import CrossAccountRequest, Tenant
 
 QUERY_BY_KEY = "query_by"
 ACCOUNT = "target_account"
 USER_ID = "user_id"
 VALID_QUERY_BY_KEY = [ACCOUNT, USER_ID]
+PARAMS_FOR_CREATION = ["target_account", "start_date", "end_date", "roles"]
+
 PROXY = PrincipalProxy()
 
 
@@ -45,7 +51,9 @@ class CrossAccountRequestFilter(filters.FilterSet):
     def approved_filter(self, queryset, field, value):
         """Filter to lookup requests by status of approved."""
         if value:
-            return queryset.filter(status="approved").filter(end_date__gt=timezone.now())
+            return queryset.filter(status="approved").filter(
+                start_date__lt=timezone.now(), end_date__gt=timezone.now()
+            )
         return queryset
 
     account = filters.CharFilter(field_name="target_account", method="account_filter")
@@ -56,10 +64,12 @@ class CrossAccountRequestFilter(filters.FilterSet):
         fields = ["account", "approved_only"]
 
 
-class CrossAccountRequestViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet):
+class CrossAccountRequestViewSet(
+    mixins.CreateModelMixin, mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet
+):
     """Cross Account Request view set.
 
-    A viewset that provides default `list()` actions.
+    A viewset that provides default `create(), list()` actions.
 
     """
 
@@ -79,11 +89,16 @@ class CrossAccountRequestViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixi
             return CrossAccountRequestSerializer
         return CrossAccountRequestDetailSerializer
 
+    def create(self, request, *args, **kwargs):
+        """Create cross account requests for associate."""
+        self.validate_and_get_input_for_creation(request.data)
+
+        with tenant_context(Tenant.objects.get(schema_name="public")):
+            return super().create(request=request, args=args, kwargs=kwargs)
+
     def list(self, request, *args, **kwargs):
         """List cross account requests for account/user_id."""
-        errors = validate_limit_and_offset(self.request.query_params)
-        if errors:
-            return Response(status=status.HTTP_400_BAD_REQUEST, data=errors)
+        validate_limit_and_offset(self.request.query_params)
 
         result = super().list(request=request, args=args, kwargs=kwargs)
         # The approver's view requires requester's info such as first name, last name, email address.
@@ -93,7 +108,8 @@ class CrossAccountRequestViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixi
 
     def retrieve(self, request, *args, **kwargs):
         """Retrive cross account requests by request_id."""
-        result = super().retrieve(request=request, args=args, kwargs=kwargs)
+        with tenant_context(Tenant.objects.get(schema_name="public")):
+            result = super().retrieve(request=request, args=args, kwargs=kwargs)
 
         if validate_and_get_key(self.request.query_params, QUERY_BY_KEY, VALID_QUERY_BY_KEY, ACCOUNT) == ACCOUNT:
             user_id = result.data.pop("user_id")
@@ -136,3 +152,44 @@ class CrossAccountRequestViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixi
             element.update(requestor_info)
 
         return result
+
+    def throw_validation_error(self, source, message):
+        """Construct a validation error and raise the error."""
+        error = {source: [message]}
+        raise ValidationError(error)
+
+    def validate_and_get_input_for_creation(self, request_data):
+        """Validate the create api input."""
+        target_account = request_data.get("target_account")
+        start_date = request_data.get("start_date")
+        end_date = request_data.get("end_date")
+        roles = request_data.get("roles")
+        if None in [target_account, start_date, end_date, roles]:
+            self.throw_validation_error("cross-account-create", f"{PARAMS_FOR_CREATION} must be all specified.")
+
+        try:
+            start_date = datetime.strptime(start_date, "%m/%d/%Y")
+            end_date = datetime.strptime(end_date, "%m/%d/%Y")
+        except ValueError:
+            raise self.throw_validation_error(
+                "cross-account-create", f"start_date or end_date does not match format '%m/%d/%Y'."
+            )
+
+        if end_date - start_date > timedelta(365):
+            raise self.throw_validation_error(
+                "cross-account-create", f"Access duration could not be longer than one year."
+            )
+
+        with tenant_context(Tenant.objects.get(schema_name="public")):
+            for role in roles:
+                try:
+                    Role.objects.get(display_name=role)
+                except Role.DoesNotExist:
+                    raise self.throw_validation_error(
+                        "cross-account-create", f"Role {role} could not be found in public."
+                    )
+
+        request_data["start_date"] = start_date
+        request_data["end_date"] = end_date
+        request_data["user_id"] = self.request.user.user_id
+        request_data["roles"] = [{"display_name": role} for role in roles]
