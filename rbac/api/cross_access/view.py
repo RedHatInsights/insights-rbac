@@ -23,8 +23,8 @@ from django_filters import rest_framework as filters
 from management.models import Role
 from management.principal.proxy import PrincipalProxy
 from management.utils import validate_and_get_key, validate_limit_and_offset
-from rest_framework import mixins, serializers, status, viewsets
-from rest_framework.response import Response
+from rest_framework import mixins, viewsets
+from rest_framework.serializers import ValidationError
 from tenant_schemas.utils import tenant_context
 
 from api.cross_access.access_control import CrossAccountRequestAccessPermission
@@ -51,7 +51,9 @@ class CrossAccountRequestFilter(filters.FilterSet):
     def approved_filter(self, queryset, field, value):
         """Filter to lookup requests by status of approved."""
         if value:
-            return queryset.filter(status="approved").filter(end_date__gt=timezone.now())
+            return queryset.filter(status="approved").filter(
+                start_date__lt=timezone.now(), end_date__gt=timezone.now()
+            )
         return queryset
 
     account = filters.CharFilter(field_name="target_account", method="account_filter")
@@ -89,18 +91,14 @@ class CrossAccountRequestViewSet(
 
     def create(self, request, *args, **kwargs):
         """Create cross account requests for associate."""
-        error = self.validate_and_get_input_for_creation(request.data)
-        if error:
-            return Response(status=status.HTTP_400_BAD_REQUEST, data=error)
+        self.validate_and_get_input_for_creation(request.data)
 
         with tenant_context(Tenant.objects.get(schema_name="public")):
             return super().create(request=request, args=args, kwargs=kwargs)
 
     def list(self, request, *args, **kwargs):
         """List cross account requests for account/user_id."""
-        errors = validate_limit_and_offset(self.request.query_params)
-        if errors:
-            return Response(status=status.HTTP_400_BAD_REQUEST, data=errors)
+        validate_limit_and_offset(self.request.query_params)
 
         result = super().list(request=request, args=args, kwargs=kwargs)
         # The approver's view requires requester's info such as first name, last name, email address.
@@ -155,11 +153,6 @@ class CrossAccountRequestViewSet(
 
         return result
 
-    def create_error_object(self, message):
-        """Create and return error object based on message."""
-        error = {"detail": message, "source": "CrossAccountRequest", "status": str(status.HTTP_400_BAD_REQUEST)}
-        return {"errors": [error]}
-
     def validate_and_get_input_for_creation(self, request_data):
         """Validate the create api input."""
         target_account = request_data.get("target_account")
@@ -167,20 +160,23 @@ class CrossAccountRequestViewSet(
         end_date = request_data.get("end_date")
         roles = request_data.get("roles")
         if None in [target_account, start_date, end_date, roles]:
-            return {"error": self.create_error_object(f"{PARAMS_FOR_CREATION} must be all specified.")}
+            raise ValidationError(f"{PARAMS_FOR_CREATION} must be all specified.")
 
-        start_date = datetime.strptime(start_date, "%m/%d/%Y")
-        end_date = datetime.strptime(end_date, "%m/%d/%Y")
+        try:
+            start_date = datetime.strptime(start_date, "%m/%d/%Y")
+            end_date = datetime.strptime(end_date, "%m/%d/%Y")
+        except ValueError:
+            raise ValidationError(f"start_date or end_date does not match format '%m/%d/%Y'.")
+
         if end_date - start_date > timedelta(365):
-            return {"error": self.create_error_object(f"Access duration could not be longer than one year.")}
+            raise ValidationError(f"Access duration could not be longer than one year.")
 
         with tenant_context(Tenant.objects.get(schema_name="public")):
             for role in roles:
                 try:
                     Role.objects.get(display_name=role)
                 except Role.DoesNotExist:
-                    error = {"detail": f"Role {role} could not be found in public."}
-                    raise serializers.ValidationError(error)
+                    raise ValidationError(f"Role {role} could not be found in public.")
 
         request_data["start_date"] = start_date
         request_data["end_date"] = end_date

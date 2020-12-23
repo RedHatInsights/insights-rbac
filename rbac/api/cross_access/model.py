@@ -19,10 +19,10 @@
 import datetime
 from uuid import uuid4
 
-from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils import timezone
 from management.rbac_fields import AutoDateTimeField
+from rest_framework.serializers import ValidationError
 
 
 STATUS_LIST = ["pending", "cancelled", "approved", "denied", "expired"]

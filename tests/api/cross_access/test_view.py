@@ -301,6 +301,16 @@ class CrossAccountRequestViewTests(IdentityRequest):
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
+    def test_create_requests_fail_for_end_date_being_past_value(self):
+        """Test the creation of cross account request fail for end_date being past value."""
+        self.data4create["end_date"] = "05/01/2020"
+        client = APIClient()
+        response = client.post(
+            f"{URL_LIST}?", self.data4create, format="json", **self.associate_non_admin_request.META
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
     def test_create_requests_fail_for_not_exist_role(self):
         """Test the creation of cross account request fail for not supported period."""
         self.data4create["roles"] = ["role_1", "role_3"]

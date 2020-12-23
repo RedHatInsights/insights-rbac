@@ -16,11 +16,11 @@
 #
 """Test the cross account request model."""
 from api.models import CrossAccountRequest
-from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
 from django.test import TestCase
 from django.utils import timezone
 from management.models import Role
+from rest_framework.serializers import ValidationError
 from tenant_schemas.utils import tenant_context
 
 from datetime import timedelta
@@ -94,27 +94,6 @@ class CrossAccountRequestModelTests(TestCase):
         with transaction.atomic():
             self.assertRaises(
                 IntegrityError, CrossAccountRequest.objects.create, target_account="123456", user_id="567890"
-            )
-
-        # Invalid end_date, omitted start date
-        with transaction.atomic():
-            self.assertRaises(
-                ValidationError,
-                CrossAccountRequest.objects.create,
-                target_account="33823827",
-                user_id="567890",
-                end_date="RSTLNE118",
-            )
-
-        # Invalid start and end date
-        with transaction.atomic():
-            self.assertRaises(
-                ValidationError,
-                CrossAccountRequest.objects.create,
-                target_account="8888888",
-                user_id="567890",
-                start_date="INVALID",
-                end_date="INVALID",
             )
 
         # End date earlier than now
