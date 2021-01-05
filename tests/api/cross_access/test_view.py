@@ -34,6 +34,9 @@ URL_LIST = reverse("cross-list")
 class CrossAccountRequestViewTests(IdentityRequest):
     """Test the cross account request view."""
 
+    def format_date(self, date):
+        return date.strftime("%m/%d/%Y")
+
     def setUp(self):
         """Set up the cross account request for tests."""
         super().setUp()
@@ -79,8 +82,8 @@ class CrossAccountRequestViewTests(IdentityRequest):
             )
         self.data4create = {
             "target_account": "012345",
-            "start_date": "02/20/2021",
-            "end_date": "05/20/2021",
+            "start_date": self.format_date(self.ref_time),
+            "end_date": self.format_date(self.ref_time + timedelta(90)),
             "roles": ["role_1", "role_2"],
         }
 
@@ -304,7 +307,7 @@ class CrossAccountRequestViewTests(IdentityRequest):
 
     def test_create_requests_fail_for_over_a_year_period(self):
         """Test the creation of cross account request fail for not supported period."""
-        self.data4create["end_date"] = "05/01/2022"
+        self.data4create["end_date"] = self.format_date(self.ref_time + timedelta(366))
         client = APIClient()
         response = client.post(
             f"{URL_LIST}?", self.data4create, format="json", **self.associate_non_admin_request.META
