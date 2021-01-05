@@ -57,7 +57,16 @@ class CrossAccountRequestViewTests(IdentityRequest):
             |     123456     | 2222222 |    now     | now+10day | pending  |
         """
         self.another_account = "123456"
+
+        self.data4create = {
+            "target_account": "012345",
+            "start_date": self.format_date(self.ref_time),
+            "end_date": self.format_date(self.ref_time + timedelta(90)),
+            "roles": ["role_1", "role_2"],
+        }
+
         with tenant_context(Tenant.objects.get(schema_name="public")):
+            Tenant.objects.create(schema_name=f"acct{self.data4create['target_account']}")
             self.role_1 = Role.objects.create(name="role_1")
             self.role_2 = Role.objects.create(name="role_2")
             self.request_1 = CrossAccountRequest.objects.create(
@@ -80,12 +89,6 @@ class CrossAccountRequestViewTests(IdentityRequest):
             self.request_4 = CrossAccountRequest.objects.create(
                 target_account=self.another_account, user_id="2222222", end_date=self.ref_time + timedelta(10)
             )
-        self.data4create = {
-            "target_account": "012345",
-            "start_date": self.format_date(self.ref_time),
-            "end_date": self.format_date(self.ref_time + timedelta(90)),
-            "roles": ["role_1", "role_2"],
-        }
 
     def tearDown(self):
         """Tear down cross account request model tests."""
@@ -275,8 +278,6 @@ class CrossAccountRequestViewTests(IdentityRequest):
 
     def test_create_requests_success(self):
         """Test the creation of cross account request success."""
-        with tenant_context(Tenant.objects.get(schema_name="public")):
-            Tenant.objects.create(schema_name=f"acct{self.data4create['target_account']}")
         client = APIClient()
         response = client.post(
             f"{URL_LIST}?", self.data4create, format="json", **self.associate_non_admin_request.META
@@ -291,12 +292,16 @@ class CrossAccountRequestViewTests(IdentityRequest):
 
     def test_create_requests_fail_for_no_account(self):
         """Test the creation of cross account request fails when the account doesn't exist."""
+        self.data4create["target_account"] = self.another_account
         client = APIClient()
         response = client.post(
             f"{URL_LIST}?", self.data4create, format="json", **self.associate_non_admin_request.META
         )
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(
+            response.data.get("errors")[0].get("detail"), f"Account '{self.another_account}' does not exist."
+        )
 
     def test_create_requests_fail_for_none_associate(self):
         """Test the creation of cross account request fail for none red hat associate."""
@@ -314,16 +319,22 @@ class CrossAccountRequestViewTests(IdentityRequest):
         )
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(
+            response.data.get("errors")[0].get("detail"), "Access duration may not be longer than one year."
+        )
 
     def test_create_requests_fail_for_end_date_being_past_value(self):
         """Test the creation of cross account request fail for end_date being past value."""
-        self.data4create["end_date"] = "05/01/2020"
+        self.data4create["end_date"] = self.format_date(self.ref_time + timedelta(-30))
         client = APIClient()
         response = client.post(
             f"{URL_LIST}?", self.data4create, format="json", **self.associate_non_admin_request.META
         )
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(
+            response.data.get("errors")[0].get("detail"), "Please verify the end date, it should not be a past value."
+        )
 
     def test_create_requests_fail_for_not_exist_role(self):
         """Test the creation of cross account request fail for not supported period."""
@@ -334,3 +345,4 @@ class CrossAccountRequestViewTests(IdentityRequest):
         )
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data.get("errors")[0].get("detail"), "Role 'role_3' does not exist.")
