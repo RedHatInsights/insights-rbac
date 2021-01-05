@@ -272,6 +272,8 @@ class CrossAccountRequestViewTests(IdentityRequest):
 
     def test_create_requests_success(self):
         """Test the creation of cross account request success."""
+        with tenant_context(Tenant.objects.get(schema_name="public")):
+            Tenant.objects.create(schema_name=f"acct{self.data4create['target_account']}")
         client = APIClient()
         response = client.post(
             f"{URL_LIST}?", self.data4create, format="json", **self.associate_non_admin_request.META
@@ -283,6 +285,15 @@ class CrossAccountRequestViewTests(IdentityRequest):
         self.assertEqual(response.data["start_date"], self.data4create["start_date"])
         self.assertEqual(response.data["end_date"], self.data4create["end_date"])
         self.assertEqual(len(response.data["roles"]), 2)
+
+    def test_create_requests_fail_for_no_account(self):
+        """Test the creation of cross account request fails when the account doesn't exist."""
+        client = APIClient()
+        response = client.post(
+            f"{URL_LIST}?", self.data4create, format="json", **self.associate_non_admin_request.META
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
     def test_create_requests_fail_for_none_associate(self):
         """Test the creation of cross account request fail for none red hat associate."""
