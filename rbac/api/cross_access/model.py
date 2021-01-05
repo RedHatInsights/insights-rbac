@@ -56,7 +56,7 @@ class CrossAccountRequest(models.Model):
         if (
             isinstance(self.end_date, datetime.datetime)
             and isinstance(self.start_date, datetime.datetime)
-            and self.start_date >= self.end_date
+            and self.start_date.date() > self.end_date.date()
         ):
             raise ValidationError("Start date must be earlier than end date.")
 

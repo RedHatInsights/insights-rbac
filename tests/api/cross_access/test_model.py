@@ -105,6 +105,14 @@ class CrossAccountRequestModelTests(TestCase):
             end_date=timezone.now() - timedelta(1),
         )
 
+    def test_request_with_same_start_and_end_date(self):
+        """Test the start date and end date can be the same."""
+        self.assertEqual(CrossAccountRequest.objects.count(), 1)
+        CrossAccountRequest.objects.create(
+            target_account="4321", user_id="9876", start_date=self.ref_time, end_date=self.ref_time
+        )
+        self.assertEqual(CrossAccountRequest.objects.count(), 2)
+
     def test_the_request_could_be_associated_with_role(self):
         ROLE_NAME = "Test Role"
         role = Role.objects.create(name=ROLE_NAME)
