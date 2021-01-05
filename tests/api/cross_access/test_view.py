@@ -346,3 +346,14 @@ class CrossAccountRequestViewTests(IdentityRequest):
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(response.data.get("errors")[0].get("detail"), "Role 'role_3' does not exist.")
+
+    def test_create_requests_fail_for_over_60_day_start_date(self):
+        """Test the creation of cross account request fails when the start date is > 60 days out."""
+        self.data4create["start_date"] = self.format_date(self.ref_time + timedelta(61))
+        client = APIClient()
+        response = client.post(
+            f"{URL_LIST}?", self.data4create, format="json", **self.associate_non_admin_request.META
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data.get("errors")[0].get("detail"), "Start date must be within 60 days of today.")

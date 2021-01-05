@@ -176,6 +176,9 @@ class CrossAccountRequestViewSet(
                 "cross-account-create", "start_date or end_date does not match format: '%m/%d/%Y'."
             )
 
+        if start_date > (datetime.now() + timedelta(60)):
+            raise self.throw_validation_error("cross-account-create", "Start date must be within 60 days of today.")
+
         if end_date - start_date > timedelta(365):
             raise self.throw_validation_error(
                 "cross-account-create", "Access duration may not be longer than one year."
