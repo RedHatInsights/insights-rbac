@@ -80,6 +80,7 @@ if should_migrate; then
     echo "WARNING: seems that you're using Django, but we could not find a 'manage.py' file."
     echo "Skipped 'python manage.py migrate'."
   fi
+  exit 0
 fi
 
 if is_gunicorn_installed; then
