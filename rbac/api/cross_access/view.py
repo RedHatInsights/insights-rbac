@@ -30,6 +30,7 @@ from tenant_schemas.utils import tenant_context
 from api.cross_access.access_control import CrossAccountRequestAccessPermission
 from api.cross_access.serializer import CrossAccountRequestDetailSerializer, CrossAccountRequestSerializer
 from api.models import CrossAccountRequest, Tenant
+from api.serializers import create_schema_name
 
 QUERY_BY_KEY = "query_by"
 ACCOUNT = "target_account"
@@ -172,12 +173,15 @@ class CrossAccountRequestViewSet(
             end_date = datetime.strptime(end_date, "%m/%d/%Y")
         except ValueError:
             raise self.throw_validation_error(
-                "cross-account-create", f"start_date or end_date does not match format '%m/%d/%Y'."
+                "cross-account-create", "start_date or end_date does not match format: '%m/%d/%Y'."
             )
+
+        if start_date > (datetime.now() + timedelta(60)):
+            raise self.throw_validation_error("cross-account-create", "Start date must be within 60 days of today.")
 
         if end_date - start_date > timedelta(365):
             raise self.throw_validation_error(
-                "cross-account-create", f"Access duration could not be longer than one year."
+                "cross-account-create", "Access duration may not be longer than one year."
             )
 
         with tenant_context(Tenant.objects.get(schema_name="public")):
@@ -185,9 +189,13 @@ class CrossAccountRequestViewSet(
                 try:
                     Role.objects.get(display_name=role)
                 except Role.DoesNotExist:
-                    raise self.throw_validation_error(
-                        "cross-account-create", f"Role {role} could not be found in public."
-                    )
+                    raise self.throw_validation_error("cross-account-create", f"Role '{role}' does not exist.")
+
+        try:
+            tenant_schema_name = create_schema_name(target_account)
+            Tenant.objects.get(schema_name=tenant_schema_name)
+        except Tenant.DoesNotExist:
+            raise self.throw_validation_error("cross-account-create", f"Account '{target_account}' does not exist.")
 
         request_data["start_date"] = start_date
         request_data["end_date"] = end_date
