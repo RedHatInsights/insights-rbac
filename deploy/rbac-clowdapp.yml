@@ -27,7 +27,7 @@ objects:
         livenessProbe:
           httpGet:
             path: /api/rbac/v1/status/
-            port: 8080
+            port: 8000
             scheme: HTTP
           initialDelaySeconds: 60
           periodSeconds: 10
@@ -37,7 +37,7 @@ objects:
         readinessProbe:
           httpGet:
             path: /api/rbac/v1/status/
-            port: 8080
+            port: 8000
             scheme: HTTP
           initialDelaySeconds: 60
           periodSeconds: 10
@@ -1566,6 +1566,21 @@ objects:
     principal-proxy-client-id: aW5zaWdodHMtcmJhYw==
     principal-proxy-port: NDQz
   type: Opaque
+- apiVersion: v1
+  kind: Service
+  metadata:
+    name: rbac
+    labels:
+      app: rbac
+      pod: rbac-service
+  spec:
+    ports:
+    - port: 8080
+      protocol: TCP
+      targetPort: 8000
+      name: weblegacy
+    selector:
+      pod: rbac-service
 
 parameters:
 - description: Image name
