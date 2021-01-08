@@ -15,26 +15,47 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Django database settings."""
+from app_common_python import LoadedConfig
+
 from .env import ENVIRONMENT
 
 
 def config():
     """Database config."""
-    db_obj = {
-        "ENGINE": "tenant_schemas.postgresql_backend",
-        "NAME": ENVIRONMENT.get_value("DATABASE_NAME", default=None),
-        "USER": ENVIRONMENT.get_value("DATABASE_USER", default=None),
-        "PASSWORD": ENVIRONMENT.get_value("DATABASE_PASSWORD", default=None),
-        "HOST": ENVIRONMENT.get_value("DATABASE_HOST", default=None),
-        "PORT": ENVIRONMENT.get_value("DATABASE_PORT", default=None),
-    }
-
-    db_options = {
-        "OPTIONS": {
-            "sslmode": ENVIRONMENT.get_value("PGSSLMODE", default="prefer"),
-            "sslrootcert": ENVIRONMENT.get_value("PGSSLROOTCERT", default="/etc/rds-certs/rds-cacert"),
+    if ENVIRONMENT.bool("CLOWDER_ENABLED", default=False):
+        db_obj = {
+            "ENGINE": "tenant_schemas.postgresql_backend",
+            "NAME": LoadedConfig.database.name,
+            "USER": LoadedConfig.database.username,
+            "PASSWORD": LoadedConfig.database.password,
+            "HOST": LoadedConfig.database.hostname,
+            "PORT": LoadedConfig.database.port,
         }
-    }
+        if LoadedConfig.database.rdsCa:
+            db_options = {
+                "OPTIONS": {
+                    "sslmode": ENVIRONMENT.get_value("PGSSLMODE", default="prefer"),
+                    "sslrootcert": LoadedConfig.rds_ca(),
+                }
+            }
+        else:
+            db_options = {}
+    else:
+        db_obj = {
+            "ENGINE": "tenant_schemas.postgresql_backend",
+            "NAME": ENVIRONMENT.get_value("DATABASE_NAME", default=None),
+            "USER": ENVIRONMENT.get_value("DATABASE_USER", default=None),
+            "PASSWORD": ENVIRONMENT.get_value("DATABASE_PASSWORD", default=None),
+            "HOST": ENVIRONMENT.get_value("DATABASE_HOST", default=None),
+            "PORT": ENVIRONMENT.get_value("DATABASE_PORT", default=None),
+        }
+        db_options = {
+            "OPTIONS": {
+                "sslmode": ENVIRONMENT.get_value("PGSSLMODE", default="prefer"),
+                "sslrootcert": ENVIRONMENT.get_value("PGSSLROOTCERT", default="/etc/rds-certs/rds-cacert"),
+            }
+        }
+
     db_obj.update(db_options)
 
     return db_obj
