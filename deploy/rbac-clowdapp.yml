@@ -1596,7 +1596,7 @@ objects:
 parameters:
 - description: Image name
   name: IMAGE
-  required: true
+  value: quay.io/cloudservices/rbac
 - description: Determines Clowder deployment
   name: CLOWDER_ENABLED
   value: "true"
@@ -1606,17 +1606,14 @@ parameters:
 - description: Maximum amount of memory the Django container can use.
   displayName: Memory Limit
   name: MEMORY_LIMIT
-  required: true
   value: 1Gi
 - description: Initial amount of cpu the Django container will request.
   displayName: CPU Request
   name: CPU_REQUEST
-  required: true
   value: 250m
 - description: Maximum amount of cpu the Django container can use.
   displayName: CPU Limit
   name: CPU_LIMIT
-  required: true
   value: 700m
 - displayName: RBAC PSKs
   name: RBAC_PSKS
@@ -1644,10 +1641,8 @@ parameters:
   value: console
 - displayName: Django log directory
   name: DJANGO_LOG_DIRECTORY
-  required: false
 - displayName: Django logging file
   name: DJANGO_LOGGING_FILE
-  required: false
 - description: Name of the rbac-config config map
   name: CONFIG_MAP_NAME
   value: rbac-config
@@ -1701,52 +1696,38 @@ parameters:
 - description: The name assigned to all frontend objects defined in this template.
   displayName: Name
   name: NAME
-  required: true
   value: rbac
 - description: Initial amount of CPU the Flower container will request.
   displayName: Celery scheduler CPU Resource Request
   name: CELERY_SCHEDULER_CPU_REQUEST
-  required: true
   value: 100m
 - description: Maximum amount of CPU the scheduler container can use.
   displayName: CPU Limit
   name: CELERY_SCHEDULER_CPU_LIMIT
-  required: true
   value: 300m
 - description: Initial amount of memory the scheduler container will request.
   displayName: Celery scheduler Memory Resource Request
   name: CELERY_SCHEDULER_MEMORY_REQUEST
-  required: true
   value: 256Mi
 - description: Maximum amount of memory the scheduler container can use.
   displayName: Memory Limit
   name: CELERY_SCHEDULER_MEMORY_LIMIT
-  required: true
   value: 512Mi
-- description: The name assigned to all frontend objects defined in this template.
-  displayName: Name
-  name: NAME
-  required: true
-  value: rbac
 - description: Initial amount of CPU the worker container will request.
   displayName: Celery worker CPU Resource Request
   name: CELERY_WORKER_CPU_REQUEST
-  required: true
   value: 100m
 - description: Maximum amount of CPU the worker container can use.
   displayName: CPU Limit
   name: CELERY_WORKER_CPU_LIMIT
-  required: true
   value: 300m
 - description: Initial amount of memory the worker container will request.
   displayName: Celery worker Memory Resource Request
   name: CELERY_WORKER_MEMORY_REQUEST
-  required: true
   value: 256Mi
 - description: Maximum amount of memory the worker container can use.
   displayName: Memory Limit
   name: CELERY_WORKER_MEMORY_LIMIT
-  required: true
   value: 512Mi
 - displayName: Django Debug
   name: DJANGO_DEBUG
