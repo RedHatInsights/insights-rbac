@@ -23,18 +23,6 @@ function is_django_installed() {
   python -c "import django" &>/dev/null
 }
 
-function should_migrate() {
-  if [ is_django_installed ]; then
-    if [ ! -z "$DISABLE_MIGRATE" ]; then
-      if [ $DISABLE_MIGRATE == "True" ]; then
-        return 0
-      else
-        return 1
-      fi
-    fi
-  fi
-}
-
 # Guess the number of workers according to the number of cores
 function get_default_web_concurrency() {
   limit_vars=$(cgroup-limits)
@@ -80,17 +68,19 @@ APP_HOME=${APP_HOME:-.}
 # Look for 'manage.py' in the directory specified by APP_HOME, or the current direcotry
 manage_file=$APP_HOME/manage.py
 
-if should_migrate; then
-  if [[ -f "$manage_file" ]]; then
-    echo "---> Migrating database ..."
-    python "$manage_file" migrate_schemas --noinput --executor=parallel
-  else
-    echo "WARNING: seems that you're using Django, but we could not find a 'manage.py' file."
-    echo "Skipped 'python manage.py migrate'."
-  fi
-  if [ ! -z $INIT_CONTAINER ]; then
-    if [ $INIT_CONTAINER == "True" ]; then
-      exit 0
+if [ ! -z "$DISABLE_MIGRATE" ]; then
+  if [ $DISABLE_MIGRATE == "False" ]; then
+    if [[ -f "$manage_file" ]]; then
+      echo "---> Migrating database ..."
+      python "$manage_file" migrate_schemas --noinput --executor=parallel
+    else
+      echo "WARNING: seems that you're using Django, but we could not find a 'manage.py' file."
+      echo "Skipped 'python manage.py migrate'."
+    fi
+    if [ ! -z $INIT_CONTAINER ]; then
+      if [ $INIT_CONTAINER == "True" ]; then
+        exit 0
+      fi
     fi
   fi
 fi
