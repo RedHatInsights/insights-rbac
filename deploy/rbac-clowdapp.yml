@@ -24,7 +24,7 @@ objects:
             - name: INIT_CONTAINER
               value: "True"
             - name: DISABLE_MIGRATE
-              value : ""
+              value : "False"
             inheritEnv: true
         livenessProbe:
           httpGet:
