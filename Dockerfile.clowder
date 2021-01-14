@@ -1,4 +1,27 @@
 FROM registry.redhat.io/ubi8/python-36
+
+ENV NODEJS_VERSION=10 \
+    NODEJS_SCL=rh-nodejs10 \
+    NPM_RUN=start \
+    NODEJS_SCL=rh-nodejs10 \
+    NPM_CONFIG_PREFIX=$HOME/.npm-global \
+    PATH=$HOME/.local/bin/:$HOME/node_modules/.bin/:$HOME/.npm-global/bin/:$PATH \
+    LC_ALL=en_US.UTF-8 \
+    LANG=en_US.UTF-8 \
+    PIP_NO_CACHE_DIR=off \
+    UPGRADE_PIP_TO_LATEST=true
+
+LABEL summary="$SUMMARY" \
+      description="$DESCRIPTION" \
+      io.k8s.description="$DESCRIPTION" \
+      io.k8s.display-name="insights-rbac" \
+      io.openshift.expose-services="8080:http" \
+      io.openshift.tags="python,python36,rh-python36" \
+      com.redhat.component="python36-docker" \
+      name="insights-rbac" \
+      version="1" \
+      maintainer="Red Hat Insights"
+
 USER 0
 COPY Pipfile Pipfile
 COPY Pipfile.lock Pipfile.lock
@@ -8,5 +31,12 @@ RUN yum install -y git gcc python3-devel && pip3 install pipenv pip pipenv-to-re
 COPY rbac rbac
 COPY scripts scripts
 COPY openshift/s2i/bin/run run
+RUN source scl_source enable rh-python36 ${NODEJS_SCL} && \
+    virtualenv ${APP_ROOT} && \
+    chown -R 1001:0 ${APP_ROOT} && \
+    fix-permissions ${APP_ROOT} -P && \
+    rpm-file-permissions && \
+    $STI_SCRIPTS_PATH/assemble || true
 RUN touch /opt/app-root/src/rbac/app.log; chmod 777 /opt/app-root/src/rbac/app.log
+USER 1001
 ENTRYPOINT ["./run"]

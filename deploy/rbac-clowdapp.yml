@@ -21,8 +21,10 @@ objects:
         image: ${IMAGE}:${IMAGE_TAG}
         initContainers:
           - env:
-              - name: DISABLE_MIGRATE
-                value : ""
+            - name: INIT_CONTAINER
+              value: "True"
+            - name: DISABLE_MIGRATE
+              value : ""
             inheritEnv: true
         livenessProbe:
           httpGet:
@@ -183,6 +185,9 @@ objects:
             value: ${APP_NAMESPACE}
           - name: CW_NULL_WORKAROUND
             value: ${CW_NULL_WORKAROUND)
+          - name: INIT_CONTAINER
+            value: "False"
+
     - name: worker
       minReplicas: 1
       podSpec:

@@ -24,7 +24,15 @@ function is_django_installed() {
 }
 
 function should_migrate() {
-  is_django_installed && [[ -z "$DISABLE_MIGRATE" ]]
+  if [ is_django_installed ]; then
+    if [ ! -z "$DISABLE_MIGRATE" ]; then
+      if [ $DISABLE_MIGRATE == "True" ]; then
+        return 0
+      else
+        return 1
+      fi
+    fi
+  fi
 }
 
 # Guess the number of workers according to the number of cores
@@ -80,7 +88,11 @@ if should_migrate; then
     echo "WARNING: seems that you're using Django, but we could not find a 'manage.py' file."
     echo "Skipped 'python manage.py migrate'."
   fi
-  exit 0
+  if [ ! -z $INIT_CONTAINER ]; then
+    if [ $INIT_CONTAINER == "True" ]; then
+      exit 0
+    fi
+  fi
 fi
 
 if is_gunicorn_installed; then
