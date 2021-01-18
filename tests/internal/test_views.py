@@ -158,7 +158,9 @@ class InternalViewsetTests(IdentityRequest):
         )
         self.assertEqual(response_data["unmodified_tenants_count"], 2)
         self.assertEqual(response_data["total_tenants_count"], 4)
-        self.assertEqual(Tenant.objects.count(), 4)
+
+        # the public schema is created in migrations but excluded from the internal view
+        self.assertEqual(Tenant.objects.count(), 5)
 
         response = self.client.get(f"/_private/api/tenant/unmodified/?limit=2", **self.request.META)
         response_data = json.loads(response.content)

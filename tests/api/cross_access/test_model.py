@@ -16,18 +16,18 @@
 #
 """Test the cross account request model."""
 from api.models import CrossAccountRequest
-from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
 from django.test import TestCase
 from django.utils import timezone
+from management.models import Role
+from rest_framework.serializers import ValidationError
 from tenant_schemas.utils import tenant_context
 
 from datetime import timedelta
 from unittest.mock import Mock
-from tests.identity_request import IdentityRequest
 
 
-class CrossAccountRequestModelTests(IdentityRequest):
+class CrossAccountRequestModelTests(TestCase):
     """Test the cross account request model."""
 
     def setUp(self):
@@ -96,27 +96,6 @@ class CrossAccountRequestModelTests(IdentityRequest):
                 IntegrityError, CrossAccountRequest.objects.create, target_account="123456", user_id="567890"
             )
 
-        # Invalid end_date, omitted start date
-        with transaction.atomic():
-            self.assertRaises(
-                ValidationError,
-                CrossAccountRequest.objects.create,
-                target_account="33823827",
-                user_id="567890",
-                end_date="RSTLNE118",
-            )
-
-        # Invalid start and end date
-        with transaction.atomic():
-            self.assertRaises(
-                ValidationError,
-                CrossAccountRequest.objects.create,
-                target_account="8888888",
-                user_id="567890",
-                start_date="INVALID",
-                end_date="INVALID",
-            )
-
         # End date earlier than now
         self.assertRaises(
             ValidationError,
@@ -125,3 +104,22 @@ class CrossAccountRequestModelTests(IdentityRequest):
             user_id="567890",
             end_date=timezone.now() - timedelta(1),
         )
+
+    def test_request_with_same_start_and_end_date(self):
+        """Test the start date and end date can be the same."""
+        self.assertEqual(CrossAccountRequest.objects.count(), 1)
+        CrossAccountRequest.objects.create(
+            target_account="4321", user_id="9876", start_date=self.ref_time, end_date=self.ref_time
+        )
+        self.assertEqual(CrossAccountRequest.objects.count(), 2)
+
+    def test_the_request_could_be_associated_with_role(self):
+        ROLE_NAME = "Test Role"
+        role = Role.objects.create(name=ROLE_NAME)
+        self.assertEqual(self.request.roles.count(), 0)
+        self.assertEqual(role.cross_account_requests.count(), 0)
+
+        # Add role
+        self.request.roles.add(role)
+        self.assertEqual(self.request.roles.count(), 1)
+        self.assertEqual(self.request.roles.filter(name="Test Role").first(), role)

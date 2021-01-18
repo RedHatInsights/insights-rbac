@@ -682,7 +682,7 @@ class GroupViewsetTests(IdentityRequest):
         response = client.get(url, **self.headers)
         principals = response.data.get("data")
 
-        mock_request.assert_called_with([], ANY, sort_order=None)
+        mock_request.assert_called_with([], ANY, options={"sort_order": None})
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(principals), 0)
 
@@ -698,7 +698,7 @@ class GroupViewsetTests(IdentityRequest):
         response = client.get(url, **self.headers)
         principals = response.data.get("data")
 
-        mock_request.assert_called_with([self.principal.username], ANY, sort_order=None)
+        mock_request.assert_called_with([self.principal.username], ANY, options={"sort_order": None})
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(principals), 1)
 
@@ -713,7 +713,7 @@ class GroupViewsetTests(IdentityRequest):
         response = client.get(url, **self.headers)
         principals = response.data.get("data")
         expected_principals = sorted([self.principal.username, self.principalB.username])
-        mock_request.assert_called_with(expected_principals, ANY, sort_order="asc")
+        mock_request.assert_called_with(expected_principals, ANY, options={"sort_order": "asc"})
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(principals), 1)
 

@@ -19,10 +19,10 @@
 import datetime
 from uuid import uuid4
 
-from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils import timezone
 from management.rbac_fields import AutoDateTimeField
+from rest_framework.serializers import ValidationError
 
 
 STATUS_LIST = ["pending", "cancelled", "approved", "denied", "expired"]
@@ -39,19 +39,24 @@ class CrossAccountRequest(models.Model):
     end_date = models.DateTimeField(null=False, blank=False, default=None)
     modified = AutoDateTimeField(default=timezone.now)
     status = models.CharField(max_length=10, default="pending")
+    roles = models.ManyToManyField("management.Role", through="RequestsRoles")
+
+    def validate_date(self, date):
+        """Validate that start and end dates are not in the past."""
+        if isinstance(date, datetime.datetime) and date.date() < timezone.now().date():
+            raise ValidationError("Please verify the start and end dates are not in the past.")
 
     def validate_input_value(self):
         """Validate status is valid, and date is valid."""
         if self.status not in STATUS_LIST:
             raise ValidationError(f'Unknown status "{self.status}" specified, {STATUS_LIST} are valid inputs.')
 
-        if isinstance(self.end_date, datetime.datetime) and self.end_date <= timezone.now():
-            raise ValidationError("Please verify the end date, it should not be a past value.")
+        [self.validate_date(date) for date in [self.start_date, self.end_date]]
 
         if (
             isinstance(self.end_date, datetime.datetime)
             and isinstance(self.start_date, datetime.datetime)
-            and self.start_date >= self.end_date
+            and self.start_date.date() > self.end_date.date()
         ):
             raise ValidationError("Start date must be earlier than end date.")
 
@@ -60,3 +65,12 @@ class CrossAccountRequest(models.Model):
         self.validate_input_value()
 
         super(CrossAccountRequest, self).save(*args, **kwargs)
+
+
+class RequestsRoles(models.Model):
+    """Model to associate the cross account access request and role."""
+
+    cross_account_request = models.ForeignKey(CrossAccountRequest, on_delete=models.CASCADE)
+    role = models.ForeignKey(
+        "management.Role", on_delete=models.CASCADE, to_field="uuid", related_name="cross_account_requests"
+    )

@@ -76,23 +76,28 @@ class PrincipalProxy:  # pylint: disable=too-few-public-methods
             params["status"] = options["status"]
         if "admin_only" in options:
             params["admin_only"] = options["admin_only"]
+        if "query_by" in options:
+            if options["query_by"] == "user_id":
+                params["queryBy"] = "userId"
+            else:
+                params["queryBy"] = options["query_by"]
 
         return params
 
-    def _process_data(self, data, account, account_filter):
+    def _process_data(self, data, account, account_filter, return_id=False):
         """Process data for uniform output."""
         processed_data = []
         for item in data:
             if account_filter:
                 if account == item.get("account_number"):
-                    processed_data.append(self._call_item(item))
+                    processed_data.append(self._call_item(item, return_id))
             else:
-                processed_data.append(self._call_item(item))
+                processed_data.append(self._call_item(item, return_id))
 
         return processed_data
 
     @staticmethod
-    def _call_item(item):
+    def _call_item(item, return_id=False):
         processed_item = {
             "username": item.get("username"),
             "email": item.get("email"),
@@ -101,6 +106,9 @@ class PrincipalProxy:  # pylint: disable=too-few-public-methods
             "is_active": item.get("is_active"),
             "is_org_admin": item.get("is_org_admin"),
         }
+
+        if return_id:
+            processed_item["user_id"] = item.get("id")
         return processed_item
 
     def _get_proxy_service(self):  # pylint: disable=no-self-use
@@ -119,7 +127,14 @@ class PrincipalProxy:  # pylint: disable=too-few-public-methods
         return proxy_conn_info
 
     def _request_principals(
-        self, url, account=None, account_filter=False, method=requests.get, params=None, data=None  # noqa: C901
+        self,
+        url,
+        account=None,
+        account_filter=False,
+        method=requests.get,
+        params=None,
+        data=None,
+        return_id=False,  # noqa: C901
     ):
         """Send request to proxy service."""
         if settings.BYPASS_BOP_VERIFICATION:
@@ -157,10 +172,10 @@ class PrincipalProxy:  # pylint: disable=too-few-public-methods
             try:
                 data = response.json()
                 if isinstance(data, dict):
-                    userList = self._process_data(data.get("users"), account, account_filter)
+                    userList = self._process_data(data.get("users"), account, account_filter, return_id)
                     resp["data"] = {"userCount": data.get("userCount"), "users": userList}
                 else:
-                    userList = self._process_data(data, account, account_filter)
+                    userList = self._process_data(data, account, account_filter, return_id)
                     resp["data"] = userList
             except ValueError:
                 resp["status_code"] = status.HTTP_500_INTERNAL_SERVER_ERROR
@@ -197,7 +212,7 @@ class PrincipalProxy:  # pylint: disable=too-few-public-methods
         # For v2 account users endpoints are already filtered by account
         return self._request_principals(url, params=params, account_filter=False, method=method, data=payload)
 
-    def request_filtered_principals(self, principals, account=None, limit=None, offset=None, sort_order=None):
+    def request_filtered_principals(self, principals, account=None, limit=None, offset=None, options={}):
         """Request specific principals for an account."""
         if account is None:
             account_filter = False
@@ -206,9 +221,17 @@ class PrincipalProxy:  # pylint: disable=too-few-public-methods
         if not principals:
             return {"status_code": status.HTTP_200_OK, "data": []}
         filtered_principals_path = "/v1/users"
-        params = self._create_params(limit, offset, {"sort_order": sort_order})
+        params = self._create_params(limit, offset, options)
         payload = {"users": principals, "include_permissions": False}
         url = "{}://{}:{}{}{}".format(self.protocol, self.host, self.port, self.path, filtered_principals_path)
+
+        return_id = False if options.get("return_id") is None else True
         return self._request_principals(
-            url, account=account, account_filter=account_filter, method=requests.post, params=params, data=payload
+            url,
+            account=account,
+            account_filter=account_filter,
+            method=requests.post,
+            params=params,
+            data=payload,
+            return_id=return_id,
         )

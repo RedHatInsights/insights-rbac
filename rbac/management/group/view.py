@@ -446,7 +446,7 @@ class GroupViewSet(
                 sort_order = "des" if sort_field == "-username" else "asc"
             else:
                 sort_order = None
-            resp = proxy.request_filtered_principals(username_list, account, sort_order=sort_order)
+            resp = proxy.request_filtered_principals(username_list, account, options={"sort_order": sort_order})
             if isinstance(resp, dict) and "errors" in resp:
                 return Response(status=resp.get("status_code"), data=resp.get("errors"))
             response = self.get_paginated_response(resp.get("data"))
