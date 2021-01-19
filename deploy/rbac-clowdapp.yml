@@ -26,6 +26,12 @@ objects:
             - name: DISABLE_MIGRATE
               value : "False"
             inheritEnv: true
+            args:
+              - python
+              - /opt/app-root/src/rbac/manage.py
+              - migrate_schemas
+              - --noinput
+              - --executor=parallel
         livenessProbe:
           httpGet:
             path: /api/rbac/v1/status/
