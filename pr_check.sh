@@ -67,6 +67,9 @@ export PGPASSWORD=$(jq -r .adminPassword < db-creds.json)
 
 oc port-forward svc/rbac-db 34567:5432 &
 
+export DATABASE_HOST=localhost
+export DATABASE_PORT=34567
+
 pid=$!
 
 tox -r
