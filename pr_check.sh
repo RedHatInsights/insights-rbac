@@ -28,7 +28,7 @@ if [ ! -d venv ]; then
 fi
 
 source venv/bin/activate
-pip install --upgrade pip setuptools wheel pipenv tox
+pip install --upgrade pip setuptools wheel pipenv tox psycopg2-binary
 pip install ./bonfire
 
 #
