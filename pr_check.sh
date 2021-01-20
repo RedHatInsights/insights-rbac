@@ -35,7 +35,11 @@ pip install ./bonfire
 # Deploy ClowdApp to get DB instance
 #
 
+NAMESPACE=$(bonfire namespace reserve)
+oc project $NAMESPACE
+
 cat << EOF > config.yaml
+envName: env-$NAMESPACE
 apps:
 - name: rbac
   host: local
@@ -45,8 +49,6 @@ apps:
     IMAGE: $IMAGE
 EOF
 
-NAMESPACE=$(bonfire namespace reserve)
-oc project $NAMESPACE
 bonfire config get -l -a rbac | oc apply -f -
 sleep 5
 
@@ -63,8 +65,13 @@ export DATABASE_USER=$(jq -r .username < db-creds.json)
 export DATABASE_PASSWORD=$(jq -r .password < db-creds.json)
 export PGPASSWORD=$(jq -r .adminPassword < db-creds.json)
 
+oc port-forward svc/rbac-db 34567:5432 &
+
+pid=$!
+
 tox -r
 
+kill $pid
 bonfire namespace release $NAMESPACE
 
 # Need to make a dummy results file to make tests pass
