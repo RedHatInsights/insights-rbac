@@ -1,4 +1,4 @@
-FROM registry.redhat.io/ubi8/python-36
+FROM centos/python-36-centos7
 
 EXPOSE 8080
 
