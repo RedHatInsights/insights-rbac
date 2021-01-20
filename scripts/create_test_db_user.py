@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 
-import psycopg2
 from os import environ as e
 
-config = "dbname='%s' user='%s' host='%s' password='%s'"
+import psycopg2
 
-name, user, host, pw = e["DATABASE_NAME"], e["DATABASE_USER"], "%s:%s" % (e["DATABASE_HOST"], e["DATABASE_PORT"]), e["DATABASE_PASSWORD"]
+config = "dbname='%s' user='%s' host='%s' port='%s' password='%s'"
 
-conn = psycopg2.connect(config % (name, user, host, pw))
+name, user, host, port, pw = e["DATABASE_NAME"], e["DATABASE_USER"], e["DATABASE_HOST"], e["DATABASE_PORT"], e["PGPASSWORD"]
+
+conn = psycopg2.connect(config % (name, "postgres", host, port, pw))
+conn.set_isolation_level(0)
 cur = conn.cursor()
 cur.execute("DROP DATABASE IF EXISTS test_%s" % name)
 cur.execute("DROP USER %s" % user)
