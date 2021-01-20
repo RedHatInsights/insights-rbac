@@ -3,7 +3,7 @@
 # Build PR image
 #
 
-IMAGE="quay.io/klape/insights-rbac"
+IMAGE="quay.io/cloudservices/rbac"
 IMAGE_TAG=$(git rev-parse --short=7 HEAD)
 DOCKER_CONF="$PWD/.docker"
 mkdir -p "$DOCKER_CONF"
