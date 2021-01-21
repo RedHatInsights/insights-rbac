@@ -51,7 +51,9 @@ COPY openshift/root /
 RUN cd ${APP_ROOT}/src && ls -la && \
     npm install apidoc && \
     node_modules/.bin/apidoc -i rbac -o apidoc && \
-    cp docs/source/specs/openapi.json apidoc
+    cp docs/source/specs/openapi.json apidoc && \
+    mkdir -p rbac/staticfiles && \
+    gzip docs/source/specs/openapi.json -c > rbac/staticfiles/openapi.json.gz
 
 # - Create a Python virtual environment for use by any application to avoid
 #   potential conflicts with Python packages preinstalled in the main Python
