@@ -1,4 +1,4 @@
-FROM registry.redhat.io/rhel8/python-36
+FROM registry.redhat.io/ubi8/python-36
 
 EXPOSE 8080
 
@@ -29,11 +29,18 @@ LABEL summary="$SUMMARY" \
 
 USER root
 
-COPY Pipfile Pipfile
-COPY Pipfile.lock Pipfile.lock
-COPY run_server.sh run_server.sh
-RUN yum install -y git gcc python3-devel nodejs-nodemon && pip3 install pipenv pip pipenv-to-requirements && pip3 install -U pip && pipenv run pipenv_to_requirements -f \
-    && pip3 install -r requirements.txt && yum clean all
+# Copy application files to the image.
+COPY Pipfile Pipfile.lock run_server.sh apidoc.json ${APP_ROOT}/src/
+COPY docs/ ${APP_ROOT}/src/docs/
+COPY rbac/ ${APP_ROOT}/src/rbac/
+COPY openshift/ ${APP_ROOT}/src/openshift/
+
+RUN yum install -y git gcc python3-devel nodejs-nodemon && \
+    pip3 install pipenv pip pipenv-to-requirements && \
+    pip3 install -U pip && \
+    pipenv run pipenv_to_requirements -f && \
+    pip3 install -r requirements.txt && \
+    yum clean all
 
 # Copy the S2I scripts from the specific language image to $STI_SCRIPTS_PATH.
 COPY openshift/s2i/bin $STI_SCRIPTS_PATH
@@ -41,8 +48,10 @@ COPY openshift/s2i/bin $STI_SCRIPTS_PATH
 # Copy extra files to the image.
 COPY openshift/root /
 
-# Copy application files to the image.
-COPY . ${APP_ROOT}/src
+RUN cd ${APP_ROOT}/src && ls -la && \
+    npm install apidoc && \
+    node_modules/.bin/apidoc -i rbac -o apidoc && \
+    cp docs/source/specs/openapi.json apidoc
 
 # - Create a Python virtual environment for use by any application to avoid
 #   potential conflicts with Python packages preinstalled in the main Python
