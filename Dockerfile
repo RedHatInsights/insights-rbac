@@ -1,4 +1,4 @@
-FROM centos/python-36-centos7
+FROM registry.redhat.io/rhel8/python-36
 
 EXPOSE 8080
 
@@ -29,17 +29,11 @@ LABEL summary="$SUMMARY" \
 
 USER root
 
-# replace nodejs 8 with nodejs 10
-RUN INSTALL_PKGS="${NODEJS_SCL} \
-                  ${NODEJS_SCL}-npm \
-                  ${NODEJS_SCL}-nodejs-nodemon \
-    " && \
-    yum-config-manager --enable centos-sclo-rh-testing && \
-    yum -y --setopt=tsflags=nodocs install --enablerepo=centosplus $INSTALL_PKGS && \
-    rpm -V $INSTALL_PKGS && \
-    yum remove -y rh-nodejs8\* && \
-    ln -s /usr/lib/node_modules/nodemon/bin/nodemon.js /usr/bin/nodemon && \
-    yum -y clean all --enablerepo='*'
+COPY Pipfile Pipfile
+COPY Pipfile.lock Pipfile.lock
+COPY run_server.sh run_server.sh
+RUN yum install -y git gcc python3-devel nodejs-nodemon && pip3 install pipenv pip pipenv-to-requirements && pip3 install -U pip && pipenv run pipenv_to_requirements -f \
+    && pip3 install -r requirements.txt && yum clean all
 
 # Copy the S2I scripts from the specific language image to $STI_SCRIPTS_PATH.
 COPY openshift/s2i/bin $STI_SCRIPTS_PATH
@@ -66,6 +60,8 @@ RUN source scl_source enable rh-python36 ${NODEJS_SCL} && \
 RUN curl -L -o /usr/bin/haberdasher \
 https://github.com/RedHatInsights/haberdasher/releases/latest/download/haberdasher_linux_amd64 && \
 chmod 755 /usr/bin/haberdasher
+
+RUN touch /opt/app-root/src/rbac/app.log; chmod 777 /opt/app-root/src/rbac/app.log
 
 USER 1001
 
