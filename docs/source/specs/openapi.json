@@ -38,9 +38,253 @@
     {
       "name": "Status",
       "description": "Operations about status"
+    },
+    {
+      "name": "CrossAccountRequest",
+      "description": "Operations about cross account requests"
     }
   ],
   "paths": {
+    "/cross-account-requests/": {
+      "get": {
+        "tags": [
+          "CrossAccountRequest"
+        ],
+        "summary": "List the cross account requests for a user or account",
+        "description": "By default, responses are sorted in ascending order by created_at",
+        "operationId": "listCrossAccountRequests",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/QueryLimit"
+          },
+          {
+            "$ref": "#/components/parameters/QueryOffset"
+          },
+          {
+            "in": "query",
+            "name": "query_by",
+            "required": false,
+            "description": "Parameter for filtering resource by either a user's ID, or a client's account number. The default value is target_account.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "user_id",
+                "target_account"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "account",
+            "required": false,
+            "description": "Parameter for filtering resource by an account number. Value can be a comma-separated list of ids. To be used in tandem with ?query_by=user_id to further filter a user's requests by account number.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "approved_only",
+            "required": false,
+            "description": "Parameter for filtering resource which have been approved.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A paginated list of cross account request objects",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CrossAccountRequestPagination"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Insufficient permissions to list cross account requests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error403"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "CrossAccountRequest"
+        ],
+        "summary": "Create a cross account request",
+        "operationId": "createCrossAccountRequests",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CrossAccountRequestIn"
+              }
+            }
+          },
+          "description": "CrossAccountRequest to create",
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "An object describing the cross account request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CrossAccountRequestOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Insufficient permissions to create cross account request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error403"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/cross-account-requests/{uuid}/": {
+      "get": {
+        "tags": [
+          "CrossAccountRequest"
+        ],
+        "summary": "Get a cross account request",
+        "operationId": "getCrossAccountRequest",
+        "parameters": [
+          {
+            "name": "uuid",
+            "in": "path",
+            "description": "ID of cross account request to get",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "query_by",
+            "required": false,
+            "description": "Parameter for filtering resource by either a user's ID, or a client's account number. The default value is target_account.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "user_id",
+                "target_account"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "account",
+            "required": false,
+            "description": "Parameter for filtering resource by an account number. Value can be a comma-separated list of ids. To be used in tandem with ?query_by=user_id to further filter a user's requests by account number.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "approved_only",
+            "required": false,
+            "description": "Parameter for filtering resource which have been approved.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A cross account request object",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CrossAccountRequestDetail"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Insufficient permissions to get group",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error403"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/status/": {
       "get": {
         "tags": [
@@ -2662,6 +2906,202 @@
                 "items": {
                   "$ref": "#/components/schemas/GroupOut"
                 }
+              }
+            }
+          }
+        ]
+      },
+      "CrossAccountRequestDetail": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/CrossAccountRequestWithRoles"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "first_name": {
+                "format": "string",
+                "example": "first_name"
+              },
+              "last_name": {
+                "format": "string",
+                "example": "last_name"
+              },
+              "email": {
+                "format": "string",
+                "example": "email"
+              }
+            }
+          }
+        ]
+      },
+      "CrossAccountRequestWithDates": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/CrossAccountRequest"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "start_date": {
+                "format": "date-time",
+                "example": "2019-01-21T17:32:28Z"
+              },
+              "end_date": {
+                "format": "date-time",
+                "example": "2019-01-21T17:32:28Z"
+              }
+            }
+          }
+        ]
+      },
+      "CrossAccountRequestPagination": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ListPagination"
+          },
+          {
+            "type": "object",
+            "required": [
+              "data"
+            ],
+            "properties": {
+              "data": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/CrossAccountRequestWithDates"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "CrossAccountRequestIn": {
+        "required": [
+          "target_account",
+          "start_date",
+          "end_date",
+          "roles"
+        ],
+        "properties": {
+          "target_account": {
+            "type": "string",
+            "example": "12345"
+          },
+          "start_date": {
+            "type": "string",
+            "example": "01/01/2021"
+          },
+          "end_date": {
+            "type": "string",
+            "example": "01/01/2021"
+          },
+          "roles": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "example": "Role Name"
+            }
+          }
+        }
+      },
+      "CrossAccountRequest": {
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "format": "uuid",
+            "example": "2ad8cac5-336e-44c6-9b16-15ac84224d4b"
+          },
+          "target_account": {
+            "type": "string",
+            "example": "12345"
+          },
+          "status": {
+            "type": "string",
+            "example": "pending"
+          },
+          "first_name": {
+            "type": "string",
+            "example": "Jane"
+          },
+          "last_name": {
+            "type": "string",
+            "example": "Doe"
+          },
+          "email": {
+            "type": "string",
+            "example": "test@redhat.com"
+          },
+          "created": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2019-01-21T17:32:28Z"
+          }
+        }
+      },
+      "CrossAccountRequestWithRoles": {
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "format": "uuid",
+            "example": "2ad8cac5-336e-44c6-9b16-15ac84224d4b"
+          },
+          "target_account": {
+            "type": "string",
+            "example": "12345"
+          },
+          "start_date": {
+            "type": "string",
+            "example": "01/01/2021"
+          },
+          "end_date": {
+            "type": "string",
+            "example": "01/01/2021"
+          },
+          "status": {
+            "type": "string",
+            "example": "pending"
+          },
+          "created": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2019-01-21T17:32:28Z"
+          },
+          "roles": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "display_name": {
+                  "type": "string",
+                  "example": "display_name"
+                },
+                "description": {
+                  "type": "string",
+                  "example": "description"
+                },
+                "permissions": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Permission"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "CrossAccountRequestOut": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/CrossAccountRequestWithRoles"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "user_id": {
+                "type": "string",
+                "example": "1234"
               }
             }
           }
