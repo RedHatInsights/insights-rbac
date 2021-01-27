@@ -102,7 +102,7 @@ def seed_permissions(tenant):
         for f in os.listdir(permission_directory)
         if os.path.isfile(os.path.join(permission_directory, f)) and f.endswith(".json")
     ]
-    # current_permission_ids = set()
+    current_permission_ids = set()
 
     with tenant_context(tenant):
         with transaction.atomic():
@@ -131,16 +131,16 @@ def seed_permissions(tenant):
                                         f"Created permission {permission.permission} "
                                         f"for tenant {tenant.schema_name}."
                                     )
-                                    # current_permission_ids.add(permission.id)
+                                current_permission_ids.add(permission.id)
                         except Exception as e:
                             logger.error(
                                 f"Failed to update or create permissions for: "
                                 f"{app_name}:{resource} for tenant: {tenant.schema_name} with error: {e}"
                             )
-
-            # TODO: Remove permissions that are no longer exist, could enable later after enforcing
-            # all available permission from the permissions files (there might be some custom ones for
-            # Costmanagement or Remediations currently)
-            # Permission.objects.exclude(id__in=current_permission_ids).delete()
-            # Override delete methods for Permission to remove the related Access objects
+        perms_to_delete = Permission.objects.exclude(id__in=current_permission_ids)
+        logger.info(
+            f"[READ-ONLY] Deleting the following '{perms_to_delete.count()}' permission(s): {perms_to_delete.values()}"
+        )
+        # Currently read-only to ensure we don't have any orphaned permissions which should be added to the config
+        # Permission.objects.exclude(id__in=current_permission_ids).delete()
     return tenant
