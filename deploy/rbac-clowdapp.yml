@@ -1588,7 +1588,7 @@ objects:
     name: rbac
     labels:
       app: rbac
-      pod: rbac-service
+      pod: rbac-service-clowder
   spec:
     ports:
     - port: 8080
@@ -1596,7 +1596,7 @@ objects:
       targetPort: 8000
       name: weblegacy
     selector:
-      pod: rbac-service
+      pod: rbac-service-clowder
 
 parameters:
 - description: Image name
