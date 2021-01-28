@@ -2,19 +2,19 @@
 apiVersion: v1
 kind: Template
 metadata:
-  name: rbac
+  name: rbac-clowder
 objects:
 - apiVersion: cloud.redhat.com/v1alpha1
   kind: ClowdApp
   metadata:
-    name: rbac
+    name: rbac-clowder
   spec:
     envName: ${ENV_NAME}
     database:
       name: rbac
     inMemoryDb: true
     deployments:
-    - name: service
+    - name: service-clowder
       minReplicas: 1
       web: true
       podSpec:
@@ -194,7 +194,7 @@ objects:
           - name: INIT_CONTAINER
             value: "False"
 
-    - name: worker
+    - name: worker-clowder
       minReplicas: 1
       podSpec:
         image: ${IMAGE}:${IMAGE_TAG}
@@ -323,7 +323,9 @@ objects:
             value: ${PGSSLMODE}
           - name: CLOWDER_ENABLED
             value: ${CLOWDER_ENABLED}
-    - name: scheduler
+          - name: CW_NULL_WORKAROUND
+            value: ${CW_NULL_WORKAROUND)
+    - name: scheduler-clowder
       minReplicas: 1
       podSpec:
         image: ${IMAGE}:${IMAGE_TAG}
@@ -382,6 +384,9 @@ objects:
           value: 'False'
         - name: CLOWDER_ENABLED
           value: ${CLOWDER_ENABLED}
+        - name: CW_NULL_WORKAROUND
+          value: ${CW_NULL_WORKAROUND)
+
 - apiVersion: v1
   kind: ConfigMap
   metadata:
