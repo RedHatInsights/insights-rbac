@@ -56,7 +56,9 @@ sleep 5
 # Grab DB creds
 #
 
-oc get secret rbac -o json | jq -r '.data["cdappconfig.json"]' | base64 -d | jq .database > db-creds.json
+oc rollout status -w deployment/rbac-clowder-db
+
+oc get secret rbac-clowder -o json | jq -r '.data["cdappconfig.json"]' | base64 -d | jq .database > db-creds.json
 
 export DATABASE_NAME=$(jq -r .name < db-creds.json)
 export PGPASSWORD=$(jq -r .adminPassword < db-creds.json)
@@ -65,7 +67,9 @@ export DATABASE_PORT=34567
 export DATABASE_USER=postgres
 export DATABASE_PASSWORD=$PGPASSWORD
 
-oc port-forward svc/rbac-db 34567:5432 &
+echo "DB Name === ${DATABASE_NAME}"
+
+oc port-forward svc/rbac-clowder-db 34567:5432 &
 
 pid=$!
 
