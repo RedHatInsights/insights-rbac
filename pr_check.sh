@@ -67,7 +67,7 @@ export DATABASE_PASSWORD=$PGPASSWORD
 
 echo "DB Name === ${DATABASE_NAME}"
 
-oc port-forward svc/rbac-db 34567:5432 &
+oc port-forward svc/rbac-clowder-db 34567:5432 &
 
 pid=$!
 
