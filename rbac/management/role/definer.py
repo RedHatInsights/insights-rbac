@@ -67,7 +67,7 @@ def _update_or_create_roles(tenant, roles):
     """Update or create roles from list."""
     for role_json in roles:
         try:
-            _make_role(tenant, role_json)
+            return _make_role(tenant, role_json)
         except Exception as e:
             logger.error(
                 f"Failed to update or create role: {role_json.get('name')} "
@@ -83,6 +83,7 @@ def seed_roles(tenant):
         for f in os.listdir(roles_directory)
         if os.path.isfile(os.path.join(roles_directory, f)) and f.endswith(".json")
     ]
+    current_role_ids = set()
     with tenant_context(tenant):
         with transaction.atomic():
             for role_file_name in role_files:
@@ -90,7 +91,15 @@ def seed_roles(tenant):
                 with open(role_file_path) as json_file:
                     data = json.load(json_file)
                     role_list = data.get("roles")
-                    _update_or_create_roles(tenant, role_list)
+                    role = _update_or_create_roles(tenant, role_list)
+                    current_role_ids.add(role.id)
+
+        roles_to_delete = Role.objects.filter(system=True).exclude(id__in=current_role_ids)
+        logger.info(
+            f"[READ-ONLY] Deleting the following '{roles_to_delete.count()}' roles(s): {roles_to_delete.values()}"
+        )
+        # Currently read-only to ensure we don't have any orphaned roles which should be added to the config
+        # Role.objects.filter(system=True).exclude(id__in=current_role_ids).delete()
     return tenant
 
 
