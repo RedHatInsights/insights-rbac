@@ -11,7 +11,7 @@ objects:
   spec:
     envName: ${ENV_NAME}
     database:
-      name: rbac
+      name: rbac-clowder
     inMemoryDb: true
     deployments:
     - name: service-clowder
@@ -139,7 +139,7 @@ objects:
           - name: POD_CPU_LIMIT
             valueFrom:
               resourceFieldRef:
-                containerName: rbac-service
+                containerName: rbac-clowder-service
                 resource: limits.cpu
           - name: ACCESS_CACHE_ENABLED
             value: ${ACCESS_CACHE_ENABLED}
@@ -1588,7 +1588,7 @@ objects:
     name: rbac
     labels:
       app: rbac
-      pod: rbac-service-clowder
+      pod: rbac-clowder-service
   spec:
     ports:
     - port: 8080
@@ -1596,7 +1596,7 @@ objects:
       targetPort: 8000
       name: weblegacy
     selector:
-      pod: rbac-service-clowder
+      pod: rbac-clowder-service
 
 parameters:
 - description: Image name
