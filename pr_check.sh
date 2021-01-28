@@ -65,6 +65,8 @@ export DATABASE_PORT=34567
 export DATABASE_USER=postgres
 export DATABASE_PASSWORD=$PGPASSWORD
 
+echo "DB Name === ${DATABASE_NAME}"
+
 oc port-forward svc/rbac-db 34567:5432 &
 
 pid=$!
