@@ -56,6 +56,8 @@ sleep 5
 # Grab DB creds
 #
 
+oc rollout status -w deployment/rbac-clowder-db
+
 oc get secret rbac-clowder -o json | jq -r '.data["cdappconfig.json"]' | base64 -d | jq .database > db-creds.json
 
 export DATABASE_NAME=$(jq -r .name < db-creds.json)
