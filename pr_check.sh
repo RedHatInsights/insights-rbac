@@ -41,7 +41,7 @@ oc project $NAMESPACE
 cat << EOF > config.yaml
 envName: env-$NAMESPACE
 apps:
-- name: rbac
+- name: rbac-clowder
   host: local
   repo: $PWD
   path: deploy/rbac-clowdapp.yml
