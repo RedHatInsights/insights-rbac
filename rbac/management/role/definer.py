@@ -96,7 +96,7 @@ def seed_roles(tenant):
 
         roles_to_delete = Role.objects.filter(system=True).exclude(id__in=current_role_ids)
         logger.info(
-            f"[READ-ONLY] Deleting the following '{roles_to_delete.count()}' roles(s): {roles_to_delete.values()}"
+            f"The following '{roles_to_delete.count()}' roles(s) eligible for removal: {roles_to_delete.values()}"
         )
         # Currently read-only to ensure we don't have any orphaned roles which should be added to the config
         # Role.objects.filter(system=True).exclude(id__in=current_role_ids).delete()
@@ -148,7 +148,7 @@ def seed_permissions(tenant):
                             )
         perms_to_delete = Permission.objects.exclude(id__in=current_permission_ids)
         logger.info(
-            f"[READ-ONLY] Deleting the following '{perms_to_delete.count()}' permission(s): {perms_to_delete.values()}"
+            f"The following '{perms_to_delete.count()}' permission(s) eligible for removal: {perms_to_delete.values()}"
         )
         # Currently read-only to ensure we don't have any orphaned permissions which should be added to the config
         # Permission.objects.exclude(id__in=current_permission_ids).delete()
