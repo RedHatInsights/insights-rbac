@@ -1388,6 +1388,9 @@
             "$ref": "#/components/parameters/NameFilter"
           },
           {
+            "$ref": "#/components/parameters/RoleSystemFilter"
+          },
+          {
             "in": "query",
             "name": "display_name",
             "required": false,
@@ -2440,6 +2443,15 @@
         "description": "Parameter for filtering resource by name using string contains search.",
         "schema": {
           "type": "string"
+        }
+      },
+      "RoleSystemFilter": {
+        "in": "query",
+        "name": "system",
+        "required": false,
+        "description": "Parameter for filtering roles by system flag.",
+        "schema": {
+          "type": "boolean"
         }
       },
       "GroupNameFilter": {
