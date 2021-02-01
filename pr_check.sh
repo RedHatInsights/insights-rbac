@@ -55,7 +55,8 @@ sleep 5
 #
 # Grab DB creds
 #
-
+oc get secret
+oc get deployment
 oc rollout status -w deployment/rbac-db
 
 oc get secret rbac -o json | jq -r '.data["cdappconfig.json"]' | base64 -d | jq .database > db-creds.json
