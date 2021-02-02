@@ -355,7 +355,6 @@
               "example": "userA,userB"
             }
           },
-
           {
             "name": "sort_order",
             "in": "query",
@@ -363,7 +362,10 @@
             "required": false,
             "schema": {
               "type": "string",
-              "enum": ["asc", "desc"]
+              "enum": [
+                "asc",
+                "desc"
+              ]
             }
           },
           {
@@ -411,7 +413,9 @@
             "description": "Parameter for ordering principals by value. For inverse ordering, supply '-' before the param value, such as: ?order_by=-username",
             "schema": {
               "type": "string",
-              "enum": ["username"]
+              "enum": [
+                "username"
+              ]
             }
           }
         ],
@@ -573,7 +577,10 @@
             "required": false,
             "schema": {
               "type": "string",
-              "enum": ["all", "any"]
+              "enum": [
+                "all",
+                "any"
+              ]
             }
           },
           {
@@ -938,7 +945,9 @@
             "description": "Parameter for ordering principals by value. For inverse ordering, supply '-' before the param value, such as: ?order_by=-username",
             "schema": {
               "type": "string",
-              "enum": ["username"]
+              "enum": [
+                "username"
+              ]
             }
           }
         ],
@@ -2503,7 +2512,10 @@
         "description": "Parameter for specifying the matching criteria for an object's name or display_name.",
         "schema": {
           "type": "string",
-          "enum": ["partial", "exact"]
+          "enum": [
+            "partial",
+            "exact"
+          ]
         }
       }
     },
@@ -2933,6 +2945,16 @@
         ]
       },
       "CrossAccountRequestDetail": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/CrossAccountRequestDetailByAccount"
+          },
+          {
+            "$ref": "#/components/schemas/CrossAccountRequestDetailByUseId"
+          }
+        ]
+      },
+      "CrossAccountRequestDetailByAccount": {
         "allOf": [
           {
             "$ref": "#/components/schemas/CrossAccountRequestWithRoles"
@@ -2956,21 +2978,17 @@
           }
         ]
       },
-      "CrossAccountRequestWithDates": {
+      "CrossAccountRequestDetailByUseId": {
         "allOf": [
           {
-            "$ref": "#/components/schemas/CrossAccountRequest"
+            "$ref": "#/components/schemas/CrossAccountRequestWithRoles"
           },
           {
             "type": "object",
             "properties": {
-              "start_date": {
-                "format": "date-time",
-                "example": "2019-01-21T17:32:28Z"
-              },
-              "end_date": {
-                "format": "date-time",
-                "example": "2019-01-21T17:32:28Z"
+              "user_id": {
+                "format": "string",
+                "example": "1234"
               }
             }
           }
@@ -2990,7 +3008,14 @@
               "data": {
                 "type": "array",
                 "items": {
-                  "$ref": "#/components/schemas/CrossAccountRequestWithDates"
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/CrossAccountRequestByAccount"
+                    },
+                    {
+                      "$ref": "#/components/schemas/CrossAccountRequestByUserId"
+                    }
+                  ]
                 }
               }
             }
@@ -3026,6 +3051,46 @@
           }
         }
       },
+      "CrossAccountRequestByAccount": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/CrossAccountRequest"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "first_name": {
+                "type": "string",
+                "example": "Jane"
+              },
+              "last_name": {
+                "type": "string",
+                "example": "Doe"
+              },
+              "email": {
+                "type": "string",
+                "example": "test@redhat.com"
+              }
+            }
+          }
+        ]
+      },
+      "CrossAccountRequestByUserId": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/CrossAccountRequest"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "user_id": {
+                "type": "string",
+                "example": "1234"
+              }
+            }
+          }
+        ]
+      },
       "CrossAccountRequest": {
         "properties": {
           "request_id": {
@@ -3041,20 +3106,16 @@
             "type": "string",
             "example": "pending"
           },
-          "first_name": {
-            "type": "string",
-            "example": "Jane"
-          },
-          "last_name": {
-            "type": "string",
-            "example": "Doe"
-          },
-          "email": {
-            "type": "string",
-            "example": "test@redhat.com"
-          },
           "created": {
             "type": "string",
+            "format": "date-time",
+            "example": "2019-01-21T17:32:28Z"
+          },
+          "start_date": {
+            "format": "date-time",
+            "example": "2019-01-21T17:32:28Z"
+          },
+          "end_date": {
             "format": "date-time",
             "example": "2019-01-21T17:32:28Z"
           }
