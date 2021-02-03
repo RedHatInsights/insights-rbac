@@ -2,19 +2,19 @@
 apiVersion: v1
 kind: Template
 metadata:
-  name: rbac-clowder
+  name: rbac
 objects:
 - apiVersion: cloud.redhat.com/v1alpha1
   kind: ClowdApp
   metadata:
-    name: rbac-clowder
+    name: rbac
   spec:
     envName: ${ENV_NAME}
     database:
-      name: rbac-clowder
+      name: rbac
     inMemoryDb: true
     deployments:
-    - name: service-clowder
+    - name: service
       minReplicas: 1
       web: true
       podSpec:
@@ -139,7 +139,7 @@ objects:
           - name: POD_CPU_LIMIT
             valueFrom:
               resourceFieldRef:
-                containerName: rbac-clowder-service
+                containerName: rbac-service
                 resource: limits.cpu
           - name: ACCESS_CACHE_ENABLED
             value: ${ACCESS_CACHE_ENABLED}
@@ -194,7 +194,7 @@ objects:
           - name: INIT_CONTAINER
             value: "False"
 
-    - name: worker-clowder
+    - name: worker
       minReplicas: 1
       podSpec:
         image: ${IMAGE}:${IMAGE_TAG}
@@ -325,7 +325,7 @@ objects:
             value: ${CLOWDER_ENABLED}
           - name: CW_NULL_WORKAROUND
             value: ${CW_NULL_WORKAROUND)
-    - name: scheduler-clowder
+    - name: scheduler
       minReplicas: 1
       podSpec:
         image: ${IMAGE}:${IMAGE_TAG}
@@ -1588,7 +1588,7 @@ objects:
     name: rbac
     labels:
       app: rbac
-      pod: rbac-clowder-service
+      pod: rbac-service
   spec:
     ports:
     - port: 8080
@@ -1596,7 +1596,7 @@ objects:
       targetPort: 8000
       name: weblegacy
     selector:
-      pod: rbac-clowder-service
+      pod: rbac-service
 
 parameters:
 - description: Image name
