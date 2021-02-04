@@ -9,7 +9,6 @@ class Migration(migrations.Migration):
     dependencies = [("management", "0030_auto_20201130_1845")]
 
     operations = [
-        migrations.AddField(
-            model_name="principal", name="cross_account", field=models.BooleanField(default=False, null=True)
-        )
+        migrations.AddField(model_name="principal", name="cross_account", field=models.BooleanField(default=False)),
+        migrations.RunSQL("ALTER TABLE ONLY management_principal ALTER COLUMN cross_account SET DEFAULT false;"),
     ]
