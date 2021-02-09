@@ -15,7 +15,7 @@ objects:
     inMemoryDb: true
     deployments:
     - name: service
-      minReplicas: 1
+      minReplicas: 2
       web: true
       podSpec:
         image: ${IMAGE}:${IMAGE_TAG}
@@ -50,7 +50,7 @@ objects:
           initialDelaySeconds: 60
           periodSeconds: 10
           successThreshold: 1
-          failureThreshold: 3
+          failureThreshold: 60
           timeoutSeconds: 3
         volumes:
         - configMap:
@@ -194,7 +194,7 @@ objects:
           - name: INIT_CONTAINER
             value: "False"
 
-    - name: worker
+    - name: worker-service
       minReplicas: 1
       podSpec:
         image: ${IMAGE}:${IMAGE_TAG}
@@ -325,7 +325,7 @@ objects:
             value: ${CLOWDER_ENABLED}
           - name: CW_NULL_WORKAROUND
             value: ${CW_NULL_WORKAROUND)
-    - name: scheduler
+    - name: scheduler-service
       minReplicas: 1
       podSpec:
         image: ${IMAGE}:${IMAGE_TAG}
