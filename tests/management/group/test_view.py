@@ -396,23 +396,26 @@ class GroupViewsetTests(IdentityRequest):
 
     @patch(
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
-        return_value={"status_code": 200, "data": []},
+        return_value={"status_code": 200, "data": [{"username": "test_user"}]},
     )
     def test_add_group_principals_success(self, mock_request):
         """Test that adding a principal to a group returns successfully."""
-        url = reverse("group-principals", kwargs={"uuid": self.group.uuid})
+        # Create a group and a cross account user.
+        with tenant_context(self.tenant):
+            test_group = Group.objects.create(name="test")
+            cross_account_user = Principal.objects.create(username="cross_account_user", cross_account=True)
+        url = reverse("group-principals", kwargs={"uuid": test_group.uuid})
         client = APIClient()
-        new_username = uuid4()
-        test_data = {"principals": [{"username": self.principal.username}, {"username": new_username}]}
+        test_data = {"principals": [{"username": "test_user"}, {"username": "cross_account_user"}]}
         response = client.post(url, test_data, format="json", **self.headers)
+
+        # Only the user exists in IT will be added to the group.
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        url = reverse("group-list")
-        response = client.get(url, **self.headers)
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data.get("meta").get("count"), 5)
-        self.assertEqual(response.data.get("data")[0].get("principalCount"), 2)
-        self.assertEqual(response.data.get("data")[0].get("policyCount"), None)
-        self.assertEqual(response.data.get("data")[0].get("roleCount"), 1)
+        self.assertEqual(len(response.data.get("principals")), 1)
+        self.assertEqual(response.data.get("principals")[0], {"username": "test_user"})
+
+        test_group.delete()
+        cross_account_user.delete()
 
     @patch(
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
