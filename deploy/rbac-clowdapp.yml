@@ -323,6 +323,8 @@ objects:
             value: ${PGSSLMODE}
           - name: CLOWDER_ENABLED
             value: ${CLOWDER_ENABLED}
+          - name: CW_NULL_WORKAROUND
+            value: ${CW_NULL_WORKAROUND)
     - name: scheduler
       minReplicas: 1
       podSpec:
@@ -382,6 +384,9 @@ objects:
           value: 'False'
         - name: CLOWDER_ENABLED
           value: ${CLOWDER_ENABLED}
+        - name: CW_NULL_WORKAROUND
+          value: ${CW_NULL_WORKAROUND)
+
 - apiVersion: v1
   kind: ConfigMap
   metadata:

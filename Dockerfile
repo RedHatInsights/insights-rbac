@@ -11,7 +11,15 @@ ENV NODEJS_VERSION=10 \
     LC_ALL=en_US.UTF-8 \
     LANG=en_US.UTF-8 \
     PIP_NO_CACHE_DIR=off \
-    UPGRADE_PIP_TO_LATEST=true
+    UPGRADE_PIP_TO_LATEST=true \
+    PIP_INDEX_URL="" \
+    PIPENV_PYPI_MIRROR="" \
+    ENABLE_PIPENV=true \
+    APP_CONFIG=/opt/app-root/src/rbac/gunicorn.py \
+    APP_HOME=/opt/app-root/src/rbac \
+    APP_MODULE=rbac.wsgi \
+    APP_NAMESPACE=rbac
+
 
 ENV SUMMARY="Insights RBAC is a role based access control web server" \
     DESCRIPTION="Insights RBAC is a role based access control web server"
@@ -29,18 +37,9 @@ LABEL summary="$SUMMARY" \
 
 USER root
 
-# Copy application files to the image.
-COPY Pipfile Pipfile.lock run_server.sh apidoc.json ${APP_ROOT}/src/
-COPY docs/ ${APP_ROOT}/src/docs/
-COPY rbac/ ${APP_ROOT}/src/rbac/
-COPY openshift/ ${APP_ROOT}/src/openshift/
+RUN yum install @nodejs:10 -y
 
-RUN yum install -y git gcc python3-devel nodejs-nodemon && \
-    pip3 install pipenv pip pipenv-to-requirements && \
-    pip3 install -U pip && \
-    pipenv run pipenv_to_requirements -f && \
-    pip3 install -r requirements.txt && \
-    yum clean all
+RUN yum install -y git gcc python3-devel nodejs-nodemon
 
 # Copy the S2I scripts from the specific language image to $STI_SCRIPTS_PATH.
 COPY openshift/s2i/bin $STI_SCRIPTS_PATH
@@ -48,12 +47,8 @@ COPY openshift/s2i/bin $STI_SCRIPTS_PATH
 # Copy extra files to the image.
 COPY openshift/root /
 
-RUN cd ${APP_ROOT}/src && ls -la && \
-    npm install apidoc && \
-    node_modules/.bin/apidoc -i rbac -o apidoc && \
-    cp docs/source/specs/openapi.json apidoc && \
-    mkdir -p rbac/staticfiles && \
-    gzip docs/source/specs/openapi.json -c > rbac/staticfiles/openapi.json.gz
+# Copy application files to the image.
+COPY . ${APP_ROOT}/src
 
 # - Create a Python virtual environment for use by any application to avoid
 #   potential conflicts with Python packages preinstalled in the main Python
@@ -61,8 +56,7 @@ RUN cd ${APP_ROOT}/src && ls -la && \
 # - In order to drop the root user, we have to make some directories world
 #   writable as OpenShift default security model is to run the container
 #   under random UID.
-RUN source scl_source enable rh-python36 ${NODEJS_SCL} && \
-    virtualenv ${APP_ROOT} && \
+RUN virtualenv ${APP_ROOT} && \
     chown -R 1001:0 ${APP_ROOT} && \
     fix-permissions ${APP_ROOT} -P && \
     rpm-file-permissions && \
@@ -71,8 +65,6 @@ RUN source scl_source enable rh-python36 ${NODEJS_SCL} && \
 RUN curl -L -o /usr/bin/haberdasher \
 https://github.com/RedHatInsights/haberdasher/releases/latest/download/haberdasher_linux_amd64 && \
 chmod 755 /usr/bin/haberdasher
-
-RUN touch /opt/app-root/src/rbac/app.log; chmod 777 /opt/app-root/src/rbac/app.log
 
 USER 1001
 
