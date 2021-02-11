@@ -71,7 +71,9 @@ def get_group_queryset(request):
 
     username = request.query_params.get("username")
     if username:
-        get_principal(username, request.user.account)
+        principal = get_principal(username, request.user.account)
+        if principal.cross_account:
+            return Group.objects.filter(principals__username__iexact=username)
         return Group.objects.filter(principals__username__iexact=username) | Group.platform_default_set()
 
     if has_group_all_access(request):
