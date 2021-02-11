@@ -65,14 +65,17 @@ def _make_role(tenant, data):
 
 def _update_or_create_roles(tenant, roles):
     """Update or create roles from list."""
+    current_role_ids = set()
     for role_json in roles:
         try:
-            return _make_role(tenant, role_json)
+            role = _make_role(tenant, role_json)
+            current_role_ids.add(role.id)
         except Exception as e:
             logger.error(
                 f"Failed to update or create role: {role_json.get('name')} "
                 f"for tenant: {tenant.schema_name} with error: {e}"
             )
+    return current_role_ids
 
 
 def seed_roles(tenant):
@@ -91,8 +94,8 @@ def seed_roles(tenant):
                 with open(role_file_path) as json_file:
                     data = json.load(json_file)
                     role_list = data.get("roles")
-                    role = _update_or_create_roles(tenant, role_list)
-                    current_role_ids.add(role.id)
+                    file_role_ids = _update_or_create_roles(tenant, role_list)
+                    current_role_ids.update(file_role_ids)
 
         roles_to_delete = Role.objects.filter(system=True).exclude(id__in=current_role_ids)
         logger.info(
