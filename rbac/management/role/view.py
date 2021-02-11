@@ -88,6 +88,7 @@ class RoleFilter(CommonFilters):
     display_name = filters.CharFilter(field_name="display_name", method="display_name_filter")
     application = filters.CharFilter(field_name="application", method="application_filter")
     permission = filters.CharFilter(field_name="permission", method="permission_filter")
+    system = filters.BooleanFilter(field_name="system")
 
     class Meta:
         model = Role
