@@ -67,7 +67,13 @@ export DATABASE_PORT=34567
 export DATABASE_USER=postgres
 export DATABASE_PASSWORD=$PGPASSWORD
 
-echo "DB Name === ${DATABASE_NAME}"
+if [ -z ${DATABASE_NAME} ]; then
+    echo "DATABASE_NAME is null, error with eph env / clowder config"
+    echo "Exiting with PR check failed"
+    exit 1
+else
+    echo "DB Name === ${DATABASE_NAME}"
+fi
 
 oc port-forward svc/rbac-db 34567:5432 &
 
