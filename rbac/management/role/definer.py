@@ -65,14 +65,17 @@ def _make_role(tenant, data):
 
 def _update_or_create_roles(tenant, roles):
     """Update or create roles from list."""
+    current_role_ids = set()
     for role_json in roles:
         try:
-            _make_role(tenant, role_json)
+            role = _make_role(tenant, role_json)
+            current_role_ids.add(role.id)
         except Exception as e:
             logger.error(
                 f"Failed to update or create role: {role_json.get('name')} "
                 f"for tenant: {tenant.schema_name} with error: {e}"
             )
+    return current_role_ids
 
 
 def seed_roles(tenant):
@@ -83,6 +86,7 @@ def seed_roles(tenant):
         for f in os.listdir(roles_directory)
         if os.path.isfile(os.path.join(roles_directory, f)) and f.endswith(".json")
     ]
+    current_role_ids = set()
     with tenant_context(tenant):
         with transaction.atomic():
             for role_file_name in role_files:
@@ -90,7 +94,15 @@ def seed_roles(tenant):
                 with open(role_file_path) as json_file:
                     data = json.load(json_file)
                     role_list = data.get("roles")
-                    _update_or_create_roles(tenant, role_list)
+                    file_role_ids = _update_or_create_roles(tenant, role_list)
+                    current_role_ids.update(file_role_ids)
+
+        roles_to_delete = Role.objects.filter(system=True).exclude(id__in=current_role_ids)
+        logger.info(
+            f"The following '{roles_to_delete.count()}' roles(s) eligible for removal: {roles_to_delete.values()}"
+        )
+        # Currently read-only to ensure we don't have any orphaned roles which should be added to the config
+        # Role.objects.filter(system=True).exclude(id__in=current_role_ids).delete()
     return tenant
 
 
@@ -102,7 +114,7 @@ def seed_permissions(tenant):
         for f in os.listdir(permission_directory)
         if os.path.isfile(os.path.join(permission_directory, f)) and f.endswith(".json")
     ]
-    # current_permission_ids = set()
+    current_permission_ids = set()
 
     with tenant_context(tenant):
         with transaction.atomic():
@@ -131,16 +143,16 @@ def seed_permissions(tenant):
                                         f"Created permission {permission.permission} "
                                         f"for tenant {tenant.schema_name}."
                                     )
-                                    # current_permission_ids.add(permission.id)
+                                current_permission_ids.add(permission.id)
                         except Exception as e:
                             logger.error(
                                 f"Failed to update or create permissions for: "
                                 f"{app_name}:{resource} for tenant: {tenant.schema_name} with error: {e}"
                             )
-
-            # TODO: Remove permissions that are no longer exist, could enable later after enforcing
-            # all available permission from the permissions files (there might be some custom ones for
-            # Costmanagement or Remediations currently)
-            # Permission.objects.exclude(id__in=current_permission_ids).delete()
-            # Override delete methods for Permission to remove the related Access objects
+        perms_to_delete = Permission.objects.exclude(id__in=current_permission_ids)
+        logger.info(
+            f"The following '{perms_to_delete.count()}' permission(s) eligible for removal: {perms_to_delete.values()}"
+        )
+        # Currently read-only to ensure we don't have any orphaned permissions which should be added to the config
+        # Permission.objects.exclude(id__in=current_permission_ids).delete()
     return tenant
