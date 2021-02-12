@@ -81,7 +81,7 @@ if [ -z ${DATABASE_NAME} ]; then
     exit 1
 else
     echo "DB Name === ${DATABASE_NAME}"
-if
+fi
 
 oc port-forward svc/rbac-db 34567:5432 &
 
