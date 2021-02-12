@@ -67,8 +67,8 @@ class CrossAccountRequestViewTests(IdentityRequest):
 
         with tenant_context(Tenant.objects.get(schema_name="public")):
             Tenant.objects.create(schema_name=f"acct{self.data4create['target_account']}")
-            self.role_1 = Role.objects.create(name="role_1")
-            self.role_2 = Role.objects.create(name="role_2")
+            self.role_1 = Role.objects.create(name="role_1", system=True)
+            self.role_2 = Role.objects.create(name="role_2", system=True)
             self.request_1 = CrossAccountRequest.objects.create(
                 target_account=self.account,
                 user_id="1111111",
@@ -359,6 +359,22 @@ class CrossAccountRequestViewTests(IdentityRequest):
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(response.data.get("errors")[0].get("detail"), "Role 'role_3' does not exist.")
+
+    def test_create_requests_fail_for_not_canned_role(self):
+        """Test the creation of cross account request fail for not supported period."""
+        with tenant_context(Tenant.objects.get(schema_name="public")):
+            self.role_2.system = False
+            self.role_2.save()
+        self.data4create["roles"] = ["role_1", "role_2"]
+        client = APIClient()
+        response = client.post(
+            f"{URL_LIST}?", self.data4create, format="json", **self.associate_non_admin_request.META
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(
+            response.data.get("errors")[0].get("detail"), "Role 'role_2' is not canned role and could not be assigned."
+        )
 
     def test_create_requests_fail_for_over_60_day_start_date(self):
         """Test the creation of cross account request fails when the start date is > 60 days out."""
