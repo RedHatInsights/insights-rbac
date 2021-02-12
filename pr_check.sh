@@ -47,6 +47,14 @@ apps:
   path: deploy/rbac-clowdapp.yml
   parameters:
     IMAGE: $IMAGE
+    HABERDASHER_LABELS: {"app": "rbac"}
+    HABERDASHER_TAGS: ["rbac"]
+    DISABLE_MIGRATE: "True"
+    EPH_ENV: "True"
+    CLOWDER_ENABLED: "true"
+    PERMISSION_SEEDING_ENABLED: 'False'
+    ROLE_SEEDING_ENABLED: 'False'
+    GROUP_SEEDING_ENABLED: 'False'
 EOF
 
 bonfire config get -l -a rbac | oc apply -f -
@@ -73,7 +81,7 @@ if [ -z ${DATABASE_NAME} ]; then
     exit 1
 else
     echo "DB Name === ${DATABASE_NAME}"
-fi
+i
 
 oc port-forward svc/rbac-db 34567:5432 &
 
