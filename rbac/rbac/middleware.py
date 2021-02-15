@@ -122,14 +122,24 @@ class IdentityHeaderMiddleware(BaseTenantMiddleware):
         user = User()
         try:
             _, json_rh_auth = extract_header(request, self.header)
-            user.username = json_rh_auth.get("identity", {}).get("user", {})["username"]
             user.account = json_rh_auth.get("identity", {})["account_number"]
-            user.admin = json_rh_auth.get("identity", {}).get("user", {}).get("is_org_admin")
-            user.internal = json_rh_auth.get("identity", {}).get("user", {}).get("is_internal")
-            user.user_id = json_rh_auth.get("identity", {}).get("user", {}).get("user_id")
+            user_info = json_rh_auth.get("identity", {}).get("user", {})
+            user.username = user_info["username"]
+            user.admin = user_info.get("is_org_admin")
+            user.internal = user_info.get("is_internal")
+            user.user_id = user_info.get("user_id")
             user.system = False
             if not user.admin:
                 user.access = IdentityHeaderMiddleware._get_access_for_user()
+            # Cross account request check
+            internal = json_rh_auth.get("identity", {}).get("internal", {})
+            if internal != {}:
+                cross_account = internal.get("cross_access", False)
+                if cross_account:
+                    if not (user.internal and user_info.get("email").endswith("@redhat.com")):
+                        logger.error("Cross accout request permission denied. Requester is not internal user.")
+                        return HttpResponseUnauthorizedRequest()
+                    user.username = f"{user.account}-{user.user_id}"
         except (KeyError, JSONDecodeError):
             request_psk = request.META.get(RH_RBAC_PSK)
             account = request.META.get(RH_RBAC_ACCOUNT)
