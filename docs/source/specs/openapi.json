@@ -1117,6 +1117,15 @@
             }
           },
           {
+            "in": "query",
+            "name": "role_system",
+            "required": false,
+            "description": "Parameter for filtering group roles by system flag.",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
             "$ref": "#/components/parameters/QueryLimit"
           },
           {
@@ -1395,6 +1404,9 @@
           },
           {
             "$ref": "#/components/parameters/NameFilter"
+          },
+          {
+            "$ref": "#/components/parameters/SystemFilter"
           },
           {
             "in": "query",
@@ -2449,6 +2461,15 @@
         "description": "Parameter for filtering resource by name using string contains search.",
         "schema": {
           "type": "string"
+        }
+      },
+      "SystemFilter": {
+        "in": "query",
+        "name": "system",
+        "required": false,
+        "description": "Parameter for filtering resource by system flag.",
+        "schema": {
+          "type": "boolean"
         }
       },
       "GroupNameFilter": {

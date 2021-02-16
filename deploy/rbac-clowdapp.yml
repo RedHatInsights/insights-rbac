@@ -15,7 +15,7 @@ objects:
     inMemoryDb: true
     deployments:
     - name: service
-      minReplicas: 1
+      minReplicas: 2
       web: true
       podSpec:
         image: ${IMAGE}:${IMAGE_TAG}
@@ -23,15 +23,12 @@ objects:
           - env:
             - name: INIT_CONTAINER
               value: "True"
-            - name: DISABLE_MIGRATE
-              value : "False"
+            - name: EPH_ENV
+              value: ${EPH_ENV}
             inheritEnv: true
             args:
-              - python
-              - /opt/app-root/src/rbac/manage.py
-              - migrate_schemas
-              - --noinput
-              - --executor=parallel
+              - sh
+              - /opt/app-root/src/deploy/init-container-setup.sh
         livenessProbe:
           httpGet:
             path: /api/rbac/v1/status/
@@ -194,7 +191,7 @@ objects:
           - name: INIT_CONTAINER
             value: "False"
 
-    - name: worker
+    - name: worker-service
       minReplicas: 1
       podSpec:
         image: ${IMAGE}:${IMAGE_TAG}
@@ -325,7 +322,7 @@ objects:
             value: ${CLOWDER_ENABLED}
           - name: CW_NULL_WORKAROUND
             value: ${CW_NULL_WORKAROUND)
-    - name: scheduler
+    - name: scheduler-service
       minReplicas: 1
       podSpec:
         image: ${IMAGE}:${IMAGE_TAG}
@@ -1669,16 +1666,16 @@ parameters:
   value: prefer
 - description: Python boolean value to enable/disable permission seeding on app boot
   name: PERMISSION_SEEDING_ENABLED
-  value: 'True'
+  required: true
 - description: Python boolean value to enable/disable role seeding on app boot
   name: ROLE_SEEDING_ENABLED
-  value: 'True'
+  required: true
 - description: Python boolean value to enable/disable group seeding on app boot
   name: GROUP_SEEDING_ENABLED
-  value: 'True'
+  required: true
 - description: Flag to disable migrations
   name: DISABLE_MIGRATE
-  value: 'True'
+  required: true
 - description: Enable the RBAC access cache
   name: ACCESS_CACHE_ENABLED
   value: 'True'
@@ -1763,3 +1760,5 @@ parameters:
   value: 'rbac'
 - name: CW_NULL_WORKAROUND
   value: 'true'
+- name: EPH_ENV
+  required: true

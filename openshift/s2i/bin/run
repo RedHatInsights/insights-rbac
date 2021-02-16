@@ -24,7 +24,7 @@ function is_django_installed() {
 }
 
 function should_migrate() {
-  is_django_installed && [[ -z "$DISABLE_MIGRATE" ]]
+  is_django_installed && [[ "${DISABLE_MIGRATE}" == "False" ]]
 }
 
 # Guess the number of workers according to the number of cores
