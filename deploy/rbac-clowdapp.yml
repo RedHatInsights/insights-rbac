@@ -2,20 +2,20 @@
 apiVersion: v1
 kind: Template
 metadata:
-  name: rbac-clowder
+  name: rbac
 objects:
 - apiVersion: cloud.redhat.com/v1alpha1
   kind: ClowdApp
   metadata:
-    name: rbac-clowder
+    name: rbac
   spec:
     envName: ${ENV_NAME}
     database:
-      name: rbac-clowder
+      name: rbac
     inMemoryDb: true
     deployments:
-    - name: service-clowder
-      minReplicas: 1
+    - name: service
+      minReplicas: 2
       web: true
       podSpec:
         image: ${IMAGE}:${IMAGE_TAG}
@@ -23,15 +23,12 @@ objects:
           - env:
             - name: INIT_CONTAINER
               value: "True"
-            - name: DISABLE_MIGRATE
-              value : "False"
+            - name: EPH_ENV
+              value: ${EPH_ENV}
             inheritEnv: true
             args:
-              - python
-              - /opt/app-root/src/rbac/manage.py
-              - migrate_schemas
-              - --noinput
-              - --executor=parallel
+              - sh
+              - /opt/app-root/src/deploy/init-container-setup.sh
         livenessProbe:
           httpGet:
             path: /api/rbac/v1/status/
@@ -139,7 +136,7 @@ objects:
           - name: POD_CPU_LIMIT
             valueFrom:
               resourceFieldRef:
-                containerName: rbac-clowder-service
+                containerName: rbac-service
                 resource: limits.cpu
           - name: ACCESS_CACHE_ENABLED
             value: ${ACCESS_CACHE_ENABLED}
@@ -194,7 +191,7 @@ objects:
           - name: INIT_CONTAINER
             value: "False"
 
-    - name: worker-clowder
+    - name: worker-service
       minReplicas: 1
       podSpec:
         image: ${IMAGE}:${IMAGE_TAG}
@@ -325,7 +322,7 @@ objects:
             value: ${CLOWDER_ENABLED}
           - name: CW_NULL_WORKAROUND
             value: ${CW_NULL_WORKAROUND)
-    - name: scheduler-clowder
+    - name: scheduler-service
       minReplicas: 1
       podSpec:
         image: ${IMAGE}:${IMAGE_TAG}
@@ -1588,7 +1585,7 @@ objects:
     name: rbac
     labels:
       app: rbac
-      pod: rbac-clowder-service
+      pod: rbac-service
   spec:
     ports:
     - port: 8080
@@ -1596,7 +1593,7 @@ objects:
       targetPort: 8000
       name: weblegacy
     selector:
-      pod: rbac-clowder-service
+      pod: rbac-service
 
 parameters:
 - description: Image name
@@ -1669,16 +1666,16 @@ parameters:
   value: prefer
 - description: Python boolean value to enable/disable permission seeding on app boot
   name: PERMISSION_SEEDING_ENABLED
-  value: 'True'
+  required: true
 - description: Python boolean value to enable/disable role seeding on app boot
   name: ROLE_SEEDING_ENABLED
-  value: 'True'
+  required: true
 - description: Python boolean value to enable/disable group seeding on app boot
   name: GROUP_SEEDING_ENABLED
-  value: 'True'
+  required: true
 - description: Flag to disable migrations
   name: DISABLE_MIGRATE
-  value: 'True'
+  required: true
 - description: Enable the RBAC access cache
   name: ACCESS_CACHE_ENABLED
   value: 'True'
@@ -1763,3 +1760,5 @@ parameters:
   value: 'rbac'
 - name: CW_NULL_WORKAROUND
   value: 'true'
+- name: EPH_ENV
+  required: true

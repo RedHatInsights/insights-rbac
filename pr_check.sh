@@ -47,6 +47,14 @@ apps:
   path: deploy/rbac-clowdapp.yml
   parameters:
     IMAGE: $IMAGE
+    HABERDASHER_LABELS: {"app": "rbac"}
+    HABERDASHER_TAGS: ["rbac"]
+    DISABLE_MIGRATE: "True"
+    EPH_ENV: "True"
+    CLOWDER_ENABLED: "true"
+    PERMISSION_SEEDING_ENABLED: 'False'
+    ROLE_SEEDING_ENABLED: 'False'
+    GROUP_SEEDING_ENABLED: 'False'
 EOF
 
 bonfire config get -l -a rbac | oc apply -f -
@@ -56,9 +64,9 @@ sleep 5
 # Grab DB creds
 #
 
-oc rollout status -w deployment/rbac-clowder-db
+oc rollout status -w deployment/rbac-db
 
-oc get secret rbac-clowder -o json | jq -r '.data["cdappconfig.json"]' | base64 -d | jq .database > db-creds.json
+oc get secret rbac -o json | jq -r '.data["cdappconfig.json"]' | base64 -d | jq .database > db-creds.json
 
 export DATABASE_NAME=$(jq -r .name < db-creds.json)
 export PGPASSWORD=$(jq -r .adminPassword < db-creds.json)
@@ -67,9 +75,15 @@ export DATABASE_PORT=34567
 export DATABASE_USER=postgres
 export DATABASE_PASSWORD=$PGPASSWORD
 
-echo "DB Name === ${DATABASE_NAME}"
+if [ -z ${DATABASE_NAME} ]; then
+    echo "DATABASE_NAME is null, error with eph env / clowder config"
+    echo "Exiting with PR check failed"
+    exit 1
+else
+    echo "DB Name === ${DATABASE_NAME}"
+fi
 
-oc port-forward svc/rbac-clowder-db 34567:5432 &
+oc port-forward svc/rbac-db 34567:5432 &
 
 pid=$!
 

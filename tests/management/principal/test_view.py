@@ -59,6 +59,10 @@ class PrincipalViewsetTests(IdentityRequest):
     )
     def test_read_principal_list_success(self, mock_request):
         """Test that we can read a list of principals."""
+        # Create a cross_account user in rbac.
+        with tenant_context(self.tenant):
+            cross_account_principal = Principal.objects.create(username="cross_account_user", cross_account=True)
+
         url = reverse("principals")
         client = APIClient()
         response = client.get(url, **self.headers)
@@ -66,6 +70,7 @@ class PrincipalViewsetTests(IdentityRequest):
         mock_request.assert_called_once_with(
             ANY, limit=10, offset=0, options={"sort_order": "asc", "status": "enabled", "admin_only": "false"}
         )
+        # /principals/ endpoint won't return the cross_account_principal, which does not exist in IT.
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         for keyname in ["meta", "links", "data"]:
             self.assertIn(keyname, response.data)
@@ -76,6 +81,8 @@ class PrincipalViewsetTests(IdentityRequest):
         principal = response.data.get("data")[0]
         self.assertIsNotNone(principal.get("username"))
         self.assertEqual(principal.get("username"), self.principal.username)
+
+        cross_account_principal.delete()
 
     @patch(
         "management.principal.proxy.PrincipalProxy.request_principals",
@@ -111,6 +118,37 @@ class PrincipalViewsetTests(IdentityRequest):
         self.assertEqual(principal.get("username"), "test_user1")
         self.assertIsNotNone(principal.get("is_org_admin"))
         self.assertTrue(principal.get("is_org_admin"))
+
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={"status_code": 200, "data": [{"username": "test_user"}]},
+    )
+    def test_read_principal_filtered_list_success(self, mock_request):
+        """Test that we can read a filtered list of principals."""
+        # Create a cross_account user in rbac.
+        with tenant_context(self.tenant):
+            cross_account_principal = Principal.objects.create(username="cross_account_user", cross_account=True)
+
+        url = f'{reverse("principals")}?usernames=test_user,cross_account_user&offset=30'
+        client = APIClient()
+        response = client.get(url, **self.headers)
+
+        mock_request.assert_called_once_with(
+            ["test_user"], account=ANY, limit=10, offset=30, options={"sort_order": "asc"}
+        )
+        # Cross account user won't be returned.
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        for keyname in ["meta", "links", "data"]:
+            self.assertIn(keyname, response.data)
+        self.assertIsInstance(response.data.get("data"), list)
+        self.assertEqual(len(response.data.get("data")), 1)
+        self.assertEqual(response.data.get("meta").get("count"), 1)
+
+        principal = response.data.get("data")[0]
+        self.assertIsNotNone(principal.get("username"))
+        self.assertEqual(principal.get("username"), "test_user")
+
+        cross_account_principal.delete()
 
     @patch(
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
