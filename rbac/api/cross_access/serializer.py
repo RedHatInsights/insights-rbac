@@ -95,3 +95,16 @@ class CrossAccountRequestDetailSerializer(serializers.ModelSerializer):
         for role in roles:
             request.roles.add(role)
         return request
+
+    def update(self, instance, validated_data):
+        """Override the update method to associate the roles to cross account request after it is updated."""
+        role_data = validated_data.pop("roles")
+        display_names = [role["display_name"] for role in role_data]
+        for field in validated_data:
+            setattr(instance, field, validated_data.get(field))
+
+        roles = Role.objects.filter(display_name__in=display_names)
+        for role in roles:
+            instance.roles.add(role)
+        instance.save()
+        return instance
