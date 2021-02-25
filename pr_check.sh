@@ -57,7 +57,7 @@ apps:
     GROUP_SEEDING_ENABLED: 'False'
 EOF
 
-bonfire config get -l -a rbac | oc apply -f -
+bonfire local get -a rbac | oc apply -f -
 sleep 5
 
 #
