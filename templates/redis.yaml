@@ -1,0 +1,202 @@
+apiVersion: v1
+kind: Template
+labels:
+  app: ${NAME}
+  template: ${NAME}-redis
+metadata:
+  annotations:
+    description: Redis for Role Based Access Control powered by Django+PostgreSQL+Celery
+    iconClass: icon-python
+    openshift.io/display-name: RBAC
+    openshift.io/documentation-url: https://insight-rbac.readthedocs.io/en/latest/
+    openshift.io/long-description: This template defines resources needed to run the
+      RBAC application, including a build configuration, application deployment configuration,
+      and database deployment configuration.
+    openshift.io/provider-display-name: Red Hat, Inc.
+    tags: python,flask
+  name: rbac-redis
+objects:
+- apiVersion: v1
+  data:
+    redis-service-host: ${NAME}-redis
+    redis-service-port: '6379'
+    redis.conf: 'dir /var/lib/redis/data
+
+      '
+  kind: ConfigMap
+  metadata:
+    name: redis-config
+- apiVersion: apps/v1
+  kind: Deployment
+  metadata:
+    labels:
+      app: rbac
+      template: rbac
+    name: ${NAME}-redis
+  spec:
+    minReadySeconds: 15
+    progressDeadlineSeconds: 600
+    replicas: ${{REPLICAS}}
+    revisionHistoryLimit: 9
+    selector:
+      matchLabels:
+        name: ${NAME}-redis
+    strategy:
+      type: Recreate
+    template:
+      metadata:
+        labels:
+          app: rbac
+          name: ${NAME}-redis
+          template: rbac-template
+        name: ${NAME}-redis
+      spec:
+        affinity:
+          podAntiAffinity:
+            preferredDuringSchedulingIgnoredDuringExecution:
+            - podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                  - key: app
+                    operator: In
+                    values:
+                    - rbac
+                  - key: template
+                    operator: In
+                    values:
+                    - rbac-template
+                topologyKey: failure-domain.beta.kubernetes.io/zone
+              weight: 100
+            - podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                  - key: app
+                    operator: In
+                    values:
+                    - rbac
+                  - key: template
+                    operator: In
+                    values:
+                    - rbac-template
+                topologyKey: kubernetes.io/hostname
+              weight: 99
+        containers:
+        - args:
+          - /etc/redis/redis.conf
+          command:
+          - redis-server
+          env: null
+          image: ${IMAGE}:${IMAGE_TAG}
+          imagePullPolicy: IfNotPresent
+          livenessProbe:
+            exec:
+              command:
+              - redis-cli
+              - ping
+            failureThreshold: 3
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            successThreshold: 1
+            timeoutSeconds: 3
+          name: ${NAME}-redis
+          ports:
+          - containerPort: 6379
+            protocol: TCP
+          readinessProbe:
+            exec:
+              command:
+              - redis-cli
+              - ping
+            failureThreshold: 3
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            successThreshold: 1
+            timeoutSeconds: 3
+          resources:
+            limits:
+              cpu: ${CPU_LIMIT}
+              memory: ${MEMORY_LIMIT}
+            requests:
+              cpu: ${CPU_REQUEST}
+              memory: ${MEMORY_REQUEST}
+          volumeMounts:
+          - mountPath: /var/lib/redis/data
+            name: ${NAME}-redis-data
+          - mountPath: /etc/redis/
+            name: ${NAME}-redis-config
+        imagePullSecrets:
+        - name: quay-cloudservices-pull
+        - name: rh-registry-pull
+        volumes:
+        - name: ${NAME}-redis-data
+          persistentVolumeClaim:
+            claimName: ${NAME}-redis
+        - configMap:
+            name: redis-config
+          name: ${NAME}-redis-config
+- apiVersion: v1
+  kind: Service
+  metadata:
+    annotations:
+      description: Exposes the redis service
+    labels:
+      app: rbac
+      template: rbac
+    name: ${NAME}-redis
+  spec:
+    ports:
+    - name: ${NAME}-redis
+      port: 6379
+      protocol: TCP
+      targetPort: 6379
+    selector:
+      name: ${NAME}-redis
+- apiVersion: v1
+  kind: PersistentVolumeClaim
+  metadata:
+    name: ${NAME}-redis
+  spec:
+    accessModes:
+    - ReadWriteOnce
+    resources:
+      requests:
+        storage: ${VOLUME_CAPACITY}
+parameters:
+- description: The name assigned to all frontend objects defined in this template.
+  displayName: Name
+  name: NAME
+  required: true
+  value: rbac
+- description: Initial amount of memory the container will request.
+  displayName: Memory Request
+  name: MEMORY_REQUEST
+  required: true
+  value: 1Gi
+- description: Maximum amount of memory the container can use.
+  displayName: Memory Limit
+  name: MEMORY_LIMIT
+  required: true
+  value: 1Gi
+- description: Initial amount of cpu the container will request.
+  displayName: CPU Request
+  name: CPU_REQUEST
+  required: true
+  value: 100m
+- description: Maximum amount of cpu the container can use.
+  displayName: CPU Limit
+  name: CPU_LIMIT
+  required: true
+  value: 200m
+- description: Volume space available for data, e.g. 512Mi, 2Gi
+  displayName: Volume Capacity
+  name: VOLUME_CAPACITY
+  required: true
+  value: 1Gi
+- name: IMAGE
+  value: redis
+- description: The number of replicas to use for the prometheus deployment
+  name: REPLICAS
+  value: '1'
+- description: Image tag
+  name: IMAGE_TAG
+  required: true

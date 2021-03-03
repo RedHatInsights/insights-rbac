@@ -28,6 +28,7 @@ from tenant_schemas.utils import tenant_context
 from api.models import User
 from management.models import Group, Permission, Principal, Role, Access, Policy
 from tests.identity_request import IdentityRequest
+from unittest.mock import patch
 
 
 URL = reverse("role-list")
@@ -174,8 +175,15 @@ class RoleViewsetTests(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
     def test_create_role_invalid_permission(self):
-        """Test that creating an invalid role returns an error."""
+        """Test that creating a role with invalid access permission returns an error."""
         test_data = {"name": "role1", "access": [{"permission": "foo:bar", "resourceDefinitions": []}]}
+        client = APIClient()
+        response = client.post(URL, test_data, format="json", **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_create_role_empty_application_in_permission(self):
+        """Test that creating a role with empty application in access permission returns an error."""
+        test_data = {"name": "role1", "access": [{"permission": ":foo:bar", "resourceDefinitions": []}]}
         client = APIClient()
         response = client.post(URL, test_data, format="json", **self.headers)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
@@ -214,6 +222,19 @@ class RoleViewsetTests(IdentityRequest):
         ]
         response = self.create_role(role_name, in_access_data=access_data)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_create_role_appfilter_structure_fail(self):
+        """Test that we cannot create a role with invalid structure of resource definition."""
+        role_name = "operationFail"
+        access_data = [
+            {
+                "permission": "cost-management:*:*",
+                "resourceDefinitions": {"attributeFilter": {"key": "keyA", "operation": "in", "foo": "valueA"}},
+            }
+        ]
+        response = self.create_role(role_name, in_access_data=access_data)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data["errors"][0]["detail"].code, "not_a_list")
 
     def test_create_role_appfilter_fields_fail(self):
         """Test that we cannot create a role with an invalid key in the attributeFilter object."""
@@ -520,6 +541,32 @@ class RoleViewsetTests(IdentityRequest):
             self.assertIsNotNone(iterRole.get("groups_in")[0]["uuid"])
             self.assertIsNotNone(iterRole.get("groups_in")[0]["description"])
 
+    def test_list_role_with_username_forbidden_to_nonadmin(self):
+        """Test that non admin can not read a list of roles for username."""
+        # Setup non admin request
+        non_admin_request_context = self._create_request_context(
+            self.customer_data, self.user_data, create_customer=False, is_org_admin=False
+        )
+        non_admin_request = non_admin_request_context["request"]
+
+        url = "{}?username={}".format(URL, self.user_data["username"])
+        client = APIClient()
+        response = client.get(url, **non_admin_request.META)
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={"status_code": 200, "data": []},
+    )
+    def test_list_role_fail_with_invalid_username(self, mock_request):
+        """Test that non admin can not read a list of roles for username."""
+        url = "{}?username={}".format(URL, "foo")
+        client = APIClient()
+        response = client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
     def test_list_role_with_additional_fields_username_success(self):
         """Test that we can read a list of roles and add fields for username."""
         field_1 = "groups_in_count"
@@ -657,6 +704,55 @@ class RoleViewsetTests(IdentityRequest):
         client = APIClient()
         response = client.put(url, test_data, format="json", **self.headers)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_update_role_invalid_resource_defs_structure(self):
+        """Test that updating a role with an invalid resource definitions returns an error."""
+        # Set up
+        role_name = "permRole"
+        access_data = [
+            {
+                "permission": "cost-management:*:*",
+                "resourceDefinitions": [{"attributeFilter": {"key": "keyA", "operation": "equal", "value": "valueA"}}],
+            }
+        ]
+        response = self.create_role(role_name, in_access_data=access_data)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        role_uuid = response.data.get("uuid")
+        test_data = response.data
+        test_data.get("access")[0]["resourceDefinitions"] = {
+            "attributeFilter": {"key": "keyA", "operation": "equal", "value": "valueA"}
+        }
+
+        # Test update failure
+        url = reverse("role-detail", kwargs={"uuid": role_uuid})
+        client = APIClient()
+        response = client.put(url, test_data, format="json", **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data["errors"][0]["detail"].code, "not_a_list")
+
+    def test_update_role_appfilter_operation_fail(self):
+        # Set up
+        role_name = "permRole"
+        access_data = [
+            {
+                "permission": "cost-management:*:*",
+                "resourceDefinitions": [{"attributeFilter": {"key": "keyA", "operation": "equal", "value": "valueA"}}],
+            }
+        ]
+        response = self.create_role(role_name, in_access_data=access_data)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        role_uuid = response.data.get("uuid")
+        test_data = response.data
+        test_data.get("access")[0]["resourceDefinitions"][0].get("attributeFilter")["operation"] = "foo"
+
+        # Test update failure
+        url = reverse("role-detail", kwargs={"uuid": role_uuid})
+        client = APIClient()
+        response = client.put(url, test_data, format="json", **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(
+            str(response.data["errors"][0]["detail"]), "attributeFilter operation must be one of ['in', 'equal']"
+        )
 
     def test_update_role_permission_does_not_exist_fail(self):
         """Test that we cannot update a role with a permission that doesn't exist."""
