@@ -16,17 +16,14 @@
 #
 
 """View for cross access request."""
-from datetime import datetime, timedelta
 
-import pytz
-from django.db.models.query import QuerySet
 from django.utils import timezone
-from django.utils.translation import gettext as _
 from django_filters import rest_framework as filters
 from management.models import Principal, Role
 from management.principal.proxy import PrincipalProxy
 from management.utils import validate_and_get_key, validate_limit_and_offset, validate_uuid
-from rest_framework import mixins, serializers, viewsets
+from rest_framework import mixins, viewsets
+from rest_framework import status as http_status
 from rest_framework.response import Response
 from rest_framework.serializers import ValidationError
 from tenant_schemas.utils import tenant_context
@@ -101,9 +98,8 @@ class CrossAccountRequestViewSet(
 
     def create(self, request, *args, **kwargs):
         """Create cross account requests for associate."""
-        self.validate_and_get_input_for_creation(request.data)
-
         with tenant_context(Tenant.objects.get(schema_name="public")):
+            self.validate_and_format_input(request.data)
             return super().create(request=request, args=args, kwargs=kwargs)
 
     def list(self, request, *args, **kwargs):
@@ -119,35 +115,28 @@ class CrossAccountRequestViewSet(
     def partial_update(self, request, *args, **kwargs):
         """Patch a cross-account request."""
         validate_uuid(kwargs.get("pk"), "cross-account request uuid validation")
-        payload = request.data
-        for field in payload:
+        for field in request.data:
             if field not in VALID_PATCH_FIELDS:
-                key = "cross-account request"
-                message = f"Field '{field}' is not supported. Please use one or more of: {VALID_PATCH_FIELDS}."
-                error = {key: [_(message)]}
-                raise serializers.ValidationError(error)
+                self.throw_validation_error(
+                    "cross-accont partial update",
+                    f"Field '{field}' is not supported. Please use one or more of: {VALID_PATCH_FIELDS}"
+                )
 
         with tenant_context(Tenant.objects.get(schema_name="public")):
             current = self.get_object()
-            update_data = {
-                "start_date": request.data.get("start_date", current.start_date),
-                "end_date": request.data.get("end_date", current.end_date),
-                "roles": request.data.get("roles", current.roles.all()),
-                "status": request.data.get("status", current.status),
-            }
-            # Todo: This function is pretty messy, and basically just a rehash of the create version,
-            #       can likely clean it up and maybe provide a partial flag
-            self.validate_and_get_input_for_update(update_data)
 
-            if current.status == "expired":
-                update_data["target_account"] = current.target_account
-                if isinstance(update_data.get("roles"), QuerySet):
-                    update_data["roles"] = [role.display_name for role in update_data.get("roles")]
-                request.data.update(update_data)
-                return super().create(request=request, args=args, kwargs=kwargs)
+            if current.status != "pending":
+                self.throw_validation_error("cross-account partial update", "Only pending requests may be updated.")
 
-            self.update_cross_account_request(current, update_data)
-            return Response(CrossAccountRequestDetailSerializer(current).data)
+            self.validate_and_format_input(request.data)
+
+            kwargs["partial"] = True
+            response = super().update(request=request, *args, **kwargs)
+            if response.status_code and response.status_code is http_status.HTTP_200_OK:
+                if request.data.get("status"):
+                    self.update_status(current, request.data.get("status"))
+                    return Response(CrossAccountRequestDetailSerializer(current).data)
+            return response
 
     def update(self, request, *args, **kwargs):
         """Update a cross-account request."""
@@ -155,14 +144,19 @@ class CrossAccountRequestViewSet(
 
         with tenant_context(Tenant.objects.get(schema_name="public")):
             current = self.get_object()
+            if current.status != "pending":
+                self.throw_validation_error("cross-account update", "Only pending requests may be updated.")
+            if "target_account" in request.data and str(request.data.get("target_account")) != current.target_account:
+                self.throw_validation_error("cross-account-update", "Target account may not be updated.")
 
-            self.validate_and_get_input_for_creation(request.data)
+            self.validate_and_format_input(request.data)
 
-            if current.status == "expired":
-                return super().create(request=request, args=args, kwargs=kwargs)
-
-            self.update_cross_account_request(current, request.data)
-            return Response(CrossAccountRequestDetailSerializer(current).data)
+            response = super().update(request=request, args=args, kwargs=kwargs)
+            if response.status_code and response.status_code is http_status.HTTP_200_OK:
+                if request.data.get("status"):
+                    self.update_status(current, request.data.get("status"))
+                    return Response(CrossAccountRequestDetailSerializer(current).data)
+            return response
 
     def retrieve(self, request, *args, **kwargs):
         """Retrive cross account requests by request_id."""
@@ -216,63 +210,24 @@ class CrossAccountRequestViewSet(
         error = {source: [message]}
         raise ValidationError(error)
 
-    def update_cross_account_request(self, car, update_data):
-        """Update cross-account-request with list of role names."""
-        if car.status == "pending" and update_data.get("status").lower() == "approved":
-            # create_principal_for_approved_request()
-            pass
-        for field in update_data:
-            if field == "roles":
-                car.roles.clear()
-                for role in update_data.get("roles"):
-                    car.roles.add(Role.objects.get(display_name=role.get("display_name")))
-                car.save()
-                continue
-            setattr(car, field, update_data.get(field))
-        car.save()
-
-    def validate_and_get_input_for_creation(self, request_data):
+    def validate_and_format_input(self, request_data, partial=False):
         """Validate the create api input."""
         target_account = request_data.get("target_account")
-        start_date = request_data.get("start_date")
-        end_date = request_data.get("end_date")
-        roles = request_data.get("roles")
-        if None in [target_account, start_date, end_date, roles]:
-            self.throw_validation_error("cross-account-create", f"{PARAMS_FOR_CREATION} must be all specified.")
 
-        try:
-            start_date = datetime.strptime(start_date, "%m/%d/%Y")
-            end_date = datetime.strptime(end_date, "%m/%d/%Y")
-        except ValueError:
-            raise self.throw_validation_error(
-                "cross-account-create", "start_date or end_date does not match format: '%m/%d/%Y'."
-            )
+        if target_account:
+            try:
+                tenant_schema_name = create_schema_name(target_account)
+                Tenant.objects.get(schema_name=tenant_schema_name)
+            except Tenant.DoesNotExist:
+                raise self.throw_validation_error(
+                    "cross-account-request",
+                    f"Account '{target_account}' does not exist."
+                )
 
-        if start_date > (datetime.now() + timedelta(60)):
-            raise self.throw_validation_error("cross-account-create", "Start date must be within 60 days of today.")
-
-        if end_date - start_date > timedelta(365):
-            raise self.throw_validation_error(
-                "cross-account-create", "Access duration may not be longer than one year."
-            )
-
-        with tenant_context(Tenant.objects.get(schema_name="public")):
-            for role in roles:
-                try:
-                    Role.objects.get(display_name=role)
-                except Role.DoesNotExist:
-                    raise self.throw_validation_error("cross-account-create", f"Role '{role}' does not exist.")
-
-        try:
-            tenant_schema_name = create_schema_name(target_account)
-            Tenant.objects.get(schema_name=tenant_schema_name)
-        except Tenant.DoesNotExist:
-            raise self.throw_validation_error("cross-account-create", f"Account '{target_account}' does not exist.")
-
-        request_data["start_date"] = start_date
-        request_data["end_date"] = end_date
         request_data["user_id"] = self.request.user.user_id
-        request_data["roles"] = [{"display_name": role} for role in roles]
+        if "roles" in request_data:
+            with tenant_context(Tenant.objects.get(schema_name="public")):
+                request_data["roles"] = self.format_roles(request_data.get("roles"))
 
     def create_principal(self, target_account, user_id):
         """Create a cross account principal in the target account."""
@@ -284,51 +239,24 @@ class CrossAccountRequestViewSet(
 
         return cross_account_principal
 
-    def validate_and_get_input_for_update(self, request_data):
-        """Validate the update api input."""
-        target_account = request_data.get("target_account")
-        start_date = request_data.get("start_date")
-        end_date = request_data.get("end_date")
-        roles = request_data.get("roles")
-
-        try:
-            if start_date and isinstance(start_date, str):
-                start_date = pytz.utc.localize(datetime.strptime(start_date, "%m/%d/%Y"))
-            if end_date and isinstance(end_date, str):
-                end_date = pytz.utc.localize(datetime.strptime(end_date, "%m/%d/%Y"))
-        except ValueError:
-            raise self.throw_validation_error(
-                "cross-account-update", "start_date or end_date does not match format: '%m/%d/%Y'."
-            )
-
-        if start_date and start_date > pytz.utc.localize(datetime.now() + timedelta(60)):
-            raise self.throw_validation_error("cross-account-update", "Start date must be within 60 days of today.")
-
-        if end_date and start_date and (end_date - start_date) > timedelta(365):
-            raise self.throw_validation_error(
-                "cross-account-update", "Access duration may not be longer than one year."
-            )
-
-        if isinstance(roles, QuerySet):
-            roles = [role.display_name for role in roles]
-
-        if roles:
-            with tenant_context(Tenant.objects.get(schema_name="public")):
-                for role in roles:
-                    try:
-                        Role.objects.get(display_name=role)
-                    except Role.DoesNotExist:
-                        raise self.throw_validation_error("cross-account-update", f"Role '{role}' does not exist.")
-
-        if target_account:
+    def format_roles(self, roles):
+        """Format role list as expected for cross-account-request."""
+        for role_name in roles:
             try:
-                tenant_schema_name = create_schema_name(target_account)
-                Tenant.objects.get(schema_name=tenant_schema_name)
-            except Tenant.DoesNotExist:
-                raise self.throw_validation_error("cross-account-update", f"Account '{target_account}' does not exist.")
+                role = Role.objects.get(display_name=role_name)
+                if not role.system:
+                    self.throw_validation_error(
+                        "cross-account-request",
+                        "Only system roles may be assigned to a cross-account-request."
+                    )
+            except Role.DoesNotExist:
+                raise self.throw_validation_error("cross-account-request", f"Role '{role_name}' does not exist.")
 
-        request_data["start_date"] = start_date
-        request_data["end_date"] = end_date
-        request_data["user_id"] = self.request.user.user_id
-        if roles:
-            request_data["roles"] = [{"display_name": role} for role in roles]
+        return [{"display_name": role} for role in roles]
+
+    def update_status(self, car, status):
+        """Update the status of a cross-account-request."""
+        car.status = status
+        if status == "approved":
+            self.create_principal(car.target_account, car.user_id)
+        car.save()
