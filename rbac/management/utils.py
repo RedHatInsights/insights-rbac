@@ -113,6 +113,8 @@ def access_for_roles(roles, param_applications):
 
 def groups_for_principal(principal, **kwargs):
     """Gathers all groups for a principal, including the default."""
+    if principal.cross_account:
+        return set()
     assigned_group_set = principal.group.all()
     platform_default_group_set = Group.platform_default_set()
     prefetch_lookups = kwargs.get("prefetch_lookups_for_groups")
@@ -121,8 +123,6 @@ def groups_for_principal(principal, **kwargs):
         assigned_group_set = assigned_group_set.prefetch_related(prefetch_lookups)
         platform_default_group_set = platform_default_group_set.prefetch_related(prefetch_lookups)
 
-    if principal.cross_account:
-        return set(assigned_group_set)
     return set(assigned_group_set | platform_default_group_set)
 
 
