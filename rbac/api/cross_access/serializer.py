@@ -16,6 +16,7 @@
 #
 
 """Serializer for CrossAccountRequest."""
+from django.db import transaction
 from management.models import Role
 from management.permission.serializer import PermissionSerializer
 from rest_framework import serializers
@@ -96,6 +97,7 @@ class CrossAccountRequestDetailSerializer(serializers.ModelSerializer):
             request.roles.add(role)
         return request
 
+    @transaction.atomic
     def update(self, instance, validated_data):
         """Override the update method to associate the roles to cross account request after it is updated."""
         if "roles" in validated_data:

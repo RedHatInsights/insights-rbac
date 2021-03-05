@@ -25,6 +25,7 @@ from tenant_schemas.utils import tenant_context
 
 from datetime import datetime, timedelta
 from unittest.mock import patch
+from uuid import uuid4
 from tests.identity_request import IdentityRequest
 
 
@@ -486,6 +487,7 @@ class CrossAccountRequestViewTests(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
     def test_partial_update_expired(self):
+        """Test that PATCHing an expired CAR fails."""
         update_data = {
             "end_date": self.format_date(self.ref_time + timedelta(18))
         }
@@ -502,3 +504,101 @@ class CrossAccountRequestViewTests(IdentityRequest):
         )
         
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_update_bmi(self):
+        """Test that PUT with extra fields in body fails."""
+        self.data4create["billy"] = "mandy"
+
+        car_uuid = self.request_5.request_id
+        url = reverse("cross-detail", kwargs={"pk": car_uuid})
+
+        client = APIClient()
+        response = client.put(
+            url,
+            self.data4create,
+            format="json",
+            **self.associate_admin_request.META
+        )
+        
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_partial_update_bmi(self):
+        """Test that PATCH with extra fields in body fails."""
+        update_data = {
+            "start_date": self.format_date(self.ref_time + timedelta(2)),
+            "cup": "cake"
+        }
+
+        car_uuid = self.request_1.request_id
+        url = reverse("cross-detail", kwargs={"pk": str(car_uuid)})
+
+        client = APIClient()
+        response = client.patch(
+            url,
+            update_data,
+            format="json",
+            **self.associate_admin_request.META
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_update_bad_date_spec(self):
+        """Test that PUT with body fields not matching spec fails."""
+        self.data4create["end_date"] = 12252021
+
+        car_uuid = self.request_5.request_id
+        url = reverse("cross-detail", kwargs={"pk": car_uuid})
+
+        client = APIClient()
+        response = client.put(
+            url,
+            self.data4create,
+            format="json",
+            **self.associate_admin_request.META
+        )
+        
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_partial_update_bad_date_spec(self):
+        """Test that PATCH with body fields not matching spec fails."""
+        update_data = {
+            "start_date": 12252021
+        }
+
+        car_uuid = self.request_1.request_id
+        url = reverse("cross-detail", kwargs={"pk": str(car_uuid)})
+
+        client = APIClient()
+        response = client.patch(
+            url,
+            update_data,
+            format="json",
+            **self.associate_admin_request.META
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_update_bad_uuid(self):
+        """Test that update endpoints reject invalid UUIDs."""
+        bad_uuids = [
+            "imateapot!", # Not even close
+            str(self.request_5.request_id).replace("-", ""), # Malformed but valid UUID
+            "7g895hq3-6204-43e6-9g4c-20de5f61e021", # Non-hex values in UUID
+            None
+        ]
+
+        client = APIClient()
+        for bad_uuid in bad_uuids:
+            url = reverse("cross-detail", kwargs={"pk": bad_uuid})
+            response = client.put(
+                url,
+                self.data4create,
+                format="json",
+                **self.associate_admin_request.META
+            )
+            self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+            response = client.patch(
+                url,
+                self.data4create,
+                format="json",
+                **self.associate_admin_request.META
+            )
+            self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
