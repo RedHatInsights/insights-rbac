@@ -392,7 +392,8 @@ class CrossAccountRequestViewTests(IdentityRequest):
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(
-            response.data.get("errors")[0].get("detail"), "Role 'role_2' is not canned role and could not be assigned."
+            response.data.get("errors")[0].get("detail"),
+            "Only system roles may be assigned to a cross-account-request.",
         )
 
     def test_create_requests_fail_for_over_60_day_start_date(self):
