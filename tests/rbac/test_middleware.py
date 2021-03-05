@@ -142,6 +142,41 @@ class IdentityHeaderMiddlewareTest(IdentityRequest):
         middleware.process_request(mock_request)
         self.assertTrue(hasattr(mock_request, "user"))
 
+    def test_process_cross_account_request(self):
+        """Test that the process request functions correctly for cross account request."""
+        middleware = IdentityHeaderMiddleware()
+        # User without redhat email will fail.
+        request_context = self._create_request_context(
+            self.customer, self.user_data, create_customer=False, cross_account=True, is_internal=True
+        )
+        mock_request = request_context["request"]
+        mock_request.path = "/api/v1/providers/"
+
+        response = middleware.process_request(mock_request)
+        self.assertIsInstance(response, HttpResponseUnauthorizedRequest)
+
+        # User with is_internal equal to False will fail.
+        self.user_data["email"] = "test@redhat.com"
+        request_context = self._create_request_context(
+            self.customer, self.user_data, create_customer=False, cross_account=True
+        )
+        mock_request = request_context["request"]
+        mock_request.path = "/api/v1/providers/"
+
+        response = middleware.process_request(mock_request)
+        self.assertIsInstance(response, HttpResponseUnauthorizedRequest)
+
+        # Success pass if user is internal and with redhat email
+        self.user_data["email"] = "test@redhat.com"
+        request_context = self._create_request_context(
+            self.customer, self.user_data, create_customer=False, cross_account=True, is_internal=True
+        )
+        mock_request = request_context["request"]
+        mock_request.path = "/api/v1/providers/"
+
+        response = middleware.process_request(mock_request)
+        self.assertEqual(response, None)
+
     def test_process_response(self):
         """Test that the process response functions correctly."""
         mock_request = Mock(path="/api/v1/status/")

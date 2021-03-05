@@ -88,7 +88,14 @@ class IdentityRequest(TestCase):
 
     @classmethod
     def _create_request_context(
-        cls, customer_data, user_data, create_customer=True, create_tenant=False, is_org_admin=True, is_internal=False
+        cls,
+        customer_data,
+        user_data,
+        create_customer=True,
+        create_tenant=False,
+        is_org_admin=True,
+        is_internal=False,
+        cross_account=False,
     ):
         """Create the request context for a user."""
         customer = customer_data
@@ -96,7 +103,10 @@ class IdentityRequest(TestCase):
         if create_customer:
             cls.customer = cls._create_customer(account, create_tenant=create_tenant)
 
-        json_identity = json_dumps(cls._build_identity(user_data, account, is_org_admin, is_internal))
+        identity = cls._build_identity(user_data, account, is_org_admin, is_internal)
+        if cross_account:
+            identity["identity"]["internal"] = {"cross_access": True}
+        json_identity = json_dumps(identity)
         mock_header = b64encode(json_identity.encode("utf-8"))
         request = Mock()
         request.META = {RH_IDENTITY_HEADER: mock_header}

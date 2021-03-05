@@ -185,11 +185,16 @@ class CrossAccountRequestViewSet(
             )
 
         with tenant_context(Tenant.objects.get(schema_name="public")):
-            for role in roles:
+            for role_name in roles:
                 try:
-                    Role.objects.get(display_name=role)
+                    role = Role.objects.get(display_name=role_name)
                 except Role.DoesNotExist:
-                    raise self.throw_validation_error("cross-account-create", f"Role '{role}' does not exist.")
+                    raise self.throw_validation_error("cross-account-create", f"Role '{role_name}' does not exist.")
+
+                if not role.system:
+                    raise self.throw_validation_error(
+                        "cross-account-create", f"Role '{role_name}' is not canned role and could not be assigned."
+                    )
 
         try:
             tenant_schema_name = create_schema_name(target_account)
