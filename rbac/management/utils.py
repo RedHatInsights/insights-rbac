@@ -21,9 +21,12 @@ from uuid import UUID
 
 from django.core.exceptions import PermissionDenied
 from django.utils.translation import gettext as _
-from management.models import Group, Principal
+from management.models import Group, Principal, Role
 from management.principal.proxy import PrincipalProxy
 from rest_framework import serializers, status
+from tenant_schemas.utils import tenant_context
+
+from api.models import CrossAccountRequest, Tenant
 
 
 USERNAME_KEY = "username"
@@ -110,6 +113,8 @@ def access_for_roles(roles, param_applications):
 
 def groups_for_principal(principal, **kwargs):
     """Gathers all groups for a principal, including the default."""
+    if principal.cross_account:
+        return set()
     assigned_group_set = principal.group.all()
     platform_default_group_set = Group.platform_default_set()
     prefetch_lookups = kwargs.get("prefetch_lookups_for_groups")
@@ -129,6 +134,8 @@ def policies_for_principal(principal, **kwargs):
 
 def roles_for_principal(principal, **kwargs):
     """Gathers all roles for a principal."""
+    if principal.cross_account:
+        return roles_for_cross_account_principal(principal)
     policies = policies_for_principal(principal, **kwargs)
     return roles_for_policies(policies)
 
@@ -189,3 +196,14 @@ def validate_limit_and_offset(query_params):
             "status": str(status.HTTP_400_BAD_REQUEST),
         }
         return {"errors": [error]}
+
+
+def roles_for_cross_account_principal(principal):
+    """Return roles for cross account principals."""
+    target_account, user_id = principal.username.split("-")
+    with tenant_context(Tenant.objects.get(schema_name="public")):
+        cross_account_request = CrossAccountRequest.objects.filter(
+            target_account=target_account, user_id=user_id, status="approved"
+        ).first()
+        role_names = list(cross_account_request.roles.all().values_list("name", flat=True))
+    return Role.objects.filter(name__in=role_names)

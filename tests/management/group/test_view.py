@@ -497,6 +497,19 @@ class GroupViewsetTests(IdentityRequest):
         response = client.get(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
+    def test_get_group_by_username_for_cross_account_principal(self):
+        """Test that getting groups for a cross account principal won't have platform default group."""
+        with tenant_context(self.tenant):
+            self.principalC.cross_account = True
+            self.principalC.save()
+        url = reverse("group-list")
+        url = "{}?username={}".format(url, self.principalC.username)
+        client = APIClient()
+
+        # User who is not added to a group explicitly will not return platform default group if he is cross account principal.
+        response = client.get(url, **self.headers)
+        self.assertEqual(response.data.get("meta").get("count"), 0)
+
     def test_get_group_by_username_with_capitalization(self):
         """Test that getting groups for a user name with capitalization returns successfully."""
         url = reverse("group-list")

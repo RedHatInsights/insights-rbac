@@ -48,6 +48,7 @@ class DevelopmentIdentityHeaderMiddleware(MiddlewareMixin):  # pylint: disable=t
                         "is_internal": True,
                         "user_id": "51736777",
                     },
+                    "internal": {"cross_access": False},
                 }
             }
             json_identity = json_dumps(identity_header)

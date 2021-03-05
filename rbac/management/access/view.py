@@ -83,7 +83,7 @@ class AccessView(APIView):
         return get_access_queryset(self.request)
 
     def get(self, request):
-        """Provide access data for prinicpal."""
+        """Provide access data for principal."""
         app = request.query_params.get(APPLICATION_KEY)
         principal = get_principal_from_request(request)
         cache = AccessCache(request.tenant.schema_name)
