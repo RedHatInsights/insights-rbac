@@ -1,0 +1,174 @@
+apiVersion: v1
+kind: Template
+labels:
+  app: rbac
+  template: rbac-config-sync
+metadata:
+  annotations:
+    description: Component to sync from config repo and create config map for service
+      to consume
+    iconClass: icon-python
+    openshift.io/display-name: RBAC
+    openshift.io/documentation-url: https://insight-rbac.readthedocs.io/en/latest/
+    openshift.io/long-description: This template defines resources needed to run the
+      RBAC application, including a build configuration, application deployment configuration,
+      and database deployment configuration.
+    openshift.io/provider-display-name: Red Hat, Inc.
+    tags: python,flask
+  name: rbac-config-sync
+objects:
+- apiVersion: apps/v1
+  kind: Deployment
+  metadata:
+    labels:
+      app: ${NAME}
+    name: ${JOB_NAME}
+  spec:
+    minReadySeconds: 15
+    progressDeadlineSeconds: 600
+    replicas: ${{REPLICAS}}
+    revisionHistoryLimit: 9
+    selector:
+      matchLabels:
+        name: ${JOB_NAME}
+    strategy:
+      type: Recreate
+    template:
+      metadata:
+        labels:
+          app: ${NAME}
+          name: ${JOB_NAME}
+        name: ${JOB_NAME}
+      spec:
+        affinity:
+          podAntiAffinity:
+            preferredDuringSchedulingIgnoredDuringExecution:
+            - podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                  - key: app
+                    operator: In
+                    values:
+                    - ${NAME}
+                topologyKey: failure-domain.beta.kubernetes.io/zone
+              weight: 100
+            - podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                  - key: app
+                    operator: In
+                    values:
+                    - ${NAME}
+                topologyKey: kubernetes.io/hostname
+              weight: 99
+        containers:
+        - command:
+          - /bin/bash
+          - -c
+          - "while [ true ] ; do\n  repo_changes=false\n  cd /data\n  if [ ! -d config_repo\
+            \ ]; then \n    git clone -b ${CONFIG_SOURCE_REPOSITORY_REF} --single-branch\
+            \ ${CONFIG_SOURCE_REPOSITORY_URL} config_repo\n    repo_changes=true\n\
+            \  fi\n\n  cd config_repo\n  git fetch > change_log.txt 2>&1\n  git reset\
+            \ --hard FETCH_HEAD\n  if [ -s change_log.txt ]; then\n    repo_changes=true\n\
+            \  fi\n\n  if $repo_changes; then\n    oc create configmap ${CONFIG_MAP_NAME}\
+            \ --from-file=configs/roles --dry-run -o json | oc apply -f -\n    oc\
+            \ create configmap ${MODEL_ACCESS_PERMISSIONS} --from-file=configs/permissions\
+            \ --dry-run -o json | oc apply -f -\n    oc rollout latest dc/${NAME}\n\
+            \  fi\n  sleep 1d\ndone\n"
+          env:
+          - name: GIT_COMMITTER_NAME
+            value: rbac
+          - name: GIT_COMMITTER_EMAIL
+            value: nobody@redhat.com
+          - name: NAME
+            value: ${NAME}
+          - name: CONFIG_SOURCE_REPOSITORY_REF
+            value: ${CONFIG_SOURCE_REPOSITORY_REF}
+          - name: CONFIG_SOURCE_REPOSITORY_URL
+            value: ${CONFIG_SOURCE_REPOSITORY_URL}
+          - name: CONFIG_MAP_NAME
+            value: ${CONFIG_MAP_NAME}
+          image: quay.io/cloudservices/rbac-config-cronjob:${IMAGE_TAG}
+          name: ${JOB_NAME}
+          resources:
+            limits:
+              cpu: 200m
+              memory: 200Mi
+            requests:
+              cpu: 100m
+              memory: 100Mi
+          volumeMounts:
+          - mountPath: /data
+            name: config-repo
+        imagePullSecrets:
+        - name: quay-cloudservices-pull
+        - name: rh-registry-pull
+        serviceAccountName: ${JOB_NAME}
+        volumes:
+        - name: config-repo
+          persistentVolumeClaim:
+            claimName: ${CLAIM_NAME}
+- apiVersion: v1
+  kind: PersistentVolumeClaim
+  metadata:
+    name: ${CLAIM_NAME}
+  spec:
+    accessModes:
+    - ReadWriteOnce
+    resources:
+      requests:
+        storage: 20Mi
+- apiVersion: v1
+  imagePullSecrets:
+  - name: quay-cloudservices-pull
+  kind: ServiceAccount
+  metadata:
+    name: ${JOB_NAME}
+  secrets:
+  - name: quay-cloudservices-pull
+- apiVersion: rbac.authorization.k8s.io/v1
+  kind: RoleBinding
+  metadata:
+    name: ${JOB_NAME}
+  roleRef:
+    apiGroup: rbac.authorization.k8s.io
+    kind: ClusterRole
+    name: edit
+  subjects:
+  - kind: ServiceAccount
+    name: ${JOB_NAME}
+parameters:
+- description: The name assigned to all frontend objects defined in this template.
+  displayName: Name
+  name: NAME
+  required: true
+  value: rbac
+- description: The URL of the repository for rbac config
+  displayName: Git Repository URL
+  name: CONFIG_SOURCE_REPOSITORY_URL
+  required: true
+  value: https://github.com/RedHatInsights/rbac-config.git
+- description: Set this to a branch name, tag or other ref of your repository if you
+    are not using the default branch.
+  displayName: Git Reference
+  name: CONFIG_SOURCE_REPOSITORY_REF
+  value: master
+- description: Name of the Scheduled Job to sync from rbac-config repo. A service
+    account is created specifically for this job
+  displayName: Job Name
+  name: JOB_NAME
+  value: rbac-config-sync
+- description: Name of the rbac-config config map
+  name: CONFIG_MAP_NAME
+  value: rbac-config
+- description: Name of the predefined access permissions config map
+  name: MODEL_ACCESS_PERMISSIONS
+  value: model-access-permissions
+- name: CLAIM_NAME
+  value: config-repo-pv-claim
+- description: The number of replicas to use for the prometheus deployment
+  name: REPLICAS
+  value: '1'
+- description: Image tag
+  name: IMAGE_TAG
+  required: true
