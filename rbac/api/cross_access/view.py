@@ -72,7 +72,7 @@ class CrossAccountRequestViewSet(
     mixins.ListModelMixin,
     mixins.RetrieveModelMixin,
     mixins.UpdateModelMixin,
-    viewsets.GenericViewSet
+    viewsets.GenericViewSet,
 ):
     """Cross Account Request view set.
 
@@ -119,7 +119,7 @@ class CrossAccountRequestViewSet(
             if field not in VALID_PATCH_FIELDS:
                 self.throw_validation_error(
                     "cross-accont partial update",
-                    f"Field '{field}' is not supported. Please use one or more of: {VALID_PATCH_FIELDS}"
+                    f"Field '{field}' is not supported. Please use one or more of: {VALID_PATCH_FIELDS}",
                 )
 
         with tenant_context(Tenant.objects.get(schema_name="public")):
@@ -220,8 +220,7 @@ class CrossAccountRequestViewSet(
                 Tenant.objects.get(schema_name=tenant_schema_name)
             except Tenant.DoesNotExist:
                 raise self.throw_validation_error(
-                    "cross-account-request",
-                    f"Account '{target_account}' does not exist."
+                    "cross-account-request", f"Account '{target_account}' does not exist."
                 )
 
         request_data["user_id"] = self.request.user.user_id
@@ -246,8 +245,7 @@ class CrossAccountRequestViewSet(
                 role = Role.objects.get(display_name=role_name)
                 if not role.system:
                     self.throw_validation_error(
-                        "cross-account-request",
-                        "Only system roles may be assigned to a cross-account-request."
+                        "cross-account-request", "Only system roles may be assigned to a cross-account-request."
                     )
             except Role.DoesNotExist:
                 raise self.throw_validation_error("cross-account-request", f"Role '{role_name}' does not exist.")

@@ -31,6 +31,7 @@ from tests.identity_request import IdentityRequest
 
 URL_LIST = reverse("cross-list")
 
+
 class CrossAccountRequestViewTests(IdentityRequest):
     """Test the cross account request view."""
 
@@ -98,7 +99,7 @@ class CrossAccountRequestViewTests(IdentityRequest):
                 target_account=self.another_account,
                 user_id="2222222",
                 end_date=self.ref_time + timedelta(10),
-                status="pending"
+                status="pending",
             )
             self.request_5 = CrossAccountRequest.objects.create(
                 target_account=self.account,
@@ -399,12 +400,7 @@ class CrossAccountRequestViewTests(IdentityRequest):
         url = reverse("cross-detail", kwargs={"pk": str(car_uuid)})
 
         client = APIClient()
-        response = client.put(
-            url,
-            self.data4create,
-            format="json",
-            **self.associate_admin_request.META
-        )
+        response = client.put(url, self.data4create, format="json", **self.associate_admin_request.META)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         for field in self.data4create:
@@ -422,13 +418,8 @@ class CrossAccountRequestViewTests(IdentityRequest):
         url = reverse("cross-detail", kwargs={"pk": car_uuid})
 
         client = APIClient()
-        response = client.put(
-            url,
-            self.data4create,
-            format="json",
-            **self.associate_admin_request.META
-        )
-        
+        response = client.put(url, self.data4create, format="json", **self.associate_admin_request.META)
+
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
     def test_update_request_expired(self):
@@ -439,70 +430,44 @@ class CrossAccountRequestViewTests(IdentityRequest):
         url = reverse("cross-detail", kwargs={"pk": car_uuid})
 
         client = APIClient()
-        response = client.put(
-            url,
-            self.data4create,
-            format="json",
-            **self.associate_admin_request.META
-        )
-        
+        response = client.put(url, self.data4create, format="json", **self.associate_admin_request.META)
+
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-    
+
     def test_partial_update_success(self):
         """Test updating part of a CAR."""
-        update_data = {
-            "start_date": self.format_date(self.ref_time + timedelta(2))
-        }
+        update_data = {"start_date": self.format_date(self.ref_time + timedelta(2))}
 
         car_uuid = self.request_2.request_id
         url = reverse("cross-detail", kwargs={"pk": str(car_uuid)})
 
         client = APIClient()
-        response = client.patch(
-            url,
-            update_data,
-            format="json",
-            **self.associate_admin_request.META
-        )
+        response = client.patch(url, update_data, format="json", **self.associate_admin_request.META)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data.get("start_date"), update_data.get("start_date"))
 
     def test_partial_update_fail_invalid_field(self):
         """Test that updating protected fields of a CAR fails."""
-        update_data = {
-            "target_account": "123456"
-        }
+        update_data = {"target_account": "123456"}
 
         car_uuid = self.request_1.request_id
         url = reverse("cross-detail", kwargs={"pk": str(car_uuid)})
 
         client = APIClient()
-        response = client.patch(
-            url,
-            update_data,
-            format="json",
-            **self.associate_admin_request.META
-        )
+        response = client.patch(url, update_data, format="json", **self.associate_admin_request.META)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
     def test_partial_update_expired(self):
         """Test that PATCHing an expired CAR fails."""
-        update_data = {
-            "end_date": self.format_date(self.ref_time + timedelta(18))
-        }
+        update_data = {"end_date": self.format_date(self.ref_time + timedelta(18))}
 
         car_uuid = self.request_5.request_id
         url = reverse("cross-detail", kwargs={"pk": car_uuid})
 
         client = APIClient()
-        response = client.patch(
-            url,
-            update_data,
-            format="json",
-            **self.associate_admin_request.META
-        )
-        
+        response = client.patch(url, update_data, format="json", **self.associate_admin_request.META)
+
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
     def test_update_bmi(self):
@@ -513,32 +478,19 @@ class CrossAccountRequestViewTests(IdentityRequest):
         url = reverse("cross-detail", kwargs={"pk": car_uuid})
 
         client = APIClient()
-        response = client.put(
-            url,
-            self.data4create,
-            format="json",
-            **self.associate_admin_request.META
-        )
-        
+        response = client.put(url, self.data4create, format="json", **self.associate_admin_request.META)
+
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
     def test_partial_update_bmi(self):
         """Test that PATCH with extra fields in body fails."""
-        update_data = {
-            "start_date": self.format_date(self.ref_time + timedelta(2)),
-            "cup": "cake"
-        }
+        update_data = {"start_date": self.format_date(self.ref_time + timedelta(2)), "cup": "cake"}
 
         car_uuid = self.request_1.request_id
         url = reverse("cross-detail", kwargs={"pk": str(car_uuid)})
 
         client = APIClient()
-        response = client.patch(
-            url,
-            update_data,
-            format="json",
-            **self.associate_admin_request.META
-        )
+        response = client.patch(url, update_data, format="json", **self.associate_admin_request.META)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
     def test_update_bad_date_spec(self):
@@ -549,56 +501,34 @@ class CrossAccountRequestViewTests(IdentityRequest):
         url = reverse("cross-detail", kwargs={"pk": car_uuid})
 
         client = APIClient()
-        response = client.put(
-            url,
-            self.data4create,
-            format="json",
-            **self.associate_admin_request.META
-        )
-        
+        response = client.put(url, self.data4create, format="json", **self.associate_admin_request.META)
+
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
     def test_partial_update_bad_date_spec(self):
         """Test that PATCH with body fields not matching spec fails."""
-        update_data = {
-            "start_date": 12252021
-        }
+        update_data = {"start_date": 12252021}
 
         car_uuid = self.request_1.request_id
         url = reverse("cross-detail", kwargs={"pk": str(car_uuid)})
 
         client = APIClient()
-        response = client.patch(
-            url,
-            update_data,
-            format="json",
-            **self.associate_admin_request.META
-        )
+        response = client.patch(url, update_data, format="json", **self.associate_admin_request.META)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
     def test_update_bad_uuid(self):
         """Test that update endpoints reject invalid UUIDs."""
         bad_uuids = [
-            "imateapot!", # Not even close
-            str(self.request_5.request_id).replace("-", ""), # Malformed but valid UUID
-            "7g895hq3-6204-43e6-9g4c-20de5f61e021", # Non-hex values in UUID
-            None
+            "imateapot!",  # Not even close
+            str(self.request_5.request_id).replace("-", ""),  # Malformed but valid UUID
+            "7g895hq3-6204-43e6-9g4c-20de5f61e021",  # Non-hex values in UUID
+            None,
         ]
 
         client = APIClient()
         for bad_uuid in bad_uuids:
             url = reverse("cross-detail", kwargs={"pk": bad_uuid})
-            response = client.put(
-                url,
-                self.data4create,
-                format="json",
-                **self.associate_admin_request.META
-            )
+            response = client.put(url, self.data4create, format="json", **self.associate_admin_request.META)
             self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-            response = client.patch(
-                url,
-                self.data4create,
-                format="json",
-                **self.associate_admin_request.META
-            )
+            response = client.patch(url, self.data4create, format="json", **self.associate_admin_request.META)
             self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
