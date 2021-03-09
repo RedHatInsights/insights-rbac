@@ -1,4 +1,4 @@
-FROM registry.access.redhat.com/ubi8/python-36
+FROM python:3.6
 
 EXPOSE 8080
 
@@ -31,11 +31,6 @@ LABEL summary="$SUMMARY" \
       maintainer="Red Hat Insights"
 
 USER root
-
-RUN yum install -y git gcc python3-devel
-
-# Copy the S2I scripts from the specific language image to $STI_SCRIPTS_PATH.
-COPY openshift/s2i/bin $STI_SCRIPTS_PATH
 
 # Copy extra files to the image.
 COPY openshift/root /
