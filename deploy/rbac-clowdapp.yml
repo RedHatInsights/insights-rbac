@@ -190,6 +190,14 @@ objects:
             value: ${CW_NULL_WORKAROUND)
           - name: INIT_CONTAINER
             value: "False"
+          - name: SENTRY_ENABLED
+            value: ${SENTRY_ENABLED}
+          - name: SENTRY_DSN
+              valueFrom:
+                secretKeyRef:
+                  key: sentry-dsn
+                  name: rbac-secret
+                  optional: true
 
     - name: worker-service
       minReplicas: 1
