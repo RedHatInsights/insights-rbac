@@ -55,12 +55,16 @@ class SentryMisconfigurationError(Exception):
 
 
 SENTRY_ENABLED = os.getenv("SENTRY_ENABLED", "false")
-SENTRY_DSN = os.getenv("SENTRY_DSN", "")
+
 if SENTRY_ENABLED.lower() == "true":
     if ENVIRONMENT.bool("CLOWDER_ENABLED", default=False):
         import sentry_sdk
         from sentry_sdk.integrations.django import DjangoIntegration
 
+        # Pull SENTRY_DSN from clowder config
+        SENTRY_DSN = LoadedConfig.sentry.dsn
+        if not SENTRY_DSN:
+            raise SentryMisconfigurationError
         sentry_sdk.init(dsn=SENTRY_DSN, integrations=[DjangoIntegration()])
     else:
         # Clowder is needed to pull the DSN secret
