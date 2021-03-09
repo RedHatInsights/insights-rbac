@@ -32,7 +32,7 @@ LABEL summary="$SUMMARY" \
 
 USER root
 
-RUN yum install -y git gcc python3-devel nodejs-nodemon
+RUN yum install -y git gcc python3-devel
 
 # Copy the S2I scripts from the specific language image to $STI_SCRIPTS_PATH.
 COPY openshift/s2i/bin $STI_SCRIPTS_PATH
