@@ -57,12 +57,15 @@ class SentryMisconfigurationError(Exception):
 SENTRY_ENABLED = os.getenv("SENTRY_ENABLED", "false")
 SENTRY_DSN = os.getenv("SENTRY_DSN", "")
 if SENTRY_ENABLED.lower() == "true":
-    import sentry_sdk
-    from sentry_sdk.integrations.django import DjangoIntegration
+    if ENVIRONMENT.bool("CLOWDER_ENABLED", default=False):
+        import sentry_sdk
+        from sentry_sdk.integrations.django import DjangoIntegration
 
-    if SENTRY_DSN == "":
+        sentry_sdk.init(dsn=SENTRY_DSN, integrations=[DjangoIntegration()])
+    else:
+        # Clowder is needed to pull the DSN secret
         raise SentryMisconfigurationError
-    sentry_sdk.init(dsn=SENTRY_DSN, integrations=[DjangoIntegration()])
+
 
 # Build paths inside the project like this: os.path.join(BASE_DIR, ...)
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
