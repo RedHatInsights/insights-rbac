@@ -2,12 +2,7 @@ FROM registry.redhat.io/ubi8/python-36
 
 EXPOSE 8080
 
-ENV NODEJS_VERSION=10 \
-    NODEJS_SCL=rh-nodejs10 \
-    NPM_RUN=start \
-    NODEJS_SCL=rh-nodejs10 \
-    NPM_CONFIG_PREFIX=$HOME/.npm-global \
-    PATH=$HOME/.local/bin/:$HOME/node_modules/.bin/:$HOME/.npm-global/bin/:$PATH \
+ENV PATH=$HOME/.local/bin/:$PATH \
     LC_ALL=en_US.UTF-8 \
     LANG=en_US.UTF-8 \
     PIP_NO_CACHE_DIR=off \
@@ -36,8 +31,6 @@ LABEL summary="$SUMMARY" \
       maintainer="Red Hat Insights"
 
 USER root
-
-RUN yum install @nodejs:10 -y
 
 RUN yum install -y git gcc python3-devel nodejs-nodemon
 
