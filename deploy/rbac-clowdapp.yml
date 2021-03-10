@@ -193,11 +193,11 @@ objects:
           - name: SENTRY_ENABLED
             value: ${SENTRY_ENABLED}
           - name: SENTRY_DSN
-              valueFrom:
-                secretKeyRef:
-                  key: sentry-dsn
-                  name: rbac-secret
-                  optional: true
+            valueFrom:
+              secretKeyRef:
+                key: sentry-dsn
+                name: rbac-secret
+                optional: true
 
     - name: worker-service
       minReplicas: 1
