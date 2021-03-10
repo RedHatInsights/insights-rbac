@@ -1771,4 +1771,4 @@ parameters:
   - name: EPH_ENV
     required: true
   - name: SENTRY_ENABLED
-    value: 'true'
+    value: 'false'
