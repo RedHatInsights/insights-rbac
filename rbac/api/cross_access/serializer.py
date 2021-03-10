@@ -16,6 +16,7 @@
 #
 
 """Serializer for CrossAccountRequest."""
+from django.db import transaction
 from management.models import Role
 from management.permission.serializer import PermissionSerializer
 from rest_framework import serializers
@@ -67,8 +68,8 @@ class CrossAccountRequestDetailSerializer(serializers.ModelSerializer):
     request_id = serializers.UUIDField(read_only=True)
     target_account = serializers.CharField(max_length=15)
     user_id = serializers.CharField(max_length=15)
-    start_date = serializers.DateTimeField(format="%m/%d/%Y")
-    end_date = serializers.DateTimeField(format="%m/%d/%Y")
+    start_date = serializers.DateTimeField(format="%m/%d/%Y", input_formats=["%m/%d/%Y"])
+    end_date = serializers.DateTimeField(format="%m/%d/%Y", input_formats=["%m/%d/%Y"])
     created = serializers.DateTimeField(format="%m/%d/%Y", read_only=True)
     status = serializers.CharField(max_length=10, read_only=True)
     roles = RoleSerializer(many=True)
@@ -95,3 +96,19 @@ class CrossAccountRequestDetailSerializer(serializers.ModelSerializer):
         for role in roles:
             request.roles.add(role)
         return request
+
+    @transaction.atomic
+    def update(self, instance, validated_data):
+        """Override the update method to associate the roles to cross account request after it is updated."""
+        if "roles" in validated_data:
+            role_data = validated_data.pop("roles")
+            display_names = [role["display_name"] for role in role_data]
+            roles = Role.objects.filter(display_name__in=display_names)
+            instance.roles.clear()
+            instance.roles.add(*roles)
+
+        for field in validated_data:
+            setattr(instance, field, validated_data.get(field))
+
+        instance.save()
+        return instance

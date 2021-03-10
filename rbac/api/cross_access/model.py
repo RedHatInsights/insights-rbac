@@ -53,12 +53,15 @@ class CrossAccountRequest(models.Model):
 
         [self.validate_date(date) for date in [self.start_date, self.end_date]]
 
-        if (
-            isinstance(self.end_date, datetime.datetime)
-            and isinstance(self.start_date, datetime.datetime)
-            and self.start_date.date() > self.end_date.date()
-        ):
-            raise ValidationError("Start date must be earlier than end date.")
+        if isinstance(self.end_date, datetime.datetime) and isinstance(self.start_date, datetime.datetime):
+            if self.start_date.date() > (datetime.datetime.now() + datetime.timedelta(60)).date():
+                raise ValidationError("Start date must be within 60 days of today.")
+
+            if self.start_date > self.end_date:
+                raise ValidationError("Start date must be earlier than end date.")
+
+            if self.end_date - self.start_date > datetime.timedelta(365):
+                raise ValidationError("Access duration may not be longer than one year.")
 
     def save(self, *args, **kwargs):
         """Override save method to validate some input."""
