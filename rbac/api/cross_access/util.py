@@ -18,18 +18,21 @@
 """Handler for cross-account request clean up."""
 import logging
 
-from rest_framework import status
-from tenant_schemas.utils import tenant_context
-from django.utils import timezone
 from django.db.models import Q
+from django.utils import timezone
 from prometheus_client import Summary
+from tenant_schemas.utils import tenant_context
 
-from api.models import Tenant, CrossAccountRequest
+from api.models import CrossAccountRequest, Tenant
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 # Create processing time metric
-PROCESSING_TIME = Summary("cross_account_expiry_processing_second", "Time spent checking and expiring cross-account requests")
+PROCESSING_TIME = Summary(
+    "cross_account_expiry_processing_second",
+    "Time spent checking and expiring cross-account requests"
+)
+
 
 @PROCESSING_TIME.time()
 def check_cross_request_expiry():
