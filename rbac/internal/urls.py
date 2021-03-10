@@ -26,5 +26,5 @@ urlpatterns = [
     path("api/migrations/run/", views.run_migrations),
     path("api/migrations/progress/", views.migration_progress),
     path("api/seeds/run/", views.run_seeds),
-    path("api/cars/expire/", views.car_expiry)
+    path("api/cars/expire/", views.car_expiry),
 ]

@@ -29,8 +29,7 @@ logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 # Create processing time metric
 PROCESSING_TIME = Summary(
-    "cross_account_expiry_processing_second",
-    "Time spent checking and expiring cross-account requests"
+    "cross_account_expiry_processing_second", "Time spent checking and expiring cross-account requests"
 )
 
 
@@ -50,7 +49,5 @@ def check_cross_request_expiry():
                 car.save()
 
         logger.info(
-            "Completed clean up of %d cross-account requests, %d expired.",
-            len(cars),
-            len(expired_cars),
+            "Completed clean up of %d cross-account requests, %d expired.", len(cars), len(expired_cars),
         )
