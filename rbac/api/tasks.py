@@ -1,5 +1,5 @@
 #
-# Copyright 2020 Red Hat, Inc.
+# Copyright 2019 Red Hat, Inc.
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -14,17 +14,14 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
+"""Celery tasks."""
+from __future__ import absolute_import, unicode_literals
 
-"""Describes the urls and patterns for internal routes."""
-from django.urls import path
+from celery import shared_task
+from api.cross_access.util import check_cross_request_expiry
 
-from . import views
 
-urlpatterns = [
-    path("api/tenant/unmodified/", views.list_unmodified_tenants),
-    path("api/tenant/<str:tenant_schema_name>/", views.tenant_view),
-    path("api/migrations/run/", views.run_migrations),
-    path("api/migrations/progress/", views.migration_progress),
-    path("api/seeds/run/", views.run_seeds),
-    path("api/cars/expire/", views.car_expiry)
-]
+@shared_task
+def cross_account_cleanup():
+    """Celery task to mark expired cross-account requests."""
+    check_cross_request_expiry()
