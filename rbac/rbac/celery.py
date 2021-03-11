@@ -39,7 +39,11 @@ app.conf.beat_schedule = {
         "schedule": crontab(0, 0, day_of_month="7-28/7"),
         "args": [],
     },
-    "car-wash-daily": {"task": "api.tasks.cross_account_cleanup", "schedule": crontab(minute=0, hour=0), "args": [],},
+    "car-wash-daily": {
+        "task": "api.tasks.cross_account_cleanup",
+        "schedule": crontab(minute=0, hour=0),
+        "args": [],
+    },  # noqa: E231, E501
 }
 
 # Load task modules from all registered Django app configs.
