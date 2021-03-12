@@ -49,6 +49,24 @@ class PrincipalCleanerTests(IdentityRequest):
         "management.principal.proxy.PrincipalProxy._request_principals",
         return_value={"status_code": status.HTTP_200_OK, "data": []},
     )
+    def test_principal_cleanup_skip_cross_account_principals(self, mock_request):
+        """Test that principal clean up on a tenant will skip cross account principals."""
+        with tenant_context(self.tenant):
+            Principal.objects.create(username="user1")
+            Principal.objects.create(username="CAR", cross_account=True)
+            self.assertEqual(Principal.objects.count(), 2)
+
+        try:
+            clean_tenant_principals(self.tenant)
+        except Exception:
+            self.fail(msg="clean_tenant_principals encountered an exception")
+        with tenant_context(self.tenant):
+            self.assertEqual(Principal.objects.count(), 1)
+
+    @patch(
+        "management.principal.proxy.PrincipalProxy._request_principals",
+        return_value={"status_code": status.HTTP_200_OK, "data": []},
+    )
     def test_principal_cleanup_principal_in_group(self, mock_request):
         """Test that we can run a principal clean up on a tenant with a principal in a group."""
         with tenant_context(self.tenant):
