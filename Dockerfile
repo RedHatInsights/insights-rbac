@@ -1,8 +1,13 @@
-FROM python:3.6
+FROM registry.access.redhat.com/ubi8/python-36
 
 EXPOSE 8080
 
-ENV PATH=$HOME/.local/bin/:$PATH \
+ENV NODEJS_VERSION=14 \
+    NODEJS_SCL=rh-nodejs14 \
+    NPM_RUN=start \
+    NODEJS_SCL=rh-nodejs14 \
+    NPM_CONFIG_PREFIX=$HOME/.npm-global \
+    PATH=$HOME/.local/bin/:$HOME/node_modules/.bin/:$HOME/.npm-global/bin/:$PATH \
     LC_ALL=en_US.UTF-8 \
     LANG=en_US.UTF-8 \
     PIP_NO_CACHE_DIR=off \
@@ -31,6 +36,12 @@ LABEL summary="$SUMMARY" \
       maintainer="Red Hat Insights"
 
 USER root
+
+RUN yum module reset nodejs -y
+RUN yum install @nodejs:14 -y
+
+# Copy the S2I scripts from the specific language image to $STI_SCRIPTS_PATH.
+COPY openshift/s2i/bin $STI_SCRIPTS_PATH
 
 # Copy extra files to the image.
 COPY openshift/root /
