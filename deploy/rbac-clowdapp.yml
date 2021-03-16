@@ -1583,6 +1583,7 @@ objects:
     principal-proxy-ssl-verify: VHJ1ZQ==
     principal-proxy-client-id: aW5zaWdodHMtcmJhYw==
     principal-proxy-port: NDQz
+    sentry-dsn: ''
   type: Opaque
 - apiVersion: v1
   kind: Service
