@@ -69,6 +69,11 @@ objects:
             cpu: 200m
             memory: 256Mi
         env:
+          - name: SENTRY_DSN
+            valueFrom:
+              secretKeyRef:
+                key: sentry-dsn
+                name: rbac-secret
           - name: SERVICE_PSKS
             valueFrom:
               secretKeyRef:
