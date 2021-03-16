@@ -21,12 +21,15 @@ from decimal import Decimal
 from uuid import uuid4
 from unittest.mock import patch
 
+from api.models import CrossAccountRequest, Tenant
 from django.urls import reverse
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APIClient
 from tenant_schemas.utils import tenant_context
 
 from api.models import User
+from datetime import timedelta
 from management.models import Group, Permission, Principal, Policy, Role, Access
 from tests.identity_request import IdentityRequest
 
@@ -91,6 +94,23 @@ class AccessViewTests(IdentityRequest):
         self.assertEqual(response.status_code, status)
         return response
 
+    def create_platform_default_resource(self):
+        """Setup default group and role."""
+        with tenant_context(self.tenant):
+            default_permission = Permission.objects.create(permission="default:*:*")
+            default_role = Role.objects.create(name="default role", platform_default=True, system=True)
+            default_access = Access.objects.create(permission=default_permission, role=default_role)
+            default_policy = Policy.objects.create(name="default policy", system=True)
+            default_policy.roles.add(default_role)
+            default_group = Group.objects.create(name="default group", system=True, platform_default=True)
+            default_group.policies.add(default_policy)
+
+    def create_role_and_permission(self):
+        role = Role.objects.create(name="Test Role")
+        assigned_permission = Permission.objects.create(permission="test:assigned:permission")
+        access = Access.objects.create(role=role, permission=assigned_permission)
+        return role
+
     def test_get_access_success(self):
         """Test that we can obtain the expected access without pagination."""
         role_name = "roleA"
@@ -101,9 +121,11 @@ class AccessViewTests(IdentityRequest):
         access = Access.objects.create(role=role, permission=self.permission)
         policy_name = "policyA"
         response = self.create_policy(policy_name, self.group.uuid, [role_uuid])
+        # Create platform default group, and add roles to it.
+        self.create_platform_default_resource()
 
-        # test that we can retrieve the principal access
-        url = "{}?application={}&username={}".format(reverse("access"), "app", self.principal.username)
+        # Test that we can retrieve the principal access
+        url = "{}?application={}".format(reverse("access"), "app")
         client = APIClient()
         response = client.get(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -112,6 +134,46 @@ class AccessViewTests(IdentityRequest):
         self.assertEqual(len(response.data.get("data")), 2)
         self.assertEqual(response.data.get("meta").get("limit"), 1000)
         self.assertEqual(self.access_data, response.data.get("data")[0])
+
+        # the platform default permission could also be retrieved
+        url = "{}?application={}".format(reverse("access"), "default")
+        response = client.get(url, **self.headers)
+        self.assertEqual({"permission": "default:*:*", "resourceDefinitions": []}, response.data.get("data")[0])
+
+    def test_access_for_cross_account_principal_return_permissions_based_on_assigned_role(self):
+        """Test that the expected access for cross account principal return permissions based on assigned role."""
+        # setup default group/role
+        self.create_platform_default_resource()
+        client = APIClient()
+        url = "{}?application=".format(reverse("access"))
+        account_id = self.customer_data["account_id"]
+        user_id = "123456"
+        user_name = f"{account_id}-{user_id}"
+
+        # setup cross account request, role and permission in public schema
+        role = self.create_role_and_permission()
+        cross_account_request = CrossAccountRequest.objects.create(
+            target_account=account_id, user_id=user_id, end_date=timezone.now() + timedelta(10), status="approved"
+        )
+        cross_account_request.roles.add(role)
+
+        # Create cross_account principal and role, permission in the account
+        user_data = {"username": user_name, "email": "test@gmail.com"}
+        request_context = self._create_request_context(self.customer_data, user_data, is_org_admin=False)
+        request = request_context["request"]
+        headers = request.META
+
+        with tenant_context(self.tenant):
+            Principal.objects.create(username=user_name, cross_account=True)
+            self.create_role_and_permission()
+        response = client.get(url, **headers)
+
+        # only assigned role permissions without platform default permission
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data.get("data")), 1)
+        self.assertEqual(
+            {"permission": "test:assigned:permission", "resourceDefinitions": []}, response.data.get("data")[0]
+        )
 
     def test_get_access_no_app_supplied(self):
         """Test that we return all permissions when no app supplied."""
