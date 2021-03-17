@@ -121,3 +121,6 @@ scripts/aws_pricing/
 # IDE metadata
 .vscode/
 .idea/
+
+# Generated docs for spec
+docs/source/specs/output-dir/
