@@ -349,7 +349,6 @@ class AccessHandlingTest(TestCase):
 
     def test_principal_with_access_no_res_defs(self):
         """Test a user with definded access without any resource definitions."""
-        import pdb; pdb.set_trace()
         principal = Principal.objects.create(username='test_user')
         group = Group.objects.create(name='group1')
         group.principals.add(principal)
@@ -375,9 +374,9 @@ class AccessHandlingTest(TestCase):
         group.principals.add(principal)
         group.save()
         role = Role.objects.create(name='role1')
-        perm = Permission.object.create(permission='rbac:group:foo:bar')
+        perm = Permission.objects.create(permission='rbac:group:foo:bar')
         Access.objects.create(permission=perm, role=role)
-        perm2 = Permission.object.create(permission='rbac:group:write')
+        perm2 = Permission.objects.create(permission='rbac:group:write')
         access = Access.objects.create(permission=perm2, role=role)
         ResourceDefinition.objects.create(access=access,
                                           attributeFilter={
