@@ -17,16 +17,22 @@
 
 """Describes the urls and patterns for internal routes."""
 
-from . import views
 from django.urls import path
+from . import views
 
 
 class SentryDiagnosticError(Exception):
+    """
+    Raise this to create an event in Sentry.
+    """
+
     pass
 
 
 def trigger_error(request):
-    """ An easily-triggered error to help confirm Sentry is working. """
+    """
+    Trigger an error to confirm Sentry is working.
+    """
     raise SentryDiagnosticError
 
 
