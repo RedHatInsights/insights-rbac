@@ -202,8 +202,10 @@ def roles_for_cross_account_principal(principal):
     """Return roles for cross account principals."""
     target_account, user_id = principal.username.split("-")
     with tenant_context(Tenant.objects.get(schema_name="public")):
-        cross_account_request = CrossAccountRequest.objects.filter(
+        cross_account_requests = CrossAccountRequest.objects.filter(
             target_account=target_account, user_id=user_id, status="approved"
-        ).first()
-        role_names = list(cross_account_request.roles.all().values_list("name", flat=True))
+        )
+        role_names = []
+        for car in cross_account_requests:
+            role_names.extend(list(car.roles.all().values_list("name", flat=True)))
     return Role.objects.filter(name__in=role_names)
