@@ -26,7 +26,7 @@ class SentryDiagnosticError(Exception):
 
 
 def trigger_error(request):
-    """ An easily-triggerable error to help confirm Sentry is working. """
+    """ An easily-triggered error to help confirm Sentry is working. """
     raise SentryDiagnosticError
 
 
