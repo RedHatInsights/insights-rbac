@@ -19,7 +19,7 @@
 
 from django.utils import timezone
 from django_filters import rest_framework as filters
-from management.models import Principal, Role
+from management.models import Role
 from management.principal.proxy import PrincipalProxy
 from management.utils import validate_and_get_key, validate_limit_and_offset, validate_uuid
 from rest_framework import mixins, viewsets
@@ -30,6 +30,7 @@ from tenant_schemas.utils import tenant_context
 
 from api.cross_access.access_control import CrossAccountRequestAccessPermission
 from api.cross_access.serializer import CrossAccountRequestDetailSerializer, CrossAccountRequestSerializer
+from api.cross_access.util import create_cross_principal
 from api.models import CrossAccountRequest, Tenant
 from api.serializers import create_schema_name
 
@@ -228,16 +229,6 @@ class CrossAccountRequestViewSet(
             with tenant_context(Tenant.objects.get(schema_name="public")):
                 request_data["roles"] = self.format_roles(request_data.get("roles"))
 
-    def create_principal(self, target_account, user_id):
-        """Create a cross account principal in the target account."""
-        # Principal would have the pattern acctxxx-123456.
-        principal_name = f"{target_account}-{user_id}"
-        tenant_schema = create_schema_name(target_account)
-        with tenant_context(Tenant.objects.get(schema_name=tenant_schema)):
-            cross_account_principal = Principal.objects.get_or_create(username=principal_name, cross_account=True)
-
-        return cross_account_principal
-
     def format_roles(self, roles):
         """Format role list as expected for cross-account-request."""
         for role_name in roles:
@@ -256,5 +247,5 @@ class CrossAccountRequestViewSet(
         """Update the status of a cross-account-request."""
         car.status = status
         if status == "approved":
-            self.create_principal(car.target_account, car.user_id)
+            create_cross_principal(car.target_account, car.user_id)
         car.save()
