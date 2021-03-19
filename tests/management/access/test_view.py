@@ -30,6 +30,7 @@ from tenant_schemas.utils import tenant_context
 
 from api.models import User
 from datetime import timedelta
+from management.cache import AccessCache
 from management.models import Group, Permission, Principal, Policy, Role, Access
 from tests.identity_request import IdentityRequest
 
@@ -299,3 +300,40 @@ class AccessViewTests(IdentityRequest):
         client = APIClient()
         response = client.get(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_get_access_with_pagination_and_cache(self):
+        """Test that we can obtain the expected access with pagination and cache."""
+        role_name = "roleA"
+        response = self.create_role(role_name)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        role_uuid = response.data.get("uuid")
+        policy_name = "policyA"
+        response = self.create_policy(policy_name, self.group.uuid, [role_uuid])
+        cache = AccessCache(self.tenant.schema_name)
+        client = APIClient()
+
+        # test that the access_policy are cached with desired sub_key
+        ## The cache was none
+        access_policy = cache.get_policy(self.principal.uuid, "app_1_1")
+        self.assertIsNone(access_policy)
+
+        url = "{}?application={}&username={}&offset=0&limit=1".format(
+            reverse("access"), "app", self.principal.username
+        )
+        response = client.get(url, **self.headers)
+
+        ## Cache is valid
+        access_policy = cache.get_policy(self.principal.uuid, "app_1_1")
+        self.assertIsNone(access_policy)
+
+        # test that the access_policy are cached with desired sub_key when proper defaults
+        ## Cache was none
+        access_policy = cache.get_policy(self.principal.uuid, "all_0_1000")
+        self.assertIsNone(access_policy)
+
+        url = "{}?application=&username={}".format(reverse("access"), self.principal.username)
+        response = client.get(url, **self.headers)
+
+        ## Cache is valid
+        access_policy = cache.get_policy(self.principal.uuid, "all_0_1000")
+        self.assertEqual(access_policy, [self.access_data])

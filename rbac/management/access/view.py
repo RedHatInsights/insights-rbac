@@ -19,7 +19,7 @@
 from management.cache import AccessCache
 from management.querysets import get_access_queryset
 from management.role.serializer import AccessSerializer
-from management.utils import APPLICATION_KEY, get_principal_from_request
+from management.utils import APPLICATION_KEY, get_principal_from_request, validate_limit_and_offset
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.settings import api_settings
@@ -84,17 +84,18 @@ class AccessView(APIView):
 
     def get(self, request):
         """Provide access data for principal."""
-        app = request.query_params.get(APPLICATION_KEY)
+        validate_limit_and_offset(request.query_params)
+        sub_key = self.generate_sub_key(request)
         principal = get_principal_from_request(request)
         cache = AccessCache(request.tenant.schema_name)
-        access_policy = cache.get_policy(principal.uuid, app)
+        access_policy = cache.get_policy(principal.uuid, sub_key)
         if access_policy is None:
             queryset = self.get_queryset()
-            access_policy = self.serializer_class(queryset, many=True).data
-            cache.save_policy(principal.uuid, app, access_policy)
-        page = self.paginate_queryset(access_policy)
+            page = self.paginate_queryset(queryset)
+            access_policy = self.serializer_class(page, many=True).data
+            cache.save_policy(principal.uuid, sub_key, access_policy)
 
-        if page is not None:
+        if self.paginate_queryset(access_policy) is not None:
             return self.get_paginated_response(access_policy)
         return Response({"data": access_policy})
 
@@ -117,3 +118,15 @@ class AccessView(APIView):
         """Return a paginated style `Response` object for the given output data."""
         assert self.paginator is not None
         return self.paginator.get_paginated_response(data)
+
+    def generate_sub_key(self, request):
+        """Generate the sub key to store/retrive record from redis."""
+        query_params = request.query_params
+        app = query_params.get(APPLICATION_KEY, "all")
+        limit = int(query_params.get("limit", self.paginator.default_limit))
+        # If there are some team setting this out of range, set it to the max support
+        if limit > self.paginator.max_limit:
+            limit = self.paginator.max_limit
+        offset = int(query_params.get("offset", 0))
+
+        return f"{app}_{offset}_{limit}"
