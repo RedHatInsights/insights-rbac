@@ -15,13 +15,14 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Test the access view."""
-
+import json
 import random
 from decimal import Decimal
 from uuid import uuid4
 from unittest.mock import patch
 
 from api.models import CrossAccountRequest, Tenant
+from collections import OrderedDict
 from django.urls import reverse
 from django.utils import timezone
 from rest_framework import status
@@ -301,7 +302,9 @@ class AccessViewTests(IdentityRequest):
         response = client.get(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
-    def test_get_access_with_pagination_and_cache(self):
+    @patch("management.cache.AccessCache.get_policy", return_value=None)
+    @patch("management.cache.AccessCache.save_policy", return_value=None)
+    def test_get_access_with_pagination_and_cache(self, save_policy, get_policy):
         """Test that we can obtain the expected access with pagination and cache."""
         role_name = "roleA"
         response = self.create_role(role_name)
@@ -309,31 +312,32 @@ class AccessViewTests(IdentityRequest):
         role_uuid = response.data.get("uuid")
         policy_name = "policyA"
         response = self.create_policy(policy_name, self.group.uuid, [role_uuid])
-        cache = AccessCache(self.tenant.schema_name)
+
+        schema_name = self.tenant.schema_name
+        principal_id = self.principal.uuid
+        key = f"rbac::policy::tenant={schema_name}::user={principal_id}"
         client = APIClient()
 
-        # test that the access_policy are cached with desired sub_key
-        ## The cache was none
-        access_policy = cache.get_policy(self.principal.uuid, "app_1_1")
-        self.assertIsNone(access_policy)
-
-        url = "{}?application={}&username={}&offset=0&limit=1".format(
+        ######## access_policy are cached with desired sub_key ############
+        url = "{}?application={}&username={}&offset=1&limit=1".format(
             reverse("access"), "app", self.principal.username
         )
         response = client.get(url, **self.headers)
 
-        ## Cache is valid
-        access_policy = cache.get_policy(self.principal.uuid, "app_1_1")
-        self.assertIsNone(access_policy)
+        # Cache is called saved with sub_key "app_1_1"
+        sub_key = "app_1_1"
+        get_policy.assert_called_with(principal_id, sub_key)
+        save_policy.assert_called_with(principal_id, sub_key, [])
+        ###################################################################
 
-        # test that the access_policy are cached with desired sub_key when proper defaults
-        ## Cache was none
-        access_policy = cache.get_policy(self.principal.uuid, "all_0_1000")
-        self.assertIsNone(access_policy)
-
+        #### access_policy are cached with desired sub_key when proper defaults ####
         url = "{}?application=&username={}".format(reverse("access"), self.principal.username)
         response = client.get(url, **self.headers)
 
-        ## Cache is valid
-        access_policy = cache.get_policy(self.principal.uuid, "all_0_1000")
-        self.assertEqual(access_policy, [self.access_data])
+        # Cache is called saved with sub_key "all_0_1000"
+        sub_key = "all_0_1000"
+        get_policy.assert_called_with(principal_id, sub_key)
+        called_with_para = save_policy.mock_calls[1][1]
+        self.assertEqual(principal_id, called_with_para[0])
+        self.assertEqual(sub_key, called_with_para[1])
+        self.assertEqual([self.access_data], json.loads(json.dumps(called_with_para[2])))

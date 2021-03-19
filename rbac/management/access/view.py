@@ -120,9 +120,11 @@ class AccessView(APIView):
         return self.paginator.get_paginated_response(data)
 
     def generate_sub_key(self, request):
-        """Generate the sub key to store/retrive record from redis."""
+        """Generate the sub key to store/retrieve record from redis."""
         query_params = request.query_params
-        app = query_params.get(APPLICATION_KEY, "all")
+        app = query_params.get(APPLICATION_KEY)
+        if not app:
+            app = "all"
         limit = int(query_params.get("limit", self.paginator.default_limit))
         # If there are some team setting this out of range, set it to the max support
         if limit > self.paginator.max_limit:
