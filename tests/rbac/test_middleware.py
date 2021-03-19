@@ -348,7 +348,7 @@ class AccessHandlingTest(TestCase):
         self.assertEqual(expected, access)
 
     def test_principal_with_access_no_res_defs(self):
-        """Test a user with definded access without any resource definitions."""
+        """Test a user with defined access without any resource definitions."""
         principal = Principal.objects.create(username="test_user")
         group = Group.objects.create(name="group1")
         group.principals.add(principal)
@@ -368,7 +368,7 @@ class AccessHandlingTest(TestCase):
         self.assertEqual(expected, access)
 
     def test_principal_with_access_with_res_defs(self):
-        """Test a user with definded access with any resource definitions."""
+        """Test a user with defined access with any resource definitions."""
         principal = Principal.objects.create(username="test_user")
         group = Group.objects.create(name="group1")
         group.principals.add(principal)
@@ -399,7 +399,7 @@ class AccessHandlingTest(TestCase):
         self.assertEqual(expected, access)
 
     def test_principal_with_access_with_wildcard_op(self):
-        """Test a user with definded access with wildcard operation."""
+        """Test a user with defined access with wildcard operation."""
         principal = Principal.objects.create(username="test_user")
         group = Group.objects.create(name="group1")
         group.principals.add(principal)
@@ -428,7 +428,7 @@ class AccessHandlingTest(TestCase):
         self.assertEqual(expected, access)
 
     def test_principal_with_access_with_wildcard_access(self):
-        """Test a user with definded access with wildcard access."""
+        """Test a user with defined access with wildcard access."""
         principal = Principal.objects.create(username="test_user")
         group = Group.objects.create(name="group1")
         group.principals.add(principal)
