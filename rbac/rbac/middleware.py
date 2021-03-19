@@ -109,43 +109,45 @@ class IdentityHeaderMiddleware(BaseTenantMiddleware):
         with tenant_context(tenant):
             try:  # pylint: disable=R1702
                 principal = Principal.objects.get(username__iexact=username)
-                kwargs = {APPLICATION_KEY: 'rbac'}
+                kwargs = {APPLICATION_KEY: "rbac"}
                 access_list = access_for_principal(principal, **kwargs)
                 for access_item in access_list:  # pylint: disable=too-many-nested-blocks
                     resource_type = access_item.permission.resource_type
                     operation = access_item.permission.verb
                     res_list = []
                     res_defs = access_item.resourceDefinitions
-                    if operation == '*':
-                        operation = 'write'
+                    if operation == "*":
+                        operation = "write"
                     for res_def in res_defs.all():
                         attr_filter = res_def.attributeFilter
-                        if attr_filter.get('operation') == 'equal' and attr_filter.get('value'):
-                            res_list.append(attr_filter.get('value'))
-                        if attr_filter.get('operation') == 'in' and attr_filter.get('value'):
-                            res_list += attr_filter.get('value').split(',')
+                        if attr_filter.get("operation") == "equal" and attr_filter.get("value"):
+                            res_list.append(attr_filter.get("value"))
+                        if attr_filter.get("operation") == "in" and attr_filter.get("value"):
+                            res_list += attr_filter.get("value").split(",")
                     if not res_defs or not res_defs.values():
-                        res_list = ['*']
-                    if resource_type == '*':
-                        for resource in ('group', 'role', 'policy'):
-                            if (resource in access.keys() and  # noqa: W504
-                                    operation in access.get(resource,
-                                                            {}).keys() and  # noqa: W504
-                                    isinstance(access.get(resource,
-                                                            {}).get(operation), list)):  # noqa: E127
+                        res_list = ["*"]
+                    if resource_type == "*":
+                        for resource in ("group", "role", "policy"):
+                            if (
+                                resource in access.keys()
+                                and operation in access.get(resource, {}).keys()  # noqa: W504
+                                and isinstance(access.get(resource, {}).get(operation), list)  # noqa: W504
+                            ):  # noqa: E127
                                 access[resource][operation] += res_list
-                                if operation == 'write':
-                                    access[resource]['read'] += res_list
-                    elif (resource_type in access.keys() and  # noqa: W504
-                            operation in access.get(resource_type, {}).keys() and  # noqa: W504
-                            isinstance(access.get(resource_type, {}).get(operation), list)):
+                                if operation == "write":
+                                    access[resource]["read"] += res_list
+                    elif (
+                        resource_type in access.keys()
+                        and operation in access.get(resource_type, {}).keys()  # noqa: W504
+                        and isinstance(access.get(resource_type, {}).get(operation), list)  # noqa: W504
+                    ):
                         access[resource_type][operation] += res_list
-                        if operation == 'write':
-                            access[resource_type]['read'] += res_list
+                        if operation == "write":
+                            access[resource_type]["read"] += res_list
                     for res_type, res_ops_obj in access.items():
                         for op_type, op_list in res_ops_obj.items():
-                            if '*' in op_list:
-                                access[res_type][op_type] = ['*']
+                            if "*" in op_list:
+                                access[res_type][op_type] = ["*"]
             except Principal.DoesNotExist:
                 return access
 
