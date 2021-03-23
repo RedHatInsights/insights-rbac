@@ -21,7 +21,7 @@ from uuid import UUID
 
 from django.core.exceptions import PermissionDenied
 from django.utils.translation import gettext as _
-from management.models import Group, Principal, Role
+from management.models import Access, Group, Principal, Role
 from management.principal.proxy import PrincipalProxy
 from rest_framework import serializers, status
 from tenant_schemas.utils import tenant_context
@@ -104,15 +104,11 @@ def access_for_roles(roles, param_applications):
     """Gathers all access for the given roles and application(s)."""
     access = []
     for role in set(roles):
-        role_access = set(role.access.all())
-        for access_item in role_access:
-            if not param_applications:
-                access.append(access_item)
-                continue
-            for param_app in param_applications.split(","):
-                if param_app == access_item.permission_application():
-                    access.append(access_item)
-    return access
+        if param_applications:
+            access += Access.objects.filter(role=role, permission__application__in=param_applications.split(","))
+            continue
+        access += role.access.all()
+    return set(access)
 
 
 def groups_for_principal(principal, **kwargs):
