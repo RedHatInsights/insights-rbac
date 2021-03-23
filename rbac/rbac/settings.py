@@ -45,24 +45,16 @@ from . import database
 from .env import ENVIRONMENT
 
 # Sentry monitoring configuration
-# Note: Sentry is disabled unless it is explicitly turned on
+# Note: Sentry is disabled unless it is explicitly turned on by setting DSN
 
-
-class SentryMisconfigurationError(Exception):
-    """
-    Raise this if sentry is enabled but the DSN is not set
-    """
-
-
-SENTRY_ENABLED = os.getenv("SENTRY_ENABLED", "false")
 SENTRY_DSN = os.getenv("SENTRY_DSN", "")
-if SENTRY_ENABLED.lower() == "true":
+if SENTRY_DSN:
     import sentry_sdk
     from sentry_sdk.integrations.django import DjangoIntegration
 
-    if SENTRY_DSN == "":
-        raise SentryMisconfigurationError
     sentry_sdk.init(dsn=SENTRY_DSN, integrations=[DjangoIntegration()])
+else:
+    print("SENTRY_DSN was not set, skipping Sentry initialization.")
 
 # Build paths inside the project like this: os.path.join(BASE_DIR, ...)
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
