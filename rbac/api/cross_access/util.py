@@ -46,16 +46,9 @@ def check_cross_request_expiry():
         cars = CrossAccountRequest.objects.filter(Q(status="pending") | Q(status="approved"))
         logger.info("Running expiry check on %d cross-account requests.", len(cars))
         for car in cars:
-            target_account = car.target_account
-            user_id = car.user_id
             logger.debug("Checking for expiration of cross-account request %s.", car.pk)
             if car.end_date < timezone.now():
                 logger.info("Expiring cross-account request with uuid: %s", car.pk)
-                if car.status == "approved":
-                    try:
-                        remove_cross_principal(target_account, user_id)
-                    except Exception as e:
-                        logger.warning(f"Error deleting cross-account principal {target_account}-{user_id}: ", e)
                 car.status = "expired"
                 expired_cars.append(car.pk)
                 car.save()
