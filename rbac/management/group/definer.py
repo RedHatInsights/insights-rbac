@@ -20,9 +20,11 @@ import logging
 
 from django.db import transaction
 from django.db.models.query import QuerySet
+from django.utils.translation import gettext as _
 from management.group.model import Group
 from management.policy.model import Policy
 from management.role.model import Role
+from rest_framework import serializers
 from tenant_schemas.utils import tenant_context
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
@@ -59,7 +61,7 @@ def set_system_flag_post_update(group):
     group.save()
 
 
-def add_roles(group, roles_or_role_ids, replace=False):
+def add_roles(group, roles_or_role_ids, user=None, replace=False):
     """Process list of roles and add them to the group."""
     system_policy_name = "System Policy for Group {}".format(group.uuid)
     system_policy, system_policy_created = Policy.objects.get_or_create(
@@ -78,6 +80,12 @@ def add_roles(group, roles_or_role_ids, replace=False):
         roles = roles_or_role_ids
 
     for role in roles:
+        accesses = role.access.all()
+        for access in accesses:
+            if access.permission_application() == 'rbac' and user and not user.admin:
+                key = "add-roles"
+                message = f"Non-admin users cannot add RBAC role {role} to groups."
+                raise serializers.ValidationError({key: _(message)})
         system_policy.roles.add(role)
 
     system_policy.save()
