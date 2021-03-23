@@ -74,6 +74,7 @@ objects:
               secretKeyRef:
                 key: sentry-dsn
                 name: rbac-secret
+                optional: true
           - name: SERVICE_PSKS
             valueFrom:
               secretKeyRef:
