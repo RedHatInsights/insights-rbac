@@ -1,11 +1,11 @@
-FROM registry.redhat.io/ubi8/python-36
+FROM registry.access.redhat.com/ubi8/python-36
 
 EXPOSE 8080
 
-ENV NODEJS_VERSION=10 \
-    NODEJS_SCL=rh-nodejs10 \
+ENV NODEJS_VERSION=14 \
+    NODEJS_SCL=rh-nodejs14 \
     NPM_RUN=start \
-    NODEJS_SCL=rh-nodejs10 \
+    NODEJS_SCL=rh-nodejs14 \
     NPM_CONFIG_PREFIX=$HOME/.npm-global \
     PATH=$HOME/.local/bin/:$HOME/node_modules/.bin/:$HOME/.npm-global/bin/:$PATH \
     LC_ALL=en_US.UTF-8 \
@@ -37,9 +37,8 @@ LABEL summary="$SUMMARY" \
 
 USER root
 
-RUN yum install @nodejs:10 -y
-
-RUN yum install -y git gcc python3-devel nodejs-nodemon
+RUN yum module reset nodejs -y
+RUN yum install @nodejs:14 -y
 
 # Copy the S2I scripts from the specific language image to $STI_SCRIPTS_PATH.
 COPY openshift/s2i/bin $STI_SCRIPTS_PATH
