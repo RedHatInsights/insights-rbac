@@ -31,7 +31,6 @@ import datetime
 import sys
 import logging
 import pytz
-import ecs_logging
 
 from boto3.session import Session
 from corsheaders.defaults import default_headers
@@ -45,6 +44,7 @@ from app_common_python import LoadedConfig
 from . import database
 
 from .env import ENVIRONMENT
+from django_log_formatter_ecs import ECSFormatter
 
 # Sentry monitoring configuration
 # Note: Sentry is disabled unless it is explicitly turned on by setting DSN
@@ -277,7 +277,7 @@ LOGGING = {
     "formatters": {
         "verbose": {"format": VERBOSE_FORMATTING},
         "simple": {"format": "[%(asctime)s] %(levelname)s: %(message)s"},
-        "ecs_formatter": {"()": "ecs_logging.StdlibFormatter"},
+        "ecs_formatter": {"()": "django_log_formatter_ecs.ECSFormatter"},
     },
     "handlers": {
         "console": {"class": "logging.StreamHandler", "formatter": LOGGING_FORMATTER},
@@ -290,11 +290,9 @@ LOGGING = {
         "ecs": {"class": "logging.StreamHandler", "formatter": "ecs_formatter"},
     },
     "loggers": {
-        "django": {"handlers": LOGGING_HANDLERS, "level": DJANGO_LOGGING_LEVEL},
-        "django.server": {"handlers": DEBUG_LOG_HANDLERS, "level": DJANGO_LOGGING_LEVEL},
-        "django.request": {"handlers": DEBUG_LOG_HANDLERS, "level": DJANGO_LOGGING_LEVEL},
+        "django": {"handlers": ["ecs"], "level": DJANGO_LOGGING_LEVEL},
         "api": {"handlers": LOGGING_HANDLERS, "level": RBAC_LOGGING_LEVEL},
-        "rbac": {"handlers": LOGGING_HANDLERS, "level": RBAC_LOGGING_LEVEL},
+        "rbac": {"handlers": ["ecs"], "level": RBAC_LOGGING_LEVEL},
         "management": {"handlers": LOGGING_HANDLERS, "level": RBAC_LOGGING_LEVEL},
     },
 }

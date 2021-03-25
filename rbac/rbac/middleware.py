@@ -18,7 +18,6 @@
 """Custom RBAC Middleware."""
 import binascii
 import logging
-import sys
 from json.decoder import JSONDecodeError
 
 from django.conf import settings
@@ -196,30 +195,6 @@ class IdentityHeaderMiddleware(BaseTenantMiddleware):
                 is_admin = is_system = False
                 account = None
 
-        extras = {}
-
-        if "ecs" in settings.LOGGING_HANDLERS:
-            extras = {
-                "http": {
-                    "request": {
-                        "body": {"bytes": sys.getsizeof(request.body)},
-                        "bytes": sys.getsizeof(request),
-                        "method": request.method,
-                    },
-                    "response": {
-                        "body": {"bytes": sys.getsizeof(response.content)},
-                        "bytes": sys.getsizeof(response),
-                        "status_code": response.status_code,
-                    },
-                },
-                "url": {
-                    "original": request.path + query_string,
-                    "path": request.path,
-                    "query": query_string,
-                    "port": request.get_port(),
-                },
-            }
-
         log_object = {
             "method": request.method,
             "path": request.path + query_string,
@@ -231,7 +206,7 @@ class IdentityHeaderMiddleware(BaseTenantMiddleware):
             "is_system": is_system,
         }
 
-        logger.info(log_object, extra=extras)
+        logger.info(log_object)
         return response
 
 
