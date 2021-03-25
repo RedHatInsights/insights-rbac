@@ -21,7 +21,6 @@ import logging
 from django.db.models import Q
 from django.utils import timezone
 from management.models import Principal
-from prometheus_client import Counter, Summary
 from tenant_schemas.utils import tenant_context
 
 from api.models import CrossAccountRequest, Tenant
@@ -29,16 +28,7 @@ from api.serializers import create_schema_name
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
-# Create processing time metric
-PROCESSING_TIME = Summary(
-    "cross_account_expiry_processing_second", "Time spent checking and expiring cross-account requests"
-)
-PROCESSING_COUNT = Counter(
-    "cross_account_expiration_calls", "Number of times cross-account request expiration check has run"
-)
 
-
-@PROCESSING_TIME.time()
 def check_cross_request_expiry():
     """Check if a cross-account requests have expired, tag them if so."""
     with tenant_context(Tenant.objects.get(schema_name="public")):
@@ -53,7 +43,6 @@ def check_cross_request_expiry():
                 expired_cars.append(car.pk)
                 car.save()
 
-        PROCESSING_COUNT.inc()
         logger.info(
             "Completed clean up of %d cross-account requests, %d expired.", len(cars), len(expired_cars),
         )
@@ -68,18 +57,6 @@ def create_cross_principal(target_account, user_id):
         cross_account_principal = Principal.objects.get_or_create(username=principal_name, cross_account=True)
 
     return cross_account_principal
-
-
-def remove_cross_principal(target_account, user_id):
-    """Remove a cross account principal in the target account."""
-    # Principal has the pattern acctxxx-123456.
-    principal_name = get_cross_principal_name(target_account, user_id)
-    tenant_schema = create_schema_name(target_account)
-    with tenant_context(Tenant.objects.get(schema_name=tenant_schema)):
-        princ = Principal.objects.get(username__iexact=principal_name)
-        if princ:
-            logger.info(f"Removing cross-account principal {principal_name} from tenant {target_account}")
-            princ.delete()
 
 
 def get_cross_principal_name(target_account, user_id):
