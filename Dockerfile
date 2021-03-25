@@ -67,7 +67,7 @@ chmod 755 /usr/bin/haberdasher
 
 USER 1001
 
-ENTRYPOINT ["/usr/bin/haberdasher"]
+# ENTRYPOINT ["/usr/bin/haberdasher"]
 
 # Set the default CMD to print the usage of the language image.
 CMD $STI_SCRIPTS_PATH/run
