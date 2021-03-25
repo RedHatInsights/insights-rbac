@@ -1740,7 +1740,7 @@ parameters:
   value: 512Mi
 - displayName: Django Debug
   name: DJANGO_DEBUG
-  value: 'false'
+  value: 'False'
 - displayName: Django log level
   name: DJANGO_LOG_LEVEL
   value: INFO
