@@ -69,6 +69,12 @@ objects:
             cpu: 200m
             memory: 256Mi
         env:
+          - name: SENTRY_DSN
+            valueFrom:
+              secretKeyRef:
+                key: sentry-dsn
+                name: rbac-secret
+                optional: true
           - name: SERVICE_PSKS
             valueFrom:
               secretKeyRef:
@@ -1578,6 +1584,7 @@ objects:
     principal-proxy-ssl-verify: VHJ1ZQ==
     principal-proxy-client-id: aW5zaWdodHMtcmJhYw==
     principal-proxy-port: NDQz
+    sentry-dsn: ''
   type: Opaque
 - apiVersion: v1
   kind: Service
@@ -1733,7 +1740,7 @@ parameters:
   value: 512Mi
 - displayName: Django Debug
   name: DJANGO_DEBUG
-  value: 'false'
+  value: 'False'
 - displayName: Django log level
   name: DJANGO_LOG_LEVEL
   value: INFO
