@@ -422,6 +422,13 @@ class GroupViewSet(
         group = self.get_object()
         account = self.request.user.account
         if request.method == "POST":
+            if not request.user.admin:
+                for role in group.roles_with_access():
+                    for access in role.access.all():
+                        if access.permission_application() == "rbac":
+                            key = "add_principals"
+                            message = "Non-admin users may not add principals to Groups with RBAC permissions."
+                            raise serializers.ValidationError({key: _(message)})
             serializer = GroupPrincipalInputSerializer(data=request.data)
             if serializer.is_valid(raise_exception=True):
                 principals = serializer.data.pop("principals")

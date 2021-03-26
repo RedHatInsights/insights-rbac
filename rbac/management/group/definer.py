@@ -84,7 +84,7 @@ def add_roles(group, roles_or_role_ids, user=None, replace=False):
         for access in accesses:
             if access.permission_application() == "rbac" and user and not user.admin:
                 key = "add-roles"
-                message = f"Non-admin users cannot add RBAC role {role} to groups."
+                message = f"Non-admin users cannot add RBAC role {role.display_name} to groups."
                 raise serializers.ValidationError({key: _(message)})
         system_policy.roles.add(role)
 

@@ -41,7 +41,9 @@ class GroupViewsetTests(IdentityRequest):
         user = User()
         user.username = self.user_data["username"]
         user.account = self.customer_data["account_id"]
+        user.admin = True
         request.user = user
+
         self.dummy_role_id = uuid4()
 
         with tenant_context(self.tenant):
