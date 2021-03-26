@@ -74,6 +74,7 @@ objects:
               secretKeyRef:
                 key: sentry-dsn
                 name: rbac-secret
+                optional: true
           - name: SERVICE_PSKS
             valueFrom:
               secretKeyRef:
@@ -1739,7 +1740,7 @@ parameters:
   value: 512Mi
 - displayName: Django Debug
   name: DJANGO_DEBUG
-  value: 'false'
+  value: 'False'
 - displayName: Django log level
   name: DJANGO_LOG_LEVEL
   value: INFO
