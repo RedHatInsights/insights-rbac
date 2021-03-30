@@ -20,18 +20,7 @@
 from django.urls import path
 
 from . import views
-
-
-class SentryDiagnosticError(Exception):
-    """Raise this to create an event in Sentry."""
-
-    pass
-
-
-def trigger_error(request):
-    """Trigger an error to confirm Sentry is working."""
-    raise SentryDiagnosticError
-
+from .views import trigger_error
 
 urlpatterns = [
     path("api/tenant/unmodified/", views.list_unmodified_tenants),
