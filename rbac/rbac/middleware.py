@@ -77,6 +77,8 @@ class IdentityHeaderMiddleware(BaseTenantMiddleware):
                     raise Http404()
             else:
                 with transaction.atomic():
+                    cursor = transaction.get_connection().cursor()
+                    cursor.execute("LOCK TABLE public.api_tenant in SHARE ROW EXCLUSIVE MODE")
                     tenant, created = Tenant.objects.get_or_create(schema_name=tenant_schema)
                     if created:
                         seed_permissions(tenant=tenant)
