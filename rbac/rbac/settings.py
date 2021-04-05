@@ -28,6 +28,7 @@ https://docs.djangoproject.com/en/2.0/ref/settings/
 import os
 
 import datetime
+import django_log_formatter_ecs
 import sys
 import logging
 import pytz
@@ -43,8 +44,9 @@ from app_common_python import LoadedConfig
 
 from . import database
 
+from .ECSCustomFormatter import ECSFormatter
 from .env import ENVIRONMENT
-from django_log_formatter_ecs import ECSFormatter
+
 
 # Sentry monitoring configuration
 # Note: Sentry is disabled unless it is explicitly turned on by setting DSN
@@ -256,6 +258,9 @@ DJANGO_LOGGING_LEVEL = os.getenv("DJANGO_LOG_LEVEL", "INFO")
 RBAC_LOGGING_LEVEL = os.getenv("RBAC_LOG_LEVEL", "INFO")
 LOGGING_HANDLERS = os.getenv("DJANGO_LOG_HANDLERS", "console").split(",")
 VERBOSE_FORMATTING = "%(levelname)s %(asctime)s %(module)s " "%(process)d %(thread)d %(message)s"
+# Used to define the application name that should be logged for ECS.
+DLFE_APP_NAME = os.getenv("NAME", "rbac")
+django_log_formatter_ecs.ECSFormatter = ECSFormatter
 
 if DEBUG and "ecs" in LOGGING_HANDLERS:
     DEBUG_LOG_HANDLERS = [v for v in LOGGING_HANDLERS if v != "ecs"]
@@ -290,9 +295,11 @@ LOGGING = {
         "ecs": {"class": "logging.StreamHandler", "formatter": "ecs_formatter"},
     },
     "loggers": {
-        "django": {"handlers": ["ecs"], "level": DJANGO_LOGGING_LEVEL},
+        "django": {"handlers": LOGGING_HANDLERS, "level": DJANGO_LOGGING_LEVEL},
+        "django.server": {"handlers": DEBUG_LOG_HANDLERS, "level": DJANGO_LOGGING_LEVEL},
+        "django.request": {"handlers": DEBUG_LOG_HANDLERS, "level": DJANGO_LOGGING_LEVEL},
         "api": {"handlers": LOGGING_HANDLERS, "level": RBAC_LOGGING_LEVEL},
-        "rbac": {"handlers": ["ecs"], "level": RBAC_LOGGING_LEVEL},
+        "rbac": {"handlers": LOGGING_HANDLERS, "level": RBAC_LOGGING_LEVEL},
         "management": {"handlers": LOGGING_HANDLERS, "level": RBAC_LOGGING_LEVEL},
     },
 }
