@@ -40,6 +40,8 @@ from app_common_python import LoadedConfig
 
 # Database
 # https://docs.djangoproject.com/en/2.0/ref/settings/#databases
+
+
 from . import database
 
 from .env import ENVIRONMENT
@@ -51,8 +53,9 @@ SENTRY_DSN = os.getenv("SENTRY_DSN", "")
 if SENTRY_DSN:
     import sentry_sdk
     from sentry_sdk.integrations.django import DjangoIntegration
+    from sentry_sdk.integrations.redis import RedisIntegration
 
-    sentry_sdk.init(dsn=SENTRY_DSN, integrations=[DjangoIntegration()])
+    sentry_sdk.init(dsn=SENTRY_DSN, integrations=[DjangoIntegration(), RedisIntegration()])
 else:
     print("SENTRY_DSN was not set, skipping Sentry initialization.")
 
