@@ -1,4 +1,4 @@
-# Byte-compiled / optimized / DLL files
+# Byte-compiled / optimized / DLL files1
 __pycache__/
 *.py[cod]
 *$py.class
@@ -118,4 +118,9 @@ rbac/staticfiles/
 scripts/aws_cost_usage/
 scripts/aws_pricing/
 
+# IDE metadata
 .vscode/
+.idea/
+
+# Generated docs for spec
+docs/source/specs/output-dir/
