@@ -112,17 +112,17 @@ class PolicyViewsetTests(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         role_uuid = response.data.get("uuid")
         policy_name = "policyA"
-        response = self.create_policy(policy_name, uuid4(), [role_uuid], status.HTTP_400_BAD_REQUEST)
+        self.create_policy(policy_name, uuid4(), [role_uuid], status.HTTP_400_BAD_REQUEST)
 
     def test_create_policy_invalid_role(self):
         """Test that we cannot create a policy with an invalid role."""
         policy_name = "policyA"
-        response = self.create_policy(policy_name, self.group.uuid, [uuid4()], status.HTTP_400_BAD_REQUEST)
+        self.create_policy(policy_name, self.group.uuid, [uuid4()], status.HTTP_400_BAD_REQUEST)
 
     def test_create_policy_no_role(self):
         """Test that we cannot create a policy without roles."""
         policy_name = "policyA"
-        response = self.create_policy(policy_name, self.group.uuid, [], status.HTTP_400_BAD_REQUEST)
+        self.create_policy(policy_name, self.group.uuid, [], status.HTTP_400_BAD_REQUEST)
 
     def test_create_policy_invalid(self):
         """Test that creating an invalid policy returns an error."""
