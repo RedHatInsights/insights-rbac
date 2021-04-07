@@ -132,6 +132,15 @@ class PolicyViewsetTests(IdentityRequest):
         response = client.post(url, test_data, format="json", **self.headers)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
+    def test_create_policy_no_name(self):
+        """Test that creating a policy with no name returns a 400."""
+        role_name = "roleA"
+        response = self.create_role(role_name)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        role_uuid = response.data.get("uuid")
+        policy_name = None
+        self.create_policy(policy_name, self.group.uuid, [role_uuid], status.HTTP_400_BAD_REQUEST)
+
     def test_read_policy_invalid(self):
         """Test that reading an invalid policy returns an error."""
         url = reverse("policy-detail", kwargs={"uuid": uuid4()})
