@@ -16,9 +16,11 @@
 #
 
 """Describes the urls and patterns for internal routes."""
+
 from django.urls import path
 
 from . import views
+from .views import trigger_error
 
 urlpatterns = [
     path("api/tenant/unmodified/", views.list_unmodified_tenants),
@@ -27,4 +29,5 @@ urlpatterns = [
     path("api/migrations/progress/", views.migration_progress),
     path("api/seeds/run/", views.run_seeds),
     path("api/cars/expire/", views.car_expiry),
+    path("api/sentry_debug/", trigger_error),
 ]

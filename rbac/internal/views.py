@@ -182,3 +182,14 @@ def car_expiry(request):
         cross_account_cleanup.delay()
         return HttpResponse("Expiry checks are running in a background worker.", status=202)
     return HttpResponse(f'Method "{request.method}" not allowed.', status=405)
+
+
+class SentryDiagnosticError(Exception):
+    """Raise this to create an event in Sentry."""
+
+    pass
+
+
+def trigger_error(request):
+    """Trigger an error to confirm Sentry is working."""
+    raise SentryDiagnosticError
