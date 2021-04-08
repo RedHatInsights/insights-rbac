@@ -105,6 +105,26 @@ class PolicyViewsetTests(IdentityRequest):
         self.assertEqual(policy_name, response.data.get("name"))
         self.assertEqual(str(self.group.uuid), response.data.get("group").get("uuid"))
 
+    def test_delete_policy_success(self):
+        """Test that we can delete a policy."""
+        role_name = "roleA"
+        response = self.create_role(role_name)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        role_uuid = response.data.get("uuid")
+        policy_name = "policyA"
+        response = self.create_policy(policy_name, self.group.uuid, [role_uuid])
+        policy_uuid = response.data.get("uuid")
+
+        client = APIClient()
+        url = reverse("policy-detail", kwargs={"uuid": policy_uuid})
+        response = client.delete(url, **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_202_ACCEPTED)
+
+        url = reverse("policy-detail", kwargs={"uuid": policy_uuid})
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
     def test_create_policy_invalid_group(self):
         """Test that we cannot create a policy with invalid group."""
         role_name = "roleA"
