@@ -54,7 +54,7 @@ data:
           "reverseYBuckets": false,
           "targets": [
             {
-              "expr": "sum(increase(api_3scale_gateway_api_time_bucket{service=\"rbac\"}[5m])) by (le)",
+              "expr": "sum(increase(api_3scale_gateway_api_time_bucket{exported_service=\"rbac\"}[5m])) by (le)",
               "format": "heatmap",
               "interval": "15s",
               "legendFormat": "{{le}} ms",
@@ -127,7 +127,7 @@ data:
           "steppedLine": false,
           "targets": [
             {
-              "expr": "sum(rate(api_3scale_gateway_api_time_count{service=\"rbac\"}[5m]))",
+              "expr": "sum(rate(api_3scale_gateway_api_time_count{exported_service=\"rbac\"}[5m]))",
               "interval": "15s",
               "refId": "A"
             }
@@ -218,7 +218,7 @@ data:
           "steppedLine": false,
           "targets": [
             {
-              "expr": "sum(rate(api_3scale_gateway_api_status{service=\"rbac\",status=\"5xx\"}[5m])) / sum(rate(api_3scale_gateway_api_time_count{service=\"rbac\"}[5m]))",
+              "expr": "sum(rate(api_3scale_gateway_api_status{exported_service=\"rbac\",status=\"5xx\"}[5m])) / sum(rate(api_3scale_gateway_api_time_count{exported_service=\"rbac\"}[5m]))",
               "interval": "15s",
               "refId": "A"
             }
