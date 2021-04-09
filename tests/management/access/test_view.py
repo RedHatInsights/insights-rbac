@@ -240,6 +240,27 @@ class AccessViewTests(IdentityRequest):
         self.assertEqual(len(response.data.get("data")), 0)
         self.assertEqual(response.data.get("meta").get("limit"), 1000)
 
+    def test_get_access_no_subset_match(self):
+        """Test that we cannot have a subset match on app/permission."""
+        role_name = "roleA"
+        policy_name = "policyA"
+        access_data = {
+            "permission": "app:foo:bar",
+            "resourceDefinitions": [{"attributeFilter": {"key": "keyA", "operation": "equal", "value": "valueA"}}],
+        }
+        response = self.create_role(role_name, access_data)
+        role_uuid = response.data.get("uuid")
+        self.create_policy(policy_name, self.group.uuid, [role_uuid])
+
+        url = "{}?application={}&username={}".format(reverse("access"), "appfoo", self.principal.username)
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIsNotNone(response.data.get("data"))
+        self.assertIsInstance(response.data.get("data"), list)
+        self.assertEqual(len(response.data.get("data")), 0)
+        self.assertEqual(response.data.get("meta").get("limit"), 1000)
+
     def test_get_access_no_match(self):
         """Test that we only match on the application name of the permission data."""
         role_name = "roleA"
