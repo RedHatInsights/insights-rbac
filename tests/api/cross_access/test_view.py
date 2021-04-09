@@ -16,9 +16,11 @@
 #
 """Test the cross account request model."""
 from api.models import CrossAccountRequest, Tenant
+from api.cross_access.util import get_cross_principal_name
+from api.serializers import create_schema_name
 from django.urls import reverse
 from django.utils import timezone
-from management.models import Role
+from management.models import Role, Principal
 from rest_framework import status
 from rest_framework.test import APIClient
 from tenant_schemas.utils import tenant_context
@@ -97,7 +99,7 @@ class CrossAccountRequestViewTests(IdentityRequest):
                 status="approved",
             )
             self.request_4 = CrossAccountRequest.objects.create(
-                target_account=self.another_account,
+                target_account=self.account,
                 user_id="2222222",
                 end_date=self.ref_time + timedelta(10),
                 status="pending",
@@ -143,7 +145,7 @@ class CrossAccountRequestViewTests(IdentityRequest):
         response = client.get(URL_LIST, **self.headers)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(response.data["data"]), 3)
+        self.assertEqual(len(response.data["data"]), 4)
         self.assertEqual(response.data["data"][0].get("email"), "test_user@email.com")
         self.assertEqual(response.data["data"][1].get("email"), "test_user_2@email.com")
 
@@ -550,3 +552,22 @@ class CrossAccountRequestViewTests(IdentityRequest):
             self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
             response = client.patch(url, self.data4create, format="json", **self.associate_admin_request.META)
             self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_create_principal_on_approval(self):
+        """Test that moving a car to approved creates a principal."""
+        update_data = {"status": "approved"}
+        tenant_schema = create_schema_name(self.request_4.target_account)
+        principal_name = get_cross_principal_name(self.request_4.target_account, self.request_4.user_id)
+        car_uuid = self.request_4.request_id
+        url = reverse("cross-detail", kwargs={"pk": str(car_uuid)})
+
+        client = APIClient()
+        response = client.patch(url, update_data, format="json", **self.associate_admin_request.META)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data.get("status"), update_data.get("status"))
+
+        with tenant_context(Tenant.objects.get(schema_name=tenant_schema)):
+            princ = Principal.objects.get(username__iexact=principal_name)
+        self.assertEqual(princ.username, principal_name)
+        self.assertTrue(princ.cross_account)
