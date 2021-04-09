@@ -31,6 +31,7 @@ from management.tasks import run_migrations_in_worker, run_seeds_in_worker
 from tenant_schemas.utils import tenant_context
 
 from api.models import Tenant
+from api.tasks import cross_account_cleanup
 
 
 logger = logging.getLogger(__name__)
@@ -168,6 +169,18 @@ def run_seeds(request):
         logger.info(f"Running seeds: {request.method} {request.user.username}")
         run_seeds_in_worker.delay(args)
         return HttpResponse("Seeds are running in a background worker.", status=202)
+    return HttpResponse(f'Method "{request.method}" not allowed.', status=405)
+
+
+def car_expiry(request):
+    """View method for running cross-account request expiry.
+
+    POST /_private/api/cars/expire/
+    """
+    if request.method == "POST":
+        logger.info("Running cross-account request expiration check.")
+        cross_account_cleanup.delay()
+        return HttpResponse("Expiry checks are running in a background worker.", status=202)
     return HttpResponse(f'Method "{request.method}" not allowed.', status=405)
 
 
