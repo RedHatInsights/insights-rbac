@@ -118,7 +118,7 @@ class PolicyViewsetTests(IdentityRequest):
         client = APIClient()
         url = reverse("policy-detail", kwargs={"uuid": policy_uuid})
         response = client.delete(url, **self.headers)
-        self.assertEqual(response.status_code, status.HTTP_202_ACCEPTED)
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
 
         url = reverse("policy-detail", kwargs={"uuid": policy_uuid})
         client = APIClient()
