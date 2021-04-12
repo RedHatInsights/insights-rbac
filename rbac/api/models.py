@@ -15,11 +15,11 @@
 #    along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """API models for import organization."""
+from django.db import models
 from tenant_schemas.models import TenantMixin
 
 from api.cross_access.model import CrossAccountRequest  # noqa: F401
 from api.status.model import Status  # noqa: F401
-from django.db import models
 
 
 class Tenant(TenantMixin):

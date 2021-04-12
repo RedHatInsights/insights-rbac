@@ -29,11 +29,13 @@ from management.principal.model import Principal
 from management.rbac_fields import AutoDateTimeField
 from management.role.model import Role
 
+from api.models import TenantAwareModel
+
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 
-class Policy(models.Model):
+class Policy(TenantAwareModel):
     """A policy."""
 
     uuid = models.UUIDField(default=uuid4, editable=False, unique=True, null=False)
