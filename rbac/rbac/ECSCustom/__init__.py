@@ -14,15 +14,18 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
-"""Custom ecs formatter"""
-import django
-
-from ecs_logging import StdlibFormatter
+"""Custom ecs formatter."""
 from urllib.parse import urlparse
+
+import django
+from ecs_logging import StdlibFormatter
 
 
 class ECSCustomFormatter(StdlibFormatter):
+    """Custom ECS formatter."""
+
     def format_to_ecs(self, record):
+        """Over write the format_to_ecs method to deal with WSGI and socket request."""
         request = None
         if hasattr(record, "request"):
             request = record.request
@@ -50,6 +53,7 @@ class ECSCustomFormatter(StdlibFormatter):
         return result
 
     def add_info_from_WSGIRequest(self, result, request):
+        """Extract info from WSGIRequest and add it to the log."""
         parsed_url = urlparse(request.build_absolute_uri())
         request_body_bytes = request.headers["Content-Length"] or "0"
 
