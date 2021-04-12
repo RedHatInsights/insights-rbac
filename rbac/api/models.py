@@ -19,6 +19,7 @@ from tenant_schemas.models import TenantMixin
 
 from api.cross_access.model import CrossAccountRequest  # noqa: F401
 from api.status.model import Status  # noqa: F401
+from django.db import models
 
 
 class Tenant(TenantMixin):
@@ -33,6 +34,15 @@ class Tenant(TenantMixin):
     def __str__(self):
         """Get string representation of Tenant."""
         return f"Tenant ({self.schema_name})"
+
+
+class TenantAwareModel(models.Model):
+    """Abstract model for inheriting `Tenant`."""
+
+    tenant = models.ForeignKey(Tenant, blank=True, null=True, on_delete=models.CASCADE)
+
+    class Meta:
+        abstract = True
 
 
 class User:
