@@ -31,12 +31,13 @@ import datetime
 import sys
 import logging
 import pytz
-import ecs_logging
 
 from boto3.session import Session
 from corsheaders.defaults import default_headers
 from dateutil.parser import parse as parse_dt
 from app_common_python import LoadedConfig
+
+from . import ECSCustom
 
 # Database
 # https://docs.djangoproject.com/en/2.0/ref/settings/#databases
@@ -277,7 +278,7 @@ LOGGING = {
     "formatters": {
         "verbose": {"format": VERBOSE_FORMATTING},
         "simple": {"format": "[%(asctime)s] %(levelname)s: %(message)s"},
-        "ecs_formatter": {"()": "ecs_logging.StdlibFormatter"},
+        "ecs_formatter": {"()": "rbac.ECSCustom.ECSCustomFormatter"},
     },
     "handlers": {
         "console": {"class": "logging.StreamHandler", "formatter": LOGGING_FORMATTER},
@@ -291,8 +292,8 @@ LOGGING = {
     },
     "loggers": {
         "django": {"handlers": LOGGING_HANDLERS, "level": DJANGO_LOGGING_LEVEL},
-        "django.server": {"handlers": DEBUG_LOG_HANDLERS, "level": DJANGO_LOGGING_LEVEL},
-        "django.request": {"handlers": DEBUG_LOG_HANDLERS, "level": DJANGO_LOGGING_LEVEL},
+        "django.server": {"handlers": DEBUG_LOG_HANDLERS, "level": DJANGO_LOGGING_LEVEL, "propagate": False},
+        "django.request": {"handlers": DEBUG_LOG_HANDLERS, "level": DJANGO_LOGGING_LEVEL, "propagate": False},
         "api": {"handlers": LOGGING_HANDLERS, "level": RBAC_LOGGING_LEVEL},
         "rbac": {"handlers": LOGGING_HANDLERS, "level": RBAC_LOGGING_LEVEL},
         "management": {"handlers": LOGGING_HANDLERS, "level": RBAC_LOGGING_LEVEL},
