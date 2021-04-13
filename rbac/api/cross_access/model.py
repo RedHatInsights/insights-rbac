@@ -51,7 +51,8 @@ class CrossAccountRequest(models.Model):
         if self.status not in STATUS_LIST:
             raise ValidationError(f'Unknown status "{self.status}" specified, {STATUS_LIST} are valid inputs.')
 
-        [self.validate_date(date) for date in [self.start_date, self.end_date]]
+        if self.status != "expired":
+            [self.validate_date(date) for date in [self.start_date, self.end_date]]
 
         if isinstance(self.end_date, datetime.datetime) and isinstance(self.start_date, datetime.datetime):
             if self.start_date.date() > (datetime.datetime.now() + datetime.timedelta(60)).date():
