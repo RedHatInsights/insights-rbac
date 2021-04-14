@@ -605,3 +605,37 @@ class CrossAccountRequestViewTests(IdentityRequest):
             princ = Principal.objects.get(username__iexact=principal_name)
         self.assertEqual(princ.username, principal_name)
         self.assertTrue(princ.cross_account)
+
+    def test_cross_account_request_ordering_filter(self):
+        "Test ordering filter for request id, created/start/end date."
+        client = APIClient()
+        # Sort by Request ID
+        response = client.get(
+            f"{URL_LIST}?query_by=user_id&order_by=request_id", **self.associate_non_admin_request.META
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 2)
+        self.assertTrue(response.data["data"][0].get("request_id") < response.data["data"][1].get("request_id"))
+
+        # Sorting the dates
+        ## request_1 is created a little bit ealier than request_3, and default is created desc, therefore, the
+        ## first should be request_3
+        response = client.get(f"{URL_LIST}?query_by=user_id", **self.associate_non_admin_request.META)
+        self.assertEqual(response.data["data"][0].get("request_id"), str(self.request_3.request_id))
+
+        ## set start_date of request_3 to a day later
+        self.request_3.start_date = self.ref_time + timedelta(1)
+        self.request_3.save()
+        response = client.get(
+            f"{URL_LIST}?query_by=user_id&order_by=start_date", **self.associate_non_admin_request.META
+        )
+        self.assertEqual(response.data["data"][0].get("request_id"), str(self.request_1.request_id))
+
+        ## set start_date of request_3 to 21 days later so its end_date bigger than request_1
+        self.request_3.end_date = self.ref_time + timedelta(21)
+        self.request_3.save()
+        response = client.get(
+            f"{URL_LIST}?query_by=user_id&order_by=-end_date", **self.associate_non_admin_request.META
+        )
+        self.assertEqual(response.data["data"][0].get("request_id"), str(self.request_3.request_id))

@@ -24,6 +24,7 @@ from management.principal.proxy import PrincipalProxy
 from management.utils import validate_and_get_key, validate_limit_and_offset, validate_uuid
 from rest_framework import mixins, viewsets
 from rest_framework import status as http_status
+from rest_framework.filters import OrderingFilter
 from rest_framework.response import Response
 from rest_framework.serializers import ValidationError
 from tenant_schemas.utils import tenant_context
@@ -82,8 +83,10 @@ class CrossAccountRequestViewSet(
     """
 
     permission_classes = (CrossAccountRequestAccessPermission,)
-    filter_backends = (filters.DjangoFilterBackend,)
+    filter_backends = (filters.DjangoFilterBackend, OrderingFilter)
     filterset_class = CrossAccountRequestFilter
+    ordering_fields = ("request_id", "start_date", "end_date", "created", "modified")
+    ordering = "-created"
 
     def get_queryset(self):
         """Get query set based on the queryBy key word."""
