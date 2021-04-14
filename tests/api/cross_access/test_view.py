@@ -149,6 +149,40 @@ class CrossAccountRequestViewTests(IdentityRequest):
         self.assertEqual(response.data["data"][0].get("email"), "test_user@email.com")
         self.assertEqual(response.data["data"][1].get("email"), "test_user_2@email.com")
 
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={
+            "status_code": 200,
+            "data": [
+                {
+                    "username": "test_user",
+                    "email": "test_user@email.com",
+                    "first_name": "user",
+                    "last_name": "test",
+                    "account_number": "567890",
+                    "user_id": "1111111",
+                },
+                {
+                    "username": "test_user_2",
+                    "email": "test_user_2@email.com",
+                    "first_name": "user_2",
+                    "last_name": "test",
+                    "account_number": "123456",
+                    "user_id": "2222222",
+                },
+            ],
+        },
+    )
+    def test_list_requests_query_by_account_with_status_filter_success(self, mock_request):
+        """Test listing of cross account request based on account number of identity and filter status."""
+        client = APIClient()
+        response = client.get(f"{URL_LIST}?status=pending", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 2)
+        self.assertEqual(response.data["data"][0].get("status"), "pending")
+        self.assertEqual(response.data["data"][1].get("status"), "pending")
+
     def test_list_requests_query_by_account_fail_if_not_admin(self):
         """Test listing cross account request based on account number of identity would fail for non org admin."""
         client = APIClient()

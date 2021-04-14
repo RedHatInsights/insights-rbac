@@ -65,7 +65,7 @@ class CrossAccountRequestFilter(filters.FilterSet):
 
     class Meta:
         model = CrossAccountRequest
-        fields = ["account", "approved_only"]
+        fields = ["account", "approved_only", "status"]
 
 
 class CrossAccountRequestViewSet(
