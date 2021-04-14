@@ -56,6 +56,7 @@ if SENTRY_DSN:
     from sentry_sdk.integrations.redis import RedisIntegration
 
     sentry_sdk.init(dsn=SENTRY_DSN, integrations=[DjangoIntegration(), RedisIntegration()])
+    print("Sentry SDK initialization was successful!")
 else:
     print("SENTRY_DSN was not set, skipping Sentry initialization.")
 
