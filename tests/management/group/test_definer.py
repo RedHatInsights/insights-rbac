@@ -80,7 +80,7 @@ class GroupDefinerTests(IdentityRequest):
         with tenant_context(self.tenant):
             group = Group.objects.get(platform_default=True)
             roles = Role.objects.filter(name="RBAC Administrator").values_list("uuid", flat=True)
-            add_roles(group, roles)
+            add_roles(group, roles, self.tenant)
 
             group.system = system
             group.save()

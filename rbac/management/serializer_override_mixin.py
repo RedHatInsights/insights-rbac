@@ -45,8 +45,7 @@ class SerializerCreateOverrideMixin:
                 many_to_many[field_name] = validated_data.pop(field_name)
 
         try:
-            tenant_id = self.context["request"].tenant.id
-            validated_data["tenant_id"] = tenant_id
+            validated_data["tenant"] = self.context["request"].tenant
             instance = ModelClass._default_manager.create(**validated_data)
         except TypeError:
             tb = traceback.format_exc()

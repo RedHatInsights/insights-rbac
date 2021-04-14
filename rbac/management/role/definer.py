@@ -42,6 +42,15 @@ def _make_role(tenant, data):
         platform_default=data.get("platform_default", False),
     )
     role, created = Role.objects.get_or_create(name=name, defaults=defaults)
+
+    # NOTE: after we ensure/enforce all object have a tenant_id FK, we can add tenant=tenant
+    # to the get_or_create. We cannot currently, because records without would fail the GET
+    # and would create duplicate records. This ensures we temporarily do an update if
+    # obj.tenant_id is NULL
+    if not role.tenant:
+        role.tenant = tenant
+        role.save()
+
     if created:
         if role.display_name != display_name:
             role.display_name = display_name
@@ -57,10 +66,19 @@ def _make_role(tenant, data):
             return role
     for access_item in access_list:
         resource_def_list = access_item.pop("resourceDefinitions", [])
-        permission, created = Permission.objects.get_or_create(**access_item)
-        access_obj = Access.objects.create(permission=permission, role=role)
+        permission, created = Permission.objects.get_or_create(**access_item, tenant=tenant)
+
+        # NOTE: after we ensure/enforce all object have a tenant_id FK, we can add tenant=tenant
+        # to the get_or_create. We cannot currently, because records without would fail the GET
+        # and would create duplicate records. This ensures we temporarily do an update if
+        # obj.tenant_id is NULL
+        if not permission.tenant:
+            permission.tenant = tenant
+            permission.save()
+
+        access_obj = Access.objects.create(permission=permission, role=role, tenant=tenant)
         for resource_def_item in resource_def_list:
-            ResourceDefinition.objects.create(**resource_def_item, access=access_obj)
+            ResourceDefinition.objects.create(**resource_def_item, access=access_obj, tenant=tenant)
     return role
 
 
@@ -139,6 +157,13 @@ def seed_permissions(tenant):
                                     permission, created = Permission.objects.update_or_create(
                                         permission=f"{app_name}:{resource}:{operation_object}"
                                     )
+                                # NOTE: after we ensure/enforce all object have a tenant_id FK, we can add tenant=tenant
+                                # to the get_or_create. We cannot currently, because records without would fail the GET
+                                # and would create duplicate records. This ensures we temporarily do an update if
+                                # obj.tenant_id is NULL
+                                if not permission.tenant:
+                                    permission.tenant = tenant
+                                    permission.save()
                                 if created:
                                     logger.info(
                                         f"Created permission {permission.permission} "

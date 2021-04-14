@@ -17,10 +17,11 @@
 
 """Serializer for permission management."""
 from management.models import Permission
+from management.serializer_override_mixin import SerializerCreateOverrideMixin
 from rest_framework import serializers
 
 
-class PermissionSerializer(serializers.ModelSerializer):
+class PermissionSerializer(SerializerCreateOverrideMixin, serializers.ModelSerializer):
     """Serializer for the Permission model."""
 
     class Meta:

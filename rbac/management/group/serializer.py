@@ -20,11 +20,12 @@ from management.group.model import Group
 from management.principal.proxy import PrincipalProxy
 from management.principal.serializer import PrincipalInputSerializer, PrincipalSerializer
 from management.role.serializer import RoleMinimumSerializer
+from management.serializer_override_mixin import SerializerCreateOverrideMixin
 from rest_framework import serializers, status
 from rest_framework.validators import UniqueValidator
 
 
-class GroupInputSerializer(serializers.ModelSerializer):
+class GroupInputSerializer(SerializerCreateOverrideMixin, serializers.ModelSerializer):
     """Serializer for Group input model."""
 
     uuid = serializers.UUIDField(read_only=True)
@@ -60,7 +61,7 @@ class GroupInputSerializer(serializers.ModelSerializer):
         )
 
 
-class GroupSerializer(serializers.ModelSerializer):
+class GroupSerializer(SerializerCreateOverrideMixin, serializers.ModelSerializer):
     """Serializer for the Group model."""
 
     uuid = serializers.UUIDField(read_only=True)
