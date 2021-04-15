@@ -146,8 +146,9 @@ class CrossAccountRequestViewTests(IdentityRequest):
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data["data"]), 4)
-        self.assertEqual(response.data["data"][0].get("email"), "test_user@email.com")
-        self.assertEqual(response.data["data"][1].get("email"), "test_user_2@email.com")
+        email_list = [data.get("email") for data in response.data["data"]]
+        self.assertTrue("test_user@email.com" in email_list)
+        self.assertTrue("test_user_2@email.com" in email_list)
 
     @patch(
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
@@ -198,12 +199,9 @@ class CrossAccountRequestViewTests(IdentityRequest):
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data["data"]), 2)
-        self.assertEqual(response.data["data"][0].get("email"), None)
-        self.assertEqual(response.data["data"][0].get("user_id"), "1111111")
-        self.assertEqual(response.data["data"][0].get("target_account"), self.account)
-        self.assertEqual(response.data["data"][1].get("email"), None)
-        self.assertEqual(response.data["data"][0].get("user_id"), "1111111")
-        self.assertEqual(response.data["data"][1].get("target_account"), self.another_account)
+        accounts = [data.get("target_account") for data in response.data["data"]]
+        self.assertTrue(self.account in accounts)
+        self.assertTrue(self.another_account in accounts)
 
     def test_list_requests_query_by_user_id_filter_by_account_success(self):
         """Test listing cross account request based on user id of identity."""
