@@ -1659,7 +1659,7 @@ parameters:
   value: simple
 - displayName: Django log handlers
   name: DJANGO_LOG_HANDLERS
-  value: console
+  value: console,ecs
 - displayName: Django log directory
   name: DJANGO_LOG_DIRECTORY
 - displayName: Django logging file
