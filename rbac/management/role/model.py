@@ -28,11 +28,13 @@ from management.cache import AccessCache
 from management.models import Permission, Principal
 from management.rbac_fields import AutoDateTimeField
 
+from api.models import TenantAwareModel
+
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 
-class Role(models.Model):
+class Role(TenantAwareModel):
     """A role."""
 
     uuid = models.UUIDField(default=uuid4, editable=False, unique=True, null=False)
@@ -60,7 +62,7 @@ class Role(models.Model):
         super(Role, self).save(*args, **kwargs)
 
 
-class Access(models.Model):
+class Access(TenantAwareModel):
     """An access object."""
 
     permission = models.ForeignKey(Permission, null=True, on_delete=models.CASCADE, related_name="accesses")
@@ -71,7 +73,7 @@ class Access(models.Model):
         return self.permission.application
 
 
-class ResourceDefinition(models.Model):
+class ResourceDefinition(TenantAwareModel):
     """A resource definition."""
 
     attributeFilter = JSONField(default=dict)

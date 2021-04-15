@@ -21,7 +21,7 @@ from uuid import UUID
 
 from django.core.exceptions import PermissionDenied
 from django.utils.translation import gettext as _
-from management.models import Group, Principal, Role
+from management.models import Access, Group, Principal, Role
 from management.principal.proxy import PrincipalProxy
 from rest_framework import serializers, status
 from tenant_schemas.utils import tenant_context
@@ -103,12 +103,13 @@ def roles_for_policies(policies):
 def access_for_roles(roles, param_applications):
     """Gathers all access for the given roles and application(s)."""
     access = []
+    param_applications_list = param_applications.split(",")
     for role in set(roles):
-        role_access = set(role.access.all())
-        for access_item in role_access:
-            if (not param_applications) or (access_item.permission_application() in param_applications):
-                access.append(access_item)
-    return access
+        if param_applications:
+            access += Access.objects.filter(role=role, permission__application__in=param_applications_list)
+            continue
+        access += role.access.all()
+    return set(access)
 
 
 def groups_for_principal(principal, **kwargs):
@@ -202,8 +203,10 @@ def roles_for_cross_account_principal(principal):
     """Return roles for cross account principals."""
     target_account, user_id = principal.username.split("-")
     with tenant_context(Tenant.objects.get(schema_name="public")):
-        cross_account_request = CrossAccountRequest.objects.filter(
-            target_account=target_account, user_id=user_id, status="approved"
-        ).first()
-        role_names = list(cross_account_request.roles.all().values_list("name", flat=True))
-    return Role.objects.filter(name__in=role_names)
+        role_names = (
+            CrossAccountRequest.objects.filter(target_account=target_account, user_id=user_id, status="approved")
+            .values_list("roles__name", flat=True)
+            .distinct()
+        )
+        role_names_list = list(role_names)
+    return Role.objects.filter(name__in=role_names_list)

@@ -74,6 +74,7 @@ objects:
               secretKeyRef:
                 key: sentry-dsn
                 name: rbac-secret
+                optional: true
           - name: SERVICE_PSKS
             valueFrom:
               secretKeyRef:
@@ -327,6 +328,12 @@ objects:
             value: ${CLOWDER_ENABLED}
           - name: CW_NULL_WORKAROUND
             value: ${CW_NULL_WORKAROUND)
+          - name: SENTRY_DSN
+            valueFrom:
+              secretKeyRef:
+                key: sentry-dsn
+                name: rbac-secret
+                optional: true
     - name: scheduler-service
       minReplicas: 1
       podSpec:
@@ -388,6 +395,12 @@ objects:
           value: ${CLOWDER_ENABLED}
         - name: CW_NULL_WORKAROUND
           value: ${CW_NULL_WORKAROUND)
+        - name: SENTRY_DSN
+          valueFrom:
+            secretKeyRef:
+              key: sentry-dsn
+              name: rbac-secret
+              optional: true
 
 - apiVersion: v1
   kind: ConfigMap
@@ -1739,7 +1752,7 @@ parameters:
   value: 512Mi
 - displayName: Django Debug
   name: DJANGO_DEBUG
-  value: 'false'
+  value: 'False'
 - displayName: Django log level
   name: DJANGO_LOG_LEVEL
   value: INFO
