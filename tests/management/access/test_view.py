@@ -105,9 +105,9 @@ class AccessViewTests(IdentityRequest):
             default_group = Group.objects.create(name="default group", system=True, platform_default=True)
             default_group.policies.add(default_policy)
 
-    def create_role_and_permission(self):
-        role = Role.objects.create(name="Test Role")
-        assigned_permission = Permission.objects.create(permission="test:assigned:permission")
+    def create_role_and_permission(self, role_name, permission):
+        role = Role.objects.create(name=role_name)
+        assigned_permission = Permission.objects.create(permission=permission)
         access = Access.objects.create(role=role, permission=assigned_permission)
         return role
 
@@ -151,9 +151,16 @@ class AccessViewTests(IdentityRequest):
         user_name = f"{account_id}-{user_id}"
 
         # setup cross account request, role and permission in public schema
-        role = self.create_role_and_permission()
+        ## This CAR will provide permission: "test:assigned:permission"
+        role = self.create_role_and_permission("Test Role one", "test:assigned:permission1")
         cross_account_request = CrossAccountRequest.objects.create(
             target_account=account_id, user_id=user_id, end_date=timezone.now() + timedelta(10), status="approved"
+        )
+        cross_account_request.roles.add(role)
+        ## CAR below will provide permission: "app:*:*"
+        role = self.create_role_and_permission("Test Role two", "test:assigned:permission2")
+        cross_account_request = CrossAccountRequest.objects.create(
+            target_account=account_id, user_id=user_id, end_date=timezone.now() + timedelta(20), status="approved"
         )
         cross_account_request.roles.add(role)
 
@@ -165,15 +172,15 @@ class AccessViewTests(IdentityRequest):
 
         with tenant_context(self.tenant):
             Principal.objects.create(username=user_name, cross_account=True)
-            self.create_role_and_permission()
+            self.create_role_and_permission("Test Role one", "test:assigned:permission1")
+            self.create_role_and_permission("Test Role two", "test:assigned:permission2")
         response = client.get(url, **headers)
 
         # only assigned role permissions without platform default permission
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(response.data.get("data")), 1)
-        self.assertEqual(
-            {"permission": "test:assigned:permission", "resourceDefinitions": []}, response.data.get("data")[0]
-        )
+        self.assertEqual(len(response.data.get("data")), 2)
+        permissions = [access["permission"] for access in response.data.get("data")]
+        self.assertListEqual(permissions, ["test:assigned:permission1", "test:assigned:permission2"])
 
     def test_get_access_no_app_supplied(self):
         """Test that we return all permissions when no app supplied."""

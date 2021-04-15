@@ -37,6 +37,8 @@ def clean_tenant_principals(tenant):
         principals = list(Principal.objects.all())
         logger.info("Running clean up on %d principals for tenant %s.", len(principals), tenant.schema_name)
         for principal in principals:
+            if principal.cross_account:
+                continue
             logger.debug("Checking for username %s for tenant %s.", principal.username, tenant.schema_name)
             resp = proxy.request_filtered_principals([principal.username])
             status_code = resp.get("status_code")
