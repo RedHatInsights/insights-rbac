@@ -136,11 +136,11 @@ class AccessCache(BasicCache):
         if obj:
             return json.loads(obj)
 
-    def get_policy(self, uuid, application):
-        """Get the given user's policy for the given application."""
+    def get_policy(self, uuid, sub_key):
+        """Get the given user's policy for the given sub_key (application_offset_limit)."""
         if not settings.ACCESS_CACHE_ENABLED:
             return None
-        return super().get_cached((uuid, application), f"Error querying policy for uuid {uuid}")
+        return super().get_cached((uuid, sub_key), f"Error querying policy for uuid {uuid}")
 
     def delete_policy(self, uuid):
         """Purge the given user's policy from the cache."""
@@ -157,8 +157,8 @@ class AccessCache(BasicCache):
             if keys:
                 self.connection.delete(*keys)
 
-    def save_policy(self, uuid, application, policy):
-        """Write the policy for a given user for a given app to Redis."""
+    def save_policy(self, uuid, sub_key, policy):
+        """Write the policy for a given user for a given sub_key (application_offset_limit) to Redis."""
         if not settings.ACCESS_CACHE_ENABLED:
             return
-        super().save((uuid, application), policy, "policy")
+        super().save((uuid, sub_key), policy, "policy")

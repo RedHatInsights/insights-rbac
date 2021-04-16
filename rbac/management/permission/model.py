@@ -18,8 +18,10 @@
 """Model for permission management."""
 from django.db import models
 
+from api.models import TenantAwareModel
 
-class Permission(models.Model):
+
+class Permission(TenantAwareModel):
     """A Permission."""
 
     application = models.TextField(null=False)
