@@ -16,7 +16,7 @@
 #
 
 """View for cross access request."""
-
+from django.db.models import Q
 from django.utils import timezone
 from django_filters import rest_framework as filters
 from management.models import Role
@@ -61,8 +61,17 @@ class CrossAccountRequestFilter(filters.FilterSet):
             )
         return queryset
 
+    def status_filter(self, queryset, field, values):
+        """Filter to lookup requests by status(es) in permissions."""
+        statuses = values.split(",")
+        query = Q()
+        for status in statuses:
+            query = query | Q(status__iexact=status)
+        return queryset.distinct().filter(query)
+
     account = filters.CharFilter(field_name="target_account", method="account_filter")
     approved_only = filters.BooleanFilter(field_name="end_date", method="approved_filter")
+    status = filters.CharFilter(field_name="status", method="status_filter")
 
     class Meta:
         model = CrossAccountRequest

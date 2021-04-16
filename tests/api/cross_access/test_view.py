@@ -177,12 +177,21 @@ class CrossAccountRequestViewTests(IdentityRequest):
     def test_list_requests_query_by_account_with_status_filter_success(self, mock_request):
         """Test listing of cross account request based on account number of identity and filter status."""
         client = APIClient()
+
+        # Single status filter
         response = client.get(f"{URL_LIST}?status=pending", **self.headers)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data["data"]), 2)
         self.assertEqual(response.data["data"][0].get("status"), "pending")
         self.assertEqual(response.data["data"][1].get("status"), "pending")
+
+        # Multiple statuses filter
+        response = client.get(f"{URL_LIST}?status=approved,expired", **self.headers)
+        statuses = [data.get("status") for data in response.data["data"]]
+        self.assertTrue("approved" in statuses)
+        self.assertTrue("expired" in statuses)
+        self.assertTrue("pending" not in statuses)
 
     def test_list_requests_query_by_account_fail_if_not_admin(self):
         """Test listing cross account request based on account number of identity would fail for non org admin."""
