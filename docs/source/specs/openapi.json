@@ -114,7 +114,7 @@
             "in": "query",
             "name": "order_by",
             "required": false,
-            "description": "Parameter for ordering by field. For inverse ordering, use '-', e.g. ?order_by=-start_date. Default is -created",
+            "description": "Parameter for ordering by field. For inverse ordering, use '-', e.g. ?order_by=-start_date.",
             "schema": {
               "type": "string",
               "enum": [

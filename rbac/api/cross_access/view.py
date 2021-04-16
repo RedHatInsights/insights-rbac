@@ -86,7 +86,6 @@ class CrossAccountRequestViewSet(
     filter_backends = (filters.DjangoFilterBackend, OrderingFilter)
     filterset_class = CrossAccountRequestFilter
     ordering_fields = ("request_id", "start_date", "end_date", "created", "modified")
-    ordering = "-created"
 
     def get_queryset(self):
         """Get query set based on the queryBy key word."""

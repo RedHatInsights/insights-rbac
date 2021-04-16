@@ -617,9 +617,11 @@ class CrossAccountRequestViewTests(IdentityRequest):
         self.assertTrue(response.data["data"][0].get("request_id") < response.data["data"][1].get("request_id"))
 
         # Sorting the dates
-        ## request_1 is created a little bit ealier than request_3, and default is created desc, therefore, the
+        ## request_1 is created a little bit ealier than request_3, therefore, the
         ## first should be request_3
-        response = client.get(f"{URL_LIST}?query_by=user_id", **self.associate_non_admin_request.META)
+        response = client.get(
+            f"{URL_LIST}?query_by=user_id&order_by=-created", **self.associate_non_admin_request.META
+        )
         self.assertEqual(response.data["data"][0].get("request_id"), str(self.request_3.request_id))
 
         ## set start_date of request_3 to a day later
