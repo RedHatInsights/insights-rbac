@@ -22,6 +22,7 @@ import os
 
 from django.conf import settings
 from django.db import transaction
+from django.utils import timezone
 from management.permission.model import Permission
 from management.role.model import Access, ResourceDefinition, Role
 from tenant_schemas.utils import tenant_context
@@ -48,7 +49,7 @@ def _make_role(tenant, data):
         logger.info("Created role %s for tenant %s.", name, tenant.schema_name)
     else:
         if role.version != defaults["version"]:
-            Role.objects.filter(name=name).update(**defaults, display_name=display_name)
+            Role.objects.filter(name=name).update(**defaults, display_name=display_name, modified=timezone.now())
             logger.info("Updated role %s for tenant %s.", name, tenant.schema_name)
             role.access.all().delete()
         else:
