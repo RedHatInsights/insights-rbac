@@ -42,9 +42,9 @@ class CrossAccountRequest(models.Model):
     roles = models.ManyToManyField("management.Role", through="RequestsRoles")
 
     def validate_date(self, date):
-        """Validate that start and end dates are not in the past."""
+        """Validate that end dates are not in the past."""
         if isinstance(date, datetime.datetime) and date.date() < timezone.now().date():
-            raise ValidationError("Please verify the start and end dates are not in the past.")
+            raise ValidationError("Please verify the end dates are not in the past.")
 
     def validate_input_value(self):
         """Validate status is valid, and date is valid."""
@@ -52,7 +52,7 @@ class CrossAccountRequest(models.Model):
             raise ValidationError(f'Unknown status "{self.status}" specified, {STATUS_LIST} are valid inputs.')
 
         if self.status != "expired":
-            [self.validate_date(date) for date in [self.start_date, self.end_date]]
+            self.validate_date(self.end_date)
 
         if isinstance(self.end_date, datetime.datetime) and isinstance(self.start_date, datetime.datetime):
             if self.start_date.date() > (datetime.datetime.now() + datetime.timedelta(60)).date():
