@@ -55,10 +55,9 @@ class Role(TenantAwareModel):
     class Meta:
         ordering = ["name", "modified"]
         constraints = [
-            models.UniqueConstraint(fields=['name', 'tenant'], name='unique role name per tenant'),
-            models.UniqueConstraint(fields=['display_name', 'tenant'], name='unique role display name per tenant')
+            models.UniqueConstraint(fields=["name", "tenant"], name="unique role name per tenant"),
+            models.UniqueConstraint(fields=["display_name", "tenant"], name="unique role display name per tenant"),
         ]
-
 
     def save(self, *args, **kwargs):
         """Ensure that display_name is populated on save."""

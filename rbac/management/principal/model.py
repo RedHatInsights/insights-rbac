@@ -33,6 +33,5 @@ class Principal(TenantAwareModel):
     class Meta:
         ordering = ["username"]
         constraints = [
-            models.UniqueConstraint(fields=['username', 'tenant'], name='unique principal username per tenant')
+            models.UniqueConstraint(fields=["username", "tenant"], name="unique principal username per tenant")
         ]
-

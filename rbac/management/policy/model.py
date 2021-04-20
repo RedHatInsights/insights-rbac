@@ -49,9 +49,7 @@ class Policy(TenantAwareModel):
 
     class Meta:
         ordering = ["name", "modified"]
-        constraints = [
-            models.UniqueConstraint(fields=['name', 'tenant'], name='unique policy name per tenant')
-        ]
+        constraints = [models.UniqueConstraint(fields=["name", "tenant"], name="unique policy name per tenant")]
 
 
 def policy_changed_cache_handler(sender=None, instance=None, using=None, **kwargs):
