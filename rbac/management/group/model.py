@@ -68,6 +68,9 @@ class Group(TenantAwareModel):
 
     class Meta:
         ordering = ["name", "modified"]
+        constraints = [
+            models.UniqueConstraint(fields=['name', 'tenant'], name='unique group name per tenant')
+        ]
 
 
 def group_deleted_cache_handler(sender=None, instance=None, using=None, **kwargs):
