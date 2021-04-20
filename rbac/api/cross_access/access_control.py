@@ -35,6 +35,11 @@ class CrossAccountRequestAccessPermission(permissions.BasePermission):
                 # Only allow associates create the request
                 return request.user.internal
 
+            if request.method in ["PUT", "PATCH"]:
+                # The permission depends on the object to be updated, strict permission check in view.
+                return True
+
+            # For list
             query_by = validate_and_get_key(request.query_params, QUERY_BY_KEY, VALID_QUERY_BY_KEY, ACCOUNT)
             if query_by == ACCOUNT:
                 return request.user.admin
