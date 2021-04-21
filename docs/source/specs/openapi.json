@@ -122,7 +122,8 @@
                 "start_date",
                 "end_date",
                 "created",
-                "modified"
+                "modified",
+                "status"
               ]
             }
           }
