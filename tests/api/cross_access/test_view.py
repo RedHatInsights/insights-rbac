@@ -146,8 +146,52 @@ class CrossAccountRequestViewTests(IdentityRequest):
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data["data"]), 4)
-        self.assertEqual(response.data["data"][0].get("email"), "test_user@email.com")
-        self.assertEqual(response.data["data"][1].get("email"), "test_user_2@email.com")
+        email_list = [data.get("email") for data in response.data["data"]]
+        self.assertTrue("test_user@email.com" in email_list)
+        self.assertTrue("test_user_2@email.com" in email_list)
+
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={
+            "status_code": 200,
+            "data": [
+                {
+                    "username": "test_user",
+                    "email": "test_user@email.com",
+                    "first_name": "user",
+                    "last_name": "test",
+                    "account_number": "567890",
+                    "user_id": "1111111",
+                },
+                {
+                    "username": "test_user_2",
+                    "email": "test_user_2@email.com",
+                    "first_name": "user_2",
+                    "last_name": "test",
+                    "account_number": "123456",
+                    "user_id": "2222222",
+                },
+            ],
+        },
+    )
+    def test_list_requests_query_by_account_with_status_filter_success(self, mock_request):
+        """Test listing of cross account request based on account number of identity and filter status."""
+        client = APIClient()
+
+        # Single status filter
+        response = client.get(f"{URL_LIST}?status=pending", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 2)
+        self.assertEqual(response.data["data"][0].get("status"), "pending")
+        self.assertEqual(response.data["data"][1].get("status"), "pending")
+
+        # Multiple statuses filter
+        response = client.get(f"{URL_LIST}?status=approved,expired", **self.headers)
+        statuses = [data.get("status") for data in response.data["data"]]
+        self.assertTrue("approved" in statuses)
+        self.assertTrue("expired" in statuses)
+        self.assertTrue("pending" not in statuses)
 
     def test_list_requests_query_by_account_fail_if_not_admin(self):
         """Test listing cross account request based on account number of identity would fail for non org admin."""
@@ -164,12 +208,9 @@ class CrossAccountRequestViewTests(IdentityRequest):
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data["data"]), 2)
-        self.assertEqual(response.data["data"][0].get("email"), None)
-        self.assertEqual(response.data["data"][0].get("user_id"), "1111111")
-        self.assertEqual(response.data["data"][0].get("target_account"), self.account)
-        self.assertEqual(response.data["data"][1].get("email"), None)
-        self.assertEqual(response.data["data"][0].get("user_id"), "1111111")
-        self.assertEqual(response.data["data"][1].get("target_account"), self.another_account)
+        accounts = [data.get("target_account") for data in response.data["data"]]
+        self.assertTrue(self.account in accounts)
+        self.assertTrue(self.another_account in accounts)
 
     def test_list_requests_query_by_user_id_filter_by_account_success(self):
         """Test listing cross account request based on user id of identity."""
@@ -558,3 +599,39 @@ class CrossAccountRequestViewTests(IdentityRequest):
             princ = Principal.objects.get(username__iexact=principal_name)
         self.assertEqual(princ.username, principal_name)
         self.assertTrue(princ.cross_account)
+
+    def test_cross_account_request_ordering_filter(self):
+        "Test ordering filter for request id, created/start/end date."
+        client = APIClient()
+        # Sort by Request ID
+        response = client.get(
+            f"{URL_LIST}?query_by=user_id&order_by=request_id", **self.associate_non_admin_request.META
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 2)
+        self.assertTrue(response.data["data"][0].get("request_id") < response.data["data"][1].get("request_id"))
+
+        # Sorting the dates
+        ## request_1 is created a little bit ealier than request_3, therefore, the
+        ## first should be request_3
+        response = client.get(
+            f"{URL_LIST}?query_by=user_id&order_by=-created", **self.associate_non_admin_request.META
+        )
+        self.assertEqual(response.data["data"][0].get("request_id"), str(self.request_3.request_id))
+
+        ## set start_date of request_3 to a day later
+        self.request_3.start_date = self.ref_time + timedelta(1)
+        self.request_3.save()
+        response = client.get(
+            f"{URL_LIST}?query_by=user_id&order_by=start_date", **self.associate_non_admin_request.META
+        )
+        self.assertEqual(response.data["data"][0].get("request_id"), str(self.request_1.request_id))
+
+        ## set start_date of request_3 to 21 days later so its end_date bigger than request_1
+        self.request_3.end_date = self.ref_time + timedelta(21)
+        self.request_3.save()
+        response = client.get(
+            f"{URL_LIST}?query_by=user_id&order_by=-end_date", **self.associate_non_admin_request.META
+        )
+        self.assertEqual(response.data["data"][0].get("request_id"), str(self.request_3.request_id))
