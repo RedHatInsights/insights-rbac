@@ -216,8 +216,8 @@ objects:
                 PYTHONPATH=${PWD}/rbac/ celery inspect
                 ping -A rbac.celery
           failureThreshold: 3
-          initialDelaySeconds: 30
-          periodSeconds: 300
+          initialDelaySeconds: ${{CELERY_INITIAL_DELAY_SEC}}
+          periodSeconds: ${{CELERY_PERIOD_SEC}}
           successThreshold: 1
           timeoutSeconds: 10
         readinessProbe:
@@ -229,7 +229,7 @@ objects:
                 PYTHONPATH=${PWD}/rbac/ celery inspect
                 ping -A rbac.celery
           failureThreshold: 3
-          periodSeconds: 300
+          periodSeconds: ${{CELERY_PERIOD_SEC}}
           successThreshold: 1
           timeoutSeconds: 10
         volumeMounts:
@@ -353,8 +353,8 @@ objects:
                 PYTHONPATH=${PWD}/rbac/ celery inspect
                 ping -A rbac.celery
           failureThreshold: 3
-          initialDelaySeconds: 30
-          periodSeconds: 300
+          initialDelaySeconds: ${{CELERY_INITIAL_DELAY_SEC}}
+          periodSeconds: ${{CELERY_PERIOD_SEC}}
           successThreshold: 1
           timeoutSeconds: 10
         readinessProbe:
@@ -366,7 +366,7 @@ objects:
                 PYTHONPATH=${PWD}/rbac/ celery inspect
                 ping -A rbac.celery
           failureThreshold: 3
-          periodSeconds: 300
+          periodSeconds: ${{CELERY_PERIOD_SEC}}
           successThreshold: 1
           timeoutSeconds: 10
         resources:
@@ -1781,3 +1781,7 @@ parameters:
   value: 'true'
 - name: EPH_ENV
   required: true
+- name: CELERY_INITIAL_DELAY_SEC
+  value: "30"
+- name: CELERY_PERIOD_SEC
+  value: "300"
