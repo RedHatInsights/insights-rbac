@@ -586,6 +586,14 @@ class GroupViewsetTests(IdentityRequest):
         self.assertEqual(roles[0].get("name"), self.roleB.name)
         self.assertEqual(roles[1].get("name"), self.role.name)
 
+    def test_get_group_roles_ordered_bad_input(self):
+        url = f"{reverse('group-roles', kwargs={'uuid': self.group.uuid})}?order_by=-themis"
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        roles = response.data.get("data")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
     def test_exclude_input_invalid(self):
         """Test that getting roles with 'exclude=' for a group returns failed validation."""
         url = "%s?exclude=sth" % (reverse("group-roles", kwargs={"uuid": self.group.uuid}))
