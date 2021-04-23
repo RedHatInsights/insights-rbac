@@ -430,6 +430,14 @@ class GroupViewsetTests(IdentityRequest):
         self.assertEqual(response.data.get("meta").get("count"), 0)
         self.assertEqual(response.data.get("data"), [])
 
+    def test_get_group_principals_invalid_sort_order(self):
+        """Test that an invalid value for sort order is rejected."""
+        client = APIClient()
+        url = reverse("group-principals", kwargs={"uuid": self.emptyGroup.uuid})
+        url += "?order_by=themis"
+        response = client.get(url, **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
     @patch(
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
         return_value={"status_code": 200, "data": []},
@@ -585,6 +593,14 @@ class GroupViewsetTests(IdentityRequest):
         self.assertEqual(len(roles), 2)
         self.assertEqual(roles[0].get("name"), self.roleB.name)
         self.assertEqual(roles[1].get("name"), self.role.name)
+
+    def test_get_group_roles_ordered_bad_input(self):
+        url = f"{reverse('group-roles', kwargs={'uuid': self.group.uuid})}?order_by=-themis"
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        roles = response.data.get("data")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
     def test_exclude_input_invalid(self):
         """Test that getting roles with 'exclude=' for a group returns failed validation."""
