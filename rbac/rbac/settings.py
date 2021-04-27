@@ -52,11 +52,14 @@ from .env import ENVIRONMENT
 
 SENTRY_DSN = os.getenv("SENTRY_DSN", "")
 if SENTRY_DSN:
+    import logging
     import sentry_sdk
     from sentry_sdk.integrations.django import DjangoIntegration
     from sentry_sdk.integrations.redis import RedisIntegration
+    from sentry_sdk.integrations.logging import LoggingIntegration
 
-    sentry_sdk.init(dsn=SENTRY_DSN, integrations=[DjangoIntegration(), RedisIntegration()])
+    sentry_logging = LoggingIntegration(level=logging.INFO, event_level=None)
+    sentry_sdk.init(dsn=SENTRY_DSN, integrations=[DjangoIntegration(), RedisIntegration(), sentry_logging])
     print("Sentry SDK initialization was successful!")
 else:
     print("SENTRY_DSN was not set, skipping Sentry initialization.")
