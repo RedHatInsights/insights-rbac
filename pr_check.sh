@@ -9,8 +9,10 @@ IQE_MARKER_EXPRESSION="rbac_smoke"  # This is the value passed to pytest -m
 IQE_FILTER_EXPRESSION=""  # This is the value passed to pytest -k
 
 # Install bonfire repo/initialize
-CICD_URL=https://raw.githubusercontent.com/RedHatInsights/bonfire/master/cicd
+CICD_URL=https://raw.githubusercontent.com/RedHatInsights/bonfire/local_enhancements/cicd
 curl -s $CICD_URL/bootstrap.sh > .cicd_bootstrap.sh && source .cicd_bootstrap.sh
+
+pip install --upgrade crc-bonfire==v1.0.0b10
 
 source $CICD_ROOT/build.sh
 
