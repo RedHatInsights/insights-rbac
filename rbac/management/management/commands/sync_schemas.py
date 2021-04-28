@@ -1,19 +1,41 @@
-from django.core.management.base import BaseCommand
+#
+# Copyright 2021 Red Hat, Inc.
+#
+#    This program is free software: you can redistribute it and/or modify
+#    it under the terms of the GNU Affero General Public License as
+#    published by the Free Software Foundation, either version 3 of the
+#    License, or (at your option) any later version.
+#
+#    This program is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU Affero General Public License for more details.
+#
+#    You should have received a copy of the GNU Affero General Public License
+#    along with this program.  If not, see <https://www.gnu.org/licenses/>.
+#
+"""Schema sync command."""
 
+from django.core.management.base import BaseCommand
 from django.db.utils import IntegrityError
-from management.models import Group, Role, Policy, Principal
-from api.models import Tenant
+from management.models import Group, Policy, Principal, Role
 from tenant_schemas.utils import tenant_context
+
+from api.models import Tenant
 
 
 class Command(BaseCommand):
+    """Command for use with django's manage.py script."""
+
     help = "Syncs custom principals, roles, groups, and policies to the public schema"
 
     def clear_pk(self, entry):
+        """Clear the ID and PK values for provided postgres entry."""
         entry.id = None
         entry.pk = None
 
     def copy_custom_principals_to_public(self, tenant):
+        """Copy custom principals from provided tenant to the public schema."""
         principals = Principal.objects.all()
         public_schema = Tenant.objects.get(schema_name="public")
         for principal in principals:
@@ -28,10 +50,9 @@ class Command(BaseCommand):
                 except IntegrityError as err:
                     self.stderr.write(f"Couldn't copy principal: {principal.username}. Skipping due to:\n{err}")
                     continue
-                    
-
 
     def copy_custom_roles_to_public(self, tenant):
+        """Copy custom roles from provided tenant to the public schema."""
         roles = Role.objects.filter(system=False)
         public_schema = Tenant.objects.get(schema_name="public")
         for role in roles:
@@ -68,8 +89,8 @@ class Command(BaseCommand):
                 role.access.set(access_list)
                 role.save()
 
-
     def copy_custom_groups_to_public(self, tenant):
+        """Copy custom groups from provided tenant to the public schema."""
         groups = Group.objects.filter(system=False)
         public_schema = Tenant.objects.get(schema_name="public")
         for group in groups:
@@ -91,8 +112,8 @@ class Command(BaseCommand):
                 group.principals.set(new_principals)
                 group.save()
 
-
     def copy_custom_policies_to_public(self, tenant):
+        """Copy custom policies from provided tenant to the public schema."""
         policies = Policy.objects.all()
         public_schema = Tenant.objects.get(schema_name="public")
         for policy in policies:
@@ -116,8 +137,8 @@ class Command(BaseCommand):
                 policy.roles.set(new_roles)
                 policy.save()
 
-
     def handle(self, *args, **options):
+        """Actually do the work when the command is run."""
         tenants = Tenant.objects.exclude(schema_name="public")
         for tenant in tenants:
             with tenant_context(tenant):
