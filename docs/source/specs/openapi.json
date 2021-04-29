@@ -910,7 +910,7 @@
         "tags": [
           "Group"
         ],
-        "summary": "Udate a group in the tenant",
+        "summary": "Update a group in the tenant",
         "operationId": "updateGroup",
         "parameters": [
           {
