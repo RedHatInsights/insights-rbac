@@ -81,7 +81,7 @@ class AccessSerializer(SerializerCreateOverrideMixin, serializers.ModelSerialize
         fields = ("resourceDefinitions", "permission")
 
 
-class RoleSerializer(SerializerCreateOverrideMixin, serializers.ModelSerializer):
+class RoleSerializer(serializers.ModelSerializer):
     """Serializer for the Role model."""
 
     uuid = serializers.UUIDField(read_only=True)
