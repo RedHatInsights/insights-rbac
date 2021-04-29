@@ -26,7 +26,7 @@ from rest_framework.test import APIClient
 from tenant_schemas.utils import tenant_context
 
 from api.models import User
-from management.models import Group, Permission, Principal, Role, Access, Policy
+from management.models import Group, Permission, Principal, Role, Access, Policy, ResourceDefinition
 from tests.identity_request import IdentityRequest
 from unittest.mock import patch
 
@@ -132,14 +132,21 @@ class RoleViewsetTests(IdentityRequest):
         url = reverse("role-detail", kwargs={"uuid": response.data.get("uuid")})
         client = APIClient()
         response = client.get(url, **self.headers)
+        uuid = response.data.get("uuid")
+        role = Role.objects.get(uuid=uuid)
 
-        self.assertIsNotNone(response.data.get("uuid"))
+        self.assertIsNotNone(uuid)
         self.assertIsNotNone(response.data.get("name"))
         self.assertEqual(role_name, response.data.get("name"))
         self.assertIsNotNone(response.data.get("display_name"))
         self.assertEqual(role_name, response.data.get("display_name"))
         self.assertIsInstance(response.data.get("access"), list)
         self.assertEqual(access_data, response.data.get("access"))
+        self.assertEqual(role.tenant, self.tenant)
+        for access in role.access.all():
+            self.assertEqual(access.tenant, self.tenant)
+            for rd in ResourceDefinition.objects.filter(access=access):
+                self.assertEqual(rd.tenant, self.tenant)
 
     def test_create_role_with_display_success(self):
         """Test that we can create a role."""

@@ -107,15 +107,18 @@ class GroupViewsetTests(IdentityRequest):
         url = reverse("group-list")
         client = APIClient()
         response = client.post(url, test_data, format="json", **self.headers)
+        uuid = response.data.get("uuid")
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
 
         # test that we can retrieve the group
         url = reverse("group-detail", kwargs={"uuid": response.data.get("uuid")})
         response = client.get(url, **self.headers)
+        group = Group.objects.get(uuid=uuid)
 
-        self.assertIsNotNone(response.data.get("uuid"))
+        self.assertIsNotNone(uuid)
         self.assertIsNotNone(response.data.get("name"))
         self.assertEqual(group_name, response.data.get("name"))
+        self.assertEqual(group.tenant, self.tenant)
 
     def test_create_default_group(self):
         """Test that system groups can be created."""
@@ -406,13 +409,16 @@ class GroupViewsetTests(IdentityRequest):
             cross_account_user = Principal.objects.create(username="cross_account_user", cross_account=True)
         url = reverse("group-principals", kwargs={"uuid": test_group.uuid})
         client = APIClient()
-        test_data = {"principals": [{"username": "test_user"}, {"username": "cross_account_user"}]}
+        username = "test_user"
+        test_data = {"principals": [{"username": username}, {"username": "cross_account_user"}]}
         response = client.post(url, test_data, format="json", **self.headers)
+        principal = Principal.objects.get(username=username)
 
         # Only the user exists in IT will be added to the group.
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data.get("principals")), 1)
-        self.assertEqual(response.data.get("principals")[0], {"username": "test_user"})
+        self.assertEqual(response.data.get("principals")[0], {"username": username})
+        self.assertEqual(principal.tenant, self.tenant)
 
         test_group.delete()
         cross_account_user.delete()
@@ -810,6 +816,7 @@ class GroupViewsetTests(IdentityRequest):
         self.assertEqual(roles[0].get("uuid"), str(self.role.uuid))
         self.assertEqual(roles[0].get("name"), self.role.name)
         self.assertEqual(roles[0].get("description"), self.role.description)
+        self.assertEqual(system_policy.tenant, self.tenant)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
     def test_system_flag_update_on_add(self):

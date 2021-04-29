@@ -588,6 +588,7 @@ class CrossAccountRequestViewTests(IdentityRequest):
         principal_name = get_cross_principal_name(self.request_4.target_account, self.request_4.user_id)
         car_uuid = self.request_4.request_id
         url = reverse("cross-detail", kwargs={"pk": str(car_uuid)})
+        tenant = Tenant.objects.get(schema_name=tenant_schema)
 
         client = APIClient()
         response = client.patch(url, update_data, format="json", **self.associate_admin_request.META)
@@ -595,9 +596,10 @@ class CrossAccountRequestViewTests(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data.get("status"), update_data.get("status"))
 
-        with tenant_context(Tenant.objects.get(schema_name=tenant_schema)):
+        with tenant_context(tenant):
             princ = Principal.objects.get(username__iexact=principal_name)
         self.assertEqual(princ.username, principal_name)
+        self.assertEqual(princ.tenant, tenant)
         self.assertTrue(princ.cross_account)
 
     def test_cross_account_request_ordering_filter(self):
