@@ -27,7 +27,7 @@ class Principal(TenantAwareModel):
     """A principal."""
 
     uuid = models.UUIDField(default=uuid4, editable=False, unique=True, null=False)
-    username = models.CharField(max_length=150, unique=True)
+    username = models.CharField(max_length=150)
     cross_account = models.BooleanField(default=False)
 
     class Meta:

@@ -39,7 +39,7 @@ class Policy(TenantAwareModel):
     """A policy."""
 
     uuid = models.UUIDField(default=uuid4, editable=False, unique=True, null=False)
-    name = models.CharField(max_length=150, unique=True)
+    name = models.CharField(max_length=150)
     description = models.TextField(null=True)
     group = models.ForeignKey(Group, null=True, on_delete=models.CASCADE, related_name="policies")
     roles = models.ManyToManyField(Role, related_name="policies")

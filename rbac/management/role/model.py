@@ -38,8 +38,8 @@ class Role(TenantAwareModel):
     """A role."""
 
     uuid = models.UUIDField(default=uuid4, editable=False, unique=True, null=False)
-    name = models.CharField(max_length=150, unique=True)
-    display_name = models.CharField(default="", max_length=150, unique=True)
+    name = models.CharField(max_length=150)
+    display_name = models.CharField(default="", max_length=150)
     description = models.TextField(null=True)
     system = models.BooleanField(default=False)
     platform_default = models.BooleanField(default=False)
