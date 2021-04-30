@@ -16,7 +16,7 @@
 #
 
 """View for cross access request."""
-
+from django.db.models import Q
 from django.utils import timezone
 from django_filters import rest_framework as filters
 from management.models import Role
@@ -24,6 +24,7 @@ from management.principal.proxy import PrincipalProxy
 from management.utils import validate_and_get_key, validate_limit_and_offset, validate_uuid
 from rest_framework import mixins, viewsets
 from rest_framework import status as http_status
+from rest_framework.filters import OrderingFilter
 from rest_framework.response import Response
 from rest_framework.serializers import ValidationError
 from tenant_schemas.utils import tenant_context
@@ -60,12 +61,21 @@ class CrossAccountRequestFilter(filters.FilterSet):
             )
         return queryset
 
+    def status_filter(self, queryset, field, values):
+        """Filter to lookup requests by status(es) in permissions."""
+        statuses = values.split(",")
+        query = Q()
+        for status in statuses:
+            query = query | Q(status__iexact=status)
+        return queryset.distinct().filter(query)
+
     account = filters.CharFilter(field_name="target_account", method="account_filter")
     approved_only = filters.BooleanFilter(field_name="end_date", method="approved_filter")
+    status = filters.CharFilter(field_name="status", method="status_filter")
 
     class Meta:
         model = CrossAccountRequest
-        fields = ["account", "approved_only"]
+        fields = ["account", "approved_only", "status"]
 
 
 class CrossAccountRequestViewSet(
@@ -82,8 +92,9 @@ class CrossAccountRequestViewSet(
     """
 
     permission_classes = (CrossAccountRequestAccessPermission,)
-    filter_backends = (filters.DjangoFilterBackend,)
+    filter_backends = (filters.DjangoFilterBackend, OrderingFilter)
     filterset_class = CrossAccountRequestFilter
+    ordering_fields = ("request_id", "start_date", "end_date", "created", "modified", "status")
 
     def get_queryset(self):
         """Get query set based on the queryBy key word."""

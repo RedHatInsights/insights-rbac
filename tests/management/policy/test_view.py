@@ -99,10 +99,13 @@ class PolicyViewsetTests(IdentityRequest):
         url = reverse("policy-detail", kwargs={"uuid": response.data.get("uuid")})
         client = APIClient()
         response = client.get(url, **self.headers)
+        uuid = response.data.get("uuid")
+        policy = Policy.objects.get(uuid=uuid)
 
-        self.assertIsNotNone(response.data.get("uuid"))
+        self.assertIsNotNone(uuid)
         self.assertIsNotNone(response.data.get("name"))
         self.assertEqual(policy_name, response.data.get("name"))
+        self.assertEqual(policy.tenant, self.tenant)
         self.assertEqual(str(self.group.uuid), response.data.get("group").get("uuid"))
 
     def test_delete_policy_success(self):

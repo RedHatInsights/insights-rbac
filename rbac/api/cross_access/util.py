@@ -43,9 +43,7 @@ def check_cross_request_expiry():
                 expired_cars.append(car.pk)
                 car.save()
 
-        logger.info(
-            "Completed clean up of %d cross-account requests, %d expired.", len(cars), len(expired_cars),
-        )
+        logger.info("Completed clean up of %d cross-account requests, %d expired.", len(cars), len(expired_cars))
 
 
 def create_cross_principal(target_account, user_id):
@@ -53,8 +51,17 @@ def create_cross_principal(target_account, user_id):
     # Principal would have the pattern acctxxx-123456.
     principal_name = get_cross_principal_name(target_account, user_id)
     tenant_schema = create_schema_name(target_account)
-    with tenant_context(Tenant.objects.get(schema_name=tenant_schema)):
-        cross_account_principal = Principal.objects.get_or_create(username=principal_name, cross_account=True)
+    tenant = Tenant.objects.get(schema_name=tenant_schema)
+    with tenant_context(tenant):
+        cross_account_principal, _ = Principal.objects.get_or_create(username=principal_name, cross_account=True)
+
+        # NOTE: after we ensure/enforce all object have a tenant_id FK, we can add tenant=tenant
+        # to the get_or_create. We cannot currently, because records without would fail the GET
+        # and would create duplicate records. This ensures we temporarily do an update if
+        # obj.tenant_id is NULL
+        if not cross_account_principal.tenant:
+            cross_account_principal.tenant = tenant
+            cross_account_principal.save()
 
     return cross_account_principal
 

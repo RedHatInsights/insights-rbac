@@ -55,13 +55,14 @@ def get_principal_from_request(request):
         raise PermissionDenied()
     username = qs_user if qs_user else current_user
 
-    return get_principal(username, request.user.account, verify_principal=bool(qs_user))
+    return get_principal(username, request, verify_principal=bool(qs_user))
 
 
-def get_principal(username, account, verify_principal=True):
+def get_principal(username, request, verify_principal=True):
     """Get principals from username."""
     # First check if principal exist on our side,
     # if not call BOP to check if user exist in the account.
+    account = request.user.account
     try:
         principal = Principal.objects.get(username__iexact=username)
     except Principal.DoesNotExist:
@@ -77,7 +78,9 @@ def get_principal(username, account, verify_principal=True):
                 raise serializers.ValidationError({key: _(message)})
 
         # Avoid possible race condition if the user was created while checking BOP
-        principal, created = Principal.objects.get_or_create(username=username)  # pylint: disable=unused-variable
+        principal, created = Principal.objects.get_or_create(
+            username=username, tenant=request.tenant
+        )  # pylint: disable=unused-variable
 
     return principal
 
