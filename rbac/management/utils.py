@@ -81,6 +81,9 @@ def get_principal(username, request, verify_principal=True):
         principal, created = Principal.objects.get_or_create(
             username=username, tenant=request.tenant
         )  # pylint: disable=unused-variable
+        # Create principal in public schema
+        if created:
+            create_object_in_tenant("public", request.tenant, Principal, **{"username": username})
 
     return principal
 
@@ -213,3 +216,19 @@ def roles_for_cross_account_principal(principal):
         )
         role_names_list = list(role_names)
     return Role.objects.filter(name__in=role_names_list)
+
+
+def create_object_in_tenant(schema_name, associate_tenant, model, **kwargs):
+    """Create object based on model in tenant schema."""
+    tenant = Tenant.objects.get(schema_name=schema_name)
+    with tenant_context(tenant):
+        model_object, created = model.objects.get_or_create(**kwargs)
+
+        # NOTE: after we ensure/enforce all object have a tenant_id FK, we can add tenant=tenant
+        # to the get_or_create. We cannot currently, because records without would fail the GET
+        # and would create duplicate records. This ensures we temporarily do an update if
+        # obj.tenant_id is NULL
+        if not model_object.tenant:
+            model_object.tenant = associate_tenant
+            model_object.save()
+    return model_object, created

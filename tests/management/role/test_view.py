@@ -25,7 +25,7 @@ from rest_framework import status
 from rest_framework.test import APIClient
 from tenant_schemas.utils import tenant_context
 
-from api.models import User
+from api.models import Tenant, User
 from management.models import Group, Permission, Principal, Role, Access, Policy, ResourceDefinition
 from tests.identity_request import IdentityRequest
 from unittest.mock import patch
@@ -92,12 +92,11 @@ class RoleViewsetTests(IdentityRequest):
             self.access3 = Access.objects.create(permission=self.permission2, role=self.sysRole)
             Permission.objects.create(permission="cost-management:*:*")
 
-    def tearDown(self):
-        """Tear down role viewset tests."""
-        with tenant_context(self.tenant):
-            Group.objects.all().delete()
-            Principal.objects.all().delete()
-            Role.objects.all().delete()
+        # Create permission in public schema
+        with tenant_context(Tenant.objects.get(schema_name="public")):
+            Permission.objects.create(permission="cost-management:*:*")
+            Permission.objects.create(permission="app:*:*")
+            Permission.objects.create(permission="app2:*:*")
 
     def create_role(self, role_name, role_display="", in_access_data=None):
         """Create a role."""
@@ -147,6 +146,16 @@ class RoleViewsetTests(IdentityRequest):
             self.assertEqual(access.tenant, self.tenant)
             for rd in ResourceDefinition.objects.filter(access=access):
                 self.assertEqual(rd.tenant, self.tenant)
+
+        # role also gets created in public schema
+        with tenant_context(Tenant.objects.get(schema_name="public")):
+            role_public = Role.objects.get(name="roleA")
+            self.assertEqual(role_public.access.count(), 1)
+            self.assertEqual(role_public.access.first().permission.permission, access_data[0]["permission"])
+            self.assertEqual(
+                role_public.access.first().resourceDefinitions.first().attributeFilter,
+                access_data[0]["resourceDefinitions"][0]["attributeFilter"],
+            )
 
     def test_create_role_with_display_success(self):
         """Test that we can create a role."""

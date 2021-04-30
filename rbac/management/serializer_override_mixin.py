@@ -2,6 +2,7 @@
 
 import traceback
 
+from management.utils import create_object_in_tenant
 from rest_framework.serializers import raise_errors_on_nested_writes
 from rest_framework.utils import model_meta
 
@@ -47,6 +48,7 @@ class SerializerCreateOverrideMixin:
         try:
             validated_data["tenant"] = self.context["request"].tenant
             instance = ModelClass._default_manager.create(**validated_data)
+            create_object_in_tenant("public", self.context["request"].tenant, ModelClass, **validated_data)
         except TypeError:
             tb = traceback.format_exc()
             msg = (

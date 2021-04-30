@@ -19,9 +19,11 @@
 from django.utils.translation import gettext as _
 from management.group.model import Group
 from management.serializer_override_mixin import SerializerCreateOverrideMixin
-from management.utils import get_principal_from_request
+from management.utils import create_object_in_tenant, get_principal_from_request
 from rest_framework import serializers
+from tenant_schemas.utils import tenant_context
 
+from api.models import Tenant
 from .model import Access, Permission, ResourceDefinition, Role
 
 ALLOWED_OPERATIONS = ["in", "equal"]
@@ -127,15 +129,11 @@ class RoleSerializer(serializers.ModelSerializer):
         access_list = validated_data.pop("access")
         tenant = self.context["request"].tenant
         role = Role.objects.create(name=name, description=description, display_name=display_name, tenant=tenant)
-        role.save()
-        for access_item in access_list:
-            resource_def_list = access_item.pop("resourceDefinitions")
-            access_permission = access_item.pop("permission")
-            permission, created = Permission.objects.get_or_create(**access_permission)
+        role_public, _ = create_object_in_tenant(
+            "public", tenant, Role, **{"name": name, "description": description, "display_name": display_name}
+        )
+        create_access_for_role(role, role_public, access_list, tenant)
 
-            access_obj = Access.objects.create(permission=permission, role=role, tenant=tenant)
-            for resource_def_item in resource_def_list:
-                ResourceDefinition.objects.create(**resource_def_item, access=access_obj, tenant=tenant)
         return role
 
     def update(self, instance, validated_data):
@@ -314,3 +312,29 @@ def obtain_groups_in(obj, request):
         return (assigned_groups | Group.platform_default_set()).distinct()
 
     return Group.objects.filter(policies__in=policy_ids).distinct()
+
+
+def create_access_for_role(role, role_public, access_list, tenant):
+    """Create access objects and relate it to role."""
+    for access_item in access_list:
+        resource_def_list = access_item.pop("resourceDefinitions")
+        access_permission = access_item.pop("permission")
+        permission, _ = create_object_in_tenant(tenant.schema_name, tenant, Permission, **access_permission)
+
+        access_obj = Access.objects.create(permission=permission, role=role, tenant=tenant)
+        for resource_def_item in resource_def_list:
+            ResourceDefinition.objects.create(**resource_def_item, access=access_obj, tenant=tenant)
+
+        with tenant_context(Tenant.objects.get(schema_name="public")):
+            permission_public = Permission.objects.get(**access_permission)
+            access_obj_public, _ = create_object_in_tenant(
+                "public", tenant, Access, **{"permission": permission_public, "role": role_public}
+            )
+            for resource_def_item in resource_def_list:
+                create_object_in_tenant(
+                    "public",
+                    tenant,
+                    ResourceDefinition,
+                    **resource_def_item,
+                    **{"access": access_obj_public, "tenant": tenant},
+                )
