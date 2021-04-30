@@ -659,6 +659,12 @@ class RoleViewsetTests(IdentityRequest):
         self.assertEqual(updated_name, response.data.get("display_name"))
         self.assertEqual(updated_description, response.data.get("description"))
 
+        with tenant_context(Tenant.objects.get(schema_name="public")):
+            role_in_public = Role.objects.get(name=updated_name, tenant=self.tenant)
+            self.assertIsNotNone(role_in_public)
+            self.assertEqual(updated_name, role_in_public.display_name)
+            self.assertEqual(updated_description, role_in_public.description)
+
     def test_patch_role_failure(self):
         """Test that we return a 400 with invalid fields in the patch."""
         role_name = "role"
@@ -684,6 +690,7 @@ class RoleViewsetTests(IdentityRequest):
         role_uuid = response.data.get("uuid")
         test_data = response.data
         test_data["name"] = updated_name
+        test_data["access"][0]["permission"] = "cost-management:*:*"
         del test_data["uuid"]
         url = reverse("role-detail", kwargs={"uuid": role_uuid})
         client = APIClient()
@@ -692,6 +699,12 @@ class RoleViewsetTests(IdentityRequest):
 
         self.assertIsNotNone(response.data.get("uuid"))
         self.assertEqual(updated_name, response.data.get("name"))
+        self.assertEqual("cost-management:*:*", response.data.get("access")[0]["permission"])
+
+        with tenant_context(Tenant.objects.get(schema_name="public")):
+            role_in_public = Role.objects.get(name=updated_name, tenant=self.tenant)
+            self.assertIsNotNone(role_in_public)
+            self.assertEqual("cost-management:*:*", role_in_public.access.first().permission.permission)
 
     def test_update_role_invalid(self):
         """Test that updating an invalid role returns an error."""

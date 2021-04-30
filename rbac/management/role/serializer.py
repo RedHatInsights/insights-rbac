@@ -129,7 +129,7 @@ class RoleSerializer(serializers.ModelSerializer):
         access_list = validated_data.pop("access")
         tenant = self.context["request"].tenant
         role = Role.objects.create(name=name, description=description, display_name=display_name, tenant=tenant)
-        role_public, _ = create_object_in_tenant(
+        role_public, created = create_object_in_tenant(
             "public", tenant, Role, **{"name": name, "description": description, "display_name": display_name}
         )
         create_access_for_role(role, role_public, access_list, tenant)
@@ -138,29 +138,13 @@ class RoleSerializer(serializers.ModelSerializer):
 
     def update(self, instance, validated_data):
         """Update the role object in the database."""
-        if instance.system:
-            key = "role.update"
-            message = "System roles may not be updated."
-            error = {key: [_(message)]}
-            raise serializers.ValidationError(error)
         access_list = validated_data.pop("access")
-        instance.name = validated_data.get("name", instance.name)
-        instance.display_name = validated_data.get("display_name", instance.display_name)
-        instance.description = validated_data.get("description", instance.description)
         tenant = self.context["request"].tenant
-        instance.save()
-        instance.access.all().delete()
 
-        for access_item in access_list:
-            resource_def_list = access_item.pop("resourceDefinitions")
-            access_permission = access_item.pop("permission")
-            permission, created = Permission.objects.get_or_create(**access_permission)
+        instance, role_public = validate_and_update_role(instance, validated_data, tenant)
 
-            access_obj = Access.objects.create(permission=permission, role=instance, tenant=tenant)
-            for resource_def_item in resource_def_list:
-                ResourceDefinition.objects.create(**resource_def_item, access=access_obj, tenant=tenant)
+        create_access_for_role(instance, role_public, access_list, tenant)
 
-        instance.save()
         return instance
 
 
@@ -280,15 +264,8 @@ class RolePatchSerializer(RoleSerializer):
 
     def update(self, instance, validated_data):
         """Patch the role object."""
-        if instance.system:
-            key = "role.update"
-            message = "System roles may not be updated."
-            error = {key: [_(message)]}
-            raise serializers.ValidationError(error)
-        instance.name = validated_data.get("name", instance.name)
-        instance.display_name = validated_data.get("display_name", instance.display_name)
-        instance.description = validated_data.get("description", instance.description)
-        instance.save()
+        tenant = self.context["request"].tenant
+        instance, role_public = validate_and_update_role(instance, validated_data, tenant, clear_access=False)
         return instance
 
 
@@ -338,3 +315,33 @@ def create_access_for_role(role, role_public, access_list, tenant):
                     **resource_def_item,
                     **{"access": access_obj_public, "tenant": tenant},
                 )
+
+
+def validate_and_update_role(instance, validated_data, tenant, clear_access=True):
+    """Validate if role could be updated and update role attribute."""
+    if instance.system:
+        key = "role.update"
+        message = "System roles may not be updated."
+        error = {key: [_(message)]}
+        raise serializers.ValidationError(error)
+    updated_name = validated_data.get("name", instance.name)
+    updated_display_name = validated_data.get("display_name", instance.display_name)
+    updated_description = validated_data.get("description", instance.description)
+
+    with tenant_context(Tenant.objects.get(schema_name="public")):
+        role_public, created = Role.objects.update_or_create(
+            name=instance.name,
+            tenant=tenant,
+            defaults={"name": updated_name, "display_name": updated_display_name, "description": updated_description},
+        )
+        if clear_access:
+            role_public.access.all().delete()
+
+    instance.name = updated_name
+    instance.display_name = updated_display_name
+    instance.description = updated_description
+    instance.save()
+    if clear_access:
+        instance.access.all().delete()
+
+    return instance, role_public

@@ -26,7 +26,7 @@ from rest_framework import status
 from rest_framework.test import APIClient
 from tenant_schemas.utils import tenant_context
 
-from api.models import User
+from api.models import Tenant, User
 from management.models import Group, Principal, Policy, Role
 from tests.identity_request import IdentityRequest
 
@@ -86,6 +86,11 @@ class GroupViewsetTests(IdentityRequest):
             self.policyMultiRole.roles.add(self.roleB)
             self.groupMultiRole.policies.add(self.policyMultiRole)
 
+        with tenant_context(Tenant.objects.get(schema_name="public")):
+            Group.objects.create(name="groupA", tenant=self.tenant)
+            Group.objects.create(name="groupB", tenant=self.tenant)
+            Group.objects.create(name="groupDef", tenant=self.tenant)
+
     def tearDown(self):
         """Tear down group viewset tests."""
         with tenant_context(self.tenant):
@@ -119,6 +124,10 @@ class GroupViewsetTests(IdentityRequest):
         self.assertIsNotNone(response.data.get("name"))
         self.assertEqual(group_name, response.data.get("name"))
         self.assertEqual(group.tenant, self.tenant)
+
+        # group is created in public schema
+        with tenant_context(Tenant.objects.get(schema_name="public")):
+            self.assertIsNotNone(Group.objects.get(name=group_name))
 
     def test_create_default_group(self):
         """Test that system groups can be created."""
@@ -329,16 +338,18 @@ class GroupViewsetTests(IdentityRequest):
     )
     def test_update_group_success(self, mock_request):
         """Test that we can update an existing group."""
-        group = Group.objects.first()
-        updated_name = group.name + "_update"
+        updated_name = self.group.name + "_update"
         test_data = {"name": updated_name}
-        url = reverse("group-detail", kwargs={"uuid": group.uuid})
+        url = reverse("group-detail", kwargs={"uuid": self.group.uuid})
         client = APIClient()
         response = client.put(url, test_data, format="json", **self.headers)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
         self.assertIsNotNone(response.data.get("uuid"))
         self.assertEqual(updated_name, response.data.get("name"))
+
+        with tenant_context(Tenant.objects.get(schema_name="public")):
+            self.assertIsNotNone(Group.objects.get(name=updated_name, tenant=self.tenant))
 
     def test_update_default_group(self):
         """Test that platform_default groups are protected from updates"""
@@ -445,6 +456,10 @@ class GroupViewsetTests(IdentityRequest):
         with tenant_context(self.tenant):
             test_group = Group.objects.create(name="test")
             cross_account_user = Principal.objects.create(username="cross_account_user", cross_account=True)
+        # Create same group in public schema.
+        with tenant_context(Tenant.objects.get(schema_name="public")):
+            test_group_in_public = Group.objects.create(name="test", tenant=self.tenant)
+
         url = reverse("group-principals", kwargs={"uuid": test_group.uuid})
         client = APIClient()
         username = "test_user"
@@ -460,6 +475,11 @@ class GroupViewsetTests(IdentityRequest):
 
         test_group.delete()
         cross_account_user.delete()
+
+        with tenant_context(Tenant.objects.get(schema_name="public")):
+            principals = Group.objects.get(name="test", tenant=self.tenant).principals
+            self.assertEqual(principals.count(), 1)
+            self.assertEqual(principals.first().username, "test_user")
 
     @patch(
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
@@ -968,6 +988,12 @@ class GroupViewsetTests(IdentityRequest):
 
     def test_add_group_multiple_roles_success(self):
         """Test that adding multiple roles to a group returns successfully."""
+        ######## Create the resource in public ################
+        Role.objects.create(name="roleA", system=False, tenant=self.tenant)
+        Role.objects.create(name="roleB", system=False, tenant=self.tenant)
+        group_in_public = Group.objects.create(name="groupC", tenant=self.tenant)
+        #######################################################
+
         with tenant_context(self.tenant):
             groupC = Group.objects.create(name="groupC")
             url = reverse("group-roles", kwargs={"uuid": groupC.uuid})
@@ -980,6 +1006,10 @@ class GroupViewsetTests(IdentityRequest):
 
             self.assertCountEqual([self.role, self.roleB], list(groupC.roles()))
             self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        # Roles also added to the group in public schema
+        self.assertEqual(1, len(group_in_public.policies.all()))
+        self.assertEqual(["roleA", "roleB"], list(group_in_public.roles().values_list("name", flat=True)))
 
     def test_add_group_multiple_roles_invalid(self):
         """Test that adding invalid roles to a group fails the request and does not add any."""
@@ -998,6 +1028,8 @@ class GroupViewsetTests(IdentityRequest):
 
     def test_add_group_multiple_roles_not_found_success(self):
         """Test that adding roles to a group skips ids not found, and returns success."""
+        with tenant_context(Tenant.objects.get(schema_name="public")):
+            Group.objects.create(name="groupC", tenant=self.tenant)
         with tenant_context(self.tenant):
             groupC = Group.objects.create(name="groupC")
             url = reverse("group-roles", kwargs={"uuid": groupC.uuid})

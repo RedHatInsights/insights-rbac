@@ -23,7 +23,10 @@ from django.db.models.query import QuerySet
 from management.group.model import Group
 from management.policy.model import Policy
 from management.role.model import Role
+from management.utils import create_object_in_tenant
 from tenant_schemas.utils import tenant_context
+
+from api.models import Tenant
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
@@ -67,20 +70,12 @@ def set_system_flag_post_update(group):
     group.save()
 
 
-def add_roles(group, roles_or_role_ids, tenant, replace=False):
+def add_roles(group, roles_or_role_ids, tenant, replace=False, duplicate_in_public=False):
     """Process list of roles and add them to the group."""
     system_policy_name = "System Policy for Group {}".format(group.uuid)
-    system_policy, system_policy_created = Policy.objects.get_or_create(
-        system=True, group=group, name=system_policy_name
+    system_policy, system_policy_created = create_object_in_tenant(
+        tenant.schema_name, tenant, Policy, **{"system": True, "group": group, "name": system_policy_name}
     )
-
-    # NOTE: after we ensure/enforce all object have a tenant_id FK, we can add tenant=tenant
-    # to the get_or_create. We cannot currently, because records without would fail the GET
-    # and would create duplicate records. This ensures we temporarily do an update if
-    # obj.tenant_id is NULL
-    if not system_policy.tenant:
-        system_policy.tenant = tenant
-        system_policy.save()
 
     if system_policy_created:
         logger.info("Created new system policy for tenant.")
@@ -98,6 +93,20 @@ def add_roles(group, roles_or_role_ids, tenant, replace=False):
         system_policy.roles.add(role)
 
     system_policy.save()
+
+    if duplicate_in_public:
+        group_name = group.name
+        role_names = list(roles.values_list("name", flat=True))
+        with tenant_context(tenant=Tenant.objects.get(schema_name="public")):
+            group_in_public = Group.objects.get(name=group_name, tenant=tenant)
+            system_policy_name = "System Policy for Group {}".format(group_in_public.uuid)
+            system_policy_in_public, system_policy_created_in_public = create_object_in_tenant(
+                "public", tenant, Policy, **{"system": True, "group": group_in_public, "name": system_policy_name}
+            )
+
+            roles_in_public = Role.objects.filter(name__in=role_names, tenant=tenant)
+            for role in roles_in_public:
+                system_policy_in_public.roles.add(role)
 
 
 def remove_roles(group, role_ids):

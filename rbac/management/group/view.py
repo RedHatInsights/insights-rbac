@@ -44,6 +44,9 @@ from rest_framework import mixins, serializers, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.filters import OrderingFilter
 from rest_framework.response import Response
+from tenant_schemas.utils import tenant_context
+
+from api.models import Tenant
 
 
 USERNAMES_KEY = "usernames"
@@ -308,10 +311,21 @@ class GroupViewSet(
         """
         validate_uuid(kwargs.get("uuid"), "group uuid validation")
         self.protect_default_groups("update")
+        group_name = Group.objects.get(uuid=kwargs.get("uuid")).name
+        with tenant_context(Tenant.objects.get(schema_name="public")):
+            group_in_public, _ = Group.objects.update_or_create(
+                name=group_name, tenant=request.tenant, defaults=request.data
+            )
         return super().update(request=request, args=args, kwargs=kwargs)
 
     def add_principals(self, group, principals, account):
         """Process list of principals and add them to the group."""
+        tenant = self.request.tenant
+        tenant_public = Tenant.objects.get(schema_name="public")
+        group_name = group.name
+        with tenant_context(tenant_public):
+            group_in_public = Group.objects.get(name=group_name, tenant=tenant)
+
         users = [principal.get("username") for principal in principals]
         resp = self.proxy.request_filtered_principals(users, account, limit=len(users))
         if "errors" in resp:
@@ -321,10 +335,15 @@ class GroupViewSet(
             try:
                 principal = Principal.objects.get(username__iexact=username)
             except Principal.DoesNotExist:
-                principal = Principal.objects.create(username=username, tenant=self.request.tenant)
+                principal = Principal.objects.create(username=username, tenant=tenant)
                 logger.info("Created new principal %s for account_id %s.", username, account)
             group.principals.add(principal)
+            with tenant_context(tenant_public):
+                principal_in_public, _ = Principal.objects.get_or_create(username=username, tenant=tenant)
+                group_in_public.principals.add(principal_in_public)
         group.save()
+        with tenant_context(tenant_public):
+            group_in_public.save()
         return group
 
     def remove_principals(self, group, principals, account):
@@ -551,7 +570,7 @@ class GroupViewSet(
             serializer = GroupRoleSerializerIn(data=request.data)
             if serializer.is_valid(raise_exception=True):
                 roles = request.data.pop(ROLES_KEY, [])
-            add_roles(group, roles, request.tenant)
+            add_roles(group, roles, request.tenant, duplicate_in_public=True)
             set_system_flag_post_update(group)
             response_data = GroupRoleSerializerIn(group)
         elif request.method == "GET":
