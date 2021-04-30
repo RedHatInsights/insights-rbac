@@ -17,9 +17,10 @@
 """Reconcile tenant relations command."""
 import logging
 
-from django.core.management.base import BaseCommand
 from django.apps import apps
+from django.core.management.base import BaseCommand
 from tenant_schemas.utils import tenant_context
+
 from api.models import Tenant
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
@@ -35,6 +36,7 @@ class Command(BaseCommand):
         parser.add_argument("--readonly", action="store_true")
 
     def models_with_tenant_relations(self):
+        """Return models with tenant relations."""
         return ["ResourceDefinition", "Access", "Role", "Principal", "Policy", "Group", "Permission"]
 
     def handle(self, *args, **options):
