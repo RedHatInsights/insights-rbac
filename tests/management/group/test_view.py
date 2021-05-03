@@ -375,8 +375,10 @@ class GroupViewsetTests(IdentityRequest):
 
     def test_delete_group_success(self):
         """Test that we can delete an existing group."""
-        group = Group.objects.first()
-        url = reverse("group-detail", kwargs={"uuid": group.uuid})
+        with tenant_context(Tenant.objects.get(schema_name="public")):
+            self.assertIsNotNone(Group.objects.get(name="groupA", tenant=self.tenant))
+
+        url = reverse("group-detail", kwargs={"uuid": self.group.uuid})
         client = APIClient()
         response = client.delete(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
@@ -384,6 +386,9 @@ class GroupViewsetTests(IdentityRequest):
         # verify the group no longer exists
         response = client.get(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        # verify the group no longer exists in public schema
+        with tenant_context(Tenant.objects.get(schema_name="public")):
+            self.assertIsNone(Group.objects.filter(name="groupA", tenant=self.tenant).first())
 
     def test_delete_default_group(self):
         """Test that platform_default groups are protected from deletion"""
@@ -534,13 +539,29 @@ class GroupViewsetTests(IdentityRequest):
         self.assertEqual(response.data.get("data")[0].get("username"), self.principal.username)
         self.assertEqual(response.data.get("data")[1].get("username"), self.principalB.username)
 
-    def test_remove_group_principals_success(self):
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={"status_code": 200, "data": [{"username": "test_user"}]},
+    )
+    def test_remove_group_principals_success(self, mock_request):
         """Test that removing a principal to a group returns successfully."""
+        with tenant_context(self.tenant):
+            test_user = Principal.objects.create(username="test_user")
+            self.group.principals.add(test_user)
+
+        with tenant_context(Tenant.objects.get(schema_name="public")):
+            test_user = Principal.objects.create(username="test_user")
+            Group.objects.get(name=self.group.name, tenant=self.tenant).principals.add(test_user)
+
         url = reverse("group-principals", kwargs={"uuid": self.group.uuid})
         client = APIClient()
-        url = "{}?usernames={}".format(url, self.principal.username)
+
+        url = "{}?usernames={}".format(url, "test_user")
         response = client.delete(url, format="json", **self.headers)
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+
+        with tenant_context(Tenant.objects.get(schema_name="public")):
+            self.assertEqual(Group.objects.get(name=self.group.name, tenant=self.tenant).principals.count(), 0)
 
     def test_remove_group_principals_invalid(self):
         """Test that removing a principal returns an error with invalid data format."""
@@ -1065,14 +1086,26 @@ class GroupViewsetTests(IdentityRequest):
         client = APIClient()
         url = "{}?roles={},{}".format(url, self.role.uuid, self.roleB.uuid)
 
-        self.policy.roles.add(self.roleB)
-        self.policy.save()
-        self.assertCountEqual([self.role, self.roleB], list(self.group.roles()))
+        with tenant_context(self.tenant):
+            self.policy.roles.add(self.roleB)
+            self.assertCountEqual([self.role, self.roleB], list(self.group.roles()))
+
+        # Add roles for the group in public schema
+        with tenant_context(Tenant.objects.get(schema_name="public")):
+            group_public = Group.objects.get(name=self.group.name, tenant=self.tenant)
+            policy_public = Policy.objects.create(name="policyA", group=group_public, tenant=self.tenant)
+            roleA_public = Role.objects.create(name="roleA", tenant=self.tenant)
+            roleB_public = Role.objects.create(name="roleB", tenant=self.tenant)
+            policy_public.roles.add(roleA_public, roleB_public)
 
         response = client.delete(url, format="json", **self.headers)
 
         self.assertCountEqual([], list(self.group.roles()))
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+
+        # Roles for the group in public schema also get removed
+        with tenant_context(Tenant.objects.get(schema_name="public")):
+            self.assertCountEqual([], list(group_public.roles()))
 
     def test_remove_group_multiple_roles_invalid(self):
         """Test that removing invalid roles from a group fails the request and does not remove any."""

@@ -819,6 +819,9 @@ class RoleViewsetTests(IdentityRequest):
         """Test that we can delete an existing role."""
         role_name = "roleA"
         response = self.create_role(role_name)
+
+        with tenant_context(Tenant.objects.get(schema_name="public")):
+            self.assertIsNotNone(Role.objects.get(name=role_name, tenant=self.tenant))
         role_uuid = response.data.get("uuid")
         url = reverse("role-detail", kwargs={"uuid": role_uuid})
         client = APIClient()
@@ -828,6 +831,8 @@ class RoleViewsetTests(IdentityRequest):
         # verify the role no longer exists
         response = client.get(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        with tenant_context(Tenant.objects.get(schema_name="public")):
+            self.assertIsNone(Role.objects.filter(name=role_name, tenant=self.tenant).first())
 
     def test_delete_system_role(self):
         """Test that system roles are protected from deletion"""

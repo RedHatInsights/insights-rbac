@@ -109,9 +109,16 @@ def add_roles(group, roles_or_role_ids, tenant, replace=False, duplicate_in_publ
                 system_policy_in_public.roles.add(role)
 
 
-def remove_roles(group, role_ids):
+def remove_roles(group, role_ids, tenant):
     """Process list of roles and remove them from the group."""
     roles = Role.objects.filter(uuid__in=role_ids)
 
     for policy in group.policies.all():
         policy.roles.remove(*roles)
+
+    role_names = list(roles.values_list("name", flat=True))
+    with tenant_context(Tenant.objects.get(schema_name="public")):
+        group_public = Group.objects.get(name=group.name, tenant=tenant)
+        roles = Role.objects.filter(name__in=role_names)
+        for policy in group_public.policies.all():
+            policy.roles.remove(*roles)

@@ -285,6 +285,9 @@ class GroupViewSet(
         """
         validate_uuid(kwargs.get("uuid"), "group uuid validation")
         self.protect_default_groups("delete")
+        group_name = Group.objects.get(uuid=kwargs.get("uuid")).name
+        with tenant_context(Tenant.objects.get(schema_name="public")):
+            Group.objects.filter(name=group_name, tenant=request.tenant).delete()
         return super().destroy(request=request, args=args, kwargs=kwargs)
 
     def update(self, request, *args, **kwargs):
@@ -348,6 +351,12 @@ class GroupViewSet(
 
     def remove_principals(self, group, principals, account):
         """Process list of principals and remove them from the group."""
+        # Remove from public.
+        with tenant_context(Tenant.objects.get(schema_name="public")):
+            principals_public = Principal.objects.filter(username__in=principals)
+            group_public = Group.objects.get(name=group.name, tenant=Tenant.objects.get(schema_name=f"acct{account}"))
+            group_public.principals.remove(*principals_public)
+
         for username in principals:
             try:
                 principal = Principal.objects.get(username__iexact=username)
@@ -587,7 +596,7 @@ class GroupViewSet(
             role_ids = request.query_params.get(ROLES_KEY, "").split(",")
             serializer = GroupRoleSerializerIn(data={"roles": role_ids})
             if serializer.is_valid(raise_exception=True):
-                remove_roles(group, role_ids)
+                remove_roles(group, role_ids, request.tenant)
                 set_system_flag_post_update(group)
 
             return Response(status=status.HTTP_204_NO_CONTENT)
