@@ -19,7 +19,7 @@ from tenant_schemas.utils import tenant_context
 
 from management.role.definer import seed_roles, seed_permissions
 from tests.identity_request import IdentityRequest
-from management.models import Role, Permission
+from management.models import Role, Permission, Access, ResourceDefinition
 
 
 class RoleDefinerTests(IdentityRequest):
@@ -52,6 +52,11 @@ class RoleDefinerTests(IdentityRequest):
             roles = Role.objects.filter(platform_default=True)
             self.assertTrue(len(roles))
 
+            for access in Access.objects.all():
+                self.assertEqual(access.tenant, self.tenant)
+                for rd in ResourceDefinition.objects.filter(access=access):
+                    self.assertEqual(rd.tenant, self.tenant)
+
     def test_role_update_version_diff(self):
         """ Test that role seeding updates attribute when version is changed. """
         self.try_seed_roles()
@@ -72,7 +77,7 @@ class RoleDefinerTests(IdentityRequest):
         except Exception:
             self.fail(msg="seed_roles encountered an exception")
 
-    def try_seed_permissions(self):
+    def test_try_seed_permissions(self):
         """ Test permission seeding. """
         with tenant_context(self.tenant):
             self.assertFalse(len(Permission.objects.all()))
@@ -90,8 +95,9 @@ class RoleDefinerTests(IdentityRequest):
             self.assertTrue(permission.resource_type)
             self.assertTrue(permission.verb)
             self.assertTrue(permission.permission)
+            self.assertEqual(permission.tenant, self.tenant)
 
-    def try_seed_permissions_update_description(self):
+    def test_try_seed_permissions_update_description(self):
         """ Test permission seeding update description, skip string configs. """
         permission_string = "approval_local_test:templates:read"
         with tenant_context(self.tenant):
@@ -106,7 +112,7 @@ class RoleDefinerTests(IdentityRequest):
         with tenant_context(self.tenant):
             self.assertEqual(
                 Permission.objects.exclude(permission=permission_string).values_list("description").distinct().first(),
-                (None,),
+                ("",),
             )
 
             permission = Permission.objects.filter(permission=permission_string)

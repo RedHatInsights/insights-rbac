@@ -42,9 +42,17 @@ def seed_group(tenant):
                 platform_default=True, defaults={"description": group_description, "name": name, "system": True}
             )
 
+            # NOTE: after we ensure/enforce all object have a tenant_id FK, we can add tenant=tenant
+            # to the get_or_create. We cannot currently, because records without would fail the GET
+            # and would create duplicate records. This ensures we temporarily do an update if
+            # obj.tenant_id is NULL
+            if not group.tenant:
+                group.tenant = tenant
+                group.save()
+
             if group.system:
                 platform_roles = Role.objects.filter(platform_default=True)
-                add_roles(group, platform_roles, replace=True)
+                add_roles(group, platform_roles, tenant, replace=True)
                 logger.info("Finished seeding default group %s for tenant %s.", name, tenant.schema_name)
             else:
                 logger.info("Default group %s is managed by tenant %s.", name, tenant.schema_name)
@@ -59,12 +67,21 @@ def set_system_flag_post_update(group):
     group.save()
 
 
-def add_roles(group, roles_or_role_ids, replace=False):
+def add_roles(group, roles_or_role_ids, tenant, replace=False):
     """Process list of roles and add them to the group."""
     system_policy_name = "System Policy for Group {}".format(group.uuid)
     system_policy, system_policy_created = Policy.objects.get_or_create(
         system=True, group=group, name=system_policy_name
     )
+
+    # NOTE: after we ensure/enforce all object have a tenant_id FK, we can add tenant=tenant
+    # to the get_or_create. We cannot currently, because records without would fail the GET
+    # and would create duplicate records. This ensures we temporarily do an update if
+    # obj.tenant_id is NULL
+    if not system_policy.tenant:
+        system_policy.tenant = tenant
+        system_policy.save()
+
     if system_policy_created:
         logger.info("Created new system policy for tenant.")
     else:

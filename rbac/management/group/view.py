@@ -321,7 +321,7 @@ class GroupViewSet(
             try:
                 principal = Principal.objects.get(username__iexact=username)
             except Principal.DoesNotExist:
-                principal = Principal.objects.create(username=username)
+                principal = Principal.objects.create(username=username, tenant=self.request.tenant)
                 logger.info("Created new principal %s for account_id %s.", username, account)
             group.principals.add(principal)
         group.save()
@@ -551,7 +551,7 @@ class GroupViewSet(
             serializer = GroupRoleSerializerIn(data=request.data)
             if serializer.is_valid(raise_exception=True):
                 roles = request.data.pop(ROLES_KEY, [])
-            add_roles(group, roles)
+            add_roles(group, roles, request.tenant)
             set_system_flag_post_update(group)
             response_data = GroupRoleSerializerIn(group)
         elif request.method == "GET":

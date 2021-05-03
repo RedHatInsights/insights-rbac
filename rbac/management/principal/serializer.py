@@ -16,12 +16,13 @@
 #
 
 """Serializer for principal management."""
+from management.serializer_override_mixin import SerializerCreateOverrideMixin
 from rest_framework import serializers
 
 from .model import Principal
 
 
-class PrincipalSerializer(serializers.ModelSerializer):
+class PrincipalSerializer(SerializerCreateOverrideMixin, serializers.ModelSerializer):
     """Serializer for the Principal model."""
 
     class Meta:

@@ -18,6 +18,7 @@
 """Serializer for role management."""
 from django.utils.translation import gettext as _
 from management.group.model import Group
+from management.serializer_override_mixin import SerializerCreateOverrideMixin
 from management.utils import get_principal_from_request
 from rest_framework import serializers
 from rest_framework.validators import UniqueValidator
@@ -28,7 +29,7 @@ ALLOWED_OPERATIONS = ["in", "equal"]
 FILTER_FIELDS = set(["key", "value", "operation"])
 
 
-class ResourceDefinitionSerializer(serializers.ModelSerializer):
+class ResourceDefinitionSerializer(SerializerCreateOverrideMixin, serializers.ModelSerializer):
     """Serializer for the ResourceDefinition model."""
 
     attributeFilter = serializers.JSONField()
@@ -56,7 +57,7 @@ class ResourceDefinitionSerializer(serializers.ModelSerializer):
         fields = ("attributeFilter",)
 
 
-class AccessSerializer(serializers.ModelSerializer):
+class AccessSerializer(SerializerCreateOverrideMixin, serializers.ModelSerializer):
     """Serializer for the Access model."""
 
     resourceDefinitions = ResourceDefinitionSerializer(many=True)
@@ -129,15 +130,25 @@ class RoleSerializer(serializers.ModelSerializer):
         display_name = validated_data.pop("display_name", name)
         description = validated_data.pop("description", None)
         access_list = validated_data.pop("access")
-        role = Role.objects.create(name=name, description=description, display_name=display_name)
+        tenant = self.context["request"].tenant
+        role = Role.objects.create(name=name, description=description, display_name=display_name, tenant=tenant)
         role.save()
         for access_item in access_list:
             resource_def_list = access_item.pop("resourceDefinitions")
             access_permission = access_item.pop("permission")
             permission, created = Permission.objects.get_or_create(**access_permission)
-            access_obj = Access.objects.create(permission=permission, role=role)
+
+            # NOTE: after we ensure/enforce all object have a tenant_id FK, we can add tenant=tenant
+            # to the get_or_create. We cannot currently, because records without would fail the GET
+            # and would create duplicate records. This ensures we temporarily do an update if
+            # obj.tenant_id is NULL
+            if not permission.tenant:
+                permission.tenant = tenant
+                permission.save()
+
+            access_obj = Access.objects.create(permission=permission, role=role, tenant=tenant)
             for resource_def_item in resource_def_list:
-                ResourceDefinition.objects.create(**resource_def_item, access=access_obj)
+                ResourceDefinition.objects.create(**resource_def_item, access=access_obj, tenant=tenant)
         return role
 
     def update(self, instance, validated_data):
@@ -151,6 +162,7 @@ class RoleSerializer(serializers.ModelSerializer):
         instance.name = validated_data.get("name", instance.name)
         instance.display_name = validated_data.get("display_name", instance.display_name)
         instance.description = validated_data.get("description", instance.description)
+        tenant = self.context["request"].tenant
         instance.save()
         instance.access.all().delete()
 
@@ -158,15 +170,24 @@ class RoleSerializer(serializers.ModelSerializer):
             resource_def_list = access_item.pop("resourceDefinitions")
             access_permission = access_item.pop("permission")
             permission, created = Permission.objects.get_or_create(**access_permission)
-            access_obj = Access.objects.create(permission=permission, role=instance)
+
+            # NOTE: after we ensure/enforce all object have a tenant_id FK, we can add tenant=tenant
+            # to the get_or_create. We cannot currently, because records without would fail the GET
+            # and would create duplicate records. This ensures we temporarily do an update if
+            # obj.tenant_id is NULL
+            if not permission.tenant:
+                permission.tenant = tenant
+                permission.save()
+
+            access_obj = Access.objects.create(permission=permission, role=instance, tenant=tenant)
             for resource_def_item in resource_def_list:
-                ResourceDefinition.objects.create(**resource_def_item, access=access_obj)
+                ResourceDefinition.objects.create(**resource_def_item, access=access_obj, tenant=tenant)
 
         instance.save()
         return instance
 
 
-class RoleMinimumSerializer(serializers.ModelSerializer):
+class RoleMinimumSerializer(SerializerCreateOverrideMixin, serializers.ModelSerializer):
     """Serializer for the Role model that doesn't return access info."""
 
     uuid = serializers.UUIDField(read_only=True)
@@ -204,7 +225,7 @@ class RoleMinimumSerializer(serializers.ModelSerializer):
         return obtain_applications(obj)
 
 
-class DynamicFieldsModelSerializer(serializers.ModelSerializer):
+class DynamicFieldsModelSerializer(SerializerCreateOverrideMixin, serializers.ModelSerializer):
     """A ModelSerializer that controls which fields should be displayed."""
 
     def __init__(self, *args, **kwargs):
