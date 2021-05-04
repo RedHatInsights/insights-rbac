@@ -262,28 +262,28 @@ class CrossAccountRequestViewSet(
     def check_patch_permission(self, request, update_obj):
         """Check if user has right to patch cross access request."""
         if request.user.account == update_obj.target_account:
-            """ For approvers updating requests coming to them, only org admin
-                could update status from pending/approved/denied to approved/denied.
+            """ For approvers updating requests coming to them, only org admins
+                may update status from pending/approved/denied to approved/denied.
             """
             if not request.user.admin:
-                self.throw_validation_error("cross-account partial update", "Only org admin could update status.")
+                self.throw_validation_error("cross-account partial update", "Only org admins may update status.")
             if update_obj.status not in ["pending", "approved", "denied"]:
                 self.throw_validation_error(
-                    "cross-account partial update", "Only pending/approved/denied requests could be updated."
+                    "cross-account partial update", "Only pending/approved/denied requests may be updated."
                 )
             if request.data.get("status") not in ["approved", "denied"]:
                 self.throw_validation_error(
-                    "cross-accont partial update", f"Status could only be updated to approved/denied."
+                    "cross-accont partial update", f"Request status may only be updated to approved/denied."
                 )
             if len(request.data.keys()) > 1 or next(iter(request.data)) != "status":
-                self.throw_validation_error("cross-accont partial update", f"Only status could be updated.")
+                self.throw_validation_error("cross-accont partial update", f"Only status may be updated.")
         elif request.user.user_id == update_obj.user_id:
-            """ For requestors updating their requests, the status update could
-                only be from pending to cancelled.
+            """ For requestors updating their requests, the request status may
+                only be updated from pending to cancelled.
             """
             if update_obj.status != "pending" or request.data.get("status") != "cancelled":
                 self.throw_validation_error(
-                    "cross-accont partial update", f"Status could only be updated from pending to cancelled."
+                    "cross-accont partial update", f"Request status may only be updated from pending to cancelled."
                 )
             for field in request.data:
                 if field not in VALID_PATCH_FIELDS:
@@ -293,8 +293,7 @@ class CrossAccountRequestViewSet(
                     )
         else:
             self.throw_validation_error(
-                "cross-accont partial update",
-                f"User does not have permission to update the request that does not belong to them.",
+                "cross-accont partial update", f"User does not have permission to update the request."
             )
 
     def check_update_permission(self, request, update_obj):
@@ -302,16 +301,20 @@ class CrossAccountRequestViewSet(
         # Only requestors could update the cross access request.
         if request.user.user_id != update_obj.user_id:
             self.throw_validation_error(
-                "cross-account update", "Only requestor could update the cross access request."
+                "cross-account update", "Only the requestor may update the cross access request."
             )
 
         # Only pending request could be updated.
         if update_obj.status != "pending":
-            self.throw_validation_error("cross-account update", "Only pending requests could be updated.")
+            self.throw_validation_error("cross-account update", "Only pending requests may be updated.")
 
         # Do not allow updating the status:
         if request.data.get("status") and str(request.data.get("status")) != "pending":
-            self.throw_validation_error("cross-account update", "Please use partial update to update the status.")
+            self.throw_validation_error(
+                "cross-account update",
+                "The status may not be updated through PUT endpoint. "
+                "Please use PATCH to update the status of the request.",
+            )
 
         if request.data.get("target_account") and str(request.data.get("target_account")) != update_obj.target_account:
-            self.throw_validation_error("cross-account-update", "Target account has to stay the same.")
+            self.throw_validation_error("cross-account-update", "Target account must stay the same.")

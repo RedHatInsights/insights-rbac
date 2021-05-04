@@ -465,7 +465,7 @@ class CrossAccountRequestViewTests(IdentityRequest):
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(
-            response.data.get("errors")[0].get("detail"), "Only requestor could update the cross access request."
+            response.data.get("errors")[0].get("detail"), "Only the requestor may update the cross access request."
         )
 
     def test_update_request_success_for_requestor(self):
@@ -502,7 +502,7 @@ class CrossAccountRequestViewTests(IdentityRequest):
         response = client.put(url, self.data4create, format="json", **self.associate_admin_request.META)
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertEqual(response.data.get("errors")[0].get("detail"), "Target account has to stay the same.")
+        self.assertEqual(response.data.get("errors")[0].get("detail"), "Target account must stay the same.")
 
     def test_update_request_expired_for_requestor(self):
         """Test that updating an expired CAR fails."""
@@ -517,7 +517,7 @@ class CrossAccountRequestViewTests(IdentityRequest):
         response = client.put(url, self.data4create, format="json", **self.associate_admin_request.META)
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertEqual(response.data.get("errors")[0].get("detail"), "Only pending requests could be updated.")
+        self.assertEqual(response.data.get("errors")[0].get("detail"), "Only pending requests may be updated.")
 
     def test_partial_update_denied_for_updating_CAR_belong_to_others(self):
         """Test updating part of a CAR does not have relation with api caller."""
