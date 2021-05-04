@@ -76,15 +76,7 @@ def custom_exception_handler(exc, context):
         data = context.get("request").data
         source_view = context.get("view")
         response = Response(
-            {
-                "errors": [
-                    {
-                        "detail": str(exc),
-                        "source": f"{source_view.basename}",
-                        "status": "400"
-                    },
-                ],
-            },
-            status=status.HTTP_400_BAD_REQUEST
+            {"errors": [{"detail": str(exc), "source": f"{source_view.basename}", "status": "400"},],},
+            status=status.HTTP_400_BAD_REQUEST,
         )
     return response

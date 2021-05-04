@@ -35,10 +35,7 @@ class PolicyInputSerializer(SerializerCreateOverrideMixin, serializers.ModelSeri
     """Serializer for the policy model."""
 
     uuid = serializers.UUIDField(read_only=True)
-    name = serializers.CharField(
-        required=True,
-        max_length=150
-    )
+    name = serializers.CharField(required=True, max_length=150)
     description = serializers.CharField(allow_null=True, required=False)
     group = serializers.UUIDField(required=True)
     roles = UUIDListField(required=True)

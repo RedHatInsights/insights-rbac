@@ -84,15 +84,8 @@ class RoleSerializer(serializers.ModelSerializer):
     """Serializer for the Role model."""
 
     uuid = serializers.UUIDField(read_only=True)
-    name = serializers.CharField(
-        required=True,
-        max_length=150
-    )
-    display_name = serializers.CharField(
-        required=False,
-        max_length=150,
-        allow_blank=True
-    )
+    name = serializers.CharField(required=True, max_length=150)
+    display_name = serializers.CharField(required=False, max_length=150, allow_blank=True)
     description = serializers.CharField(allow_null=True, required=False)
     access = AccessSerializer(many=True)
     policyCount = serializers.IntegerField(read_only=True)
@@ -301,10 +294,7 @@ class RolePatchSerializer(RoleSerializer):
     """Serializer for Role patch."""
 
     access = AccessSerializer(many=True, required=False)
-    name = serializers.CharField(
-        required=False,
-        max_length=150,
-    )
+    name = serializers.CharField(required=False, max_length=150,)
 
     def update(self, instance, validated_data):
         """Patch the role object."""
