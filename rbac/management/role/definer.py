@@ -41,7 +41,7 @@ def _make_role(tenant, data):
         version=data.get("version", 1),
         platform_default=data.get("platform_default", False),
     )
-    role, created = Role.objects.get_or_create(name=name, defaults=defaults)
+    role, created = Role.objects.get_or_create(name=name, defaults=defaults, tenant=tenant)
 
     # NOTE: after we ensure/enforce all object have a tenant_id FK, we can add tenant=tenant
     # to the get_or_create. We cannot currently, because records without would fail the GET

@@ -23,7 +23,6 @@ from management.role.model import Role
 from management.role.serializer import RoleMinimumSerializer
 from management.serializer_override_mixin import SerializerCreateOverrideMixin
 from rest_framework import serializers
-from rest_framework.validators import UniqueValidator
 
 
 class UUIDListField(serializers.ListField):
@@ -37,7 +36,8 @@ class PolicyInputSerializer(SerializerCreateOverrideMixin, serializers.ModelSeri
 
     uuid = serializers.UUIDField(read_only=True)
     name = serializers.CharField(
-        required=True, max_length=150, validators=[UniqueValidator(queryset=Policy.objects.all())]
+        required=True,
+        max_length=150
     )
     description = serializers.CharField(allow_null=True, required=False)
     group = serializers.UUIDField(required=True)
