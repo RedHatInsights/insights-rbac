@@ -296,7 +296,7 @@ def create_access_for_role(role, role_public, access_list, tenant):
     for access_item in access_list:
         resource_def_list = access_item.pop("resourceDefinitions")
         access_permission = access_item.pop("permission")
-        permission, _ = create_object_in_tenant(tenant.schema_name, tenant, Permission, **access_permission)
+        permission = Permission.objects.get(**access_permission)
 
         access_obj = Access.objects.create(permission=permission, role=role, tenant=tenant)
         for resource_def_item in resource_def_list:
@@ -309,11 +309,7 @@ def create_access_for_role(role, role_public, access_list, tenant):
             )
             for resource_def_item in resource_def_list:
                 create_object_in_tenant(
-                    "public",
-                    tenant,
-                    ResourceDefinition,
-                    **resource_def_item,
-                    **{"access": access_obj_public, "tenant": tenant},
+                    "public", tenant, ResourceDefinition, **resource_def_item, **{"access": access_obj_public}
                 )
 
 

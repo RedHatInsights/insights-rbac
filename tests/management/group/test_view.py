@@ -985,27 +985,38 @@ class GroupViewsetTests(IdentityRequest):
         client = APIClient()
         test_data = {"roles": [self.roleB.uuid, self.dummy_role_id]}
         system_policy_name = "System Policy for Group {}".format(self.group.uuid)
-        system_policy = Policy.objects.create(system=True, group=self.group, name=system_policy_name)
+        with tenant_context(self.tenant):
+            system_policy = Policy.objects.create(
+                system=True, tenant=self.tenant, group=self.group, name=system_policy_name
+            )
+            self.assertCountEqual([self.role], list(self.group.roles()))
+            self.assertCountEqual([system_policy, self.policy], list(self.group.policies.all()))
 
-        self.assertCountEqual([self.role], list(self.group.roles()))
-        self.assertCountEqual([system_policy, self.policy], list(self.group.policies.all()))
+        with tenant_context(Tenant.objects.get(schema_name="public")):
+            Role.objects.create(name="roleB", system=False, tenant=self.tenant)
+            group_public = Group.objects.get(name=self.group.name, tenant=self.tenant)
+            system_policy_name_public = "System Policy for Group {}".format(group_public.uuid)
+            system_policy_public = Policy.objects.create(
+                system=True, group=group_public, tenant=self.tenant, name=system_policy_name_public
+            )
 
         response = client.post(url, test_data, format="json", **self.headers)
 
         roles = response.data.get("data")
-        system_policies = Policy.objects.filter(system=True, group=self.group)
-        system_policy = system_policies.first()
+        with tenant_context(tenant=self.tenant):
+            self.assertCountEqual([system_policy, self.policy], list(self.group.policies.all()))
+            self.assertCountEqual([self.roleB], list(system_policy.roles.all()))
+            self.assertCountEqual([self.role], list(self.policy.roles.all()))
+            self.assertCountEqual([self.role, self.roleB], list(self.group.roles()))
+            self.assertEqual(len(roles), 2)
+            self.assertEqual(roles[0].get("uuid"), str(self.role.uuid))
+            self.assertEqual(roles[0].get("name"), self.role.name)
+            self.assertEqual(roles[0].get("description"), self.role.description)
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
 
-        self.assertEqual(len(system_policies), 1)
-        self.assertCountEqual([system_policy, self.policy], list(self.group.policies.all()))
-        self.assertCountEqual([self.roleB], list(system_policy.roles.all()))
-        self.assertCountEqual([self.role], list(self.policy.roles.all()))
-        self.assertCountEqual([self.role, self.roleB], list(self.group.roles()))
-        self.assertEqual(len(roles), 2)
-        self.assertEqual(roles[0].get("uuid"), str(self.role.uuid))
-        self.assertEqual(roles[0].get("name"), self.role.name)
-        self.assertEqual(roles[0].get("description"), self.role.description)
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        # roleB also gets added to public schema
+        with tenant_context(Tenant.objects.get(schema_name="public")):
+            self.assertCountEqual(["roleB"], list(system_policy_public.roles.values_list("name", flat=True)))
 
     def test_add_group_multiple_roles_success(self):
         """Test that adding multiple roles to a group returns successfully."""
