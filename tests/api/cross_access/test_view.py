@@ -57,13 +57,17 @@ class CrossAccountRequestViewTests(IdentityRequest):
         self.associate_admin_request = self.associate_admin_request_context["request"]
 
         """
-            Create cross account requests
+            Create cross account requests 1 to 6: request_1 to request_6
+            self.associate_admin_request has user_id 1111111, and account nubmer xxxxxx
+            It would be approver for request_1, request_2, request_5;
+            It would be requestor for request_3, request_6
             | target_account | user_id | start_date | end_date  |  status  | roles |
             |     xxxxxx     | 1111111 |    now     | now+10day | approved |       |
             |     xxxxxx     | 2222222 |    now     | now+10day | pending  |       |
             |     123456     | 1111111 |    now     | now+10day | approved |       |
             |     123456     | 2222222 |    now     | now+10day | pending  |       |
             |     xxxxxx     | 2222222 |    now     | now+10day | expired  |       |
+            |     123456     | 1111111 |    now     | now_10day | pending  |       |
         """
         self.another_account = "123456"
 
@@ -109,6 +113,12 @@ class CrossAccountRequestViewTests(IdentityRequest):
                 user_id="2222222",
                 end_date=self.ref_time + timedelta(10),
                 status="expired",
+            )
+            self.request_6 = CrossAccountRequest.objects.create(
+                target_account=self.another_account,
+                user_id="1111111",
+                end_date=self.ref_time + timedelta(10),
+                status="pending",
             )
 
     def tearDown(self):
@@ -207,10 +217,13 @@ class CrossAccountRequestViewTests(IdentityRequest):
         response = client.get(f"{URL_LIST}?query_by=user_id", **self.associate_non_admin_request.META)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(response.data["data"]), 2)
-        accounts = [data.get("target_account") for data in response.data["data"]]
-        self.assertTrue(self.account in accounts)
-        self.assertTrue(self.another_account in accounts)
+        self.assertEqual(len(response.data["data"]), 3)
+        request_ids = [data.get("request_id") for data in response.data["data"]]
+        for request_id in request_ids:
+            self.assertTrue(
+                request_id
+                in [str(self.request_1.request_id), str(self.request_3.request_id), str(self.request_6.request_id)]
+            )
 
     def test_list_requests_query_by_user_id_filter_by_account_success(self):
         """Test listing cross account request based on user id of identity."""
@@ -231,7 +244,7 @@ class CrossAccountRequestViewTests(IdentityRequest):
         )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(response.data["data"]), 2)
+        self.assertEqual(len(response.data["data"]), 3)
 
     def test_list_requests_query_by_user_id_with_combined_filters_success(self):
         """Test listing cross account request based on user id of identity."""
@@ -437,14 +450,34 @@ class CrossAccountRequestViewTests(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(response.data.get("errors")[0].get("detail"), "Start date must be within 60 days of today.")
 
-    def test_update_request_success(self):
-        """Test updating an entire CAR."""
+    def test_update_request_denied_for_approver(self):
+        """Test updating an entire CAR denied for approver."""
         self.data4create["target_account"] = self.account
         self.data4create["start_date"] = self.format_date(self.ref_time + timedelta(3))
         self.data4create["end_date"] = self.format_date(self.ref_time + timedelta(5))
         self.data4create["roles"] = ["role_8", "role_9"]
 
         car_uuid = self.request_2.request_id
+        url = reverse("cross-detail", kwargs={"pk": str(car_uuid)})
+
+        client = APIClient()
+        response = client.put(url, self.data4create, format="json", **self.associate_admin_request.META)
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(
+            response.data.get("errors")[0].get("detail"), "Only the requestor may update the cross access request."
+        )
+
+    def test_update_request_success_for_requestor(self):
+        """Test updating an entire CAR."""
+        self.data4create["target_account"] = self.account
+        self.data4create["start_date"] = self.format_date(self.ref_time + timedelta(3))
+        self.data4create["end_date"] = self.format_date(self.ref_time + timedelta(5))
+        self.data4create["roles"] = ["role_8", "role_9"]
+
+        car_uuid = self.request_1.request_id
+        self.request_1.status = "pending"
+        self.request_1.save()
         url = reverse("cross-detail", kwargs={"pk": str(car_uuid)})
 
         client = APIClient()
@@ -458,59 +491,146 @@ class CrossAccountRequestViewTests(IdentityRequest):
                 continue
             self.assertEqual(self.data4create.get(field), response.data.get(field))
 
-    def test_update_request_fail_acct(self):
+    def test_update_request_fail_acct_for_requestor(self):
         """Test that updating the account of a CAR fails."""
         self.data4create["target_account"] = "10001"
 
-        car_uuid = self.request_1.request_id
+        car_uuid = self.request_6.request_id
         url = reverse("cross-detail", kwargs={"pk": car_uuid})
 
         client = APIClient()
         response = client.put(url, self.data4create, format="json", **self.associate_admin_request.META)
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data.get("errors")[0].get("detail"), "Target account must stay the same.")
 
-    def test_update_request_expired(self):
+    def test_update_request_expired_for_requestor(self):
         """Test that updating an expired CAR fails."""
         self.data4create["end_date"] = self.format_date(self.ref_time + timedelta(20))
 
-        car_uuid = self.request_5.request_id
+        car_uuid = self.request_3.request_id
+        self.request_3.status = "expired"
+        self.request_3.save()
         url = reverse("cross-detail", kwargs={"pk": car_uuid})
 
         client = APIClient()
         response = client.put(url, self.data4create, format="json", **self.associate_admin_request.META)
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data.get("errors")[0].get("detail"), "Only pending requests may be updated.")
 
-    def test_partial_update_success(self):
-        """Test updating part of a CAR."""
+    def test_partial_update_denied_for_updating_CAR_belong_to_others(self):
+        """Test updating part of a CAR does not have relation with api caller."""
         update_data = {"start_date": self.format_date(self.ref_time + timedelta(2))}
 
+        # request_4's user_id is "2222222", associate_admin_request'user_id is "1111111"
+        # request_4's target_account is "123456", associate_admin_request's account is "xxxxxx"
+        car_uuid = self.request_4.request_id
+        url = reverse("cross-detail", kwargs={"pk": str(car_uuid)})
+
+        client = APIClient()
+        response = client.patch(url, update_data, format="json", **self.associate_admin_request.META)
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_partial_update_success_for_approver(self):
+        """Test updating part of a CAR."""
+        # request_2's account is "xxxxxx" same as associate_admin_request's account
         car_uuid = self.request_2.request_id
         url = reverse("cross-detail", kwargs={"pk": str(car_uuid)})
 
         client = APIClient()
+
+        # From pending to approved
+        update_data = {"status": "approved"}
         response = client.patch(url, update_data, format="json", **self.associate_admin_request.META)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data.get("start_date"), update_data.get("start_date"))
+        self.assertEqual(response.data.get("status"), update_data.get("status"))
 
-    def test_partial_update_fail_invalid_field(self):
-        """Test that updating protected fields of a CAR fails."""
-        update_data = {"target_account": "123456"}
+        # From approved to denied
+        update_data = {"status": "denied"}
+        response = client.patch(url, update_data, format="json", **self.associate_admin_request.META)
 
-        car_uuid = self.request_1.request_id
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data.get("status"), update_data.get("status"))
+
+        # From denied to approved
+        update_data = {"status": "approved"}
+        response = client.patch(url, update_data, format="json", **self.associate_admin_request.META)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data.get("status"), update_data.get("status"))
+
+        # From approved to cancelled would fail
+        update_data = {"status": "cancelled"}
+        response = client.patch(url, update_data, format="json", **self.associate_admin_request.META)
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_partial_update_invalid_update_denied_for_approver(self):
+        """Test updating part of a CAR fail due to invalid update for approver."""
+        # request_2's account is "xxxxxx" same as associate_admin_request's account
+        car_uuid = self.request_2.request_id
+        url = reverse("cross-detail", kwargs={"pk": str(car_uuid)})
+        client = APIClient()
+
+        # fail to update if approver is not admin
+        update_data = {"status": "approved"}
+        response = client.patch(url, update_data, format="json", **self.associate_non_admin_request.META)
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+        # fail to update field other than status
+        update_data = {"start_date": self.format_date(self.ref_time + timedelta(2))}
+        response = client.patch(url, update_data, format="json", **self.associate_admin_request.META)
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+        # fail to update fields more than just status
+        update_data = {"start_date": self.format_date(self.ref_time + timedelta(2)), "status": "approved"}
+        response = client.patch(url, update_data, format="json", **self.associate_admin_request.META)
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+        # approver fail to update status from pending to cancelled
+        update_data = {"status": "cancelled"}
+        response = client.patch(url, update_data, format="json", **self.associate_admin_request.META)
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_partial_update_success_for_requestor(self):
+        """Test updating part of a CAR."""
+        # request_6's user_id is "1111111" same as associate_admin_request's user_id
+        car_uuid = self.request_6.request_id
         url = reverse("cross-detail", kwargs={"pk": str(car_uuid)})
 
         client = APIClient()
+        update_data = {"status": "cancelled"}
+        response = client.patch(url, update_data, format="json", **self.associate_admin_request.META)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data.get("status"), update_data.get("status"))
+
+    def test_partial_update_approved_request_for_requestor(self):
+        """Test that updating protected fields of a CAR fails."""
+        car_uuid = self.request_3.request_id
+        url = reverse("cross-detail", kwargs={"pk": str(car_uuid)})
+
+        client = APIClient()
+
+        # Can not partial update status from approved to other status
+        update_data = {"status": "cancelled"}
         response = client.patch(url, update_data, format="json", **self.associate_admin_request.META)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
-    def test_partial_update_expired(self):
+    def test_partial_update_expired_for_requestor(self):
         """Test that PATCHing an expired CAR fails."""
         update_data = {"end_date": self.format_date(self.ref_time + timedelta(18))}
 
-        car_uuid = self.request_5.request_id
+        car_uuid = self.request_3.request_id
+        self.request_3.status = "expired"
+        self.request_3.save()
         url = reverse("cross-detail", kwargs={"pk": car_uuid})
 
         client = APIClient()
@@ -518,46 +638,41 @@ class CrossAccountRequestViewTests(IdentityRequest):
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
-    def test_update_bmi(self):
-        """Test that PUT with extra fields in body fails."""
-        self.data4create["billy"] = "mandy"
-
-        car_uuid = self.request_5.request_id
-        url = reverse("cross-detail", kwargs={"pk": car_uuid})
-
-        client = APIClient()
-        response = client.put(url, self.data4create, format="json", **self.associate_admin_request.META)
-
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-
-    def test_partial_update_bmi(self):
+    def test_partial_update_bmi_for_requestor(self):
         """Test that PATCH with extra fields in body fails."""
         update_data = {"start_date": self.format_date(self.ref_time + timedelta(2)), "cup": "cake"}
 
-        car_uuid = self.request_1.request_id
+        car_uuid = self.request_6.request_id
         url = reverse("cross-detail", kwargs={"pk": str(car_uuid)})
 
         client = APIClient()
         response = client.patch(url, update_data, format="json", **self.associate_admin_request.META)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
-    def test_update_bad_date_spec(self):
+    def test_update_bad_date_spec_for_requestor(self):
         """Test that PUT with body fields not matching spec fails."""
+        self.data4create["target_account"] = self.account
         self.data4create["end_date"] = 12252021
 
-        car_uuid = self.request_5.request_id
+        car_uuid = self.request_1.request_id
+        self.request_1.status = "pending"
+        self.request_1.save()
         url = reverse("cross-detail", kwargs={"pk": car_uuid})
 
         client = APIClient()
         response = client.put(url, self.data4create, format="json", **self.associate_admin_request.META)
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(
+            response.data.get("errors")[0].get("detail"),
+            "Datetime has wrong format. Use one of these formats instead: MM/DD/YYYY.",
+        )
 
-    def test_partial_update_bad_date_spec(self):
+    def test_partial_update_bad_date_spec_for_requestor(self):
         """Test that PATCH with body fields not matching spec fails."""
         update_data = {"start_date": 12252021}
 
-        car_uuid = self.request_1.request_id
+        car_uuid = self.request_6.request_id
         url = reverse("cross-detail", kwargs={"pk": str(car_uuid)})
 
         client = APIClient()
@@ -584,9 +699,9 @@ class CrossAccountRequestViewTests(IdentityRequest):
     def test_create_principal_on_approval(self):
         """Test that moving a car to approved creates a principal."""
         update_data = {"status": "approved"}
-        tenant_schema = create_schema_name(self.request_4.target_account)
-        principal_name = get_cross_principal_name(self.request_4.target_account, self.request_4.user_id)
-        car_uuid = self.request_4.request_id
+        tenant_schema = create_schema_name(self.request_2.target_account)
+        principal_name = get_cross_principal_name(self.request_2.target_account, self.request_2.user_id)
+        car_uuid = self.request_2.request_id
         url = reverse("cross-detail", kwargs={"pk": str(car_uuid)})
         tenant = Tenant.objects.get(schema_name=tenant_schema)
 
@@ -611,16 +726,16 @@ class CrossAccountRequestViewTests(IdentityRequest):
         )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(response.data["data"]), 2)
+        self.assertEqual(len(response.data["data"]), 3)
         self.assertTrue(response.data["data"][0].get("request_id") < response.data["data"][1].get("request_id"))
 
         # Sorting the dates
-        ## request_1 is created a little bit ealier than request_3, therefore, the
-        ## first should be request_3
+        ## request_1 is created a little bit ealier than request_6, therefore, the
+        ## first should be request_6
         response = client.get(
             f"{URL_LIST}?query_by=user_id&order_by=-created", **self.associate_non_admin_request.META
         )
-        self.assertEqual(response.data["data"][0].get("request_id"), str(self.request_3.request_id))
+        self.assertEqual(response.data["data"][0].get("request_id"), str(self.request_6.request_id))
 
         ## set start_date of request_3 to a day later
         self.request_3.start_date = self.ref_time + timedelta(1)
