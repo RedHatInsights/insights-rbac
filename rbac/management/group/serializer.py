@@ -22,16 +22,13 @@ from management.principal.serializer import PrincipalInputSerializer, PrincipalS
 from management.role.serializer import RoleMinimumSerializer
 from management.serializer_override_mixin import SerializerCreateOverrideMixin
 from rest_framework import serializers, status
-from rest_framework.validators import UniqueValidator
 
 
 class GroupInputSerializer(SerializerCreateOverrideMixin, serializers.ModelSerializer):
     """Serializer for Group input model."""
 
     uuid = serializers.UUIDField(read_only=True)
-    name = serializers.CharField(
-        required=True, max_length=150, validators=[UniqueValidator(queryset=Group.objects.all())]
-    )
+    name = serializers.CharField(required=True, max_length=150)
     description = serializers.CharField(allow_null=True, required=False)
     principalCount = serializers.IntegerField(read_only=True)
     platform_default = serializers.BooleanField(read_only=True)

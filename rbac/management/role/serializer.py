@@ -21,7 +21,6 @@ from management.group.model import Group
 from management.serializer_override_mixin import SerializerCreateOverrideMixin
 from management.utils import get_principal_from_request
 from rest_framework import serializers
-from rest_framework.validators import UniqueValidator
 
 from .model import Access, Permission, ResourceDefinition, Role
 
@@ -85,12 +84,8 @@ class RoleSerializer(serializers.ModelSerializer):
     """Serializer for the Role model."""
 
     uuid = serializers.UUIDField(read_only=True)
-    name = serializers.CharField(
-        required=True, max_length=150, validators=[UniqueValidator(queryset=Role.objects.all())]
-    )
-    display_name = serializers.CharField(
-        required=False, max_length=150, allow_blank=True, validators=[UniqueValidator(queryset=Role.objects.all())]
-    )
+    name = serializers.CharField(required=True, max_length=150)
+    display_name = serializers.CharField(required=False, max_length=150, allow_blank=True)
     description = serializers.CharField(allow_null=True, required=False)
     access = AccessSerializer(many=True)
     policyCount = serializers.IntegerField(read_only=True)
@@ -283,9 +278,7 @@ class RolePatchSerializer(RoleSerializer):
     """Serializer for Role patch."""
 
     access = AccessSerializer(many=True, required=False)
-    name = serializers.CharField(
-        required=False, max_length=150, validators=[UniqueValidator(queryset=Role.objects.all())]
-    )
+    name = serializers.CharField(required=False, max_length=150,)
 
     def update(self, instance, validated_data):
         """Patch the role object."""
