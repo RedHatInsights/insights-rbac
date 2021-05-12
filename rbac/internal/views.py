@@ -27,7 +27,7 @@ from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from management.cache import TenantCache
 from management.models import Group, Role
-from management.tasks import run_migrations_in_worker, run_seeds_in_worker, run_reconcile_tenant_relations_in_worker
+from management.tasks import run_migrations_in_worker, run_reconcile_tenant_relations_in_worker, run_seeds_in_worker
 from tenant_schemas.utils import tenant_context
 
 from api.models import Tenant
