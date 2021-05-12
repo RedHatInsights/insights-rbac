@@ -38,3 +38,9 @@ def run_migrations_in_worker():
 def run_seeds_in_worker(kwargs):
     """Celery task to run seeds."""
     call_command("seeds", **kwargs)
+
+
+@shared_task
+def run_reconcile_tenant_relations_in_worker(kwargs):
+    """Celery task to run seeds."""
+    call_command("reconcile_tenant_relations", **kwargs)

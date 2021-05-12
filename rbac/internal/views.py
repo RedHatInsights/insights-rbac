@@ -27,7 +27,7 @@ from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from management.cache import TenantCache
 from management.models import Group, Role
-from management.tasks import run_migrations_in_worker, run_seeds_in_worker
+from management.tasks import run_migrations_in_worker, run_seeds_in_worker, run_reconcile_tenant_relations_in_worker
 from tenant_schemas.utils import tenant_context
 
 from api.models import Tenant
@@ -148,6 +148,22 @@ def migration_progress(request):
         }
 
         return HttpResponse(json.dumps(payload), content_type="application/json")
+    return HttpResponse(f'Method "{request.method}" not allowed.', status=405)
+
+
+def tenant_reconciliation(request):
+    """View method for checking/executing tenant reconciliation.
+
+    GET(read-only)|POST(updates enabled) /_private/api/utils/tenant_reconciliation/
+    """
+    args = {"readonly": True} if request.method == "GET" else {}
+    msg = "Running tenant reconciliation in a background worker."
+
+    if request.method in ["GET", "POST"]:
+        logger.info(msg)
+        run_reconcile_tenant_relations_in_worker.delay(args)
+        return HttpResponse(msg, status=202)
+
     return HttpResponse(f'Method "{request.method}" not allowed.', status=405)
 
 
