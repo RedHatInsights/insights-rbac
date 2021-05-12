@@ -134,7 +134,7 @@ class AccessViewTests(IdentityRequest):
         self.assertIsNotNone(response.data.get("data"))
         self.assertIsInstance(response.data.get("data"), list)
         self.assertEqual(len(response.data.get("data")), 2)
-        self.assertEqual(response.data.get("meta").get("limit"), 1000)
+        self.assertEqual(response.data.get("meta").get("limit"), 2)
         self.assertEqual(self.access_data, response.data.get("data")[0])
 
         # the platform default permission could also be retrieved
@@ -205,7 +205,7 @@ class AccessViewTests(IdentityRequest):
         self.assertIsNotNone(response.data.get("data"))
         self.assertIsInstance(response.data.get("data"), list)
         self.assertEqual(len(response.data.get("data")), 2)
-        self.assertEqual(response.data.get("meta").get("limit"), 1000)
+        self.assertEqual(response.data.get("meta").get("limit"), 2)
 
     def test_get_access_multiple_apps_supplied(self):
         """Test that we return all permissions for multiple apps when supplied."""
@@ -247,7 +247,7 @@ class AccessViewTests(IdentityRequest):
         self.assertIsNotNone(response.data.get("data"))
         self.assertIsInstance(response.data.get("data"), list)
         self.assertEqual(len(response.data.get("data")), 0)
-        self.assertEqual(response.data.get("meta").get("limit"), 1000)
+        self.assertEqual(response.data.get("meta").get("limit"), 0)
 
     def test_get_access_no_subset_match(self):
         """Test that we cannot have a subset match on app/permission."""
@@ -268,7 +268,7 @@ class AccessViewTests(IdentityRequest):
         self.assertIsNotNone(response.data.get("data"))
         self.assertIsInstance(response.data.get("data"), list)
         self.assertEqual(len(response.data.get("data")), 0)
-        self.assertEqual(response.data.get("meta").get("limit"), 1000)
+        self.assertEqual(response.data.get("meta").get("limit"), 0)
 
     def test_get_access_no_match(self):
         """Test that we only match on the application name of the permission data."""
@@ -289,7 +289,7 @@ class AccessViewTests(IdentityRequest):
         self.assertIsNotNone(response.data.get("data"))
         self.assertIsInstance(response.data.get("data"), list)
         self.assertEqual(len(response.data.get("data")), 0)
-        self.assertEqual(response.data.get("meta").get("limit"), 1000)
+        self.assertEqual(response.data.get("meta").get("limit"), 0)
 
     def test_get_access_with_limit(self):
         """Test that we can obtain the expected access with pagination."""
