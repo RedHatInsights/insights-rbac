@@ -30,4 +30,5 @@ urlpatterns = [
     path("api/seeds/run/", views.run_seeds),
     path("api/cars/expire/", views.car_expiry),
     path("api/sentry_debug/", trigger_error),
+    path("api/utils/tenant_reconciliation/", views.tenant_reconciliation),
 ]

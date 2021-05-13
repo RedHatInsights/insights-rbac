@@ -44,6 +44,8 @@ class Command(BaseCommand):
         read_only = options["readonly"]
         tenants = Tenant.objects.all()
         tenants_missing_releations = set()
+        start_msg = "--- READ ONLY ---" if read_only else "--- UDPATES ENABLED ---"
+        logger.info(start_msg)
 
         try:
             for idx, tenant in enumerate(list(tenants)):
