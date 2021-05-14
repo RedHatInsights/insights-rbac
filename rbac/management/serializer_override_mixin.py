@@ -2,7 +2,7 @@
 
 import traceback
 
-from management.utils import create_object_in_tenant
+from management.utils import schema_handler
 from rest_framework.serializers import raise_errors_on_nested_writes
 from rest_framework.utils import model_meta
 
@@ -46,8 +46,8 @@ class SerializerCreateOverrideMixin:
                 many_to_many[field_name] = validated_data.pop(field_name)
 
         try:
-            instance = ModelClass._default_manager.create(**validated_data, tenant=self.context["request"].tenant)
-            create_object_in_tenant("public", self.context["request"].tenant, ModelClass, **validated_data)
+            for request_tenant in schema_handler(self.context["request"].tenant):
+                instance = ModelClass._default_manager.create(**validated_data, tenant=request_tenant)
         except TypeError:
             tb = traceback.format_exc()
             msg = (

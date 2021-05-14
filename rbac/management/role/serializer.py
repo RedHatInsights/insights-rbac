@@ -19,11 +19,9 @@
 from django.utils.translation import gettext as _
 from management.group.model import Group
 from management.serializer_override_mixin import SerializerCreateOverrideMixin
-from management.utils import create_object_in_tenant, get_principal_from_request
+from management.utils import get_principal_from_request, schema_handler
 from rest_framework import serializers
-from tenant_schemas.utils import tenant_context
 
-from api.models import Tenant
 from .model import Access, Permission, ResourceDefinition, Role
 
 ALLOWED_OPERATIONS = ["in", "equal"]
@@ -128,11 +126,9 @@ class RoleSerializer(serializers.ModelSerializer):
         description = validated_data.pop("description", None)
         access_list = validated_data.pop("access")
         tenant = self.context["request"].tenant
-        role = Role.objects.create(name=name, description=description, display_name=display_name, tenant=tenant)
-        role_public, created = create_object_in_tenant(
-            "public", tenant, Role, **{"name": name, "description": description, "display_name": display_name}
-        )
-        create_access_for_role(role, role_public, access_list, tenant)
+        for tenant_schema in schema_handler(tenant):
+            role = Role.objects.create(name=name, description=description, display_name=display_name, tenant=tenant)
+            create_access_for_role(role, access_list, tenant)
 
         return role
 
@@ -140,10 +136,13 @@ class RoleSerializer(serializers.ModelSerializer):
         """Update the role object in the database."""
         access_list = validated_data.pop("access")
         tenant = self.context["request"].tenant
+        role_name = instance.name
+        update_data = validate_role_update(instance, validated_data)
 
-        instance, role_public = validate_and_update_role(instance, validated_data, tenant)
+        for tenant_schema in schema_handler(tenant):
+            instance = update_role(role_name, update_data, tenant)
 
-        create_access_for_role(instance, role_public, access_list, tenant)
+            create_access_for_role(instance, access_list, tenant)
 
         return instance
 
@@ -260,12 +259,16 @@ class RolePatchSerializer(RoleSerializer):
     """Serializer for Role patch."""
 
     access = AccessSerializer(many=True, required=False)
-    name = serializers.CharField(required=False, max_length=150,)
+    name = serializers.CharField(required=False, max_length=150)
 
     def update(self, instance, validated_data):
         """Patch the role object."""
         tenant = self.context["request"].tenant
-        instance, role_public = validate_and_update_role(instance, validated_data, tenant, clear_access=False)
+        role_name = instance.name
+        update_data = validate_role_update(instance, validated_data)
+
+        for tenant_schema in schema_handler(tenant):
+            instance = update_role(role_name, update_data, tenant, clear_access=False)
         return instance
 
 
@@ -291,30 +294,20 @@ def obtain_groups_in(obj, request):
     return Group.objects.filter(policies__in=policy_ids).distinct()
 
 
-def create_access_for_role(role, role_public, access_list, tenant):
+def create_access_for_role(role, access_list, tenant):
     """Create access objects and relate it to role."""
     for access_item in access_list:
-        resource_def_list = access_item.pop("resourceDefinitions")
-        access_permission = access_item.pop("permission")
+        resource_def_list = access_item.get("resourceDefinitions")
+        access_permission = access_item.get("permission")
         permission = Permission.objects.get(**access_permission)
 
         access_obj = Access.objects.create(permission=permission, role=role, tenant=tenant)
         for resource_def_item in resource_def_list:
             ResourceDefinition.objects.create(**resource_def_item, access=access_obj, tenant=tenant)
 
-        with tenant_context(Tenant.objects.get(schema_name="public")):
-            permission_public = Permission.objects.get(**access_permission)
-            access_obj_public, _ = create_object_in_tenant(
-                "public", tenant, Access, **{"permission": permission_public, "role": role_public}
-            )
-            for resource_def_item in resource_def_list:
-                create_object_in_tenant(
-                    "public", tenant, ResourceDefinition, **resource_def_item, **{"access": access_obj_public}
-                )
 
-
-def validate_and_update_role(instance, validated_data, tenant, clear_access=True):
-    """Validate if role could be updated and update role attribute."""
+def validate_role_update(instance, validated_data):
+    """Validate if role could be updated."""
     if instance.system:
         key = "role.update"
         message = "System roles may not be updated."
@@ -324,20 +317,25 @@ def validate_and_update_role(instance, validated_data, tenant, clear_access=True
     updated_display_name = validated_data.get("display_name", instance.display_name)
     updated_description = validated_data.get("description", instance.description)
 
-    with tenant_context(Tenant.objects.get(schema_name="public")):
-        role_public, created = Role.objects.update_or_create(
-            name=instance.name,
-            tenant=tenant,
-            defaults={"name": updated_name, "display_name": updated_display_name, "description": updated_description},
-        )
-        if clear_access:
-            role_public.access.all().delete()
+    return {
+        "updated_name": updated_name,
+        "updated_display_name": updated_display_name,
+        "updated_description": updated_description,
+    }
 
-    instance.name = updated_name
-    instance.display_name = updated_display_name
-    instance.description = updated_description
-    instance.save()
+
+def update_role(role_name, update_data, tenant, clear_access=True):
+    """Update role attribute."""
+    role, created = Role.objects.update_or_create(
+        name=role_name,
+        tenant=tenant,
+        defaults={
+            "name": update_data.get("updated_name"),
+            "display_name": update_data.get("updated_display_name"),
+            "description": update_data.get("updated_description"),
+        },
+    )
     if clear_access:
-        instance.access.all().delete()
+        role.access.all().delete()
 
-    return instance, role_public
+    return role

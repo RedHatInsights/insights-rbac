@@ -51,17 +51,19 @@ class GroupViewsetTests(IdentityRequest):
             self.principalB.save()
             self.principalC = Principal(username="user_not_attaced_to_group_explicitly")
             self.principalC.save()
-            self.group = Group(name="groupA")
+            self.group = Group(name="groupA", tenant=self.tenant)
             self.group.save()
-            self.role = Role.objects.create(name="roleA", description="A role for a group.", system=True)
-            self.policy = Policy.objects.create(name="policyA", group=self.group)
+            self.role = Role.objects.create(
+                name="roleA", description="A role for a group.", system=True, tenant=self.tenant
+            )
+            self.policy = Policy.objects.create(name="policyA", group=self.group, tenant=self.tenant)
             self.policy.roles.add(self.role)
             self.policy.save()
             self.group.policies.add(self.policy)
             self.group.principals.add(self.principal, self.principalB)
             self.group.save()
 
-            self.defGroup = Group(name="groupDef", platform_default=True, system=True)
+            self.defGroup = Group(name="groupDef", platform_default=True, system=True, tenant=self.tenant)
             self.defGroup.save()
             self.defGroup.principals.add(self.principal)
             self.defGroup.save()
@@ -69,10 +71,10 @@ class GroupViewsetTests(IdentityRequest):
             self.emptyGroup = Group(name="groupE")
             self.emptyGroup.save()
 
-            self.groupB = Group.objects.create(name="groupB")
+            self.groupB = Group.objects.create(name="groupB", tenant=self.tenant)
             self.groupB.principals.add(self.principal)
             self.policyB = Policy.objects.create(name="policyB", group=self.groupB)
-            self.roleB = Role.objects.create(name="roleB", system=False)
+            self.roleB = Role.objects.create(name="roleB", system=False, tenant=self.tenant)
             self.policyB.roles.add(self.roleB)
             self.policyB.save()
 
@@ -942,9 +944,11 @@ class GroupViewsetTests(IdentityRequest):
         client = APIClient()
         url = "{}?roles={}".format(url, self.roleB.uuid)
 
-        self.policy.roles.add(self.roleB)
-        self.policy.save()
+        with tenant_context(self.tenant):
+            self.policy.roles.add(self.roleB)
+            self.policy.save()
 
+            self.defGroup.policies.add(self.policy)
         self.assertTrue(self.defGroup.system)
         response = client.delete(url, format="json", **self.headers)
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
@@ -1027,7 +1031,7 @@ class GroupViewsetTests(IdentityRequest):
         #######################################################
 
         with tenant_context(self.tenant):
-            groupC = Group.objects.create(name="groupC")
+            groupC = Group.objects.create(name="groupC", tenant=self.tenant)
             url = reverse("group-roles", kwargs={"uuid": groupC.uuid})
             client = APIClient()
             test_data = {"roles": [self.role.uuid, self.roleB.uuid]}
@@ -1063,7 +1067,7 @@ class GroupViewsetTests(IdentityRequest):
         with tenant_context(Tenant.objects.get(schema_name="public")):
             Group.objects.create(name="groupC", tenant=self.tenant)
         with tenant_context(self.tenant):
-            groupC = Group.objects.create(name="groupC")
+            groupC = Group.objects.create(name="groupC", tenant=self.tenant)
             url = reverse("group-roles", kwargs={"uuid": groupC.uuid})
             client = APIClient()
             test_data = {"roles": [self.dummy_role_id, self.roleB.uuid]}

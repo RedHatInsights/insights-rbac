@@ -328,7 +328,7 @@ class AccessViewTests(IdentityRequest):
     )
     def test_missing_invalid_username(self, mock_request):
         """Test that we get expected failure when missing required query params."""
-        url = "{}?application={}&username={}".format(reverse("access"), "app", uuid4())
+        url = "{}?application={}&username={}".format(reverse("access"), "app", "test_user")
         client = APIClient()
         response = client.get(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
