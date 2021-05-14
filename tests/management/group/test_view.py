@@ -142,6 +142,20 @@ class GroupViewsetTests(IdentityRequest):
         response = client.post(url, test_data, format="json", **self.headers)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
+    def test_create_duplicate_group(self):
+        """Test that creating a duplicate group is not allowed."""
+        group_name = "groupC"
+        test_data = {"name": group_name}
+
+        # create a group
+        url = reverse("group-list")
+        client = APIClient()
+        response = client.post(url, test_data, format="json", **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+        response = client.post(url, test_data, format="json", **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
     def test_group_filter_by_any_role_name_in_a_list_success(self):
         """Test default behaviour that filter groups by any role name in a list success."""
         url = "{}?role_names={},{}".format(reverse("group-list"), "Rolea", "RoleB")
