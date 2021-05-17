@@ -273,17 +273,17 @@ class CrossAccountRequestViewSet(
                 )
             if request.data.get("status") not in ["approved", "denied"]:
                 self.throw_validation_error(
-                    "cross-accont partial update", f"Request status may only be updated to approved/denied."
+                    "cross-accont partial update", "Request status may only be updated to approved/denied."
                 )
             if len(request.data.keys()) > 1 or next(iter(request.data)) != "status":
-                self.throw_validation_error("cross-accont partial update", f"Only status may be updated.")
+                self.throw_validation_error("cross-accont partial update", "Only status may be updated.")
         elif request.user.user_id == update_obj.user_id:
             """ For requestors updating their requests, the request status may
                 only be updated from pending to cancelled.
             """
             if update_obj.status != "pending" or request.data.get("status") != "cancelled":
                 self.throw_validation_error(
-                    "cross-accont partial update", f"Request status may only be updated from pending to cancelled."
+                    "cross-accont partial update", "Request status may only be updated from pending to cancelled."
                 )
             for field in request.data:
                 if field not in VALID_PATCH_FIELDS:
@@ -293,7 +293,7 @@ class CrossAccountRequestViewSet(
                     )
         else:
             self.throw_validation_error(
-                "cross-accont partial update", f"User does not have permission to update the request."
+                "cross-accont partial update", "User does not have permission to update the request."
             )
 
     def check_update_permission(self, request, update_obj):
