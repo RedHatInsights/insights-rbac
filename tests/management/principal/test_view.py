@@ -156,12 +156,12 @@ class PrincipalViewsetTests(IdentityRequest):
     )
     def test_read_principal_filtered_list_success(self, mock_request):
         """Test that we can read a filtered list of principals."""
-        url = f'{reverse("principals")}?usernames=test_user&offset=30'
+        url = f'{reverse("principals")}?usernames=test_user75&offset=30'
         client = APIClient()
         response = client.get(url, **self.headers)
 
         mock_request.assert_called_once_with(
-            ["test_user"], account=ANY, limit=10, offset=30, options={"sort_order": "asc"}
+            ["test_user75"], account=ANY, limit=10, offset=30, options={"sort_order": "asc"}
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         for keyname in ["meta", "links", "data"]:
@@ -186,10 +186,10 @@ class PrincipalViewsetTests(IdentityRequest):
 
         mock_request.assert_called_once_with(
             ANY,
-            input="test_us",
+            input={"principalStartsWith": "test_us"},
             limit=10,
             offset=30,
-            options={"sort_order": "asc", "status": "enabled", "search_by": "partial_name"},
+            options={"sort_order": "asc", "status": "enabled"},
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         for keyname in ["meta", "links", "data"]:
@@ -317,7 +317,11 @@ class PrincipalViewsetTests(IdentityRequest):
         self.assertEqual(len(resp), 1)
 
         mock_request.assert_called_once_with(
-            ANY, input="test_user@example.com", limit=10, offset=0, options={"sort_order": "asc", "search_by": "email"}
+            ANY,
+            input={"primaryEmail": "test_user@example.com"},
+            limit=10,
+            offset=0,
+            options={"sort_order": "asc", "status": "enabled"},
         )
 
         self.assertEqual(resp[0]["username"], "test_user")
@@ -405,10 +409,10 @@ class PrincipalViewsetTests(IdentityRequest):
 
         mock_request.assert_called_once_with(
             ANY,
-            input="test_use",
+            input={"emailStartsWith": "test_use"},
             limit=10,
             offset=0,
-            options={"sort_order": "asc", "status": "enabled", "search_by": "partial_email"},
+            options={"sort_order": "asc", "status": "enabled"},
         )
 
         self.assertEqual(resp[0]["username"], "test_user")
