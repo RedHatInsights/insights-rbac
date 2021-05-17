@@ -123,7 +123,7 @@ class PrincipalViewsetTests(IdentityRequest):
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
         return_value={"status_code": 200, "data": [{"username": "test_user"}]},
     )
-    def test_read_principal_filtered_list_success(self, mock_request):
+    def test_read_principal_filtered_list_success_without_cross_account_user(self, mock_request):
         """Test that we can read a filtered list of principals."""
         # Create a cross_account user in rbac.
         with tenant_context(self.tenant):
@@ -134,7 +134,7 @@ class PrincipalViewsetTests(IdentityRequest):
         response = client.get(url, **self.headers)
 
         mock_request.assert_called_once_with(
-            ["test_user"], account=ANY, limit=10, offset=30, options={"sort_order": "asc"}
+            ["test_user", "cross_account_user"], account=ANY, limit=10, offset=30, options={"sort_order": "asc"}
         )
         # Cross account user won't be returned.
         self.assertEqual(response.status_code, status.HTTP_200_OK)
