@@ -6,6 +6,8 @@ metadata:
 objects:
 - apiVersion: cloud.redhat.com/v1alpha1
   kind: ClowdJobInvocation
+  metadata:
+    name: rbac-smoke-tests
   spec:
     appName: rbac
     # iqe:
