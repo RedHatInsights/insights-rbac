@@ -1,0 +1,16 @@
+apiVersion: cloud.redhat.com/v1alpha1
+kind: ClowdJobInvocationList
+metadata:
+  name: rbac-test-jobs
+items:
+- apiVersion: cloud.redhat.com/v1alpha1
+  kind: ClowdJobInvocation
+  metadata:
+    name: rbac-smoke-tests
+  spec:
+    appName: rbac
+  # set the test run options
+    ui: false  # indicates whether a selenium container should be included in the pod
+  marker: "rbac_smoke"  # sets pytest -m argument
+  dynaconfEnvName: "smoke"  # sets value for ENV_FOR_DYNACONF
+  # filter: "some_test"  # sets pytest -k argument, can be empty string
