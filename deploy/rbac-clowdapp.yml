@@ -5,23 +5,6 @@ metadata:
   name: rbac
 objects:
 - apiVersion: cloud.redhat.com/v1alpha1
-  kind: ClowdJobInvocation
-  metadata:
-    name: rbac-smoke-tests
-  spec:
-    appName: rbac
-    # iqe:
-    # by default, Clowder will set the image on the ClowdJob to be
-    # "baseImage:<name of the iqe plugin set on ClowdApp>", but you
-    # can override the image tag here:
-    #  imageTag: "my-custom-image-tag"
-
-  # set the test run options
-    ui: false  # indicates whether a selenium container should be included in the pod
-  marker: "rbac_smoke"  # sets pytest -m argument
-  dynaconfEnvName: "smoke"  # sets value for ENV_FOR_DYNACONF
-  # filter: "some_test"  # sets pytest -k argument, can be empty string
-- apiVersion: cloud.redhat.com/v1alpha1
   kind: ClowdApp
   metadata:
     name: rbac
@@ -420,7 +403,23 @@ objects:
               key: sentry-dsn
               name: rbac-secret
               optional: true
+- apiVersion: cloud.redhat.com/v1alpha1
+  kind: ClowdJobInvocation
+  metadata:
+    name: rbac-smoke-tests
+  spec:
+    appName: rbac
+    # iqe:
+    # by default, Clowder will set the image on the ClowdJob to be
+    # "baseImage:<name of the iqe plugin set on ClowdApp>", but you
+    # can override the image tag here:
+    #  imageTag: "my-custom-image-tag"
 
+  # set the test run options
+    ui: false  # indicates whether a selenium container should be included in the pod
+  marker: "rbac_smoke"  # sets pytest -m argument
+  dynaconfEnvName: "smoke"  # sets value for ENV_FOR_DYNACONF
+  # filter: "some_test"  # sets pytest -k argument, can be empty string
 - apiVersion: v1
   kind: ConfigMap
   metadata:
