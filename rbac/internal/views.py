@@ -22,6 +22,7 @@ import logging
 
 import pytz
 from django.conf import settings
+from django.db import transaction
 from django.db.migrations.recorder import MigrationRecorder
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
@@ -97,14 +98,15 @@ def tenant_view(request, tenant_schema_name):
             return HttpResponse("Destructive operations disallowed.", status=400)
 
         tenant_obj = get_object_or_404(Tenant, schema_name=tenant_schema_name)
-        with tenant_context(tenant_obj):
-            if tenant_is_unmodified():
-                logger.warning(f"Deleting tenant {tenant_schema_name}. Requested by {request.user.username}")
-                TENANTS.delete_tenant(tenant_schema_name)
-                tenant_obj.delete()
-                return HttpResponse(status=204)
-            else:
-                return HttpResponse("Tenant cannot be deleted.", status=400)
+        with transaction.atomic():
+            with tenant_context(tenant_obj):
+                if tenant_is_unmodified():
+                    logger.warning(f"Deleting tenant {tenant_schema_name}. Requested by {request.user.username}")
+                    TENANTS.delete_tenant(tenant_schema_name)
+                    tenant_obj.delete()
+                    return HttpResponse(status=204)
+                else:
+                    return HttpResponse("Tenant cannot be deleted.", status=400)
     return HttpResponse(f'Method "{request.method}" not allowed.', status=405)
 
 
