@@ -85,18 +85,18 @@ class AccessView(APIView):
     def get(self, request):
         """Provide access data for principal."""
         validate_limit_and_offset(request.query_params)
-        sub_key = self.generate_sub_key(request)
+        app = request.query_params.get(APPLICATION_KEY)
         principal = get_principal_from_request(request)
         cache = AccessCache(request.tenant.schema_name)
-        access_policy = cache.get_policy(principal.uuid, sub_key)
+        access_policy = cache.get_policy(principal.uuid, app)
         if access_policy is None:
             queryset = self.get_queryset()
-            page = self.paginate_queryset(queryset)
-            access_policy = self.serializer_class(page, many=True).data
-            cache.save_policy(principal.uuid, sub_key, access_policy)
+            access_policy = self.serializer_class(queryset, many=True).data
+            cache.save_policy(principal.uuid, app, access_policy)
 
-        if self.paginate_queryset(access_policy) is not None:
-            return self.get_paginated_response(access_policy)
+        page = self.paginate_queryset(access_policy)
+        if page is not None:
+            return self.get_paginated_response(page)
         return Response({"data": access_policy})
 
     @property
@@ -104,31 +104,18 @@ class AccessView(APIView):
         """Return the paginator instance associated with the view, or `None`."""
         if not hasattr(self, "_paginator"):
             self._paginator = self.pagination_class()
-            if self.pagination_class is None or "limit" not in self.request.query_params:
-                self._paginator.default_limit = self._paginator.max_limit
+            self._paginator.max_limit = None
         return self._paginator
 
     def paginate_queryset(self, queryset):
         """Return a single page of results, or `None` if pagination is disabled."""
         if self.paginator is None:
             return None
+        if "limit" not in self.request.query_params:
+            self.paginator.default_limit = len(queryset)
         return self.paginator.paginate_queryset(queryset, self.request, view=self)
 
     def get_paginated_response(self, data):
         """Return a paginated style `Response` object for the given output data."""
         assert self.paginator is not None
         return self.paginator.get_paginated_response(data)
-
-    def generate_sub_key(self, request):
-        """Generate the sub key to store/retrieve record from redis."""
-        query_params = request.query_params
-        app = query_params.get(APPLICATION_KEY)
-        if not app:
-            app = "all"
-        limit = int(query_params.get("limit", self.paginator.default_limit))
-        # If there are some team setting this out of range, set it to the max support
-        if limit > self.paginator.max_limit:
-            limit = self.paginator.max_limit
-        offset = int(query_params.get("offset", 0))
-
-        return f"{app}_{offset}_{limit}"

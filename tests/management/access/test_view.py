@@ -134,7 +134,7 @@ class AccessViewTests(IdentityRequest):
         self.assertIsNotNone(response.data.get("data"))
         self.assertIsInstance(response.data.get("data"), list)
         self.assertEqual(len(response.data.get("data")), 2)
-        self.assertEqual(response.data.get("meta").get("limit"), 1000)
+        self.assertEqual(response.data.get("meta").get("limit"), 2)
         self.assertEqual(self.access_data, response.data.get("data")[0])
 
         # the platform default permission could also be retrieved
@@ -205,7 +205,7 @@ class AccessViewTests(IdentityRequest):
         self.assertIsNotNone(response.data.get("data"))
         self.assertIsInstance(response.data.get("data"), list)
         self.assertEqual(len(response.data.get("data")), 2)
-        self.assertEqual(response.data.get("meta").get("limit"), 1000)
+        self.assertEqual(response.data.get("meta").get("limit"), 2)
 
     def test_get_access_multiple_apps_supplied(self):
         """Test that we return all permissions for multiple apps when supplied."""
@@ -247,7 +247,7 @@ class AccessViewTests(IdentityRequest):
         self.assertIsNotNone(response.data.get("data"))
         self.assertIsInstance(response.data.get("data"), list)
         self.assertEqual(len(response.data.get("data")), 0)
-        self.assertEqual(response.data.get("meta").get("limit"), 1000)
+        self.assertEqual(response.data.get("meta").get("limit"), 0)
 
     def test_get_access_no_subset_match(self):
         """Test that we cannot have a subset match on app/permission."""
@@ -268,7 +268,7 @@ class AccessViewTests(IdentityRequest):
         self.assertIsNotNone(response.data.get("data"))
         self.assertIsInstance(response.data.get("data"), list)
         self.assertEqual(len(response.data.get("data")), 0)
-        self.assertEqual(response.data.get("meta").get("limit"), 1000)
+        self.assertEqual(response.data.get("meta").get("limit"), 0)
 
     def test_get_access_no_match(self):
         """Test that we only match on the application name of the permission data."""
@@ -289,7 +289,7 @@ class AccessViewTests(IdentityRequest):
         self.assertIsNotNone(response.data.get("data"))
         self.assertIsInstance(response.data.get("data"), list)
         self.assertEqual(len(response.data.get("data")), 0)
-        self.assertEqual(response.data.get("meta").get("limit"), 1000)
+        self.assertEqual(response.data.get("meta").get("limit"), 0)
 
     def test_get_access_with_limit(self):
         """Test that we can obtain the expected access with pagination."""
@@ -338,8 +338,9 @@ class AccessViewTests(IdentityRequest):
         response = self.create_role(role_name)
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         role_uuid = response.data.get("uuid")
+        test_role = self.create_role_and_permission("Test Role one", "test:assigned:permission1")
         policy_name = "policyA"
-        response = self.create_policy(policy_name, self.group.uuid, [role_uuid])
+        response = self.create_policy(policy_name, self.group.uuid, [role_uuid, test_role.uuid])
 
         schema_name = self.tenant.schema_name
         principal_id = self.principal.uuid
@@ -352,20 +353,26 @@ class AccessViewTests(IdentityRequest):
         )
         response = client.get(url, **self.headers)
 
-        # Cache is called saved with sub_key "app_1_1"
-        sub_key = "app_1_1"
-        get_policy.assert_called_with(principal_id, sub_key)
-        save_policy.assert_called_with(principal_id, sub_key, [])
+        get_policy.assert_called_with(principal_id, "app")
+        called_with_para = save_policy.mock_calls[0][1]  # save_policy params
+        self.assertEqual(principal_id, called_with_para[0])
+        self.assertEqual("app", called_with_para[1])
+        self.assertEqual([self.access_data], called_with_para[2])  # it catches all the policies for app
+        self.assertEqual(response.data["meta"]["count"], 1)
+        self.assertEqual(
+            response.data["data"], []
+        )  # after pagination, it is empty becase totoal is one, and offset is one
         ###################################################################
 
-        #### access_policy are cached with desired sub_key when proper defaults ####
-        url = "{}?application=&username={}".format(reverse("access"), self.principal.username)
+        #### access_policy are cached properly when application is empty ####
+        url = "{}?application=&username={}&limit=1".format(reverse("access"), self.principal.username)
         response = client.get(url, **self.headers)
 
-        # Cache is called saved with sub_key "all_0_1000"
-        sub_key = "all_0_1000"
-        get_policy.assert_called_with(principal_id, sub_key)
+        # Cache is called saved with sub_key ""
+        get_policy.assert_called_with(principal_id, "")
         called_with_para = save_policy.mock_calls[1][1]
         self.assertEqual(principal_id, called_with_para[0])
-        self.assertEqual(sub_key, called_with_para[1])
-        self.assertEqual([self.access_data], json.loads(json.dumps(called_with_para[2])))
+        self.assertEqual("", called_with_para[1])
+        self.assertEqual(2, len(called_with_para[2]))  # it catches all the policies for app
+        self.assertEqual(response.data["meta"]["count"], 2)
+        self.assertEqual(len(response.data["data"]), 1)  # returns one policy because limit is 1
