@@ -172,6 +172,14 @@ class GroupViewsetTests(IdentityRequest):
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
+    def test_group_filter_by_guids_with_invalid_guid(self):
+        """ Test that an invalid guid in a list of guids returns an error."""
+        url = "{}?uuids=invalid"
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        # FIXME: This seems inconsistent with GUID validation we added elsewhere
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
     @patch(
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
         return_value={"status_code": 200, "data": []},
@@ -339,6 +347,13 @@ class GroupViewsetTests(IdentityRequest):
         response = client.put(url, {}, format="json", **self.headers)
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
+    def test_update_group_invalid_guid(self):
+        """Test that an invalid GUID on update causes a 400."""
+        url = reverse("group-detail", kwargs={"uuid": "invalid_guid"})
+        client = APIClient()
+        response = client.put(url, {}, format="json", **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
     def test_delete_group_success(self):
         """Test that we can delete an existing group."""
         group = Group.objects.first()
@@ -365,6 +380,13 @@ class GroupViewsetTests(IdentityRequest):
         response = client.delete(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
+    def test_delete_group_invalid_guid(self):
+        """Test that deleting group with an invalid GUID returns an error."""
+        url = reverse("group-detail", kwargs={"uuid": "invalid_guid"})
+        client = APIClient()
+        response = client.delete(url, **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
     def test_group_principals_invalid_method(self):
         """Test that using an unsupported REST method returns an error."""
         url = reverse("group-principals", kwargs={"uuid": uuid4()})
@@ -386,7 +408,7 @@ class GroupViewsetTests(IdentityRequest):
         },
     )
     def test_add_group_principals_failure(self, mock_request):
-        """Test that adding a principal to a group returns has proper response when it is failed."""
+        """Test that adding a principal to a group returns the proper response on failure."""
         url = reverse("group-principals", kwargs={"uuid": self.group.uuid})
         client = APIClient()
         new_username = uuid4()
@@ -396,6 +418,14 @@ class GroupViewsetTests(IdentityRequest):
         self.assertEqual(response.data[0]["detail"], "Unexpected error.")
         self.assertEqual(response.data[0]["status"], 500)
         self.assertEqual(response.data[0]["source"], "principals")
+
+    def test_add_group_principal_invalid_guid(self):
+        """Test that adding a principal to a group with an invalid GUID causes a 400. """
+        url = reverse("group-principals", kwargs={"uuid": "invalid_guid"})
+        client = APIClient()
+        test_data = {"principals": [{"username": self.principal.username}]}
+        response = client.post(url, test_data, format="json", **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
     @patch(
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
@@ -435,6 +465,12 @@ class GroupViewsetTests(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data.get("meta").get("count"), 0)
         self.assertEqual(response.data.get("data"), [])
+
+    def test_get_group_principals_invalid_guid(self):
+        client = APIClient()
+        url = reverse("group-principals", kwargs={"uuid": "invalid"})
+        response = client.get(url, **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
     def test_get_group_principals_invalid_sort_order(self):
         """Test that an invalid value for sort order is rejected."""
@@ -481,6 +517,13 @@ class GroupViewsetTests(IdentityRequest):
     def test_remove_group_principals_invalid(self):
         """Test that removing a principal returns an error with invalid data format."""
         url = reverse("group-principals", kwargs={"uuid": self.group.uuid})
+        client = APIClient()
+        response = client.delete(url, format="json", **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_remove_group_principals_invalid_guid(self):
+        """Test that removing a principal returns an error when GUID is invalid."""
+        url = reverse("group-principals", kwargs={"uuid": "invalid"})
         client = APIClient()
         response = client.delete(url, format="json", **self.headers)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
