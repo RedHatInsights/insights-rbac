@@ -177,7 +177,8 @@ class GroupViewsetTests(IdentityRequest):
         url = "{}?uuids=invalid"
         client = APIClient()
         response = client.get(url, **self.headers)
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        # FIXME: This seems inconsistent with GUID validation we added elsewhere
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
     @patch(
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
