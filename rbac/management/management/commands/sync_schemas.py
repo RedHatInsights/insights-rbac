@@ -108,7 +108,7 @@ class Command(BaseCommand):
                     self.stderr.write(f"Couldn't copy group {group.name}. Skipping due to:\n{err}")
                     continue
                 for principal in principals:
-                    new_principals.append(Principal.objects.get(username=principal.username))
+                    new_principals.append(Principal.objects.get(username=principal.username, tenant=tenant))
                 group.principals.set(new_principals)
                 group.save()
 
@@ -131,15 +131,23 @@ class Command(BaseCommand):
                 except IntegrityError as err:
                     self.stderr.write(f"Couldn't copy policy {policy.name}. Skipping due to:\n{err}")
                     continue
-                policy.group = Group.objects.get(name=group.name)
+                try:
+                    policy.group = Group.objects.get(name=group.name, tenant=tenant)
+                except Group.DoesNotExist as err:
+                    if "Default access" in group.name and group.platform_default:
+                        continue
+                    else:
+                        self.stderr.write(f"Couldn't copy group {group.name}. Skipping due to:\n{err}")
+                        continue
                 for role in roles:
-                    new_roles.append(Role.objects.get(name=role.name))
+                    new_roles.append(Role.objects.get(name=role.name, tenant=tenant))
                 policy.roles.set(new_roles)
                 policy.save()
 
     def handle(self, *args, **options):
         """Actually do the work when the command is run."""
         tenants = Tenant.objects.exclude(schema_name="public")
+        import pdb; pdb.set_trace()
         for tenant in tenants:
             with tenant_context(tenant):
                 self.copy_custom_principals_to_public(tenant)
