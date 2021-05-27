@@ -1090,6 +1090,8 @@ class GroupViewNonAdminTests(IdentityRequest):
             self.group.save()
             self.roleB = Role.objects.create(name="roleB", system=False)
             self.roleB.save()
+            self.role = Role.objects.create(name="roleA", description="A role for a group.", system=False)
+            self.role.save()
 
     def tearDown(self):
         """Tear down group view tests."""
@@ -1124,4 +1126,8 @@ class GroupViewNonAdminTests(IdentityRequest):
 
     def test_remove_group_role_as_non_admin(self):
         """Test that removal of a role from a group is forbidden to non-admins."""
-        pass
+        url = reverse("group-roles", kwargs={"uuid": self.group.uuid})
+        client = APIClient()
+        url = "{}?roles={}".format(url, self.role.uuid)
+        response = client.delete(url, format="json", **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
