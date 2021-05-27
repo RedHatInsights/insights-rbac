@@ -1084,7 +1084,7 @@ class GroupViewsetTests(IdentityRequest):
         url = "{}?roles={}".format(url, self.dummy_role_id)
         client = APIClient()
         response = client.delete(url, format="json", **self.headers)
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
 
     def test_admin_RonR(self):
         """Test that a admin user can group RBAC resources"""
