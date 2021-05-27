@@ -304,7 +304,7 @@ class GroupViewsetTests(IdentityRequest):
         self.assertEqual(group.get("name"), self.groupB.name)
 
     def test_filter_group_list_by_uuid_fail(self):
-        """Test that filtering by a nonexistant uuid returns nothing."""
+        """Test that filtering by a nonexistent uuid returns nothing."""
         url = f"{reverse('group-list')}?uuid={uuid4()}"
         client = APIClient()
         response = client.get(url, **self.headers)
@@ -651,6 +651,18 @@ class GroupViewsetTests(IdentityRequest):
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
+    def test_get_group_roles_bad_group_guid(self):
+        url = f"{reverse('group-roles', kwargs={'uuid': 'kielbasa'})}"
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_get_group_roles_nonexistent_group(self):
+        url = f"{reverse('group-roles', kwargs={'uuid': uuid4()})}"
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
     def test_exclude_input_invalid(self):
         """Test that getting roles with 'exclude=' for a group returns failed validation."""
         url = "%s?exclude=sth" % (reverse("group-roles", kwargs={"uuid": self.group.uuid}))
@@ -891,6 +903,13 @@ class GroupViewsetTests(IdentityRequest):
         self.assertEqual(self.defGroup.name, "Custom default access")
         self.assertFalse(self.defGroup.system)
 
+    def test_add_group_roles_bad_group_guid(self):
+        group_url = reverse("group-roles", kwargs={"uuid": "master_exploder"})
+        client = APIClient()
+        test_data = {"roles": [self.roleB.uuid]}
+        response = client.post(group_url, test_data, format="json", **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
     def test_add_group_roles_system_policy_create_new_group_success(self):
         """Test that adding a role to a group without a system policy returns successfully."""
         group_url = reverse("group-roles", kwargs={"uuid": self.group.uuid})
@@ -1054,6 +1073,19 @@ class GroupViewsetTests(IdentityRequest):
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
+    def test_remove_group_roles_bad_guid(self):
+        url = reverse("group-roles", kwargs={"uuid": "invalid"})
+        client = APIClient()
+        response = client.delete(url, format="json", **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_remove_group_roles_nonexistent_role(self):
+        url = reverse("group-roles", kwargs={"uuid": self.group.uuid})
+        url = "{}?roles={}".format(url, self.dummy_role_id)
+        client = APIClient()
+        response = client.delete(url, format="json", **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
     def test_admin_RonR(self):
         """Test that a admin user can group RBAC resources"""
         url = "{}?application={}".format(reverse("group-list"), "rbac")
@@ -1131,3 +1163,10 @@ class GroupViewNonAdminTests(IdentityRequest):
         url = "{}?roles={}".format(url, self.role.uuid)
         response = client.delete(url, format="json", **self.headers)
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_group_role_filter_as_non_admin(self):
+        url = "%s?exclude=FALSE" % (reverse("group-roles", kwargs={"uuid": self.group.uuid}))
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        # Before adding RonR this would've been a 403
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
