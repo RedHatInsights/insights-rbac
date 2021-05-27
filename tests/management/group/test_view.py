@@ -1168,5 +1168,4 @@ class GroupViewNonAdminTests(IdentityRequest):
         url = "%s?exclude=FALSE" % (reverse("group-roles", kwargs={"uuid": self.group.uuid}))
         client = APIClient()
         response = client.get(url, **self.headers)
-        # Before adding RonR this would've been a 403
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
