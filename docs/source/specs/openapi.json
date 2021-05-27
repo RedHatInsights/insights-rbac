@@ -2373,6 +2373,20 @@
             }
           },
           {
+            "name": "order_by",
+            "in": "query",
+            "description": "Parameter for ordering roles by value. For inverse ordering, supply '-' before the param value, such as: ?order_by=-application",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "application",
+                "resource_type",
+                "verb"
+              ]
+            }
+          },
+          {
             "$ref": "#/components/parameters/QueryLimit"
           },
           {
