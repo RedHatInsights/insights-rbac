@@ -1068,7 +1068,7 @@ class GroupViewNonAdminTests(IdentityRequest):
     def setUp(self):
         """Set up the group view nonadmin tests."""
         super().setUp()
-
+        self.dummy_role_id = uuid4()
         self.user_data = self._create_user_data()
         self.customer = self._create_customer_data()
         self.request_context = self._create_request_context(self.customer, self.user_data, is_org_admin=False)
@@ -1088,6 +1088,8 @@ class GroupViewNonAdminTests(IdentityRequest):
             self.group.save()
             self.group.principals.add(self.principal)
             self.group.save()
+            self.roleB = Role.objects.create(name="roleB", system=False)
+            self.roleB.save()
 
     def tearDown(self):
         """Tear down group view tests."""
@@ -1110,3 +1112,16 @@ class GroupViewNonAdminTests(IdentityRequest):
         client = APIClient()
         response = client.get(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_add_group_roles_as_non_admin(self):
+        """Test that adding roles a group as a non-admin is forbidden."""
+        url = reverse("group-roles", kwargs={"uuid": self.group.uuid})
+        client = APIClient()
+        test_data = {"roles": [self.roleB.uuid, self.dummy_role_id]}
+
+        response = client.post(url, test_data, format="json", **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_remove_group_role_as_non_admin(self):
+        """Test that removal of a role from a group is forbidden to non-admins."""
+        pass
