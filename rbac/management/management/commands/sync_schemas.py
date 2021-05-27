@@ -122,6 +122,8 @@ class Command(BaseCommand):
                 policy.tenant = tenant
                 policy.save()
             group = policy.group
+            if group.system:
+                continue
             roles = list(policy.roles.all())
             new_roles = []
             with tenant_context(public_schema):
@@ -131,23 +133,16 @@ class Command(BaseCommand):
                 except IntegrityError as err:
                     self.stderr.write(f"Couldn't copy policy {policy.name}. Skipping due to:\n{err}")
                     continue
-                try:
+                else:
                     policy.group = Group.objects.get(name=group.name, tenant=tenant)
-                except Group.DoesNotExist as err:
-                    if "Default access" in group.name and group.platform_default:
-                        continue
-                    else:
-                        self.stderr.write(f"Couldn't copy group {group.name}. Skipping due to:\n{err}")
-                        continue
-                for role in roles:
-                    new_roles.append(Role.objects.get(name=role.name, tenant=tenant))
+                    for role in roles:
+                        new_roles.append(Role.objects.get(name=role.name, tenant=tenant))
                 policy.roles.set(new_roles)
                 policy.save()
 
     def handle(self, *args, **options):
         """Actually do the work when the command is run."""
         tenants = Tenant.objects.exclude(schema_name="public")
-        import pdb; pdb.set_trace()
         for tenant in tenants:
             with tenant_context(tenant):
                 self.copy_custom_principals_to_public(tenant)
