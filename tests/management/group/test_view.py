@@ -268,6 +268,14 @@ class GroupViewsetTests(IdentityRequest):
         response = client.get(url, **self.headers)
         self.assertEqual(response.data.get("meta").get("count"), 0)
 
+    def test_get_group_invalid_sort_order_ignored(self):
+        """Test that an invalid sort order value is ignored when getting groups."""
+        url = reverse("group-list")
+        url = "{}?order_by=potato"
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
     def test_filter_group_list_by_uuid_success(self):
         """Test that we can filter a list of groups by uuid."""
         url = f"{reverse('group-list')}?uuid={self.group.uuid}"
