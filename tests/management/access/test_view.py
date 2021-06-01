@@ -397,26 +397,69 @@ class AccessViewTests(IdentityRequest):
         key = f"rbac::policy::tenant={schema_name}::user={principal_id}"
         client = APIClient()
 
-        ######## access_policy are cached with desired sub_key ############
-        url = "{}?application={}&username={}&order_by={}".format(
-            reverse("access"), "app", self.principal.username, "resource_type"
+        #### Sort by application ####
+        url = "{}?application=&username={}&order_by={}".format(
+            reverse("access"), self.principal.username, "application"
         )
         response = client.get(url, **self.headers)
 
-        get_policy.assert_called_with(principal_id, "app&order:resource_type")
-        called_with_para = save_policy.mock_calls[0][1]  # save_policy params
+        # Cache is called saved with sub_key ""
+        get_policy.assert_called_with(principal_id, "&order:application")
+        called_with_para = save_policy.mock_calls[0][1]
         self.assertEqual(principal_id, called_with_para[0])
-        self.assertEqual("app&order:resource_type", called_with_para[1])
-        self.assertEqual([self.access_data], called_with_para[2])  # it catches all the policies for app
-        ###################################################################
+        self.assertEqual("&order:application", called_with_para[1])
+        self.assertEqual(2, len(called_with_para[2]))  # it catches all the policies
+        self.assertEqual(response.data["meta"]["count"], 2)
+        self.assertEqual(response.data["data"][0]["permission"], "app:*:*")  # check order
 
-        #### access_policy are cached properly when application is empty ####
+        url = "{}?application=&username={}&order_by={}".format(
+            reverse("access"), self.principal.username, "-application"
+        )
+        response = client.get(url, **self.headers)
+        get_policy.assert_called_with(principal_id, "&order:-application")
+        called_with_para = save_policy.mock_calls[1][1]
+        self.assertEqual(principal_id, called_with_para[0])
+        self.assertEqual("&order:-application", called_with_para[1])
+        self.assertEqual(2, len(called_with_para[2]))  # it catches all the policies
+        self.assertEqual(response.data["meta"]["count"], 2)
+        # Response data is in reverse order
+        self.assertEqual(response.data["data"][0]["permission"], "test:assigned:permission1")  # check order
+
+        #### Sort by resource_type ####
+        url = "{}?application=&username={}&order_by={}".format(
+            reverse("access"), self.principal.username, "resource_type"
+        )
+        response = client.get(url, **self.headers)
+
+        # Cache is called saved with sub_key ""
+        get_policy.assert_called_with(principal_id, "&order:resource_type")
+        called_with_para = save_policy.mock_calls[2][1]
+        self.assertEqual(principal_id, called_with_para[0])
+        self.assertEqual("&order:resource_type", called_with_para[1])
+        self.assertEqual(2, len(called_with_para[2]))  # it catches all the policies
+        self.assertEqual(response.data["meta"]["count"], 2)
+        self.assertEqual(response.data["data"][0]["permission"], "app:*:*")  # check order
+
+        url = "{}?application=&username={}&order_by={}".format(
+            reverse("access"), self.principal.username, "-resource_type"
+        )
+        response = client.get(url, **self.headers)
+        get_policy.assert_called_with(principal_id, "&order:-resource_type")
+        called_with_para = save_policy.mock_calls[3][1]
+        self.assertEqual(principal_id, called_with_para[0])
+        self.assertEqual("&order:-resource_type", called_with_para[1])
+        self.assertEqual(2, len(called_with_para[2]))  # it catches all the policies
+        self.assertEqual(response.data["meta"]["count"], 2)
+        # Response data is in reverse order
+        self.assertEqual(response.data["data"][0]["permission"], "test:assigned:permission1")  # check order
+
+        #### Sort by verb ####
         url = "{}?application=&username={}&order_by={}".format(reverse("access"), self.principal.username, "verb")
         response = client.get(url, **self.headers)
 
         # Cache is called saved with sub_key ""
         get_policy.assert_called_with(principal_id, "&order:verb")
-        called_with_para = save_policy.mock_calls[1][1]
+        called_with_para = save_policy.mock_calls[4][1]
         self.assertEqual(principal_id, called_with_para[0])
         self.assertEqual("&order:verb", called_with_para[1])
         self.assertEqual(2, len(called_with_para[2]))  # it catches all the policies
@@ -427,7 +470,7 @@ class AccessViewTests(IdentityRequest):
         response = client.get(url, **self.headers)
         # Cache is called saved with sub_key ""
         get_policy.assert_called_with(principal_id, "&order:-verb")
-        called_with_para = save_policy.mock_calls[2][1]
+        called_with_para = save_policy.mock_calls[5][1]
         self.assertEqual(principal_id, called_with_para[0])
         self.assertEqual("&order:-verb", called_with_para[1])
         self.assertEqual(2, len(called_with_para[2]))  # it catches all the policies
