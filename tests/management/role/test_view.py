@@ -621,6 +621,13 @@ class RoleViewsetTests(IdentityRequest):
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
+    def test_list_role_with_invalid_sort_order(self):
+        """Test that an invalid sort order is ignored."""
+        url = "{}?sort_field=zombie".format(URL)
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
     def test_patch_role_success(self):
         """Test that we can patch an existing role."""
         role_name = "role"
