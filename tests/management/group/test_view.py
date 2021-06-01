@@ -271,7 +271,7 @@ class GroupViewsetTests(IdentityRequest):
     def test_get_group_invalid_sort_order_ignored(self):
         """Test that an invalid sort order value is ignored when getting groups."""
         url = reverse("group-list")
-        url = "{}?order_by=potato"
+        url = "{}?order_by=potato".format(url)
         client = APIClient()
         response = client.get(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
