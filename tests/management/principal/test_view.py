@@ -156,12 +156,12 @@ class PrincipalViewsetTests(IdentityRequest):
     )
     def test_read_principal_filtered_list_success(self, mock_request):
         """Test that we can read a filtered list of principals."""
-        url = f'{reverse("principals")}?usernames=test_user&offset=30'
+        url = f'{reverse("principals")}?usernames=test_user75&offset=30'
         client = APIClient()
         response = client.get(url, **self.headers)
 
         mock_request.assert_called_once_with(
-            ["test_user"], account=ANY, limit=10, offset=30, options={"sort_order": "asc"}
+            ["test_user75"], account=ANY, limit=10, offset=30, options={"sort_order": "asc"}
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         for keyname in ["meta", "links", "data"]:
@@ -186,10 +186,38 @@ class PrincipalViewsetTests(IdentityRequest):
 
         mock_request.assert_called_once_with(
             ANY,
-            input="test_us",
+            input={"principalStartsWith": "test_us"},
             limit=10,
             offset=30,
-            options={"sort_order": "asc", "status": "enabled", "search_by": "partial_name"},
+            options={"sort_order": "asc", "status": "enabled"},
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        for keyname in ["meta", "links", "data"]:
+            self.assertIn(keyname, response.data)
+        self.assertIsInstance(response.data.get("data"), list)
+        self.assertEqual(len(response.data.get("data")), 1)
+        self.assertEqual(response.data.get("meta").get("count"), 1)
+
+        principal = response.data.get("data")[0]
+        self.assertIsNotNone(principal.get("username"))
+        self.assertEqual(principal.get("username"), "test_user")
+
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_principals",
+        return_value={"status_code": 200, "data": [{"username": "test_user"}]},
+    )
+    def test_read_principal_multi_filter(self, mock_request):
+        """Test that we can read a list of principals by partial matching."""
+        url = f'{reverse("principals")}?usernames=test_us&email=test&offset=30&match_criteria=partial'
+        client = APIClient()
+        response = client.get(url, **self.headers)
+
+        mock_request.assert_called_once_with(
+            ANY,
+            input={"principalStartsWith": "test_us", "emailStartsWith": "test"},
+            limit=10,
+            offset=30,
+            options={"sort_order": "asc", "status": "enabled"},
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         for keyname in ["meta", "links", "data"]:
@@ -317,7 +345,11 @@ class PrincipalViewsetTests(IdentityRequest):
         self.assertEqual(len(resp), 1)
 
         mock_request.assert_called_once_with(
-            ANY, input="test_user@example.com", limit=10, offset=0, options={"sort_order": "asc", "search_by": "email"}
+            ANY,
+            input={"primaryEmail": "test_user@example.com"},
+            limit=10,
+            offset=0,
+            options={"sort_order": "asc", "status": "enabled"},
         )
 
         self.assertEqual(resp[0]["username"], "test_user")
@@ -405,10 +437,10 @@ class PrincipalViewsetTests(IdentityRequest):
 
         mock_request.assert_called_once_with(
             ANY,
-            input="test_use",
+            input={"emailStartsWith": "test_use"},
             limit=10,
             offset=0,
-            options={"sort_order": "asc", "status": "enabled", "search_by": "partial_email"},
+            options={"sort_order": "asc", "status": "enabled"},
         )
 
         self.assertEqual(resp[0]["username"], "test_user")
