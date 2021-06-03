@@ -29,7 +29,7 @@ from rest_framework import status
 from rest_framework.test import APIClient
 from tenant_schemas.utils import tenant_context
 
-from api.models import User
+from api.models import Tenant, User
 from datetime import timedelta
 from management.cache import AccessCache
 from management.models import Group, Permission, Principal, Policy, Role, Access
@@ -63,6 +63,9 @@ class AccessViewTests(IdentityRequest):
             self.group.save()
             self.permission = Permission.objects.create(permission="app:*:*")
             Permission.objects.create(permission="app:foo:bar")
+        with tenant_context(Tenant.objects.get(schema_name="public")):
+            Permission.objects.create(permission="app:foo:bar")
+            Permission.objects.create(permission="app:*:*")
 
     def tearDown(self):
         """Tear down access view tests."""
@@ -325,7 +328,7 @@ class AccessViewTests(IdentityRequest):
     )
     def test_missing_invalid_username(self, mock_request):
         """Test that we get expected failure when missing required query params."""
-        url = "{}?application={}&username={}".format(reverse("access"), "app", uuid4())
+        url = "{}?application={}&username={}".format(reverse("access"), "app", "test_user")
         client = APIClient()
         response = client.get(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
