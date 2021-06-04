@@ -3,6 +3,7 @@ python3 -m venv app-venv
 pip install --upgrade pip setuptools wheel pipenv tox psycopg2-binary
 tox -r
 result=$?
+deactivate
 
 # TODO: add unittest-xml-reporting to rbac so that junit results can be parsed by jenkins
 mkdir -p $WORKSPACE/artifacts
