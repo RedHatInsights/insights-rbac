@@ -8,6 +8,8 @@ export IQE_PLUGINS="rbac"  # name of the IQE plugin for this APP
 export IQE_MARKER_EXPRESSION="rbac_smoke"  # This is the value passed to pytest -m
 export IQE_FILTER_EXPRESSION=""  # This is the value passed to pytest -k
 
+find . -name cdappconfig.json
+
 # Install bonfire repo/initialize
 CICD_URL=https://raw.githubusercontent.com/RedHatInsights/bonfire/master/cicd
 curl -s $CICD_URL/bootstrap.sh > .cicd_bootstrap.sh && source .cicd_bootstrap.sh
