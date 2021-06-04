@@ -143,9 +143,15 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         """Actually do the work when the command is run."""
         tenants = Tenant.objects.exclude(schema_name="public")
-        for tenant in tenants:
-            with tenant_context(tenant):
-                self.copy_custom_principals_to_public(tenant)
-                self.copy_custom_roles_to_public(tenant)
-                self.copy_custom_groups_to_public(tenant)
-                self.copy_custom_policies_to_public(tenant)
+        try:
+            for idx, tenant in enumerate(list(tenants)):
+                self.stdout.write(
+                    f"*** Syncing Schemas for '{tenant.id}' - '{tenant.schema_name}' ({idx + 1} of {len(tenants)}) ***"
+                )
+                with tenant_context(tenant):
+                    self.copy_custom_principals_to_public(tenant)
+                    self.copy_custom_roles_to_public(tenant)
+                    self.copy_custom_groups_to_public(tenant)
+                    self.copy_custom_policies_to_public(tenant)
+        except Exception as e:
+            self.stderr(f"Failure: {str(e)}")
