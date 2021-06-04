@@ -21,4 +21,4 @@ source $CICD_ROOT/build.sh
 # Env vars defined by caller:
 export IQE_PLUGINS="rbac"
 export IQE_MARKER_EXPRESSION="rbac_smoke"
-source $CICID_ROOT/smoke_test.sh
+source $CICD_ROOT/smoke_test.sh
