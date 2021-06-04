@@ -1,10 +1,3 @@
-# Deploy ephemeral db
-
-source $CICD_ROOT/deploy_ephemeral_db.sh
-
-# Map env vars set by `deploy_ephemeral_db.sh` if vars the app uses are different
-export PGPASSWORD=$DATABASE_ADMIN_PASSWORD
-
 python3 -m venv app-venv
 . app-venv/bin/activate
 pip install --upgrade pip setuptools wheel pipenv tox psycopg2-binary
@@ -18,5 +11,3 @@ cat << EOF > $WORKSPACE/artifacts/junit-dummy.xml
     <testcase classname="dummy" name="dummytest"/>
 </testsuite>
 EOF
-
-exit $result
