@@ -24,7 +24,7 @@ export PGPASSWORD=$DATABASE_ADMIN_PASSWORD
 
 # check if NAMESPACE is set
 [ -z "$NAMESPACE" ] && exit 1
-oc get secret rbac -o json -n $NAMESPACE | jq -r '.data["cdappconfig.json"]' | base64 -d
+oc get secret rbac -o json -n $NAMESPACE | base64 -d
 
 # Run unit tests
 source $APP_ROOT/unit_test.sh
