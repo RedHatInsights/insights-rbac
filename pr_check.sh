@@ -16,3 +16,5 @@ source $CICD_ROOT/build.sh
 
 source $APP_ROOT/unit_test.sh
 
+# Smoke tests
+source $CICID_ROOT/smoke_test.sh
