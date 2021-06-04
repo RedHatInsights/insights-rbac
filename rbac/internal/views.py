@@ -177,7 +177,6 @@ def sync_schemas(request):
 
     POST /_private/api/utils/sync_schemas/
     """
-
     if request.method == "POST":
         msg = "Running schema sync in background worker."
         logger.info(msg)
