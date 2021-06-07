@@ -1,8 +1,3 @@
-#apiVersion: cloud.redhat.com/v1alpha1
-#kind: ClowdJobInvocationList
-#metadata:
-#  name: rbac-test-jobs
-#items:
 apiVersion: cloud.redhat.com/v1alpha1
 kind: ClowdJobInvocation
 metadata:
