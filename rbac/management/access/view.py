@@ -31,7 +31,7 @@ from rest_framework.settings import api_settings
 from rest_framework.views import APIView
 
 ORDER_FIELD = "order_by"
-VALID_ORDER_VALUES = ["unordered", "application", "resource_type", "verb", "-application", "-resource_type", "-verb"]
+VALID_ORDER_VALUES = ["application", "resource_type", "verb", "-application", "-resource_type", "-verb"]
 
 
 class AccessView(APIView):
@@ -89,7 +89,7 @@ class AccessView(APIView):
     def get_queryset(self, ordering):
         """Define the query set."""
         access_queryset = get_access_queryset(self.request)
-        if ordering != "unordered":
+        if ordering:
             if ordering[0] == "-":
                 order_sign = "-"
                 field = ordering[1:]
@@ -143,7 +143,7 @@ class AccessView(APIView):
         validate_limit_and_offset(params)
         app = params.get(APPLICATION_KEY)
         sub_key = app
-        ordering = validate_and_get_key(params, ORDER_FIELD, VALID_ORDER_VALUES, "unordered")
-        if ordering != "unordered":
+        ordering = validate_and_get_key(params, ORDER_FIELD, VALID_ORDER_VALUES, required=False)
+        if ordering:
             sub_key = f"{app}&order:{ordering}"
         return sub_key, ordering

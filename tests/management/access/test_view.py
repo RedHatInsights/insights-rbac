@@ -478,6 +478,17 @@ class AccessViewTests(IdentityRequest):
         # Response data is in reverse order
         self.assertEqual(response.data["data"][0]["permission"], "test:assigned:permission1")  # check order
 
+        #### Sort by nothing still works ####
+        url = "{}?application=&username={}&order_by=".format(reverse("access"), self.principal.username)
+        response = client.get(url, **self.headers)
+        # Cache is called saved with sub_key ""
+        get_policy.assert_called_with(principal_id, "")
+        called_with_para = save_policy.mock_calls[6][1]
+        self.assertEqual(principal_id, called_with_para[0])
+        self.assertEqual("", called_with_para[1])
+        self.assertEqual(2, len(called_with_para[2]))  # it catches all the policies
+        self.assertEqual(response.data["meta"]["count"], 2)
+
     def test_get_access_with_invalid_ordering_value(self):
         """Test that get access with invalid ordering value raises 401."""
         client = APIClient()
