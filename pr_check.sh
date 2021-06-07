@@ -30,4 +30,4 @@ oc get secret rbac -o json -n $NAMESPACE
 source $APP_ROOT/unit_test.sh
 
 # Smoke tests
-source $CICD_ROOT/smoke_test.sh
+source $APP_ROOT/smoke_test.sh
