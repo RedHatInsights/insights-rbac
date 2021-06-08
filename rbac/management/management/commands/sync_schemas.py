@@ -156,4 +156,4 @@ class Command(BaseCommand):
                     self.copy_custom_groups_to_public(tenant)
                     self.copy_custom_policies_to_public(tenant)
         except Exception as e:
-            self.stderr(f"Failure: {str(e)}")
+            self.stderr(f"Failed during copying schemas. Error was: {e}")
