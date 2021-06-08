@@ -18,7 +18,7 @@
 
 from django.core.management.base import BaseCommand
 from django.db.utils import IntegrityError
-from management.models import Group, Policy, Principal, Role
+from management.models import Group, Permission, Policy, Principal, Role
 from tenant_schemas.utils import tenant_context
 
 from api.models import Tenant
@@ -73,6 +73,7 @@ class Command(BaseCommand):
                     if not access.tenant:
                         access.tenant = tenant
                     access.role = role
+                    access.permission = Permission.objects.get(permission=access.permission.permission)
                     try:
                         access.save()
                     except IntegrityError as err:
@@ -101,6 +102,7 @@ class Command(BaseCommand):
             principals = list(group.principals.all())
             new_principals = []
             with tenant_context(public_schema):
+                group.principals.clear()
                 self.clear_pk(group)
                 try:
                     group.save()
