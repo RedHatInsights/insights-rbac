@@ -127,6 +127,8 @@ class Command(BaseCommand):
             roles = list(policy.roles.all())
             new_roles = []
             with tenant_context(public_schema):
+                policy.roles.clear()
+                policy.group = None
                 self.clear_pk(policy)
                 try:
                     policy.save()
