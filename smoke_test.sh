@@ -6,7 +6,7 @@
 #IQE_FILTER_EXPRESSION="something AND something_else" -- pytest filter, can be "" if no filter desired
 #NAMESPACE="mynamespace" -- namespace to deploy iqe pod into, can be set by 'deploy_ephemeral_env.sh'
 
-IQE_POD_NAME="iqe-tests"
+#IQE_POD_NAME="iqe-tests"
 
 # create a custom svc acct for the iqe pod to run with that has elevated permissions
 SA=$(oc get -n $NAMESPACE sa iqe --ignore-not-found -o jsonpath='{.metadata.name}')
@@ -15,18 +15,18 @@ if [ -z "$SA" ]; then
 fi
 oc policy -n $NAMESPACE add-role-to-user edit system:serviceaccount:$NAMESPACE:iqe
 oc secrets -n $NAMESPACE link iqe quay-cloudservices-pull --for=pull,mount
+oc apply -f $APP_ROOT/deploy/rbac-cji-smoketest.yml
+#python $CICD_ROOT/iqe_pod/create_iqe_pod.py $NAMESPACE \
+#    -e IQE_PLUGINS=$IQE_PLUGINS \
+#    -e IQE_MARKER_EXPRESSION=$IQE_MARKER_EXPRESSION \
+#    -e IQE_FILTER_EXPRESSION=$IQE_FILTER_EXPRESSION \
+#    -e ENV_FOR_DYNACONF=clowder_smoke \
+#    -e NAMESPACE=$NAMESPACE
 
-python $CICD_ROOT/iqe_pod/create_iqe_pod.py $NAMESPACE \
-    -e IQE_PLUGINS=$IQE_PLUGINS \
-    -e IQE_MARKER_EXPRESSION=$IQE_MARKER_EXPRESSION \
-    -e IQE_FILTER_EXPRESSION=$IQE_FILTER_EXPRESSION \
-    -e ENV_FOR_DYNACONF=clowder_smoke \
-    -e NAMESPACE=$NAMESPACE
+# oc cp -n $NAMESPACE $CICD_ROOT/iqe_pod/iqe_runner.sh $IQE_POD_NAME:/iqe_venv/iqe_runner.sh
+# oc exec $IQE_POD_NAME -n $NAMESPACE -- bash /iqe_venv/iqe_runner.sh
 
-oc cp -n $NAMESPACE $CICD_ROOT/iqe_pod/iqe_runner.sh $IQE_POD_NAME:/iqe_venv/iqe_runner.sh
-oc exec $IQE_POD_NAME -n $NAMESPACE -- bash /iqe_venv/iqe_runner.sh
+#oc cp -n $NAMESPACE $IQE_POD_NAME:artifacts/ $WORKSPACE/artifacts
 
-oc cp -n $NAMESPACE $IQE_POD_NAME:artifacts/ $WORKSPACE/artifacts
-
-echo "copied artifacts from iqe pod: "
-ls -l $WORKSPACE/artifacts
+#echo "copied artifacts from iqe pod: "
+#ls -l $WORKSPACE/artifacts
