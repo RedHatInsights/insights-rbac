@@ -61,6 +61,9 @@ class Command(BaseCommand):
                 role.tenant = tenant
                 role.save()
             access_list = list(role.access.all())
+            access_resourceDefs = {}
+            for access in access_list:
+                access_resourceDefs[str(access)] = list(access.resourceDefinitions.all())
             with tenant_context(public_schema):
                 self.clear_pk(role)
                 try:
@@ -69,6 +72,7 @@ class Command(BaseCommand):
                     self.stderr.write(f"Couldn't copy role: {role.name}. Skipping due to:\n{err}")
                     continue
                 for access in access_list:
+                    old_access = str(access)
                     self.clear_pk(access)
                     if not access.tenant:
                         access.tenant = tenant
@@ -79,7 +83,7 @@ class Command(BaseCommand):
                     except IntegrityError as err:
                         self.stderr.write(f"Couldn't copy access entry: {access}. Skipping due to:\n{err}")
                         continue
-                    for resource_def in access.resourceDefinitions.all():
+                    for resource_def in access_resourceDefs[old_access]:
                         self.clear_pk(resource_def)
                         resource_def.access = access
                         try:
