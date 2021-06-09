@@ -17,14 +17,14 @@ curl -s $CICD_URL/bootstrap.sh > .cicd_bootstrap.sh && source .cicd_bootstrap.sh
 source $CICD_ROOT/build.sh
 
 # Deploy ephemeral db
-#source $CICD_ROOT/deploy_ephemeral_db.sh
+source $CICD_ROOT/deploy_ephemeral_db.sh
 
 # Map env vars set by `deploy_ephemeral_db.sh` if vars the app uses are different
-#export PGPASSWORD=$DATABASE_ADMIN_PASSWORD
+export PGPASSWORD=$DATABASE_ADMIN_PASSWORD
 
 # check if NAMESPACE is set
-# [ -z "$NAMESPACE" ] && exit 1
-# oc get secret rbac -o json -n $NAMESPACE
+[ -z "$NAMESPACE" ] && exit 1
+oc get secret rbac -o json -n $NAMESPACE
 
 # Run unit tests
 source $APP_ROOT/unit_test.sh
