@@ -9,24 +9,18 @@
 #IQE_POD_NAME="iqe-tests"
 
 # create a custom svc acct for the iqe pod to run with that has elevated permissions
-SA=$(oc get -n $NAMESPACE sa iqe --ignore-not-found -o jsonpath='{.metadata.name}')
-if [ -z "$SA" ]; then
-    oc create -n $NAMESPACE sa iqe
-fi
-oc policy -n $NAMESPACE add-role-to-user edit system:serviceaccount:$NAMESPACE:iqe
-oc secrets -n $NAMESPACE link iqe quay-cloudservices-pull --for=pull,mount
+# SA=$(oc get -n $NAMESPACE sa iqe --ignore-not-found -o jsonpath='{.metadata.name}')
+# if [ -z "$SA" ]; then
+#     oc create -n $NAMESPACE sa iqe
+# fi
+# oc policy -n $NAMESPACE add-role-to-user edit system:serviceaccount:$NAMESPACE:iqe
+# oc secrets -n $NAMESPACE link iqe quay-cloudservices-pull --for=pull,mount
 oc apply -f $APP_ROOT/deploy/rbac-cji-smoketest.yml
-#python $CICD_ROOT/iqe_pod/create_iqe_pod.py $NAMESPACE \
-#    -e IQE_PLUGINS=$IQE_PLUGINS \
-#    -e IQE_MARKER_EXPRESSION=$IQE_MARKER_EXPRESSION \
-#    -e IQE_FILTER_EXPRESSION=$IQE_FILTER_EXPRESSION \
-#    -e ENV_FOR_DYNACONF=clowder_smoke \
-#    -e NAMESPACE=$NAMESPACE
+oc logs -n $NAMESPACE job/rbac-smoke-tests-iqe -f &
+oc wait --for=condition=complete job/rbac-smoke-tests-iqe
 
-# oc cp -n $NAMESPACE $CICD_ROOT/iqe_pod/iqe_runner.sh $IQE_POD_NAME:/iqe_venv/iqe_runner.sh
-# oc exec $IQE_POD_NAME -n $NAMESPACE -- bash /iqe_venv/iqe_runner.sh
-
-#oc cp -n $NAMESPACE $IQE_POD_NAME:artifacts/ $WORKSPACE/artifacts
+LAST=$(oc get pod -n $NAMESPACE -l=clowdjob=rbac-smoke-tests -o json | jq '[.items[].metadata.name] | last')
+oc cp -n $NAMESPACE $LAST:artifacts/ $WORKSPACE/artifacts
 
 #echo "copied artifacts from iqe pod: "
 #ls -l $WORKSPACE/artifacts
