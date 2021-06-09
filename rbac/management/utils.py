@@ -164,15 +164,17 @@ def queryset_by_id(objects, clazz, **kwargs):
     return query
 
 
-def validate_and_get_key(params, query_key, valid_values, default_value):
+def validate_and_get_key(params, query_key, valid_values, default_value=None, required=True):
     """Validate the key."""
     value = params.get(query_key, default_value)
     if not value:
-        key = "detail"
-        message = "Query parameter '{}' is required.".format(query_key)
-        raise serializers.ValidationError({key: _(message)})
+        if required:
+            key = "detail"
+            message = "Query parameter '{}' is required.".format(query_key)
+            raise serializers.ValidationError({key: _(message)})
+        return None
 
-    if value.lower() not in valid_values:
+    elif value.lower() not in valid_values:
         key = "detail"
         message = "{} query parameter value '{}' is invalid. {} are valid inputs.".format(
             query_key, value, valid_values

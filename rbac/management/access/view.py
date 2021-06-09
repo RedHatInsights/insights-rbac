@@ -19,11 +19,19 @@
 from management.cache import AccessCache
 from management.querysets import get_access_queryset
 from management.role.serializer import AccessSerializer
-from management.utils import APPLICATION_KEY, get_principal_from_request, validate_limit_and_offset
+from management.utils import (
+    APPLICATION_KEY,
+    get_principal_from_request,
+    validate_and_get_key,
+    validate_limit_and_offset,
+)
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.settings import api_settings
 from rest_framework.views import APIView
+
+ORDER_FIELD = "order_by"
+VALID_ORDER_VALUES = ["application", "resource_type", "verb", "-application", "-resource_type", "-verb"]
 
 
 class AccessView(APIView):
@@ -78,21 +86,31 @@ class AccessView(APIView):
     pagination_class = api_settings.DEFAULT_PAGINATION_CLASS
     permission_classes = (AllowAny,)
 
-    def get_queryset(self):
+    def get_queryset(self, ordering):
         """Define the query set."""
-        return get_access_queryset(self.request)
+        access_queryset = get_access_queryset(self.request)
+        if ordering:
+            if ordering[0] == "-":
+                order_sign = "-"
+                field = ordering[1:]
+            else:
+                order_sign = ""
+                field = ordering
+            return access_queryset.order_by(f"{order_sign}permission__{field}")
+        return access_queryset
 
     def get(self, request):
         """Provide access data for principal."""
-        validate_limit_and_offset(request.query_params)
-        app = request.query_params.get(APPLICATION_KEY)
+        # Parameter extraction
+        sub_key, ordering = self.validate_and_get_param(request.query_params)
+
         principal = get_principal_from_request(request)
         cache = AccessCache(request.tenant.schema_name)
-        access_policy = cache.get_policy(principal.uuid, app)
+        access_policy = cache.get_policy(principal.uuid, sub_key)
         if access_policy is None:
-            queryset = self.get_queryset()
+            queryset = self.get_queryset(ordering)
             access_policy = self.serializer_class(queryset, many=True).data
-            cache.save_policy(principal.uuid, app, access_policy)
+            cache.save_policy(principal.uuid, sub_key, access_policy)
 
         page = self.paginate_queryset(access_policy)
         if page is not None:
@@ -119,3 +137,13 @@ class AccessView(APIView):
         """Return a paginated style `Response` object for the given output data."""
         assert self.paginator is not None
         return self.paginator.get_paginated_response(data)
+
+    def validate_and_get_param(self, params):
+        """Validate input parameters and get ordering and sub_key."""
+        validate_limit_and_offset(params)
+        app = params.get(APPLICATION_KEY)
+        sub_key = app
+        ordering = validate_and_get_key(params, ORDER_FIELD, VALID_ORDER_VALUES, required=False)
+        if ordering:
+            sub_key = f"{app}&order:{ordering}"
+        return sub_key, ordering

@@ -379,3 +379,122 @@ class AccessViewTests(IdentityRequest):
         self.assertEqual(2, len(called_with_para[2]))  # it catches all the policies for app
         self.assertEqual(response.data["meta"]["count"], 2)
         self.assertEqual(len(response.data["data"]), 1)  # returns one policy because limit is 1
+
+    @patch("management.cache.AccessCache.get_policy", return_value=None)
+    @patch("management.cache.AccessCache.save_policy", return_value=None)
+    def test_get_access_with_ordering_and_cache(self, save_policy, get_policy):
+        """Test that we can obtain the expected access with ordering and cache."""
+        role_name = "roleA"
+        response = self.create_role(role_name)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        role_uuid = response.data.get("uuid")
+        test_role = self.create_role_and_permission("Test Role one", "test:assigned:permission1")
+        policy_name = "policyA"
+        response = self.create_policy(policy_name, self.group.uuid, [role_uuid, test_role.uuid])
+
+        schema_name = self.tenant.schema_name
+        principal_id = self.principal.uuid
+        key = f"rbac::policy::tenant={schema_name}::user={principal_id}"
+        client = APIClient()
+
+        #### Sort by application ####
+        url = "{}?application=&username={}&order_by={}".format(
+            reverse("access"), self.principal.username, "application"
+        )
+        response = client.get(url, **self.headers)
+
+        # Cache is called saved with sub_key ""
+        get_policy.assert_called_with(principal_id, "&order:application")
+        called_with_para = save_policy.mock_calls[0][1]
+        self.assertEqual(principal_id, called_with_para[0])
+        self.assertEqual("&order:application", called_with_para[1])
+        self.assertEqual(2, len(called_with_para[2]))  # it catches all the policies
+        self.assertEqual(response.data["meta"]["count"], 2)
+        self.assertEqual(response.data["data"][0]["permission"], "app:*:*")  # check order
+
+        url = "{}?application=&username={}&order_by={}".format(
+            reverse("access"), self.principal.username, "-application"
+        )
+        response = client.get(url, **self.headers)
+        get_policy.assert_called_with(principal_id, "&order:-application")
+        called_with_para = save_policy.mock_calls[1][1]
+        self.assertEqual(principal_id, called_with_para[0])
+        self.assertEqual("&order:-application", called_with_para[1])
+        self.assertEqual(2, len(called_with_para[2]))  # it catches all the policies
+        self.assertEqual(response.data["meta"]["count"], 2)
+        # Response data is in reverse order
+        self.assertEqual(response.data["data"][0]["permission"], "test:assigned:permission1")  # check order
+
+        #### Sort by resource_type ####
+        url = "{}?application=&username={}&order_by={}".format(
+            reverse("access"), self.principal.username, "resource_type"
+        )
+        response = client.get(url, **self.headers)
+
+        # Cache is called saved with sub_key ""
+        get_policy.assert_called_with(principal_id, "&order:resource_type")
+        called_with_para = save_policy.mock_calls[2][1]
+        self.assertEqual(principal_id, called_with_para[0])
+        self.assertEqual("&order:resource_type", called_with_para[1])
+        self.assertEqual(2, len(called_with_para[2]))  # it catches all the policies
+        self.assertEqual(response.data["meta"]["count"], 2)
+        self.assertEqual(response.data["data"][0]["permission"], "app:*:*")  # check order
+
+        url = "{}?application=&username={}&order_by={}".format(
+            reverse("access"), self.principal.username, "-resource_type"
+        )
+        response = client.get(url, **self.headers)
+        get_policy.assert_called_with(principal_id, "&order:-resource_type")
+        called_with_para = save_policy.mock_calls[3][1]
+        self.assertEqual(principal_id, called_with_para[0])
+        self.assertEqual("&order:-resource_type", called_with_para[1])
+        self.assertEqual(2, len(called_with_para[2]))  # it catches all the policies
+        self.assertEqual(response.data["meta"]["count"], 2)
+        # Response data is in reverse order
+        self.assertEqual(response.data["data"][0]["permission"], "test:assigned:permission1")  # check order
+
+        #### Sort by verb ####
+        url = "{}?application=&username={}&order_by={}".format(reverse("access"), self.principal.username, "verb")
+        response = client.get(url, **self.headers)
+
+        # Cache is called saved with sub_key ""
+        get_policy.assert_called_with(principal_id, "&order:verb")
+        called_with_para = save_policy.mock_calls[4][1]
+        self.assertEqual(principal_id, called_with_para[0])
+        self.assertEqual("&order:verb", called_with_para[1])
+        self.assertEqual(2, len(called_with_para[2]))  # it catches all the policies
+        self.assertEqual(response.data["meta"]["count"], 2)
+        self.assertEqual(response.data["data"][0]["permission"], "app:*:*")  # check order
+
+        url = "{}?application=&username={}&order_by={}".format(reverse("access"), self.principal.username, "-verb")
+        response = client.get(url, **self.headers)
+        # Cache is called saved with sub_key ""
+        get_policy.assert_called_with(principal_id, "&order:-verb")
+        called_with_para = save_policy.mock_calls[5][1]
+        self.assertEqual(principal_id, called_with_para[0])
+        self.assertEqual("&order:-verb", called_with_para[1])
+        self.assertEqual(2, len(called_with_para[2]))  # it catches all the policies
+        self.assertEqual(response.data["meta"]["count"], 2)
+        # Response data is in reverse order
+        self.assertEqual(response.data["data"][0]["permission"], "test:assigned:permission1")  # check order
+
+        #### Sort by nothing still works ####
+        url = "{}?application=&username={}&order_by=".format(reverse("access"), self.principal.username)
+        response = client.get(url, **self.headers)
+        # Cache is called saved with sub_key ""
+        get_policy.assert_called_with(principal_id, "")
+        called_with_para = save_policy.mock_calls[6][1]
+        self.assertEqual(principal_id, called_with_para[0])
+        self.assertEqual("", called_with_para[1])
+        self.assertEqual(2, len(called_with_para[2]))  # it catches all the policies
+        self.assertEqual(response.data["meta"]["count"], 2)
+
+    def test_get_access_with_invalid_ordering_value(self):
+        """Test that get access with invalid ordering value raises 401."""
+        client = APIClient()
+        url = "{}?application={}&username={}&order_by={}".format(
+            reverse("access"), "app", self.principal.username, "invalid_value"
+        )
+        response = client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
