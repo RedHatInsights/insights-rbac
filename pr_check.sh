@@ -16,6 +16,7 @@ curl -s $CICD_URL/bootstrap.sh > .cicd_bootstrap.sh && source .cicd_bootstrap.sh
 
 source $CICD_ROOT/build.sh
 
+pip install crc-bonfire==v1.4.0b0
 # Deploy ephemeral db
 source $CICD_ROOT/deploy_ephemeral_db.sh
 
@@ -26,7 +27,6 @@ export PGPASSWORD=$DATABASE_ADMIN_PASSWORD
 [ -z "$NAMESPACE" ] && exit 1
 oc get secret rbac -o json -n $NAMESPACE
 
-pip install crc-bonfire==v1.4.0b0
 
 # Run unit tests
 source $APP_ROOT/unit_test.sh
