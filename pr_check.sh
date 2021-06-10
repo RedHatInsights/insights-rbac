@@ -21,6 +21,7 @@ pip install crc-bonfire==v1.4.0b0
 
 # Run unit tests
 source $APP_ROOT/unit_test.sh
+source .bonfire_venv/bin/activate
 # Deploy to eph
 source $CICD_ROOT/deploy_ephemeral_env.sh
 
