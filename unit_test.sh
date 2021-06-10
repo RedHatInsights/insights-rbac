@@ -16,7 +16,7 @@ pip install --upgrade pip setuptools wheel pipenv tox psycopg2-binary
 pip install crc-bonfire==v1.4.0b0
 tox -r
 result=$?
-deactivate
+source .bonfire_venv/bin/activate
 
 # TODO: add unittest-xml-reporting to rbac so that junit results can be parsed by jenkins
 mkdir -p $WORKSPACE/artifacts
