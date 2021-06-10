@@ -26,6 +26,8 @@ export PGPASSWORD=$DATABASE_ADMIN_PASSWORD
 [ -z "$NAMESPACE" ] && exit 1
 oc get secret rbac -o json -n $NAMESPACE
 
+pip install crc-bonfire==v1.4.0b0
+
 # Run unit tests
 source $APP_ROOT/unit_test.sh
 # Deploy to eph
