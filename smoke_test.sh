@@ -16,8 +16,9 @@
 # oc policy -n $NAMESPACE add-role-to-user edit system:serviceaccount:$NAMESPACE:iqe
 # oc secrets -n $NAMESPACE link iqe quay-cloudservices-pull --for=pull,mount
 oc apply -f $APP_ROOT/deploy/rbac-cji-smoketest.yml
+sleep 30
 oc logs -n $NAMESPACE job/rbac-smoke-tests-iqe -f &
-oc wait --for=condition=complete job/rbac-smoke-tests-iqe
+oc wait --for=condition=Complete job/rbac-smoke-tests-iqe || oc wait --for=condition=Failed job/rbac-smoke-tests-iqe 
 
 LAST=$(oc get pod -n $NAMESPACE -l=clowdjob=rbac-smoke-tests -o json | jq '[.items[].metadata.name] | last')
 oc cp -n $NAMESPACE $LAST:artifacts/ $WORKSPACE/artifacts

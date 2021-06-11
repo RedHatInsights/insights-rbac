@@ -15,13 +15,9 @@ CICD_URL=https://raw.githubusercontent.com/RedHatInsights/bonfire/master/cicd
 curl -s $CICD_URL/bootstrap.sh > .cicd_bootstrap.sh && source .cicd_bootstrap.sh
 
 source $CICD_ROOT/build.sh
-
-# Temp override to get a fix tested 
-pip install crc-bonfire==v1.4.0b0
-
 # Run unit tests
-source $APP_ROOT/unit_test.sh
-source .bonfire_venv/bin/activate
+#source $APP_ROOT/unit_test.sh
+
 # Deploy to eph
 source $CICD_ROOT/deploy_ephemeral_env.sh
 
