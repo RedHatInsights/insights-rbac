@@ -106,7 +106,6 @@ class Command(BaseCommand):
             principals = list(group.principals.all())
             new_principals = []
             with tenant_context(public_schema):
-                group.principals.clear()
                 self.clear_pk(group)
                 try:
                     group.save()
@@ -133,7 +132,6 @@ class Command(BaseCommand):
             roles = list(policy.roles.all())
             new_roles = []
             with tenant_context(public_schema):
-                policy.roles.clear()
                 policy.group = None
                 self.clear_pk(policy)
                 try:
@@ -144,7 +142,10 @@ class Command(BaseCommand):
                 else:
                     policy.group = Group.objects.get(name=group.name, tenant=tenant)
                     for role in roles:
-                        new_roles.append(Role.objects.get(name=role.name, tenant=tenant))
+                        if role.system:
+                            new_roles.append(Role.objects.get(name=role.name, tenant=public_schema))
+                        else:
+                            new_roles.append(Role.objects.get(name=role.name, tenant=tenant))
                 policy.roles.set(new_roles)
                 policy.save()
 
