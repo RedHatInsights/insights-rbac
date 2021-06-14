@@ -15,7 +15,7 @@
 # fi
 # oc policy -n $NAMESPACE add-role-to-user edit system:serviceaccount:$NAMESPACE:iqe
 # oc secrets -n $NAMESPACE link iqe quay-cloudservices-pull --for=pull,mount
-oc apply -f $APP_ROOT/deploy/rbac-cji-smoketest.yml
+oc apply -n $NAMESPACE -f $APP_ROOT/deploy/rbac-cji-smoketest.yml
 
 job_name=rbac-smoke-tests-iqe
 found=0
