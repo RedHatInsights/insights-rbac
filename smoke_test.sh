@@ -18,20 +18,20 @@
 oc apply -n $NAMESPACE -f $APP_ROOT/deploy/rbac-cji-smoketest.yml
 
 job_name=rbac-smoke-tests-iqe
-found=0
+found=false
 end=$((SECONDS+30))
 
 echo "Waiting for Job $job_name to appear"
 
 while [ $SECONDS -lt $end ]; do
     if `oc get job $job_name -n $NAMESPACE >/dev/null 2>&1`; then
-        found=1
+        found=true
         break
     fi
     sleep 1
 done
 
-if ! found; then
+if [$found = "false"] ; then
     echo "Job $job_name failed to appear"
     exit 1
 fi
