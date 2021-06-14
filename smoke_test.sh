@@ -16,7 +16,26 @@
 # oc policy -n $NAMESPACE add-role-to-user edit system:serviceaccount:$NAMESPACE:iqe
 # oc secrets -n $NAMESPACE link iqe quay-cloudservices-pull --for=pull,mount
 oc apply -f $APP_ROOT/deploy/rbac-cji-smoketest.yml
-sleep 30
+
+job_name=rbac-smoke-tests-iqe
+found=0
+end=$((SECONDS+30))
+
+echo "Waiting for Job $job_name to appear"
+
+while [ $SECONDS -lt $end ]; do
+    if `oc get job $job_name -n $NAMESPACE >/dev/null 2>&1`; then
+        found=1
+        break
+    fi
+    sleep 1
+done
+
+if ! found; then
+    echo "Job $job_name failed to appear"
+    exit 1
+fi
+
 oc logs -n $NAMESPACE job/rbac-smoke-tests-iqe -f &
 oc wait --timeout=3m --for=condition=Complete job/rbac-smoke-tests-iqe || oc wait --timeout=3m --for=condition=Failed job/rbac-smoke-tests-iqe 
 
