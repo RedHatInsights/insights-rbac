@@ -586,7 +586,7 @@ class GroupViewSet(
             serializer = GroupRoleSerializerIn(data=request.data)
             if serializer.is_valid(raise_exception=True):
                 roles = request.data.pop(ROLES_KEY, [])
-            add_roles(group, roles, request.tenant, duplicate_in_public=True)
+            add_roles(group, roles, request.tenant, user=request.user, duplicate_in_public=True)
             set_system_flag_post_update(group)
             response_data = GroupRoleSerializerIn(group)
         elif request.method == "GET":

@@ -71,7 +71,7 @@ def set_system_flag_post_update(group):
     group.save()
 
 
-def add_roles(group, roles_or_role_ids, tenant, replace=False, duplicate_in_public=False):
+def add_roles(group, roles_or_role_ids, tenant, user=None, replace=False, duplicate_in_public=False):
     """Process list of roles and add them to the group."""
     if not isinstance(roles_or_role_ids, QuerySet):
         # If given an iterable of UUIDs, get the corresponding objects
@@ -102,7 +102,7 @@ def add_roles(group, roles_or_role_ids, tenant, replace=False, duplicate_in_publ
                     key = "add-roles"
                     message = f"Non-admin users cannot add RBAC role {role.display_name} to groups."
                     raise serializers.ValidationError({key: _(message)})
-            system_policy.roles.add(role) 
+            system_policy.roles.add(role)
 
 
 def remove_roles(group, role_ids, tenant):
