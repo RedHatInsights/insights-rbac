@@ -31,32 +31,33 @@ while [ $SECONDS -lt $end ]; do
     sleep 1
 done
 
-if [$found = "false"] ; then
+if [$found == "false"] ; then
     echo "Job $job_name failed to appear"
     exit 1
 fi
 
 echo "Waiting for Job $job_name to be running"
 running=false
+pod=""
 
 while [ $SECONDS -lt $end ]; do
-    if `oc get pods -n $NAMESPACE -o json | jq -r '.items[] | select(.status.phase=="Running") | select(.metadata.name|test("rbac-smoke.")) .metadata.name' >/dev/null 2>&1`; then
+    pod=$(oc get pods -n $NAMESPACE -o json | jq -r '.items[] | select(.status.phase=="Running") | select(.metadata.name|test("rbac-smoke.")) .metadata.name')
+    if [ -z $pod ]; then
         running=true
         break
     fi
     sleep 1
 done
 
-if [$running = "false"] ; then
+if [$running == "false"] ; then
     echo "Job $job_name failed to start"
     exit 1
 fi
 
-oc logs -n $NAMESPACE job/rbac-smoke-tests-iqe -f &
+oc logs -n $NAMESPACE $pod -f &
 oc wait --timeout=3m --for=condition=Complete job/rbac-smoke-tests-iqe || oc wait --timeout=3m --for=condition=Failed job/rbac-smoke-tests-iqe 
 
-LAST=$(oc get pod -n $NAMESPACE -l=clowdjob=rbac-smoke-tests -o json | jq '[.items[].metadata.name] | last')
-oc cp -n $NAMESPACE $LAST:artifacts/ $WORKSPACE/artifacts
+oc cp -n $NAMESPACE $pod:artifacts/ $WORKSPACE/artifacts
 
 echo "copied artifacts from iqe pod: "
 ls -l $WORKSPACE/artifacts
