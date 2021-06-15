@@ -19,7 +19,7 @@ oc apply -n $NAMESPACE -f $APP_ROOT/deploy/rbac-cji-smoketest.yml
 
 job_name=rbac-smoke-tests-iqe
 found=false
-end=$((SECONDS+30))
+end=$((SECONDS+45))
 
 echo "Waiting for Job $job_name to appear"
 
@@ -36,11 +36,27 @@ if [$found = "false"] ; then
     exit 1
 fi
 
+echo "Waiting for Job $job_name to be running"
+running=false
+
+while [ $SECONDS -lt $end ]; do
+    if `oc get pods -n $NAMESPACE -o json | jq -r '.items[] | select(.status.phase=="Running") | select(.metadata.name|test("rbac-smoke.")) .metadata.name' >/dev/null 2>&1`; then
+        running=true
+        break
+    fi
+    sleep 1
+done
+
+if [$running = "false"] ; then
+    echo "Job $job_name failed to start"
+    exit 1
+fi
+
 oc logs -n $NAMESPACE job/rbac-smoke-tests-iqe -f &
 oc wait --timeout=3m --for=condition=Complete job/rbac-smoke-tests-iqe || oc wait --timeout=3m --for=condition=Failed job/rbac-smoke-tests-iqe 
 
 LAST=$(oc get pod -n $NAMESPACE -l=clowdjob=rbac-smoke-tests -o json | jq '[.items[].metadata.name] | last')
 oc cp -n $NAMESPACE $LAST:artifacts/ $WORKSPACE/artifacts
 
-#echo "copied artifacts from iqe pod: "
-#ls -l $WORKSPACE/artifacts
+echo "copied artifacts from iqe pod: "
+ls -l $WORKSPACE/artifacts
