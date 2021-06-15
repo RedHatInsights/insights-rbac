@@ -15,21 +15,23 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Test the access view."""
-
+import json
 import random
 from decimal import Decimal
 from uuid import uuid4
 from unittest.mock import patch
 
 from api.models import CrossAccountRequest, Tenant
+from collections import OrderedDict
 from django.urls import reverse
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APIClient
 from tenant_schemas.utils import tenant_context
 
-from api.models import User
+from api.models import Tenant, User
 from datetime import timedelta
+from management.cache import AccessCache
 from management.models import Group, Permission, Principal, Policy, Role, Access
 from tests.identity_request import IdentityRequest
 
@@ -61,6 +63,9 @@ class AccessViewTests(IdentityRequest):
             self.group.save()
             self.permission = Permission.objects.create(permission="app:*:*")
             Permission.objects.create(permission="app:foo:bar")
+        with tenant_context(Tenant.objects.get(schema_name="public")):
+            Permission.objects.create(permission="app:foo:bar")
+            Permission.objects.create(permission="app:*:*")
 
     def tearDown(self):
         """Tear down access view tests."""
@@ -105,9 +110,9 @@ class AccessViewTests(IdentityRequest):
             default_group = Group.objects.create(name="default group", system=True, platform_default=True)
             default_group.policies.add(default_policy)
 
-    def create_role_and_permission(self):
-        role = Role.objects.create(name="Test Role")
-        assigned_permission = Permission.objects.create(permission="test:assigned:permission")
+    def create_role_and_permission(self, role_name, permission):
+        role = Role.objects.create(name=role_name)
+        assigned_permission = Permission.objects.create(permission=permission)
         access = Access.objects.create(role=role, permission=assigned_permission)
         return role
 
@@ -132,7 +137,7 @@ class AccessViewTests(IdentityRequest):
         self.assertIsNotNone(response.data.get("data"))
         self.assertIsInstance(response.data.get("data"), list)
         self.assertEqual(len(response.data.get("data")), 2)
-        self.assertEqual(response.data.get("meta").get("limit"), 1000)
+        self.assertEqual(response.data.get("meta").get("limit"), 2)
         self.assertEqual(self.access_data, response.data.get("data")[0])
 
         # the platform default permission could also be retrieved
@@ -151,9 +156,16 @@ class AccessViewTests(IdentityRequest):
         user_name = f"{account_id}-{user_id}"
 
         # setup cross account request, role and permission in public schema
-        role = self.create_role_and_permission()
+        ## This CAR will provide permission: "test:assigned:permission"
+        role = self.create_role_and_permission("Test Role one", "test:assigned:permission1")
         cross_account_request = CrossAccountRequest.objects.create(
             target_account=account_id, user_id=user_id, end_date=timezone.now() + timedelta(10), status="approved"
+        )
+        cross_account_request.roles.add(role)
+        ## CAR below will provide permission: "app:*:*"
+        role = self.create_role_and_permission("Test Role two", "test:assigned:permission2")
+        cross_account_request = CrossAccountRequest.objects.create(
+            target_account=account_id, user_id=user_id, end_date=timezone.now() + timedelta(20), status="approved"
         )
         cross_account_request.roles.add(role)
 
@@ -165,15 +177,15 @@ class AccessViewTests(IdentityRequest):
 
         with tenant_context(self.tenant):
             Principal.objects.create(username=user_name, cross_account=True)
-            self.create_role_and_permission()
+            self.create_role_and_permission("Test Role one", "test:assigned:permission1")
+            self.create_role_and_permission("Test Role two", "test:assigned:permission2")
         response = client.get(url, **headers)
 
         # only assigned role permissions without platform default permission
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(response.data.get("data")), 1)
-        self.assertEqual(
-            {"permission": "test:assigned:permission", "resourceDefinitions": []}, response.data.get("data")[0]
-        )
+        self.assertEqual(len(response.data.get("data")), 2)
+        permissions = [access["permission"] for access in response.data.get("data")]
+        self.assertListEqual(permissions, ["test:assigned:permission1", "test:assigned:permission2"])
 
     def test_get_access_no_app_supplied(self):
         """Test that we return all permissions when no app supplied."""
@@ -196,7 +208,7 @@ class AccessViewTests(IdentityRequest):
         self.assertIsNotNone(response.data.get("data"))
         self.assertIsInstance(response.data.get("data"), list)
         self.assertEqual(len(response.data.get("data")), 2)
-        self.assertEqual(response.data.get("meta").get("limit"), 1000)
+        self.assertEqual(response.data.get("meta").get("limit"), 2)
 
     def test_get_access_multiple_apps_supplied(self):
         """Test that we return all permissions for multiple apps when supplied."""
@@ -238,7 +250,28 @@ class AccessViewTests(IdentityRequest):
         self.assertIsNotNone(response.data.get("data"))
         self.assertIsInstance(response.data.get("data"), list)
         self.assertEqual(len(response.data.get("data")), 0)
-        self.assertEqual(response.data.get("meta").get("limit"), 1000)
+        self.assertEqual(response.data.get("meta").get("limit"), 0)
+
+    def test_get_access_no_subset_match(self):
+        """Test that we cannot have a subset match on app/permission."""
+        role_name = "roleA"
+        policy_name = "policyA"
+        access_data = {
+            "permission": "app:foo:bar",
+            "resourceDefinitions": [{"attributeFilter": {"key": "keyA", "operation": "equal", "value": "valueA"}}],
+        }
+        response = self.create_role(role_name, access_data)
+        role_uuid = response.data.get("uuid")
+        self.create_policy(policy_name, self.group.uuid, [role_uuid])
+
+        url = "{}?application={}&username={}".format(reverse("access"), "appfoo", self.principal.username)
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIsNotNone(response.data.get("data"))
+        self.assertIsInstance(response.data.get("data"), list)
+        self.assertEqual(len(response.data.get("data")), 0)
+        self.assertEqual(response.data.get("meta").get("limit"), 0)
 
     def test_get_access_no_match(self):
         """Test that we only match on the application name of the permission data."""
@@ -259,7 +292,7 @@ class AccessViewTests(IdentityRequest):
         self.assertIsNotNone(response.data.get("data"))
         self.assertIsInstance(response.data.get("data"), list)
         self.assertEqual(len(response.data.get("data")), 0)
-        self.assertEqual(response.data.get("meta").get("limit"), 1000)
+        self.assertEqual(response.data.get("meta").get("limit"), 0)
 
     def test_get_access_with_limit(self):
         """Test that we can obtain the expected access with pagination."""
@@ -295,7 +328,173 @@ class AccessViewTests(IdentityRequest):
     )
     def test_missing_invalid_username(self, mock_request):
         """Test that we get expected failure when missing required query params."""
-        url = "{}?application={}&username={}".format(reverse("access"), "app", uuid4())
+        url = "{}?application={}&username={}".format(reverse("access"), "app", "test_user")
         client = APIClient()
         response = client.get(url, **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    @patch("management.cache.AccessCache.get_policy", return_value=None)
+    @patch("management.cache.AccessCache.save_policy", return_value=None)
+    def test_get_access_with_pagination_and_cache(self, save_policy, get_policy):
+        """Test that we can obtain the expected access with pagination and cache."""
+        role_name = "roleA"
+        response = self.create_role(role_name)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        role_uuid = response.data.get("uuid")
+        test_role = self.create_role_and_permission("Test Role one", "test:assigned:permission1")
+        policy_name = "policyA"
+        response = self.create_policy(policy_name, self.group.uuid, [role_uuid, test_role.uuid])
+
+        schema_name = self.tenant.schema_name
+        principal_id = self.principal.uuid
+        key = f"rbac::policy::tenant={schema_name}::user={principal_id}"
+        client = APIClient()
+
+        ######## access_policy are cached with desired sub_key ############
+        url = "{}?application={}&username={}&offset=1&limit=1".format(
+            reverse("access"), "app", self.principal.username
+        )
+        response = client.get(url, **self.headers)
+
+        get_policy.assert_called_with(principal_id, "app")
+        called_with_para = save_policy.mock_calls[0][1]  # save_policy params
+        self.assertEqual(principal_id, called_with_para[0])
+        self.assertEqual("app", called_with_para[1])
+        self.assertEqual([self.access_data], called_with_para[2])  # it catches all the policies for app
+        self.assertEqual(response.data["meta"]["count"], 1)
+        self.assertEqual(
+            response.data["data"], []
+        )  # after pagination, it is empty becase totoal is one, and offset is one
+        ###################################################################
+
+        #### access_policy are cached properly when application is empty ####
+        url = "{}?application=&username={}&limit=1".format(reverse("access"), self.principal.username)
+        response = client.get(url, **self.headers)
+
+        # Cache is called saved with sub_key ""
+        get_policy.assert_called_with(principal_id, "")
+        called_with_para = save_policy.mock_calls[1][1]
+        self.assertEqual(principal_id, called_with_para[0])
+        self.assertEqual("", called_with_para[1])
+        self.assertEqual(2, len(called_with_para[2]))  # it catches all the policies for app
+        self.assertEqual(response.data["meta"]["count"], 2)
+        self.assertEqual(len(response.data["data"]), 1)  # returns one policy because limit is 1
+
+    @patch("management.cache.AccessCache.get_policy", return_value=None)
+    @patch("management.cache.AccessCache.save_policy", return_value=None)
+    def test_get_access_with_ordering_and_cache(self, save_policy, get_policy):
+        """Test that we can obtain the expected access with ordering and cache."""
+        role_name = "roleA"
+        response = self.create_role(role_name)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        role_uuid = response.data.get("uuid")
+        test_role = self.create_role_and_permission("Test Role one", "test:assigned:permission1")
+        policy_name = "policyA"
+        response = self.create_policy(policy_name, self.group.uuid, [role_uuid, test_role.uuid])
+
+        schema_name = self.tenant.schema_name
+        principal_id = self.principal.uuid
+        key = f"rbac::policy::tenant={schema_name}::user={principal_id}"
+        client = APIClient()
+
+        #### Sort by application ####
+        url = "{}?application=&username={}&order_by={}".format(
+            reverse("access"), self.principal.username, "application"
+        )
+        response = client.get(url, **self.headers)
+
+        # Cache is called saved with sub_key ""
+        get_policy.assert_called_with(principal_id, "&order:application")
+        called_with_para = save_policy.mock_calls[0][1]
+        self.assertEqual(principal_id, called_with_para[0])
+        self.assertEqual("&order:application", called_with_para[1])
+        self.assertEqual(2, len(called_with_para[2]))  # it catches all the policies
+        self.assertEqual(response.data["meta"]["count"], 2)
+        self.assertEqual(response.data["data"][0]["permission"], "app:*:*")  # check order
+
+        url = "{}?application=&username={}&order_by={}".format(
+            reverse("access"), self.principal.username, "-application"
+        )
+        response = client.get(url, **self.headers)
+        get_policy.assert_called_with(principal_id, "&order:-application")
+        called_with_para = save_policy.mock_calls[1][1]
+        self.assertEqual(principal_id, called_with_para[0])
+        self.assertEqual("&order:-application", called_with_para[1])
+        self.assertEqual(2, len(called_with_para[2]))  # it catches all the policies
+        self.assertEqual(response.data["meta"]["count"], 2)
+        # Response data is in reverse order
+        self.assertEqual(response.data["data"][0]["permission"], "test:assigned:permission1")  # check order
+
+        #### Sort by resource_type ####
+        url = "{}?application=&username={}&order_by={}".format(
+            reverse("access"), self.principal.username, "resource_type"
+        )
+        response = client.get(url, **self.headers)
+
+        # Cache is called saved with sub_key ""
+        get_policy.assert_called_with(principal_id, "&order:resource_type")
+        called_with_para = save_policy.mock_calls[2][1]
+        self.assertEqual(principal_id, called_with_para[0])
+        self.assertEqual("&order:resource_type", called_with_para[1])
+        self.assertEqual(2, len(called_with_para[2]))  # it catches all the policies
+        self.assertEqual(response.data["meta"]["count"], 2)
+        self.assertEqual(response.data["data"][0]["permission"], "app:*:*")  # check order
+
+        url = "{}?application=&username={}&order_by={}".format(
+            reverse("access"), self.principal.username, "-resource_type"
+        )
+        response = client.get(url, **self.headers)
+        get_policy.assert_called_with(principal_id, "&order:-resource_type")
+        called_with_para = save_policy.mock_calls[3][1]
+        self.assertEqual(principal_id, called_with_para[0])
+        self.assertEqual("&order:-resource_type", called_with_para[1])
+        self.assertEqual(2, len(called_with_para[2]))  # it catches all the policies
+        self.assertEqual(response.data["meta"]["count"], 2)
+        # Response data is in reverse order
+        self.assertEqual(response.data["data"][0]["permission"], "test:assigned:permission1")  # check order
+
+        #### Sort by verb ####
+        url = "{}?application=&username={}&order_by={}".format(reverse("access"), self.principal.username, "verb")
+        response = client.get(url, **self.headers)
+
+        # Cache is called saved with sub_key ""
+        get_policy.assert_called_with(principal_id, "&order:verb")
+        called_with_para = save_policy.mock_calls[4][1]
+        self.assertEqual(principal_id, called_with_para[0])
+        self.assertEqual("&order:verb", called_with_para[1])
+        self.assertEqual(2, len(called_with_para[2]))  # it catches all the policies
+        self.assertEqual(response.data["meta"]["count"], 2)
+        self.assertEqual(response.data["data"][0]["permission"], "app:*:*")  # check order
+
+        url = "{}?application=&username={}&order_by={}".format(reverse("access"), self.principal.username, "-verb")
+        response = client.get(url, **self.headers)
+        # Cache is called saved with sub_key ""
+        get_policy.assert_called_with(principal_id, "&order:-verb")
+        called_with_para = save_policy.mock_calls[5][1]
+        self.assertEqual(principal_id, called_with_para[0])
+        self.assertEqual("&order:-verb", called_with_para[1])
+        self.assertEqual(2, len(called_with_para[2]))  # it catches all the policies
+        self.assertEqual(response.data["meta"]["count"], 2)
+        # Response data is in reverse order
+        self.assertEqual(response.data["data"][0]["permission"], "test:assigned:permission1")  # check order
+
+        #### Sort by nothing still works ####
+        url = "{}?application=&username={}&order_by=".format(reverse("access"), self.principal.username)
+        response = client.get(url, **self.headers)
+        # Cache is called saved with sub_key ""
+        get_policy.assert_called_with(principal_id, "")
+        called_with_para = save_policy.mock_calls[6][1]
+        self.assertEqual(principal_id, called_with_para[0])
+        self.assertEqual("", called_with_para[1])
+        self.assertEqual(2, len(called_with_para[2]))  # it catches all the policies
+        self.assertEqual(response.data["meta"]["count"], 2)
+
+    def test_get_access_with_invalid_ordering_value(self):
+        """Test that get access with invalid ordering value raises 401."""
+        client = APIClient()
+        url = "{}?application={}&username={}&order_by={}".format(
+            reverse("access"), "app", self.principal.username, "invalid_value"
+        )
+        response = client.get(url, **self.headers)
+
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)

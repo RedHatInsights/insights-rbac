@@ -21,8 +21,8 @@ from management.group.serializer import GroupInputSerializer
 from management.policy.model import Policy
 from management.role.model import Role
 from management.role.serializer import RoleMinimumSerializer
+from management.serializer_override_mixin import SerializerCreateOverrideMixin
 from rest_framework import serializers
-from rest_framework.validators import UniqueValidator
 
 
 class UUIDListField(serializers.ListField):
@@ -31,13 +31,11 @@ class UUIDListField(serializers.ListField):
     child = serializers.UUIDField()
 
 
-class PolicyInputSerializer(serializers.ModelSerializer):
+class PolicyInputSerializer(SerializerCreateOverrideMixin, serializers.ModelSerializer):
     """Serializer for the policy model."""
 
     uuid = serializers.UUIDField(read_only=True)
-    name = serializers.CharField(
-        required=True, max_length=150, validators=[UniqueValidator(queryset=Policy.objects.all())]
-    )
+    name = serializers.CharField(required=True, max_length=150)
     description = serializers.CharField(allow_null=True, required=False)
     group = serializers.UUIDField(required=True)
     roles = UUIDListField(required=True)
@@ -53,6 +51,7 @@ class PolicyInputSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         """Create the policy object in the database."""
         name = validated_data.pop("name")
+        tenant = self.context["request"].tenant
         description = validated_data.pop("description", None)
         group_uuid = validated_data.pop("group")
         role_uuids = validated_data.pop("roles")
@@ -63,7 +62,7 @@ class PolicyInputSerializer(serializers.ModelSerializer):
             error = {"detail": msg.format(group_uuid)}
             raise serializers.ValidationError(error)
 
-        policy = Policy(name=name, description=description, group=group)
+        policy = Policy(name=name, description=description, group=group, tenant=tenant)
         roles = []
         for role_uuid in role_uuids:
             try:
@@ -138,7 +137,7 @@ class PolicyInputSerializer(serializers.ModelSerializer):
         }
 
 
-class PolicySerializer(serializers.ModelSerializer):
+class PolicySerializer(SerializerCreateOverrideMixin, serializers.ModelSerializer):
     """Serializer for the policy model."""
 
     uuid = serializers.UUIDField(read_only=True)

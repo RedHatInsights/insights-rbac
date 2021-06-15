@@ -29,15 +29,17 @@ from management.principal.model import Principal
 from management.rbac_fields import AutoDateTimeField
 from management.role.model import Role
 
+from api.models import TenantAwareModel
+
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 
-class Policy(models.Model):
+class Policy(TenantAwareModel):
     """A policy."""
 
     uuid = models.UUIDField(default=uuid4, editable=False, unique=True, null=False)
-    name = models.CharField(max_length=150, unique=True)
+    name = models.CharField(max_length=150)
     description = models.TextField(null=True)
     group = models.ForeignKey(Group, null=True, on_delete=models.CASCADE, related_name="policies")
     roles = models.ManyToManyField(Role, related_name="policies")
@@ -47,6 +49,7 @@ class Policy(models.Model):
 
     class Meta:
         ordering = ["name", "modified"]
+        constraints = [models.UniqueConstraint(fields=["name", "tenant"], name="unique policy name per tenant")]
 
 
 def policy_changed_cache_handler(sender=None, instance=None, using=None, **kwargs):

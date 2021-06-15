@@ -18,9 +18,9 @@
 """Serializer for role management."""
 from django.utils.translation import gettext as _
 from management.group.model import Group
-from management.utils import get_principal_from_request
+from management.serializer_override_mixin import SerializerCreateOverrideMixin
+from management.utils import get_principal_from_request, schema_handler
 from rest_framework import serializers
-from rest_framework.validators import UniqueValidator
 
 from .model import Access, Permission, ResourceDefinition, Role
 
@@ -28,7 +28,7 @@ ALLOWED_OPERATIONS = ["in", "equal"]
 FILTER_FIELDS = set(["key", "value", "operation"])
 
 
-class ResourceDefinitionSerializer(serializers.ModelSerializer):
+class ResourceDefinitionSerializer(SerializerCreateOverrideMixin, serializers.ModelSerializer):
     """Serializer for the ResourceDefinition model."""
 
     attributeFilter = serializers.JSONField()
@@ -56,7 +56,7 @@ class ResourceDefinitionSerializer(serializers.ModelSerializer):
         fields = ("attributeFilter",)
 
 
-class AccessSerializer(serializers.ModelSerializer):
+class AccessSerializer(SerializerCreateOverrideMixin, serializers.ModelSerializer):
     """Serializer for the Access model."""
 
     resourceDefinitions = ResourceDefinitionSerializer(many=True)
@@ -84,12 +84,8 @@ class RoleSerializer(serializers.ModelSerializer):
     """Serializer for the Role model."""
 
     uuid = serializers.UUIDField(read_only=True)
-    name = serializers.CharField(
-        required=True, max_length=150, validators=[UniqueValidator(queryset=Role.objects.all())]
-    )
-    display_name = serializers.CharField(
-        required=False, max_length=150, allow_blank=True, validators=[UniqueValidator(queryset=Role.objects.all())]
-    )
+    name = serializers.CharField(required=True, max_length=150)
+    display_name = serializers.CharField(required=False, max_length=150, allow_blank=True)
     description = serializers.CharField(allow_null=True, required=False)
     access = AccessSerializer(many=True)
     policyCount = serializers.IntegerField(read_only=True)
@@ -129,44 +125,29 @@ class RoleSerializer(serializers.ModelSerializer):
         display_name = validated_data.pop("display_name", name)
         description = validated_data.pop("description", None)
         access_list = validated_data.pop("access")
-        role = Role.objects.create(name=name, description=description, display_name=display_name)
-        role.save()
-        for access_item in access_list:
-            resource_def_list = access_item.pop("resourceDefinitions")
-            access_permission = access_item.pop("permission")
-            permission, created = Permission.objects.get_or_create(**access_permission)
-            access_obj = Access.objects.create(permission=permission, role=role)
-            for resource_def_item in resource_def_list:
-                ResourceDefinition.objects.create(**resource_def_item, access=access_obj)
+        tenant = self.context["request"].tenant
+        for tenant_schema in schema_handler(tenant):
+            role = Role.objects.create(name=name, description=description, display_name=display_name, tenant=tenant)
+            create_access_for_role(role, access_list, tenant)
+
         return role
 
     def update(self, instance, validated_data):
         """Update the role object in the database."""
-        if instance.system:
-            key = "role.update"
-            message = "System roles may not be updated."
-            error = {key: [_(message)]}
-            raise serializers.ValidationError(error)
         access_list = validated_data.pop("access")
-        instance.name = validated_data.get("name", instance.name)
-        instance.display_name = validated_data.get("display_name", instance.display_name)
-        instance.description = validated_data.get("description", instance.description)
-        instance.save()
-        instance.access.all().delete()
+        tenant = self.context["request"].tenant
+        role_name = instance.name
+        update_data = validate_role_update(instance, validated_data)
 
-        for access_item in access_list:
-            resource_def_list = access_item.pop("resourceDefinitions")
-            access_permission = access_item.pop("permission")
-            permission, created = Permission.objects.get_or_create(**access_permission)
-            access_obj = Access.objects.create(permission=permission, role=instance)
-            for resource_def_item in resource_def_list:
-                ResourceDefinition.objects.create(**resource_def_item, access=access_obj)
+        for tenant_schema in schema_handler(tenant):
+            instance = update_role(role_name, update_data, tenant)
 
-        instance.save()
+            create_access_for_role(instance, access_list, tenant)
+
         return instance
 
 
-class RoleMinimumSerializer(serializers.ModelSerializer):
+class RoleMinimumSerializer(SerializerCreateOverrideMixin, serializers.ModelSerializer):
     """Serializer for the Role model that doesn't return access info."""
 
     uuid = serializers.UUIDField(read_only=True)
@@ -204,7 +185,7 @@ class RoleMinimumSerializer(serializers.ModelSerializer):
         return obtain_applications(obj)
 
 
-class DynamicFieldsModelSerializer(serializers.ModelSerializer):
+class DynamicFieldsModelSerializer(SerializerCreateOverrideMixin, serializers.ModelSerializer):
     """A ModelSerializer that controls which fields should be displayed."""
 
     def __init__(self, *args, **kwargs):
@@ -278,21 +259,16 @@ class RolePatchSerializer(RoleSerializer):
     """Serializer for Role patch."""
 
     access = AccessSerializer(many=True, required=False)
-    name = serializers.CharField(
-        required=False, max_length=150, validators=[UniqueValidator(queryset=Role.objects.all())]
-    )
+    name = serializers.CharField(required=False, max_length=150)
 
     def update(self, instance, validated_data):
         """Patch the role object."""
-        if instance.system:
-            key = "role.update"
-            message = "System roles may not be updated."
-            error = {key: [_(message)]}
-            raise serializers.ValidationError(error)
-        instance.name = validated_data.get("name", instance.name)
-        instance.display_name = validated_data.get("display_name", instance.display_name)
-        instance.description = validated_data.get("description", instance.description)
-        instance.save()
+        tenant = self.context["request"].tenant
+        role_name = instance.name
+        update_data = validate_role_update(instance, validated_data)
+
+        for tenant_schema in schema_handler(tenant):
+            instance = update_role(role_name, update_data, tenant, clear_access=False)
         return instance
 
 
@@ -316,3 +292,50 @@ def obtain_groups_in(obj, request):
         return (assigned_groups | Group.platform_default_set()).distinct()
 
     return Group.objects.filter(policies__in=policy_ids).distinct()
+
+
+def create_access_for_role(role, access_list, tenant):
+    """Create access objects and relate it to role."""
+    for access_item in access_list:
+        resource_def_list = access_item.get("resourceDefinitions")
+        access_permission = access_item.get("permission")
+        permission = Permission.objects.get(**access_permission)
+
+        access_obj = Access.objects.create(permission=permission, role=role, tenant=tenant)
+        for resource_def_item in resource_def_list:
+            ResourceDefinition.objects.create(**resource_def_item, access=access_obj, tenant=tenant)
+
+
+def validate_role_update(instance, validated_data):
+    """Validate if role could be updated."""
+    if instance.system:
+        key = "role.update"
+        message = "System roles may not be updated."
+        error = {key: [_(message)]}
+        raise serializers.ValidationError(error)
+    updated_name = validated_data.get("name", instance.name)
+    updated_display_name = validated_data.get("display_name", instance.display_name)
+    updated_description = validated_data.get("description", instance.description)
+
+    return {
+        "updated_name": updated_name,
+        "updated_display_name": updated_display_name,
+        "updated_description": updated_description,
+    }
+
+
+def update_role(role_name, update_data, tenant, clear_access=True):
+    """Update role attribute."""
+    role, created = Role.objects.update_or_create(
+        name=role_name,
+        tenant=tenant,
+        defaults={
+            "name": update_data.get("updated_name"),
+            "display_name": update_data.get("updated_display_name"),
+            "description": update_data.get("updated_description"),
+        },
+    )
+    if clear_access:
+        role.access.all().delete()
+
+    return role

@@ -21,7 +21,7 @@ from uuid import UUID
 
 from django.core.exceptions import PermissionDenied
 from django.utils.translation import gettext as _
-from management.models import Group, Principal, Role
+from management.models import Access, Group, Principal, Role
 from management.principal.proxy import PrincipalProxy
 from rest_framework import serializers, status
 from tenant_schemas.utils import tenant_context
@@ -55,13 +55,14 @@ def get_principal_from_request(request):
         raise PermissionDenied()
     username = qs_user if qs_user else current_user
 
-    return get_principal(username, request.user.account, verify_principal=bool(qs_user))
+    return get_principal(username, request, verify_principal=bool(qs_user))
 
 
-def get_principal(username, account, verify_principal=True):
+def get_principal(username, request, verify_principal=True):
     """Get principals from username."""
     # First check if principal exist on our side,
     # if not call BOP to check if user exist in the account.
+    account = request.user.account
     try:
         principal = Principal.objects.get(username__iexact=username)
     except Principal.DoesNotExist:
@@ -77,8 +78,10 @@ def get_principal(username, account, verify_principal=True):
                 raise serializers.ValidationError({key: _(message)})
 
         # Avoid possible race condition if the user was created while checking BOP
-        principal, created = Principal.objects.get_or_create(username=username)  # pylint: disable=unused-variable
-
+        for tenant in schema_handler(request.tenant):
+            principal, created = Principal.objects.get_or_create(
+                username=username, tenant=tenant
+            )  # pylint: disable=unused-variable
     return principal
 
 
@@ -103,12 +106,13 @@ def roles_for_policies(policies):
 def access_for_roles(roles, param_applications):
     """Gathers all access for the given roles and application(s)."""
     access = []
+    param_applications_list = param_applications.split(",")
     for role in set(roles):
-        role_access = set(role.access.all())
-        for access_item in role_access:
-            if (not param_applications) or (access_item.permission_application() in param_applications):
-                access.append(access_item)
-    return access
+        if param_applications:
+            access += Access.objects.filter(role=role, permission__application__in=param_applications_list)
+            continue
+        access += role.access.all()
+    return set(access)
 
 
 def groups_for_principal(principal, **kwargs):
@@ -160,15 +164,17 @@ def queryset_by_id(objects, clazz, **kwargs):
     return query
 
 
-def validate_and_get_key(params, query_key, valid_values, default_value):
+def validate_and_get_key(params, query_key, valid_values, default_value=None, required=True):
     """Validate the key."""
     value = params.get(query_key, default_value)
     if not value:
-        key = "detail"
-        message = "Query parameter '{}' is required.".format(query_key)
-        raise serializers.ValidationError({key: _(message)})
+        if required:
+            key = "detail"
+            message = "Query parameter '{}' is required.".format(query_key)
+            raise serializers.ValidationError({key: _(message)})
+        return None
 
-    if value.lower() not in valid_values:
+    elif value.lower() not in valid_values:
         key = "detail"
         message = "{} query parameter value '{}' is invalid. {} are valid inputs.".format(
             query_key, value, valid_values
@@ -202,8 +208,25 @@ def roles_for_cross_account_principal(principal):
     """Return roles for cross account principals."""
     target_account, user_id = principal.username.split("-")
     with tenant_context(Tenant.objects.get(schema_name="public")):
-        cross_account_request = CrossAccountRequest.objects.filter(
-            target_account=target_account, user_id=user_id, status="approved"
-        ).first()
-        role_names = list(cross_account_request.roles.all().values_list("name", flat=True))
-    return Role.objects.filter(name__in=role_names)
+        role_names = (
+            CrossAccountRequest.objects.filter(target_account=target_account, user_id=user_id, status="approved")
+            .values_list("roles__name", flat=True)
+            .distinct()
+        )
+        role_names_list = list(role_names)
+    return Role.objects.filter(name__in=role_names_list)
+
+
+# this would provide as a handler to yield/run the same command
+# on both the public schema, and the schema that's passed in,
+# without changing the implementation logic in the original method
+def schema_handler(tenant_schema, include_public=True):
+    """Handle events in both public and tenant schemas."""
+    schemas = []
+    if include_public:
+        public_schema = Tenant.objects.get(schema_name="public")
+        schemas.append(public_schema)
+    schemas.append(tenant_schema)
+    for schema in schemas:
+        with tenant_context(schema):
+            yield tenant_schema

@@ -36,13 +36,17 @@ class GroupDefinerTests(IdentityRequest):
         """Test that default group are seeded properly."""
         with tenant_context(self.tenant):
             group = Group.objects.get(platform_default=True)
+            system_policy = group.policies.get(name="System Policy for Group {}".format(group.uuid))
             self.assertEqual(group.platform_default, True)
             self.assertEqual(group.system, True)
             self.assertEqual(group.name, "Default access")
-            self.assertEqual(group.policies.get(name="System Policy for Group {}".format(group.uuid)).system, True)
+            self.assertEqual(group.tenant, self.tenant)
+            self.assertEqual(system_policy.system, True)
+            self.assertEqual(system_policy.tenant, self.tenant)
             # only platform_default roles would be assigned to the default group
             for role in group.roles():
                 self.assertTrue(role.platform_default)
+                self.assertEqual(role.tenant, self.tenant)
 
     def test_default_group_seeding_skips(self):
         """Test that default groups with system flag false will be skipped during seeding"""
@@ -57,6 +61,7 @@ class GroupDefinerTests(IdentityRequest):
         with tenant_context(self.tenant):
             group = Group.objects.get(platform_default=True)
             self.assertEqual(group.system, False)
+            self.assertEqual(group.tenant, self.tenant)
             group.roles().get(name="Ansible Automation Access Local Test")
 
     def test_default_group_seeding_reassign_roles(self):
@@ -80,7 +85,7 @@ class GroupDefinerTests(IdentityRequest):
         with tenant_context(self.tenant):
             group = Group.objects.get(platform_default=True)
             roles = Role.objects.filter(name="RBAC Administrator").values_list("uuid", flat=True)
-            add_roles(group, roles)
+            add_roles(group, roles, self.tenant)
 
             group.system = system
             group.save()

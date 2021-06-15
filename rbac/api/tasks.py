@@ -18,35 +18,11 @@
 from __future__ import absolute_import, unicode_literals
 
 from celery import shared_task
-from django.core.management import call_command
-from management.principal.cleaner import clean_tenants_principals
+
+from api.cross_access.util import check_cross_request_expiry
 
 
 @shared_task
-def principal_cleanup():
-    """Celery task to clean up principals no longer existing."""
-    clean_tenants_principals()
-
-
-@shared_task
-def run_migrations_in_worker():
-    """Celery task to run migrations."""
-    call_command("migrate_schemas")
-
-
-@shared_task
-def run_seeds_in_worker(kwargs):
-    """Celery task to run seeds."""
-    call_command("seeds", **kwargs)
-
-
-@shared_task
-def run_reconcile_tenant_relations_in_worker(kwargs):
-    """Celery task to reconcile tenant relations."""
-    call_command("reconcile_tenant_relations", **kwargs)
-
-
-@shared_task
-def run_sync_schemas_in_worker():
-    """Celery task to sync schemas."""
-    call_command("sync_schemas")
+def cross_account_cleanup():
+    """Celery task to mark expired cross-account requests."""
+    check_cross_request_expiry()

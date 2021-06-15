@@ -93,6 +93,39 @@
                 "true"
               ]
             }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "description": "Parameter for filtering resource based on status.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "pending",
+                "approved",
+                "denied",
+                "cancelled",
+                "expired"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "order_by",
+            "required": false,
+            "description": "Parameter for ordering by field. For inverse ordering, use '-', e.g. ?order_by=-start_date.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "request_id",
+                "start_date",
+                "end_date",
+                "created",
+                "modified",
+                "status"
+              ]
+            }
           }
         ],
         "responses": {
@@ -507,7 +540,7 @@
             "in": "query",
             "name": "match_criteria",
             "required": false,
-            "description": "Parameter for specifying the matching criteria for an object's name or email.",
+            "description": "Parameter for specifying the matching criteria for an object's name and/or email.",
             "schema": {
               "type": "string",
               "enum": [
@@ -552,7 +585,7 @@
           {
             "name": "status",
             "in": "query",
-            "description": "Set the status of users to get back. Could not be used with: usernames, email, admin_only",
+            "description": "Set the status of users to get back.",
             "required": false,
             "schema": {
               "type": "string",
@@ -877,7 +910,7 @@
         "tags": [
           "Group"
         ],
-        "summary": "Udate a group in the tenant",
+        "summary": "Update a group in the tenant",
         "operationId": "updateGroup",
         "parameters": [
           {
@@ -2340,6 +2373,20 @@
             }
           },
           {
+            "name": "order_by",
+            "in": "query",
+            "description": "Parameter for ordering roles by value. For inverse ordering, supply '-' before the param value, such as: ?order_by=-application",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "application",
+                "resource_type",
+                "verb"
+              ]
+            }
+          },
+          {
             "$ref": "#/components/parameters/QueryLimit"
           },
           {
@@ -3254,7 +3301,7 @@
               "cancelled",
               "denied"
             ]
-          }  
+          }
         }
       },
       "CrossAccountRequestPatch": {
@@ -3283,7 +3330,7 @@
               "cancelled",
               "denied"
             ]
-          }  
+          }
         }
       },
       "CrossAccountRequestByAccount": {

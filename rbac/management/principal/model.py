@@ -20,13 +20,18 @@ from uuid import uuid4
 
 from django.db import models
 
+from api.models import TenantAwareModel
 
-class Principal(models.Model):
+
+class Principal(TenantAwareModel):
     """A principal."""
 
     uuid = models.UUIDField(default=uuid4, editable=False, unique=True, null=False)
-    username = models.CharField(max_length=150, unique=True)
+    username = models.CharField(max_length=150)
     cross_account = models.BooleanField(default=False)
 
     class Meta:
         ordering = ["username"]
+        constraints = [
+            models.UniqueConstraint(fields=["username", "tenant"], name="unique principal username per tenant")
+        ]

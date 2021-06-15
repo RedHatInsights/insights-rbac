@@ -86,20 +86,15 @@ class PrincipalView(APIView):
 
     def get(self, request):
         """List principals for account."""
-        proxy = PrincipalProxy()
-        user = self.request.user
-        path = self.request.path
-        query_params = self.request.query_params
+        user = request.user
+        path = request.path
+        query_params = request.query_params
         default_limit = StandardResultsSetPagination.default_limit
-        usernames = None
         usernames_filter = ""
         options = {}
         try:
             limit = int(query_params.get("limit", default_limit))
             offset = int(query_params.get("offset", 0))
-            usernames = query_params.get(USERNAMES_KEY)
-            email = query_params.get(EMAIL_KEY)
-            match_criteria = validate_and_get_key(query_params, MATCH_CRITERIA_KEY, VALID_MATCH_VALUE, "exact")
             options["sort_order"] = validate_and_get_key(query_params, SORTORDER_KEY, VALID_SORTORDER_VALUE, "asc")
             options["status"] = validate_and_get_key(query_params, STATUS_KEY, VALID_STATUS_VALUE, "enabled")
         except ValueError:
@@ -114,37 +109,9 @@ class PrincipalView(APIView):
         previous_offset = 0
         if offset - limit > 0:
             previous_offset = offset - limit
-        if usernames:
-            principals = usernames.split(",")
-            if match_criteria == "partial":
-                options["search_by"] = "partial_name"
-                resp = proxy.request_principals(
-                    user.account, input=principals[0], limit=limit, offset=offset, options=options
-                )
-            else:
-                resp = proxy.request_filtered_principals(
-                    principals,
-                    account=user.account,
-                    limit=limit,
-                    offset=offset,
-                    options={"sort_order": options["sort_order"]},
-                )
-                usernames_filter = f"&usernames={usernames}"
-        elif email:
-            if match_criteria == "partial":
-                options["search_by"] = "partial_email"
-                resp = proxy.request_principals(user.account, input=email, limit=limit, offset=offset, options=options)
-            else:
-                resp = proxy.request_principals(
-                    user.account,
-                    input=email,
-                    limit=limit,
-                    offset=offset,
-                    options={"sort_order": options["sort_order"], "search_by": "email"},
-                )
-        else:
-            options["admin_only"] = validate_and_get_key(query_params, ADMIN_ONLY_KEY, VALID_ADMIN_ONLY_VALUE, "false")
-            resp = proxy.request_principals(user.account, limit=limit, offset=offset, options=options)
+
+        resp, usernames_filter = self.users_from_proxy(user, query_params, options, limit, offset)
+
         status_code = resp.get("status_code")
         response_data = {}
         if status_code == status.HTTP_200_OK:
@@ -169,3 +136,38 @@ class PrincipalView(APIView):
             del response_data["status_code"]
 
         return Response(status=status_code, data=response_data)
+
+    def users_from_proxy(self, user, query_params, options, limit, offset):
+        """Format principal request for proxy and return prepped result."""
+        proxy = PrincipalProxy()
+        usernames = query_params.get(USERNAMES_KEY)
+        email = query_params.get(EMAIL_KEY)
+        match_criteria = validate_and_get_key(query_params, MATCH_CRITERIA_KEY, VALID_MATCH_VALUE, "exact")
+
+        if not usernames and not email:
+            options["admin_only"] = validate_and_get_key(query_params, ADMIN_ONLY_KEY, VALID_ADMIN_ONLY_VALUE, "false")
+            resp = proxy.request_principals(user.account, limit=limit, offset=offset, options=options)
+            return resp, ""
+        proxyInput = {}
+        resp = None
+        if usernames:
+            principals = usernames.split(",")
+            if match_criteria != "partial":
+                resp = proxy.request_filtered_principals(
+                    principals,
+                    account=user.account,
+                    limit=limit,
+                    offset=offset,
+                    options={"sort_order": options["sort_order"]},
+                )
+                usernames_filter = f"&usernames={usernames}"
+                return resp, usernames_filter
+            else:
+                proxyInput["principalStartsWith"] = principals[0]
+        if email:
+            if match_criteria == "partial":
+                proxyInput["emailStartsWith"] = email
+            else:
+                proxyInput["primaryEmail"] = email
+        resp = proxy.request_principals(user.account, input=proxyInput, limit=limit, offset=offset, options=options)
+        return resp, ""

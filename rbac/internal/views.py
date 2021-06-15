@@ -22,15 +22,22 @@ import logging
 
 import pytz
 from django.conf import settings
+from django.db import transaction
 from django.db.migrations.recorder import MigrationRecorder
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from management.cache import TenantCache
 from management.models import Group, Role
-from management.tasks import run_migrations_in_worker, run_seeds_in_worker
+from management.tasks import (
+    run_migrations_in_worker,
+    run_reconcile_tenant_relations_in_worker,
+    run_seeds_in_worker,
+    run_sync_schemas_in_worker,
+)
 from tenant_schemas.utils import tenant_context
 
 from api.models import Tenant
+from api.tasks import cross_account_cleanup
 
 
 logger = logging.getLogger(__name__)
@@ -91,14 +98,15 @@ def tenant_view(request, tenant_schema_name):
             return HttpResponse("Destructive operations disallowed.", status=400)
 
         tenant_obj = get_object_or_404(Tenant, schema_name=tenant_schema_name)
-        with tenant_context(tenant_obj):
-            if tenant_is_unmodified():
-                logger.warning(f"Deleting tenant {tenant_schema_name}. Requested by {request.user.username}")
-                TENANTS.delete_tenant(tenant_schema_name)
-                tenant_obj.delete()
-                return HttpResponse(status=204)
-            else:
-                return HttpResponse("Tenant cannot be deleted.", status=400)
+        with transaction.atomic():
+            with tenant_context(tenant_obj):
+                if tenant_is_unmodified():
+                    logger.warning(f"Deleting tenant {tenant_schema_name}. Requested by {request.user.username}")
+                    TENANTS.delete_tenant(tenant_schema_name)
+                    tenant_obj.delete()
+                    return HttpResponse(status=204)
+                else:
+                    return HttpResponse("Tenant cannot be deleted.", status=400)
     return HttpResponse(f'Method "{request.method}" not allowed.', status=405)
 
 
@@ -150,6 +158,36 @@ def migration_progress(request):
     return HttpResponse(f'Method "{request.method}" not allowed.', status=405)
 
 
+def tenant_reconciliation(request):
+    """View method for checking/executing tenant reconciliation.
+
+    GET(read-only)|POST(updates enabled) /_private/api/utils/tenant_reconciliation/
+    """
+    args = {"readonly": True} if request.method == "GET" else {}
+    msg = "Running tenant reconciliation in a background worker."
+
+    if request.method in ["GET", "POST"]:
+        logger.info(msg)
+        run_reconcile_tenant_relations_in_worker.delay(args)
+        return HttpResponse(msg, status=202)
+
+    return HttpResponse(f'Method "{request.method}" not allowed.', status=405)
+
+
+def sync_schemas(request):
+    """View method for syncing public and tenant schemas.
+
+    POST /_private/api/utils/sync_schemas/
+    """
+    if request.method == "POST":
+        msg = "Running schema sync in background worker."
+        logger.info(msg)
+        run_sync_schemas_in_worker.delay()
+        return HttpResponse(msg, status=202)
+
+    return HttpResponse(f'Method "{request.method}" not allowed.', status=405)
+
+
 def run_seeds(request):
     """View method for running seeds.
 
@@ -169,3 +207,26 @@ def run_seeds(request):
         run_seeds_in_worker.delay(args)
         return HttpResponse("Seeds are running in a background worker.", status=202)
     return HttpResponse(f'Method "{request.method}" not allowed.', status=405)
+
+
+def car_expiry(request):
+    """View method for running cross-account request expiry.
+
+    POST /_private/api/cars/expire/
+    """
+    if request.method == "POST":
+        logger.info("Running cross-account request expiration check.")
+        cross_account_cleanup.delay()
+        return HttpResponse("Expiry checks are running in a background worker.", status=202)
+    return HttpResponse(f'Method "{request.method}" not allowed.', status=405)
+
+
+class SentryDiagnosticError(Exception):
+    """Raise this to create an event in Sentry."""
+
+    pass
+
+
+def trigger_error(request):
+    """Trigger an error to confirm Sentry is working."""
+    raise SentryDiagnosticError

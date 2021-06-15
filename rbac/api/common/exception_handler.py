@@ -18,7 +18,9 @@
 """Common exception handler class."""
 import copy
 
-from rest_framework.views import exception_handler
+from django.db import IntegrityError
+from rest_framework import status
+from rest_framework.views import Response, exception_handler
 
 
 def _generate_errors_from_list(data, **kwargs):
@@ -70,5 +72,11 @@ def custom_exception_handler(exc, context):
             errors += _generate_errors_from_list(data, **{"status_code": str(response.status_code)})
         error_response = {"errors": errors}
         response.data = error_response
-
+    elif isinstance(exc, IntegrityError):
+        data = context.get("request").data
+        source_view = context.get("view")
+        response = Response(
+            {"errors": [{"detail": str(exc), "source": f"{source_view.basename}", "status": "400"},],},  # noqa: E231
+            status=status.HTTP_400_BAD_REQUEST,
+        )
     return response

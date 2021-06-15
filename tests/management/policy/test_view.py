@@ -25,7 +25,7 @@ from rest_framework import status
 from rest_framework.test import APIClient
 from tenant_schemas.utils import tenant_context
 
-from api.models import User
+from api.models import Tenant, User
 from management.models import Group, Principal, Policy, Role, Permission
 from tests.identity_request import IdentityRequest
 
@@ -49,6 +49,8 @@ class PolicyViewsetTests(IdentityRequest):
             self.group.save()
             self.group.principals.add(self.principal)
             self.group.save()
+            Permission.objects.create(permission="app:*:*")
+        with tenant_context(Tenant.objects.get(schema_name="public")):
             Permission.objects.create(permission="app:*:*")
 
     def tearDown(self):
@@ -99,11 +101,34 @@ class PolicyViewsetTests(IdentityRequest):
         url = reverse("policy-detail", kwargs={"uuid": response.data.get("uuid")})
         client = APIClient()
         response = client.get(url, **self.headers)
+        uuid = response.data.get("uuid")
+        policy = Policy.objects.get(uuid=uuid)
 
-        self.assertIsNotNone(response.data.get("uuid"))
+        self.assertIsNotNone(uuid)
         self.assertIsNotNone(response.data.get("name"))
         self.assertEqual(policy_name, response.data.get("name"))
+        self.assertEqual(policy.tenant, self.tenant)
         self.assertEqual(str(self.group.uuid), response.data.get("group").get("uuid"))
+
+    def test_delete_policy_success(self):
+        """Test that we can delete a policy."""
+        role_name = "roleA"
+        response = self.create_role(role_name)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        role_uuid = response.data.get("uuid")
+        policy_name = "policyA"
+        response = self.create_policy(policy_name, self.group.uuid, [role_uuid])
+        policy_uuid = response.data.get("uuid")
+
+        client = APIClient()
+        url = reverse("policy-detail", kwargs={"uuid": policy_uuid})
+        response = client.delete(url, **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+
+        url = reverse("policy-detail", kwargs={"uuid": policy_uuid})
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
     def test_create_policy_invalid_group(self):
         """Test that we cannot create a policy with invalid group."""
@@ -112,17 +137,17 @@ class PolicyViewsetTests(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         role_uuid = response.data.get("uuid")
         policy_name = "policyA"
-        response = self.create_policy(policy_name, uuid4(), [role_uuid], status.HTTP_400_BAD_REQUEST)
+        self.create_policy(policy_name, uuid4(), [role_uuid], status.HTTP_400_BAD_REQUEST)
 
     def test_create_policy_invalid_role(self):
         """Test that we cannot create a policy with an invalid role."""
         policy_name = "policyA"
-        response = self.create_policy(policy_name, self.group.uuid, [uuid4()], status.HTTP_400_BAD_REQUEST)
+        self.create_policy(policy_name, self.group.uuid, [uuid4()], status.HTTP_400_BAD_REQUEST)
 
     def test_create_policy_no_role(self):
         """Test that we cannot create a policy without roles."""
         policy_name = "policyA"
-        response = self.create_policy(policy_name, self.group.uuid, [], status.HTTP_400_BAD_REQUEST)
+        self.create_policy(policy_name, self.group.uuid, [], status.HTTP_400_BAD_REQUEST)
 
     def test_create_policy_invalid(self):
         """Test that creating an invalid policy returns an error."""
@@ -131,6 +156,15 @@ class PolicyViewsetTests(IdentityRequest):
         client = APIClient()
         response = client.post(url, test_data, format="json", **self.headers)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_create_policy_no_name(self):
+        """Test that creating a policy with no name returns a 400."""
+        role_name = "roleA"
+        response = self.create_role(role_name)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        role_uuid = response.data.get("uuid")
+        policy_name = None
+        self.create_policy(policy_name, self.group.uuid, [role_uuid], status.HTTP_400_BAD_REQUEST)
 
     def test_read_policy_invalid(self):
         """Test that reading an invalid policy returns an error."""

@@ -74,6 +74,7 @@ objects:
               secretKeyRef:
                 key: sentry-dsn
                 name: rbac-secret
+                optional: true
           - name: SERVICE_PSKS
             valueFrom:
               secretKeyRef:
@@ -197,7 +198,7 @@ objects:
             value: "False"
 
     - name: worker-service
-      minReplicas: 1
+      minReplicas: ${{MIN_WORKER_REPLICAS}}
       podSpec:
         image: ${IMAGE}:${IMAGE_TAG}
         command:
@@ -215,8 +216,8 @@ objects:
                 PYTHONPATH=${PWD}/rbac/ celery inspect
                 ping -A rbac.celery
           failureThreshold: 3
-          initialDelaySeconds: 30
-          periodSeconds: 300
+          initialDelaySeconds: ${{CELERY_INITIAL_DELAY_SEC}}
+          periodSeconds: ${{CELERY_PERIOD_SEC}}
           successThreshold: 1
           timeoutSeconds: 10
         readinessProbe:
@@ -228,7 +229,7 @@ objects:
                 PYTHONPATH=${PWD}/rbac/ celery inspect
                 ping -A rbac.celery
           failureThreshold: 3
-          periodSeconds: 300
+          periodSeconds: ${{CELERY_PERIOD_SEC}}
           successThreshold: 1
           timeoutSeconds: 10
         volumeMounts:
@@ -327,8 +328,14 @@ objects:
             value: ${CLOWDER_ENABLED}
           - name: CW_NULL_WORKAROUND
             value: ${CW_NULL_WORKAROUND)
+          - name: SENTRY_DSN
+            valueFrom:
+              secretKeyRef:
+                key: sentry-dsn
+                name: rbac-secret
+                optional: true
     - name: scheduler-service
-      minReplicas: 1
+      minReplicas: ${{MIN_SCHEDULER_REPLICAS}}
       podSpec:
         image: ${IMAGE}:${IMAGE_TAG}
         command:
@@ -346,8 +353,8 @@ objects:
                 PYTHONPATH=${PWD}/rbac/ celery inspect
                 ping -A rbac.celery
           failureThreshold: 3
-          initialDelaySeconds: 30
-          periodSeconds: 300
+          initialDelaySeconds: ${{CELERY_INITIAL_DELAY_SEC}}
+          periodSeconds: ${{CELERY_PERIOD_SEC}}
           successThreshold: 1
           timeoutSeconds: 10
         readinessProbe:
@@ -359,7 +366,7 @@ objects:
                 PYTHONPATH=${PWD}/rbac/ celery inspect
                 ping -A rbac.celery
           failureThreshold: 3
-          periodSeconds: 300
+          periodSeconds: ${{CELERY_PERIOD_SEC}}
           successThreshold: 1
           timeoutSeconds: 10
         resources:
@@ -388,6 +395,12 @@ objects:
           value: ${CLOWDER_ENABLED}
         - name: CW_NULL_WORKAROUND
           value: ${CW_NULL_WORKAROUND)
+        - name: SENTRY_DSN
+          valueFrom:
+            secretKeyRef:
+              key: sentry-dsn
+              name: rbac-secret
+              optional: true
 
 - apiVersion: v1
   kind: ConfigMap
@@ -1646,7 +1659,7 @@ parameters:
   value: simple
 - displayName: Django log handlers
   name: DJANGO_LOG_HANDLERS
-  value: console
+  value: console,ecs
 - displayName: Django log directory
   name: DJANGO_LOG_DIRECTORY
 - displayName: Django logging file
@@ -1662,6 +1675,12 @@ parameters:
   value: '1'
 - description: maximum number of pods to use when autoscaling is enabled
   name: MAX_REPLICAS
+  value: '1'
+- description: minimum number of pods to use when autoscaling is enabled for worker service
+  name: MIN_WORKER_REPLICAS
+  value: '1'
+- description: minimum number of pods to use when autoscaling is enabled for scheduler service
+  name: MIN_SCHEDULER_REPLICAS
   value: '1'
 - description: target CPU utilization for the service
   name: TARGET_CPU_UTILIZATION
@@ -1739,7 +1758,7 @@ parameters:
   value: 512Mi
 - displayName: Django Debug
   name: DJANGO_DEBUG
-  value: 'false'
+  value: 'False'
 - displayName: Django log level
   name: DJANGO_LOG_LEVEL
   value: INFO
@@ -1768,3 +1787,7 @@ parameters:
   value: 'true'
 - name: EPH_ENV
   required: true
+- name: CELERY_INITIAL_DELAY_SEC
+  value: "30"
+- name: CELERY_PERIOD_SEC
+  value: "300"

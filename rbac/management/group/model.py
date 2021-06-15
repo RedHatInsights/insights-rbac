@@ -28,15 +28,17 @@ from management.principal.model import Principal
 from management.rbac_fields import AutoDateTimeField
 from management.role.model import Role
 
+from api.models import TenantAwareModel
+
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 
-class Group(models.Model):
+class Group(TenantAwareModel):
     """A group."""
 
     uuid = models.UUIDField(default=uuid4, editable=False, unique=True, null=False)
-    name = models.CharField(max_length=150, unique=True)
+    name = models.CharField(max_length=150)
     description = models.TextField(null=True)
     principals = models.ManyToManyField(Principal, related_name="group")
     created = models.DateTimeField(default=timezone.now)
@@ -66,6 +68,7 @@ class Group(models.Model):
 
     class Meta:
         ordering = ["name", "modified"]
+        constraints = [models.UniqueConstraint(fields=["name", "tenant"], name="unique group name per tenant")]
 
 
 def group_deleted_cache_handler(sender=None, instance=None, using=None, **kwargs):
