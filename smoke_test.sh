@@ -36,14 +36,17 @@ pod=""
 
 # The jq magic will find all running pods in the ns and regex on the app name
 # Loop over for SECONDS and send back the pod's name once found
+set +e
 while [ $SECONDS -lt $end ]; do
-    pod=$(oc get events | grep -o "$job_name-[a-z,A-Z,0-9]\{5\}$")
+    pod=$(oc get events | grep -o "${job_name}-[a-z,A-Z,0-9]\{5\}$")
     if [ -n "$pod" ]; then
       running=true
       break
     fi
     sleep 1
 done
+
+set -e
 
 if [ "$running" == "false" ] ; then
     echo "Job $job_name failed to start"
