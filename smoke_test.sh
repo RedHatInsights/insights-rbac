@@ -36,8 +36,8 @@ pod=""
 # The jq magic will find all running pods in the ns and regex on the app name
 # Loop over for SECONDS and send back the pod's name once found
 while [ $SECONDS -lt $end ]; do
-    pod=$(oc get pods -n $NAMESPACE -o json | jq -r '.items[] | select(.status.phase=="Running") |
-        select(.metadata.name|test("${job_name}.")) .metadata.name')
+    pod=`oc get pods -n $NAMESPACE -o json | jq -r '.items[] | select(.status.phase=="Running") |
+        select(.metadata.name|test("${job_name}.")) .metadata.name')`
     if [[ -n $pod ]]; then
         running=true
         break
