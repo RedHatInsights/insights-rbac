@@ -38,7 +38,9 @@ pod=""
 # Loop over for SECONDS and send back the pod's name once found
 set +e
 while [ $SECONDS -lt $end ]; do
-    pod=$(oc get events | grep -o "${job_name}-[a-z,A-Z,0-9]\{5\}$")
+    search_criteria="${job_name}"'-[a-z,A-Z,0-9]{5}$'
+    echo "$search_criteria"
+    pod=$(oc get events | grep -o $search_criteria)
     if [ -n "$pod" ]; then
       running=true
       break
