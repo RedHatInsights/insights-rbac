@@ -18,7 +18,7 @@
 
 from django.core.management.base import BaseCommand
 from django.db.utils import IntegrityError
-from management.models import Group, Policy, Principal, Role
+from management.models import Group, Permission, Policy, Principal, Role
 from tenant_schemas.utils import tenant_context
 
 from api.models import Tenant
@@ -61,6 +61,9 @@ class Command(BaseCommand):
                 role.tenant = tenant
                 role.save()
             access_list = list(role.access.all())
+            access_resourceDefs = {}
+            for access in access_list:
+                access_resourceDefs[str(access)] = list(access.resourceDefinitions.all())
             with tenant_context(public_schema):
                 self.clear_pk(role)
                 try:
@@ -69,16 +72,18 @@ class Command(BaseCommand):
                     self.stderr.write(f"Couldn't copy role: {role.name}. Skipping due to:\n{err}")
                     continue
                 for access in access_list:
+                    old_access = str(access)
                     self.clear_pk(access)
                     if not access.tenant:
                         access.tenant = tenant
                     access.role = role
+                    access.permission = Permission.objects.get(permission=access.permission.permission)
                     try:
                         access.save()
                     except IntegrityError as err:
                         self.stderr.write(f"Couldn't copy access entry: {access}. Skipping due to:\n{err}")
                         continue
-                    for resource_def in access.resourceDefinitions.all():
+                    for resource_def in access_resourceDefs[old_access]:
                         self.clear_pk(resource_def)
                         resource_def.access = access
                         try:
@@ -127,6 +132,7 @@ class Command(BaseCommand):
             roles = list(policy.roles.all())
             new_roles = []
             with tenant_context(public_schema):
+                policy.group = None
                 self.clear_pk(policy)
                 try:
                     policy.save()
@@ -136,7 +142,10 @@ class Command(BaseCommand):
                 else:
                     policy.group = Group.objects.get(name=group.name, tenant=tenant)
                     for role in roles:
-                        new_roles.append(Role.objects.get(name=role.name, tenant=tenant))
+                        if role.system:
+                            new_roles.append(Role.objects.get(name=role.name, tenant=public_schema))
+                        else:
+                            new_roles.append(Role.objects.get(name=role.name, tenant=tenant))
                 policy.roles.set(new_roles)
                 policy.save()
 
@@ -154,4 +163,4 @@ class Command(BaseCommand):
                     self.copy_custom_groups_to_public(tenant)
                     self.copy_custom_policies_to_public(tenant)
         except Exception as e:
-            self.stderr(f"Failure: {str(e)}")
+            self.stderr(f"Failed during copying schemas. Error was: {e}")
