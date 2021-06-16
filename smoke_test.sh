@@ -31,7 +31,7 @@ while [ $SECONDS -lt $end ]; do
     sleep 1
 done
 
-if [$found == "false"] ; then
+if [ "$found" == "false" ] ; then
     echo "Job $job_name failed to appear"
     exit 1
 fi
@@ -49,7 +49,7 @@ while [ $SECONDS -lt $end ]; do
     sleep 1
 done
 
-if [$running == "false"] ; then
+if [ "$running" == "false" ] ; then
     echo "Job $job_name failed to start"
     exit 1
 fi
