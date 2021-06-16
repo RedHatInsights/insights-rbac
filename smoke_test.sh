@@ -38,8 +38,9 @@ pod=""
 # Loop over for SECONDS and send back the pod's name once found
 while [ $SECONDS -lt $end ]; do
     # This seems to be where we hit hang-ups, let's try something simpler
-    oc get events | grep IQEJobInvoked
-    if [ $? -eq 0 ]; then
+    invoked=$(oc get events | grep IQEJobInvoked)
+    echo $invoked
+    if [ -n "$invoked" ]; then
       pod=$(oc get events | grep -o "$job_name-[a-z,A-Z,0-9]\{5\}$")
       running=true
       break
