@@ -7,6 +7,7 @@
 #NAMESPACE="mynamespace" -- namespace to deploy iqe pod into, can be set by 'deploy_ephemeral_env.sh'
 
 #IQE_POD_NAME="iqe-tests"
+# TODO: wait for deployment readiness??
 oc apply -n $NAMESPACE -f $APP_ROOT/deploy/rbac-cji-smoketest.yml
 
 
