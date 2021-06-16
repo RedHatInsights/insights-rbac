@@ -42,7 +42,7 @@ pod=""
 
 while [ $SECONDS -lt $end ]; do
     pod=$(oc get pods -n $NAMESPACE -o json | jq -r '.items[] | select(.status.phase=="Running") | select(.metadata.name|test("rbac-smoke.")) .metadata.name')
-    if [ -z $pod ]; then
+    if [[ -n $pod ]]; then
         running=true
         break
     fi
