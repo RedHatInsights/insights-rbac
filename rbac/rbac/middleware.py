@@ -26,9 +26,11 @@ from django.http import Http404, HttpResponse
 from django.utils.deprecation import MiddlewareMixin
 from management.cache import TenantCache
 from management.group.definer import seed_group  # noqa: I100, I201
+from management.models import Principal
 from management.role.definer import seed_permissions, seed_roles
-from management.utils import validate_psk
+from management.utils import APPLICATION_KEY, access_for_principal, validate_psk
 from tenant_schemas.middleware import BaseTenantMiddleware
+from tenant_schemas.utils import tenant_context
 
 from api.common import RH_IDENTITY_HEADER, RH_INSIGHTS_REQUEST_ID, RH_RBAC_ACCOUNT, RH_RBAC_CLIENT_ID, RH_RBAC_PSK
 from api.models import Tenant, User
@@ -94,16 +96,64 @@ class IdentityHeaderMiddleware(BaseTenantMiddleware):
         return ""
 
     @staticmethod  # noqa: C901
-    def _get_access_for_user():  # pylint: disable=too-many-locals,too-many-branches
+    def _get_access_for_user(username, tenant):  # pylint: disable=too-many-locals,too-many-branches
         """Obtain access data for given username.
 
         Stubbed out to begin removal of RBAC on RBAC, with minimal disruption
         """
+        principal = None
+        access_list = None
+
         access = {
             "group": {"read": [], "write": []},
             "role": {"read": [], "write": []},
             "policy": {"read": [], "write": []},
         }
+
+        with tenant_context(tenant):
+            try:  # pylint: disable=R1702
+                principal = Principal.objects.get(username__iexact=username)
+                kwargs = {APPLICATION_KEY: "rbac"}
+                access_list = access_for_principal(principal, **kwargs)
+                for access_item in access_list:  # pylint: disable=too-many-nested-blocks
+                    resource_type = access_item.permission.resource_type
+                    operation = access_item.permission.verb
+                    res_list = []
+                    res_defs = access_item.resourceDefinitions
+                    if operation == "*":
+                        operation = "write"
+                    for res_def in res_defs.all():
+                        attr_filter = res_def.attributeFilter
+                        if attr_filter.get("operation") == "equal" and attr_filter.get("value"):
+                            res_list.append(attr_filter.get("value"))
+                        if attr_filter.get("operation") == "in" and attr_filter.get("value"):
+                            res_list += attr_filter.get("value").split(",")
+                    if not res_defs or not res_defs.values():
+                        res_list = ["*"]
+                    if resource_type == "*":
+                        for resource in ("group", "role", "policy"):
+                            if (
+                                resource in access.keys()
+                                and operation in access.get(resource, {}).keys()  # noqa: W504
+                                and isinstance(access.get(resource, {}).get(operation), list)  # noqa: W504
+                            ):  # noqa: E127
+                                access[resource][operation] += res_list
+                                if operation == "write":
+                                    access[resource]["read"] += res_list
+                    elif (
+                        resource_type in access.keys()
+                        and operation in access.get(resource_type, {}).keys()  # noqa: W504
+                        and isinstance(access.get(resource_type, {}).get(operation), list)  # noqa: W504
+                    ):
+                        access[resource_type][operation] += res_list
+                        if operation == "write":
+                            access[resource_type]["read"] += res_list
+                    for res_type, res_ops_obj in access.items():
+                        for op_type, op_list in res_ops_obj.items():
+                            if "*" in op_list:
+                                access[res_type][op_type] = ["*"]
+            except Principal.DoesNotExist:
+                return access
 
         return access
 
@@ -134,7 +184,14 @@ class IdentityHeaderMiddleware(BaseTenantMiddleware):
             user.user_id = user_info.get("user_id")
             user.system = False
             if not user.admin:
-                user.access = IdentityHeaderMiddleware._get_access_for_user()
+                try:
+                    schema_name = create_schema_name(user.account)
+                    tenant = Tenant.objects.filter(schema_name=schema_name).get()
+                except Tenant.DoesNotExist:
+                    request.user = user
+                    tenant = self.get_tenant(model=None, hostname=None, request=request)
+
+                user.access = IdentityHeaderMiddleware._get_access_for_user(user.username, tenant)
             # Cross account request check
             internal = json_rh_auth.get("identity", {}).get("internal", {})
             if internal != {}:

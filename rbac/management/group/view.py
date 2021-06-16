@@ -450,6 +450,13 @@ class GroupViewSet(
         group = self.get_object()
         account = self.request.user.account
         if request.method == "POST":
+            if not request.user.admin:
+                for role in group.roles_with_access():
+                    for access in role.access.all():
+                        if access.permission_application() == "rbac":
+                            key = "add_principals"
+                            message = "Non-admin users may not add principals to Groups with RBAC permissions."
+                            raise serializers.ValidationError({key: _(message)})
             serializer = GroupPrincipalInputSerializer(data=request.data)
             if serializer.is_valid(raise_exception=True):
                 principals = serializer.data.pop("principals")
@@ -579,7 +586,7 @@ class GroupViewSet(
             serializer = GroupRoleSerializerIn(data=request.data)
             if serializer.is_valid(raise_exception=True):
                 roles = request.data.pop(ROLES_KEY, [])
-            add_roles(group, roles, request.tenant, duplicate_in_public=True)
+            add_roles(group, roles, request.tenant, user=request.user, duplicate_in_public=True)
             set_system_flag_post_update(group)
             response_data = GroupRoleSerializerIn(group)
         elif request.method == "GET":
