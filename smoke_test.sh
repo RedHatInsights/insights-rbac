@@ -7,15 +7,8 @@
 #NAMESPACE="mynamespace" -- namespace to deploy iqe pod into, can be set by 'deploy_ephemeral_env.sh'
 
 #IQE_POD_NAME="iqe-tests"
-
-# create a custom svc acct for the iqe pod to run with that has elevated permissions
-# SA=$(oc get -n $NAMESPACE sa iqe --ignore-not-found -o jsonpath='{.metadata.name}')
-# if [ -z "$SA" ]; then
-#     oc create -n $NAMESPACE sa iqe
-# fi
-# oc policy -n $NAMESPACE add-role-to-user edit system:serviceaccount:$NAMESPACE:iqe
-# oc secrets -n $NAMESPACE link iqe quay-cloudservices-pull --for=pull,mount
 oc apply -n $NAMESPACE -f $APP_ROOT/deploy/rbac-cji-smoketest.yml
+
 
 job_name=rbac-smoke-tests-iqe
 found=false
@@ -40,8 +33,10 @@ echo "Waiting for Job $job_name to be running"
 running=false
 pod=""
 
+# The jq magic will find all running pods in the ns and regex on the app name
+# Loop over for SECONDS and send back the pod's name once found
 while [ $SECONDS -lt $end ]; do
-    pod=$(oc get pods -n $NAMESPACE -o json | jq -r '.items[] | select(.status.phase=="Running") | select(.metadata.name|test("rbac-smoke.")) .metadata.name')
+    pod=$(oc get pods -n $NAMESPACE -o json | jq -r '.items[] | select(.status.phase=="Running") | select(.metadata.name|test("$job_name.")) .metadata.name')
     if [[ -n $pod ]]; then
         running=true
         break
@@ -54,8 +49,12 @@ if [ "$running" == "false" ] ; then
     exit 1
 fi
 
+# Pipe logs to background to keep them rolling in jenkins
 oc logs -n $NAMESPACE $pod -f &
-oc wait --timeout=3m --for=condition=complete -n $NAMESPACE job/rbac-smoke-tests-iqe || oc wait --timeout=3m --for=condition=failed -n $NAMESPACE job/rbac-smoke-tests-iqe
+
+# Wait for the job to Complete or Fail before we try to grab artifacts
+oc wait --timeout=3m --for=condition=Complete -n $NAMESPACE job/$job_name || oc wait --timeout=3m
+--for=condition=Failed -n $NAMESPACE job/$job_name
 
 oc cp -n $NAMESPACE $pod:artifacts/ $WORKSPACE/artifacts
 
