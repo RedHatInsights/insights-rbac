@@ -37,11 +37,12 @@ pod=""
 # The jq magic will find all running pods in the ns and regex on the app name
 # Loop over for SECONDS and send back the pod's name once found
 while [ $SECONDS -lt $end ]; do
-    pod=$(oc get pods -n $NAMESPACE -o json | jq -r '.items[] | select(.status.phase=="Running") |
-        select(.metadata.name|test("${job_name}.")) .metadata.name')
-    if [[ -n $pod ]]; then
-        running=true
-        break
+    # This seems to be where we hit hang-ups, let's try something simpler
+    oc get events | grep IQEJobInvoked
+    if [ $? -eq 0 ]; then
+      pod=$(oc get events | grep -o "$job_name-[a-z,A-Z,0-9]\{5\}$")
+      running=true
+      break
     fi
     sleep 1
 done
