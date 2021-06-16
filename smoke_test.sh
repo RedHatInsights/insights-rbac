@@ -55,7 +55,7 @@ if [ "$running" == "false" ] ; then
 fi
 
 oc logs -n $NAMESPACE $pod -f &
-oc wait --timeout=3m --for=condition=Complete job/rbac-smoke-tests-iqe || oc wait --timeout=3m --for=condition=Failed job/rbac-smoke-tests-iqe 
+oc wait --timeout=3m --for=condition=complete -n $NAMESPACE job/rbac-smoke-tests-iqe || oc wait --timeout=3m --for=condition=failed -n $NAMESPACE job/rbac-smoke-tests-iqe
 
 oc cp -n $NAMESPACE $pod:artifacts/ $WORKSPACE/artifacts
 
