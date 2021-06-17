@@ -24,10 +24,11 @@ from django.utils.translation import gettext as _
 from management.group.model import Group
 from management.policy.model import Policy
 from management.role.model import Role
-from management.utils import schema_handler
+from management.utils import schema_handler, clear_pk
 from rest_framework import serializers
 from tenant_schemas.utils import tenant_context
 
+from api.models import Tenant
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
@@ -67,8 +68,25 @@ def set_system_flag_post_update(group):
     """Update system flag on default groups."""
     if group.system:
         group.name = "Custom default access"
-    group.system = False
-    group.save()
+        group.system = False
+        group.save()
+        clone_default_group_in_public_schema(group)
+
+
+def clone_default_group_in_public_schema(group):
+    """Clone the default group for a tenant into the public schema."""
+    tenant_default_policy = group.policies.get(system=True)
+    public_tenant = Tenant.objects.get(schema_name="public")
+    clear_pk(group)
+    clear_pk(tenant_default_policy)
+    with tenant_context(public_tenant):
+        public_default_roles = (
+            Group.objects.get(platform_default=True, tenant=public_tenant).policies.get(system=True).roles.all()
+        )
+        group.save()
+        tenant_default_policy.group = group
+        tenant_default_policy.save()
+        tenant_default_policy.roles.set(public_default_roles)
 
 
 def add_roles(group, roles_or_role_ids, tenant, user=None, replace=False, duplicate_in_public=False):
@@ -83,6 +101,9 @@ def add_roles(group, roles_or_role_ids, tenant, user=None, replace=False, duplic
 
     for tenant_schema in schema_handler(tenant, include_public=duplicate_in_public):
         group, created = Group.objects.get_or_create(name=group_name, tenant=tenant)
+        # TODO
+        # we can't rely on this (currently roles won't be added in the public schema)
+        # because the UUID is different
         system_policy_name = "System Policy for Group {}".format(group.uuid)
         system_policy, system_policy_created = Policy.objects.update_or_create(
             system=True, group=group, name=system_policy_name, defaults={"tenant": tenant}
@@ -112,6 +133,6 @@ def remove_roles(group, role_ids, tenant):
 
     for tenant_schema in schema_handler(tenant):
         group = Group.objects.get(name=group.name, tenant=tenant)
-        roles = Role.objects.filter(name__in=role_names, tenant=tenant)
+        roles = group.roles().filter(name__in=role_names)
         for policy in group.policies.all():
             policy.roles.remove(*roles)

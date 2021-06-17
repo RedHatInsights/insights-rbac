@@ -21,6 +21,7 @@ import traceback
 from django.core.management.base import BaseCommand
 from django.db.utils import IntegrityError
 from management.models import Group, Permission, Policy, Principal, Role
+from management.utils import clear_pk
 from tenant_schemas.utils import tenant_context
 
 from api.models import Tenant
@@ -30,11 +31,6 @@ class Command(BaseCommand):
     """Command for use with django's manage.py script."""
 
     help = "Syncs custom principals, roles, groups, and policies to the public schema"
-
-    def clear_pk(self, entry):
-        """Clear the ID and PK values for provided postgres entry."""
-        entry.id = None
-        entry.pk = None
 
     def copy_custom_principals_to_public(self, tenant):
         """Copy custom principals from provided tenant to the public schema."""
@@ -46,7 +42,7 @@ class Command(BaseCommand):
                 principal.tenant = tenant
                 principal.save()
             with tenant_context(public_schema):
-                self.clear_pk(principal)
+                clear_pk(principal)
                 try:
                     principal.save()
                 except IntegrityError as err:
@@ -72,7 +68,7 @@ class Command(BaseCommand):
                 access_resourceDefs[str(access)] = list(access.resourceDefinitions.all())
             self.stdout.write(f"Accesses to copy: {access_list}")
             with tenant_context(public_schema):
-                self.clear_pk(role)
+                clear_pk(role)
                 try:
                     role.save()
                 except IntegrityError as err:
@@ -80,7 +76,7 @@ class Command(BaseCommand):
                     continue
                 for access in access_list:
                     old_access = str(access)
-                    self.clear_pk(access)
+                    clear_pk(access)
                     if not access.tenant:
                         access.tenant = tenant
                     access.role = role
@@ -98,7 +94,7 @@ class Command(BaseCommand):
                         self.stderr.write(f"Couldn't copy access entry: {access}. Skipping due to:\n{err}")
                         continue
                     for resource_def in access_resourceDefs[old_access]:
-                        self.clear_pk(resource_def)
+                        clear_pk(resource_def)
                         resource_def.access = access
                         try:
                             resource_def.save()
@@ -121,7 +117,7 @@ class Command(BaseCommand):
             principals = list(group.principals.all())
             new_principals = []
             with tenant_context(public_schema):
-                self.clear_pk(group)
+                clear_pk(group)
                 try:
                     group.save()
                 except IntegrityError as err:
@@ -152,7 +148,7 @@ class Command(BaseCommand):
             new_roles = []
             with tenant_context(public_schema):
                 policy.group = None
-                self.clear_pk(policy)
+                clear_pk(policy)
                 policy.group = None
                 try:
                     policy.save()
