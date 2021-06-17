@@ -53,8 +53,8 @@ fi
 oc logs -n $NAMESPACE $pod -f &
 
 # Wait for the job to Complete or Fail before we try to grab artifacts
-oc wait --timeout=3m --for=condition=Complete -n $NAMESPACE job/$job_name || oc wait --timeout=3m
---for=condition=Failed -n $NAMESPACE job/$job_name
+# condition=complete does trigger when the job fails
+oc wait --timeout=3m --for=condition=Complete -n $NAMESPACE job/$job_name 
 
 oc cp -n $NAMESPACE $pod:artifacts/ $WORKSPACE/artifacts
 
