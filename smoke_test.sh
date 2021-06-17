@@ -12,7 +12,7 @@ oc apply -n $NAMESPACE -f $APP_ROOT/deploy/rbac-cji-smoketest.yml
 
 job_name=rbac-smoke-tests-iqe
 found=false
-end=$((SECONDS+45))
+end=$((SECONDS+60))
 
 echo "Waiting for Job $job_name to appear"
 
@@ -41,7 +41,7 @@ while [ $SECONDS -lt $end ]; do
         running=true
         break
     fi
-    sleep 1
+    sleep 5
 done
 
 if [ "$running" == "false" ] ; then
