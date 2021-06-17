@@ -39,8 +39,10 @@ pod=""
 set +e
 while [ $SECONDS -lt $end ]; do
     search_criteria="${job_name}"'-[a-z,A-Z,0-9]{5}$'
-    echo "$search_criteria"
+    echo "Search criteria regex: $search_criteria"
+    oc get events
     pod=$(oc get events | grep -o $search_criteria)
+    echo "pod is $pod"
     if [ -n "$pod" ]; then
       running=true
       break
