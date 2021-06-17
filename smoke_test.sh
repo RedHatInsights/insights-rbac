@@ -7,7 +7,7 @@
 #NAMESPACE="mynamespace" -- namespace to deploy iqe pod into, can be set by 'deploy_ephemeral_env.sh'
 
 #IQE_POD_NAME="iqe-tests"
-# TODO: wait for deployment  readiness??
+
 oc apply -n $NAMESPACE -f $APP_ROOT/deploy/rbac-cji-smoketest.yml
 
 
@@ -41,7 +41,7 @@ while [ $SECONDS -lt $end ]; do
     search_criteria="${job_name}"'-[a-z,A-Z,0-9]{5}$'
     echo "Search criteria regex: $search_criteria"
     oc get events -n $NAMESPACE
-    pod=$(oc get events -n $NAMESPACE | egrep -o $search_criteria | sort -u)
+    pod=$(oc get events -n $NAMESPACE | egrep -o $search_criteria | sort -u | head -n 1)
     echo "pod is $pod"
     if [ -n "$pod" ]; then
       running=true
@@ -61,7 +61,7 @@ fi
 oc logs -n $NAMESPACE $pod -f &
 
 # Wait for the job to Complete or Fail before we try to grab artifacts
-oc wait --timeout=3m --for=condition=Complete -n $NAMESPACE job/$job_name || oc wait --timeout=3m
+oc wait --timeout=3m --for=condition=Complete -n $NAMESPACE job/$job_name || oc wait --timeout=3m \
 --for=condition=Failed -n $NAMESPACE job/$job_name
 
 oc cp -n $NAMESPACE $pod:artifacts/ $WORKSPACE/artifacts
