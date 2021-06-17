@@ -56,7 +56,7 @@ oc logs -n $NAMESPACE $pod -f &
 # condition=complete does trigger when the job fails
 oc wait --timeout=3m --for=condition=Complete -n $NAMESPACE job/$job_name 
 
-oc cp -n $NAMESPACE $pod:artifacts/ $WORKSPACE/artifacts
+oc cp -n $NAMESPACE $pod:/iqe-venv/artifacts/ $WORKSPACE/artifacts
 
 echo "copied artifacts from iqe pod: "
 ls -l $WORKSPACE/artifacts
