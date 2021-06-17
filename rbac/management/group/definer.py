@@ -19,6 +19,7 @@
 import logging
 
 from django.db import transaction
+from django.db.models import Q
 from django.db.models.query import QuerySet
 from django.utils.translation import gettext as _
 from management.group.model import Group
@@ -101,9 +102,6 @@ def add_roles(group, roles_or_role_ids, tenant, user=None, replace=False, duplic
 
     for tenant_schema in schema_handler(tenant, include_public=duplicate_in_public):
         group, created = Group.objects.get_or_create(name=group_name, tenant=tenant)
-        # TODO
-        # we can't rely on this (currently roles won't be added in the public schema)
-        # because the UUID is different
         system_policy_name = "System Policy for Group {}".format(group.uuid)
         system_policy, system_policy_created = Policy.objects.update_or_create(
             system=True, group=group, name=system_policy_name, defaults={"tenant": tenant}
@@ -115,7 +113,9 @@ def add_roles(group, roles_or_role_ids, tenant, user=None, replace=False, duplic
             if replace:
                 system_policy.roles.clear()
 
-        roles = Role.objects.filter(name__in=role_names, tenant=tenant)
+        roles = Role.objects.filter(
+            Q(tenant=tenant) | Q(tenant=Tenant.objects.get(schema_name="public")), name__in=role_names
+        )
         for role in roles:
             accesses = role.access.all()
             for access in accesses:
