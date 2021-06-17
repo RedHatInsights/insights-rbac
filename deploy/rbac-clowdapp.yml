@@ -334,6 +334,9 @@ objects:
                 key: sentry-dsn
                 name: rbac-secret
                 optional: true
+          - name: MAX_SEED_THREADS
+            value: ${MAX_SEED_THREADS}
+
     - name: scheduler-service
       minReplicas: ${{MIN_SCHEDULER_REPLICAS}}
       podSpec:
@@ -1791,3 +1794,6 @@ parameters:
   value: "30"
 - name: CELERY_PERIOD_SEC
   value: "300"
+- description: Default number of threads to use for seeding
+  name: MAX_SEED_THREADS
+  value: "2"
