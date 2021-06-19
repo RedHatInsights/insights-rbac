@@ -16,6 +16,7 @@
 #
 """Schema sync command."""
 
+import traceback
 from django.core.management.base import BaseCommand
 from django.db.utils import IntegrityError
 from management.models import Group, Permission, Policy, Principal, Role
@@ -64,6 +65,7 @@ class Command(BaseCommand):
             access_resourceDefs = {}
             for access in access_list:
                 access_resourceDefs[str(access)] = list(access.resourceDefinitions.all())
+            self.stdout.write(f"Accesses to copy: {access_list}")
             with tenant_context(public_schema):
                 self.clear_pk(role)
                 try:
@@ -80,6 +82,7 @@ class Command(BaseCommand):
                     access.permission = Permission.objects.get(permission=access.permission.permission)
                     try:
                         access.save()
+                        self.stdout.write(f"Copy access with perm {access.permission.permission}")
                     except IntegrityError as err:
                         self.stderr.write(f"Couldn't copy access entry: {access}. Skipping due to:\n{err}")
                         continue
@@ -88,6 +91,7 @@ class Command(BaseCommand):
                         resource_def.access = access
                         try:
                             resource_def.save()
+                            self.stdout.write(f"Copied resource definition with filter {resource_def.attribute_filter}")
                         except IntegrityError as err:
                             self.stderr.write(f"Couldn't copy {resource_def}. Skipping due to:\n{err}")
                             continue
@@ -127,25 +131,30 @@ class Command(BaseCommand):
                 policy.tenant = tenant
                 policy.save()
             group = policy.group
+            group_name = group.name
             if group.system:
                 continue
             roles = list(policy.roles.all())
+            tenant_roles = []
+            for role in roles:
+                tenant_roles.append({'name': role.name, 'system': role.system})
             new_roles = []
             with tenant_context(public_schema):
                 policy.group = None
                 self.clear_pk(policy)
+                policy.group = None
                 try:
                     policy.save()
                 except IntegrityError as err:
                     self.stderr.write(f"Couldn't copy policy {policy.name}. Skipping due to:\n{err}")
                     continue
                 else:
-                    policy.group = Group.objects.get(name=group.name, tenant=tenant)
-                    for role in roles:
-                        if role.system:
-                            new_roles.append(Role.objects.get(name=role.name, tenant=public_schema))
+                    policy.group = Group.objects.get(name=group_name, tenant=tenant)
+                    for role in tenant_roles:
+                        if role.get("system"):
+                            new_roles.append(Role.objects.get(name=role.get("name"), tenant=public_schema))
                         else:
-                            new_roles.append(Role.objects.get(name=role.name, tenant=tenant))
+                            new_roles.append(Role.objects.get(name=role.get("name"), tenant=tenant))
                 policy.roles.set(new_roles)
                 policy.save()
 
@@ -163,4 +172,5 @@ class Command(BaseCommand):
                     self.copy_custom_groups_to_public(tenant)
                     self.copy_custom_policies_to_public(tenant)
         except Exception as e:
-            self.stderr(f"Failed during copying schemas. Error was: {e}")
+            self.stderr.write(f"Failed during copying schemas. Error was: {e}")
+            self.stderr.write(f"Trace: {''.join(traceback.format_exception(type(e), e, e.__traceback__))}")
