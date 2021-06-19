@@ -17,6 +17,7 @@
 """Schema sync command."""
 
 import traceback
+
 from django.core.management.base import BaseCommand
 from django.db.utils import IntegrityError
 from management.models import Group, Permission, Policy, Principal, Role
@@ -137,7 +138,7 @@ class Command(BaseCommand):
             roles = list(policy.roles.all())
             tenant_roles = []
             for role in roles:
-                tenant_roles.append({'name': role.name, 'system': role.system})
+                tenant_roles.append({"name": role.name, "system": role.system})
             new_roles = []
             with tenant_context(public_schema):
                 policy.group = None
