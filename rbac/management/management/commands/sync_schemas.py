@@ -91,7 +91,7 @@ class Command(BaseCommand):
                         resource_def.access = access
                         try:
                             resource_def.save()
-                            self.stdout.write(f"Copied resource definition with filter {resource_def.attribute_filter}")
+                            self.stdout.write(f"Copied resource definition with filter {resource_def.attributeFilter}")
                         except IntegrityError as err:
                             self.stderr.write(f"Couldn't copy {resource_def}. Skipping due to:\n{err}")
                             continue
