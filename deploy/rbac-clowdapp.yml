@@ -1626,7 +1626,7 @@ parameters:
   value: "true"
 - description: ClowdEnv Name
   name: ENV_NAME
-  requred: true
+  required: true
 - description: Maximum amount of memory the Django container can use.
   displayName: Memory Limit
   name: MEMORY_LIMIT
