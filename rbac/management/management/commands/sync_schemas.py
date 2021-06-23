@@ -63,6 +63,10 @@ class Command(BaseCommand):
                 role.tenant = tenant
                 role.save()
             access_list = list(role.access.all())
+            access_perms = []
+            for access in access_list:
+                access_perms.append(access.permission.permission)
+            self.stdout.write(f"Access Strings:\n{access_perms}")
             access_resourceDefs = {}
             for access in access_list:
                 access_resourceDefs[str(access)] = list(access.resourceDefinitions.all())
@@ -80,7 +84,12 @@ class Command(BaseCommand):
                     if not access.tenant:
                         access.tenant = tenant
                     access.role = role
-                    access.permission = Permission.objects.get(permission=access.permission.permission)
+                    try:
+                        access.permission = Permission.objects.get(permission=access.permission.permission)
+                    except Permission.DoesNotExist as err:
+                        self.stderr.write(f"Couldn't find permission matching entry: {access.permission.permission}. Skipping. Additional context:\n {err}")
+                        access_list.remove(access)
+                        continue
                     try:
                         access.save()
                         self.stdout.write(f"Copy access with perm {access.permission.permission}")
