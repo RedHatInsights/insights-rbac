@@ -87,7 +87,8 @@ class Command(BaseCommand):
                     try:
                         access.permission = Permission.objects.get(permission=access.permission.permission)
                     except Permission.DoesNotExist as err:
-                        self.stderr.write(f"Couldn't find permission matching entry: {access.permission.permission}. Skipping. Additional context:\n {err}")
+                        self.stderr.write(f"Couldn't find permission entry: {access.permission.permission}, skipping.")
+                        self.stderr.write(f"Additional context:\n {err}")
                         access_list.remove(access)
                         continue
                     try:
