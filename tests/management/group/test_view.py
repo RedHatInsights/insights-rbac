@@ -924,7 +924,7 @@ class GroupViewsetTests(IdentityRequest):
         system_policies = Policy.objects.filter(system=True)
         system_policy = system_policies.get(group=self.group)
 
-        self.assertEqual(len(system_policies), 1)
+        self.assertEqual(len(system_policies), 2)
         self.assertCountEqual([system_policy, self.policy], list(self.group.policies.all()))
         self.assertCountEqual([self.roleB], list(system_policy.roles.all()))
         self.assertCountEqual([self.role], list(self.policy.roles.all()))
@@ -1010,7 +1010,7 @@ class GroupViewsetTests(IdentityRequest):
         system_policy = system_policies.get(group=self.group)
         system_policyB = system_policies.get(group=self.groupB)
 
-        self.assertEqual(len(system_policies), 2)
+        self.assertEqual(len(system_policies), 3)
         self.assertCountEqual([self.roleB], list(system_policy.roles.all()))
         self.assertCountEqual([self.roleB], list(system_policyB.roles.all()))
         self.assertEqual(response.status_code, status.HTTP_200_OK)

@@ -94,9 +94,9 @@ class RoleViewsetTests(IdentityRequest):
 
         # Create permission in public schema
         with tenant_context(Tenant.objects.get(schema_name="public")):
-            Permission.objects.create(permission="cost-management:*:*")
-            Permission.objects.create(permission="app:*:*")
-            Permission.objects.create(permission="app2:*:*")
+            Permission.objects.get_or_create(permission="cost-management:*:*")
+            Permission.objects.get_or_create(permission="app:*:*")
+            Permission.objects.get_or_create(permission="app2:*:*")
 
     def create_role(self, role_name, role_display="", in_access_data=None):
         """Create a role."""
