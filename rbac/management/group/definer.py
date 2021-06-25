@@ -25,7 +25,7 @@ from django.utils.translation import gettext as _
 from management.group.model import Group
 from management.policy.model import Policy
 from management.role.model import Role
-from management.utils import schema_handler, clear_pk
+from management.utils import clear_pk, schema_handler
 from rest_framework import serializers
 from tenant_schemas.utils import tenant_context
 
@@ -65,25 +65,29 @@ def seed_group(tenant):
     return tenant
 
 
-def set_system_flag_post_update(group):
+def set_system_flag_post_update(group, tenant):
     """Update system flag on default groups."""
     if group.system:
         group.name = "Custom default access"
         group.system = False
         group.save()
-        clone_default_group_in_public_schema(group)
+        clone_default_group_in_public_schema(group, tenant)
 
 
-def clone_default_group_in_public_schema(group):
+def clone_default_group_in_public_schema(group, tenant):
     """Clone the default group for a tenant into the public schema."""
     tenant_default_policy = group.policies.get(system=True)
     public_tenant = Tenant.objects.get(schema_name="public")
     clear_pk(group)
     clear_pk(tenant_default_policy)
     with tenant_context(public_tenant):
+        if Group.objects.filter(name=group.name, platform_default=group.platform_default, tenant=tenant):
+            return
+
         public_default_roles = (
             Group.objects.get(platform_default=True, tenant=public_tenant).policies.get(system=True).roles.all()
         )
+
         group.save()
         tenant_default_policy.group = group
         tenant_default_policy.save()

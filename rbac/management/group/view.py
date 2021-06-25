@@ -586,7 +586,7 @@ class GroupViewSet(
             serializer = GroupRoleSerializerIn(data=request.data)
             if serializer.is_valid(raise_exception=True):
                 roles = request.data.pop(ROLES_KEY, [])
-            set_system_flag_post_update(group)
+            set_system_flag_post_update(group, request.tenant)
             add_roles(group, roles, request.tenant, user=request.user, duplicate_in_public=True)
             response_data = GroupRoleSerializerIn(group)
         elif request.method == "GET":
@@ -603,7 +603,7 @@ class GroupViewSet(
             role_ids = request.query_params.get(ROLES_KEY, "").split(",")
             serializer = GroupRoleSerializerIn(data={"roles": role_ids})
             if serializer.is_valid(raise_exception=True):
-                set_system_flag_post_update(group)
+                set_system_flag_post_update(group, request.tenant)
                 remove_roles(group, role_ids, request.tenant)
 
             return Response(status=status.HTTP_204_NO_CONTENT)
