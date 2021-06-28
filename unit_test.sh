@@ -13,7 +13,6 @@ oc get secret rbac -o json -n $NAMESPACE
 python3 -m venv app-venv
 . app-venv/bin/activate
 pip install --upgrade pip setuptools wheel pipenv tox psycopg2-binary
-pip install crc-bonfire==v1.4.0b0
 tox -r
 result=$?
 source .bonfire_venv/bin/activate
