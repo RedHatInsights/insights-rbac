@@ -1,8 +1,7 @@
 # Spin up iqe pod and execute IQE tests in it
 
 # Env vars defined by caller:
-#IQE_PLUGINS="plugin1,plugin2" -- pytest plugins to run separated by ","
-#IQE_MARKER_EXPRESSION="mymarker" -- pytest marker expression
+#IQE_PLUGINS="plugin1,plugin2" -- pytest plugins to run separated by "," #IQE_MARKER_EXPRESSION="mymarker" -- pytest marker expression
 #IQE_FILTER_EXPRESSION="something AND something_else" -- pytest filter, can be "" if no filter desired
 #NAMESPACE="mynamespace" -- namespace to deploy iqe pod into, can be set by 'deploy_ephemeral_env.sh'
 
@@ -70,7 +69,7 @@ export MINIO_ACCESS=$(jq -r .accessKey < minio-creds.json | base64 -d)
 export MINIO_SECRET_KEY=$(jq -r .secretKey < minio-creds.json | base64 -d)
 
 # Setup the minio client to auth to the local eph minio in the ns
-./mc alias set minio $MINIO_HOST:$MINIO_PORT $MINIO_ACCESS $MINIO_SECRET_KEY
+./mc alias set minio http://$MINIO_HOST:$MINIO_PORT $MINIO_ACCESS $MINIO_SECRET_KEY
 
 # "mirror" copies the entire artifacts dir from the pod and writes it to the jenkins node
 ./mc mirror --overwrite minio/$pod-artifacts artifacts/
