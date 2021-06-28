@@ -61,13 +61,13 @@ chmod +x mc
 
 
 # Get the secret from the env
-oc get secret env-$NAMESPACE-minio -o json -n $NAMESPACE | jq '.data | map_values(@base64d)' > minio-creds.json
+oc get secret env-$NAMESPACE-minio -o json -n $NAMESPACE | jq -r '.data' > minio-creds.json
 
 # Grab the needed creds from the secret
-export MINIO_HOST=$(jq -r .hostname < minio-creds.json)
-export MINIO_PORT=$(jq -r .port < minio-creds.json)
-export MINIO_ACCESS=$(jq -r .accessKey < minio-creds.json)
-export MINIO_SECRET_KEY=$(jq -r .secretKey < minio-creds.json)
+export MINIO_HOST=$(jq -r .hostname < minio-creds.json | base64 -d)
+export MINIO_PORT=$(jq -r .port < minio-creds.json | base64 -d)
+export MINIO_ACCESS=$(jq -r .accessKey < minio-creds.json | base64 -d)
+export MINIO_SECRET_KEY=$(jq -r .secretKey < minio-creds.json | base64 -d)
 
 # Setup the minio client to auth to the local eph minio in the ns
 ./mc alias set minio $MINIO_HOST:$MINIO_PORT $MINIO_ACCESS $MINIO_SECRET_KEY
