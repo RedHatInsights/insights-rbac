@@ -76,7 +76,7 @@ oc get secret env-$NAMESPACE-minio -o json -n $NAMESPACE | jq -r '.data' > minio
 # Grab the needed creds from the secret
 export MINIO_ACCESS=$(jq -r .accessKey < minio-creds.json | base64 -d)
 export MINIO_SECRET_KEY=$(jq -r .secretKey < minio-creds.json | base64 -d)
-export MINIO_HOST=localhost
+export MINIO_HOST=$(jq -r .hostname < minio-creds.json | base64 -d)
 export MINIO_PORT=$LOCAL_SVC_PORT
 
 # Setup the minio client to auth to the local eph minio in the ns
