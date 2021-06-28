@@ -7,6 +7,7 @@ export IMAGE="quay.io/cloudservices/rbac"  # the image location on quay
 export IQE_PLUGINS="rbac"  # name of the IQE plugin for this APP
 export IQE_MARKER_EXPRESSION="rbac_smoke"  # This is the value passed to pytest -m
 export IQE_FILTER_EXPRESSION=""  # This is the value passed to pytest -k
+export CJI_PATH="deploy/rbac-cji-smoketest.yml"
 
 find . -name cdappconfig.json
 
