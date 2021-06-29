@@ -42,5 +42,11 @@ def run_seeds_in_worker(kwargs):
 
 @shared_task
 def run_reconcile_tenant_relations_in_worker(kwargs):
-    """Celery task to run seeds."""
+    """Celery task to reconcile tenant relations."""
     call_command("reconcile_tenant_relations", **kwargs)
+
+
+@shared_task
+def run_sync_schemas_in_worker():
+    """Celery task to sync schemas."""
+    call_command("sync_schemas")

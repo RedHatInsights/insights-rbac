@@ -51,7 +51,23 @@ def create_cross_principal(target_account, user_id):
     # Principal would have the pattern acctxxx-123456.
     principal_name = get_cross_principal_name(target_account, user_id)
     tenant_schema = create_schema_name(target_account)
-    tenant = Tenant.objects.get(schema_name=tenant_schema)
+    associate_tenant = Tenant.objects.get(schema_name=tenant_schema)
+    cross_account_principal = create_principal_with_tenant(principal_name, tenant_schema, associate_tenant)
+
+    # Create the principal in public schema
+    create_principal_with_tenant(principal_name, "public", associate_tenant)
+
+    return cross_account_principal
+
+
+def get_cross_principal_name(target_account, user_id):
+    """Get cross-account principal string from account and UID."""
+    return f"{target_account}-{user_id}"
+
+
+def create_principal_with_tenant(principal_name, schema_name, associate_tenant):
+    """Create cross-account principal in tenant."""
+    tenant = Tenant.objects.get(schema_name=schema_name)
     with tenant_context(tenant):
         cross_account_principal, _ = Principal.objects.get_or_create(username=principal_name, cross_account=True)
 
@@ -60,12 +76,6 @@ def create_cross_principal(target_account, user_id):
         # and would create duplicate records. This ensures we temporarily do an update if
         # obj.tenant_id is NULL
         if not cross_account_principal.tenant:
-            cross_account_principal.tenant = tenant
+            cross_account_principal.tenant = associate_tenant
             cross_account_principal.save()
-
     return cross_account_principal
-
-
-def get_cross_principal_name(target_account, user_id):
-    """Get cross-account principal string from account and UID."""
-    return f"{target_account}-{user_id}"

@@ -19,11 +19,19 @@
 from management.cache import AccessCache
 from management.querysets import get_access_queryset
 from management.role.serializer import AccessSerializer
-from management.utils import APPLICATION_KEY, get_principal_from_request, validate_limit_and_offset
+from management.utils import (
+    APPLICATION_KEY,
+    get_principal_from_request,
+    validate_and_get_key,
+    validate_limit_and_offset,
+)
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.settings import api_settings
 from rest_framework.views import APIView
+
+ORDER_FIELD = "order_by"
+VALID_ORDER_VALUES = ["application", "resource_type", "verb", "-application", "-resource_type", "-verb"]
 
 
 class AccessView(APIView):
@@ -78,25 +86,35 @@ class AccessView(APIView):
     pagination_class = api_settings.DEFAULT_PAGINATION_CLASS
     permission_classes = (AllowAny,)
 
-    def get_queryset(self):
+    def get_queryset(self, ordering):
         """Define the query set."""
-        return get_access_queryset(self.request)
+        access_queryset = get_access_queryset(self.request)
+        if ordering:
+            if ordering[0] == "-":
+                order_sign = "-"
+                field = ordering[1:]
+            else:
+                order_sign = ""
+                field = ordering
+            return access_queryset.order_by(f"{order_sign}permission__{field}")
+        return access_queryset
 
     def get(self, request):
         """Provide access data for principal."""
-        validate_limit_and_offset(request.query_params)
-        sub_key = self.generate_sub_key(request)
+        # Parameter extraction
+        sub_key, ordering = self.validate_and_get_param(request.query_params)
+
         principal = get_principal_from_request(request)
         cache = AccessCache(request.tenant.schema_name)
         access_policy = cache.get_policy(principal.uuid, sub_key)
         if access_policy is None:
-            queryset = self.get_queryset()
-            page = self.paginate_queryset(queryset)
-            access_policy = self.serializer_class(page, many=True).data
+            queryset = self.get_queryset(ordering)
+            access_policy = self.serializer_class(queryset, many=True).data
             cache.save_policy(principal.uuid, sub_key, access_policy)
 
-        if self.paginate_queryset(access_policy) is not None:
-            return self.get_paginated_response(access_policy)
+        page = self.paginate_queryset(access_policy)
+        if page is not None:
+            return self.get_paginated_response(page)
         return Response({"data": access_policy})
 
     @property
@@ -104,14 +122,15 @@ class AccessView(APIView):
         """Return the paginator instance associated with the view, or `None`."""
         if not hasattr(self, "_paginator"):
             self._paginator = self.pagination_class()
-            if self.pagination_class is None or "limit" not in self.request.query_params:
-                self._paginator.default_limit = self._paginator.max_limit
+            self._paginator.max_limit = None
         return self._paginator
 
     def paginate_queryset(self, queryset):
         """Return a single page of results, or `None` if pagination is disabled."""
         if self.paginator is None:
             return None
+        if "limit" not in self.request.query_params:
+            self.paginator.default_limit = len(queryset)
         return self.paginator.paginate_queryset(queryset, self.request, view=self)
 
     def get_paginated_response(self, data):
@@ -119,16 +138,12 @@ class AccessView(APIView):
         assert self.paginator is not None
         return self.paginator.get_paginated_response(data)
 
-    def generate_sub_key(self, request):
-        """Generate the sub key to store/retrieve record from redis."""
-        query_params = request.query_params
-        app = query_params.get(APPLICATION_KEY)
-        if not app:
-            app = "all"
-        limit = int(query_params.get("limit", self.paginator.default_limit))
-        # If there are some team setting this out of range, set it to the max support
-        if limit > self.paginator.max_limit:
-            limit = self.paginator.max_limit
-        offset = int(query_params.get("offset", 0))
-
-        return f"{app}_{offset}_{limit}"
+    def validate_and_get_param(self, params):
+        """Validate input parameters and get ordering and sub_key."""
+        validate_limit_and_offset(params)
+        app = params.get(APPLICATION_KEY)
+        sub_key = app
+        ordering = validate_and_get_key(params, ORDER_FIELD, VALID_ORDER_VALUES, required=False)
+        if ordering:
+            sub_key = f"{app}&order:{ordering}"
+        return sub_key, ordering

@@ -78,10 +78,10 @@ def get_principal(username, request, verify_principal=True):
                 raise serializers.ValidationError({key: _(message)})
 
         # Avoid possible race condition if the user was created while checking BOP
-        principal, created = Principal.objects.get_or_create(
-            username=username, tenant=request.tenant
-        )  # pylint: disable=unused-variable
-
+        for tenant in schema_handler(request.tenant):
+            principal, created = Principal.objects.get_or_create(
+                username=username, tenant=tenant
+            )  # pylint: disable=unused-variable
     return principal
 
 
@@ -164,15 +164,17 @@ def queryset_by_id(objects, clazz, **kwargs):
     return query
 
 
-def validate_and_get_key(params, query_key, valid_values, default_value):
+def validate_and_get_key(params, query_key, valid_values, default_value=None, required=True):
     """Validate the key."""
     value = params.get(query_key, default_value)
     if not value:
-        key = "detail"
-        message = "Query parameter '{}' is required.".format(query_key)
-        raise serializers.ValidationError({key: _(message)})
+        if required:
+            key = "detail"
+            message = "Query parameter '{}' is required.".format(query_key)
+            raise serializers.ValidationError({key: _(message)})
+        return None
 
-    if value.lower() not in valid_values:
+    elif value.lower() not in valid_values:
         key = "detail"
         message = "{} query parameter value '{}' is invalid. {} are valid inputs.".format(
             query_key, value, valid_values
@@ -213,3 +215,24 @@ def roles_for_cross_account_principal(principal):
         )
         role_names_list = list(role_names)
     return Role.objects.filter(name__in=role_names_list)
+
+
+# this would provide as a handler to yield/run the same command
+# on both the public schema, and the schema that's passed in,
+# without changing the implementation logic in the original method
+def schema_handler(tenant_schema, include_public=True):
+    """Handle events in both public and tenant schemas."""
+    schemas = []
+    if include_public:
+        public_schema = Tenant.objects.get(schema_name="public")
+        schemas.append(public_schema)
+    schemas.append(tenant_schema)
+    for schema in schemas:
+        with tenant_context(schema):
+            yield tenant_schema
+
+
+def clear_pk(entry):
+    """Clear the ID and PK values for provided postgres entry."""
+    entry.id = None
+    entry.pk = None

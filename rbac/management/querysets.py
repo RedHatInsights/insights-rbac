@@ -54,6 +54,20 @@ def get_annotated_groups():
     )
 
 
+def user_has_perm(request, resource):
+    """Check to determine if user has RBAC access perms."""
+    access = request.user.access
+    access_op = "read"
+    if request.method in ("POST", "PUT"):
+        access_op = "write"
+    res_list = access.get(resource, {}).get(access_op, [])
+    if not res_list:
+        return "None"
+    if "*" in res_list:
+        return "All"
+    return res_list
+
+
 def has_group_all_access(request):
     """Quick check to determine if a request should have access to all groups on a tenant."""
     return (
@@ -79,7 +93,14 @@ def get_group_queryset(request):
     if has_group_all_access(request):
         return get_annotated_groups() | Group.platform_default_set()
 
-    return Group.objects.none()
+    access = user_has_perm(request, "group")
+
+    if access == "All":
+        return get_annotated_groups() | Group.platform_default_set()
+    if access == "None":
+        return Group.objects.none()
+
+    return Group.objects.filter(uuid__in=access) | Group.platform_default_set()
 
 
 def annotate_roles_with_counts(queryset):
@@ -119,16 +140,12 @@ def get_role_queryset(request):
         return base_query
     if request.user.admin:
         return base_query
-    access = request.user.access
-    access_op = "read"
-    if request.method in ("POST", "PUT"):
-        access_op = "write"
-    res_list = access.get("role", {}).get(access_op, [])
-    if not res_list:
-        return Role.objects.none()
-    if "*" in res_list:
+    access = user_has_perm(request, "role")
+    if access == "All":
         return base_query
-    return base_query.filter(uuid__in=res_list)
+    if access == "None":
+        return Role.objects.none()
+    return annotate_roles_with_counts(Role.objects.filter(uuid__in=access))
 
 
 def get_policy_queryset(request):
@@ -141,16 +158,13 @@ def get_policy_queryset(request):
         return Policy.objects.all()
     if request.user.admin:
         return Policy.objects.all()
-    access = request.user.access
-    access_op = "read"
-    if request.method in ("POST", "PUT"):
-        access_op = "write"
-    res_list = access.get("policy", {}).get(access_op, [])
-    if not res_list:
-        return Policy.objects.none()
-    if "*" in res_list:
+    access = user_has_perm(request, "policy")
+
+    if access == "All":
         return Policy.objects.all()
-    return Policy.objects.filter(uuid__in=res_list)
+    if access == "None":
+        return Policy.objects.none()
+    return Policy.objects.filter(uuid__in=access)
 
 
 def get_access_queryset(request):

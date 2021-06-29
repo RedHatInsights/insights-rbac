@@ -25,7 +25,7 @@ from rest_framework import status
 from rest_framework.test import APIClient
 from tenant_schemas.utils import tenant_context
 
-from api.models import User
+from api.models import Tenant, User
 from management.models import Group, Permission, Principal, Role, Access, Policy, ResourceDefinition
 from tests.identity_request import IdentityRequest
 from unittest.mock import patch
@@ -92,12 +92,11 @@ class RoleViewsetTests(IdentityRequest):
             self.access3 = Access.objects.create(permission=self.permission2, role=self.sysRole)
             Permission.objects.create(permission="cost-management:*:*")
 
-    def tearDown(self):
-        """Tear down role viewset tests."""
-        with tenant_context(self.tenant):
-            Group.objects.all().delete()
-            Principal.objects.all().delete()
-            Role.objects.all().delete()
+        # Create permission in public schema
+        with tenant_context(Tenant.objects.get(schema_name="public")):
+            Permission.objects.get_or_create(permission="cost-management:*:*")
+            Permission.objects.get_or_create(permission="app:*:*")
+            Permission.objects.get_or_create(permission="app2:*:*")
 
     def create_role(self, role_name, role_display="", in_access_data=None):
         """Create a role."""
@@ -147,6 +146,16 @@ class RoleViewsetTests(IdentityRequest):
             self.assertEqual(access.tenant, self.tenant)
             for rd in ResourceDefinition.objects.filter(access=access):
                 self.assertEqual(rd.tenant, self.tenant)
+
+        # role also gets created in public schema
+        with tenant_context(Tenant.objects.get(schema_name="public")):
+            role_public = Role.objects.get(name="roleA")
+            self.assertEqual(role_public.access.count(), 1)
+            self.assertEqual(role_public.access.first().permission.permission, access_data[0]["permission"])
+            self.assertEqual(
+                role_public.access.first().resourceDefinitions.first().attributeFilter,
+                access_data[0]["resourceDefinitions"][0]["attributeFilter"],
+            )
 
     def test_create_role_with_display_success(self):
         """Test that we can create a role."""
@@ -621,6 +630,13 @@ class RoleViewsetTests(IdentityRequest):
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
+    def test_list_role_with_invalid_sort_order(self):
+        """Test that an invalid sort order is ignored."""
+        url = "{}?sort_field=zombie".format(URL)
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
     def test_patch_role_success(self):
         """Test that we can patch an existing role."""
         role_name = "role"
@@ -642,6 +658,12 @@ class RoleViewsetTests(IdentityRequest):
         self.assertEqual(updated_name, response.data.get("name"))
         self.assertEqual(updated_name, response.data.get("display_name"))
         self.assertEqual(updated_description, response.data.get("description"))
+
+        with tenant_context(Tenant.objects.get(schema_name="public")):
+            role_in_public = Role.objects.get(name=updated_name, tenant=self.tenant)
+            self.assertIsNotNone(role_in_public)
+            self.assertEqual(updated_name, role_in_public.display_name)
+            self.assertEqual(updated_description, role_in_public.description)
 
     def test_patch_role_failure(self):
         """Test that we return a 400 with invalid fields in the patch."""
@@ -668,6 +690,7 @@ class RoleViewsetTests(IdentityRequest):
         role_uuid = response.data.get("uuid")
         test_data = response.data
         test_data["name"] = updated_name
+        test_data["access"][0]["permission"] = "cost-management:*:*"
         del test_data["uuid"]
         url = reverse("role-detail", kwargs={"uuid": role_uuid})
         client = APIClient()
@@ -676,6 +699,12 @@ class RoleViewsetTests(IdentityRequest):
 
         self.assertIsNotNone(response.data.get("uuid"))
         self.assertEqual(updated_name, response.data.get("name"))
+        self.assertEqual("cost-management:*:*", response.data.get("access")[0]["permission"])
+
+        with tenant_context(Tenant.objects.get(schema_name="public")):
+            role_in_public = Role.objects.get(name=updated_name, tenant=self.tenant)
+            self.assertIsNotNone(role_in_public)
+            self.assertEqual("cost-management:*:*", role_in_public.access.first().permission.permission)
 
     def test_update_role_invalid(self):
         """Test that updating an invalid role returns an error."""
@@ -790,6 +819,9 @@ class RoleViewsetTests(IdentityRequest):
         """Test that we can delete an existing role."""
         role_name = "roleA"
         response = self.create_role(role_name)
+
+        with tenant_context(Tenant.objects.get(schema_name="public")):
+            self.assertIsNotNone(Role.objects.get(name=role_name, tenant=self.tenant))
         role_uuid = response.data.get("uuid")
         url = reverse("role-detail", kwargs={"uuid": role_uuid})
         client = APIClient()
@@ -799,6 +831,8 @@ class RoleViewsetTests(IdentityRequest):
         # verify the role no longer exists
         response = client.get(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        with tenant_context(Tenant.objects.get(schema_name="public")):
+            self.assertIsNone(Role.objects.filter(name=role_name, tenant=self.tenant).first())
 
     def test_delete_system_role(self):
         """Test that system roles are protected from deletion"""

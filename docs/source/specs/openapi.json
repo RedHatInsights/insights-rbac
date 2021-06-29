@@ -540,7 +540,7 @@
             "in": "query",
             "name": "match_criteria",
             "required": false,
-            "description": "Parameter for specifying the matching criteria for an object's name or email.",
+            "description": "Parameter for specifying the matching criteria for an object's name and/or email.",
             "schema": {
               "type": "string",
               "enum": [
@@ -585,7 +585,7 @@
           {
             "name": "status",
             "in": "query",
-            "description": "Set the status of users to get back. Could not be used with: usernames, email, admin_only",
+            "description": "Set the status of users to get back.",
             "required": false,
             "schema": {
               "type": "string",
@@ -2370,6 +2370,20 @@
             "required": false,
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "name": "order_by",
+            "in": "query",
+            "description": "Parameter for ordering roles by value. For inverse ordering, supply '-' before the param value, such as: ?order_by=-application",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "application",
+                "resource_type",
+                "verb"
+              ]
             }
           },
           {
