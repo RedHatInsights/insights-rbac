@@ -68,7 +68,7 @@ chmod +x mc
 LOCAL_SVC_PORT=$(python -c 'import socket; s=socket.socket(); s.bind(("", 0)); print(s.getsockname()[1]); s.close()')
 oc port-forward svc/env-$NAMESPACE-minio $LOCAL_SVC_PORT:9000 -n $NAMESPACE &
 PORT_FORWARD_PID=$!
-trap "kill_port_fwd" EXIT ERR SIGINT SIGTERM
+trap "teardown" EXIT ERR SIGINT SIGTERM
 
 # Get the secret from the env
 oc get secret env-$NAMESPACE-minio -o json -n $NAMESPACE | jq -r '.data' > minio-creds.json
