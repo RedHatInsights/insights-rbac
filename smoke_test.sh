@@ -60,7 +60,7 @@ oc logs -n $NAMESPACE $pod -f &
 # condition=complete does trigger when the job fails
 oc wait --timeout=3m --for=condition=Complete -n $NAMESPACE job/$job_name 
 
-# Get the minio client (curl would be even more complicated)
+# Get the minio client
 curl https://dl.min.io/client/mc/release/linux-amd64/mc -o mc
 chmod +x mc
 
