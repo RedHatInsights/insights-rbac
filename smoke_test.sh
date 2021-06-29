@@ -67,6 +67,7 @@ chmod +x mc
 # Set up port-forward for minio
 LOCAL_SVC_PORT=$(python -c 'import socket; s=socket.socket(); s.bind(("", 0)); print(s.getsockname()[1]); s.close()')
 oc port-forward svc/env-$NAMESPACE-minio $LOCAL_SVC_PORT:9000 -n $NAMESPACE &
+sleep 5
 PORT_FORWARD_PID=$!
 trap "teardown" EXIT ERR SIGINT SIGTERM
 
@@ -84,8 +85,6 @@ export MINIO_PORT=$LOCAL_SVC_PORT
 
 # "mirror" copies the entire artifacts dir from the pod and writes it to the jenkins node
 ./mc mirror --overwrite minio/$pod-artifacts artifacts/
-
-oc cp -n $NAMESPACE $pod:/iqe-venv/artifacts/ $WORKSPACE/artifacts
 
 echo "copied artifacts from iqe pod: "
 ls -l $WORKSPACE/artifacts
