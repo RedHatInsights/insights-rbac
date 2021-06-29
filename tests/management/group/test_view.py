@@ -21,6 +21,8 @@ from decimal import Decimal
 from unittest.mock import patch, ANY
 from uuid import uuid4
 
+from django.core.management import call_command
+from django.db import transaction
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APIClient
@@ -69,6 +71,8 @@ class GroupViewsetTests(IdentityRequest):
             self.defGroup.save()
             self.defGroup.principals.add(self.principal)
             self.defGroup.save()
+            self.defPolicy = Policy(name="defPolicy", system=True, tenant=self.tenant, group=self.defGroup)
+            self.defPolicy.save()
 
             self.emptyGroup = Group(name="groupE")
             self.emptyGroup.save()
@@ -94,6 +98,11 @@ class GroupViewsetTests(IdentityRequest):
             Group.objects.create(name="groupA", tenant=self.tenant)
             Group.objects.create(name="groupB", tenant=self.tenant)
             Group.objects.create(name="groupDef", tenant=self.tenant)
+
+    @classmethod
+    def setUpClass(self):
+        super().setUpClass()
+        call_command("seeds")
 
     def tearDown(self):
         """Tear down group viewset tests."""
@@ -915,7 +924,7 @@ class GroupViewsetTests(IdentityRequest):
         system_policies = Policy.objects.filter(system=True)
         system_policy = system_policies.get(group=self.group)
 
-        self.assertEqual(len(system_policies), 1)
+        self.assertEqual(len(system_policies), 2)
         self.assertCountEqual([system_policy, self.policy], list(self.group.policies.all()))
         self.assertCountEqual([self.roleB], list(system_policy.roles.all()))
         self.assertCountEqual([self.role], list(self.policy.roles.all()))
@@ -929,19 +938,36 @@ class GroupViewsetTests(IdentityRequest):
 
     def test_system_flag_update_on_add(self):
         """Test that adding a role to a platform_default group flips the system flag."""
+        public_tenant = Tenant.objects.get(schema_name="public")
+
+        with tenant_context(public_tenant):
+            Role.objects.create(name=self.roleB.name, system=False, tenant=public_tenant)
+
         url = reverse("group-roles", kwargs={"uuid": self.defGroup.uuid})
         client = APIClient()
         test_data = {"roles": [self.roleB.uuid, self.dummy_role_id]}
 
         self.assertTrue(self.defGroup.system)
+        self.assertEqual(self.defGroup.roles().count(), 0)
         response = client.post(url, test_data, format="json", **self.headers)
+        self.assertEqual(self.defGroup.roles().count(), 1)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.defGroup.refresh_from_db()
         self.assertEqual(self.defGroup.name, "Custom default access")
         self.assertFalse(self.defGroup.system)
 
+        with tenant_context(public_tenant):
+            public_default_group = Group.objects.get(name="Custom default access", tenant=self.tenant)
+            new_role = public_default_group.roles().filter(name=self.roleB.name)
+            self.assertEqual(len(new_role), 1)
+
     def test_system_flag_update_on_remove(self):
         """Test that removing a role from a platform_default group flips the system flag."""
+        public_tenant = Tenant.objects.get(schema_name="public")
+
+        with tenant_context(public_tenant):
+            Role.objects.create(name=self.roleB.name, system=False, tenant=public_tenant)
+
         url = reverse("group-roles", kwargs={"uuid": self.defGroup.uuid})
         client = APIClient()
         url = "{}?roles={}".format(url, self.roleB.uuid)
@@ -957,6 +983,11 @@ class GroupViewsetTests(IdentityRequest):
         self.defGroup.refresh_from_db()
         self.assertEqual(self.defGroup.name, "Custom default access")
         self.assertFalse(self.defGroup.system)
+
+        with tenant_context(public_tenant):
+            public_default_group = Group.objects.get(name="Custom default access", tenant=self.tenant)
+            new_role = public_default_group.roles().filter(name=self.roleB.name)
+            self.assertEqual(len(new_role), 0)
 
     def test_add_group_roles_bad_group_guid(self):
         group_url = reverse("group-roles", kwargs={"uuid": "master_exploder"})
@@ -979,7 +1010,7 @@ class GroupViewsetTests(IdentityRequest):
         system_policy = system_policies.get(group=self.group)
         system_policyB = system_policies.get(group=self.groupB)
 
-        self.assertEqual(len(system_policies), 2)
+        self.assertEqual(len(system_policies), 3)
         self.assertCountEqual([self.roleB], list(system_policy.roles.all()))
         self.assertCountEqual([self.roleB], list(system_policyB.roles.all()))
         self.assertEqual(response.status_code, status.HTTP_200_OK)

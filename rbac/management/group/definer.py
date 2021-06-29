@@ -19,15 +19,17 @@
 import logging
 
 from django.db import transaction
+from django.db.models import Q
 from django.db.models.query import QuerySet
 from django.utils.translation import gettext as _
 from management.group.model import Group
 from management.policy.model import Policy
 from management.role.model import Role
-from management.utils import schema_handler
+from management.utils import clear_pk, schema_handler
 from rest_framework import serializers
 from tenant_schemas.utils import tenant_context
 
+from api.models import Tenant
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
@@ -63,12 +65,33 @@ def seed_group(tenant):
     return tenant
 
 
-def set_system_flag_post_update(group):
+def set_system_flag_post_update(group, tenant):
     """Update system flag on default groups."""
     if group.system:
         group.name = "Custom default access"
-    group.system = False
-    group.save()
+        group.system = False
+        group.save()
+        clone_default_group_in_public_schema(group, tenant)
+
+
+def clone_default_group_in_public_schema(group, tenant):
+    """Clone the default group for a tenant into the public schema."""
+    tenant_default_policy = group.policies.get(system=True)
+    public_tenant = Tenant.objects.get(schema_name="public")
+    clear_pk(group)
+    clear_pk(tenant_default_policy)
+    with tenant_context(public_tenant):
+        if Group.objects.filter(name=group.name, platform_default=group.platform_default, tenant=tenant):
+            return
+
+        public_default_roles = (
+            Group.objects.get(platform_default=True, tenant=public_tenant).policies.get(system=True).roles.all()
+        )
+
+        group.save()
+        tenant_default_policy.group = group
+        tenant_default_policy.save()
+        tenant_default_policy.roles.set(public_default_roles)
 
 
 def add_roles(group, roles_or_role_ids, tenant, user=None, replace=False, duplicate_in_public=False):
@@ -94,7 +117,9 @@ def add_roles(group, roles_or_role_ids, tenant, user=None, replace=False, duplic
             if replace:
                 system_policy.roles.clear()
 
-        roles = Role.objects.filter(name__in=role_names, tenant=tenant)
+        roles = Role.objects.filter(
+            Q(tenant=tenant) | Q(tenant=Tenant.objects.get(schema_name="public")), name__in=role_names
+        )
         for role in roles:
             accesses = role.access.all()
             for access in accesses:
@@ -112,6 +137,6 @@ def remove_roles(group, role_ids, tenant):
 
     for tenant_schema in schema_handler(tenant):
         group = Group.objects.get(name=group.name, tenant=tenant)
-        roles = Role.objects.filter(name__in=role_names, tenant=tenant)
+        roles = group.roles().filter(name__in=role_names)
         for policy in group.policies.all():
             policy.roles.remove(*roles)
