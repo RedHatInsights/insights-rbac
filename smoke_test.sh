@@ -12,7 +12,7 @@ function kill_port_fwd {
 }
 
 # The CJI var name will need to be exported in the main pr_check.sh
-oc apply -n $NAMESPACE -f $APP_ROOT/$CJI_PATH
+oc apply -n $NAMESPACE -f $APP_ROOT/$IQE_CJI_PATH
 
 job_name=$APP_NAME-smoke-tests-iqe
 found=false
@@ -58,7 +58,7 @@ oc logs -n $NAMESPACE $pod -f &
 
 # Wait for the job to Complete or Fail before we try to grab artifacts
 # condition=complete does trigger when the job fails
-oc wait --timeout=3m --for=condition=Complete -n $NAMESPACE job/$job_name 
+oc wait --timeout=$IQE_CJI_TIMEOUT --for=condition=Complete -n $NAMESPACE job/$job_name
 
 # Get the minio client
 curl https://dl.min.io/client/mc/release/linux-amd64/mc -o mc

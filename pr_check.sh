@@ -7,9 +7,9 @@ export IMAGE="quay.io/cloudservices/rbac"  # the image location on quay
 export IQE_PLUGINS="rbac"  # name of the IQE plugin for this APP
 export IQE_MARKER_EXPRESSION="rbac_smoke"  # This is the value passed to pytest -m
 export IQE_FILTER_EXPRESSION=""  # This is the value passed to pytest -k
-export CJI_PATH="deploy/rbac-cji-smoketest.yml"
+export IQE_CJI_PATH="deploy/rbac-cji-smoketest.yml"
+export IQE_CJI_TIMEOUT="30m"
 
-find . -name cdappconfig.json
 
 # Install bonfire repo/initialize
 CICD_URL=https://raw.githubusercontent.com/RedHatInsights/bonfire/master/cicd
