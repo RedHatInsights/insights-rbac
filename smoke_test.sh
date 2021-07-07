@@ -5,21 +5,21 @@
 #IQE_FILTER_EXPRESSION="something AND something_else" -- pytest filter, can be "" if no filter desired
 #NAMESPACE="mynamespace" -- namespace to deploy iqe pod into, can be set by 'deploy_ephemeral_env.sh'
 
-IQE_CJI_NAME="rbac-smoke-tests"
+CJI_NAME="rbac-smoke-tests"
 
 function kill_port_fwd {
     echo "Caught signal, kill port forward"
     if [ ! -z "$PORT_FORWARD_PID" ]; then kill $PORT_FORWARD_PID; fi
 }
 
-pod=$(bonfire deploy-iqe-cji rbac -m "rbac_smoke" -e "clowder_smoke" --cji-name $IQE_CJI_NAME -n $NAMESPACE)
+pod=$(bonfire deploy-iqe-cji rbac -m "rbac_smoke" -e "clowder_smoke" --cji-name $CJI_NAME -n $NAMESPACE)
 
 # Pipe logs to background to keep them rolling in jenkins
 oc logs -n $NAMESPACE $pod -f &
 
 # Wait for the job to Complete or Fail before we try to grab artifacts
 # condition=complete does trigger when the job fails
-oc wait --timeout=$IQE_CJI_TIMEOUT --for=condition=Complete -n $NAMESPACE job/$IQE_CJI_NAME
+oc wait --timeout=$IQE_CJI_TIMEOUT --for=condition=Complete -n $NAMESPACE job/$CJI_NAME-iqe
 
 # Get the minio client
 curl https://dl.min.io/client/mc/release/linux-amd64/mc -o mc
