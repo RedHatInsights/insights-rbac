@@ -5,6 +5,11 @@
 #IQE_FILTER_EXPRESSION="something AND something_else" -- pytest filter, can be "" if no filter desired
 #NAMESPACE="mynamespace" -- namespace to deploy iqe pod into, can be set by 'deploy_ephemeral_env.sh'
 
+# https://unix.stackexchange.com/questions/122845/using-a-b-for-variable-assignment-in-scripts/122848#122848
+# In order for the deploy-iqe-cji to run correctly, we must set the marker and filter to "" if they
+# are not set in pr_check.sh
+IQE_MARKER_EXPRESSION="${IQE_MARKER_EXPRESSION:='""'}"
+IQE_FILTER_EXPRESSION="${IQE_FILTER_EXPRESSION:='""'}"
 CJI_NAME="rbac-smoke-tests"
 
 function kill_port_fwd {
@@ -12,7 +17,7 @@ function kill_port_fwd {
     if [ ! -z "$PORT_FORWARD_PID" ]; then kill $PORT_FORWARD_PID; fi
 }
 
-pod=$(bonfire deploy-iqe-cji rbac -m "rbac_smoke" -e "clowder_smoke" --cji-name $CJI_NAME -n $NAMESPACE)
+pod=$(bonfire deploy-iqe-cji rbac -m $IQE_MARKER_EXPRESSION -e "clowder_smoke" -k $IQE_FILTER_EXPRESSION --cji-name $CJI_NAME -n $NAMESPACE)
 
 # Pipe logs to background to keep them rolling in jenkins
 oc logs -n $NAMESPACE $pod -f &
