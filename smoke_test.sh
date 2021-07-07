@@ -10,13 +10,17 @@
 # are not set in pr_check.sh
 IQE_MARKER_EXPRESSION="${IQE_MARKER_EXPRESSION:='""'}"
 IQE_FILTER_EXPRESSION="${IQE_FILTER_EXPRESSION:='""'}"
-IQE_CJI_TIMEOUT="${IQE_CJI_TIMEOUT:=30m}"
 CJI_NAME="rbac-smoke-tests"
 
 function kill_port_fwd {
     echo "Caught signal, kill port forward"
     if [ ! -z "$PORT_FORWARD_PID" ]; then kill $PORT_FORWARD_PID; fi
 }
+
+if [[ -z $IQE_CJI_TIMEOUT ]]; then
+    echo "Error: no timeout set; export IQE_CJI_TIMEOUT in the main pr_check.sh file"
+    exit 1 
+fi
 
 pod=$(bonfire deploy-iqe-cji rbac -m $IQE_MARKER_EXPRESSION -e "clowder_smoke" -k $IQE_FILTER_EXPRESSION --cji-name $CJI_NAME -n $NAMESPACE)
 

@@ -8,7 +8,7 @@ export IQE_PLUGINS="rbac"  # name of the IQE plugin for this APP
 export IQE_MARKER_EXPRESSION="rbac_smoke"  # This is the value passed to pytest -m
 export IQE_FILTER_EXPRESSION=""  # This is the value passed to pytest -k
 export IQE_CJI_PATH="deploy/rbac-cji-smoketest.yml"
-export IQE_CJI_TIMEOUT="30m"
+# export IQE_CJI_TIMEOUT="30m"
 
 
 # Install bonfire repo/initialize
