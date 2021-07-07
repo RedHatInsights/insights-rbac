@@ -10,6 +10,7 @@
 # are not set in pr_check.sh
 IQE_MARKER_EXPRESSION="${IQE_MARKER_EXPRESSION:='""'}"
 IQE_FILTER_EXPRESSION="${IQE_FILTER_EXPRESSION:='""'}"
+IQE_CJI_TIMEOUT="${IQE_CJI_TIMEOUT:=30m}"
 CJI_NAME="rbac-smoke-tests"
 
 function kill_port_fwd {
