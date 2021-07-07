@@ -51,7 +51,7 @@ function kill_port_fwd {
 #     echo "Job $job_name failed to start"
 #     exit 1
 # fi
-pod=$(bonfire deploy-iqe-cji -f $APP_ROOT/$IQE_CJI_PATH rbac -n $NAMESPACE)
+pod=$(bonfire deploy-iqe-cji rbac -m "rbac_smoke" -e "clowder_smoke" -n $NAMESPACE)
 
 # Pipe logs to background to keep them rolling in jenkins
 oc logs -n $NAMESPACE $pod -f &
