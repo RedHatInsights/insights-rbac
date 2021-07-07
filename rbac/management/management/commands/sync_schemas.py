@@ -128,6 +128,28 @@ class Command(BaseCommand):
                 group.principals.set(new_principals)
                 group.save()
 
+    def copy_custom_permissions_to_public(self, tenant):
+        """Copy custom permissions from provided tenant to the public schema."""
+        new_permissions = []
+        public_schema = Tenant.objects.get(schema_name="public")
+        with tenant_context(public_schema):
+            public_permissions = list(Permission.objects.values("permission"))
+
+        tenant_permissions = Permission.objects.values("permission")
+        for perm in tenant_permissions:
+            if perm not in public_permissions:
+                new_permissions.append(Permission.objects.get(permission=perm["permission"]))
+
+        with tenant_context(public_schema):
+            for new_perm in new_permissions:
+                self.stdout.write(f"Copying permission {new_perm.permission} to public schema for tenant {tenant}.")
+                clear_pk(new_perm)
+                try:
+                    new_perm.save()
+                except IntegrityError as err:
+                    self.stderr.write(f"Couldn't copy permission {new_perm.permission}. Skipping due to:\n{err}")
+                    continue
+
     def copy_custom_policies_to_public(self, tenant):
         """Copy custom policies from provided tenant to the public schema."""
         policies = Policy.objects.all()
@@ -175,6 +197,7 @@ class Command(BaseCommand):
                 )
                 with tenant_context(tenant):
                     self.copy_custom_principals_to_public(tenant)
+                    self.copy_custom_permissions_to_public(tenant)
                     self.copy_custom_roles_to_public(tenant)
                     self.copy_custom_groups_to_public(tenant)
                     self.copy_custom_policies_to_public(tenant)
