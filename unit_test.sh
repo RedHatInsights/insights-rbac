@@ -5,7 +5,7 @@ source $CICD_ROOT/deploy_ephemeral_db.sh
 export PGPASSWORD=$DATABASE_ADMIN_PASSWORD
 
 python3 -m venv app-venv
-. app-venv/bin/activate
+source app-venv/bin/activate
 pip install --upgrade pip setuptools wheel pipenv tox psycopg2-binary
 tox -r
 result=$?
