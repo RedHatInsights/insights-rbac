@@ -90,8 +90,8 @@ class IdentityHeaderMiddleware(BaseTenantMiddleware):
 
                     else:
                         while not tenant.ready:
-                            tenant.refresh_from_db()
                             time.sleep(0.5)
+                            tenant.refresh_from_db()
             TENANTS.save_tenant(tenant)
         return tenant
 
