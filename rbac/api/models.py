@@ -25,14 +25,11 @@ from api.status.model import Status  # noqa: F401
 class Tenant(TenantMixin):
     """The model used to create a tenant schema."""
 
-    ready = models.BooleanField(default=False)
-
     # Override the mixin domain url to make it nullable, non-unique
     domain_url = None
 
     # Delete all schemas when a tenant is removed
     auto_drop_schema = True
-    auto_create_schema = False
 
     def __str__(self):
         """Get string representation of Tenant."""
