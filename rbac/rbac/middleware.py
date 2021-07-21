@@ -79,19 +79,22 @@ class IdentityHeaderMiddleware(BaseTenantMiddleware):
                     raise Http404()
             else:
                 tenant, created = Tenant.objects.get_or_create(schema_name=tenant_schema)
-                with transaction.atomic():
-                    if created:
-                        tenant.create_schema(check_if_exists=True)
-                        seed_permissions(tenant=tenant)
-                        seed_roles(tenant=tenant)
-                        seed_group(tenant=tenant)
-                        tenant.ready = True
-                        tenant.save()
-
-                    else:
-                        while not tenant.ready:
-                            time.sleep(0.5)
-                            tenant.refresh_from_db()
+                if created:
+                    try:
+                        with transaction.atomic():
+                            tenant.create_schema(check_if_exists=True)
+                            seed_permissions(tenant=tenant)
+                            seed_roles(tenant=tenant)
+                            seed_group(tenant=tenant)
+                            tenant.ready = True
+                            tenant.save()
+                    except Exception as e:
+                        tenant.delete()
+                        raise e
+                else:
+                    while not tenant.ready:
+                        time.sleep(0.5)
+                        tenant.refresh_from_db()
             TENANTS.save_tenant(tenant)
         return tenant
 
