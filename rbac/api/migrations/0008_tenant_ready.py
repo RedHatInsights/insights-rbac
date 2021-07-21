@@ -7,4 +7,7 @@ class Migration(migrations.Migration):
 
     dependencies = [("api", "0007_auto_20201215_2221")]
 
-    operations = [migrations.AddField(model_name="tenant", name="ready", field=models.BooleanField(default=False))]
+    operations = [
+        migrations.AddField(model_name="tenant", name="ready", field=models.BooleanField(default=False)),
+        migrations.RunSQL("ALTER TABLE ONLY api_tenant ALTER COLUMN ready SET DEFAULT false;"),
+    ]
