@@ -45,7 +45,10 @@ class StatusModelTest(TestCase):
     def setUp(self):
         """Create test case setup."""
         super().setUp()
-        Tenant.objects.get_or_create(schema_name="public")
+        t = Tenant.objects.get_or_create(schema_name="public")
+        t.create_schema()
+        t.ready = True
+        t.save()
 
     @patch("os.environ")
     def test_commit_with_env(self, mock_os):
