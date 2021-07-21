@@ -85,6 +85,7 @@ class IdentityRequest(TestCase):
         if create_tenant:
             tenant = Tenant(schema_name=schema_name)
             tenant.save()
+            tenant.create_schema()
         return tenant
 
     @classmethod

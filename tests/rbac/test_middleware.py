@@ -330,8 +330,9 @@ class AccessHandlingTest(TestCase):
         try:
             cls.tenant = Tenant.objects.get(schema_name="test")
         except:
-            cls.tenant = Tenant(schema_name="test")
+            cls.tenant = Tenant(schema_name="test", ready=True)
             cls.tenant.save(verbosity=0)
+            cls.tenant.create_schema()
 
         connection.set_tenant(cls.tenant)
 
