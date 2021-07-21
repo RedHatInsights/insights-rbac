@@ -42,9 +42,8 @@ class IdentityRequest(TestCase):
         cls.user_data = cls._create_user_data()
         cls.request_context = cls._create_request_context(cls.customer_data, cls.user_data)
         cls.schema_name = cls.customer_data.get("schema_name")
-        cls.tenant = Tenant(schema_name=cls.schema_name, ready=True)
+        cls.tenant = Tenant(schema_name=cls.schema_name)
         cls.tenant.save()
-        cls.tenant.create_schema()
         cls.headers = cls.request_context["request"].META
 
     @classmethod
@@ -85,7 +84,6 @@ class IdentityRequest(TestCase):
         if create_tenant:
             tenant = Tenant(schema_name=schema_name)
             tenant.save()
-            tenant.create_schema()
         return tenant
 
     @classmethod

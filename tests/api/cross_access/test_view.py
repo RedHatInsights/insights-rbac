@@ -79,10 +79,7 @@ class CrossAccountRequestViewTests(IdentityRequest):
         }
 
         with tenant_context(Tenant.objects.get(schema_name="public")):
-            t = Tenant.objects.create(schema_name=f"acct{self.data4create['target_account']}")
-            t.create_schema()
-            t.ready = True
-            t.save()
+            Tenant.objects.create(schema_name=f"acct{self.data4create['target_account']}")
             self.role_1 = Role.objects.create(name="role_1", system=True)
             self.role_2 = Role.objects.create(name="role_2", system=True)
             self.role_9 = Role.objects.create(name="role_9", system=True)
