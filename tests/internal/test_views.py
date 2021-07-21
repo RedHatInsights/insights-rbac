@@ -141,6 +141,11 @@ class InternalViewsetTests(IdentityRequest):
         modified_tenant_roles = Tenant.objects.create(schema_name="acctmodifiedroles")
         unmodified_tenant_2 = Tenant.objects.create(schema_name="acctunmodified2")
 
+        for t in [modified_tenant_groups, modified_tenant_roles, unmodified_tenant_2]:
+            t.create_schema()
+            t.ready = True
+            t.save()
+
         with tenant_context(modified_tenant_groups):
             Group.objects.create(name="Custom Group")
 
@@ -184,6 +189,8 @@ class InternalViewsetTests(IdentityRequest):
         app_name = "foo_app"
         tenant_migrations_complete = Tenant.objects.create(schema_name="acctcomplete")
         tenant_migrations_incomplete = Tenant.objects.create(schema_name="acctincomplete")
+        for t in [tenant_migrations_complete, tenant_migrations_incomplete]:
+            t.create_schema()
 
         with tenant_context(tenant_migrations_complete):
             migrations_have_run = MigrationRecorder.Migration.objects.create(name=migration_name, app=app_name)

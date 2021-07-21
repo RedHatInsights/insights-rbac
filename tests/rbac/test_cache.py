@@ -36,6 +36,9 @@ class AccessCacheTest(TestCase):
         """Set up the tenant."""
         super().setUpClass()
         self.tenant = Tenant.objects.create(schema_name="acct12345")
+        self.tenant.create_schema()
+        self.tenant.ready = True
+        self.tenant.save()
         connection.set_schema("acct12345")
 
     def setUp(self):
