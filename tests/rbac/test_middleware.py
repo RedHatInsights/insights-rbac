@@ -244,7 +244,11 @@ class ServiceToService(IdentityRequest):
 
     def test_no_identity_and_invalid_psk_returns_401(self):
         connection.set_schema_to_public()
-        Tenant.objects.create(schema_name=f"acct{self.account_id}")
+        t = Tenant.objects.create(schema_name=f"acct{self.account_id}")
+        t.create_schema()
+        t.ready = True
+        t.save()
+
         url = reverse("group-list")
         client = APIClient()
         self.service_headers["HTTP_X_RH_RBAC_PSK"] = "xyz"
@@ -254,7 +258,10 @@ class ServiceToService(IdentityRequest):
 
     def test_no_identity_and_invalid_account_returns_404(self):
         connection.set_schema_to_public()
-        Tenant.objects.create(schema_name=f"acct{self.account_id}")
+        t = Tenant.objects.create(schema_name=f"acct{self.account_id}")
+        t.create_schema()
+        t.ready = True
+        t.save()
         url = reverse("group-list")
         client = APIClient()
         self.service_headers["HTTP_X_RH_RBAC_ACCOUNT"] = "1212"
@@ -264,7 +271,10 @@ class ServiceToService(IdentityRequest):
 
     def test_no_identity_and_invalid_client_id_returns_401(self):
         connection.set_schema_to_public()
-        Tenant.objects.create(schema_name=f"acct{self.account_id}")
+        t = Tenant.objects.create(schema_name=f"acct{self.account_id}")
+        t.create_schema()
+        t.ready = True
+        t.save()
         url = reverse("group-list")
         client = APIClient()
         self.service_headers["HTTP_X_RH_RBAC_CLIENT_ID"] = "bad-service"
@@ -274,7 +284,10 @@ class ServiceToService(IdentityRequest):
 
     def test_no_identity_and_valid_psk_client_id_and_account_returns_200(self):
         connection.set_schema_to_public()
-        Tenant.objects.create(schema_name=f"acct{self.account_id}")
+        t = Tenant.objects.create(schema_name=f"acct{self.account_id}")
+        t.create_schema()
+        t.ready = True
+        t.save()
         url = reverse("group-list")
         client = APIClient()
         response = client.get(url, **self.service_headers)
@@ -317,8 +330,9 @@ class AccessHandlingTest(TestCase):
         try:
             cls.tenant = Tenant.objects.get(schema_name="test")
         except:
-            cls.tenant = Tenant(schema_name="test")
+            cls.tenant = Tenant(schema_name="test", ready=True)
             cls.tenant.save(verbosity=0)
+            cls.tenant.create_schema()
 
         connection.set_tenant(cls.tenant)
 
