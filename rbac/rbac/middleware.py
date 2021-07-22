@@ -18,6 +18,7 @@
 """Custom RBAC Middleware."""
 import binascii
 import logging
+import time
 from json.decoder import JSONDecodeError
 
 from django.conf import settings
@@ -77,17 +78,23 @@ class IdentityHeaderMiddleware(BaseTenantMiddleware):
                 except Tenant.DoesNotExist:
                     raise Http404()
             else:
-                with transaction.atomic():
+                tenant, created = Tenant.objects.get_or_create(schema_name=tenant_schema)
+                if created:
                     try:
-                        tenant = Tenant.objects.get(schema_name=tenant_schema)
-                    except Tenant.DoesNotExist:
-                        cursor = transaction.get_connection().cursor()
-                        cursor.execute("LOCK TABLE public.api_tenant in SHARE ROW EXCLUSIVE MODE")
-                        tenant, created = Tenant.objects.get_or_create(schema_name=tenant_schema)
-                        if created:
+                        with transaction.atomic():
+                            tenant.create_schema(check_if_exists=True)
                             seed_permissions(tenant=tenant)
                             seed_roles(tenant=tenant)
                             seed_group(tenant=tenant)
+                            tenant.ready = True
+                            tenant.save()
+                    except Exception as e:
+                        tenant.delete()
+                        raise e
+                else:
+                    while not tenant.ready:
+                        time.sleep(0.5)
+                        tenant.refresh_from_db()
             TENANTS.save_tenant(tenant)
         return tenant
 
