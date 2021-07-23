@@ -10,9 +10,7 @@ from redis import BlockingConnectionPool, exceptions
 from redis.client import Redis
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
-_connection_pool = BlockingConnectionPool(
-    max_connections=10, **settings.REDIS_CACHE_CONNECTION_PARAMS  # should match gunicorn.threads
-)
+_connection_pool = BlockingConnectionPool(**settings.REDIS_CACHE_CONNECTION_PARAMS)  # should match gunicorn.threads
 
 
 class BasicCache:
