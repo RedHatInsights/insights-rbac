@@ -1805,7 +1805,10 @@ parameters:
   value: "2"
 - description: max_connections for redis client
   name: REDIS_MAX_CONNECTIONS
+  value: 10
 - description: socket connect timeout for redis
   name: REDIS_SOCKET_CONNECT_TIMEOUT
+  value: 0.1
 - description: socket timeout for redis
   name: REDIS_SOCKET_TIMEOUT
+  value: 0.1
