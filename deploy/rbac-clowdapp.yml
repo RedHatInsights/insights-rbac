@@ -196,6 +196,12 @@ objects:
             value: ${CW_NULL_WORKAROUND)
           - name: INIT_CONTAINER
             value: "False"
+          - name: REDIS_MAX_CONNECTIONS
+            value: ${REDIS_MAX_CONNECTIONS}
+          - name: REDIS_SOCKET_CONNECT_TIMEOUT
+            value: ${REDIS_SOCKET_CONNECT_TIMEOUT}
+          - name: REDIS_SOCKET_TIMEOUT
+            value: ${REDIS_SOCKET_TIMEOUT}
 
     - name: worker-service
       minReplicas: ${{MIN_WORKER_REPLICAS}}
@@ -1797,3 +1803,9 @@ parameters:
 - description: Default number of threads to use for seeding
   name: MAX_SEED_THREADS
   value: "2"
+- description: max_connections for redis client
+  name: REDIS_MAX_CONNECTIONS
+- description: socket connect timeout for redis
+  name: REDIS_SOCKET_CONNECT_TIMEOUT
+- description: socket timeout for redis
+  name: REDIS_SOCKET_TIMEOUT
