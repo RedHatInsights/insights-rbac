@@ -716,15 +716,9 @@ class CrossAccountRequestViewTests(IdentityRequest):
 
         with tenant_context(tenant):
             princ = Principal.objects.get(username__iexact=principal_name)
-            self.assertEqual(princ.username, principal_name)
-            self.assertTrue(princ.cross_account)
-
-        # Principal created in public schema too
-        princ = Principal.objects.get(username__iexact=principal_name)
         self.assertEqual(princ.username, principal_name)
         self.assertEqual(princ.tenant, tenant)
         self.assertTrue(princ.cross_account)
-        self.assertTrue(princ.tenant.schema_name, tenant_schema)
 
     def test_cross_account_request_ordering_filter(self):
         "Test ordering filter for request id, created/start/end date."

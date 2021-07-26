@@ -19,7 +19,7 @@
 from django.utils.translation import gettext as _
 from management.group.model import Group
 from management.serializer_override_mixin import SerializerCreateOverrideMixin
-from management.utils import get_principal_from_request, schema_handler
+from management.utils import get_principal_from_request
 from rest_framework import serializers
 
 from .model import Access, Permission, ResourceDefinition, Role
@@ -126,24 +126,43 @@ class RoleSerializer(serializers.ModelSerializer):
         description = validated_data.pop("description", None)
         access_list = validated_data.pop("access")
         tenant = self.context["request"].tenant
-        for tenant_schema in schema_handler(tenant):
-            role = Role.objects.create(name=name, description=description, display_name=display_name, tenant=tenant)
-            create_access_for_role(role, access_list, tenant)
+        role = Role.objects.create(name=name, description=description, display_name=display_name, tenant=tenant)
+        role.save()
+        for access_item in access_list:
+            resource_def_list = access_item.pop("resourceDefinitions")
+            access_permission = access_item.pop("permission")
+            permission, created = Permission.objects.get_or_create(**access_permission)
 
+            access_obj = Access.objects.create(permission=permission, role=role, tenant=tenant)
+            for resource_def_item in resource_def_list:
+                ResourceDefinition.objects.create(**resource_def_item, access=access_obj, tenant=tenant)
         return role
 
     def update(self, instance, validated_data):
         """Update the role object in the database."""
+        if instance.system:
+            key = "role.update"
+            message = "System roles may not be updated."
+            error = {key: [_(message)]}
+            raise serializers.ValidationError(error)
         access_list = validated_data.pop("access")
+        instance.name = validated_data.get("name", instance.name)
+        instance.display_name = validated_data.get("display_name", instance.display_name)
+        instance.description = validated_data.get("description", instance.description)
         tenant = self.context["request"].tenant
-        role_name = instance.name
-        update_data = validate_role_update(instance, validated_data)
+        instance.save()
+        instance.access.all().delete()
 
-        for tenant_schema in schema_handler(tenant):
-            instance = update_role(role_name, update_data, tenant)
+        for access_item in access_list:
+            resource_def_list = access_item.pop("resourceDefinitions")
+            access_permission = access_item.pop("permission")
+            permission, created = Permission.objects.get_or_create(**access_permission)
 
-            create_access_for_role(instance, access_list, tenant)
+            access_obj = Access.objects.create(permission=permission, role=instance, tenant=tenant)
+            for resource_def_item in resource_def_list:
+                ResourceDefinition.objects.create(**resource_def_item, access=access_obj, tenant=tenant)
 
+        instance.save()
         return instance
 
 
@@ -263,12 +282,15 @@ class RolePatchSerializer(RoleSerializer):
 
     def update(self, instance, validated_data):
         """Patch the role object."""
-        tenant = self.context["request"].tenant
-        role_name = instance.name
-        update_data = validate_role_update(instance, validated_data)
-
-        for tenant_schema in schema_handler(tenant):
-            instance = update_role(role_name, update_data, tenant, clear_access=False)
+        if instance.system:
+            key = "role.update"
+            message = "System roles may not be updated."
+            error = {key: [_(message)]}
+            raise serializers.ValidationError(error)
+        instance.name = validated_data.get("name", instance.name)
+        instance.display_name = validated_data.get("display_name", instance.display_name)
+        instance.description = validated_data.get("description", instance.description)
+        instance.save()
         return instance
 
 
@@ -292,50 +314,3 @@ def obtain_groups_in(obj, request):
         return (assigned_groups | Group.platform_default_set()).distinct()
 
     return Group.objects.filter(policies__in=policy_ids).distinct()
-
-
-def create_access_for_role(role, access_list, tenant):
-    """Create access objects and relate it to role."""
-    for access_item in access_list:
-        resource_def_list = access_item.get("resourceDefinitions")
-        access_permission = access_item.get("permission")
-        permission = Permission.objects.get(**access_permission)
-
-        access_obj = Access.objects.create(permission=permission, role=role, tenant=tenant)
-        for resource_def_item in resource_def_list:
-            ResourceDefinition.objects.create(**resource_def_item, access=access_obj, tenant=tenant)
-
-
-def validate_role_update(instance, validated_data):
-    """Validate if role could be updated."""
-    if instance.system:
-        key = "role.update"
-        message = "System roles may not be updated."
-        error = {key: [_(message)]}
-        raise serializers.ValidationError(error)
-    updated_name = validated_data.get("name", instance.name)
-    updated_display_name = validated_data.get("display_name", instance.display_name)
-    updated_description = validated_data.get("description", instance.description)
-
-    return {
-        "updated_name": updated_name,
-        "updated_display_name": updated_display_name,
-        "updated_description": updated_description,
-    }
-
-
-def update_role(role_name, update_data, tenant, clear_access=True):
-    """Update role attribute."""
-    role, created = Role.objects.update_or_create(
-        name=role_name,
-        tenant=tenant,
-        defaults={
-            "name": update_data.get("updated_name"),
-            "display_name": update_data.get("updated_display_name"),
-            "description": update_data.get("updated_description"),
-        },
-    )
-    if clear_access:
-        role.access.all().delete()
-
-    return role

@@ -60,8 +60,6 @@ def clean_tenant_principals(tenant):
                     principal.username,
                     tenant.schema_name,
                 )
-        with tenant_context(Tenant.objects.get(schema_name="public")):
-            Principal.objects.filter(username__in=removed_principals, tenant=tenant).delete()
         logger.info(
             "Completed clean up of %d principals for tenant %s, %d removed.",
             len(principals),

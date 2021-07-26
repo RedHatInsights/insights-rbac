@@ -25,8 +25,6 @@ from management.principal.cleaner import clean_tenant_principals
 from management.principal.model import Principal
 from tests.identity_request import IdentityRequest
 
-from api.models import Tenant
-
 
 class PrincipalCleanerTests(IdentityRequest):
     """Test the principal cleaner functions."""
@@ -130,25 +128,3 @@ class PrincipalCleanerTests(IdentityRequest):
             self.fail(msg="clean_tenant_principals encountered an exception")
         with tenant_context(self.tenant):
             self.assertEqual(Principal.objects.count(), 1)
-
-    @patch(
-        "management.principal.proxy.PrincipalProxy._request_principals",
-        return_value={"status_code": status.HTTP_200_OK, "data": []},
-    )
-    def test_principal_cleanup_principals_in_public_schema(self, mock_request):
-        """Test that we can run a principal clean up on a tenant with a principal in public schema."""
-        public_schema = Tenant.objects.get(schema_name="public")
-        with tenant_context(self.tenant):
-            Principal.objects.create(username="user1", tenant=self.tenant)
-            Principal.objects.create(username="user2", tenant=self.tenant)
-        with tenant_context(public_schema):
-            Principal.objects.create(username="user1", tenant=self.tenant)
-            Principal.objects.create(username="user2", tenant=self.tenant)
-        try:
-            clean_tenant_principals(self.tenant)
-        except Exception:
-            self.fail(msg="clean_tenant_principals encountered an exception")
-        with tenant_context(self.tenant):
-            self.assertEqual(Principal.objects.count(), 0)
-        with tenant_context(public_schema):
-            self.assertEqual(Principal.objects.count(), 0)
