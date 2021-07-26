@@ -126,17 +126,9 @@ class IdentityHeaderMiddleware(BaseTenantMiddleware):
                     resource_type = access_item.permission.resource_type
                     operation = access_item.permission.verb
                     res_list = []
-                    res_defs = access_item.resourceDefinitions
                     if operation == "*":
                         operation = "write"
-                    for res_def in res_defs.all():
-                        attr_filter = res_def.attributeFilter
-                        if attr_filter.get("operation") == "equal" and attr_filter.get("value"):
-                            res_list.append(attr_filter.get("value"))
-                        if attr_filter.get("operation") == "in" and attr_filter.get("value"):
-                            res_list += attr_filter.get("value").split(",")
-                    if not res_defs or not res_defs.values():
-                        res_list = ["*"]
+                    res_list = ["*"]
                     if resource_type == "*":
                         for resource in ("group", "role", "policy"):
                             if (

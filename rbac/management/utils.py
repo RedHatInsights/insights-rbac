@@ -21,7 +21,7 @@ from uuid import UUID
 
 from django.core.exceptions import PermissionDenied
 from django.utils.translation import gettext as _
-from management.models import Access, Group, Principal, Role
+from management.models import Access, Group, Policy, Principal, Role
 from management.principal.proxy import PrincipalProxy
 from rest_framework import serializers, status
 from tenant_schemas.utils import tenant_context
@@ -90,31 +90,20 @@ def get_principal(username, request, verify_principal=True):
 
 def policies_for_groups(groups):
     """Gathers all policies for the given groups."""
-    policies = []
-    for group in set(groups):
-        group_policies = set(group.policies.all())
-        policies += group_policies
-    return policies
+    policies = Policy.objects.filter(group__in=set(groups))
+    return set(policies)
 
 
 def roles_for_policies(policies):
     """Gathers all roles for the given policies."""
-    roles = []
-    for policy in set(policies):
-        policy_roles = set(policy.roles.all())
-        roles += policy_roles
-    return roles
+    roles = Role.objects.filter(policies__in=set(policies))
+    return set(roles)
 
 
 def access_for_roles(roles, param_applications):
     """Gathers all access for the given roles and application(s)."""
-    access = []
     param_applications_list = param_applications.split(",")
-    for role in set(roles):
-        if param_applications:
-            access += Access.objects.filter(role=role, permission__application__in=param_applications_list)
-            continue
-        access += role.access.all()
+    access = Access.objects.filter(role__in=roles).filter(permission__application__in=param_applications_list)
     return set(access)
 
 
