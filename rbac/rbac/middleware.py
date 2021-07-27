@@ -182,7 +182,7 @@ class IdentityHeaderMiddleware(BaseTenantMiddleware):
             user.internal = user_info.get("is_internal")
             user.user_id = user_info.get("user_id")
             user.system = False
-            if not user.admin:
+            if not user.admin and not (request.path.endswith("/access/") and request.method == "GET"):
                 try:
                     schema_name = create_schema_name(user.account)
                     tenant = Tenant.objects.filter(schema_name=schema_name).get()
