@@ -102,8 +102,11 @@ def roles_for_policies(policies):
 
 def access_for_roles(roles, param_applications):
     """Gathers all access for the given roles and application(s)."""
-    param_applications_list = param_applications.split(",")
-    access = Access.objects.filter(role__in=roles).filter(permission__application__in=param_applications_list)
+    if param_applications:
+        param_applications_list = param_applications.split(",")
+        access = Access.objects.filter(role__in=roles).filter(permission__application__in=param_applications_list)
+    else:
+        access = Access.objects.filter(role__in=roles)
     return set(access)
 
 
