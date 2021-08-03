@@ -27,7 +27,8 @@ To deploy individual components, there are also ``make`` commands provided for y
 
 **Docker Compose**
 
-The RBAC API can also be deployed with Docker Compose with the following steps:
+The RBAC API can also be deployed with Docker Compose with the following steps.
+Before these steps can complete, the postgresql-devel package for your distribution must be installed.
 
 * Create a Docker bridge network named ``rbac-network``: ``docker network create rbac-network``
 * Start RBAC server and database: ``make docker-up``
