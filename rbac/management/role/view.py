@@ -37,7 +37,9 @@ from management.utils import validate_uuid
 from rest_framework import mixins, serializers, viewsets
 from rest_framework.decorators import action
 from rest_framework.filters import OrderingFilter
+from tenant_schemas.utils import tenant_context
 
+from api.models import Tenant
 from .model import Role
 from .serializer import RoleSerializer
 
@@ -310,10 +312,13 @@ class RoleViewSet(
             error = {key: [_(message)]}
             raise serializers.ValidationError(error)
         with transaction.atomic():
-            policies = role.policies.all()
-            for policy in policies:
-                if policy.roles.count() == 1:
-                    policy.delete()
+            # Remove role in public schema.
+            with tenant_context(Tenant.objects.get(schema_name="public")):
+                role_public = Role.objects.get(name=role.name, tenant=request.tenant)
+                self.delete_policies_if_no_role_attached(role_public)
+                role_public.delete()
+
+            self.delete_policies_if_no_role_attached(role)
             return super().destroy(request=request, args=args, kwargs=kwargs)
 
     def partial_update(self, request, *args, **kwargs):
@@ -453,3 +458,10 @@ class RoleViewSet(
                     message = f"Permission does not exist: {perm.get('permission')}"
                     error = {key: [_(message)]}
                     raise serializers.ValidationError(error)
+
+    def delete_policies_if_no_role_attached(self, role):
+        """Delete policy if there is no role attached to it."""
+        policies = role.policies.all()
+        for policy in policies:
+            if policy.roles.count() == 1:
+                policy.delete()
