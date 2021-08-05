@@ -10,6 +10,8 @@ objects:
     name: rbac
   spec:
     envName: ${ENV_NAME}
+    testing:
+      iqePlugin: rbac
     database:
       name: rbac
     inMemoryDb: true

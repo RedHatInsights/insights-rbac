@@ -1,0 +1,14 @@
+apiVersion: cloud.redhat.com/v1alpha1
+kind: ClowdJobInvocation
+metadata:
+  name: rbac-smoke-tests
+spec:
+  appName: rbac
+  testing:
+    iqe:
+      # set the test run options
+      ui:
+        enabled: false
+      marker: "rbac_smoke"
+      dynaconfEnvName: "clowder_smoke"
+      filter: ""
