@@ -15,7 +15,7 @@ objects:
     inMemoryDb: true
     deployments:
     - name: service
-      minReplicas: ${MIN_REPLICAS}
+      minReplicas: ${{MIN_REPLICAS}}
       web: true
       podSpec:
         image: ${IMAGE}:${IMAGE_TAG}
