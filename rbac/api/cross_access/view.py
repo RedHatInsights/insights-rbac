@@ -127,7 +127,7 @@ class CrossAccountRequestViewSet(
         return result
 
     def partial_update(self, request, *args, **kwargs):
-        """Patch a cross-account request."""
+        """Patch a cross-account request. Target account admin use it to update status of the request."""
         validate_uuid(kwargs.get("pk"), "cross-account request uuid validation")
 
         with tenant_context(Tenant.objects.get(schema_name="public")):
@@ -145,7 +145,7 @@ class CrossAccountRequestViewSet(
             return response
 
     def update(self, request, *args, **kwargs):
-        """Update a cross-account request."""
+        """Update a cross-account request. TAM requestor use it to update their requesters."""
         validate_uuid(kwargs.get("pk"), "cross-account request uuid validation")
 
         with tenant_context(Tenant.objects.get(schema_name="public")):
@@ -221,6 +221,11 @@ class CrossAccountRequestViewSet(
                 self.throw_validation_error("cross-account-request", f"Field {field} must be specified.")
 
         target_account = request_data.get("target_account")
+        if target_account == self.request.user.account:
+            self.throw_validation_error(
+                "cross-account-request", "Creating a cross access request for your own account is not allowed."
+            )
+
         try:
             tenant_schema_name = create_schema_name(target_account)
             Tenant.objects.get(schema_name=tenant_schema_name)
@@ -316,5 +321,6 @@ class CrossAccountRequestViewSet(
                 "Please use PATCH to update the status of the request.",
             )
 
+        # Do not allow updating the target_account.
         if request.data.get("target_account") and str(request.data.get("target_account")) != update_obj.target_account:
             self.throw_validation_error("cross-account-update", "Target account must stay the same.")

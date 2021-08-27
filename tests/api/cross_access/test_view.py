@@ -381,6 +381,20 @@ class CrossAccountRequestViewTests(IdentityRequest):
             response.data.get("errors")[0].get("detail"), f"Account '{self.another_account}' does not exist."
         )
 
+    def test_create_requests_towards_their_own_account_fail(self):
+        """Test the creation of cross account request towards their own account fails."""
+        self.data4create["target_account"] = self.account
+        client = APIClient()
+        response = client.post(
+            f"{URL_LIST}?", self.data4create, format="json", **self.associate_non_admin_request.META
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(
+            response.data.get("errors")[0].get("detail"),
+            "Creating a cross access request for your own account is not allowed.",
+        )
+
     def test_create_requests_fail_for_none_associate(self):
         """Test the creation of cross account request fail for none red hat associate."""
         client = APIClient()
@@ -473,12 +487,15 @@ class CrossAccountRequestViewTests(IdentityRequest):
 
     def test_update_request_success_for_requestor(self):
         """Test updating an entire CAR."""
-        self.data4create["target_account"] = self.account
+        self.data4create["target_account"] = self.another_account
+        with tenant_context(Tenant.objects.get(schema_name="public")):
+            Tenant.objects.create(schema_name=f"acct{self.another_account}")
         self.data4create["start_date"] = self.format_date(self.ref_time + timedelta(3))
         self.data4create["end_date"] = self.format_date(self.ref_time + timedelta(5))
         self.data4create["roles"] = ["role_8", "role_9"]
 
         car_uuid = self.request_1.request_id
+        self.request_1.target_account = self.another_account
         self.request_1.status = "pending"
         self.request_1.save()
         url = reverse("cross-detail", kwargs={"pk": str(car_uuid)})
@@ -654,10 +671,13 @@ class CrossAccountRequestViewTests(IdentityRequest):
 
     def test_update_bad_date_spec_for_requestor(self):
         """Test that PUT with body fields not matching spec fails."""
-        self.data4create["target_account"] = self.account
+        self.data4create["target_account"] = self.another_account
+        with tenant_context(Tenant.objects.get(schema_name="public")):
+            Tenant.objects.create(schema_name=f"acct{self.another_account}")
         self.data4create["end_date"] = 12252021
 
         car_uuid = self.request_1.request_id
+        self.request_1.target_account = self.another_account
         self.request_1.status = "pending"
         self.request_1.save()
         url = reverse("cross-detail", kwargs={"pk": car_uuid})
