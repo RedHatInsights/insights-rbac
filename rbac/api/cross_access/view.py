@@ -223,7 +223,7 @@ class CrossAccountRequestViewSet(
         target_account = request_data.get("target_account")
         if target_account == self.request.user.account:
             self.throw_validation_error(
-                "cross-account-request", "Creating cross access request towards your own account is not allowed."
+                "cross-account-request", "Creating a cross access request for your own account is not allowed."
             )
 
         try:

@@ -392,7 +392,7 @@ class CrossAccountRequestViewTests(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(
             response.data.get("errors")[0].get("detail"),
-            "Creating cross access request towards your own account is not allowed.",
+            "Creating a cross access request for your own account is not allowed.",
         )
 
     def test_create_requests_fail_for_none_associate(self):
