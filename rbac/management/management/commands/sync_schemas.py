@@ -165,10 +165,23 @@ class Command(BaseCommand):
                 policy.roles.set(new_roles)
                 policy.save()
 
+    def add_arguments(self, parser):
+        """Add arguments to command."""
+        parser.add_argument("--schema_list", action="store_true")
+
     def handle(self, *args, **options):
         """Actually do the work when the command is run."""
-        tenants = Tenant.objects.exclude(schema_name="public")
         try:
+            schema_list = options.get("schema_list")
+            if schema_list:
+                tenants = Tenant.objects.exclude(schema_name="public").filter(schema_name__in=schema_list)
+            else:
+                tenants = Tenant.objects.exclude(schema_name="public")
+
+            if not tenants:
+                self.stdout.write(f"*** No schemas to sync ***")
+                return
+
             for idx, tenant in enumerate(list(tenants)):
                 self.stdout.write(
                     f"*** Syncing Schemas for '{tenant.id}' - '{tenant.schema_name}' ({idx + 1} of {len(tenants)}) ***"

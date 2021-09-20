@@ -180,9 +180,14 @@ def sync_schemas(request):
     POST /_private/api/utils/sync_schemas/
     """
     if request.method == "POST":
+        args = {}
+        schema_list_param = request.GET.get("schemas")
+        if schema_list_param:
+            schema_list = schema_list_param.split(",")
+            args = {"schema_list": schema_list}
         msg = "Running schema sync in background worker."
         logger.info(msg)
-        run_sync_schemas_in_worker.delay()
+        run_sync_schemas_in_worker.delay(args)
         return HttpResponse(msg, status=202)
 
     return HttpResponse(f'Method "{request.method}" not allowed.', status=405)

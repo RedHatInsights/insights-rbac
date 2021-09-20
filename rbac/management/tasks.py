@@ -47,6 +47,6 @@ def run_reconcile_tenant_relations_in_worker(kwargs):
 
 
 @shared_task
-def run_sync_schemas_in_worker():
+def run_sync_schemas_in_worker(kwargs):
     """Celery task to sync schemas."""
-    call_command("sync_schemas")
+    call_command("sync_schemas", **kwargs)
