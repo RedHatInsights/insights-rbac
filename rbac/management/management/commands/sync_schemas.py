@@ -20,7 +20,7 @@ import traceback
 
 from django.core.management.base import BaseCommand
 from django.db.utils import IntegrityError
-from management.models import Group, Permission, Policy, Principal, Role, Access
+from management.models import Access, Group, Permission, Policy, Principal, Role
 from management.utils import clear_pk
 from tenant_schemas.utils import tenant_context
 
@@ -204,7 +204,6 @@ class Command(BaseCommand):
         """Actually do the work when the command is run."""
         try:
             schema_list = options.get("schema_list")
-            schema_list = ["acct5839148"]
             if schema_list:
                 tenants = Tenant.objects.exclude(schema_name="public").filter(schema_name__in=schema_list)
             else:
