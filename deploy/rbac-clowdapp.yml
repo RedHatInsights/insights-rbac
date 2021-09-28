@@ -1354,6 +1354,41 @@ objects:
           }
         ]
       }
+    malware-detection.json: |
+      {
+        "roles": [
+          {
+            "name": "Malware detection administrator",
+            "display_name": "Malware detection administrator",
+            "description": "Perform any available operation against any malware-detection resource.",
+            "system": true,
+            "version": 1,
+            "access": [
+              {
+                "permission": "malware-detection:*:*"
+              },
+              {
+                "permission": "inventory:*:read"
+              }
+            ]
+          },
+          {
+            "name": "Malware detection viewer",
+            "display_name": "Malware detection viewer",
+            "description": "Read any malware-detection resource.",
+            "system": true,
+            "version": 1,
+            "access": [
+              {
+                "permission": "malware-detection:*:read"
+              },
+              {
+                "permission": "inventory:*:read"
+              }
+            ]
+          }
+        ]
+      }
     patch.json: |
       {
         "roles": [
