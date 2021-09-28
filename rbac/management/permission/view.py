@@ -19,7 +19,7 @@
 from django.db.models import Q
 from django_filters import rest_framework as filters
 from management.filters import CommonFilters
-from management.models import Permission, Role, Access
+from management.models import Access, Permission, Role
 from management.permission.serializer import PermissionSerializer
 from management.permissions.admin_access import AdminAccessPermission
 from management.utils import validate_and_get_key, validate_uuid
