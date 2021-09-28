@@ -19,10 +19,10 @@
 from django.db.models import Q
 from django_filters import rest_framework as filters
 from management.filters import CommonFilters
-from management.models import Permission
+from management.models import Permission, Role, Access
 from management.permission.serializer import PermissionSerializer
 from management.permissions.admin_access import AdminAccessPermission
-from management.utils import validate_and_get_key
+from management.utils import validate_and_get_key, validate_uuid
 from rest_framework import mixins, viewsets
 from rest_framework.decorators import action
 from rest_framework.filters import OrderingFilter
@@ -43,11 +43,24 @@ class PermissionFilter(CommonFilters):
             return queryset.exclude(exclude_set)
         return queryset
 
+    def exclude_roles_filter(self, queryset, field, value):
+        """Filter to filter out permissions already included in the role(s) from results."""
+        role_uuid_string = self.request.query_params.get(field)
+        if role_uuid_string:
+            role_uuids_list = role_uuid_string.split(",")
+            for uuid in role_uuids_list:
+                validate_uuid(uuid)
+            roles = Role.objects.filter(uuid__in=role_uuids_list)
+            permission_ids_to_exclude = Access.objects.filter(role__in=roles).values_list("permission_id", flat=True)
+            return queryset.exclude(id__in=permission_ids_to_exclude)
+        return queryset
+
     application = filters.CharFilter(field_name="application", method="multiple_values_in")
     resource_type = filters.CharFilter(field_name="resource_type", method="multiple_values_in")
     verb = filters.CharFilter(field_name="verb", method="multiple_values_in")
     permission = filters.CharFilter(field_name="permission", lookup_expr="icontains")
     exclude_globals = filters.CharFilter(field_name="exclude_globals", method="exclude_globals_filter")
+    exclude_roles = filters.CharFilter(field_name="exclude_roles", method="exclude_roles_filter")
 
 
 class PermissionViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
