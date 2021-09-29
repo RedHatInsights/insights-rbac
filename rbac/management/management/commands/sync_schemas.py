@@ -86,6 +86,7 @@ class Command(BaseCommand):
                     except Role.DoesNotExist:
                         continue
 
+                change_access = 0
                 if role.id is not None:
                     for access in access_list:
                         old_access = str(access)
@@ -111,6 +112,7 @@ class Command(BaseCommand):
 
                         try:
                             access.save()
+                            change_access = change_access + 1
                             self.stdout.write(f"Copy access with perm {access.permission.permission}")
                         except IntegrityError as err:
                             self.stderr.write(f"Couldn't copy access entry: {access}. Skipping due to:\n{err}")
@@ -126,8 +128,10 @@ class Command(BaseCommand):
                             except IntegrityError as err:
                                 self.stderr.write(f"Couldn't copy {resource_def}. Skipping due to:\n{err}")
                                 continue
-                    role.access.set(access_list)
-                    role.save()
+
+                    if change_access > 0:
+                        role.access.set(access_list)
+                        role.save()
 
     def copy_custom_groups_to_public(self, tenant):
         """Copy custom groups from provided tenant to the public schema."""
