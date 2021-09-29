@@ -20,7 +20,7 @@ import traceback
 
 from django.core.management.base import BaseCommand
 from django.db.utils import IntegrityError
-from management.models import Group, Permission, Policy, Principal, Role
+from management.models import Access, Group, Permission, Policy, Principal, Role
 from management.utils import clear_pk
 from tenant_schemas.utils import tenant_context
 
@@ -73,37 +73,61 @@ class Command(BaseCommand):
                     role.save()
                 except IntegrityError as err:
                     self.stderr.write(f"Couldn't copy role: {role.name}. Skipping due to:\n{err}")
-                    continue
-                for access in access_list:
-                    old_access = str(access)
-                    clear_pk(access)
-                    if not access.tenant:
-                        access.tenant = tenant
-                    access.role = role
                     try:
-                        access.permission = Permission.objects.get(permission=access.permission.permission)
-                    except Permission.DoesNotExist as err:
-                        self.stderr.write(f"Couldn't find permission entry: {access.permission.permission}, skipping.")
-                        self.stderr.write(f"Additional context:\n {err}")
-                        access_list.remove(access)
+                        role = Role.objects.get(
+                            name=role.name,
+                            description=role.description,
+                            system=role.system,
+                            version=role.version,
+                            platform_default=role.platform_default,
+                            display_name=role.display_name,
+                            tenant=role.tenant,
+                        )
+                    except Role.DoesNotExist:
                         continue
-                    try:
-                        access.save()
-                        self.stdout.write(f"Copy access with perm {access.permission.permission}")
-                    except IntegrityError as err:
-                        self.stderr.write(f"Couldn't copy access entry: {access}. Skipping due to:\n{err}")
-                        continue
-                    for resource_def in access_resourceDefs[old_access]:
-                        clear_pk(resource_def)
-                        resource_def.access = access
+
+                if role.id is not None:
+                    for access in access_list:
+                        old_access = str(access)
+                        clear_pk(access)
+                        if not access.tenant:
+                            access.tenant = tenant
+                        access.role = role
                         try:
-                            resource_def.save()
-                            self.stdout.write(f"Copied resource definition with filter {resource_def.attributeFilter}")
-                        except IntegrityError as err:
-                            self.stderr.write(f"Couldn't copy {resource_def}. Skipping due to:\n{err}")
+                            access.permission = Permission.objects.get(permission=access.permission.permission)
+                        except Permission.DoesNotExist as err:
+                            self.stderr.write(
+                                f"Couldn't find permission entry: {access.permission.permission}, skipping."
+                            )
+                            self.stderr.write(f"Additional context:\n {err}")
+                            access_list.remove(access)
                             continue
-                role.access.set(access_list)
-                role.save()
+
+                        has_access = Access.objects.filter(
+                            role_id=access.role_id, permission_id=access.permission_id, tenant_id=access.tenant_id
+                        )
+                        if len(has_access) > 0:
+                            continue
+
+                        try:
+                            access.save()
+                            self.stdout.write(f"Copy access with perm {access.permission.permission}")
+                        except IntegrityError as err:
+                            self.stderr.write(f"Couldn't copy access entry: {access}. Skipping due to:\n{err}")
+                            continue
+                        for resource_def in access_resourceDefs[old_access]:
+                            clear_pk(resource_def)
+                            resource_def.access = access
+                            try:
+                                resource_def.save()
+                                self.stdout.write(
+                                    f"Copied resource definition with filter {resource_def.attributeFilter}"
+                                )
+                            except IntegrityError as err:
+                                self.stderr.write(f"Couldn't copy {resource_def}. Skipping due to:\n{err}")
+                                continue
+                    role.access.set(access_list)
+                    role.save()
 
     def copy_custom_groups_to_public(self, tenant):
         """Copy custom groups from provided tenant to the public schema."""
@@ -122,11 +146,18 @@ class Command(BaseCommand):
                     group.save()
                 except IntegrityError as err:
                     self.stderr.write(f"Couldn't copy group {group.name}. Skipping due to:\n{err}")
-                    continue
-                for principal in principals:
-                    new_principals.append(Principal.objects.get(username=principal.username, tenant=tenant))
-                group.principals.set(new_principals)
-                group.save()
+                    try:
+                        group = Group.objects.get(
+                            name=group.name, description=group.description, system=group.system, tenant=group.tenant
+                        )
+                    except Group.DoesNotExist:
+                        continue
+
+                if group.id is not None:
+                    for principal in principals:
+                        new_principals.append(Principal.objects.get(username=principal.username, tenant=tenant))
+                    group.principals.set(new_principals)
+                    group.save()
 
     def copy_custom_policies_to_public(self, tenant):
         """Copy custom policies from provided tenant to the public schema."""
@@ -179,7 +210,7 @@ class Command(BaseCommand):
                 tenants = Tenant.objects.exclude(schema_name="public")
 
             if not tenants:
-                self.stdout.write(f"*** No schemas to sync ***")
+                self.stdout.write("*** No schemas to sync ***")
                 return
 
             for idx, tenant in enumerate(list(tenants)):
