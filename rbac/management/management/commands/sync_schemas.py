@@ -203,9 +203,9 @@ class Command(BaseCommand):
         try:
             schema_list = options.get("schema_list")
             if schema_list:
-                tenants = Tenant.objects.exclude(schema_name="public").filter(schema_name__in=schema_list)
+                tenants = Tenant.objects.exclude(schema_name="public").filter(ready=True, schema_name__in=schema_list)
             else:
-                tenants = Tenant.objects.exclude(schema_name="public")
+                tenants = Tenant.objects.exclude(schema_name="public").filter(ready=True)
 
             if not tenants:
                 self.stdout.write("*** No schemas to sync ***")
