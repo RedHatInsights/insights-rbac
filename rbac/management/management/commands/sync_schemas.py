@@ -86,8 +86,8 @@ class Command(BaseCommand):
                     except Role.DoesNotExist:
                         continue
 
-                change_access = 0
                 if role.id is not None:
+                    change_access = 0
                     for access in access_list:
                         old_access = str(access)
                         clear_pk(access)
