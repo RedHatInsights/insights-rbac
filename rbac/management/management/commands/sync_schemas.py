@@ -127,7 +127,6 @@ class Command(BaseCommand):
                                 self.stderr.write(f"Couldn't copy {resource_def}. Skipping due to:\n{err}")
                                 continue
 
-
     def copy_custom_groups_to_public(self, tenant):
         """Copy custom groups from provided tenant to the public schema."""
         groups = Group.objects.filter(system=False)
