@@ -126,8 +126,6 @@ class Command(BaseCommand):
                             except IntegrityError as err:
                                 self.stderr.write(f"Couldn't copy {resource_def}. Skipping due to:\n{err}")
                                 continue
-                    role.access.set(access_list)
-                    role.save()
 
     def copy_custom_groups_to_public(self, tenant):
         """Copy custom groups from provided tenant to the public schema."""
