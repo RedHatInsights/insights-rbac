@@ -577,7 +577,7 @@ data:
           "targets": [
             {
               "expr": "rate(container_cpu_usage_seconds_total{namespace=\"$namespace\",pod=~\".*rbac.*\"}[5m])",
-              "legendFormat": "{{pod_name}}:{{container_name}}",
+              "legendFormat": "{{pod}}:{{container_name}}",
               "refId": "A"
             }
           ],
@@ -664,9 +664,9 @@ data:
           "steppedLine": false,
           "targets": [
             {
-              "expr": "container_memory_usage_bytes{namespace=\"$namespace\",pod_name=~\".*rbac.*\"}",
+              "expr": "container_memory_usage_bytes{namespace=\"$namespace\",pod=~\".*rbac.*\"}",
               "interval": "15s",
-              "legendFormat": "{{pod_name}}",
+              "legendFormat": "{{pod}}:{{container_name}}",
               "refId": "A"
             }
           ],
@@ -798,7 +798,7 @@ data:
       "timezone": "",
       "title": "Operations - Rbac w/CPU",
       "uid": "TjP_nMWMk",
-      "version": 2
+      "version": 3
     }
 kind: ConfigMap
 metadata:
