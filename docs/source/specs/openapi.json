@@ -323,7 +323,7 @@
         ],
         "summary": "Update a cross account request",
         "operationId": "putCrossAccountRequest",
-        "description":"Update a cross account request",
+        "description": "Update a cross account request",
         "parameters": [
           {
             "name": "uuid",
@@ -409,7 +409,7 @@
         ],
         "summary": "Update a cross account request",
         "operationId": "patchCrossAccountRequest",
-        "description":"Update a cross account request",
+        "description": "Update a cross account request",
         "parameters": [
           {
             "name": "uuid",
@@ -2602,6 +2602,20 @@
             "required": false,
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "name": "exclude_globals",
+            "in": "query",
+            "description": "If set to 'true', this will exclude any permission option with a global allowance on the supplied '?field=' value of 'application', 'resource_type' or 'verb'. The default is 'false'.",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "false",
+              "enum": [
+                "true",
+                "false"
+              ]
             }
           }
         ],

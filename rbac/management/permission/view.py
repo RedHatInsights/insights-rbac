@@ -145,7 +145,13 @@ class PermissionViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
             if context:
                 filters[f"{key}__in"] = context.split(",")
 
-        query_set = Permission.objects.distinct(query_field).filter(**filters).values_list(query_field, flat=True)
+        query_set = (
+            self.filter_queryset(self.get_queryset())
+            .order_by(query_field)
+            .distinct(query_field)
+            .filter(**filters)
+            .values_list(query_field, flat=True)
+        )
 
         if "limit" not in self.request.query_params:
             self.paginator.default_limit = self.paginator.max_limit
