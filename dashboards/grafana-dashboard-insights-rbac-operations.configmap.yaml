@@ -307,7 +307,7 @@ data:
           "steppedLine": false,
           "targets": [
             {
-              "expr": "sum(increase(kube_pod_container_status_restarts_total{namespace=\"rbac-prod\",pod=~\".*rbac.*\"}[5m]))",
+              "expr": "sum(increase(kube_pod_container_status_restarts_total{namespace=\"$namespace\",pod=~\".*rbac.*\"}[5m]))",
               "interval": "15s",
               "refId": "A"
             }
@@ -397,7 +397,7 @@ data:
           "steppedLine": false,
           "targets": [
             {
-              "expr": "sum(rate(container_cpu_usage_seconds_total{namespace=\"rbac-prod\",pod_name=~\".*rbac.*\"}[5m])) / sum(kube_pod_container_resource_limits_cpu_cores{namespace=\"rbac-prod\",pod=~\".*rbac.*\"})",
+              "expr": "sum(rate(container_cpu_usage_seconds_total{namespace=\"$namespace\",pod=~\".*rbac.*\"}[5m])) / sum(kube_pod_init_container_resource_limits_cpu_cores{namespace=\"$namespace\",pod=~\".*rbac.*\"})",
               "interval": "15s",
               "refId": "A"
             }
@@ -487,7 +487,7 @@ data:
           "steppedLine": false,
           "targets": [
             {
-              "expr": "sum(container_memory_usage_bytes{namespace=\"rbac-prod\",pod_name=~\".*rbac.*\",container!~\"sti-build|deployment|lifecycle\",name=\"\"}) / sum(kube_pod_container_resource_limits_memory_bytes{namespace=\"rbac-prod\",pod=~\".*rbac.*\",container!~\"sti-build|deployment|lifecycle\",name=\"\"})",
+              "expr": "sum(container_memory_usage_bytes{namespace=\"$namespace\",pod=~\".*rbac.*\",container!~\"sti-build|deployment|lifecycle\",name=\"\"}) / sum(kube_pod_init_container_resource_limits_memory_bytes{namespace=\"$namespace\",pod=~\".*rbac.*\",container!~\"sti-build|deployment|lifecycle\",name=\"\"})",
               "interval": "15s",
               "refId": "A"
             }
@@ -576,8 +576,8 @@ data:
           "steppedLine": false,
           "targets": [
             {
-              "expr": "rate(container_cpu_usage_seconds_total{namespace=\"rbac-prod\",pod_name=~\".*rbac.*\"}[5m])",
-              "legendFormat": "{{pod_name}}:{{container_name}}",
+              "expr": "rate(container_cpu_usage_seconds_total{namespace=\"$namespace\",pod=~\".*rbac.*\"}[5m])",
+              "legendFormat": "{{pod}}:{{container_name}}",
               "refId": "A"
             }
           ],
@@ -664,9 +664,9 @@ data:
           "steppedLine": false,
           "targets": [
             {
-              "expr": "container_memory_usage_bytes{namespace=\"rbac-prod\",pod_name=~\".*rbac.*\"}",
+              "expr": "container_memory_usage_bytes{namespace=\"$namespace\",pod=~\".*rbac.*\"}",
               "interval": "15s",
-              "legendFormat": "{{pod_name}}",
+              "legendFormat": "{{pod}}:{{container_name}}",
               "refId": "A"
             }
           ],
@@ -735,6 +735,34 @@ data:
             "regex": "",
             "skipUrlSync": false,
             "type": "datasource"
+          },
+          {
+            "allValue": null,
+            "current": {
+              "selected": true,
+              "text": "rbac-prod",
+              "value": "rbac-prod"
+            },
+            "hide": 0,
+            "includeAll": false,
+            "label": "Namespace",
+            "multi": false,
+            "name": "namespace",
+            "options": [
+              {
+                "selected": true,
+                "text": "rbac-prod",
+                "value": "rbac-prod"
+              },
+              {
+                "selected": false,
+                "text": "rbac-stage",
+                "value": "rbac-stage"
+              }
+            ],
+            "query": "rbac-prod,rbac-stage",
+            "skipUrlSync": false,
+            "type": "custom"
           }
         ]
       },
@@ -770,7 +798,7 @@ data:
       "timezone": "",
       "title": "Operations - Rbac w/CPU",
       "uid": "TjP_nMWMk",
-      "version": 2
+      "version": 3
     }
 kind: ConfigMap
 metadata:
