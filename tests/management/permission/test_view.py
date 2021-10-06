@@ -16,6 +16,7 @@
 #
 """Test the permission viewset."""
 
+from django.db.models import Q
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APIClient
@@ -278,6 +279,51 @@ class PermissionViewsetTests(IdentityRequest):
         self.assertEqual(response_filtered.status_code, status.HTTP_200_OK)
         self.assertCountEqual(expected_all, response_all.data.get("data"))
         self.assertCountEqual(expected_filtered, response_filtered.data.get("data"))
+
+    def test_return_options_of_application_without_globals(self):
+        """Test that we can return options of application without globals."""
+        with tenant_context(self.tenant):
+            expected = (
+                Permission.objects.values_list("application", flat=True)
+                .distinct()
+                .exclude(Q(application="*") | Q(resource_type="*") | Q(verb="*"))
+            )
+
+        url = f"{OPTION_URL}?field=application&exclude_globals=true"
+        response = CLIENT.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertCountEqual(expected, response.data.get("data"))
+
+    def test_return_options_of_resource_type_without_globals(self):
+        """Test that we can return options of resource_type without globals."""
+        with tenant_context(self.tenant):
+            expected = (
+                Permission.objects.values_list("resource_type", flat=True)
+                .distinct()
+                .exclude(Q(application="*") | Q(resource_type="*") | Q(verb="*"))
+            )
+
+        url = f"{OPTION_URL}?field=resource_type&exclude_globals=true"
+        response = CLIENT.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertCountEqual(expected, response.data.get("data"))
+
+    def test_return_options_of_verb_without_globals(self):
+        """Test that we can return options of verb without globals."""
+        with tenant_context(self.tenant):
+            expected = (
+                Permission.objects.values_list("verb", flat=True)
+                .distinct()
+                .exclude(Q(application="*") | Q(resource_type="*") | Q(verb="*"))
+            )
+
+        url = f"{OPTION_URL}?field=verb&exclude_globals=true"
+        response = CLIENT.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertCountEqual(expected, response.data.get("data"))
 
     def test_return_options_with_comma_separated_filter(self):
         """Test that we can return options with comma separated filter."""
