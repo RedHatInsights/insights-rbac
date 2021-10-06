@@ -22,7 +22,7 @@ from rest_framework.test import APIClient
 from tenant_schemas.utils import tenant_context
 
 from api.models import User
-from management.models import Permission
+from management.models import Permission, Role, Access
 from tests.identity_request import IdentityRequest
 
 OPTION_URL = reverse("permission-options")
@@ -54,6 +54,13 @@ class PermissionViewsetTests(IdentityRequest):
             self.permissionG = Permission.objects.create(permission="*:*:baz")
             self.permissionH = Permission.objects.create(permission="*:bar:baz")
             self.permissionI = Permission.objects.create(permission="foo:bar:*", description="Description test.")
+
+            self.roleA = Role.objects.create(name="roleA", tenant=self.tenant)
+            self.roleB = Role.objects.create(name="roleB", tenant=self.tenant)
+
+            self.accessA = Access.objects.create(permission=self.permissionA, role=self.roleA, tenant=self.tenant)
+            self.accessB = Access.objects.create(permission=self.permissionB, role=self.roleA, tenant=self.tenant)
+            self.accessC = Access.objects.create(permission=self.permissionC, role=self.roleA, tenant=self.tenant)
 
     def tearDown(self):
         """Tear down permission viewset tests."""
@@ -326,6 +333,27 @@ class PermissionViewsetTests(IdentityRequest):
     def test_exclude_globals_fails_with_invalid_value(self):
         """Test that we return a 400 when exclude_globals is not a supported value."""
         response = CLIENT.get(f"{LIST_URL}?exclude_globals=foo", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_exclude_roles_filters_to_permissions_not_in_roles(self):
+        """Test that we filter out any permissions attached to the supplied role(s)."""
+        access_list = [self.accessA, self.accessB, self.accessC]
+        with tenant_context(self.tenant):
+            expected = list(Permission.objects.values_list("permission", flat=True))
+            total_count = len(expected)
+
+        response = CLIENT.get(f"{LIST_URL}?exclude_roles={self.roleA.uuid},{self.roleB.uuid}", **self.headers)
+        response_permissions = [p.get("permission") for p in response.data.get("data")]
+
+        self.assertEqual(len(response.data.get("data")), total_count - len(access_list))
+        for access in access_list:
+            permission = Permission.objects.get(id=access.permission_id)
+            self.assertTrue(permission.permission not in response_permissions)
+
+    def test_exclude_roles_when_non_uuid_supplied(self):
+        """Test that we respond correctly when invalid data is supplied."""
+        response = CLIENT.get(f"{LIST_URL}?exclude_roles=abc123", **self.headers)
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 

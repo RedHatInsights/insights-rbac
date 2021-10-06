@@ -323,7 +323,7 @@
         ],
         "summary": "Update a cross account request",
         "operationId": "putCrossAccountRequest",
-        "description":"Update a cross account request",
+        "description": "Update a cross account request",
         "parameters": [
           {
             "name": "uuid",
@@ -409,7 +409,7 @@
         ],
         "summary": "Update a cross account request",
         "operationId": "patchCrossAccountRequest",
-        "description":"Update a cross account request",
+        "description": "Update a cross account request",
         "parameters": [
           {
             "name": "uuid",
@@ -2508,6 +2508,15 @@
                 "true",
                 "false"
               ]
+            }
+          },
+          {
+            "name": "exclude_roles",
+            "in": "query",
+            "description": "An optional string filter which accepts one or more role UUIDs, comma-separated, to return permissions not associated with the supplied role(s).",
+            "required": false,
+            "schema": {
+              "type": "string"
             }
           }
         ],
