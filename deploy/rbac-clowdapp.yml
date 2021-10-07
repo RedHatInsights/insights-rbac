@@ -711,6 +711,50 @@ objects:
           }
         ]
       }
+    automation-analytics.json: |
+      {
+        "roles": [
+          {
+            "name": "Automation Analytics Administrator",
+            "description": "An Automation Analytics Administrator role that grants ALL permissions.",
+            "system": true,
+            "platform_default": false,
+            "version": 3,
+            "access": [
+              {
+                "permission": "automation-analytics:*:*"
+              }
+            ]
+          },
+          {
+            "name": "Automation Analytics Editor",
+            "description": "An Automation Analytics Editor role that grants read-write permissions.",
+            "system": true,
+            "platform_default": true,
+            "version": 4,
+            "access": [
+              {
+                "permission": "automation-analytics:*:read"
+              },
+              {
+                "permission": "automation-analytics:*:write"
+              }
+            ]
+          },
+          {
+            "name": "Automation Analytics Viewer",
+            "description": "An Automation Analytics Viewer role that grants read permissions.",
+            "system": true,
+            "platform_default": false,
+            "version": 3,
+            "access": [
+              {
+                "permission": "automation-analytics:*:read"
+              }
+            ]
+          }
+        ]
+      }
     catalog.json: |
       {
         "roles": [
@@ -1540,6 +1584,10 @@ objects:
           "requests": ["create", "read"],
           "templates": ["read"],
           "workflows": ["create", "read", "update", "delete", "link", "unlink"]
+      }
+    automation-analytics.json: |
+      {
+          "*": ["read", "write", "*"]
       }
     catalog.json: |
       {
