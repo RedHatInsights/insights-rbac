@@ -1614,7 +1614,13 @@ objects:
       }
     vulnerability.json: |
       {
-          "*": ["*"]
+          "*": ["read", "write", "*"],
+          "vulnerability_results": ["read"],
+          "cve.business_risk_and_status": ["write"],
+          "system.cve.status": ["write"],
+          "advanced_report": ["read"],
+          "report_and_export": ["read"],
+          "system.opt_out": ["write", "read"]
       }
   kind: ConfigMap
   metadata:
