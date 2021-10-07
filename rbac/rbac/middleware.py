@@ -20,6 +20,7 @@ import binascii
 import logging
 import time
 from json.decoder import JSONDecodeError
+from prometheus_client import Counter
 
 from django.conf import settings
 from django.db import connections, transaction
@@ -39,6 +40,7 @@ from api.serializers import create_schema_name, extract_header
 
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
+req_src_counter = Counter("rbac_int_ext_req_total", "Tracks a count of internal/external requests to RBAC.", ["source", "method", "view", "status"])
 TENANTS = TenantCache()
 
 
@@ -235,6 +237,7 @@ class IdentityHeaderMiddleware(BaseTenantMiddleware):
             # This request is for a private API endpoint
             return response
 
+        src = "external"
         query_string = ""
         is_admin = False
         is_system = False
@@ -255,6 +258,10 @@ class IdentityHeaderMiddleware(BaseTenantMiddleware):
                 # django.contrib.auth.models.AnonymousUser does not
                 is_admin = is_system = False
                 account = None
+
+        if is_system:
+            src = "internal"
+        req_src_counter.labels(source=src, method=request.method, view=request.path.split("/")[-2], status=response.status_code).inc()
 
         # Todo: add some info back to logs
         """
