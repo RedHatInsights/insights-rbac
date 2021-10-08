@@ -1515,7 +1515,7 @@ objects:
             "name": "Sources administrator",
             "description": "Perform any available operation against any Source",
             "system": true,
-            "platform_default": false,
+            "platform_default": true,
             "version": 2,
             "access": [
               {
