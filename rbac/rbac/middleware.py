@@ -43,7 +43,8 @@ logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 req_src_counter = Counter(
     "rbac_int_ext_req_total",
     "Tracks a count of internal/external requests to RBAC.",
-    ["source", "method", "view", "status"])
+    ["source", "method", "view", "status"],
+)
 TENANTS = TenantCache()
 
 
@@ -270,11 +271,7 @@ class IdentityHeaderMiddleware(BaseTenantMiddleware):
             view = path_parts[-2]
         else:
             view = path_parts[-1]
-        req_src_counter.labels(
-            source=src,
-            method=request.method,
-            view=view,
-            status=response.get("status_code")).inc()
+        req_src_counter.labels(source=src, method=request.method, view=view, status=response.get("status_code")).inc()
 
         # Todo: add some info back to logs
         """

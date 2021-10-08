@@ -42,12 +42,11 @@ CLIENT_ID_HEADER = "x-rh-clientid"
 API_TOKEN_HEADER = "x-rh-apitoken"
 
 bop_request_time_tracking = Histogram(
-    "rbac_proxy_request_processing_seconds",
-    "Time spent processing requests to BOP from RBAC")
+    "rbac_proxy_request_processing_seconds", "Time spent processing requests to BOP from RBAC"
+)
 bop_request_status_count = Counter(
-    "bop_request_status_total",
-    "Number of requests from RBAC to BOP and resulting status",
-    ["method", "status"])
+    "bop_request_status_total", "Number of requests from RBAC to BOP and resulting status", ["method", "status"]
+)
 
 
 class PrincipalProxy:  # pylint: disable=too-few-public-methods
