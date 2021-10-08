@@ -24,12 +24,14 @@ from json.decoder import JSONDecodeError
 from django.conf import settings
 from django.db import connections, transaction
 from django.http import Http404, HttpResponse
+from django.urls import resolve
 from django.utils.deprecation import MiddlewareMixin
 from management.cache import TenantCache
 from management.group.definer import seed_group  # noqa: I100, I201
 from management.models import Principal
 from management.role.definer import seed_permissions, seed_roles
 from management.utils import APPLICATION_KEY, access_for_principal, validate_psk
+from prometheus_client import Counter
 from tenant_schemas.middleware import BaseTenantMiddleware
 from tenant_schemas.utils import tenant_context
 
@@ -39,6 +41,11 @@ from api.serializers import create_schema_name, extract_header
 
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
+req_sys_counter = Counter(
+    "rbac_req_type_total",
+    "Tracks a count of requests to RBAC tracking those made on behalf of the system or a princpal.",
+    ["behalf", "method", "view", "status"],
+)
 TENANTS = TenantCache()
 
 
@@ -235,6 +242,7 @@ class IdentityHeaderMiddleware(BaseTenantMiddleware):
             # This request is for a private API endpoint
             return response
 
+        behalf = "principal"
         query_string = ""
         is_admin = False
         is_system = False
@@ -255,6 +263,16 @@ class IdentityHeaderMiddleware(BaseTenantMiddleware):
                 # django.contrib.auth.models.AnonymousUser does not
                 is_admin = is_system = False
                 account = None
+
+        if is_system:
+            behalf = "system"
+
+        req_sys_counter.labels(
+            behalf=behalf,
+            method=request.method,
+            view=resolve(request.path).url_name,
+            status=response.get("status_code"),
+        ).inc()
 
         # Todo: add some info back to logs
         """
