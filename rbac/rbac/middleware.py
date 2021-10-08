@@ -29,7 +29,6 @@ from management.cache import TenantCache
 from management.group.definer import seed_group  # noqa: I100, I201
 from management.models import Principal
 from management.role.definer import seed_permissions, seed_roles
-from management.urls import ROUTER
 from management.utils import APPLICATION_KEY, access_for_principal, validate_psk
 from prometheus_client import Counter
 from tenant_schemas.middleware import BaseTenantMiddleware
