@@ -24,6 +24,7 @@ from json.decoder import JSONDecodeError
 from django.conf import settings
 from django.db import connections, transaction
 from django.http import Http404, HttpResponse
+from django.urls import resolve
 from django.utils.deprecation import MiddlewareMixin
 from management.cache import TenantCache
 from management.group.definer import seed_group  # noqa: I100, I201
@@ -40,10 +41,10 @@ from api.serializers import create_schema_name, extract_header
 
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
-req_src_counter = Counter(
-    "rbac_int_ext_req_total",
-    "Tracks a count of internal/external requests to RBAC.",
-    ["source", "method", "view", "status"],
+req_sys_counter = Counter(
+    "rbac_req_type_total",
+    "Tracks a count of requests to RBAC tracking those made on behalf of the system or a princpal.",
+    ["behalf", "method", "view", "status"],
 )
 TENANTS = TenantCache()
 
@@ -241,7 +242,7 @@ class IdentityHeaderMiddleware(BaseTenantMiddleware):
             # This request is for a private API endpoint
             return response
 
-        src = "external"
+        behalf = "principal"
         query_string = ""
         is_admin = False
         is_system = False
@@ -264,14 +265,14 @@ class IdentityHeaderMiddleware(BaseTenantMiddleware):
                 account = None
 
         if is_system:
-            src = "internal"
+            behalf = "system"
 
-        path_parts = request.path.split("/")
-        if path_parts[-1] == "":
-            view = path_parts[-2]
-        else:
-            view = path_parts[-1]
-        req_src_counter.labels(source=src, method=request.method, view=view, status=response.get("status_code")).inc()
+        req_sys_counter.labels(
+            behalf=behalf,
+            method=request.method,
+            view=resolve(request.path).url_name,
+            status=response.get("status_code"),
+        ).inc()
 
         # Todo: add some info back to logs
         """
