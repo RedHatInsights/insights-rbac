@@ -20,7 +20,6 @@ import binascii
 import logging
 import time
 from json.decoder import JSONDecodeError
-from prometheus_client import Counter
 
 from django.conf import settings
 from django.db import connections, transaction
@@ -30,7 +29,9 @@ from management.cache import TenantCache
 from management.group.definer import seed_group  # noqa: I100, I201
 from management.models import Principal
 from management.role.definer import seed_permissions, seed_roles
+from management.urls import ROUTER
 from management.utils import APPLICATION_KEY, access_for_principal, validate_psk
+from prometheus_client import Counter
 from tenant_schemas.middleware import BaseTenantMiddleware
 from tenant_schemas.utils import tenant_context
 
@@ -40,7 +41,10 @@ from api.serializers import create_schema_name, extract_header
 
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
-req_src_counter = Counter("rbac_int_ext_req_total", "Tracks a count of internal/external requests to RBAC.", ["source", "method", "view", "status"])
+req_src_counter = Counter(
+    "rbac_int_ext_req_total",
+    "Tracks a count of internal/external requests to RBAC.",
+    ["source", "method", "view", "status"])
 TENANTS = TenantCache()
 
 
@@ -261,7 +265,17 @@ class IdentityHeaderMiddleware(BaseTenantMiddleware):
 
         if is_system:
             src = "internal"
-        req_src_counter.labels(source=src, method=request.method, view=request.path.split("/")[-2], status=response.status_code).inc()
+
+        path_parts = request.path.split("/")
+        if path_parts[-1] == "":
+            view = path_parts[-2]
+        else:
+            view = path_parts[-1]
+        req_src_counter.labels(
+            source=src,
+            method=request.method,
+            view=view,
+            status=response.get("status_code")).inc()
 
         # Todo: add some info back to logs
         """

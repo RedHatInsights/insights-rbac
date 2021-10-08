@@ -20,9 +20,9 @@ import logging
 import os
 
 import requests
-from prometheus_client import Counter, Histogram
 from django.conf import settings
 from management.models import Principal
+from prometheus_client import Counter, Histogram
 from rest_framework import status
 
 from rbac.env import ENVIRONMENT
@@ -41,8 +41,14 @@ USER_ENV_HEADER = "x-rh-insights-env"
 CLIENT_ID_HEADER = "x-rh-clientid"
 API_TOKEN_HEADER = "x-rh-apitoken"
 
-bop_request_time_tracking = Histogram("rbac_proxy_request_processing_seconds", "Time spent processing requests to BOP from RBAC")
-bop_request_status_count = Counter("bop_request_status_total", "Number of requests from RBAC to BOP and resulting status", ["method", "status"])
+bop_request_time_tracking = Histogram(
+    "rbac_proxy_request_processing_seconds",
+    "Time spent processing requests to BOP from RBAC")
+bop_request_status_count = Counter(
+    "bop_request_status_total",
+    "Number of requests from RBAC to BOP and resulting status",
+    ["method", "status"])
+
 
 class PrincipalProxy:  # pylint: disable=too-few-public-methods
     """A class to handle interactions with the Principal proxy service."""
@@ -167,7 +173,7 @@ class PrincipalProxy:  # pylint: disable=too-few-public-methods
         except requests.exceptions.ConnectionError as conn:
             LOGGER.error("Unable to connect for URL %s with error: %s", url, conn)
             resp = {"status_code": status.HTTP_500_INTERNAL_SERVER_ERROR, "errors": [unexpected_error]}
-            bop_request_status_count.labels(method=method, status=resp.status_code).inc()
+            bop_request_status_count.labels(method=method, status=resp.get("status_code")).inc()
             return resp
 
         error = None
@@ -193,7 +199,7 @@ class PrincipalProxy:  # pylint: disable=too-few-public-methods
             error["status"] = str(response.status_code)
         if error:
             resp["errors"] = [error]
-        bop_request_status_count.labels(method=method, status=resp.status).inc()
+        bop_request_status_count.labels(method=method, status=resp.get("status_code")).inc()
         return resp
 
     def request_principals(self, account, input=None, limit=None, offset=None, options={}):
