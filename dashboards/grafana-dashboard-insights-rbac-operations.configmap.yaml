@@ -529,7 +529,7 @@ data:
               }
             }
           ],
-          "title": "Row title",
+          "title": "Operational Data (CPU/Mem)",
           "type": "row"
         },
         {
