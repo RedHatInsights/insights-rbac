@@ -1518,8 +1518,8 @@ objects:
             "name": "Sources administrator",
             "description": "Perform any available operation against any Source",
             "system": true,
-            "platform_default": false,
-            "version": 2,
+            "platform_default": true,
+            "version": 3,
             "access": [
               {
                 "permission": "sources:*:*"

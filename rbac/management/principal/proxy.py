@@ -146,6 +146,7 @@ class PrincipalProxy:  # pylint: disable=too-few-public-methods
         return_id=False,  # noqa: C901
     ):
         """Send request to proxy service."""
+        metrics_method = method.__name__.upper()
         if settings.BYPASS_BOP_VERIFICATION:
             to_return = []
             if data is None:
@@ -157,6 +158,7 @@ class PrincipalProxy:  # pylint: disable=too-few-public-methods
             elif "primaryEmail" in data:
                 # We can't fake a lookup for an email address, so we won't try.
                 pass
+            bop_request_status_count.labels(method=metrics_method, status=200).inc()
             return dict(data=to_return, status_code=200, userCount=len(to_return))
         headers = {USER_ENV_HEADER: self.user_env, CLIENT_ID_HEADER: self.client_id, API_TOKEN_HEADER: self.api_token}
         unexpected_error = {
@@ -172,7 +174,7 @@ class PrincipalProxy:  # pylint: disable=too-few-public-methods
         except requests.exceptions.ConnectionError as conn:
             LOGGER.error("Unable to connect for URL %s with error: %s", url, conn)
             resp = {"status_code": status.HTTP_500_INTERNAL_SERVER_ERROR, "errors": [unexpected_error]}
-            bop_request_status_count.labels(method=method, status=resp.get("status_code")).inc()
+            bop_request_status_count.labels(method=metrics_method, status=resp.get("status_code")).inc()
             return resp
 
         error = None
@@ -198,7 +200,7 @@ class PrincipalProxy:  # pylint: disable=too-few-public-methods
             error["status"] = str(response.status_code)
         if error:
             resp["errors"] = [error]
-        bop_request_status_count.labels(method=method, status=resp.get("status_code")).inc()
+        bop_request_status_count.labels(method=metrics_method, status=resp.get("status_code")).inc()
         return resp
 
     def request_principals(self, account, input=None, limit=None, offset=None, options={}):
