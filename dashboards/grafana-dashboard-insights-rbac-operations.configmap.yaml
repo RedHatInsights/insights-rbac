@@ -1617,7 +1617,7 @@ data:
     }
 kind: ConfigMap
 metadata:
-  name: grafana-dashboard-insights-rbac-operations
+  name: grafana-dashboard-clouddot-rbac-operations
   labels:
     grafana_dashboard: "true"
   annotations:
