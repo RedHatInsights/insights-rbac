@@ -18,10 +18,7 @@ objects:
     deployments:
     - name: service
       minReplicas: ${{MIN_REPLICAS}}
-      webService: 
-        public:
-          enabled: true
-          apiPath: rbac
+      web: true
       podSpec:
         image: ${IMAGE}:${IMAGE_TAG}
         initContainers:
