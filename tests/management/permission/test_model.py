@@ -32,8 +32,10 @@ class PermissionModelTests(IdentityRequest):
         super().setUp()
 
         with tenant_context(self.tenant):
-            self.permission = Permission.objects.create(permission="rbac:roles:read")
+            self.dependency_permission = Permission.objects.create(permission="rbac:roles:read")
+            self.permission = Permission.objects.create(permission="rbac:roles:write")
             self.permission.save()
+            self.permission.permissions.add(self.dependency_permission)
 
     def tearDown(self):
         """Tear down permission model tests."""
@@ -45,5 +47,7 @@ class PermissionModelTests(IdentityRequest):
         with tenant_context(self.tenant):
             self.assertEqual(self.permission.application, "rbac")
             self.assertEqual(self.permission.resource_type, "roles")
-            self.assertEqual(self.permission.verb, "read")
-            self.assertEqual(self.permission.permission, "rbac:roles:read")
+            self.assertEqual(self.permission.verb, "write")
+            self.assertEqual(self.permission.permission, "rbac:roles:write")
+            self.assertEqual(list(self.permission.permissions.all()), [self.dependency_permission])
+            self.assertEqual(list(self.dependency_permission.requiring_permissions.all()), [self.permission])

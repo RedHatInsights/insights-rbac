@@ -55,6 +55,7 @@ class PermissionViewsetTests(IdentityRequest):
             self.permissionG = Permission.objects.create(permission="*:*:baz")
             self.permissionH = Permission.objects.create(permission="*:bar:baz")
             self.permissionI = Permission.objects.create(permission="foo:bar:*", description="Description test.")
+            self.permissionI.permissions.add(self.permissionA)
 
             self.roleA = Role.objects.create(name="roleA", tenant=self.tenant)
             self.roleB = Role.objects.create(name="roleB", tenant=self.tenant)
@@ -86,8 +87,10 @@ class PermissionViewsetTests(IdentityRequest):
             self.assertIsNotNone(perm.get("permission"))
             if perm["permission"] == "foo:bar:*":
                 self.assertEqual(perm["description"], "Description test.")
+                self.assertEqual(perm["requires"], ["rbac:roles:read"])
             else:
                 self.assertEqual(perm["description"], "")
+                self.assertEqual(perm["requires"], [])
 
     def test_read_permission_list_application_filter(self):
         """Test that we can filter a list of permissions by application."""
