@@ -86,6 +86,8 @@ class RoleViewsetTests(IdentityRequest):
 
             self.permission = Permission.objects.create(permission="app:*:*")
             self.permission2 = Permission.objects.create(permission="app2:*:*")
+            self.permission3 = Permission.objects.create(permission="app:*:read")
+            self.permission.permissions.add(self.permission3)
             self.access = Access.objects.create(permission=self.permission, role=self.defRole)
             self.access2 = Access.objects.create(permission=self.permission2, role=self.defRole)
 
@@ -97,6 +99,7 @@ class RoleViewsetTests(IdentityRequest):
             Permission.objects.get_or_create(permission="cost-management:*:*")
             Permission.objects.get_or_create(permission="app:*:*")
             Permission.objects.get_or_create(permission="app2:*:*")
+            Permission.objects.get_or_create(permission="app:*:read")
 
     def create_role(self, role_name, role_display="", in_access_data=None):
         """Create a role."""
@@ -104,7 +107,8 @@ class RoleViewsetTests(IdentityRequest):
             {
                 "permission": "app:*:*",
                 "resourceDefinitions": [{"attributeFilter": {"key": "key1", "operation": "equal", "value": "value1"}}],
-            }
+            },
+            {"permission": "app:*:read", "resourceDefinitions": []},
         ]
         if in_access_data:
             access_data = in_access_data
@@ -122,7 +126,8 @@ class RoleViewsetTests(IdentityRequest):
             {
                 "permission": "app:*:*",
                 "resourceDefinitions": [{"attributeFilter": {"key": "keyA", "operation": "equal", "value": "valueA"}}],
-            }
+            },
+            {"permission": "app:*:read", "resourceDefinitions": []},
         ]
         response = self.create_role(role_name, in_access_data=access_data)
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
@@ -150,7 +155,7 @@ class RoleViewsetTests(IdentityRequest):
         # role also gets created in public schema
         with tenant_context(Tenant.objects.get(schema_name="public")):
             role_public = Role.objects.get(name="roleA")
-            self.assertEqual(role_public.access.count(), 1)
+            self.assertEqual(role_public.access.count(), 2)
             self.assertEqual(role_public.access.first().permission.permission, access_data[0]["permission"])
             self.assertEqual(
                 role_public.access.first().resourceDefinitions.first().attributeFilter,
@@ -165,7 +170,8 @@ class RoleViewsetTests(IdentityRequest):
             {
                 "permission": "app:*:*",
                 "resourceDefinitions": [{"attributeFilter": {"key": "keyA", "operation": "equal", "value": "valueA"}}],
-            }
+            },
+            {"permission": "app:*:read", "resourceDefinitions": []},
         ]
         response = self.create_role(role_name, role_display=role_display, in_access_data=access_data)
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
@@ -182,6 +188,22 @@ class RoleViewsetTests(IdentityRequest):
         self.assertEqual(role_display, response.data.get("display_name"))
         self.assertIsInstance(response.data.get("access"), list)
         self.assertEqual(access_data, response.data.get("access"))
+
+    def test_create_role_without_required_permission(self):
+        """Test that creating a role with dependent permissions not supplied, fails."""
+        role_name = "roleWithDependentPermissions"
+        access_data = [
+            {
+                "permission": self.permission.permission,
+                "resourceDefinitions": [{"attributeFilter": {"key": "keyA", "operation": "equal", "value": "valueA"}}],
+            }
+        ]
+        response = self.create_role(role_name, in_access_data=access_data)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(
+            response.data.get("errors")[0].get("detail"),
+            f"Permission '{self.permission.permission}' requires: '['{self.permission3.permission}']'",
+        )
 
     def test_create_role_invalid(self):
         """Test that creating an invalid role returns an error."""
@@ -379,7 +401,7 @@ class RoleViewsetTests(IdentityRequest):
             # fields displayed are same as defined
             self.assertEqual(self.display_fields, set(iterRole.keys()))
             if iterRole.get("name") == role_name:
-                self.assertEqual(iterRole.get("accessCount"), 1)
+                self.assertEqual(iterRole.get("accessCount"), 2)
                 role = iterRole
         self.assertEqual(role.get("name"), role_name)
         self.assertEqual(role.get("display_name"), role_display)
