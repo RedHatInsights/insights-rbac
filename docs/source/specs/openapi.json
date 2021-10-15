@@ -540,7 +540,7 @@
             "in": "query",
             "name": "match_criteria",
             "required": false,
-            "description": "Parameter for specifying the matching criteria for an object's name and/or email. Currently, match_criteria of partial searches for a username/email using \"starts with\" pattern.",
+            "description": "Parameter for specifying the matching criteria for an object's name and/or email.",
             "schema": {
               "type": "string",
               "enum": [
