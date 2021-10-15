@@ -65,6 +65,7 @@ RUN curl -L -o /usr/bin/haberdasher \
 https://github.com/RedHatInsights/haberdasher/releases/latest/download/haberdasher_linux_amd64 && \
 chmod 755 /usr/bin/haberdasher
 
+RUN touch /opt/app-root/src/rbac/app.log; chmod 777 /opt/app-root/src/rbac/app.log
 USER 1001
 
 ENTRYPOINT ["/usr/bin/haberdasher"]
