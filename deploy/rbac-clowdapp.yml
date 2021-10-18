@@ -18,7 +18,7 @@ objects:
     deployments:
     - name: service
       minReplicas: ${{MIN_REPLICAS}}
-      webServices: 
+      webServices:
         public:
           enabled: true
           apiPath: rbac
@@ -123,14 +123,14 @@ objects:
           - name: PRINCIPAL_PROXY_CLIENT_ID
             valueFrom:
               secretKeyRef:
-                key: principal-proxy-client-id
-                name: rbac-secret
+                key: client-id
+                name: insights-rbac
                 optional: false
           - name: PRINCIPAL_PROXY_API_TOKEN
             valueFrom:
               secretKeyRef:
-                key: principal-proxy-api-token
-                name: rbac-secret
+                key: token
+                name: insights-rbac
                 optional: false
           - name: PRINCIPAL_PROXY_SERVICE_SSL_VERIFY
             valueFrom:
@@ -308,14 +308,14 @@ objects:
           - name: PRINCIPAL_PROXY_CLIENT_ID
             valueFrom:
               secretKeyRef:
-                key: principal-proxy-client-id
-                name: ${NAME}-secret
+                key: client-id
+                name: insights-rbac
                 optional: false
           - name: PRINCIPAL_PROXY_API_TOKEN
             valueFrom:
               secretKeyRef:
-                key: principal-proxy-api-token
-                name: ${NAME}-secret
+                key: token
+                name: insights-rbac
                 optional: false
           - name: PRINCIPAL_PROXY_SERVICE_SSL_VERIFY
             valueFrom:
@@ -1683,6 +1683,14 @@ objects:
   data:
     psks.json: >-
       ewogICJhZHZpc29yIjogewogICAgImFsdC1zZWNyZXQiOiAiMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTEiCiAgfSwKICAiYXBwcm92YWwiOiB7CiAgICAiYWx0LXNlY3JldCI6ICIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMiIKICB9Cn0=
+  type: Opaque
+- apiVersion: v1
+  kind: Secret
+  metadata:
+    name: insights-rbac
+  data:
+    client-id: aW5zaWdodHMtcmJhYw==
+    token: MjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMg==
   type: Opaque
 - apiVersion: v1
   kind: Secret
