@@ -72,7 +72,7 @@ objects:
             memory: ${MEMORY_LIMIT}
           requests:
             cpu: 200m
-            memory: 256Mi
+            memory: 512Mi
         env:
           - name: SENTRY_DSN
             valueFrom:
