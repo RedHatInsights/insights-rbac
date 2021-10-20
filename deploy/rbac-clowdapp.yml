@@ -1391,7 +1391,7 @@ objects:
             "name": "Notifications administrator",
             "description": "Perform any available operation against Notifications and Integrations applications.",
             "system": true,
-            "platform_default": false,
+            "platform_default": true,
             "version": 3,
             "access": [
               {
