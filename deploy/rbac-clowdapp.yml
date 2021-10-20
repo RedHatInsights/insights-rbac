@@ -1389,16 +1389,35 @@ objects:
         "roles": [
           {
             "name": "Notifications administrator",
-            "description": "Perform any available operation against any Notifications resource.",
+            "description": "Perform any available operation against Notifications and Integrations applications.",
             "system": true,
-            "platform_default": true,
-            "version": 2,
+            "platform_default": false,
+            "version": 3,
             "access": [
               {
                 "permission": "notifications:*:*"
+              },
+              {
+                "permission": "integrations:*:*"
+              }
+            ]
+          },
+          {
+            "name": "Notifications viewer",
+            "description": "Read only access to notifications and integrations applications.",
+            "system": true,
+            "platform_default": true,
+            "version": 1,
+            "access": [
+              {
+                "permission": "notifications:notifications:read"
+              },
+              {
+                "permission": "integrations:endpoints:read"
               }
             ]
           }
+
         ]
       }
     malware-detection.json: |
