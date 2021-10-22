@@ -8,7 +8,7 @@ Insights Role Based Access Control README
 About
 ~~~~~
 
-Insights RBAC's goal is to provide an open source solution for storing roles, permissions and groups.
+Insights RBACs goal is to provide an open source solution for storing roles, permissions and groups.
 
 Full documentation is available through readthedocs_.
 More info is available through platformdocs_.
