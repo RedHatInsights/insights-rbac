@@ -33,7 +33,7 @@ function install_pipenv() {
 
 function install_apidoc() {
   echo "---> Installing apidoc tool ..."
-  npm install apidoc -g
+  npm install apidoc@0.29.0 -g
 }
 
 
