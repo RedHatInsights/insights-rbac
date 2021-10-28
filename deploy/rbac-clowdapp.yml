@@ -18,7 +18,10 @@ objects:
     deployments:
     - name: service
       minReplicas: ${{MIN_REPLICAS}}
-      web: true
+      webServices:
+        public:
+          enabled: true
+          apiPath: rbac
       podSpec:
         image: ${IMAGE}:${IMAGE_TAG}
         initContainers:
@@ -69,7 +72,7 @@ objects:
             memory: ${MEMORY_LIMIT}
           requests:
             cpu: 200m
-            memory: 256Mi
+            memory: 512Mi
         env:
           - name: SENTRY_DSN
             valueFrom:
@@ -120,14 +123,14 @@ objects:
           - name: PRINCIPAL_PROXY_CLIENT_ID
             valueFrom:
               secretKeyRef:
-                key: principal-proxy-client-id
-                name: rbac-secret
+                key: client-id
+                name: insights-rbac
                 optional: false
           - name: PRINCIPAL_PROXY_API_TOKEN
             valueFrom:
               secretKeyRef:
-                key: principal-proxy-api-token
-                name: rbac-secret
+                key: token
+                name: insights-rbac
                 optional: false
           - name: PRINCIPAL_PROXY_SERVICE_SSL_VERIFY
             valueFrom:
@@ -305,14 +308,14 @@ objects:
           - name: PRINCIPAL_PROXY_CLIENT_ID
             valueFrom:
               secretKeyRef:
-                key: principal-proxy-client-id
-                name: ${NAME}-secret
+                key: client-id
+                name: insights-rbac
                 optional: false
           - name: PRINCIPAL_PROXY_API_TOKEN
             valueFrom:
               secretKeyRef:
-                key: principal-proxy-api-token
-                name: ${NAME}-secret
+                key: token
+                name: insights-rbac
                 optional: false
           - name: PRINCIPAL_PROXY_SERVICE_SSL_VERIFY
             valueFrom:
@@ -1386,16 +1389,35 @@ objects:
         "roles": [
           {
             "name": "Notifications administrator",
-            "description": "Perform any available operation against any Notifications resource.",
+            "description": "Perform any available operation against Notifications and Integrations applications.",
             "system": true,
             "platform_default": true,
-            "version": 2,
+            "version": 3,
             "access": [
               {
                 "permission": "notifications:*:*"
+              },
+              {
+                "permission": "integrations:*:*"
+              }
+            ]
+          },
+          {
+            "name": "Notifications viewer",
+            "description": "Read only access to notifications and integrations applications.",
+            "system": true,
+            "platform_default": true,
+            "version": 1,
+            "access": [
+              {
+                "permission": "notifications:notifications:read"
+              },
+              {
+                "permission": "integrations:endpoints:read"
               }
             ]
           }
+
         ]
       }
     malware-detection.json: |
@@ -1680,6 +1702,14 @@ objects:
   data:
     psks.json: >-
       ewogICJhZHZpc29yIjogewogICAgImFsdC1zZWNyZXQiOiAiMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTEiCiAgfSwKICAiYXBwcm92YWwiOiB7CiAgICAiYWx0LXNlY3JldCI6ICIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMiIKICB9Cn0=
+  type: Opaque
+- apiVersion: v1
+  kind: Secret
+  metadata:
+    name: insights-rbac
+  data:
+    client-id: aW5zaWdodHMtcmJhYw==
+    token: MjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMg==
   type: Opaque
 - apiVersion: v1
   kind: Secret
