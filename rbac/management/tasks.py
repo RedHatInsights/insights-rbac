@@ -29,8 +29,13 @@ def principal_cleanup():
 
 
 @shared_task
-def run_migrations_in_worker():
+def run_migrations_in_worker(schema_list):
     """Celery task to run migrations."""
+    if schema_list:
+        for schema in schema_list:
+            call_command("migrate_schemas", schema_name=schema)
+        return
+
     call_command("migrate_schemas")
 
 
