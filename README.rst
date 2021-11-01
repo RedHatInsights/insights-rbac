@@ -87,7 +87,7 @@ If a docker container running Postgres is not feasible, it is possible to run Po
 
 You may also run migrations explicitly, and in parallel, by specifying `TENANT_PARALLEL_MIGRATION_MAX_PROCESSES` (the number of concurrent processes to run migrations) and/or `TENANT_PARALLEL_MIGRATION_CHUNKS` (the number of migrations for each process to run at a time). Both of these values default to 2. *Be mindful of the fact that bumping these values will consume more database connections:*
 
-    TENANT_PARALLEL_MIGRATION_MAX_PROCESSES=10 TENANT_PARALLEL_MIGRATION_CHUNKS=2 ./rbac/manage.py migrate_schemas --executor=parallel
+    TENANT_PARALLEL_MIGRATION_MAX_PROCESSES=4 TENANT_PARALLEL_MIGRATION_CHUNKS=2 ./rbac/manage.py migrate_schemas --executor=parallel
 
 Seeds
 ^^^^^
