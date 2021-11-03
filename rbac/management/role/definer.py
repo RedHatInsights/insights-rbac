@@ -136,14 +136,14 @@ def seed_permissions(tenant):
     current_permission_ids = set()
 
     with tenant_context(tenant):
-        with transaction.atomic():
-            for permission_file_name in permission_files:
-                permission_file_path = os.path.join(permission_directory, permission_file_name)
-                app_name = os.path.splitext(permission_file_name)[0]
-                with open(permission_file_path) as json_file:
-                    data = json.load(json_file)
-                    for resource, operation_objects in data.items():
-                        try:
+        for permission_file_name in permission_files:
+            permission_file_path = os.path.join(permission_directory, permission_file_name)
+            app_name = os.path.splitext(permission_file_name)[0]
+            with open(permission_file_path) as json_file:
+                data = json.load(json_file)
+                for resource, operation_objects in data.items():
+                    try:
+                        with transaction.atomic():
                             for operation_object in operation_objects:
                                 # There are some old configs, e.g., cost-management still stay in CI
                                 if not isinstance(operation_object, str):
@@ -170,11 +170,23 @@ def seed_permissions(tenant):
                                         f"for tenant {tenant.schema_name}."
                                     )
                                 current_permission_ids.add(permission.id)
-                        except Exception as e:
-                            logger.error(
-                                f"Failed to update or create permissions for: "
-                                f"{app_name}:{resource} for tenant: {tenant.schema_name} with error: {e}"
-                            )
+
+                            # need to iterate over the objects with requirements AFTER all perms are created
+                            operation_objects_with_requires = [obj for obj in operation_objects if "requires" in obj]
+                            for operation_object in operation_objects_with_requires:
+                                if not isinstance(operation_object, str):
+                                    required_verbs = operation_object.get("requires")
+                                    verb = operation_object.get("verb")
+                                    permission = Permission.objects.get(permission=f"{app_name}:{resource}:{verb}")
+                                    required_permissions = Permission.objects.filter(
+                                        application=app_name, resource_type=resource, verb__in=required_verbs
+                                    ).exclude(id=permission.id)
+                                    permission.permissions.add(*required_permissions)
+                    except Exception as e:
+                        logger.error(
+                            f"Failed to update or create permissions for: "
+                            f"{app_name}:{resource} for tenant: {tenant.schema_name} with error: {e}"
+                        )
         perms_to_delete = Permission.objects.exclude(id__in=current_permission_ids)
         logger.info(
             f"The following '{perms_to_delete.count()}' permission(s) eligible for removal: {perms_to_delete.values()}"

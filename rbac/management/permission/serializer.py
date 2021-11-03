@@ -24,8 +24,14 @@ from rest_framework import serializers
 class PermissionSerializer(SerializerCreateOverrideMixin, serializers.ModelSerializer):
     """Serializer for the Permission model."""
 
+    requires = serializers.SerializerMethodField("get_permissions")
+
     class Meta:
         """Metadata for the serializer."""
 
         model = Permission
-        fields = ("application", "resource_type", "verb", "permission", "description")
+        fields = ("application", "resource_type", "verb", "permission", "description", "requires")
+
+    def get_permissions(self, obj):
+        """Get dependent/required permissions."""
+        return list(obj.permissions.all().values_list("permission", flat=True))
