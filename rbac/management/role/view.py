@@ -441,6 +441,7 @@ class RoleViewSet(
         """Validate the role request data."""
         access_list = self.validate_and_get_access_list(request.data)
         if access_list:
+            sent_permissions = [access["permission"] for access in access_list]
             for perm in access_list:
                 app, resource_type, verb = perm.get("permission").split(":")
                 if app not in settings.ROLE_CREATE_ALLOW_LIST:
@@ -451,13 +452,22 @@ class RoleViewSet(
 
                 db_permission = Permission.objects.filter(
                     application=app, resource_type=resource_type, verb=verb
-                ).exists()
+                ).first()
 
                 if not db_permission:
                     key = "role"
                     message = f"Permission does not exist: {perm.get('permission')}"
                     error = {key: [_(message)]}
                     raise serializers.ValidationError(error)
+
+                required_permissions = list(db_permission.permissions.all().values_list("permission", flat=True))
+                if required_permissions:
+                    all_required_permissions_sent = all(perm in sent_permissions for perm in required_permissions)
+                    if not all_required_permissions_sent:
+                        key = "role"
+                        message = f"Permission '{db_permission.permission}' requires: '{required_permissions}'"
+                        error = {key: [_(message)]}
+                        raise serializers.ValidationError(error)
 
     def delete_policies_if_no_role_attached(self, role):
         """Delete policy if there is no role attached to it."""

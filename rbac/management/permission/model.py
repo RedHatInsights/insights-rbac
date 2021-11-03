@@ -29,6 +29,7 @@ class Permission(TenantAwareModel):
     verb = models.TextField(null=False)
     permission = models.TextField(null=False, unique=True)
     description = models.TextField(default="")
+    permissions = models.ManyToManyField("self", symmetrical=False, related_name="requiring_permissions")
 
     def save(self, *args, **kwargs):
         """Populate the application, resource_type and verb field before saving."""
