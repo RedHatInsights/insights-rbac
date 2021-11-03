@@ -116,8 +116,11 @@ def run_migrations(request):
     POST /_private/api/migrations/run/
     """
     if request.method == "POST":
-        logger.info(f"Running migrations: {request.method} {request.user.username}")
-        run_migrations_in_worker.delay()
+        schema_list = None
+        if request.body:
+            schema_list = json.loads(request.body).get("schemas")
+        logger.info(f"Running migrations: {request.method} {request.user.username} {schema_list}")
+        run_migrations_in_worker.delay(schema_list)
         return HttpResponse("Migrations are running in a background worker.", status=202)
     return HttpResponse(f'Invalid method, only "POST" is allowed.', status=405)
 
@@ -125,16 +128,22 @@ def run_migrations(request):
 def migration_progress(request):
     """View method for checking migration progress.
 
-    GET /_private/api/migrations/progress/?migration_name=<migration_name>
+    GET /_private/api/migrations/progress/?migration_name=<migration_name>&limit=<limit>&offset=<offset>
     """
     if request.method == "GET":
+        limit = int(request.GET.get("limit", 0))
+        offset = int(request.GET.get("offset", 0))
         migration_name = request.GET.get("migration_name")
         app_name = request.GET.get("app", "management")
         if not migration_name:
             return HttpResponse("Please specify a migration name in the `?migration_name=` param.", status=400)
         tenants_completed_count = 0
         incomplete_tenants = []
-        tenant_qs = Tenant.objects.exclude(schema_name="public")
+
+        if limit:
+            tenant_qs = Tenant.objects.exclude(schema_name="public")[offset : (limit + offset)]  # noqa: E203
+        else:
+            tenant_qs = Tenant.objects.exclude(schema_name="public")
         tenant_count = tenant_qs.count()
         for idx, tenant in enumerate(list(tenant_qs)):
             with tenant_context(tenant):
