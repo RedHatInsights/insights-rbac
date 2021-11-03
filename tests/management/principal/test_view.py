@@ -26,10 +26,86 @@ from rest_framework import status
 from rest_framework.test import APIClient
 from tenant_schemas.utils import tenant_context
 
-from api.models import User
-from management.models import Principal
+from api.models import Tenant, User
+from management.models import *
 from tests.identity_request import IdentityRequest
 from management.principal.proxy import PrincipalProxy
+
+
+class PrincipalViewNonAdminTests(IdentityRequest):
+    """Test the principal view for nonadmin user."""
+
+    def setUp(self):
+        """Set up the principal view nonadmin tests."""
+        super().setUp()
+        with tenant_context(Tenant.objects.get(schema_name="public")):
+            non_admin_tenant_name = "acct1234"
+            self.non_admin_tenant = Tenant.objects.create(schema_name=non_admin_tenant_name, ready=True)
+            self.non_admin_tenant.create_schema()
+
+        self.user_data = {"username": "non_admin", "email": "non_admin@example.com"}
+        self.customer = {"account_id": "1234", "schema_name": non_admin_tenant_name}
+        self.request_context = self._create_request_context(self.customer, self.user_data, is_org_admin=False)
+
+        request = self.request_context["request"]
+        self.headers = request.META
+
+        with tenant_context(self.tenant):
+            self.principal = Principal(username="test_user")
+            self.principal.save()
+
+    def tearDown(self):
+        """Tear down principal nonadmin viewset tests."""
+        with tenant_context(self.tenant):
+            Principal.objects.all().delete()
+
+    def test_non_admin_cannot_read_principal_list_without_permissions(self):
+        """Test that we can not read a list of principals as a non-admin without permissions."""
+        url = reverse("principals")
+        client = APIClient()
+        response = client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_principals",
+        return_value={"status_code": 200, "data": {"userCount": "1", "users": [{"username": "test_user"}]}},
+    )
+    def test_non_admin_can_read_principal_list_with_permissions(self, mock_request):
+        """Test that we can read a list of principals as a non-admin with proper permissions."""
+        with tenant_context(self.non_admin_tenant):
+            non_admin_principal = Principal.objects.create(username="non_admin", tenant=self.non_admin_tenant)
+            group = Group.objects.create(name="Non-admin group", tenant=self.non_admin_tenant)
+            group.principals.add(non_admin_principal)
+            policy = Policy.objects.create(name="Non-admin policy", group=group, tenant=self.non_admin_tenant)
+            role = Role.objects.create(name="Non-admin role", tenant=self.non_admin_tenant)
+            policy.roles.add(role)
+            permission = Permission.objects.create(
+                application="rbac",
+                resource_type="principals",
+                verb="read",
+                permission="rbac:principal:read",
+                tenant=self.non_admin_tenant,
+            )
+            access = Access.objects.create(permission=permission, role=role, tenant=self.non_admin_tenant)
+
+        url = reverse("principals")
+        client = APIClient()
+        response = client.get(url, **self.headers)
+
+        mock_request.assert_called_once_with(
+            ANY, limit=10, offset=0, options={"sort_order": "asc", "status": "enabled", "admin_only": "false"}
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        for keyname in ["meta", "links", "data"]:
+            self.assertIn(keyname, response.data)
+        self.assertIsInstance(response.data.get("data"), list)
+        self.assertEqual(int(response.data.get("meta").get("count")), 1)
+        self.assertEqual(len(response.data.get("data")), 1)
+
+        principal = response.data.get("data")[0]
+        self.assertIsNotNone(principal.get("username"))
+        self.assertEqual(principal.get("username"), self.principal.username)
 
 
 class PrincipalViewsetTests(IdentityRequest):

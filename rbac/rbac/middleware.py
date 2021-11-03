@@ -122,6 +122,7 @@ class IdentityHeaderMiddleware(BaseTenantMiddleware):
             "group": {"read": [], "write": []},
             "role": {"read": [], "write": []},
             "policy": {"read": [], "write": []},
+            "principal": {"read": [], "write": []},
         }
 
         with tenant_context(tenant):
@@ -137,7 +138,7 @@ class IdentityHeaderMiddleware(BaseTenantMiddleware):
                         operation = "write"
                     res_list = ["*"]
                     if resource_type == "*":
-                        for resource in ("group", "role", "policy"):
+                        for resource in ("group", "role", "policy", "principal"):
                             if (
                                 resource in access.keys()
                                 and operation in access.get(resource, {}).keys()  # noqa: W504

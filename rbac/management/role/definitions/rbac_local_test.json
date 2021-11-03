@@ -1,11 +1,26 @@
 {
-    "roles": [{
-        "name": "RBAC Administrator Local Test",
-        "description": "A administrator role that grants read and write permissions for groups, roles and policies, just for testing locally.",
-        "system": true,
-        "version": 2,
-        "access": [{
-            "permission": "rbac:*:*"
-        }]
-    }]
+  "roles": [
+    {
+      "name": "RBAC Administrator Local Test",
+      "description": "Grants a non-org admin full access to configure and manage user access to services hosted on cloud.redhat.com. This role can only be viewed and assigned by Organization Administrators.",
+      "system": true,
+      "version": 2,
+      "access": [
+        {
+          "permission": "rbac:*:*"
+        }
+      ]
+    },
+    {
+      "name": "User Access principal viewer",
+      "description": "Grants a non-org admin read access to principals within user access. This role can only be viewed and assigned by Organization Administrators.",
+      "system": true,
+      "version": 2,
+      "access": [
+        {
+          "permission": "rbac:principal:read"
+        }
+      ]
+    }
+  ]
 }
