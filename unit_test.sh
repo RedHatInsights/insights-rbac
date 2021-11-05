@@ -7,8 +7,12 @@ export PGPASSWORD=$DATABASE_ADMIN_PASSWORD
 python3 -m venv app-venv
 source app-venv/bin/activate
 pip install --upgrade pip setuptools wheel pipenv tox psycopg2-binary
+set +e
 tox -r
 result=$?
+set -e
+
+# Move back to bonfire venv
 source .bonfire_venv/bin/activate
 
 # TODO: add unittest-xml-reporting to rbac so that junit results can be parsed by jenkins
@@ -19,4 +23,9 @@ cat << EOF > $WORKSPACE/artifacts/junit-dummy.xml
 </testsuite>
 EOF
 
-exit $result
+if [ $result -ne 0 ]; then
+  echo '====================================='
+  echo '====  ✖ ERROR: UNIT TEST FAILED  ===='
+  echo '====================================='
+  exit 1
+fi
