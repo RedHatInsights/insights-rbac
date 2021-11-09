@@ -26,7 +26,7 @@ function install_pipenv() {
   VENV_DIR=$HOME/.local/venvs/pipenv
   virtualenv_bin "$VENV_DIR"
   $VENV_DIR/bin/pip --isolated install -U pip
-  $VENV_DIR/bin/pip --isolated install -U pipenv
+  $VENV_DIR/bin/pip --isolated install -U 'pipenv==2021.5.29'
   mkdir -p $HOME/.local/bin
   ln -s $VENV_DIR/bin/pipenv $HOME/.local/bin/pipenv
 }
