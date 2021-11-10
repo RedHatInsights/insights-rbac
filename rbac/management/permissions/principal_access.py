@@ -14,14 +14,14 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
-"""Defines the Role Access Permissions class."""
+"""Defines the Principal Access Permissions class."""
 from rest_framework import permissions
 
 from rbac.env import ENVIRONMENT
 
 
 class PrincipalAccessPermission(permissions.BasePermission):
-    """Determines if a user has access to Role APIs."""
+    """Determines if a user has access to Principal APIs."""
 
     def has_permission(self, request, view):
         """Check permission based on the defined access."""
@@ -30,7 +30,7 @@ class PrincipalAccessPermission(permissions.BasePermission):
         if request.user.admin:
             return True
         if request.method == "GET":
-            role_read = request.user.access.get("principal", {}).get("read", [])
-            if role_read:
+            principal_read = request.user.access.get("principal", {}).get("read", [])
+            if principal_read:
                 return True
         return False
