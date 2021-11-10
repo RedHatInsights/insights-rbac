@@ -54,9 +54,7 @@ def tenant_is_unmodified():
     """Determine whether or not the tenant has been modified."""
     if Role.objects.filter(system=True).count() != Role.objects.count():
         return False
-    if Group.objects.count() != 1:
-        return False
-    if Group.objects.filter(system=True).count() != 1:
+    if Group.objects.filter(system=True).count() != Group.objects.count():
         return False
     return True
 
