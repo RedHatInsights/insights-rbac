@@ -50,13 +50,16 @@ def destructive_ok():
     return now < settings.INTERNAL_DESTRUCTIVE_API_OK_UNTIL
 
 
+def tenant_is_modified():
+    """Determine whether or not the tenant is modified."""
+    return (Role.objects.filter(system=True).count() != Role.objects.count()) or (
+        Group.objects.filter(system=True).count() != Group.objects.count()
+    )
+
+
 def tenant_is_unmodified():
-    """Determine whether or not the tenant has been modified."""
-    if Role.objects.filter(system=True).count() != Role.objects.count():
-        return False
-    if Group.objects.filter(system=True).count() != Group.objects.count():
-        return False
-    return True
+    """Determine whether or not the tenant is unmodified."""
+    return not tenant_is_modified()
 
 
 def list_unmodified_tenants(request):

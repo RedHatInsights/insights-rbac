@@ -135,6 +135,18 @@ class InternalViewsetTests(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(response.content.decode(), "Tenant cannot be deleted.")
 
+    @override_settings(INTERNAL_DESTRUCTIVE_API_OK_UNTIL=valid_destructive_time())
+    @patch.object(Tenant, "delete")
+    def test_delete_tenant_allowed_and_unmodified_no_roles_or_groups(self, mock):
+        """Test that we can delete a tenant when allowed and unmodified when there are no roles or groups."""
+        with tenant_context(self.tenant):
+            Group.objects.all().delete()
+            Role.objects.all().delete()
+            Policy.objects.all().delete()
+
+        response = self.client.delete(f"/_private/api/tenant/{self.tenant.schema_name}/", **self.request.META)
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+
     def test_list_unmodified_tenants(self):
         """Test that only unmodified tenants are returned"""
         modified_tenant_groups = Tenant.objects.create(schema_name="acctmodifiedgroups")
