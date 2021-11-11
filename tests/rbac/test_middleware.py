@@ -346,6 +346,7 @@ class AccessHandlingTest(TestCase):
             "group": {"read": [], "write": []},
             "role": {"read": [], "write": []},
             "policy": {"read": [], "write": []},
+            "principal": {"read": [], "write": []},
         }
         access = IdentityHeaderMiddleware._get_access_for_user("test_user", self.tenant)
         self.assertEqual(expected, access)
@@ -357,6 +358,7 @@ class AccessHandlingTest(TestCase):
             "group": {"read": [], "write": []},
             "role": {"read": [], "write": []},
             "policy": {"read": [], "write": []},
+            "principal": {"read": [], "write": []},
         }
         access = IdentityHeaderMiddleware._get_access_for_user("test_user", self.tenant)
         self.assertEqual(expected, access)
@@ -378,6 +380,7 @@ class AccessHandlingTest(TestCase):
             "group": {"read": ["*"], "write": ["*"]},
             "role": {"read": [], "write": []},
             "policy": {"read": [], "write": []},
+            "principal": {"read": [], "write": []},
         }
         self.assertEqual(expected, access)
 
@@ -409,6 +412,7 @@ class AccessHandlingTest(TestCase):
             "group": {"read": ["*"], "write": ["*"]},
             "role": {"read": [], "write": []},
             "policy": {"read": [], "write": []},
+            "principal": {"read": [], "write": []},
         }
         self.assertEqual(expected, access)
 
@@ -438,6 +442,7 @@ class AccessHandlingTest(TestCase):
             "group": {"read": ["*"], "write": ["*"]},
             "role": {"read": [], "write": []},
             "policy": {"read": [], "write": []},
+            "principal": {"read": [], "write": []},
         }
         self.assertEqual(expected, access)
 
@@ -458,5 +463,6 @@ class AccessHandlingTest(TestCase):
             "group": {"read": ["*"], "write": ["*"]},
             "role": {"read": ["*"], "write": ["*"]},
             "policy": {"read": ["*"], "write": ["*"]},
+            "principal": {"read": ["*"], "write": ["*"]},
         }
         self.assertEqual(expected, access)

@@ -23,7 +23,7 @@ from rest_framework.views import APIView
 
 from api.common.pagination import StandardResultsSetPagination
 from .proxy import PrincipalProxy
-from ..permissions.admin_access import AdminAccessPermission
+from ..permissions.principal_access import PrincipalAccessPermission
 
 USERNAMES_KEY = "usernames"
 EMAIL_KEY = "email"
@@ -82,7 +82,7 @@ class PrincipalView(APIView):
 
     """
 
-    permission_classes = (AdminAccessPermission,)
+    permission_classes = (PrincipalAccessPermission,)
 
     def get(self, request):
         """List principals for account."""
