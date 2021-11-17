@@ -94,6 +94,17 @@ class InternalViewsetTests(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
 
     @override_settings(INTERNAL_DESTRUCTIVE_API_OK_UNTIL=valid_destructive_time())
+    @patch.object(Tenant, "delete")
+    def test_delete_tenant_no_schema(self, mock):
+        """Test that we can delete a tenant when allowed and unmodified."""
+        with tenant_context(Tenant.objects.get(schema_name="public")):
+            Group.objects.create(name="Custom Group")
+
+        tenant_no_schema = Tenant.objects.create(schema_name="no_schema")
+        response = self.client.delete(f"/_private/api/tenant/{tenant_no_schema.schema_name}/", **self.request.META)
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+
+    @override_settings(INTERNAL_DESTRUCTIVE_API_OK_UNTIL=valid_destructive_time())
     def test_delete_tenant_allowed_but_multiple_groups(self):
         """Test that we cannot delete a tenant when allowed but modified."""
         with tenant_context(self.tenant):
