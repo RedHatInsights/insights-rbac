@@ -52,15 +52,16 @@ def destructive_ok():
 
 def tenant_is_modified(schema_name):
     """Determine whether or not the tenant is modified."""
-    has_custom_data = (Role.objects.filter(system=True).count() != Role.objects.count()) or (
-        Group.objects.filter(system=True).count() != Group.objects.count()
-    )
-
     # we need to check if the schema exists because if we don't, and it doesn't exist,
     # the search_path on the query will fall back to using the public schema, in
     # which case there will be custom groups/roles, and we won't be able to propertly
     # prune the tenant which has been created without a valid schema
-    return has_custom_data and schema_exists(schema_name)
+    if not schema_exists(schema_name):
+        return False
+
+    return (Role.objects.filter(system=True).count() != Role.objects.count()) or (
+        Group.objects.filter(system=True).count() != Group.objects.count()
+    )
 
 
 def tenant_is_unmodified(schema_name):
