@@ -34,7 +34,7 @@ from management.tasks import (
     run_seeds_in_worker,
     run_sync_schemas_in_worker,
 )
-from tenant_schemas.utils import tenant_context
+from tenant_schemas.utils import schema_exists, tenant_context
 
 from api.models import Tenant
 from api.tasks import cross_account_cleanup
@@ -50,16 +50,23 @@ def destructive_ok():
     return now < settings.INTERNAL_DESTRUCTIVE_API_OK_UNTIL
 
 
-def tenant_is_modified():
+def tenant_is_modified(schema_name):
     """Determine whether or not the tenant is modified."""
+    # we need to check if the schema exists because if we don't, and it doesn't exist,
+    # the search_path on the query will fall back to using the public schema, in
+    # which case there will be custom groups/roles, and we won't be able to propertly
+    # prune the tenant which has been created without a valid schema
+    if not schema_exists(schema_name):
+        return False
+
     return (Role.objects.filter(system=True).count() != Role.objects.count()) or (
         Group.objects.filter(system=True).count() != Group.objects.count()
     )
 
 
-def tenant_is_unmodified():
+def tenant_is_unmodified(schema_name):
     """Determine whether or not the tenant is unmodified."""
-    return not tenant_is_modified()
+    return not tenant_is_modified(schema_name)
 
 
 def list_unmodified_tenants(request):
@@ -78,7 +85,7 @@ def list_unmodified_tenants(request):
     to_return = []
     for tenant_obj in tenant_qs:
         with tenant_context(tenant_obj):
-            if tenant_is_unmodified():
+            if tenant_is_unmodified(tenant_obj.schema_name):
                 to_return.append(tenant_obj.schema_name)
     payload = {
         "unmodified_tenants": to_return,
@@ -101,7 +108,7 @@ def tenant_view(request, tenant_schema_name):
         tenant_obj = get_object_or_404(Tenant, schema_name=tenant_schema_name)
         with transaction.atomic():
             with tenant_context(tenant_obj):
-                if tenant_is_unmodified():
+                if tenant_is_unmodified(tenant_obj.schema_name):
                     logger.warning(f"Deleting tenant {tenant_schema_name}. Requested by {request.user.username}")
                     TENANTS.delete_tenant(tenant_schema_name)
                     tenant_obj.delete()
