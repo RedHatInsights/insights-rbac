@@ -70,6 +70,6 @@ def create_principal_with_tenant(principal_name, schema_name, associate_tenant):
     tenant = Tenant.objects.get(schema_name=schema_name)
     with tenant_context(tenant):
         cross_account_principal, _ = Principal.objects.get_or_create(
-            username=principal_name, cross_account=True, tenant=tenant
+            username=principal_name, cross_account=True, tenant=associate_tenant
         )
     return cross_account_principal
