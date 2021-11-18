@@ -69,13 +69,7 @@ def create_principal_with_tenant(principal_name, schema_name, associate_tenant):
     """Create cross-account principal in tenant."""
     tenant = Tenant.objects.get(schema_name=schema_name)
     with tenant_context(tenant):
-        cross_account_principal, _ = Principal.objects.get_or_create(username=principal_name, cross_account=True)
-
-        # NOTE: after we ensure/enforce all object have a tenant_id FK, we can add tenant=tenant
-        # to the get_or_create. We cannot currently, because records without would fail the GET
-        # and would create duplicate records. This ensures we temporarily do an update if
-        # obj.tenant_id is NULL
-        if not cross_account_principal.tenant:
-            cross_account_principal.tenant = associate_tenant
-            cross_account_principal.save()
+        cross_account_principal, _ = Principal.objects.get_or_create(
+            username=principal_name, cross_account=True, tenant=associate_tenant
+        )
     return cross_account_principal

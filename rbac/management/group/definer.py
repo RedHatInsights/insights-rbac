@@ -45,16 +45,10 @@ def seed_group(tenant):
             )
 
             group, group_created = Group.objects.get_or_create(
-                platform_default=True, defaults={"description": group_description, "name": name, "system": True}
+                platform_default=True,
+                defaults={"description": group_description, "name": name, "system": True},
+                tenant=tenant,
             )
-
-            # NOTE: after we ensure/enforce all object have a tenant_id FK, we can add tenant=tenant
-            # to the get_or_create. We cannot currently, because records without would fail the GET
-            # and would create duplicate records. This ensures we temporarily do an update if
-            # obj.tenant_id is NULL
-            if not group.tenant:
-                group.tenant = tenant
-                group.save()
 
             if group.system:
                 platform_roles = Role.objects.filter(platform_default=True)

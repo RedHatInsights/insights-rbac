@@ -102,7 +102,7 @@ class RoleDefinerTests(IdentityRequest):
         permission_string = "approval_local_test:templates:read"
         with tenant_context(self.tenant):
             self.assertFalse(len(Permission.objects.all()))
-            Permission.objects.create(permission=permission_string)
+            Permission.objects.create(permission=permission_string, tenant=self.tenant)
 
         try:
             seed_permissions(self.tenant)
