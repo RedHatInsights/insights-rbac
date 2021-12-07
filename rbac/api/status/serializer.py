@@ -27,9 +27,6 @@ class StatusSerializer(serializers.Serializer):
 
     api_version = serializers.IntegerField()
     commit = serializers.CharField()
-    modules = serializers.DictField()
-    platform_info = serializers.DictField()
-    python_version = serializers.CharField()
 
     class Meta:
         """Metadata for the serializer."""
