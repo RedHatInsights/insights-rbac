@@ -407,7 +407,7 @@ class PermissionViewsetTests(IdentityRequest):
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
-    def test_allowed_only_filters_any_globals_out_when_true(self):
+    def test_allowed_only_filters_any_roles_not_in_allow_list_out_when_true(self):
         """Test that we filter out any permissions not in the allow list when allowed_only=true."""
         with tenant_context(self.tenant):
             expected = list(
@@ -421,7 +421,7 @@ class PermissionViewsetTests(IdentityRequest):
         self.assertEqual(len(response.data.get("data")), 1)
         self.assertCountEqual(expected, response_permissions)
 
-    def test_allowed_only_filters_no_globals_out_when_false(self):
+    def test_allowed_only_filters_no_permissions_out_when_false(self):
         """Test that we do not filter out any permissions not in the allow list when allowed_only=false."""
         with tenant_context(self.tenant):
             expected = list(Permission.objects.values_list("permission", flat=True))
@@ -433,7 +433,7 @@ class PermissionViewsetTests(IdentityRequest):
         self.assertEqual(len(response.data.get("data")), 10)
         self.assertCountEqual(expected, response_permissions)
 
-    def test_allowed_only_filters_no_globals_out_by_default(self):
+    def test_allowed_only_filters_no_permissions_out_by_default(self):
         """Test that we do not filter out any permissions not in the allow list when allowed_only is unset."""
         with tenant_context(self.tenant):
             expected = list(Permission.objects.values_list("permission", flat=True))
@@ -448,6 +448,49 @@ class PermissionViewsetTests(IdentityRequest):
     def test_allowed_only_fails_with_invalid_value(self):
         """Test that we return a 400 when allowed_only is not a supported value."""
         response = CLIENT.get(f"{LIST_URL}?allowed_only=foo", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_allowed_only_on_options_filters_any_roles_not_in_allow_list_out_when_true(self):
+        """Test that we filter out any permissions not in the allow list when allowed_only=true."""
+        with tenant_context(self.tenant):
+            expected = list(
+                Permission.objects.filter(permission=self.permissionJ.permission)
+                .values_list("application", flat=True)
+                .distinct()
+            )
+
+        response = CLIENT.get(f"{OPTION_URL}?field=application&allowed_only=true", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data.get("data")), 1)
+        self.assertCountEqual(expected, response.data.get("data"))
+
+    def test_allowed_only_on_options_filters_no_permissions_out_when_false(self):
+        """Test that we do not filter out any permissions not in the allow list when allowed_only=false."""
+        with tenant_context(self.tenant):
+            expected = Permission.objects.values_list("application", flat=True).distinct()
+
+        response = CLIENT.get(f"{OPTION_URL}?field=application&allowed_only=false", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data.get("data")), 5)
+        self.assertCountEqual(expected, response.data.get("data"))
+
+    def test_allowed_only_on_options_filters_no_permissions_out_by_default(self):
+        """Test that we do not filter out any permissions not in the allow list when allowed_only is unset."""
+        with tenant_context(self.tenant):
+            expected = Permission.objects.values_list("application", flat=True).distinct()
+
+        response = CLIENT.get(f"{OPTION_URL}?field=application", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data.get("data")), 5)
+        self.assertCountEqual(expected, response.data.get("data"))
+
+    def test_allowed_only_on_options_fails_with_invalid_value(self):
+        """Test that we return a 400 when allowed_only is not a supported value."""
+        response = CLIENT.get(f"{OPTION_URL}?field=application&allowed_only=foo", **self.headers)
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 

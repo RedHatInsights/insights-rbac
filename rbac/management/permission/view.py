@@ -16,8 +16,8 @@
 #
 
 """View for permission management."""
-from django.db.models import Q
 from django.conf import settings
+from django.db.models import Q
 from django_filters import rest_framework as filters
 from management.filters import CommonFilters
 from management.models import Access, Permission, Role
