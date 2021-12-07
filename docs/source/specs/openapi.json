@@ -2518,6 +2518,20 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "allowed_only",
+            "in": "query",
+            "description": "If set to 'true', this will exclude any permission with a role where the 'application' is not in the role create allow list.",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "false",
+              "enum": [
+                "true",
+                "false"
+              ]
+            }
           }
         ],
         "responses": {
@@ -2617,6 +2631,20 @@
             "name": "exclude_globals",
             "in": "query",
             "description": "If set to 'true', this will exclude any permission option with a global allowance on the supplied '?field=' value of 'application', 'resource_type' or 'verb'. The default is 'false'.",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "false",
+              "enum": [
+                "true",
+                "false"
+              ]
+            }
+          },
+          {
+            "name": "allowed_only",
+            "in": "query",
+            "description": "If set to 'true', this will exclude any permission with a role where the 'application' is not in the role create allow list.",
             "required": false,
             "schema": {
               "type": "string",
