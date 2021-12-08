@@ -51,7 +51,7 @@ class PrincipalViewNonAdminTests(IdentityRequest):
         self.headers = request.META
 
         with tenant_context(self.tenant):
-            self.principal = Principal(username="test_user")
+            self.principal = Principal(username="test_user", tenant=self.tenant)
             self.principal.save()
 
     def tearDown(self):
@@ -121,7 +121,7 @@ class PrincipalViewsetTests(IdentityRequest):
         request.user = user
 
         with tenant_context(self.tenant):
-            self.principal = Principal(username="test_user")
+            self.principal = Principal(username="test_user", tenant=self.tenant)
             self.principal.save()
 
     def tearDown(self):
@@ -137,7 +137,9 @@ class PrincipalViewsetTests(IdentityRequest):
         """Test that we can read a list of principals."""
         # Create a cross_account user in rbac.
         with tenant_context(self.tenant):
-            cross_account_principal = Principal.objects.create(username="cross_account_user", cross_account=True)
+            cross_account_principal = Principal.objects.create(
+                username="cross_account_user", cross_account=True, tenant=self.tenant
+            )
 
         url = reverse("principals")
         client = APIClient()
@@ -203,7 +205,9 @@ class PrincipalViewsetTests(IdentityRequest):
         """Test that we can read a filtered list of principals."""
         # Create a cross_account user in rbac.
         with tenant_context(self.tenant):
-            cross_account_principal = Principal.objects.create(username="cross_account_user", cross_account=True)
+            cross_account_principal = Principal.objects.create(
+                username="cross_account_user", cross_account=True, tenant=self.tenant
+            )
 
         url = f'{reverse("principals")}?usernames=test_user,cross_account_user&offset=30'
         client = APIClient()

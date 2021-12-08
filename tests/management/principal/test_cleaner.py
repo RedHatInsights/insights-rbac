@@ -35,7 +35,7 @@ class PrincipalCleanerTests(IdentityRequest):
         """Set up the principal cleaner tests."""
         super().setUp()
         with tenant_context(self.tenant):
-            self.group = Group(name="groupA")
+            self.group = Group(name="groupA", tenant=self.tenant)
             self.group.save()
 
     def test_principal_cleanup_none(self):
@@ -54,8 +54,8 @@ class PrincipalCleanerTests(IdentityRequest):
     def test_principal_cleanup_skip_cross_account_principals(self, mock_request):
         """Test that principal clean up on a tenant will skip cross account principals."""
         with tenant_context(self.tenant):
-            Principal.objects.create(username="user1")
-            Principal.objects.create(username="CAR", cross_account=True)
+            Principal.objects.create(username="user1", tenant=self.tenant)
+            Principal.objects.create(username="CAR", cross_account=True, tenant=self.tenant)
             self.assertEqual(Principal.objects.count(), 2)
 
         try:
@@ -72,7 +72,7 @@ class PrincipalCleanerTests(IdentityRequest):
     def test_principal_cleanup_principal_in_group(self, mock_request):
         """Test that we can run a principal clean up on a tenant with a principal in a group."""
         with tenant_context(self.tenant):
-            self.principal = Principal(username="user1")
+            self.principal = Principal(username="user1", tenant=self.tenant)
             self.principal.save()
             self.group.principals.add(self.principal)
             self.group.save()
@@ -90,7 +90,7 @@ class PrincipalCleanerTests(IdentityRequest):
     def test_principal_cleanup_principal_not_in_group(self, mock_request):
         """Test that we can run a principal clean up on a tenant with a principal not in a group."""
         with tenant_context(self.tenant):
-            self.principal = Principal(username="user1")
+            self.principal = Principal(username="user1", tenant=self.tenant)
             self.principal.save()
         try:
             clean_tenant_principals(self.tenant)
@@ -106,7 +106,7 @@ class PrincipalCleanerTests(IdentityRequest):
     def test_principal_cleanup_principal_exists(self, mock_request):
         """Test that we can run a principal clean up on a tenant with an existing principal."""
         with tenant_context(self.tenant):
-            self.principal = Principal(username="user1")
+            self.principal = Principal(username="user1", tenant=self.tenant)
             self.principal.save()
         try:
             clean_tenant_principals(self.tenant)
@@ -122,7 +122,7 @@ class PrincipalCleanerTests(IdentityRequest):
     def test_principal_cleanup_principal_error(self, mock_request):
         """Test that we can handle a principal clean up with an unexpected error from proxy."""
         with tenant_context(self.tenant):
-            self.principal = Principal(username="user1")
+            self.principal = Principal(username="user1", tenant=self.tenant)
             self.principal.save()
         try:
             clean_tenant_principals(self.tenant)

@@ -47,13 +47,14 @@ class GroupViewsetTests(IdentityRequest):
         request.user = user
 
         self.dummy_role_id = uuid4()
+        public_tenant = Tenant.objects.get(schema_name="public")
 
         with tenant_context(self.tenant):
-            self.principal = Principal(username=self.user_data["username"])
+            self.principal = Principal(username=self.user_data["username"], tenant=self.tenant)
             self.principal.save()
-            self.principalB = Principal(username="mock_user")
+            self.principalB = Principal(username="mock_user", tenant=self.tenant)
             self.principalB.save()
-            self.principalC = Principal(username="user_not_attaced_to_group_explicitly")
+            self.principalC = Principal(username="user_not_attaced_to_group_explicitly", tenant=self.tenant)
             self.principalC.save()
             self.group = Group(name="groupA", tenant=self.tenant)
             self.group.save()
@@ -74,35 +75,35 @@ class GroupViewsetTests(IdentityRequest):
             self.defPolicy = Policy(name="defPolicy", system=True, tenant=self.tenant, group=self.defGroup)
             self.defPolicy.save()
 
-            self.emptyGroup = Group(name="groupE")
+            self.emptyGroup = Group(name="groupE", tenant=self.tenant)
             self.emptyGroup.save()
 
             self.groupB = Group.objects.create(name="groupB", tenant=self.tenant)
             self.groupB.principals.add(self.principal)
-            self.policyB = Policy.objects.create(name="policyB", group=self.groupB)
+            self.policyB = Policy.objects.create(name="policyB", group=self.groupB, tenant=self.tenant)
             self.roleB = Role.objects.create(name="roleB", system=False, tenant=self.tenant)
             self.policyB.roles.add(self.roleB)
             self.policyB.save()
 
             # role that's not assigned to principal
-            self.roleOrphan = Role.objects.create(name="roleOrphan")
+            self.roleOrphan = Role.objects.create(name="roleOrphan", tenant=self.tenant)
 
             # group that associates with multipal roles
-            self.groupMultiRole = Group.objects.create(name="groupMultiRole")
-            self.policyMultiRole = Policy.objects.create(name="policyMultiRole")
+            self.groupMultiRole = Group.objects.create(name="groupMultiRole", tenant=self.tenant)
+            self.policyMultiRole = Policy.objects.create(name="policyMultiRole", tenant=self.tenant)
             self.policyMultiRole.roles.add(self.role)
             self.policyMultiRole.roles.add(self.roleB)
             self.groupMultiRole.policies.add(self.policyMultiRole)
 
-        with tenant_context(Tenant.objects.get(schema_name="public")):
+        with tenant_context(public_tenant):
             Group.objects.create(name="groupA", tenant=self.tenant)
             Group.objects.create(name="groupB", tenant=self.tenant)
-            Group.objects.create(name="groupDef", tenant=self.tenant)
+            defPubGroup = Group.objects.create(name="groupDef", tenant=public_tenant, platform_default=True)
+            Policy.objects.create(name="defPolicy", tenant=public_tenant, system=True, group=defPubGroup)
 
     @classmethod
     def setUpClass(self):
         super().setUpClass()
-        call_command("seeds")
 
     def tearDown(self):
         """Tear down group viewset tests."""
@@ -487,8 +488,10 @@ class GroupViewsetTests(IdentityRequest):
         """Test that adding a principal to a group returns successfully."""
         # Create a group and a cross account user.
         with tenant_context(self.tenant):
-            test_group = Group.objects.create(name="test")
-            cross_account_user = Principal.objects.create(username="cross_account_user", cross_account=True)
+            test_group = Group.objects.create(name="test", tenant=self.tenant)
+            cross_account_user = Principal.objects.create(
+                username="cross_account_user", cross_account=True, tenant=self.tenant
+            )
         # Create same group in public schema.
         with tenant_context(Tenant.objects.get(schema_name="public")):
             test_group_in_public = Group.objects.create(name="test", tenant=self.tenant)
@@ -573,12 +576,13 @@ class GroupViewsetTests(IdentityRequest):
     )
     def test_remove_group_principals_success(self, mock_request):
         """Test that removing a principal to a group returns successfully."""
+        public_tenant = Tenant.objects.get(schema_name="public")
         with tenant_context(self.tenant):
-            test_user = Principal.objects.create(username="test_user")
+            test_user = Principal.objects.create(username="test_user", tenant=self.tenant)
             self.group.principals.add(test_user)
 
-        with tenant_context(Tenant.objects.get(schema_name="public")):
-            test_user = Principal.objects.create(username="test_user")
+        with tenant_context(public_tenant):
+            test_user = Principal.objects.create(username="test_user", tenant=public_tenant)
             Group.objects.get(name=self.group.name, tenant=self.tenant).principals.add(test_user)
 
         url = reverse("group-principals", kwargs={"uuid": self.group.uuid})
@@ -1098,7 +1102,7 @@ class GroupViewsetTests(IdentityRequest):
     def test_add_group_multiple_roles_invalid(self):
         """Test that adding invalid roles to a group fails the request and does not add any."""
         with tenant_context(self.tenant):
-            groupC = Group.objects.create(name="groupC")
+            groupC = Group.objects.create(name="groupC", tenant=self.tenant)
             url = reverse("group-roles", kwargs={"uuid": groupC.uuid})
             client = APIClient()
             test_data = {"roles": ["abc123", self.roleB.uuid]}
@@ -1248,17 +1252,19 @@ class GroupViewNonAdminTests(IdentityRequest):
             "resourceDefinitions": [{"attributeFilter": {"key": "key1", "operation": "equal", "value": "value1"}}],
         }
         with tenant_context(self.tenant):
-            self.principal = Principal(username=self.user_data["username"])
+            self.principal = Principal(username=self.user_data["username"], tenant=self.tenant)
             self.principal.save()
-            self.admin_principal = Principal(username="user_admin")
+            self.admin_principal = Principal(username="user_admin", tenant=self.tenant)
             self.admin_principal.save()
-            self.group = Group(name="groupA")
+            self.group = Group(name="groupA", tenant=self.tenant)
             self.group.save()
             self.group.principals.add(self.principal)
             self.group.save()
-            self.roleB = Role.objects.create(name="roleB", system=False)
+            self.roleB = Role.objects.create(name="roleB", system=False, tenant=self.tenant)
             self.roleB.save()
-            self.role = Role.objects.create(name="roleA", description="A role for a group.", system=False)
+            self.role = Role.objects.create(
+                name="roleA", description="A role for a group.", system=False, tenant=self.tenant
+            )
             self.role.save()
 
     def tearDown(self):

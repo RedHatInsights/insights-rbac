@@ -53,27 +53,27 @@ class QuerySetTest(TestCase):
 
     def _create_groups(self):
         """Setup groups for tests."""
-        Group.objects.create(name="group1")
-        Group.objects.create(name="group2")
-        Group.objects.create(name="group3")
-        Group.objects.create(name="group4")
-        Group.objects.create(name="group5")
+        Group.objects.create(name="group1", tenant=self.tenant)
+        Group.objects.create(name="group2", tenant=self.tenant)
+        Group.objects.create(name="group3", tenant=self.tenant)
+        Group.objects.create(name="group4", tenant=self.tenant)
+        Group.objects.create(name="group5", tenant=self.tenant)
 
     def _create_roles(self):
         """Setup roles for tests."""
-        Role.objects.create(name="role1")
-        Role.objects.create(name="role2")
-        Role.objects.create(name="role3")
-        Role.objects.create(name="role4")
-        Role.objects.create(name="role5")
+        Role.objects.create(name="role1", tenant=self.tenant)
+        Role.objects.create(name="role2", tenant=self.tenant)
+        Role.objects.create(name="role3", tenant=self.tenant)
+        Role.objects.create(name="role4", tenant=self.tenant)
+        Role.objects.create(name="role5", tenant=self.tenant)
 
     def _create_policies(self):
         """Setup policies for tests."""
-        Policy.objects.create(name="policy1")
-        Policy.objects.create(name="policy2")
-        Policy.objects.create(name="policy3")
-        Policy.objects.create(name="policy4")
-        Policy.objects.create(name="policy5")
+        Policy.objects.create(name="policy1", tenant=self.tenant)
+        Policy.objects.create(name="policy2", tenant=self.tenant)
+        Policy.objects.create(name="policy3", tenant=self.tenant)
+        Policy.objects.create(name="policy4", tenant=self.tenant)
+        Policy.objects.create(name="policy5", tenant=self.tenant)
 
     def test_get_group_queryset_admin(self):
         """Test get_group_queryset as an admin."""
@@ -86,7 +86,7 @@ class QuerySetTest(TestCase):
     def test_get_user_group_queryset_admin(self):
         """Test get_group_queryset as an admin."""
         self._create_groups()
-        principal = Principal.objects.create(username="test_user")
+        principal = Principal.objects.create(username="test_user", tenant=self.tenant)
         group = Group.objects.first()
         group.principals.add(principal)
         user = Mock(spec=User, admin=True, account="00001", username="test_user")
@@ -97,7 +97,7 @@ class QuerySetTest(TestCase):
     def test_get_group_queryset_get_users_own_groups(self):
         """Test get_group_queryset to get a users own groups."""
         self._create_groups()
-        principal = Principal.objects.create(username="test_user")
+        principal = Principal.objects.create(username="test_user", tenant=self.tenant)
         group = Group.objects.first()
         group.principals.add(principal)
         user = Mock(spec=User, admin=False, account="00001", username="test_user")
@@ -108,8 +108,8 @@ class QuerySetTest(TestCase):
     def test_get_group_queryset_get_users_other_users_groups(self):
         """Test get_group_queryset to get a users other users groups."""
         self._create_groups()
-        principal = Principal.objects.create(username="test_user")
-        principal2 = Principal.objects.create(username="test_user2")
+        principal = Principal.objects.create(username="test_user", tenant=self.tenant)
+        principal2 = Principal.objects.create(username="test_user2", tenant=self.tenant)
         group = Group.objects.first()
         group.principals.add(principal)
         user = Mock(spec=User, admin=False, account="00001", username="test_user")
@@ -319,7 +319,7 @@ class QuerySetTest(TestCase):
         self._create_policies()
         self._create_roles()
 
-        principal = Principal.objects.create(username="test_user2")
+        principal = Principal.objects.create(username="test_user2", tenant=self.tenant)
         group = Group.objects.first()
         policy = Policy.objects.first()
         roles = Role.objects.all()

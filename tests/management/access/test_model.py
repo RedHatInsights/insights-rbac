@@ -32,8 +32,8 @@ class AccessModelTests(IdentityRequest):
         super().setUp()
 
         with tenant_context(self.tenant):
-            self.permission = Permission.objects.create(permission="app:*:*")
-            self.access = Access.objects.create(permission=self.permission)
+            self.permission = Permission.objects.create(permission="app:*:*", tenant=self.tenant)
+            self.access = Access.objects.create(permission=self.permission, tenant=self.tenant)
 
     def tearDown(self):
         """Tear down access model tests."""

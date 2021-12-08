@@ -20,6 +20,7 @@ from django.db import IntegrityError, transaction
 from django.test import TestCase
 from django.utils import timezone
 from management.models import Role
+from api.models import Tenant
 from rest_framework.serializers import ValidationError
 from tenant_schemas.utils import tenant_context
 
@@ -33,6 +34,7 @@ class CrossAccountRequestModelTests(TestCase):
     def setUp(self):
         """Set up the cross account request model tests."""
         super().setUp()
+        self.tenant = Tenant.objects.create(schema_name="foo")
 
         self.ref_time = timezone.now()
         self.request = CrossAccountRequest.objects.create(
@@ -115,7 +117,7 @@ class CrossAccountRequestModelTests(TestCase):
 
     def test_the_request_could_be_associated_with_role(self):
         ROLE_NAME = "Test Role"
-        role = Role.objects.create(name=ROLE_NAME)
+        role = Role.objects.create(name=ROLE_NAME, tenant=self.tenant)
         self.assertEqual(self.request.roles.count(), 0)
         self.assertEqual(role.cross_account_requests.count(), 0)
 

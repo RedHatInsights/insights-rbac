@@ -31,33 +31,39 @@ class UtilsTests(IdentityRequest):
 
         with tenant_context(self.tenant):
             # setup principal
-            self.principal = Principal.objects.create(username="principalA")
+            self.principal = Principal.objects.create(username="principalA", tenant=self.tenant)
 
             # setup data for the principal
-            self.roleA = Role.objects.create(name="roleA")
-            self.permission = Permission.objects.create(permission="app:*:*")
-            self.accessA = Access.objects.create(permission=self.permission, role=self.roleA)
-            self.policyA = Policy.objects.create(name="policyA")
+            self.roleA = Role.objects.create(name="roleA", tenant=self.tenant)
+            self.permission = Permission.objects.create(permission="app:*:*", tenant=self.tenant)
+            self.accessA = Access.objects.create(permission=self.permission, role=self.roleA, tenant=self.tenant)
+            self.policyA = Policy.objects.create(name="policyA", tenant=self.tenant)
             self.policyA.roles.add(self.roleA)
-            self.groupA = Group.objects.create(name="groupA")
+            self.groupA = Group.objects.create(name="groupA", tenant=self.tenant)
             self.groupA.policies.add(self.policyA)
             self.groupA.principals.add(self.principal)
 
             # setup data the principal does not have access to
-            self.roleB = Role.objects.create(name="roleB")
-            self.accessB = Access.objects.create(permission=self.permission, role=self.roleB)
-            self.policyB = Policy.objects.create(name="policyB")
+            self.roleB = Role.objects.create(name="roleB", tenant=self.tenant)
+            self.accessB = Access.objects.create(permission=self.permission, role=self.roleB, tenant=self.tenant)
+            self.policyB = Policy.objects.create(name="policyB", tenant=self.tenant)
             self.policyB.roles.add(self.roleB)
-            self.groupB = Group.objects.create(name="groupB")
+            self.groupB = Group.objects.create(name="groupB", tenant=self.tenant)
             self.groupB.policies.add(self.policyB)
 
             # setup default group/role which all tenant users
             # should inherit without explicit association
-            self.default_role = Role.objects.create(name="default role", platform_default=True, system=True)
-            self.default_access = Access.objects.create(permission=self.permission, role=self.default_role)
-            self.default_policy = Policy.objects.create(name="default policy", system=True)
+            self.default_role = Role.objects.create(
+                name="default role", platform_default=True, system=True, tenant=self.tenant
+            )
+            self.default_access = Access.objects.create(
+                permission=self.permission, role=self.default_role, tenant=self.tenant
+            )
+            self.default_policy = Policy.objects.create(name="default policy", system=True, tenant=self.tenant)
             self.default_policy.roles.add(self.default_role)
-            self.default_group = Group.objects.create(name="default group", system=True, platform_default=True)
+            self.default_group = Group.objects.create(
+                name="default group", system=True, platform_default=True, tenant=self.tenant
+            )
             self.default_group.policies.add(self.default_policy)
 
     def tearDown(self):
