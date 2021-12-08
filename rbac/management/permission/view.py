@@ -16,6 +16,7 @@
 #
 
 """View for permission management."""
+from django.conf import settings
 from django.db.models import Q
 from django_filters import rest_framework as filters
 from management.filters import CommonFilters
@@ -28,7 +29,7 @@ from rest_framework.decorators import action
 from rest_framework.filters import OrderingFilter
 
 PERMISSION_FIELD_KEYS = {"application", "resource_type", "verb"}
-VALID_EXCLUDE_GLOBALS_VALUES = ["true", "false"]
+VALID_BOOLEAN_PARAM_VALS = ["true", "false"]
 QUERY_FIELD = "field"
 
 
@@ -37,7 +38,7 @@ class PermissionFilter(CommonFilters):
 
     def exclude_globals_filter(self, queryset, field, value):
         """Filter to filter out global permissions from results."""
-        query_field = validate_and_get_key(self.request.query_params, field, VALID_EXCLUDE_GLOBALS_VALUES, "false")
+        query_field = validate_and_get_key(self.request.query_params, field, VALID_BOOLEAN_PARAM_VALS, "false")
         if query_field == "true":
             exclude_set = Q(application="*") | Q(resource_type="*") | Q(verb="*")
             return queryset.exclude(exclude_set)
@@ -55,12 +56,20 @@ class PermissionFilter(CommonFilters):
             return queryset.exclude(id__in=permission_ids_to_exclude)
         return queryset
 
+    def allowed_only_filter(self, queryset, field, value):
+        """Filter to return only permissions from roles in the ROLE_CREATE_ALLOW_LIST."""
+        query_field = validate_and_get_key(self.request.query_params, field, VALID_BOOLEAN_PARAM_VALS, "false")
+        if query_field == "true":
+            queryset = Permission.objects.filter(application__in=settings.ROLE_CREATE_ALLOW_LIST)
+        return queryset
+
     application = filters.CharFilter(field_name="application", method="multiple_values_in")
     resource_type = filters.CharFilter(field_name="resource_type", method="multiple_values_in")
     verb = filters.CharFilter(field_name="verb", method="multiple_values_in")
     permission = filters.CharFilter(field_name="permission", lookup_expr="icontains")
     exclude_globals = filters.CharFilter(field_name="exclude_globals", method="exclude_globals_filter")
     exclude_roles = filters.CharFilter(field_name="exclude_roles", method="exclude_roles_filter")
+    allowed_only = filters.CharFilter(field_name="allowed_only", method="allowed_only_filter")
 
 
 class PermissionViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):

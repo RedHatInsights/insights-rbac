@@ -2518,6 +2518,20 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "allowed_only",
+            "in": "query",
+            "description": "If set to 'true', this will exclude any permission with a role where the 'application' is not in the role create allow list.",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "false",
+              "enum": [
+                "true",
+                "false"
+              ]
+            }
           }
         ],
         "responses": {
@@ -2617,6 +2631,20 @@
             "name": "exclude_globals",
             "in": "query",
             "description": "If set to 'true', this will exclude any permission option with a global allowance on the supplied '?field=' value of 'application', 'resource_type' or 'verb'. The default is 'false'.",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "false",
+              "enum": [
+                "true",
+                "false"
+              ]
+            }
+          },
+          {
+            "name": "allowed_only",
+            "in": "query",
+            "description": "If set to 'true', this will exclude any permission with a role where the 'application' is not in the role create allow list.",
             "required": false,
             "schema": {
               "type": "string",
@@ -3893,41 +3921,6 @@
           "commit": {
             "type": "string",
             "example": "178d2ea"
-          },
-          "server_address": {
-            "type": "string",
-            "example": "127.0.0.1:8000"
-          },
-          "platform_info": {
-            "type": "object",
-            "example": {
-              "system": "Darwin",
-              "node": "node-1.example.com",
-              "release": "17.5.0",
-              "version": "Darwin Kernel Version 17.5.0",
-              "machine": "x86_64",
-              "processor": "i386"
-            }
-          },
-          "python_version": {
-            "type": "string",
-            "example": "3.6.1"
-          },
-          "modules": {
-            "type": "object",
-            "example": {
-              "coverage": "4.5.1",
-              "coverage.version": "4.5.1",
-              "coverage.xmlreport": "4.5.1",
-              "cryptography": "2.0.3",
-              "ctypes": "1.1.0",
-              "ctypes.macholib": "1.0",
-              "decimal": "1.70",
-              "django": "1.11.5",
-              "django.utils.six": "1.10.0",
-              "django_filters": "1.0.4",
-              "http.server": "0.6"
-            }
           }
         }
       },
