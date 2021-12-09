@@ -58,7 +58,7 @@ class PermissionViewsetTests(IdentityRequest):
                 permission="foo:bar:*", description="Description test.", tenant=self.tenant
             )
             self.permissionI.permissions.add(self.permissionA)
-            self.permissionJ = Permission.objects.create(permission="cost-management:*:baz")
+            self.permissionJ = Permission.objects.create(permission="cost-management:*:baz", tenant=self.tenant)
 
             self.roleA = Role.objects.create(name="roleA", tenant=self.tenant)
             self.roleB = Role.objects.create(name="roleB", tenant=self.tenant)
