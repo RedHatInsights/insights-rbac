@@ -31,10 +31,8 @@ class RoleModelTests(IdentityRequest):
         super().setUp()
 
         with tenant_context(self.tenant):
-            self.roleA = Role.objects.create(name="roleA")
-            self.roleB = Role.objects.create(name="roleB", system=True)
-            self.roleA.save()
-            self.roleB.save()
+            self.roleA = Role.objects.create(name="roleA", tenant=self.tenant)
+            self.roleB = Role.objects.create(name="roleB", system=True, tenant=self.tenant)
 
     def tearDown(self):
         """Tear down group model tests."""

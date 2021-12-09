@@ -46,17 +46,19 @@ class PermissionViewsetTests(IdentityRequest):
         self.display_fields = {"application", "resource_type", "verb", "permission"}
 
         with tenant_context(self.tenant):
-            self.permissionA = Permission.objects.create(permission="rbac:roles:read")
-            self.permissionB = Permission.objects.create(permission="rbac:*:*")
-            self.permissionC = Permission.objects.create(permission="acme:*:*")
-            self.permissionD = Permission.objects.create(permission="acme:*:write")
-            self.permissionE = Permission.objects.create(permission="*:*:*")
-            self.permissionF = Permission.objects.create(permission="*:bar:*")
-            self.permissionG = Permission.objects.create(permission="*:*:baz")
-            self.permissionH = Permission.objects.create(permission="*:bar:baz")
-            self.permissionI = Permission.objects.create(permission="foo:bar:*", description="Description test.")
+            self.permissionA = Permission.objects.create(permission="rbac:roles:read", tenant=self.tenant)
+            self.permissionB = Permission.objects.create(permission="rbac:*:*", tenant=self.tenant)
+            self.permissionC = Permission.objects.create(permission="acme:*:*", tenant=self.tenant)
+            self.permissionD = Permission.objects.create(permission="acme:*:write", tenant=self.tenant)
+            self.permissionE = Permission.objects.create(permission="*:*:*", tenant=self.tenant)
+            self.permissionF = Permission.objects.create(permission="*:bar:*", tenant=self.tenant)
+            self.permissionG = Permission.objects.create(permission="*:*:baz", tenant=self.tenant)
+            self.permissionH = Permission.objects.create(permission="*:bar:baz", tenant=self.tenant)
+            self.permissionI = Permission.objects.create(
+                permission="foo:bar:*", description="Description test.", tenant=self.tenant
+            )
             self.permissionI.permissions.add(self.permissionA)
-            self.permissionJ = Permission.objects.create(permission="cost-management:*:baz")
+            self.permissionJ = Permission.objects.create(permission="cost-management:*:baz", tenant=self.tenant)
 
             self.roleA = Role.objects.create(name="roleA", tenant=self.tenant)
             self.roleB = Role.objects.create(name="roleB", tenant=self.tenant)
@@ -516,7 +518,7 @@ class PermissionViewsetTestsNonAdmin(IdentityRequest):
         self.headers = request.META
 
         with tenant_context(self.tenant):
-            self.permission = Permission.objects.create(permission="rbac:roles:read")
+            self.permission = Permission.objects.create(permission="rbac:roles:read", tenant=self.tenant)
             self.permission.save()
 
     def tearDown(self):

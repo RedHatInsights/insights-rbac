@@ -44,14 +44,14 @@ class AccessCacheTest(TestCase):
     def setUp(self):
         """Set up AccessCache tests."""
         super().setUp()
-        self.principal_a = Principal.objects.create(username="principal_a")
-        self.principal_b = Principal.objects.create(username="principal_b")
-        self.group_a = Group.objects.create(name="group_a", platform_default=True)
-        self.group_b = Group.objects.create(name="group_b")
-        self.policy_a = Policy.objects.create(name="policy_a")
-        self.policy_b = Policy.objects.create(name="policy_b")
-        self.role_a = Role.objects.create(name="role_a")
-        self.role_b = Role.objects.create(name="role_b")
+        self.principal_a = Principal.objects.create(username="principal_a", tenant=self.tenant)
+        self.principal_b = Principal.objects.create(username="principal_b", tenant=self.tenant)
+        self.group_a = Group.objects.create(name="group_a", platform_default=True, tenant=self.tenant)
+        self.group_b = Group.objects.create(name="group_b", tenant=self.tenant)
+        self.policy_a = Policy.objects.create(name="policy_a", tenant=self.tenant)
+        self.policy_b = Policy.objects.create(name="policy_b", tenant=self.tenant)
+        self.role_a = Role.objects.create(name="role_a", tenant=self.tenant)
+        self.role_b = Role.objects.create(name="role_b", tenant=self.tenant)
 
     @classmethod
     def tearDownClass(self):
@@ -220,14 +220,14 @@ class AccessCacheTest(TestCase):
 
         cache.reset_mock()
         # If Access is added
-        self.permission = Permission.objects.create(permission="foo:*:*")
-        self.access_a = Access.objects.create(permission=self.permission, role=self.role_a)
+        self.permission = Permission.objects.create(permission="foo:*:*", tenant=self.tenant)
+        self.access_a = Access.objects.create(permission=self.permission, role=self.role_a, tenant=self.tenant)
         cache.assert_called_once()
         cache.assert_called_once_with(self.principal_a.uuid)
 
         cache.reset_mock()
         # If ResourceDefinition is added
-        self.rd_a = ResourceDefinition.objects.create(access=self.access_a)
+        self.rd_a = ResourceDefinition.objects.create(access=self.access_a, tenant=self.tenant)
         cache.assert_called_once()
         cache.assert_called_once_with(self.principal_a.uuid)
 

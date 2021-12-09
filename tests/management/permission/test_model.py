@@ -32,8 +32,8 @@ class PermissionModelTests(IdentityRequest):
         super().setUp()
 
         with tenant_context(self.tenant):
-            self.dependency_permission = Permission.objects.create(permission="rbac:roles:read")
-            self.permission = Permission.objects.create(permission="rbac:roles:write")
+            self.dependency_permission = Permission.objects.create(permission="rbac:roles:read", tenant=self.tenant)
+            self.permission = Permission.objects.create(permission="rbac:roles:write", tenant=self.tenant)
             self.permission.save()
             self.permission.permissions.add(self.dependency_permission)
 

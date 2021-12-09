@@ -31,10 +31,10 @@ class GroupModelTests(IdentityRequest):
         super().setUp()
 
         with tenant_context(self.tenant):
-            self.group = Group.objects.create(name="groupA")
-            self.roleA = Role.objects.create(name="roleA")
-            self.roleB = Role.objects.create(name="roleB")
-            self.policy = Policy(name="policyA", group=self.group)
+            self.group = Group.objects.create(name="groupA", tenant=self.tenant)
+            self.roleA = Role.objects.create(name="roleA", tenant=self.tenant)
+            self.roleB = Role.objects.create(name="roleB", tenant=self.tenant)
+            self.policy = Policy(name="policyA", group=self.group, tenant=self.tenant)
             self.policy.save()
             self.policy.roles.add(self.roleA)
             self.policy.save()

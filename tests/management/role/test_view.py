@@ -65,41 +65,41 @@ class RoleViewsetTests(IdentityRequest):
         }
 
         with tenant_context(self.tenant):
-            self.principal = Principal(username=self.user_data["username"])
+            self.principal = Principal(username=self.user_data["username"], tenant=self.tenant)
             self.principal.save()
-            self.policy = Policy.objects.create(name="policyA")
-            self.group = Group(name="groupA", description="groupA description")
+            self.policy = Policy.objects.create(name="policyA", tenant=self.tenant)
+            self.group = Group(name="groupA", description="groupA description", tenant=self.tenant)
             self.group.save()
             self.group.principals.add(self.principal)
             self.group.policies.add(self.policy)
             self.group.save()
 
-            self.sysRole = Role(**sys_role_config)
+            self.sysRole = Role(**sys_role_config, tenant=self.tenant)
             self.sysRole.save()
 
-            self.defRole = Role(**def_role_config)
+            self.defRole = Role(**def_role_config, tenant=self.tenant)
             self.defRole.save()
             self.defRole.save()
 
             self.policy.roles.add(self.defRole, self.sysRole)
             self.policy.save()
 
-            self.permission = Permission.objects.create(permission="app:*:*")
-            self.permission2 = Permission.objects.create(permission="app2:*:*")
-            self.permission3 = Permission.objects.create(permission="app:*:read")
+            self.permission = Permission.objects.create(permission="app:*:*", tenant=self.tenant)
+            self.permission2 = Permission.objects.create(permission="app2:*:*", tenant=self.tenant)
+            self.permission3 = Permission.objects.create(permission="app:*:read", tenant=self.tenant)
             self.permission.permissions.add(self.permission3)
-            self.access = Access.objects.create(permission=self.permission, role=self.defRole)
-            self.access2 = Access.objects.create(permission=self.permission2, role=self.defRole)
+            self.access = Access.objects.create(permission=self.permission, role=self.defRole, tenant=self.tenant)
+            self.access2 = Access.objects.create(permission=self.permission2, role=self.defRole, tenant=self.tenant)
 
-            self.access3 = Access.objects.create(permission=self.permission2, role=self.sysRole)
-            Permission.objects.create(permission="cost-management:*:*")
+            self.access3 = Access.objects.create(permission=self.permission2, role=self.sysRole, tenant=self.tenant)
+            Permission.objects.create(permission="cost-management:*:*", tenant=self.tenant)
 
         # Create permission in public schema
         with tenant_context(Tenant.objects.get(schema_name="public")):
-            Permission.objects.get_or_create(permission="cost-management:*:*")
-            Permission.objects.get_or_create(permission="app:*:*")
-            Permission.objects.get_or_create(permission="app2:*:*")
-            Permission.objects.get_or_create(permission="app:*:read")
+            Permission.objects.get_or_create(permission="cost-management:*:*", tenant=self.tenant)
+            Permission.objects.get_or_create(permission="app:*:*", tenant=self.tenant)
+            Permission.objects.get_or_create(permission="app2:*:*", tenant=self.tenant)
+            Permission.objects.get_or_create(permission="app:*:read", tenant=self.tenant)
 
     def create_role(self, role_name, role_display="", in_access_data=None):
         """Create a role."""

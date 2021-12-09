@@ -41,17 +41,18 @@ class PolicyViewsetTests(IdentityRequest):
         user.username = self.user_data["username"]
         user.account = self.customer_data["account_id"]
         request.user = user
+        public_tenant = Tenant.objects.get(schema_name="public")
 
         with tenant_context(self.tenant):
-            self.principal = Principal(username=self.user_data["username"])
+            self.principal = Principal(username=self.user_data["username"], tenant=self.tenant)
             self.principal.save()
-            self.group = Group(name="groupA")
+            self.group = Group(name="groupA", tenant=self.tenant)
             self.group.save()
             self.group.principals.add(self.principal)
             self.group.save()
-            Permission.objects.create(permission="app:*:*")
-        with tenant_context(Tenant.objects.get(schema_name="public")):
-            Permission.objects.create(permission="app:*:*")
+            Permission.objects.create(permission="app:*:*", tenant=self.tenant)
+        with tenant_context(public_tenant):
+            Permission.objects.create(permission="app:*:*", tenant=public_tenant)
 
     def tearDown(self):
         """Tear down policy viewset tests."""
