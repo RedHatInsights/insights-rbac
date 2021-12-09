@@ -60,7 +60,7 @@ class PermissionFilter(CommonFilters):
         """Filter to return only permissions from roles in the ROLE_CREATE_ALLOW_LIST."""
         query_field = validate_and_get_key(self.request.query_params, field, VALID_BOOLEAN_PARAM_VALS, "false")
         if query_field == "true":
-            queryset = Permission.objects.filter(application__in=settings.ROLE_CREATE_ALLOW_LIST)
+            queryset = queryset.filter(application__in=settings.ROLE_CREATE_ALLOW_LIST)
         return queryset
 
     application = filters.CharFilter(field_name="application", method="multiple_values_in")
