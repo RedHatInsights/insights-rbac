@@ -1,6 +1,6 @@
 -i https://pypi.python.org/simple
 amqp==5.0.7
-app-common-python==0.1.9
+app-common-python==0.1.10
 backports.entry-points-selectable==1.1.0
 billiard==3.6.4.0
 boto3==1.18.49
