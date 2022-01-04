@@ -1468,8 +1468,8 @@ data:
           {
             "current": {
               "selected": false,
-              "text": "crcs02ue1-prometheus",
-              "value": "crcs02ue1-prometheus"
+              "text": "crcp01ue1-prometheus",
+              "value": "crcp01ue1-prometheus"
             },
             "hide": 0,
             "includeAll": false,
@@ -1671,7 +1671,7 @@ data:
       "timezone": "",
       "title": "Operations - Rbac w/CPU",
       "uid": "TjP_nMWMk",
-      "version": 1
+      "version": 2
     }
 kind: ConfigMap
 metadata:
