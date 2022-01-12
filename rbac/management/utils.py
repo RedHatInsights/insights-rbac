@@ -223,7 +223,6 @@ def schema_handler(tenant_schema, include_public=True):
         with tenant_context(schema):
             yield tenant_schema
 
-
 def clear_pk(entry):
     """Clear the ID and PK values for provided postgres entry."""
     entry.id = None
