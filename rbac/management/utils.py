@@ -23,6 +23,7 @@ from django.conf import settings
 from django.core.exceptions import PermissionDenied
 from django.utils.translation import gettext as _
 from management.models import Access, Group, Policy, Principal, Role
+from management.permissions.principal_access import PrincipalAccessPermission
 from management.principal.proxy import PrincipalProxy
 from rest_framework import serializers, status
 from tenant_schemas.utils import tenant_context
@@ -51,8 +52,9 @@ def get_principal_from_request(request):
     """Obtain principal from the request object."""
     current_user = request.user.username
     qs_user = request.query_params.get(USERNAME_KEY)
+    principal_permission = PrincipalAccessPermission()
 
-    if qs_user and not request.user.admin:
+    if qs_user and not principal_permission.has_permission(request=request, view=None):
         raise PermissionDenied()
     username = qs_user if qs_user else current_user
 
