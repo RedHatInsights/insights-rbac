@@ -136,16 +136,43 @@ class QuerySetTest(TestCase):
         """Test get_role_queryset as a non-admin supplying a username."""
         roles = self._setup_roles_for_role_username_queryset_tests()
 
-        user = Mock(spec=User, admin=False, username="test_user2")
+        user = Mock(spec=User, admin=False, username="test_user2", access={})
         req = Mock(user=user, method="GET", tenant=self.tenant, query_params={"username": "test_user2"})
+        req = Mock(user=user, method="GET", query_params={"username": "test_user2"})
         with self.assertRaises(PermissionDenied):
             get_role_queryset(req)
+
+    def test_get_role_queryset_non_admin_username_with_perms_diff_user(self):
+        """Test get_role_queryset as a non-admin supplying a username."""
+        roles = self._setup_roles_for_role_username_queryset_tests()
+
+        user = Mock(
+            spec=User,
+            admin=False,
+            username="test_user3",
+            access={"role": {"read": ["*"]}, "principal": {"read": ["*"]}},
+        )
+        req = Mock(user=user, method="GET", query_params={"username": "test_user2"}, tenant=self.tenant)
+        get_role_queryset(req)
+
+    def test_get_role_queryset_non_admin_username_with_perms(self):
+        """Test get_role_queryset as a non-admin supplying a username."""
+        roles = self._setup_roles_for_role_username_queryset_tests()
+
+        user = Mock(
+            spec=User,
+            admin=False,
+            username="test_user2",
+            access={"role": {"read": ["*"]}, "principal": {"read": ["*"]}},
+        )
+        req = Mock(user=user, method="GET", query_params={"username": "test_user2"}, tenant=self.tenant)
+        get_role_queryset(req)
 
     def test_get_role_queryset_non_admin_username_different(self):
         """Test get_role_queryset as a non-admin supplying a different username."""
         roles = self._setup_roles_for_role_username_queryset_tests()
 
-        user = Mock(spec=User, admin=False, username="test_user")
+        user = Mock(spec=User, admin=False, username="test_user", access={})
         req = Mock(user=user, tenant=self.tenant, method="GET", query_params={"username": "test_user2"})
         queryset = get_role_queryset(req)
         self.assertEquals(list(queryset), [])

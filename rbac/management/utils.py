@@ -57,7 +57,6 @@ def get_principal_from_request(request):
     if qs_user and not principal_permission.has_permission(request=request, view=None):
         raise PermissionDenied()
     username = qs_user if qs_user else current_user
-
     return get_principal(username, request, verify_principal=bool(qs_user))
 
 
