@@ -39,7 +39,7 @@ from management.principal.serializer import PrincipalSerializer
 from management.querysets import get_group_queryset, get_object_principal_queryset
 from management.role.model import Role
 from management.role.view import RoleViewSet
-from management.utils import validate_and_get_key, validate_uuid
+from management.utils import get_schema_to_be_synced, validate_and_get_key, validate_uuid
 from rest_framework import mixins, serializers, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.filters import OrderingFilter
@@ -286,7 +286,7 @@ class GroupViewSet(
         validate_uuid(kwargs.get("uuid"), "group uuid validation")
         self.protect_default_groups("delete")
         group_name = Group.objects.get(uuid=kwargs.get("uuid")).name
-        with tenant_context(Tenant.objects.get(schema_name="public")):
+        with tenant_context(get_schema_to_be_synced(request.tenant)):
             Group.objects.filter(name=group_name, tenant=request.tenant).delete()
         return super().destroy(request=request, args=args, kwargs=kwargs)
 
@@ -315,7 +315,7 @@ class GroupViewSet(
         validate_uuid(kwargs.get("uuid"), "group uuid validation")
         self.protect_default_groups("update")
         group_name = Group.objects.get(uuid=kwargs.get("uuid")).name
-        with tenant_context(Tenant.objects.get(schema_name="public")):
+        with tenant_context(get_schema_to_be_synced(request.tenant)):
             group_in_public, _ = Group.objects.update_or_create(
                 name=group_name, tenant=request.tenant, defaults=request.data
             )
@@ -324,10 +324,9 @@ class GroupViewSet(
     def add_principals(self, group, principals, account):
         """Process list of principals and add them to the group."""
         tenant = self.request.tenant
-        tenant_public = Tenant.objects.get(schema_name="public")
         group_name = group.name
-        with tenant_context(tenant_public):
-            group_in_public = Group.objects.get(name=group_name, tenant=tenant)
+        with tenant_context(get_schema_to_be_synced(tenant)):
+            group_in_another_schema = Group.objects.get(name=group_name, tenant=tenant)
 
         users = [principal.get("username") for principal in principals]
         resp = self.proxy.request_filtered_principals(users, account, limit=len(users))
@@ -336,26 +335,24 @@ class GroupViewSet(
         for item in resp.get("data", []):
             username = item["username"]
             try:
-                principal = Principal.objects.get(username__iexact=username)
+                principal = Principal.objects.get(username__iexact=username, tenant=tenant)
             except Principal.DoesNotExist:
                 principal = Principal.objects.create(username=username, tenant=tenant)
                 logger.info("Created new principal %s for account_id %s.", username, account)
             group.principals.add(principal)
-            with tenant_context(tenant_public):
-                principal_in_public, _ = Principal.objects.get_or_create(username=username, tenant=tenant)
-                group_in_public.principals.add(principal_in_public)
-        group.save()
-        with tenant_context(tenant_public):
-            group_in_public.save()
+            with tenant_context(get_schema_to_be_synced(tenant)):
+                principal_in_another_schema, _ = Principal.objects.get_or_create(username=username, tenant=tenant)
+                group_in_another_schema.principals.add(principal_in_another_schema)
         return group
 
     def remove_principals(self, group, principals, account):
         """Process list of principals and remove them from the group."""
-        # Remove from public.
-        with tenant_context(Tenant.objects.get(schema_name="public")):
-            principals_public = Principal.objects.filter(username__in=principals)
-            group_public = Group.objects.get(name=group.name, tenant=Tenant.objects.get(schema_name=f"acct{account}"))
-            group_public.principals.remove(*principals_public)
+        tenant = Tenant.objects.get(schema_name=f"acct{account}")
+        # Remove from another schema.
+        with tenant_context(get_schema_to_be_synced(tenant)):
+            principals_in_another_schema = Principal.objects.filter(username__in=principals, tenant=tenant)
+            group_in_another_schema = Group.objects.get(name=group.name, tenant=tenant)
+            group_in_another_schema.principals.remove(*principals_in_another_schema)
 
         for username in principals:
             try:
@@ -364,7 +361,6 @@ class GroupViewSet(
                 logger.info("No principal %s found for account %s.", username, account)
             if principal:
                 group.principals.remove(principal)
-        group.save()
         return group
 
     @action(detail=True, methods=["get", "post", "delete"])

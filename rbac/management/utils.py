@@ -19,6 +19,7 @@ import json
 import os
 from uuid import UUID
 
+from django.conf import settings
 from django.core.exceptions import PermissionDenied
 from django.utils.translation import gettext as _
 from management.models import Access, Group, Policy, Principal, Role
@@ -218,10 +219,27 @@ def schema_handler(tenant_schema, include_public=True):
     if include_public:
         public_schema = Tenant.objects.get(schema_name="public")
         schemas.append(public_schema)
-    schemas.append(tenant_schema)
+
+    # If serving from public schema, schema handler should deal with pulic schema last so
+    # that it will continue to be use public schema
+    if settings.SERVE_FROM_PUBLIC_SCHEMA:
+        schemas.insert(0, tenant_schema)
+    else:
+        schemas.append(tenant_schema)
+
     for schema in schemas:
         with tenant_context(schema):
             yield tenant_schema
+
+
+def get_schema_to_be_synced(tenant):
+    """Return the tenant schema based on the flag."""
+    if settings.SERVE_FROM_PUBLIC_SCHEMA:
+        tenant_schema = tenant
+    else:
+        tenant_schema = Tenant.objects.get(schema_name="public")
+    return tenant_schema
+
 
 def clear_pk(entry):
     """Clear the ID and PK values for provided postgres entry."""
