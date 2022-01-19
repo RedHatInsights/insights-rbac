@@ -18,6 +18,7 @@
 """Handler for system defined group."""
 import logging
 
+from django.conf import settings
 from django.db import transaction
 from django.db.models import Q
 from django.db.models.query import QuerySet
@@ -59,13 +60,20 @@ def seed_group(tenant):
     return tenant
 
 
-def set_system_flag_post_update(group, tenant):
+def set_system_flag_before_update(group, tenant):
     """Update system flag on default groups."""
     if group.system:
-        group.name = "Custom default access"
-        group.system = False
-        group.save()
-        clone_default_group_in_public_schema(group, tenant)
+        # No matter serving from tenant or public, use same strategy:
+        # update group in tenant, clone into public schema
+        with tenant_context(tenant):
+            group = Group.objects.get(system=True)
+            group.name = "Custom default access"
+            group.system = False
+            group.save()
+            cloned_group = clone_default_group_in_public_schema(group, tenant)
+        if settings.SERVE_FROM_PUBLIC_SCHEMA:
+            return cloned_group
+    return group
 
 
 def clone_default_group_in_public_schema(group, tenant):
@@ -86,6 +94,7 @@ def clone_default_group_in_public_schema(group, tenant):
         tenant_default_policy.group = group
         tenant_default_policy.save()
         tenant_default_policy.roles.set(public_default_roles)
+        return group
 
 
 def add_roles(group, roles_or_role_ids, tenant, user=None, replace=False, duplicate_in_public=False):

@@ -98,7 +98,9 @@ class GroupViewsetTests(IdentityRequest):
         with tenant_context(public_tenant):
             Group.objects.create(name="groupA", tenant=self.tenant)
             Group.objects.create(name="groupB", tenant=self.tenant)
-            defPubGroup = Group.objects.create(name="groupDef", tenant=public_tenant, platform_default=True)
+            defPubGroup = Group.objects.create(
+                name="groupDef", system=True, tenant=public_tenant, platform_default=True
+            )
             Policy.objects.create(name="defPolicy", tenant=public_tenant, system=True, group=defPubGroup)
 
     @classmethod
@@ -1112,6 +1114,41 @@ class GroupViewsetTests(IdentityRequest):
             new_role = public_default_group.roles().filter(name=self.roleB.name)
             self.assertEqual(len(new_role), 1)
 
+    def test_system_flag_update_on_add_serving_from_public(self):
+        """Test that adding a role to a platform_default group flips the system flag serving from public schema."""
+        with self.settings(SERVE_FROM_PUBLIC_SCHEMA=True):
+            public_tenant = Tenant.objects.get(schema_name="public")
+
+            with tenant_context(public_tenant):
+                defPubGroup = Group.objects.get(system=True)
+                roleB = Role.objects.create(name=self.roleB.name, system=False, tenant=self.tenant)
+
+            url = reverse("group-roles", kwargs={"uuid": defPubGroup.uuid})
+            client = APIClient()
+            test_data = {"roles": [roleB.uuid, self.dummy_role_id]}
+
+            self.assertTrue(defPubGroup.system)
+            self.assertEqual(defPubGroup.roles().count(), 0)
+            response = client.post(url, test_data, format="json", **self.headers)
+
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            with tenant_context(public_tenant):
+                # Default group does not change
+                defPubGroup = Group.objects.get(platform_default=True, system=True, tenant=public_tenant)
+                self.assertEqual(defPubGroup.roles().count(), 0)
+                # There will be a cloned group in public schema
+                cloned_group = Group.objects.get(
+                    name="Custom default access", platform_default=True, system=False, tenant=self.tenant
+                )
+                self.assertEqual(cloned_group.roles().count(), 1)
+
+            with tenant_context(self.tenant):
+                default_group = Group.objects.get(platform_default=True)
+                self.assertFalse(default_group.system)
+                self.assertEqual(default_group.name, "Custom default access")
+                self.assertEqual(default_group.tenant, self.tenant)
+                self.assertEqual(default_group.roles().count(), 1)
+
     def test_system_flag_update_on_remove(self):
         """Test that removing a role from a platform_default group flips the system flag."""
         public_tenant = Tenant.objects.get(schema_name="public")
@@ -1139,6 +1176,48 @@ class GroupViewsetTests(IdentityRequest):
             public_default_group = Group.objects.get(name="Custom default access", tenant=self.tenant)
             new_role = public_default_group.roles().filter(name=self.roleB.name)
             self.assertEqual(len(new_role), 0)
+
+    def test_system_flag_update_on_remove_serving_from_public(self):
+        """Test that removing a role from a platform_default group flips the system flag serving from public schema."""
+        with self.settings(SERVE_FROM_PUBLIC_SCHEMA=True):
+            public_tenant = Tenant.objects.get(schema_name="public")
+
+            with tenant_context(public_tenant):
+                defPubGroup = Group.objects.get(system=True)
+                roleB = Role.objects.create(name=self.roleB.name, system=False, tenant=public_tenant)
+                defPubPolicy = defPubGroup.policies.first()
+                defPubPolicy.roles.add(roleB)
+            with tenant_context(self.tenant):
+                self.defPolicy.roles.add(self.roleB)
+                self.assertTrue(self.defGroup.system)
+                self.assertTrue(self.defGroup.platform_default)
+                self.assertEqual(self.defGroup.roles().filter(name=self.roleB.name).count(), 1)
+
+            url = reverse("group-roles", kwargs={"uuid": defPubGroup.uuid})
+            client = APIClient()
+            url = "{}?roles={}".format(url, roleB.uuid)
+
+            response = client.delete(url, format="json", **self.headers)
+
+            self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+            with tenant_context(public_tenant):
+                # Default group keeps the same
+                defPubGroup.refresh_from_db()
+                self.assertTrue(defPubGroup.system)
+                self.assertEqual(defPubGroup.tenant, public_tenant)
+                self.assertEqual(defPubGroup.roles().count(), 1)
+                # There will be a cloned default group
+                cloned_defPubGroup = Group.objects.get(system=False, platform_default=True, tenant=self.tenant)
+                self.assertEqual(cloned_defPubGroup.roles().count(), 0)
+
+            with tenant_context(self.tenant):
+                # Only one platform default group and it is updated
+                self.assertEqual(Group.objects.filter(platform_default=True).count(), 1)
+                default_group = Group.objects.get(
+                    name="Custom default access", platform_default=True, tenant=self.tenant
+                )
+                new_role = default_group.roles().filter(name=self.roleB.name)
+                self.assertEqual(len(new_role), 0)
 
     def test_add_group_roles_bad_group_guid(self):
         group_url = reverse("group-roles", kwargs={"uuid": "master_exploder"})
