@@ -21,7 +21,6 @@ from api.models import Tenant
 from management.models import Group, Permission, Principal, Policy, Role, Access
 from management.utils import access_for_principal, groups_for_principal, policies_for_principal, roles_for_principal
 from tests.identity_request import IdentityRequest
-from unittest.mock import Mock
 
 
 class UtilsTests(IdentityRequest):
@@ -81,16 +80,14 @@ class UtilsTests(IdentityRequest):
     def test_access_for_principal(self):
         """Test that we get the correct access for a principal."""
         with tenant_context(self.tenant):
-            request = {}
             kwargs = {"application": "app"}
-            access = access_for_principal(self.principal, request, **kwargs)
+            access = access_for_principal(self.principal, self.tenant, **kwargs)
             self.assertCountEqual(access, [self.accessA, self.default_access])
 
     def test_groups_for_principal(self):
         """Test that we get the correct groups for a principal."""
         with tenant_context(self.tenant):
-            request = {}
-            groups = groups_for_principal(self.principal, request)
+            groups = groups_for_principal(self.principal, self.tenant)
             self.assertCountEqual(groups, [self.groupA, self.default_group])
 
     def test_groups_for_principal_from_public_with_custom_group(self):
@@ -103,8 +100,7 @@ class UtilsTests(IdentityRequest):
                 custom_default_group = Group.objects.create(
                     name="custom default group", system=True, platform_default=True, tenant=self.tenant
                 )
-                request = Mock(tenant=self.tenant)
-                groups = groups_for_principal(self.principal, request)
+                groups = groups_for_principal(self.principal, self.tenant)
                 self.assertCountEqual(groups, [custom_default_group])
 
     def test_groups_for_principal_from_public_without_custom_group(self):
@@ -114,20 +110,17 @@ class UtilsTests(IdentityRequest):
                 default_group = Group.objects.create(
                     name="default group", system=True, platform_default=True, tenant=self.public_tenant
                 )
-                request = Mock(tenant=self.tenant)
-                groups = groups_for_principal(self.principal, request)
+                groups = groups_for_principal(self.principal, self.tenant)
                 self.assertCountEqual(groups, [default_group])
 
     def test_policies_for_principal(self):
         """Test that we get the correct groups for a principal."""
         with tenant_context(self.tenant):
-            request = {}
-            policies = policies_for_principal(self.principal, request)
+            policies = policies_for_principal(self.principal, self.tenant)
             self.assertCountEqual(policies, [self.policyA, self.default_policy])
 
     def test_roles_for_principal(self):
         """Test that we get the correct groups for a principal."""
         with tenant_context(self.tenant):
-            request = {}
-            roles = roles_for_principal(self.principal, request)
+            roles = roles_for_principal(self.principal, self.tenant)
             self.assertCountEqual(roles, [self.roleA, self.default_role])

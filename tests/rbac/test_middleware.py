@@ -348,7 +348,7 @@ class AccessHandlingTest(TestCase):
             "policy": {"read": [], "write": []},
             "principal": {"read": [], "write": []},
         }
-        access = IdentityHeaderMiddleware._get_access_for_user("test_user", Mock(), self.tenant)
+        access = IdentityHeaderMiddleware._get_access_for_user("test_user", self.tenant)
         self.assertEqual(expected, access)
 
     def test_principal_no_access(self):
@@ -360,7 +360,7 @@ class AccessHandlingTest(TestCase):
             "policy": {"read": [], "write": []},
             "principal": {"read": [], "write": []},
         }
-        access = IdentityHeaderMiddleware._get_access_for_user("test_user", Mock(), self.tenant)
+        access = IdentityHeaderMiddleware._get_access_for_user("test_user", self.tenant)
         self.assertEqual(expected, access)
 
     def test_principal_with_access_no_res_defs(self):
@@ -375,7 +375,7 @@ class AccessHandlingTest(TestCase):
         policy = Policy.objects.create(name="policy1", group=group, tenant=self.tenant)
         policy.roles.add(role)
         policy.save()
-        access = IdentityHeaderMiddleware._get_access_for_user("test_user", Mock(), self.tenant)
+        access = IdentityHeaderMiddleware._get_access_for_user("test_user", self.tenant)
         expected = {
             "group": {"read": ["*"], "write": ["*"]},
             "role": {"read": [], "write": []},
@@ -407,7 +407,7 @@ class AccessHandlingTest(TestCase):
         policy = Policy.objects.create(name="policy1", group=group, tenant=self.tenant)
         policy.roles.add(role)
         policy.save()
-        access = IdentityHeaderMiddleware._get_access_for_user("test_user", Mock(), self.tenant)
+        access = IdentityHeaderMiddleware._get_access_for_user("test_user", self.tenant)
         expected = {
             "group": {"read": ["*"], "write": ["*"]},
             "role": {"read": [], "write": []},
@@ -437,7 +437,7 @@ class AccessHandlingTest(TestCase):
         policy = Policy.objects.create(name="policy1", group=group, tenant=self.tenant)
         policy.roles.add(role)
         policy.save()
-        access = IdentityHeaderMiddleware._get_access_for_user("test_user", Mock(), self.tenant)
+        access = IdentityHeaderMiddleware._get_access_for_user("test_user", self.tenant)
         expected = {
             "group": {"read": ["*"], "write": ["*"]},
             "role": {"read": [], "write": []},
@@ -458,7 +458,7 @@ class AccessHandlingTest(TestCase):
         policy = Policy.objects.create(name="policy1", group=group, tenant=self.tenant)
         policy.roles.add(role)
         policy.save()
-        access = IdentityHeaderMiddleware._get_access_for_user("test_user", Mock(), self.tenant)
+        access = IdentityHeaderMiddleware._get_access_for_user("test_user", self.tenant)
         expected = {
             "group": {"read": ["*"], "write": ["*"]},
             "role": {"read": ["*"], "write": ["*"]},

@@ -110,7 +110,7 @@ class IdentityHeaderMiddleware(BaseTenantMiddleware):
         return ""
 
     @staticmethod  # noqa: C901
-    def _get_access_for_user(username, request, tenant):  # pylint: disable=too-many-locals,too-many-branches
+    def _get_access_for_user(username, tenant):  # pylint: disable=too-many-locals,too-many-branches
         """Obtain access data for given username.
 
         Stubbed out to begin removal of RBAC on RBAC, with minimal disruption
@@ -129,7 +129,7 @@ class IdentityHeaderMiddleware(BaseTenantMiddleware):
             try:  # pylint: disable=R1702
                 principal = Principal.objects.get(username__iexact=username)
                 kwargs = {APPLICATION_KEY: "rbac"}
-                access_list = access_for_principal(principal, request, **kwargs)
+                access_list = access_for_principal(principal, tenant, **kwargs)
                 for access_item in access_list:  # pylint: disable=too-many-nested-blocks
                     resource_type = access_item.permission.resource_type
                     operation = access_item.permission.verb
@@ -198,7 +198,7 @@ class IdentityHeaderMiddleware(BaseTenantMiddleware):
                     request.user = user
                     tenant = self.get_tenant(model=None, hostname=None, request=request)
 
-                user.access = IdentityHeaderMiddleware._get_access_for_user(user.username, request, tenant)
+                user.access = IdentityHeaderMiddleware._get_access_for_user(user.username, tenant)
             # Cross account request check
             internal = json_rh_auth.get("identity", {}).get("internal", {})
             if internal != {}:

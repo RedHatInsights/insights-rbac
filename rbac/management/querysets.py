@@ -207,5 +207,5 @@ def get_object_principal_queryset(request, scope, clazz, **kwargs):
 
     object_principal_func = PRINCIPAL_QUERYSET_MAP.get(clazz.__name__)
     principal = get_principal_from_request(request)
-    objects = object_principal_func(principal, request, **kwargs)
+    objects = object_principal_func(principal, request.tenant, **kwargs)
     return queryset_by_id(objects, clazz, **kwargs)

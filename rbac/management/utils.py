@@ -108,7 +108,7 @@ def access_for_roles(roles, param_applications):
     return set(access)
 
 
-def groups_for_principal(principal, request, **kwargs):
+def groups_for_principal(principal, tenant, **kwargs):
     """Gathers all groups for a principal, including the default."""
     if principal.cross_account:
         return set()
@@ -116,7 +116,7 @@ def groups_for_principal(principal, request, **kwargs):
     if settings.SERVE_FROM_PUBLIC_SCHEMA:
         public_tenant = Tenant.objects.get(schema_name="public")
         platform_default_group_set = Group.platform_default_set().filter(
-            tenant=request.tenant
+            tenant=tenant
         ) or Group.platform_default_set().filter(tenant=public_tenant)
     else:
         platform_default_group_set = Group.platform_default_set()
@@ -129,24 +129,24 @@ def groups_for_principal(principal, request, **kwargs):
     return set(assigned_group_set | platform_default_group_set)
 
 
-def policies_for_principal(principal, request, **kwargs):
+def policies_for_principal(principal, tenant, **kwargs):
     """Gathers all policies for a principal."""
-    groups = groups_for_principal(principal, request, **kwargs)
+    groups = groups_for_principal(principal, tenant, **kwargs)
     return policies_for_groups(groups)
 
 
-def roles_for_principal(principal, request, **kwargs):
+def roles_for_principal(principal, tenant, **kwargs):
     """Gathers all roles for a principal."""
     if principal.cross_account:
         return roles_for_cross_account_principal(principal)
-    policies = policies_for_principal(principal, request, **kwargs)
+    policies = policies_for_principal(principal, tenant, **kwargs)
     return roles_for_policies(policies)
 
 
-def access_for_principal(principal, request, **kwargs):
+def access_for_principal(principal, tenant, **kwargs):
     """Gathers all access for a principal for an application."""
     application = kwargs.get(APPLICATION_KEY)
-    roles = roles_for_principal(principal, request, **kwargs)
+    roles = roles_for_principal(principal, tenant, **kwargs)
     access = access_for_roles(roles, application)
     return access
 
