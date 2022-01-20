@@ -16,6 +16,7 @@
 #
 
 """Serializer for role management."""
+from django.conf import settings
 from django.utils.translation import gettext as _
 from management.group.model import Group
 from management.serializer_override_mixin import SerializerCreateOverrideMixin
@@ -23,6 +24,7 @@ from management.utils import get_principal_from_request, schema_handler
 from rest_framework import serializers
 
 from .model import Access, Permission, ResourceDefinition, Role
+from api.models import Tenant
 
 ALLOWED_OPERATIONS = ["in", "equal"]
 FILTER_FIELDS = set(["key", "value", "operation"])
@@ -289,7 +291,14 @@ def obtain_groups_in(obj, request):
     if scope_param == "principal" or username_param:
         principal = get_principal_from_request(request)
         assigned_groups = Group.objects.filter(policies__in=policy_ids, principals__in=[principal])
-        return (assigned_groups | Group.platform_default_set()).distinct()
+        if settings.SERVE_FROM_PUBLIC_SCHEMA:
+            public_tenant = Tenant.objects.get(schema_name="public")
+            return (
+                assigned_groups | Group.platform_default_set().filter(tenant=request.tenant)
+                or Group.platform_default_set().filter(tenant=public_tenant)
+            ).distinct()
+        else:
+            return (assigned_groups | Group.platform_default_set()).distinct()
 
     return Group.objects.filter(policies__in=policy_ids).distinct()
 

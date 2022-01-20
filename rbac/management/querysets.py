@@ -15,9 +15,12 @@
 #    along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Queryset helpers for management module."""
+from django.conf import settings
 from django.db.models.aggregates import Count
 from django.urls import reverse
 from django.utils.translation import gettext as _
+
+from api.models import Tenant
 from management.group.model import Group
 from management.policy.model import Policy
 from management.role.model import Access, Role
@@ -93,17 +96,25 @@ def get_group_queryset(request):
             | Group.platform_default_set()
         )
 
+    if settings.SERVE_FROM_PUBLIC_SCHEMA:
+        public_tenant = Tenant.objects.get(schema_name="public")
+        default_group_set = Group.platform_default_set().filter(
+            tenant=request.tenant
+        ) or Group.platform_default_set().filter(tenant=public_tenant)
+    else:
+        default_group_set = Group.platform_default_set()
+
     if has_group_all_access(request):
-        return get_annotated_groups().filter(tenant=request.tenant) | Group.platform_default_set()
+        return get_annotated_groups().filter(tenant=request.tenant) | default_group_set
 
     access = user_has_perm(request, "group")
 
     if access == "All":
-        return get_annotated_groups().filter(tenant=request.tenant) | Group.platform_default_set()
+        return get_annotated_groups().filter(tenant=request.tenant) | default_group_set
     if access == "None":
         return Group.objects.none()
 
-    return Group.objects.filter(uuid__in=access, tenant=request.tenant) | Group.platform_default_set()
+    return Group.objects.filter(uuid__in=access, tenant=request.tenant) | default_group_set
 
 
 def annotate_roles_with_counts(queryset):
