@@ -19,8 +19,6 @@ from django.conf import settings
 from django.db.models.aggregates import Count
 from django.urls import reverse
 from django.utils.translation import gettext as _
-
-from api.models import Tenant
 from management.group.model import Group
 from management.policy.model import Policy
 from management.role.model import Access, Role
@@ -36,6 +34,7 @@ from management.utils import (
 )
 from rest_framework import permissions, serializers
 
+from api.models import Tenant
 from rbac.env import ENVIRONMENT
 
 SCOPE_KEY = "scope"

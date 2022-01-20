@@ -23,8 +23,8 @@ from management.serializer_override_mixin import SerializerCreateOverrideMixin
 from management.utils import get_principal_from_request, schema_handler
 from rest_framework import serializers
 
-from .model import Access, Permission, ResourceDefinition, Role
 from api.models import Tenant
+from .model import Access, Permission, ResourceDefinition, Role
 
 ALLOWED_OPERATIONS = ["in", "equal"]
 FILTER_FIELDS = set(["key", "value", "operation"])
