@@ -23,7 +23,7 @@ from rest_framework.test import APIClient
 from tenant_schemas.utils import tenant_context
 
 from api.models import User
-from management.models import Permission, Role, Access
+from management.models import Group, Permission, Policy, Principal, Role, Access
 from tests.identity_request import IdentityRequest
 
 OPTION_URL = reverse("permission-options")
@@ -509,10 +509,7 @@ class PermissionViewsetTestsNonAdmin(IdentityRequest):
     def setUp(self):
         """Set up the permission viewset tests."""
         super().setUp()
-
-        self.user_data = self._create_user_data()
-        self.customer = self._create_customer_data()
-        self.request_context = self._create_request_context(self.customer, self.user_data, is_org_admin=False)
+        self.request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
 
         request = self.request_context["request"]
         self.headers = request.META
@@ -530,6 +527,23 @@ class PermissionViewsetTestsNonAdmin(IdentityRequest):
         """Test that we can not read a list of permissions as a non-admin."""
         response = CLIENT.get(LIST_URL, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_read_permission_list_success_when_rbac_admin_role_assigned(self):
+        """Test that we can read a list of permissions as a non-admin if he is assigned rbac admin role."""
+        with tenant_context(self.tenant):
+            # Create admin group and add rbac admin permission to it
+            group = Group.objects.create(name="Admin_group", tenant=self.tenant)
+            policy = Policy.objects.create(name="Admin_policy", tenant=self.tenant, group=group)
+            permission = Permission.objects.create(permission="rbac:*:*", tenant=self.tenant)
+            admin_role = Role.objects.create(name="Admin_role", tenant=self.tenant)
+            access = Access.objects.create(permission=permission, role=admin_role, tenant=self.tenant)
+            policy.roles.add(admin_role)
+            # Add principal to that admin group
+            principal = Principal.objects.create(username=self.user_data["username"], tenant=self.tenant)
+            group.principals.add(principal)
+            group.principals
+        response = CLIENT.get(LIST_URL, **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
 
     def test_read_permission_options_list_fail(self):
         """Test that we can not read a list of filed options of permissions  as a non-admin."""
