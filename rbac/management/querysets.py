@@ -85,16 +85,6 @@ def get_group_queryset(request):
     if scope != ACCOUNT_SCOPE:
         return get_object_principal_queryset(request, scope, Group)
 
-    username = request.query_params.get("username")
-    if username:
-        principal = get_principal(username, request)
-        if principal.cross_account:
-            return Group.objects.none()
-        return (
-            Group.objects.filter(principals__username__iexact=username, tenant=request.tenant)
-            | Group.platform_default_set()
-        )
-
     if settings.SERVE_FROM_PUBLIC_SCHEMA:
         public_tenant = Tenant.objects.get(schema_name="public")
         default_group_set = Group.platform_default_set().filter(
@@ -102,6 +92,13 @@ def get_group_queryset(request):
         ) or Group.platform_default_set().filter(tenant=public_tenant)
     else:
         default_group_set = Group.platform_default_set()
+
+    username = request.query_params.get("username")
+    if username:
+        principal = get_principal(username, request)
+        if principal.cross_account:
+            return Group.objects.none()
+        return Group.objects.filter(principals__username__iexact=username, tenant=request.tenant) | default_group_set
 
     if has_group_all_access(request):
         return get_annotated_groups().filter(tenant=request.tenant) | default_group_set
