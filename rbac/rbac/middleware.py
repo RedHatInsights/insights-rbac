@@ -125,7 +125,12 @@ class IdentityHeaderMiddleware(BaseTenantMiddleware):
             "principal": {"read": [], "write": []},
         }
 
-        with tenant_context(tenant):
+        if settings.SERVE_FROM_PUBLIC_SCHEMA:
+            schema_tenant = Tenant.objects.get(schema_name="public")
+        else:
+            schema_tenant = tenant
+
+        with tenant_context(schema_tenant):
             try:  # pylint: disable=R1702
                 principal = Principal.objects.get(username__iexact=username)
                 kwargs = {APPLICATION_KEY: "rbac"}
@@ -197,7 +202,6 @@ class IdentityHeaderMiddleware(BaseTenantMiddleware):
                 except Tenant.DoesNotExist:
                     request.user = user
                     tenant = self.get_tenant(model=None, hostname=None, request=request)
-
                 user.access = IdentityHeaderMiddleware._get_access_for_user(user.username, tenant)
             # Cross account request check
             internal = json_rh_auth.get("identity", {}).get("internal", {})
