@@ -88,19 +88,19 @@ def get_group_queryset(request):
         principal = get_principal(username, request)
         if principal.cross_account:
             return Group.objects.none()
-        return Group.objects.filter(principals__username__iexact=username, tenant=request.tenant) | Group.platform_default_set()
+        return Group.objects.filter(principals__username__iexact=username) | Group.platform_default_set()
 
     if has_group_all_access(request):
-        return get_annotated_groups().filter(tenant=request.tenant) | Group.platform_default_set()
+        return get_annotated_groups() | Group.platform_default_set()
 
     access = user_has_perm(request, "group")
 
     if access == "All":
-        return get_annotated_groups().filter(tenant=request.tenant) | Group.platform_default_set()
+        return get_annotated_groups() | Group.platform_default_set()
     if access == "None":
         return Group.objects.none()
 
-    return Group.objects.filter(uuid__in=access, tenant=request.tenant) | Group.platform_default_set()
+    return Group.objects.filter(uuid__in=access) | Group.platform_default_set()
 
 
 def annotate_roles_with_counts(queryset):
@@ -145,7 +145,7 @@ def get_role_queryset(request):
         return base_query
     if access == "None":
         return Role.objects.none()
-    return annotate_roles_with_counts(Role.objects.filter(uuid__in=access, tenant=request.tenant))
+    return annotate_roles_with_counts(Role.objects.filter(uuid__in=access))
 
 
 def get_policy_queryset(request):
@@ -164,7 +164,7 @@ def get_policy_queryset(request):
         return Policy.objects.all()
     if access == "None":
         return Policy.objects.none()
-    return Policy.objects.filter(uuid__in=access, tenant=request.tenant)
+    return Policy.objects.filter(uuid__in=access)
 
 
 def get_access_queryset(request):

@@ -32,11 +32,12 @@ sentry-sdk = "==0.20.3"
 tox = "==3.23.0"
 psycopg2 = "==2.8.6"
 psycopg2-binary = "==2.8.6"
+werkzeug = "*"
 
 [dev-packages]
 astroid = "==2.2.5"
 sphinx-rtd-theme = ">=0.3.0"
-sphinx = ">=1.7.0"
+sphinx = "==1.7.0"
 tox = ">=3.0.0"
 coverage = ">=4.5.0"
 codecov = ">=2.0.0"

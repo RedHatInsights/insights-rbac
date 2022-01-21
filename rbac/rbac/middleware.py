@@ -21,8 +21,12 @@ import logging
 import time
 from json.decoder import JSONDecodeError
 
+from api.common import (RH_IDENTITY_HEADER, RH_INSIGHTS_REQUEST_ID,
+                        RH_RBAC_ACCOUNT, RH_RBAC_CLIENT_ID, RH_RBAC_PSK)
+from api.models import Tenant, User
+from api.serializers import create_schema_name, extract_header
 from django.conf import settings
-from django.db import connections, connection, transaction
+from django.db import connection, connections, transaction
 from django.http import Http404, HttpResponse
 from django.urls import resolve
 from django.utils.deprecation import MiddlewareMixin
@@ -30,15 +34,12 @@ from management.cache import TenantCache
 from management.group.definer import seed_group  # noqa: I100, I201
 from management.models import Principal
 from management.role.definer import seed_permissions, seed_roles
-from management.utils import APPLICATION_KEY, access_for_principal, validate_psk
+from management.utils import (APPLICATION_KEY, access_for_principal,
+                              validate_psk)
 from prometheus_client import Counter
 from tenant_schemas.middleware import BaseTenantMiddleware
 from tenant_schemas.utils import tenant_context
-
-from api.common import RH_IDENTITY_HEADER, RH_INSIGHTS_REQUEST_ID, RH_RBAC_ACCOUNT, RH_RBAC_CLIENT_ID, RH_RBAC_PSK
-from api.models import Tenant, User
-from api.serializers import create_schema_name, extract_header
-
+from werkzeug.local import Local, LocalManager
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 req_sys_counter = Counter(
@@ -47,7 +48,6 @@ req_sys_counter = Counter(
     ["behalf", "method", "view", "status"],
 )
 TENANTS = TenantCache()
-
 
 def is_no_auth(request):
     """Check condition for needing to authenticate the user."""
@@ -64,6 +64,9 @@ class HttpResponseUnauthorizedRequest(HttpResponse):
 
     status_code = 401
 
+
+_local = Local()
+lm = LocalManager([_local])
 
 class IdentityHeaderMiddleware(BaseTenantMiddleware):
     """A subclass of RemoteUserMiddleware.
@@ -171,6 +174,8 @@ class IdentityHeaderMiddleware(BaseTenantMiddleware):
             request (object): The request object
 
         """
+        _local.request = request
+
         # Get request ID
         request.req_id = request.META.get(RH_INSIGHTS_REQUEST_ID)
 

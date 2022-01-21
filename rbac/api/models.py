@@ -15,12 +15,15 @@
 #    along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """API models for import organization."""
+from django.conf import settings
 from django.db import models
 from tenant_schemas.models import TenantMixin
+from werkzeug.local import Local
 
 from api.cross_access.model import CrossAccountRequest  # noqa: F401
 from api.status.model import Status  # noqa: F401
 
+_local = Local()
 
 class Tenant(TenantMixin):
     """The model used to create a tenant schema."""
@@ -39,10 +42,23 @@ class Tenant(TenantMixin):
         return f"Tenant ({self.schema_name})"
 
 
+class TenantModelManager(models.Manager):
+    """Manager for auto-filtering on tenant."""
+    def get_queryset(self):
+        req = getattr(_local, 'request', None)
+        if req:
+            qs = super().get_queryset().filter(tenant=req.tenant)
+        else:
+            qs = super().get_queryset()
+        
+        return qs
+
 class TenantAwareModel(models.Model):
     """Abstract model for inheriting `Tenant`."""
 
     tenant = models.ForeignKey(Tenant, blank=True, null=True, on_delete=models.CASCADE)
+    if settings.SERVE_FROM_PUBLIC_SCHEMA:   
+        objects = TenantModelManager()
 
     class Meta:
         abstract = True
