@@ -18,11 +18,10 @@
     "default": {
         "amqp": {
             "hashes": [
-                "sha256:70cdb10628468ff14e57ec2f751c7aa9e48e7e3651cfd62d431213c0c4e58f21",
-                "sha256:aa7f313fb887c91f15474c1229907a04dac0b8135822d6603437803424c0aa59"
+                "sha256:1e5f707424e544078ca196e72ae6a14887ce74e02bd126be54b7c03c971bef18",
+                "sha256:9cd81f7b023fc04bbb108718fbac674f06901b77bfcdce85b10e2a5d0ee91be5"
             ],
-            "markers": "python_version >= '2.7' and python_version not in '3.0, 3.1, 3.2, 3.3, 3.4'",
-            "version": "==2.6.1"
+            "version": "==5.0.9"
         },
         "app-common-python": {
             "hashes": [
