@@ -100,21 +100,21 @@ def get_group_queryset(request):
             return Group.objects.none()
         return (
             filter_queryset_by_tenant(Group.objects.filter(principals__username__iexact=username), request.tenant)
-            | Group.platform_default_set()
+            | default_group_set
         )
 
     if has_group_all_access(request):
-        return filter_queryset_by_tenant(get_annotated_groups(), request.tenant) | Group.platform_default_set()
+        return filter_queryset_by_tenant(get_annotated_groups(), request.tenant) | default_group_set
 
     access = user_has_perm(request, "group")
 
     if access == "All":
-        return filter_queryset_by_tenant(get_annotated_groups(), request.tenant) | Group.platform_default_set()
+        return filter_queryset_by_tenant(get_annotated_groups(), request.tenant) | default_group_set
     if access == "None":
         return Group.objects.none()
 
     return (
-        filter_queryset_by_tenant(Group.objects.filter(uuid__in=access), request.tenant) | Group.platform_default_set()
+        filter_queryset_by_tenant(Group.objects.filter(uuid__in=access), request.tenant) | default_group_set
     )
 
 
@@ -220,7 +220,7 @@ def get_object_principal_queryset(request, scope, clazz, **kwargs):
 
     object_principal_func = PRINCIPAL_QUERYSET_MAP.get(clazz.__name__)
     principal = get_principal_from_request(request)
-    objects = object_principal_func(principal, **kwargs)
+    objects = object_principal_func(principal, request.tenant, **kwargs)
     return filter_queryset_by_tenant(queryset_by_id(objects, clazz, **kwargs), request.tenant)
 
 
