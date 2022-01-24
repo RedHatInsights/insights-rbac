@@ -34,6 +34,7 @@ from management.utils import (
 )
 from rest_framework import permissions, serializers
 
+from api.models import Tenant
 from rbac.env import ENVIRONMENT
 
 SCOPE_KEY = "scope"
@@ -83,6 +84,14 @@ def get_group_queryset(request):
     scope = request.query_params.get(SCOPE_KEY, ACCOUNT_SCOPE)
     if scope != ACCOUNT_SCOPE:
         return get_object_principal_queryset(request, scope, Group)
+
+    if settings.SERVE_FROM_PUBLIC_SCHEMA:
+        public_tenant = Tenant.objects.get(schema_name="public")
+        default_group_set = Group.platform_default_set().filter(
+            tenant=request.tenant
+        ) or Group.platform_default_set().filter(tenant=public_tenant)
+    else:
+        default_group_set = Group.platform_default_set()
 
     username = request.query_params.get("username")
     if username:
