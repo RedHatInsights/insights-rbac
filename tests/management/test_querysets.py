@@ -101,7 +101,13 @@ class QuerySetTest(TestCase):
         group = Group.objects.first()
         group.principals.add(principal)
         user = Mock(spec=User, admin=False, account="00001", username="test_user")
-        req = Mock(user=user, method="GET", tenant=self.tenant, query_params={"username": "test_user"}, path=reverse("group-list"))
+        req = Mock(
+            user=user,
+            method="GET",
+            tenant=self.tenant,
+            query_params={"username": "test_user"},
+            path=reverse("group-list"),
+        )
         queryset = get_group_queryset(req)
         self.assertEquals(queryset.count(), 1)
 
@@ -163,7 +169,12 @@ class QuerySetTest(TestCase):
         roles = self._setup_roles_for_role_username_queryset_tests()
 
         user = Mock(spec=User, admin=True, account="00001", username="test_user2")
-        req = Mock(user=user, method="GET", tenant=self.tenant, query_params={SCOPE_KEY: PRINCIPAL_SCOPE, "username": "test_user2"})
+        req = Mock(
+            user=user,
+            method="GET",
+            tenant=self.tenant,
+            query_params={SCOPE_KEY: PRINCIPAL_SCOPE, "username": "test_user2"},
+        )
         queryset = get_role_queryset(req)
         role = queryset.last()
         self.assertEquals(list(queryset), [roles.first()])

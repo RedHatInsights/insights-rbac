@@ -115,7 +115,7 @@ def tenant_view(request, tenant_schema_name):
                     return HttpResponse(status=204)
                 else:
                     return HttpResponse("Tenant cannot be deleted.", status=400)
-    return HttpResponse(f'Invalid method, only "DELETE" is allowed.', status=405)
+    return HttpResponse('Invalid method, only "DELETE" is allowed.', status=405)
 
 
 def run_migrations(request):
@@ -130,7 +130,7 @@ def run_migrations(request):
         logger.info(f"Running migrations: {request.method} {request.user.username} {schema_list}")
         run_migrations_in_worker.delay(schema_list)
         return HttpResponse("Migrations are running in a background worker.", status=202)
-    return HttpResponse(f'Invalid method, only "POST" is allowed.', status=405)
+    return HttpResponse('Invalid method, only "POST" is allowed.', status=405)
 
 
 def migration_progress(request):
@@ -172,7 +172,7 @@ def migration_progress(request):
         }
 
         return HttpResponse(json.dumps(payload), content_type="application/json")
-    return HttpResponse(f'Invalid method, only "GET" is allowed.', status=405)
+    return HttpResponse('Invalid method, only "GET" is allowed.', status=405)
 
 
 def tenant_reconciliation(request):
@@ -188,7 +188,7 @@ def tenant_reconciliation(request):
         run_reconcile_tenant_relations_in_worker.delay(args)
         return HttpResponse(msg, status=202)
 
-    return HttpResponse(f'Invalid method, only "GET" and "POST" are allowed.', status=405)
+    return HttpResponse('Invalid method, only "GET" and "POST" are allowed.', status=405)
 
 
 def sync_schemas(request):
@@ -207,7 +207,7 @@ def sync_schemas(request):
         run_sync_schemas_in_worker.delay(args)
         return HttpResponse(msg, status=202)
 
-    return HttpResponse(f'Invalid method, only "POST" is allowed.', status=405)
+    return HttpResponse('Invalid method, only "POST" is allowed.', status=405)
 
 
 def run_seeds(request):
@@ -228,7 +228,7 @@ def run_seeds(request):
         logger.info(f"Running seeds: {request.method} {request.user.username}")
         run_seeds_in_worker.delay(args)
         return HttpResponse("Seeds are running in a background worker.", status=202)
-    return HttpResponse(f'Invalid method, only "POST" is allowed.', status=405)
+    return HttpResponse('Invalid method, only "POST" is allowed.', status=405)
 
 
 def car_expiry(request):
@@ -240,7 +240,7 @@ def car_expiry(request):
         logger.info("Running cross-account request expiration check.")
         cross_account_cleanup.delay()
         return HttpResponse("Expiry checks are running in a background worker.", status=202)
-    return HttpResponse(f'Invalid method, only "POST" is allowed.', status=405)
+    return HttpResponse('Invalid method, only "POST" is allowed.', status=405)
 
 
 class SentryDiagnosticError(Exception):

@@ -33,13 +33,12 @@ from management.models import Permission
 from management.permissions import RoleAccessPermission
 from management.querysets import get_role_queryset
 from management.role.serializer import AccessSerializer, RoleDynamicSerializer, RolePatchSerializer
-from management.utils import validate_uuid
+from management.utils import get_schema_to_be_synced, validate_uuid
 from rest_framework import mixins, serializers, viewsets
 from rest_framework.decorators import action
 from rest_framework.filters import OrderingFilter
 from tenant_schemas.utils import tenant_context
 
-from api.models import Tenant
 from .model import Role
 from .serializer import RoleSerializer
 
@@ -312,11 +311,11 @@ class RoleViewSet(
             error = {key: [_(message)]}
             raise serializers.ValidationError(error)
         with transaction.atomic():
-            # Remove role in public schema.
-            with tenant_context(Tenant.objects.get(schema_name="public")):
-                role_public = Role.objects.get(name=role.name, tenant=request.tenant)
-                self.delete_policies_if_no_role_attached(role_public)
-                role_public.delete()
+            # Remove role in another schema.
+            with tenant_context(get_schema_to_be_synced(request.tenant)):
+                role_to_sync = Role.objects.get(name=role.name, tenant=request.tenant)
+                self.delete_policies_if_no_role_attached(role_to_sync)
+                role_to_sync.delete()
 
             self.delete_policies_if_no_role_attached(role)
             return super().destroy(request=request, args=args, kwargs=kwargs)
