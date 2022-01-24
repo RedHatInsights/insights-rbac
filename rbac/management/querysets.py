@@ -82,7 +82,7 @@ def get_group_queryset(request):
     """Obtain the queryset for groups."""
     scope = request.query_params.get(SCOPE_KEY, ACCOUNT_SCOPE)
     if scope != ACCOUNT_SCOPE:
-        return filter_queryset_by_tenant(get_object_principal_queryset(request, scope, Group), request.tenant)
+        return get_object_principal_queryset(request, scope, Group)
 
     username = request.query_params.get("username")
     if username:
@@ -128,7 +128,6 @@ def get_role_queryset(request):
             Role,
             **{"prefetch_lookups_for_ids": "access", "prefetch_lookups_for_groups": "policies__roles"},
         )
-        queryset = filter_queryset_by_tenant(queryset, request.tenant)
         return annotate_roles_with_counts(queryset)
 
     username = request.query_params.get("username")
@@ -142,7 +141,6 @@ def get_role_queryset(request):
                 Role,
                 **{"prefetch_lookups_for_ids": "access", "prefetch_lookups_for_groups": "policies__roles"},
             )
-            queryset = filter_queryset_by_tenant(queryset, request.tenant)
             return annotate_roles_with_counts(queryset)
 
     if ENVIRONMENT.get_value("ALLOW_ANY", default=False, cast=bool):
@@ -161,7 +159,7 @@ def get_policy_queryset(request):
     """Obtain the queryset for policies."""
     scope = request.query_params.get(SCOPE_KEY, ACCOUNT_SCOPE)
     if scope != ACCOUNT_SCOPE:
-        return filter_queryset_by_tenant(get_object_principal_queryset(request, scope, Policy), request.tenant)
+        return get_object_principal_queryset(request, scope, Policy)
 
     if ENVIRONMENT.get_value("ALLOW_ANY", default=False, cast=bool):
         return filter_queryset_by_tenant(Policy.objects.all(), request.tenant)
@@ -187,7 +185,7 @@ def get_access_queryset(request):
         raise serializers.ValidationError({key: _(message)})
 
     app = request.query_params.get(APPLICATION_KEY)
-    qs = get_object_principal_queryset(
+    return get_object_principal_queryset(
         request,
         PRINCIPAL_SCOPE,
         Access,
@@ -197,7 +195,6 @@ def get_access_queryset(request):
             "prefetch_lookups_for_groups": "policies__roles__access",
         },
     )
-    return filter_queryset_by_tenant(qs, request.tenant)
 
 
 def get_object_principal_queryset(request, scope, clazz, **kwargs):
@@ -215,10 +212,11 @@ def get_object_principal_queryset(request, scope, clazz, **kwargs):
     object_principal_func = PRINCIPAL_QUERYSET_MAP.get(clazz.__name__)
     principal = get_principal_from_request(request)
     objects = object_principal_func(principal, **kwargs)
-    return queryset_by_id(objects, clazz, **kwargs)
+    return filter_queryset_by_tenant(queryset_by_id(objects, clazz, **kwargs), request.tenant)
 
 
 def filter_queryset_by_tenant(queryset, tenant):
+    """Limit queryset by appropriate tenant when serving from public schema."""
     if settings.SERVE_FROM_PUBLIC_SCHEMA and tenant:
         return queryset.filter(tenant=tenant)
     return queryset
