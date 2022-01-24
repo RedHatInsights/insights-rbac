@@ -98,7 +98,9 @@ class GroupViewsetTests(IdentityRequest):
         with tenant_context(public_tenant):
             Group.objects.create(name="groupA", tenant=self.tenant)
             Group.objects.create(name="groupB", tenant=self.tenant)
-            defPubGroup = Group.objects.create(name="groupDef", tenant=public_tenant, platform_default=True)
+            defPubGroup = Group.objects.create(
+                name="groupDef", system=True, tenant=public_tenant, platform_default=True
+            )
             Policy.objects.create(name="defPolicy", tenant=public_tenant, system=True, group=defPubGroup)
 
     @classmethod
@@ -142,6 +144,35 @@ class GroupViewsetTests(IdentityRequest):
         # group is created in public schema
         with tenant_context(Tenant.objects.get(schema_name="public")):
             self.assertIsNotNone(Group.objects.get(name=group_name))
+
+    def test_create_group_success_serving_from_public(self):
+        """Test that we can create a group in public schema and synced into tenant."""
+        with self.settings(SERVE_FROM_PUBLIC_SCHEMA=True):
+            group_name = "groupC"
+            test_data = {"name": group_name}
+
+            # create a group
+            url = reverse("group-list")
+            client = APIClient()
+            response = client.post(url, test_data, format="json", **self.headers)
+            uuid = response.data.get("uuid")
+            self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+            # test that we can retrieve the group
+            url = reverse("group-detail", kwargs={"uuid": response.data.get("uuid")})
+            response = client.get(url, **self.headers)
+            group = Group.objects.get(uuid=uuid)
+
+            self.assertIsNotNone(uuid)
+            self.assertIsNotNone(response.data.get("name"))
+            self.assertEqual(group_name, response.data.get("name"))
+            self.assertEqual(group.tenant, self.tenant)
+
+            # group is created in tenant schema
+            with tenant_context(self.tenant):
+                self.assertIsNotNone(Group.objects.get(name=group_name))
+            with tenant_context(Tenant.objects.get(schema_name="public")):
+                self.assertIsNotNone(Group.objects.get(name=group_name))
 
     def test_create_default_group(self):
         """Test that system groups can be created."""
@@ -380,6 +411,24 @@ class GroupViewsetTests(IdentityRequest):
         with tenant_context(Tenant.objects.get(schema_name="public")):
             self.assertIsNotNone(Group.objects.get(name=updated_name, tenant=self.tenant))
 
+    def test_update_group_success_serving_from_public(self):
+        """Test that we can update an existing group in public schema and sync into tenant."""
+        with self.settings(SERVE_FROM_PUBLIC_SCHEMA=True):
+            updated_name = self.group.name + "_update"
+            test_data = {"name": updated_name}
+            with tenant_context(Tenant.objects.get(schema_name="public")):
+                group = Group.objects.get(name=self.group.name)
+            url = reverse("group-detail", kwargs={"uuid": group.uuid})
+            client = APIClient()
+            response = client.put(url, test_data, format="json", **self.headers)
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+            self.assertIsNotNone(response.data.get("uuid"))
+            self.assertEqual(updated_name, response.data.get("name"))
+
+            with tenant_context(self.tenant):
+                self.assertIsNotNone(Group.objects.get(name=updated_name, tenant=self.tenant))
+
     def test_update_default_group(self):
         """Test that platform_default groups are protected from updates"""
         url = reverse("group-detail", kwargs={"uuid": self.defGroup.uuid})
@@ -418,6 +467,24 @@ class GroupViewsetTests(IdentityRequest):
         # verify the group no longer exists in public schema
         with tenant_context(Tenant.objects.get(schema_name="public")):
             self.assertIsNone(Group.objects.filter(name="groupA", tenant=self.tenant).first())
+
+    def test_delete_group_success_serving_from_public(self):
+        """Test that we can delete an existing group from public schema and synced into tenant."""
+        with self.settings(SERVE_FROM_PUBLIC_SCHEMA=True):
+            with tenant_context(Tenant.objects.get(schema_name="public")):
+                group = Group.objects.get(name="groupA", tenant=self.tenant)
+
+            url = reverse("group-detail", kwargs={"uuid": group.uuid})
+            client = APIClient()
+            response = client.delete(url, **self.headers)
+            self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+
+            # verify the group no longer exists
+            response = client.get(url, **self.headers)
+            self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+            # verify the group no longer exists in tenant schema
+            with tenant_context(self.tenant):
+                self.assertIsNone(Group.objects.filter(name="groupA", tenant=self.tenant).first())
 
     def test_delete_default_group(self):
         """Test that platform_default groups are protected from deletion"""
@@ -519,6 +586,45 @@ class GroupViewsetTests(IdentityRequest):
 
     @patch(
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={"status_code": 200, "data": [{"username": "test_user"}]},
+    )
+    def test_add_group_principals_success_serving_from_public(self, mock_request):
+        """Test that adding a principal to a group returns successfully in public schema and synced to tenant schema."""
+        with self.settings(SERVE_FROM_PUBLIC_SCHEMA=True):
+            # Create a group and a cross account user.
+            with tenant_context(self.tenant):
+                test_group = Group.objects.create(name="test", tenant=self.tenant)
+
+            # Create same group in public schema.
+            with tenant_context(Tenant.objects.get(schema_name="public")):
+                test_group_in_public = Group.objects.create(name="test", tenant=self.tenant)
+                cross_account_user = Principal.objects.create(
+                    username="cross_account_user", cross_account=True, tenant=self.tenant
+                )
+
+            url = reverse("group-principals", kwargs={"uuid": test_group_in_public.uuid})
+            client = APIClient()
+            username = "test_user"
+            test_data = {"principals": [{"username": username}, {"username": "cross_account_user"}]}
+            response = client.post(url, test_data, format="json", **self.headers)
+            principal = Principal.objects.get(username=username)
+
+            # Only the user exists in IT will be added to the group.
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            self.assertEqual(len(response.data.get("principals")), 1)
+            self.assertEqual(response.data.get("principals")[0], {"username": username})
+            self.assertEqual(principal.tenant, self.tenant)
+
+            test_group.delete()
+            cross_account_user.delete()
+
+            with tenant_context(self.tenant):
+                principals = Group.objects.get(name="test", tenant=self.tenant).principals
+                self.assertEqual(principals.count(), 1)
+                self.assertEqual(principals.first().username, "test_user")
+
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
         return_value={"status_code": 200, "data": []},
     )
     def test_get_group_principals_empty(self, mock_request):
@@ -582,7 +688,7 @@ class GroupViewsetTests(IdentityRequest):
             self.group.principals.add(test_user)
 
         with tenant_context(public_tenant):
-            test_user = Principal.objects.create(username="test_user", tenant=public_tenant)
+            test_user = Principal.objects.create(username="test_user", tenant=self.tenant)
             Group.objects.get(name=self.group.name, tenant=self.tenant).principals.add(test_user)
 
         url = reverse("group-principals", kwargs={"uuid": self.group.uuid})
@@ -594,6 +700,34 @@ class GroupViewsetTests(IdentityRequest):
 
         with tenant_context(Tenant.objects.get(schema_name="public")):
             self.assertEqual(Group.objects.get(name=self.group.name, tenant=self.tenant).principals.count(), 0)
+
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={"status_code": 200, "data": [{"username": "test_user"}]},
+    )
+    def test_remove_group_principals_success_serving_from_public(self, mock_request):
+        """Test that removing a principal to a group returns successfully."""
+        with self.settings(SERVE_FROM_PUBLIC_SCHEMA=True):
+            public_tenant = Tenant.objects.get(schema_name="public")
+            with tenant_context(self.tenant):
+                test_user = Principal.objects.create(username="test_user", tenant=self.tenant)
+                self.group.principals.clear()
+                self.group.principals.add(test_user)
+
+            with tenant_context(public_tenant):
+                test_user = Principal.objects.create(username="test_user", tenant=public_tenant)
+                group_public = Group.objects.get(name=self.group.name, tenant=self.tenant)
+                group_public.principals.add(test_user)
+
+            url = reverse("group-principals", kwargs={"uuid": group_public.uuid})
+            client = APIClient()
+
+            url = "{}?usernames={}".format(url, "test_user")
+            response = client.delete(url, format="json", **self.headers)
+            self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+
+            with tenant_context(self.tenant):
+                self.assertEqual(Group.objects.get(name=self.group.name, tenant=self.tenant).principals.count(), 0)
 
     def test_remove_group_principals_invalid(self):
         """Test that removing a principal returns an error with invalid data format."""
@@ -980,6 +1114,41 @@ class GroupViewsetTests(IdentityRequest):
             new_role = public_default_group.roles().filter(name=self.roleB.name)
             self.assertEqual(len(new_role), 1)
 
+    def test_system_flag_update_on_add_serving_from_public(self):
+        """Test that adding a role to a platform_default group flips the system flag serving from public schema."""
+        with self.settings(SERVE_FROM_PUBLIC_SCHEMA=True):
+            public_tenant = Tenant.objects.get(schema_name="public")
+
+            with tenant_context(public_tenant):
+                defPubGroup = Group.objects.get(system=True)
+                roleB = Role.objects.create(name=self.roleB.name, system=False, tenant=self.tenant)
+
+            url = reverse("group-roles", kwargs={"uuid": defPubGroup.uuid})
+            client = APIClient()
+            test_data = {"roles": [roleB.uuid, self.dummy_role_id]}
+
+            self.assertTrue(defPubGroup.system)
+            self.assertEqual(defPubGroup.roles().count(), 0)
+            response = client.post(url, test_data, format="json", **self.headers)
+
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            with tenant_context(public_tenant):
+                # Default group does not change
+                defPubGroup = Group.objects.get(platform_default=True, system=True, tenant=public_tenant)
+                self.assertEqual(defPubGroup.roles().count(), 0)
+                # There will be a cloned group in public schema
+                cloned_group = Group.objects.get(
+                    name="Custom default access", platform_default=True, system=False, tenant=self.tenant
+                )
+                self.assertEqual(cloned_group.roles().count(), 1)
+
+            with tenant_context(self.tenant):
+                default_group = Group.objects.get(platform_default=True)
+                self.assertFalse(default_group.system)
+                self.assertEqual(default_group.name, "Custom default access")
+                self.assertEqual(default_group.tenant, self.tenant)
+                self.assertEqual(default_group.roles().count(), 1)
+
     def test_system_flag_update_on_remove(self):
         """Test that removing a role from a platform_default group flips the system flag."""
         public_tenant = Tenant.objects.get(schema_name="public")
@@ -1007,6 +1176,48 @@ class GroupViewsetTests(IdentityRequest):
             public_default_group = Group.objects.get(name="Custom default access", tenant=self.tenant)
             new_role = public_default_group.roles().filter(name=self.roleB.name)
             self.assertEqual(len(new_role), 0)
+
+    def test_system_flag_update_on_remove_serving_from_public(self):
+        """Test that removing a role from a platform_default group flips the system flag serving from public schema."""
+        with self.settings(SERVE_FROM_PUBLIC_SCHEMA=True):
+            public_tenant = Tenant.objects.get(schema_name="public")
+
+            with tenant_context(public_tenant):
+                defPubGroup = Group.objects.get(system=True)
+                roleB = Role.objects.create(name=self.roleB.name, system=False, tenant=public_tenant)
+                defPubPolicy = defPubGroup.policies.first()
+                defPubPolicy.roles.add(roleB)
+            with tenant_context(self.tenant):
+                self.defPolicy.roles.add(self.roleB)
+                self.assertTrue(self.defGroup.system)
+                self.assertTrue(self.defGroup.platform_default)
+                self.assertEqual(self.defGroup.roles().filter(name=self.roleB.name).count(), 1)
+
+            url = reverse("group-roles", kwargs={"uuid": defPubGroup.uuid})
+            client = APIClient()
+            url = "{}?roles={}".format(url, roleB.uuid)
+
+            response = client.delete(url, format="json", **self.headers)
+
+            self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+            with tenant_context(public_tenant):
+                # Default group keeps the same
+                defPubGroup.refresh_from_db()
+                self.assertTrue(defPubGroup.system)
+                self.assertEqual(defPubGroup.tenant, public_tenant)
+                self.assertEqual(defPubGroup.roles().count(), 1)
+                # There will be a cloned default group
+                cloned_defPubGroup = Group.objects.get(system=False, platform_default=True, tenant=self.tenant)
+                self.assertEqual(cloned_defPubGroup.roles().count(), 0)
+
+            with tenant_context(self.tenant):
+                # Only one platform default group and it is updated
+                self.assertEqual(Group.objects.filter(platform_default=True).count(), 1)
+                default_group = Group.objects.get(
+                    name="Custom default access", platform_default=True, tenant=self.tenant
+                )
+                new_role = default_group.roles().filter(name=self.roleB.name)
+                self.assertEqual(len(new_role), 0)
 
     def test_add_group_roles_bad_group_guid(self):
         group_url = reverse("group-roles", kwargs={"uuid": "master_exploder"})
@@ -1099,6 +1310,32 @@ class GroupViewsetTests(IdentityRequest):
         self.assertEqual(1, len(group_in_public.policies.all()))
         self.assertEqual(["roleA", "roleB"], list(group_in_public.roles().values_list("name", flat=True)))
 
+    def test_add_group_multiple_roles_success_serving_from_public(self):
+        """Test that adding multiple roles to a group returns successfully in public schema and synced into tenant."""
+        with self.settings(SERVE_FROM_PUBLIC_SCHEMA=True):
+            ######## Create the resource in public ################
+            with tenant_context(Tenant.objects.get(schema_name="public")):
+                roleA = Role.objects.create(name="roleA", system=False, tenant=self.tenant)
+                roleB = Role.objects.create(name="roleB", system=False, tenant=self.tenant)
+                group_in_public = Group.objects.create(name="groupC", tenant=self.tenant)
+            #######################################################
+            with tenant_context(self.tenant):
+                groupC = Group.objects.create(name="groupC", tenant=self.tenant)
+
+            url = reverse("group-roles", kwargs={"uuid": group_in_public.uuid})
+            client = APIClient()
+            test_data = {"roles": [roleA.uuid, roleB.uuid]}
+
+            response = client.post(url, test_data, format="json", **self.headers)
+
+            self.assertCountEqual([roleA, roleB], list(group_in_public.roles()))
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+            # Roles also added to the group in tenant schema
+            with tenant_context(self.tenant):
+                self.assertEqual(1, len(groupC.policies.all()))
+                self.assertEqual(["roleA", "roleB"], list(groupC.roles().values_list("name", flat=True)))
+
     def test_add_group_multiple_roles_invalid(self):
         """Test that adding invalid roles to a group fails the request and does not add any."""
         with tenant_context(self.tenant):
@@ -1173,6 +1410,34 @@ class GroupViewsetTests(IdentityRequest):
         # Roles for the group in public schema also get removed
         with tenant_context(Tenant.objects.get(schema_name="public")):
             self.assertCountEqual([], list(group_public.roles()))
+
+    def test_remove_group_multiple_roles_success_serving_from_public(self):
+        """Test that removing multiple roles from a group returns successfully in public schema and synced into tenant."""
+        with self.settings(SERVE_FROM_PUBLIC_SCHEMA=True):
+            with tenant_context(self.tenant):
+                self.policy.roles.add(self.roleB)
+                self.assertCountEqual([self.role, self.roleB], list(self.group.roles()))
+
+            # Add roles for the group in public schema
+            with tenant_context(Tenant.objects.get(schema_name="public")):
+                group_public = Group.objects.get(name=self.group.name, tenant=self.tenant)
+                policy_public = Policy.objects.create(name="policyA", group=group_public, tenant=self.tenant)
+                roleA_public = Role.objects.create(name="roleA", tenant=self.tenant)
+                roleB_public = Role.objects.create(name="roleB", tenant=self.tenant)
+                policy_public.roles.add(roleA_public, roleB_public)
+
+            url = reverse("group-roles", kwargs={"uuid": group_public.uuid})
+            client = APIClient()
+            url = "{}?roles={},{}".format(url, roleA_public.uuid, roleB_public.uuid)
+            response = client.delete(url, format="json", **self.headers)
+
+            self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+            with tenant_context(Tenant.objects.get(schema_name="public")):
+                self.assertCountEqual([], list(group_public.roles()))
+
+            # Roles for the group in tenant schema also get removed
+            with tenant_context(self.tenant):
+                self.assertCountEqual([], list(self.group.roles()))
 
     def test_remove_group_multiple_roles_invalid(self):
         """Test that removing invalid roles from a group fails the request and does not remove any."""

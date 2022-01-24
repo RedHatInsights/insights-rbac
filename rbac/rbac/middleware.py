@@ -22,7 +22,7 @@ import time
 from json.decoder import JSONDecodeError
 
 from django.conf import settings
-from django.db import connections, connection, transaction
+from django.db import connection, connections, transaction
 from django.http import Http404, HttpResponse
 from django.urls import resolve
 from django.utils.deprecation import MiddlewareMixin

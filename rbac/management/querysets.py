@@ -88,7 +88,10 @@ def get_group_queryset(request):
         principal = get_principal(username, request)
         if principal.cross_account:
             return Group.objects.none()
-        return Group.objects.filter(principals__username__iexact=username, tenant=request.tenant) | Group.platform_default_set()
+        return (
+            Group.objects.filter(principals__username__iexact=username, tenant=request.tenant)
+            | Group.platform_default_set()
+        )
 
     if has_group_all_access(request):
         return get_annotated_groups().filter(tenant=request.tenant) | Group.platform_default_set()
