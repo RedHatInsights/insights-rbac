@@ -15,6 +15,7 @@
 #    along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Queryset helpers for management module."""
+from django.conf import settings
 from django.db.models.aggregates import Count
 from django.urls import reverse
 from django.utils.translation import gettext as _
@@ -81,26 +82,26 @@ def get_group_queryset(request):
     """Obtain the queryset for groups."""
     scope = request.query_params.get(SCOPE_KEY, ACCOUNT_SCOPE)
     if scope != ACCOUNT_SCOPE:
-        return get_object_principal_queryset(request, scope, Group)
+        return filter_queryset_by_tenant(get_object_principal_queryset(request, scope, Group), request.tenant)
 
     username = request.query_params.get("username")
     if username:
         principal = get_principal(username, request)
         if principal.cross_account:
             return Group.objects.none()
-        return Group.objects.filter(principals__username__iexact=username, tenant=request.tenant) | Group.platform_default_set()
+        return filter_queryset_by_tenant(Group.objects.filter(principals__username__iexact=username), request.tenant) | Group.platform_default_set()
 
     if has_group_all_access(request):
-        return get_annotated_groups().filter(tenant=request.tenant) | Group.platform_default_set()
+        return filter_queryset_by_tenant(get_annotated_groups(), request.tenant) | Group.platform_default_set()
 
     access = user_has_perm(request, "group")
 
     if access == "All":
-        return get_annotated_groups().filter(tenant=request.tenant) | Group.platform_default_set()
+        return filter_queryset_by_tenant(get_annotated_groups(), request.tenant) | Group.platform_default_set()
     if access == "None":
         return Group.objects.none()
 
-    return Group.objects.filter(uuid__in=access, tenant=request.tenant) | Group.platform_default_set()
+    return filter_queryset_by_tenant(Group.objects.filter(uuid__in=access), request.tenant) | Group.platform_default_set()
 
 
 def annotate_roles_with_counts(queryset):
@@ -111,7 +112,7 @@ def annotate_roles_with_counts(queryset):
 def get_role_queryset(request):
     """Obtain the queryset for roles."""
     scope = request.query_params.get(SCOPE_KEY, ACCOUNT_SCOPE)
-    base_query = annotate_roles_with_counts(Role.objects.prefetch_related("access"))
+    base_query = annotate_roles_with_counts(filter_queryset_by_tenant(Role.objects.prefetch_related("access"), request.tenant))
 
     if scope != ACCOUNT_SCOPE:
         queryset = get_object_principal_queryset(
@@ -120,6 +121,7 @@ def get_role_queryset(request):
             Role,
             **{"prefetch_lookups_for_ids": "access", "prefetch_lookups_for_groups": "policies__roles"},
         )
+        queryset = filter_queryset_by_tenant(queryset, request.tenant)
         return annotate_roles_with_counts(queryset)
 
     username = request.query_params.get("username")
@@ -133,7 +135,7 @@ def get_role_queryset(request):
                 Role,
                 **{"prefetch_lookups_for_ids": "access", "prefetch_lookups_for_groups": "policies__roles"},
             )
-
+            queryset = filter_queryset_by_tenant(queryset, request.tenant)
             return annotate_roles_with_counts(queryset)
 
     if ENVIRONMENT.get_value("ALLOW_ANY", default=False, cast=bool):
@@ -145,26 +147,26 @@ def get_role_queryset(request):
         return base_query
     if access == "None":
         return Role.objects.none()
-    return annotate_roles_with_counts(Role.objects.filter(uuid__in=access, tenant=request.tenant))
+    return annotate_roles_with_counts(filter_queryset_by_tenant(Role.objects.filter(uuid__in=access), request.tenant))
 
 
 def get_policy_queryset(request):
     """Obtain the queryset for policies."""
     scope = request.query_params.get(SCOPE_KEY, ACCOUNT_SCOPE)
     if scope != ACCOUNT_SCOPE:
-        return get_object_principal_queryset(request, scope, Policy)
+        return filter_queryset_by_tenant(get_object_principal_queryset(request, scope, Policy), request.tenant)
 
     if ENVIRONMENT.get_value("ALLOW_ANY", default=False, cast=bool):
-        return Policy.objects.all()
+        return filter_queryset_by_tenant(Policy.objects.all(), request.tenant)
     if request.user.admin:
-        return Policy.objects.all()
+        return filter_queryset_by_tenant(Policy.objects.all(), request.tenant)
     access = user_has_perm(request, "policy")
 
     if access == "All":
-        return Policy.objects.all()
+        return filter_queryset_by_tenant(Policy.objects.all(), request.tenant)
     if access == "None":
         return Policy.objects.none()
-    return Policy.objects.filter(uuid__in=access, tenant=request.tenant)
+    return filter_queryset_by_tenant(Policy.objects.filter(uuid__in=access), request.tenant)
 
 
 def get_access_queryset(request):
@@ -178,7 +180,7 @@ def get_access_queryset(request):
         raise serializers.ValidationError({key: _(message)})
 
     app = request.query_params.get(APPLICATION_KEY)
-    return get_object_principal_queryset(
+    qs = get_object_principal_queryset(
         request,
         PRINCIPAL_SCOPE,
         Access,
@@ -188,6 +190,7 @@ def get_access_queryset(request):
             "prefetch_lookups_for_groups": "policies__roles__access",
         },
     )
+    return filter_queryset_by_tenant(qs, request.tenant)
 
 
 def get_object_principal_queryset(request, scope, clazz, **kwargs):
@@ -206,3 +209,9 @@ def get_object_principal_queryset(request, scope, clazz, **kwargs):
     principal = get_principal_from_request(request)
     objects = object_principal_func(principal, **kwargs)
     return queryset_by_id(objects, clazz, **kwargs)
+
+
+def filter_queryset_by_tenant(queryset, tenant):
+    if settings.SERVE_FROM_PUBLIC_SCHEMA and tenant:
+        return queryset.filter(tenant=tenant)
+    return queryset
