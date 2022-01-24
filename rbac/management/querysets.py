@@ -89,10 +89,10 @@ def get_group_queryset(request):
         principal = get_principal(username, request)
         if principal.cross_account:
             return Group.objects.none()
-        return filter_queryset_by_tenant(
-            Group.objects.filter(principals__username__iexact=username), request.tenant)
+        return (
+            filter_queryset_by_tenant(Group.objects.filter(principals__username__iexact=username), request.tenant)
             | Group.platform_default_set()
-
+        )
 
     if has_group_all_access(request):
         return filter_queryset_by_tenant(get_annotated_groups(), request.tenant) | Group.platform_default_set()
@@ -104,7 +104,9 @@ def get_group_queryset(request):
     if access == "None":
         return Group.objects.none()
 
-    return filter_queryset_by_tenant(Group.objects.filter(uuid__in=access), request.tenant) | Group.platform_default_set()
+    return (
+        filter_queryset_by_tenant(Group.objects.filter(uuid__in=access), request.tenant) | Group.platform_default_set()
+    )
 
 
 def annotate_roles_with_counts(queryset):
@@ -115,7 +117,9 @@ def annotate_roles_with_counts(queryset):
 def get_role_queryset(request):
     """Obtain the queryset for roles."""
     scope = request.query_params.get(SCOPE_KEY, ACCOUNT_SCOPE)
-    base_query = annotate_roles_with_counts(filter_queryset_by_tenant(Role.objects.prefetch_related("access"), request.tenant))
+    base_query = annotate_roles_with_counts(
+        filter_queryset_by_tenant(Role.objects.prefetch_related("access"), request.tenant)
+    )
 
     if scope != ACCOUNT_SCOPE:
         queryset = get_object_principal_queryset(
