@@ -17,6 +17,7 @@
 """Test the utils module."""
 from tenant_schemas.utils import tenant_context
 
+from api.models import Tenant
 from management.models import Group, Permission, Principal, Policy, Role, Access
 from management.utils import access_for_principal, groups_for_principal, policies_for_principal, roles_for_principal
 from tests.identity_request import IdentityRequest
@@ -28,6 +29,7 @@ class UtilsTests(IdentityRequest):
     def setUp(self):
         """Set up the utils tests."""
         super().setUp()
+        self.public_tenant = Tenant.objects.get(schema_name="public")
 
         with tenant_context(self.tenant):
             # setup principal
@@ -79,23 +81,46 @@ class UtilsTests(IdentityRequest):
         """Test that we get the correct access for a principal."""
         with tenant_context(self.tenant):
             kwargs = {"application": "app"}
-            access = access_for_principal(self.principal, **kwargs)
+            access = access_for_principal(self.principal, self.tenant, **kwargs)
             self.assertCountEqual(access, [self.accessA, self.default_access])
 
     def test_groups_for_principal(self):
         """Test that we get the correct groups for a principal."""
         with tenant_context(self.tenant):
-            groups = groups_for_principal(self.principal)
+            groups = groups_for_principal(self.principal, self.tenant)
             self.assertCountEqual(groups, [self.groupA, self.default_group])
+
+    def test_groups_for_principal_from_public_with_custom_group(self):
+        """Test that we get the correct groups (including custom defaul) for a principal serving from public."""
+        with self.settings(SERVE_FROM_PUBLIC_SCHEMA=True):
+            with tenant_context(self.public_tenant):
+                default_group = Group.objects.create(
+                    name="default group", system=True, platform_default=True, tenant=self.public_tenant
+                )
+                custom_default_group = Group.objects.create(
+                    name="custom default group", system=True, platform_default=True, tenant=self.tenant
+                )
+                groups = groups_for_principal(self.principal, self.tenant)
+                self.assertCountEqual(groups, [custom_default_group])
+
+    def test_groups_for_principal_from_public_without_custom_group(self):
+        """Test that we get the correct groups for a principal serving from public."""
+        with self.settings(SERVE_FROM_PUBLIC_SCHEMA=True):
+            with tenant_context(self.public_tenant):
+                default_group = Group.objects.create(
+                    name="default group", system=True, platform_default=True, tenant=self.public_tenant
+                )
+                groups = groups_for_principal(self.principal, self.tenant)
+                self.assertCountEqual(groups, [default_group])
 
     def test_policies_for_principal(self):
         """Test that we get the correct groups for a principal."""
         with tenant_context(self.tenant):
-            policies = policies_for_principal(self.principal)
+            policies = policies_for_principal(self.principal, self.tenant)
             self.assertCountEqual(policies, [self.policyA, self.default_policy])
 
     def test_roles_for_principal(self):
         """Test that we get the correct groups for a principal."""
         with tenant_context(self.tenant):
-            roles = roles_for_principal(self.principal)
+            roles = roles_for_principal(self.principal, self.tenant)
             self.assertCountEqual(roles, [self.roleA, self.default_role])
