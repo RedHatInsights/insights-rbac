@@ -15,6 +15,7 @@
 #    along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Queryset helpers for management module."""
+from django.conf import settings
 from django.db.models.aggregates import Count
 from django.urls import reverse
 from django.utils.translation import gettext as _
@@ -33,6 +34,7 @@ from management.utils import (
 )
 from rest_framework import permissions, serializers
 
+from api.models import Tenant
 from rbac.env import ENVIRONMENT
 
 SCOPE_KEY = "scope"
@@ -83,27 +85,32 @@ def get_group_queryset(request):
     if scope != ACCOUNT_SCOPE:
         return get_object_principal_queryset(request, scope, Group)
 
+    if settings.SERVE_FROM_PUBLIC_SCHEMA:
+        public_tenant = Tenant.objects.get(schema_name="public")
+        default_group_set = Group.platform_default_set().filter(
+            tenant=request.tenant
+        ) or Group.platform_default_set().filter(tenant=public_tenant)
+    else:
+        default_group_set = Group.platform_default_set()
+
     username = request.query_params.get("username")
     if username:
         principal = get_principal(username, request)
         if principal.cross_account:
             return Group.objects.none()
-        return (
-            Group.objects.filter(principals__username__iexact=username, tenant=request.tenant)
-            | Group.platform_default_set()
-        )
+        return Group.objects.filter(principals__username__iexact=username, tenant=request.tenant) | default_group_set
 
     if has_group_all_access(request):
-        return get_annotated_groups().filter(tenant=request.tenant) | Group.platform_default_set()
+        return get_annotated_groups().filter(tenant=request.tenant) | default_group_set
 
     access = user_has_perm(request, "group")
 
     if access == "All":
-        return get_annotated_groups().filter(tenant=request.tenant) | Group.platform_default_set()
+        return get_annotated_groups().filter(tenant=request.tenant) | default_group_set
     if access == "None":
         return Group.objects.none()
 
-    return Group.objects.filter(uuid__in=access, tenant=request.tenant) | Group.platform_default_set()
+    return Group.objects.filter(uuid__in=access, tenant=request.tenant) | default_group_set
 
 
 def annotate_roles_with_counts(queryset):
@@ -207,5 +214,5 @@ def get_object_principal_queryset(request, scope, clazz, **kwargs):
 
     object_principal_func = PRINCIPAL_QUERYSET_MAP.get(clazz.__name__)
     principal = get_principal_from_request(request)
-    objects = object_principal_func(principal, **kwargs)
+    objects = object_principal_func(principal, request.tenant, **kwargs)
     return queryset_by_id(objects, clazz, **kwargs)
