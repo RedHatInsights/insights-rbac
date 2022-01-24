@@ -113,9 +113,7 @@ def get_group_queryset(request):
     if access == "None":
         return Group.objects.none()
 
-    return (
-        filter_queryset_by_tenant(Group.objects.filter(uuid__in=access), request.tenant) | default_group_set
-    )
+    return filter_queryset_by_tenant(Group.objects.filter(uuid__in=access), request.tenant) | default_group_set
 
 
 def annotate_roles_with_counts(queryset):
