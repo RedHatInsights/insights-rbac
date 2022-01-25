@@ -132,10 +132,11 @@ def tenant_init(request, tenant_schema_name):
         tenant = get_object_or_404(Tenant, schema_name=tenant_schema_name)
         with transaction.atomic():
             with tenant_context(tenant):
-                tenant.create_schema(check_if_exists=True)
-                seed_permissions(tenant=tenant)
-                seed_roles(tenant=tenant)
-                seed_group(tenant=tenant)
+                created = tenant.create_schema(check_if_exists=True)
+                if created is not False:
+                    seed_permissions(tenant=tenant)
+                    seed_roles(tenant=tenant)
+                    seed_group(tenant=tenant)
                 tenant.ready = True
                 tenant.save()
 
