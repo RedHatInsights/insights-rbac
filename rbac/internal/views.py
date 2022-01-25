@@ -97,6 +97,37 @@ def list_unmodified_tenants(request):
     return HttpResponse(json.dumps(payload), content_type="application/json")
 
 
+def list_tenants(request):
+    """List tenant details.
+
+    GET /_private/api/tenant/?ready=<true|false>&limit=<limit>&offset=<offset>
+    """
+    limit = int(request.GET.get("limit", 0))
+    offset = int(request.GET.get("offset", 0))
+    ready = request.GET.get("ready")
+    tenant_qs = Tenant.objects.exclude(schema_name="public").values_list("schema_name", flat=True)
+
+    if limit:
+        tenant_qs = tenant_qs[offset : (limit + offset)]  # noqa: E203
+
+    if ready == "true":
+        tenant_qs = tenant_qs.filter(ready=True)
+    if ready == "false":
+        tenant_qs = tenant_qs.filter(ready=False)
+
+    ready_tenants = tenant_qs.filter(ready=True)
+    not_ready_tenants = tenant_qs.filter(ready=False)
+
+    payload = {
+        "ready_tenants": list(ready_tenants),
+        "ready_tenants_count": len(ready_tenants),
+        "not_ready_tenants": list(not_ready_tenants),
+        "not_ready_tenants_count": len(not_ready_tenants),
+        "total_tenants_count": tenant_qs.count(),
+    }
+    return HttpResponse(json.dumps(payload), content_type="application/json")
+
+
 def tenant_view(request, tenant_schema_name):
     """View method for internal tenant requests.
 

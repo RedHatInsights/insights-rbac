@@ -24,6 +24,7 @@ from .views import trigger_error
 
 urlpatterns = [
     path("api/tenant/unmodified/", views.list_unmodified_tenants),
+    path("api/tenant/", views.list_tenants),
     path("api/tenant/<str:tenant_schema_name>/", views.tenant_view),
     path("api/tenant/<str:tenant_schema_name>/init/", views.tenant_init),
     path("api/migrations/run/", views.run_migrations),
