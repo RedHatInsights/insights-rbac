@@ -27,7 +27,9 @@ from django.db.migrations.recorder import MigrationRecorder
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from management.cache import TenantCache
+from management.group.definer import seed_group
 from management.models import Group, Role
+from management.role.definer import seed_permissions, seed_roles
 from management.tasks import (
     run_migrations_in_worker,
     run_reconcile_tenant_relations_in_worker,
@@ -116,6 +118,29 @@ def tenant_view(request, tenant_schema_name):
                 else:
                     return HttpResponse("Tenant cannot be deleted.", status=400)
     return HttpResponse(f'Invalid method, only "DELETE" is allowed.', status=405)
+
+
+def tenant_init(request, tenant_schema_name):
+    """View method for resolving 'hung' tenants by re-initing them.
+
+    POST /_private/api/tenant/<schema_name>/init/
+    """
+    if request.method == "POST":
+        msg = f"Initializing schema, running migrations/seeds for tenant {tenant_schema_name}."
+        logger.info(msg)
+
+        tenant = get_object_or_404(Tenant, schema_name=tenant_schema_name)
+        with transaction.atomic():
+            with tenant_context(tenant):
+                tenant.create_schema(check_if_exists=True)
+                seed_permissions(tenant=tenant)
+                seed_roles(tenant=tenant)
+                seed_group(tenant=tenant)
+                tenant.ready = True
+                tenant.save()
+
+        return HttpResponse(msg, status=202)
+    return HttpResponse(f'Invalid method, only "POST" is allowed.', status=405)
 
 
 def run_migrations(request):
