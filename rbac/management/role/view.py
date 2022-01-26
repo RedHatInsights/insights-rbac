@@ -33,7 +33,7 @@ from management.models import Permission
 from management.permissions import RoleAccessPermission
 from management.querysets import get_role_queryset
 from management.role.serializer import AccessSerializer, RoleDynamicSerializer, RolePatchSerializer
-from management.utils import get_schema_to_be_synced, validate_uuid
+from management.utils import filter_queryset_by_tenant, get_schema_to_be_synced, validate_uuid
 from rest_framework import mixins, serializers, viewsets
 from rest_framework.decorators import action
 from rest_framework.filters import OrderingFilter
@@ -399,7 +399,7 @@ class RoleViewSet(
         """Return access objects for specified role."""
         validate_uuid(uuid, "role uuid validation")
         try:
-            role = Role.objects.get(uuid=uuid)
+            role = filter_queryset_by_tenant(Role.objects.get(uuid=uuid), request.tenant)
         except (Role.DoesNotExist, ValidationError):
             raise Http404()
 
@@ -449,8 +449,8 @@ class RoleViewSet(
                     error = {key: [_(message)]}
                     raise serializers.ValidationError(error)
 
-                db_permission = Permission.objects.filter(
-                    application=app, resource_type=resource_type, verb=verb
+                db_permission = filter_queryset_by_tenant(
+                    Permission.objects.filter(application=app, resource_type=resource_type, verb=verb), request.tenant
                 ).first()
 
                 if not db_permission:

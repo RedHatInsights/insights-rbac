@@ -25,6 +25,7 @@ from management.role.model import Access, Role
 from management.utils import (
     APPLICATION_KEY,
     access_for_principal,
+    filter_queryset_by_tenant,
     get_principal,
     get_principal_from_request,
     groups_for_principal,
@@ -220,10 +221,3 @@ def get_object_principal_queryset(request, scope, clazz, **kwargs):
     principal = get_principal_from_request(request)
     objects = object_principal_func(principal, request.tenant, **kwargs)
     return filter_queryset_by_tenant(queryset_by_id(objects, clazz, **kwargs), request.tenant)
-
-
-def filter_queryset_by_tenant(queryset, tenant):
-    """Limit queryset by appropriate tenant when serving from public schema."""
-    if settings.SERVE_FROM_PUBLIC_SCHEMA and tenant:
-        return queryset.filter(tenant=tenant)
-    return queryset
