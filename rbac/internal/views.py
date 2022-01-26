@@ -106,13 +106,12 @@ def list_tenants(request):
     ready = request.GET.get("ready")
     tenant_qs = Tenant.objects.exclude(schema_name="public").values_list("schema_name", flat=True)
 
-    if limit:
-        tenant_qs = tenant_qs[offset : (limit + offset)]  # noqa: E203
-
     if ready == "true":
         tenant_qs = tenant_qs.filter(ready=True)
     if ready == "false":
         tenant_qs = tenant_qs.filter(ready=False)
+    if limit:
+        tenant_qs = tenant_qs[offset : (limit + offset)]  # noqa: E203
 
     ready_tenants = tenant_qs.filter(ready=True)
     not_ready_tenants = tenant_qs.filter(ready=False)
