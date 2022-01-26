@@ -294,8 +294,11 @@ def obtain_groups_in(obj, request):
         if settings.SERVE_FROM_PUBLIC_SCHEMA:
             public_tenant = Tenant.objects.get(schema_name="public")
             return (
-                assigned_groups | Group.platform_default_set().filter(tenant=request.tenant)
-                or Group.platform_default_set().filter(tenant=public_tenant)
+                assigned_groups
+                | (
+                    Group.platform_default_set().filter(tenant=request.tenant_schema)
+                    or Group.platform_default_set().filter(tenant=public_tenant)
+                )
             ).distinct()
         else:
             return (assigned_groups | Group.platform_default_set()).distinct()
