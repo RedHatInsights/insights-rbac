@@ -29,6 +29,7 @@ from django.shortcuts import get_object_or_404
 from management.cache import TenantCache
 from management.models import Group, Role
 from management.tasks import (
+    run_init_tenant_in_worker,
     run_migrations_in_worker,
     run_reconcile_tenant_relations_in_worker,
     run_seeds_in_worker,
@@ -95,6 +96,37 @@ def list_unmodified_tenants(request):
     return HttpResponse(json.dumps(payload), content_type="application/json")
 
 
+def list_tenants(request):
+    """List tenant details.
+
+    GET /_private/api/tenant/?ready=<true|false>&limit=<limit>&offset=<offset>
+    """
+    limit = int(request.GET.get("limit", 0))
+    offset = int(request.GET.get("offset", 0))
+    ready = request.GET.get("ready")
+    tenant_qs = Tenant.objects.exclude(schema_name="public").values_list("schema_name", flat=True)
+
+    if limit:
+        tenant_qs = tenant_qs[offset : (limit + offset)]  # noqa: E203
+
+    if ready == "true":
+        tenant_qs = tenant_qs.filter(ready=True)
+    if ready == "false":
+        tenant_qs = tenant_qs.filter(ready=False)
+
+    ready_tenants = tenant_qs.filter(ready=True)
+    not_ready_tenants = tenant_qs.filter(ready=False)
+
+    payload = {
+        "ready_tenants": list(ready_tenants),
+        "ready_tenants_count": len(ready_tenants),
+        "not_ready_tenants": list(not_ready_tenants),
+        "not_ready_tenants_count": len(not_ready_tenants),
+        "total_tenants_count": tenant_qs.count(),
+    }
+    return HttpResponse(json.dumps(payload), content_type="application/json")
+
+
 def tenant_view(request, tenant_schema_name):
     """View method for internal tenant requests.
 
@@ -116,6 +148,19 @@ def tenant_view(request, tenant_schema_name):
                 else:
                     return HttpResponse("Tenant cannot be deleted.", status=400)
     return HttpResponse(f'Invalid method, only "DELETE" is allowed.', status=405)
+
+
+def tenant_init(request, tenant_schema_name):
+    """View method for resolving 'hung' tenants by re-initing them.
+
+    POST /_private/api/tenant/<schema_name>/init/
+    """
+    if request.method == "POST":
+        msg = f"Initializing schema, running migrations/seeds for tenant {tenant_schema_name} in the background."
+        logger.info(msg)
+        run_init_tenant_in_worker.delay(tenant_schema_name)
+        return HttpResponse(msg, status=202)
+    return HttpResponse(f'Invalid method, only "POST" is allowed.', status=405)
 
 
 def run_migrations(request):
