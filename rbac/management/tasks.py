@@ -55,3 +55,9 @@ def run_reconcile_tenant_relations_in_worker(kwargs):
 def run_sync_schemas_in_worker(kwargs):
     """Celery task to sync schemas."""
     call_command("sync_schemas", **kwargs)
+
+
+@shared_task
+def run_init_tenant_in_worker(tenant_schema_name):
+    """Initialize tenant."""
+    call_command("init_tenant", tenant_schema_name)
