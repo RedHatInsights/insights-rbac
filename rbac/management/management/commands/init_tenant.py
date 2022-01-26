@@ -19,10 +19,11 @@ import logging
 
 from django.core.management.base import BaseCommand
 from django.db import transaction
-from tenant_schemas.utils import tenant_context
-from api.models import Tenant
 from management.group.definer import seed_group
 from management.role.definer import seed_permissions, seed_roles
+from tenant_schemas.utils import tenant_context
+
+from api.models import Tenant
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
