@@ -39,7 +39,7 @@ from management.principal.serializer import PrincipalSerializer
 from management.querysets import get_group_queryset, get_object_principal_queryset
 from management.role.model import Role
 from management.role.view import RoleViewSet
-from management.utils import get_schema_to_be_synced, validate_and_get_key, validate_uuid
+from management.utils import filter_queryset_by_tenant, get_schema_to_be_synced, validate_and_get_key, validate_uuid
 from rest_framework import mixins, serializers, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.filters import OrderingFilter
@@ -356,7 +356,7 @@ class GroupViewSet(
 
         for username in principals:
             try:
-                principal = Principal.objects.get(username__iexact=username)
+                principal = Principal.objects.get(username__iexact=username, tenant=tenant)
             except Principal.DoesNotExist:
                 logger.info("No principal %s found for account %s.", username, account)
             if principal:
@@ -665,4 +665,5 @@ class GroupViewSet(
 
         # Exclude the roles in the group
         roles_for_group = group.roles().values("uuid")
+        roles = filter_queryset_by_tenant(roles, request.tenant)
         return roles.exclude(uuid__in=roles_for_group)

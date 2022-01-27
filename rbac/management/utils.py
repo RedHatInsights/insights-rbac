@@ -163,6 +163,13 @@ def queryset_by_id(objects, clazz, **kwargs):
     return query
 
 
+def filter_queryset_by_tenant(queryset, tenant):
+    """Limit queryset by appropriate tenant when serving from public schema."""
+    if settings.SERVE_FROM_PUBLIC_SCHEMA and tenant:
+        return queryset.filter(tenant=tenant)
+    return queryset
+
+
 def validate_and_get_key(params, query_key, valid_values, default_value=None, required=True):
     """Validate the key."""
     value = params.get(query_key, default_value)
