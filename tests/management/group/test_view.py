@@ -715,7 +715,7 @@ class GroupViewsetTests(IdentityRequest):
                 self.group.principals.add(test_user)
 
             with tenant_context(public_tenant):
-                test_user = Principal.objects.create(username="test_user", tenant=public_tenant)
+                test_user = Principal.objects.create(username="test_user", tenant=self.tenant)
                 group_public = Group.objects.get(name=self.group.name, tenant=self.tenant)
                 group_public.principals.add(test_user)
 
