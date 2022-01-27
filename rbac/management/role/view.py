@@ -449,8 +449,8 @@ class RoleViewSet(
                     error = {key: [_(message)]}
                     raise serializers.ValidationError(error)
 
-                db_permission = filter_queryset_by_tenant(
-                    Permission.objects.filter(application=app, resource_type=resource_type, verb=verb), request.tenant
+                db_permission = Permission.objects.filter(
+                    application=app, resource_type=resource_type, verb=verb
                 ).first()
 
                 if not db_permission:
