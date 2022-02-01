@@ -19,6 +19,7 @@ import json
 import os
 from uuid import UUID
 
+from django.conf import settings
 from django.core.exceptions import PermissionDenied
 from django.utils.translation import gettext as _
 from management.models import Access, Group, Policy, Principal, Role
@@ -107,12 +108,18 @@ def access_for_roles(roles, param_applications):
     return set(access)
 
 
-def groups_for_principal(principal, **kwargs):
+def groups_for_principal(principal, tenant, **kwargs):
     """Gathers all groups for a principal, including the default."""
     if principal.cross_account:
         return set()
     assigned_group_set = principal.group.all()
-    platform_default_group_set = Group.platform_default_set()
+    if settings.SERVE_FROM_PUBLIC_SCHEMA:
+        public_tenant = Tenant.objects.get(schema_name="public")
+        platform_default_group_set = Group.platform_default_set().filter(
+            tenant=tenant
+        ) or Group.platform_default_set().filter(tenant=public_tenant)
+    else:
+        platform_default_group_set = Group.platform_default_set()
     prefetch_lookups = kwargs.get("prefetch_lookups_for_groups")
 
     if prefetch_lookups:
@@ -122,24 +129,24 @@ def groups_for_principal(principal, **kwargs):
     return set(assigned_group_set | platform_default_group_set)
 
 
-def policies_for_principal(principal, **kwargs):
+def policies_for_principal(principal, tenant, **kwargs):
     """Gathers all policies for a principal."""
-    groups = groups_for_principal(principal, **kwargs)
+    groups = groups_for_principal(principal, tenant, **kwargs)
     return policies_for_groups(groups)
 
 
-def roles_for_principal(principal, **kwargs):
+def roles_for_principal(principal, tenant, **kwargs):
     """Gathers all roles for a principal."""
     if principal.cross_account:
         return roles_for_cross_account_principal(principal)
-    policies = policies_for_principal(principal, **kwargs)
+    policies = policies_for_principal(principal, tenant, **kwargs)
     return roles_for_policies(policies)
 
 
-def access_for_principal(principal, **kwargs):
+def access_for_principal(principal, tenant, **kwargs):
     """Gathers all access for a principal for an application."""
     application = kwargs.get(APPLICATION_KEY)
-    roles = roles_for_principal(principal, **kwargs)
+    roles = roles_for_principal(principal, tenant, **kwargs)
     access = access_for_roles(roles, application)
     return access
 
@@ -154,6 +161,13 @@ def queryset_by_id(objects, clazz, **kwargs):
         query = query.prefetch_related(prefetch_lookups)
 
     return query
+
+
+def filter_queryset_by_tenant(queryset, tenant):
+    """Limit queryset by appropriate tenant when serving from public schema."""
+    if settings.SERVE_FROM_PUBLIC_SCHEMA and tenant:
+        return queryset.filter(tenant=tenant)
+    return queryset
 
 
 def validate_and_get_key(params, query_key, valid_values, default_value=None, required=True):
@@ -218,10 +232,26 @@ def schema_handler(tenant_schema, include_public=True):
     if include_public:
         public_schema = Tenant.objects.get(schema_name="public")
         schemas.append(public_schema)
-    schemas.append(tenant_schema)
+
+    # If serving from public schema, schema handler should deal with pulic schema last so
+    # that it will continue to be use public schema
+    if settings.SERVE_FROM_PUBLIC_SCHEMA:
+        schemas.insert(0, tenant_schema)
+    else:
+        schemas.append(tenant_schema)
+
     for schema in schemas:
         with tenant_context(schema):
             yield tenant_schema
+
+
+def get_schema_to_be_synced(tenant):
+    """Return the tenant schema based on the flag."""
+    if settings.SERVE_FROM_PUBLIC_SCHEMA:
+        tenant_schema = tenant
+    else:
+        tenant_schema = Tenant.objects.get(schema_name="public")
+    return tenant_schema
 
 
 def clear_pk(entry):
