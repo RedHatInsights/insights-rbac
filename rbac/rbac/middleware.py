@@ -22,7 +22,7 @@ import time
 from json.decoder import JSONDecodeError
 
 from django.conf import settings
-from django.db import connections, transaction
+from django.db import connection, connections, transaction
 from django.http import Http404, HttpResponse
 from django.urls import resolve
 from django.utils.deprecation import MiddlewareMixin
@@ -125,11 +125,16 @@ class IdentityHeaderMiddleware(BaseTenantMiddleware):
             "principal": {"read": [], "write": []},
         }
 
-        with tenant_context(tenant):
+        if settings.SERVE_FROM_PUBLIC_SCHEMA:
+            schema_tenant = Tenant.objects.get(schema_name="public")
+        else:
+            schema_tenant = tenant
+
+        with tenant_context(schema_tenant):
             try:  # pylint: disable=R1702
                 principal = Principal.objects.get(username__iexact=username)
                 kwargs = {APPLICATION_KEY: "rbac"}
-                access_list = access_for_principal(principal, **kwargs)
+                access_list = access_for_principal(principal, tenant, **kwargs)
                 for access_item in access_list:  # pylint: disable=too-many-nested-blocks
                     resource_type = access_item.permission.resource_type
                     operation = access_item.permission.verb
@@ -197,7 +202,6 @@ class IdentityHeaderMiddleware(BaseTenantMiddleware):
                 except Tenant.DoesNotExist:
                     request.user = user
                     tenant = self.get_tenant(model=None, hostname=None, request=request)
-
                 user.access = IdentityHeaderMiddleware._get_access_for_user(user.username, tenant)
             # Cross account request check
             internal = json_rh_auth.get("identity", {}).get("internal", {})
@@ -230,6 +234,9 @@ class IdentityHeaderMiddleware(BaseTenantMiddleware):
 
             super().process_request(request)
             # We are now in the database context of the tenant
+            if settings.SERVE_FROM_PUBLIC_SCHEMA:
+                connection.set_schema_to_public()
+
             assert request.tenant
 
     def process_response(self, request, response):  # pylint: disable=no-self-use
