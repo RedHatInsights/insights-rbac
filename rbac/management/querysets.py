@@ -125,9 +125,11 @@ def annotate_roles_with_counts(queryset):
 def get_role_queryset(request):
     """Obtain the queryset for roles."""
     scope = request.query_params.get(SCOPE_KEY, ACCOUNT_SCOPE)
-    base_query = annotate_roles_with_counts(
-        filter_queryset_by_tenant(Role.objects.prefetch_related("access"), request.tenant)
-    )
+    base_query = annotate_roles_with_counts(Role.objects.prefetch_related("access"))
+
+    if settings.SERVE_FROM_PUBLIC_SCHEMA:
+        public_tenant = Tenant.objects.get(schema_name="public")
+        base_query = base_query.filter(tenant__in=[request.tenant, public_tenant])
 
     if scope != ACCOUNT_SCOPE:
         queryset = get_object_principal_queryset(
