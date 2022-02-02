@@ -297,7 +297,7 @@ def obtain_groups_in(obj, request):
             qs = (
                 assigned_groups
                 | (
-                    Group.platform_default_set().filter(tenant=request.tenant_schema)
+                    Group.platform_default_set().filter(tenant=request.tenant)
                     or Group.platform_default_set().filter(tenant=public_tenant)
                 )
             ).distinct()
