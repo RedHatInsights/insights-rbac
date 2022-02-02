@@ -71,8 +71,8 @@ objects:
             cpu: ${CPU_LIMIT}
             memory: ${MEMORY_LIMIT}
           requests:
-            cpu: 200m
-            memory: 512Mi
+            cpu: ${CPU_REQUEST}
+            memory: ${MEMORY_REQUEST}
         env:
           - name: SENTRY_DSN
             valueFrom:
@@ -1760,6 +1760,10 @@ parameters:
 - description: ClowdEnv Name
   name: ENV_NAME
   required: true
+- description: Initial amount of memory the Django container will request.
+  displayName: Memory Request
+  name: MEMORY_REQUEST
+  value: 512Gi
 - description: Maximum amount of memory the Django container can use.
   displayName: Memory Limit
   name: MEMORY_LIMIT
@@ -1767,7 +1771,7 @@ parameters:
 - description: Initial amount of cpu the Django container will request.
   displayName: CPU Request
   name: CPU_REQUEST
-  value: 250m
+  value: 200m
 - description: Maximum amount of cpu the Django container can use.
   displayName: CPU Limit
   name: CPU_LIMIT
