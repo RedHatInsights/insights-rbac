@@ -1763,7 +1763,7 @@ parameters:
 - description: Initial amount of memory the Django container will request.
   displayName: Memory Request
   name: MEMORY_REQUEST
-  value: 512Gi
+  value: 512Mi
 - description: Maximum amount of memory the Django container can use.
   displayName: Memory Limit
   name: MEMORY_LIMIT
