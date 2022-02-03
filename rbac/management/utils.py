@@ -199,6 +199,14 @@ def validate_uuid(uuid, key="UUID Validation"):
         raise serializers.ValidationError({key: _(message)})
 
 
+def validate_group_name(name):
+    """Verify name provided is valid."""
+    if name and name.lower() in ["custom default access", "default access"]:
+        key = "Group name Validation"
+        message = f"{name} is reserved, please use another name."
+        raise serializers.ValidationError({key: _(message)})
+
+
 def validate_limit_and_offset(query_params):
     """Limit and offset should not be negative number."""
     if (int(query_params.get("limit", 10)) < 0) | (int(query_params.get("offset", 0)) < 0):

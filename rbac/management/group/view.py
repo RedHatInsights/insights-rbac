@@ -39,7 +39,13 @@ from management.principal.serializer import PrincipalSerializer
 from management.querysets import get_group_queryset, get_object_principal_queryset
 from management.role.model import Role
 from management.role.view import RoleViewSet
-from management.utils import filter_queryset_by_tenant, get_schema_to_be_synced, validate_and_get_key, validate_uuid
+from management.utils import (
+    filter_queryset_by_tenant,
+    get_schema_to_be_synced,
+    validate_and_get_key,
+    validate_group_name,
+    validate_uuid,
+)
 from rest_framework import mixins, serializers, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.filters import OrderingFilter
@@ -182,6 +188,7 @@ class GroupViewSet(
                 "principals": []
             }
         """
+        validate_group_name(request.data.get("name"))
         return super().create(request=request, args=args, kwargs=kwargs)
 
     def list(self, request, *args, **kwargs):

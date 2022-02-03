@@ -211,6 +211,21 @@ class GroupViewsetTests(IdentityRequest):
             response = client.post(url, test_data, format="json", **self.headers)
             self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
+    def test_create_group_with_reserved_name(self):
+        """Test that creating a group with reserved name is not allowed."""
+
+        # create a group
+        url = reverse("group-list")
+        client = APIClient()
+
+        test_data = {"name": "Custom default access"}
+        response = client.post(url, test_data, format="json", **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+        test_data = {"name": "default access"}
+        response = client.post(url, test_data, format="json", **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
     def test_group_filter_by_any_role_name_in_a_list_success(self):
         """Test default behaviour that filter groups by any role name in a list success."""
         url = "{}?role_names={},{}".format(reverse("group-list"), "Rolea", "RoleB")
