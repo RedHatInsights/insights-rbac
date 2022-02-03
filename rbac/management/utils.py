@@ -201,7 +201,7 @@ def validate_uuid(uuid, key="UUID Validation"):
 
 def validate_group_name(name):
     """Verify name provided is valid."""
-    if name in ["Custom default access", "Default access"]:
+    if name and name.lower() in ["custom default access", "default access"]:
         key = "Group name Validation"
         message = f"{name} is reserved, please use another name."
         raise serializers.ValidationError({key: _(message)})
