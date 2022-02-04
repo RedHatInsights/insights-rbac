@@ -802,6 +802,24 @@
                 "policyCount"
               ]
             }
+          },
+          {
+            "name": "platform_default",
+            "in": "query",
+            "description": "An optional flag to return either platform default or non-platform default groups.",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "system",
+            "in": "query",
+            "description": "An optional flag to return either system or non-system groups.",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
           }
         ],
         "responses": {
