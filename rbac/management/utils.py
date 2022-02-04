@@ -65,7 +65,7 @@ def get_principal(username, request, verify_principal=True):
     # if not call BOP to check if user exist in the account.
     account = request.user.account
     try:
-        principal = Principal.objects.get(username__iexact=username)
+        principal = Principal.objects.get(username__iexact=username, tenant=request.tenant)
     except Principal.DoesNotExist:
         if verify_principal:
             proxy = PrincipalProxy()
