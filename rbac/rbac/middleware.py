@@ -132,7 +132,7 @@ class IdentityHeaderMiddleware(BaseTenantMiddleware):
 
         with tenant_context(schema_tenant):
             try:  # pylint: disable=R1702
-                principal = Principal.objects.get(username__iexact=username)
+                principal = Principal.objects.get(username__iexact=username, tenant=tenant)
                 kwargs = {APPLICATION_KEY: "rbac"}
                 access_list = access_for_principal(principal, tenant, **kwargs)
                 for access_item in access_list:  # pylint: disable=too-many-nested-blocks
