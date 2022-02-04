@@ -65,7 +65,7 @@ def get_principal(username, request, verify_principal=True):
     # if not call BOP to check if user exist in the account.
     account = request.user.account
     try:
-        principal = Principal.objects.get(username__iexact=username)
+        principal = Principal.objects.get(username__iexact=username, tenant=request.tenant)
     except Principal.DoesNotExist:
         if verify_principal:
             proxy = PrincipalProxy()
@@ -196,6 +196,14 @@ def validate_uuid(uuid, key="UUID Validation"):
     except ValueError:
         key = key
         message = f"{uuid} is not a valid UUID."
+        raise serializers.ValidationError({key: _(message)})
+
+
+def validate_group_name(name):
+    """Verify name provided is valid."""
+    if name and name.lower() in ["custom default access", "default access"]:
+        key = "Group name Validation"
+        message = f"{name} is reserved, please use another name."
         raise serializers.ValidationError({key: _(message)})
 
 
