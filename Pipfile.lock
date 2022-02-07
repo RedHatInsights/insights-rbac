@@ -25,10 +25,10 @@
         },
         "app-common-python": {
             "hashes": [
-                "sha256:7bb4af48e783c5c0da08454a51b4bf7832af7e8d31910a17a4fcca2cc3833bf1"
+                "sha256:70111d6607fd940896d5aeaae494d1479cdac715044eb389e7ad2c34e7a3e0a0",
+                "sha256:afa8275df4768900fec5e23bd81bce18b92700426524d08df712b22134468826"
             ],
-            "index": "pypi",
-            "version": "==0.1.10"
+            "version": "==0.2.0"
         },
         "backports.entry-points-selectable": {
             "hashes": [
