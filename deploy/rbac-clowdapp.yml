@@ -1481,6 +1481,42 @@ objects:
           }
         ]
       }
+    ros.json: |
+      {
+        "roles": [
+          {
+            "name": "Resource Optimization administrator",
+            "description": "Perform any available operation against any Resource Optimization resource.",
+            "system": true,
+            "platform_default": true,
+            "version": 1,
+            "access": [
+              {
+                "permission": "ros:*:*"
+              },
+              {
+                "permission": "inventory:*:read"
+              }
+            ]
+          },
+          {
+            "name": "Resource Optimization user",
+            "description": "A Resource Optimization user role that grants read only permission.",
+            "system": true,
+            "platform_default": true,
+            "version": 1,
+            "access": [
+              {
+                "permission": "ros:*:read"
+              },
+              {
+                "permission": "inventory:*:read"
+              }
+            ]
+          }
+        ]
+      }
+
     policies.json: |
       {
         "roles": [
@@ -1680,6 +1716,10 @@ objects:
           "remediation": ["read", "write", "execute"],
           "*": ["*"]
       }
+    ros.json: |
+      {
+          "*": ["read", "*"]
+      }
     sources.json: |
       {
           "*": ["*"]
@@ -1849,7 +1889,7 @@ parameters:
   value: 'False'
 - description: Application allow list for role creation in RBAC
   name: ROLE_CREATE_ALLOW_LIST
-  value: cost-management,remediations,inventory,drift,policies,advisor,catalog,approval,vulnerability,compliance,automation-analytics,notifications,patch,integrations
+  value: cost-management,remediations,inventory,drift,policies,advisor,catalog,approval,vulnerability,compliance,automation-analytics,notifications,patch,integrations,ros
 - description: Timestamp expiration allowance on destructive actions through the internal
     RBAC API
   name: RBAC_DESTRUCTIVE_ENABLED_UNTIL
