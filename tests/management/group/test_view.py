@@ -211,6 +211,21 @@ class GroupViewsetTests(IdentityRequest):
             response = client.post(url, test_data, format="json", **self.headers)
             self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
+    def test_create_group_with_reserved_name(self):
+        """Test that creating a group with reserved name is not allowed."""
+
+        # create a group
+        url = reverse("group-list")
+        client = APIClient()
+
+        test_data = {"name": "Custom default access"}
+        response = client.post(url, test_data, format="json", **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+        test_data = {"name": "default access"}
+        response = client.post(url, test_data, format="json", **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
     def test_group_filter_by_any_role_name_in_a_list_success(self):
         """Test default behaviour that filter groups by any role name in a list success."""
         url = "{}?role_names={},{}".format(reverse("group-list"), "Rolea", "RoleB")
@@ -391,6 +406,61 @@ class GroupViewsetTests(IdentityRequest):
             self.assertIn(keyname, response.data)
         self.assertEqual(response.data.get("data"), [])
         self.assertEqual(len(response.data.get("data")), 0)
+
+    def test_filter_group_list_by_system_true(self):
+        """Test that we can filter a list of groups by system flag true."""
+        with tenant_context(self.tenant):
+            system_group = Group.objects.create(system=True, tenant=self.tenant)
+        url = f"{reverse('group-list')}?system=true"
+        client = APIClient()
+        response = client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        response_group_uuids = [group["uuid"] for group in response.data.get("data")]
+        self.assertCountEqual(response_group_uuids, [str(self.defGroup.uuid), str(system_group.uuid)])
+
+    def test_filter_group_list_by_system_false(self):
+        """Test that we can filter a list of groups by system flag false."""
+        url = f"{reverse('group-list')}?system=false"
+        client = APIClient()
+        response = client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data.get("data")), 4)
+        response_group_uuids = [group["uuid"] for group in response.data.get("data")]
+        self.assertCountEqual(
+            response_group_uuids,
+            [str(self.group.uuid), str(self.groupB.uuid), str(self.emptyGroup.uuid), str(self.groupMultiRole.uuid)],
+        )
+
+    def test_filter_group_list_by_platform_default_true(self):
+        """Test that we can filter a list of groups by platform_default flag true."""
+        with tenant_context(self.tenant):
+            default_group = Group.objects.create(
+                name="Platform Default", platform_default=True, system=False, tenant=self.tenant
+            )
+
+        url = f"{reverse('group-list')}?platform_default=true"
+        client = APIClient()
+        response = client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        response_group_uuids = [group["uuid"] for group in response.data.get("data")]
+        self.assertCountEqual(response_group_uuids, [str(self.defGroup.uuid), str(default_group.uuid)])
+
+    def test_filter_group_list_by_platform_default_false(self):
+        """Test that we can filter a list of groups by platform_default flag false."""
+        url = f"{reverse('group-list')}?platform_default=false"
+        client = APIClient()
+        response = client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data.get("data")), 4)
+        response_group_uuids = [group["uuid"] for group in response.data.get("data")]
+        self.assertCountEqual(
+            response_group_uuids,
+            [str(self.group.uuid), str(self.groupB.uuid), str(self.emptyGroup.uuid), str(self.groupMultiRole.uuid)],
+        )
 
     @patch(
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",

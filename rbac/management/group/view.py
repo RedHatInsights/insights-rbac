@@ -36,10 +36,9 @@ from management.permissions import GroupAccessPermission
 from management.principal.model import Principal
 from management.principal.proxy import PrincipalProxy
 from management.principal.serializer import PrincipalSerializer
-from management.querysets import get_group_queryset, get_object_principal_queryset
-from management.role.model import Role
+from management.querysets import get_group_queryset, get_role_queryset
 from management.role.view import RoleViewSet
-from management.utils import filter_queryset_by_tenant, get_schema_to_be_synced, validate_and_get_key, validate_uuid
+from management.utils import get_schema_to_be_synced, validate_and_get_key, validate_group_name, validate_uuid
 from rest_framework import mixins, serializers, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.filters import OrderingFilter
@@ -96,6 +95,8 @@ class GroupFilter(CommonFilters):
     name = filters.CharFilter(field_name="name", method="name_filter")
     role_names = filters.CharFilter(field_name="role_names", method="roles_filter")
     uuid = filters.CharFilter(field_name="uuid", method="uuid_filter")
+    system = filters.BooleanFilter(field_name="system")
+    platform_default = filters.BooleanFilter(field_name="platform_default")
 
     class Meta:
         model = Group
@@ -182,6 +183,7 @@ class GroupViewSet(
                 "principals": []
             }
         """
+        validate_group_name(request.data.get("name"))
         return super().create(request=request, args=args, kwargs=kwargs)
 
     def list(self, request, *args, **kwargs):
@@ -655,15 +657,9 @@ class GroupViewSet(
 
     def obtain_roles_with_exclusion(self, request, group):
         """Obtain the queryset for roles based on scope."""
-        scope = request.query_params.get("scope", "account")
         # Get roles in principal or account scope
-        roles = (
-            get_object_principal_queryset(request, scope, Role)
-            if scope == "principal"
-            else Role.objects.all().prefetch_related("access")
-        )
+        roles = get_role_queryset(request)
 
         # Exclude the roles in the group
         roles_for_group = group.roles().values("uuid")
-        roles = filter_queryset_by_tenant(roles, request.tenant)
         return roles.exclude(uuid__in=roles_for_group)

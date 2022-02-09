@@ -159,7 +159,7 @@ def tenant_init(request, tenant_schema_name):
         logger.info(msg)
         run_init_tenant_in_worker.delay(tenant_schema_name)
         return HttpResponse(msg, status=202)
-    return HttpResponse(f'Invalid method, only "POST" is allowed.', status=405)
+    return HttpResponse('Invalid method, only "POST" is allowed.', status=405)
 
 
 def run_migrations(request):
