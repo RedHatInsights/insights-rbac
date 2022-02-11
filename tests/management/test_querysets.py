@@ -138,7 +138,6 @@ class QuerySetTest(TestCase):
 
         user = Mock(spec=User, admin=False, username="test_user2", access={})
         req = Mock(user=user, method="GET", tenant=self.tenant, query_params={"username": "test_user2"})
-        req = Mock(user=user, method="GET", query_params={"username": "test_user2"})
         with self.assertRaises(PermissionDenied):
             get_role_queryset(req)
 
