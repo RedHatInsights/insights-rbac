@@ -11,6 +11,10 @@ class RbacConsumer(AsyncWebsocketConsumer):
     #
     # async_to_sync(channel_layer.group_send)("account_1234", {"type": "tam_update","message": "pong!"})
 
+    @staticmethod
+    def channel_group_name(account_number):
+        return f"account_{account_number}"
+
     async def connect(self):
         # MOCK THE IDENTITY
         # from base64 import b64encode
@@ -19,7 +23,7 @@ class RbacConsumer(AsyncWebsocketConsumer):
 
         # account_numbers = ["1234", "5678"]
         # account_number = random.choice(account_numbers)
-        # connection_message = f"**** SETTIING UP CONNECTION FOR ACCOUNT: {account_number} ****"
+        # connection_message = f"**** SETTING UP CONNECTION FOR ACCOUNT: {account_number} ****"
         # print(connection_message)
         # raw_identity_header = {
         #     "identity": {
@@ -46,8 +50,8 @@ class RbacConsumer(AsyncWebsocketConsumer):
         decoded_identity_header = b64decode(identity_header)
         json_identity_header = json.loads(decoded_identity_header)
         self.account_number = json_identity_header.get("identity", {})["account_number"]
-        self.account_group_name = f"account_{self.account_number}"
-        await self.channel_layer.group_add(self.account_group_name, self.channel_name)
+        self.channel_group_name = RbacConsumer.channel_group_name(self.account_number)
+        await self.channel_layer.group_add(self.channel_group_name, self.channel_name)
         await self.accept()
 
         # SEND MOCK CONNECTION CONFIRMATION
@@ -55,7 +59,7 @@ class RbacConsumer(AsyncWebsocketConsumer):
         # SEND MOCK CONNECTION CONFIRMATION
 
     async def disconnect(self, close_code):
-        await self.channel_layer.group_discard(self.account_group_name, self.channel_name)
+        await self.channel_layer.group_discard(self.channel_group_name, self.channel_name)
 
     async def receive(self, text_data):
         pass

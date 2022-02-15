@@ -19,9 +19,13 @@
 import datetime
 from uuid import uuid4
 
+from asgiref.sync import async_to_sync
+from channels.layers import get_channel_layer
 from django.db import models
+from django.db.models import signals
 from django.utils import timezone
 from management.rbac_fields import AutoDateTimeField
+from management.consumers import RbacConsumer
 from rest_framework.serializers import ValidationError
 
 
@@ -78,3 +82,13 @@ class RequestsRoles(models.Model):
     role = models.ForeignKey(
         "management.Role", on_delete=models.CASCADE, to_field="uuid", related_name="cross_account_requests"
     )
+
+
+def cross_account_request_created_handler(sender=None, instance=None, using=None, **kwargs):
+    async_to_sync(get_channel_layer().group_send)(
+        RbacConsumer.channel_group_name(instance.target_account),
+        {"type": "tam_update", "message": "cross account request was created."},
+    )
+
+
+signals.post_save.connect(cross_account_request_created_handler, sender=CrossAccountRequest)
