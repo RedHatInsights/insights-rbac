@@ -123,6 +123,7 @@ class IdentityHeaderMiddleware(BaseTenantMiddleware):
             "role": {"read": [], "write": []},
             "policy": {"read": [], "write": []},
             "principal": {"read": [], "write": []},
+            "permission": {"read": [], "write": []},
         }
 
         if settings.SERVE_FROM_PUBLIC_SCHEMA:
@@ -143,7 +144,7 @@ class IdentityHeaderMiddleware(BaseTenantMiddleware):
                         operation = "write"
                     res_list = ["*"]
                     if resource_type == "*":
-                        for resource in ("group", "role", "policy", "principal"):
+                        for resource in ("group", "role", "policy", "principal", "permission"):
                             if (
                                 resource in access.keys()
                                 and operation in access.get(resource, {}).keys()  # noqa: W504

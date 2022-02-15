@@ -22,7 +22,7 @@ from django_filters import rest_framework as filters
 from management.filters import CommonFilters
 from management.models import Access, Permission, Role
 from management.permission.serializer import PermissionSerializer
-from management.permissions.admin_access import AdminAccessPermission
+from management.permissions.permission_access import PermissionAccessPermission
 from management.utils import validate_and_get_key, validate_uuid
 from rest_framework import mixins, viewsets
 from rest_framework.decorators import action
@@ -80,7 +80,7 @@ class PermissionViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
     """
 
     queryset = Permission.objects.all()
-    permission_classes = (AdminAccessPermission,)
+    permission_classes = (PermissionAccessPermission,)
     filter_backends = (filters.DjangoFilterBackend, OrderingFilter)
     serializer_class = PermissionSerializer
     filterset_class = PermissionFilter
