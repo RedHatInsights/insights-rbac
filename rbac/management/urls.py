@@ -17,6 +17,8 @@
 from django.conf.urls import include, url
 from management.views import AccessView, GroupViewSet, PermissionViewSet, PolicyViewSet, PrincipalView, RoleViewSet
 from rest_framework.routers import DefaultRouter
+from django.urls import re_path
+from . import consumers
 
 
 ROUTER = DefaultRouter()
@@ -31,3 +33,5 @@ urlpatterns = [
     url(r"^access/$", AccessView.as_view(), name="access"),
     url(r"^", include(ROUTER.urls)),
 ]
+
+websocket_urlpatterns = [re_path(r"ws/tam-access/$", consumers.RbacConsumer.as_asgi())]
