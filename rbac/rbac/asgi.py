@@ -29,11 +29,11 @@ import django
 from channels.auth import AuthMiddlewareStack
 from channels.http import AsgiHandler
 from channels.routing import ProtocolTypeRouter, URLRouter
-import management.urls
+import rbac.urls
 
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "rbac.settings")
 django.setup()
 
 application = ProtocolTypeRouter(
-    {"http": AsgiHandler(), "websocket": AuthMiddlewareStack(URLRouter(management.urls.websocket_urlpatterns))}
+    {"http": AsgiHandler(), "websocket": AuthMiddlewareStack(URLRouter(rbac.urls.websocket_urlpatterns))}
 )
