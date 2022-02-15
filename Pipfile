@@ -32,6 +32,8 @@ sentry-sdk = "==0.20.3"
 tox = "==3.23.0"
 psycopg2 = "==2.8.6"
 psycopg2-binary = "==2.8.6"
+channels = "*"
+channels-redis = "*"
 
 [dev-packages]
 astroid = "==2.2.5"
