@@ -1,10 +1,9 @@
 import json
-from asgiref.sync import async_to_sync
-from channels.generic.websocket import WebsocketConsumer
+from channels.generic.websocket import AsyncWebsocketConsumer
 from base64 import b64decode
 
 
-class RbacConsumer(WebsocketConsumer):
+class RbacConsumer(AsyncWebsocketConsumer):
     # Execute from within code
     # from channels.layers import get_channel_layer
     # from asgiref.sync import async_to_sync
@@ -12,7 +11,7 @@ class RbacConsumer(WebsocketConsumer):
     #
     # async_to_sync(channel_layer.group_send)("account_1234", {"type": "tam_update","message": "pong!"})
 
-    def connect(self):
+    async def connect(self):
         # MOCK THE IDENTITY
         # from base64 import b64encode
         # from json import dumps as json_dumps
@@ -48,19 +47,19 @@ class RbacConsumer(WebsocketConsumer):
         json_identity_header = json.loads(decoded_identity_header)
         self.account_number = json_identity_header.get("identity", {})["account_number"]
         self.account_group_name = f"account_{self.account_number}"
-        async_to_sync(self.channel_layer.group_add)(self.account_group_name, self.channel_name)
-        self.accept()
+        await self.channel_layer.group_add(self.account_group_name, self.channel_name)
+        await self.accept()
 
         # SEND MOCK CONNECTION CONFIRMATION
-        # self.send(text_data=json.dumps({"message": connection_message}))
+        # await self.send(text_data=json.dumps({"message": connection_message}))
         # SEND MOCK CONNECTION CONFIRMATION
 
-    def disconnect(self, close_code):
-        async_to_sync(self.channel_layer.group_discard)(self.account_group_name, self.channel_name)
+    async def disconnect(self, close_code):
+        await self.channel_layer.group_discard(self.account_group_name, self.channel_name)
 
-    def receive(self, text_data):
+    async def receive(self, text_data):
         pass
 
-    def tam_update(self, event):
+    async def tam_update(self, event):
         message = event["message"]
-        self.send(text_data=json.dumps({"message": message}))
+        await self.send(text_data=json.dumps({"message": message}))
