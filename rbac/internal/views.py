@@ -104,7 +104,7 @@ def list_tenants(request):
     limit = int(request.GET.get("limit", 0))
     offset = int(request.GET.get("offset", 0))
     ready = request.GET.get("ready")
-    tenant_qs = Tenant.objects.exclude(schema_name="public").values_list("schema_name", flat=True)
+    tenant_qs = Tenant.objects.exclude(schema_name="public").values_list("id", "schema_name")
 
     if ready == "true":
         tenant_qs = tenant_qs.filter(ready=True)
