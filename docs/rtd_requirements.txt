@@ -18,7 +18,7 @@ django-prometheus==1.0.15
 django-tenant-schemas==1.9.0
 djangorestframework==3.12.4
 djangorestframework-csv==2.1.0
-docutils==0.15.2
+docutils==0.18.1
 ecs-logging==1.0.2
 filelock==3.1.0
 gunicorn==20.1.0
