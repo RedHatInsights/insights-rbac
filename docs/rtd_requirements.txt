@@ -5,7 +5,7 @@ backports.entry-points-selectable==1.1.0
 billiard==3.6.4.0
 boto3==1.18.49
 botocore==1.21.49
-celery==4.3.0
+celery==5.2.3
 certifi==2021.5.30
 charset-normalizer==2.0.6
 distlib==0.3.3
