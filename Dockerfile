@@ -39,6 +39,7 @@ USER root
 
 RUN yum module reset nodejs -y
 RUN yum install @nodejs:14 -y
+RUN yum install screen -y
 
 # Copy the S2I scripts from the specific language image to $STI_SCRIPTS_PATH.
 COPY openshift/s2i/bin $STI_SCRIPTS_PATH
