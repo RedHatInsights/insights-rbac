@@ -20,7 +20,7 @@ djangorestframework==3.12.4
 djangorestframework-csv==2.1.0
 docutils==0.15.2
 ecs-logging==1.0.2
-filelock==3.1.0
+filelock==3.6.0
 gunicorn==20.1.0
 idna==3.2
 importlib-metadata==4.8.1
