@@ -29,7 +29,7 @@ Jinja2==2.11.3
 jmespath==0.10.0
 kombu==4.6.11
 MarkupSafe==2.0.1
-packaging==21.0
+packaging==21.3
 platformdirs==2.4.0
 pluggy==1.0.0
 prometheus-client==0.7.1
