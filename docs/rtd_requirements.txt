@@ -46,7 +46,7 @@ sentry-sdk==0.20.3
 six==1.16.0
 sqlparse==0.4.2
 toml==0.10.2
-tox==3.23.0
+tox==3.24.5
 typing-extensions==3.10.0.2
 unicodecsv==0.14.1
 urllib3==1.26.6
