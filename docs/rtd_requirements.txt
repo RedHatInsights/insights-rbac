@@ -30,7 +30,7 @@ jmespath==0.10.0
 kombu==4.6.11
 MarkupSafe==2.0.1
 packaging==21.0
-platformdirs==2.4.0
+platformdirs==2.5.1
 pluggy==1.0.0
 prometheus-client==0.7.1
 psycopg2==2.8.6
