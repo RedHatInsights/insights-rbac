@@ -18,7 +18,6 @@
 """Handler for system defined group."""
 import logging
 
-from django.conf import settings
 from django.db import transaction
 from django.db.models import Q
 from django.db.models.query import QuerySet
@@ -65,17 +64,15 @@ def set_system_flag_before_update(group, tenant):
     if group.system:
         # No matter serving from tenant or public, use same strategy:
         # update group in tenant, clone into public schema
-        with tenant_context(tenant):
-            group = Group.objects.get(system=True)
-            group.name = "Custom default access"
-            group.system = False
-            group.save()
-            cloned_group = clone_default_group_in_public_schema(group, tenant)
-        if settings.SERVE_FROM_PUBLIC_SCHEMA:
-            return cloned_group
+        group = Group.objects.get(system=True)
+        group.name = "Custom default access"
+        group.system = False
+        group.tenant = tenant
+        group.save()
     return group
 
 
+# NOT USED ANY MORE
 def clone_default_group_in_public_schema(group, tenant):
     """Clone the default group for a tenant into the public schema."""
     tenant_default_policy = group.policies.get(system=True)
@@ -97,7 +94,7 @@ def clone_default_group_in_public_schema(group, tenant):
         return group
 
 
-def add_roles(group, roles_or_role_ids, tenant, user=None, replace=False, duplicate_in_public=False):
+def add_roles(group, roles_or_role_ids, tenant, user=None, replace=False):
     """Process list of roles and add them to the group."""
     if not isinstance(roles_or_role_ids, QuerySet):
         # If given an iterable of UUIDs, get the corresponding objects
@@ -107,7 +104,7 @@ def add_roles(group, roles_or_role_ids, tenant, user=None, replace=False, duplic
     group_name = group.name
     role_names = list(roles.values_list("name", flat=True))
 
-    for tenant_schema in schema_handler(tenant, include_public=duplicate_in_public):
+    for tenant_schema in schema_handler(tenant):
         group, created = Group.objects.get_or_create(name=group_name, tenant=tenant)
         system_policy_name = "System Policy for Group {}".format(group.uuid)
         system_policy, system_policy_created = Policy.objects.update_or_create(
