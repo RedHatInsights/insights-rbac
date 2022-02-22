@@ -62,8 +62,6 @@ def seed_group(tenant):
 def set_system_flag_before_update(group, tenant):
     """Update system flag on default groups."""
     if group.system:
-        # No matter serving from tenant or public, use same strategy:
-        # update group in tenant, clone into public schema
         group = Group.objects.get(system=True)
         group.name = "Custom default access"
         group.system = False
