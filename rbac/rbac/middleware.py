@@ -18,18 +18,15 @@
 """Custom RBAC Middleware."""
 import binascii
 import logging
-import time
 from json.decoder import JSONDecodeError
 
 from django.conf import settings
-from django.db import connection, connections, transaction
+from django.db import connection, connections
 from django.http import Http404, HttpResponse
 from django.urls import resolve
 from django.utils.deprecation import MiddlewareMixin
 from management.cache import TenantCache
-from management.group.definer import seed_group  # noqa: I100, I201
 from management.models import Principal
-from management.role.definer import seed_permissions, seed_roles
 from management.utils import APPLICATION_KEY, access_for_principal, validate_psk
 from prometheus_client import Counter
 from tenant_schemas.middleware import BaseTenantMiddleware
@@ -85,23 +82,7 @@ class IdentityHeaderMiddleware(BaseTenantMiddleware):
                 except Tenant.DoesNotExist:
                     raise Http404()
             else:
-                tenant, created = Tenant.objects.get_or_create(schema_name=tenant_schema)
-                if created:
-                    try:
-                        with transaction.atomic():
-                            tenant.create_schema(check_if_exists=True)
-                            seed_permissions(tenant=tenant)
-                            seed_roles(tenant=tenant)
-                            seed_group(tenant=tenant)
-                            tenant.ready = True
-                            tenant.save()
-                    except Exception as e:
-                        tenant.delete()
-                        raise e
-                else:
-                    while not tenant.ready:
-                        time.sleep(0.5)
-                        tenant.refresh_from_db()
+                tenant, created = Tenant.objects.get_or_create(schema_name=tenant_schema, defaults={"ready": True})
             TENANTS.save_tenant(tenant)
         return tenant
 
