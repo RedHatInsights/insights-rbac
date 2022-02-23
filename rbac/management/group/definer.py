@@ -26,7 +26,7 @@ from django.utils.translation import gettext as _
 from management.group.model import Group
 from management.policy.model import Policy
 from management.role.model import Role
-from management.utils import clear_pk, schema_handler
+from management.utils import clear_pk
 from rest_framework import serializers
 from tenant_schemas.utils import tenant_context
 
@@ -99,30 +99,29 @@ def add_roles(group, roles_or_role_ids, tenant, user=None, replace=False):
     group_name = group.name
     role_names = list(roles.values_list("name", flat=True))
 
-    for tenant_schema in schema_handler(tenant):
-        group, created = Group.objects.get_or_create(name=group_name, tenant=tenant)
-        system_policy_name = "System Policy for Group {}".format(group.uuid)
-        system_policy, system_policy_created = Policy.objects.update_or_create(
-            system=True, group=group, name=system_policy_name, defaults={"tenant": tenant}
-        )
+    group, created = Group.objects.get_or_create(name=group_name, tenant=tenant)
+    system_policy_name = "System Policy for Group {}".format(group.uuid)
+    system_policy, system_policy_created = Policy.objects.update_or_create(
+        system=True, group=group, name=system_policy_name, defaults={"tenant": tenant}
+    )
 
-        if system_policy_created:
-            logger.info(f"Created new system policy for tenant {tenant_schema.schema_name}.")
-        else:
-            if replace:
-                system_policy.roles.clear()
+    if system_policy_created:
+        logger.info(f"Created new system policy for tenant {tenant.schema_name}.")
+    else:
+        if replace:
+            system_policy.roles.clear()
 
-        roles = Role.objects.filter(
-            Q(tenant=tenant) | Q(tenant=Tenant.objects.get(schema_name="public")), name__in=role_names
-        )
-        for role in roles:
-            accesses = role.access.all()
-            for access in accesses:
-                if access.permission_application() == "rbac" and user and not user.admin:
-                    key = "add-roles"
-                    message = f"Non-admin users cannot add RBAC role {role.display_name} to groups."
-                    raise serializers.ValidationError({key: _(message)})
-            system_policy.roles.add(role)
+    roles = Role.objects.filter(
+        Q(tenant=tenant) | Q(tenant=Tenant.objects.get(schema_name="public")), name__in=role_names
+    )
+    for role in roles:
+        accesses = role.access.all()
+        for access in accesses:
+            if access.permission_application() == "rbac" and user and not user.admin:
+                key = "add-roles"
+                message = f"Non-admin users cannot add RBAC role {role.display_name} to groups."
+                raise serializers.ValidationError({key: _(message)})
+        system_policy.roles.add(role)
 
 
 def remove_roles(group, role_ids, tenant):
@@ -130,8 +129,7 @@ def remove_roles(group, role_ids, tenant):
     roles = Role.objects.filter(uuid__in=role_ids)
     role_names = list(roles.values_list("name", flat=True))
 
-    for tenant_schema in schema_handler(tenant):
-        group = Group.objects.get(name=group.name, tenant=tenant)
-        roles = group.roles().filter(name__in=role_names)
-        for policy in group.policies.all():
-            policy.roles.remove(*roles)
+    group = Group.objects.get(name=group.name, tenant=tenant)
+    roles = group.roles().filter(name__in=role_names)
+    for policy in group.policies.all():
+        policy.roles.remove(*roles)

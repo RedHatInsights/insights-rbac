@@ -20,7 +20,7 @@ from django.conf import settings
 from django.utils.translation import gettext as _
 from management.group.model import Group
 from management.serializer_override_mixin import SerializerCreateOverrideMixin
-from management.utils import filter_queryset_by_tenant, get_principal_from_request, schema_handler
+from management.utils import filter_queryset_by_tenant, get_principal_from_request
 from rest_framework import serializers
 
 from api.models import Tenant
@@ -128,9 +128,9 @@ class RoleSerializer(serializers.ModelSerializer):
         description = validated_data.pop("description", None)
         access_list = validated_data.pop("access")
         tenant = self.context["request"].tenant
-        for tenant_schema in schema_handler(tenant):
-            role = Role.objects.create(name=name, description=description, display_name=display_name, tenant=tenant)
-            create_access_for_role(role, access_list, tenant)
+
+        role = Role.objects.create(name=name, description=description, display_name=display_name, tenant=tenant)
+        create_access_for_role(role, access_list, tenant)
 
         return role
 
@@ -141,10 +141,9 @@ class RoleSerializer(serializers.ModelSerializer):
         role_name = instance.name
         update_data = validate_role_update(instance, validated_data)
 
-        for tenant_schema in schema_handler(tenant):
-            instance = update_role(role_name, update_data, tenant)
+        instance = update_role(role_name, update_data, tenant)
 
-            create_access_for_role(instance, access_list, tenant)
+        create_access_for_role(instance, access_list, tenant)
 
         return instance
 
@@ -269,8 +268,7 @@ class RolePatchSerializer(RoleSerializer):
         role_name = instance.name
         update_data = validate_role_update(instance, validated_data)
 
-        for tenant_schema in schema_handler(tenant):
-            instance = update_role(role_name, update_data, tenant, clear_access=False)
+        instance = update_role(role_name, update_data, tenant, clear_access=False)
         return instance
 
 
