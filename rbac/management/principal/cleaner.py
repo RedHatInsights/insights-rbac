@@ -21,7 +21,6 @@ import logging
 from management.principal.model import Principal
 from management.principal.proxy import PrincipalProxy
 from rest_framework import status
-from tenant_schemas.utils import tenant_context
 
 from api.models import Tenant
 
@@ -32,42 +31,37 @@ proxy = PrincipalProxy()  # pylint: disable=invalid-name
 
 def clean_tenant_principals(tenant):
     """Check if all the principals in the tenant exist, remove non-existent principals."""
-    with tenant_context(tenant):
-        removed_principals = []
-        principals = list(Principal.objects.all())
-        logger.info("Running clean up on %d principals for tenant %s.", len(principals), tenant.schema_name)
-        for principal in principals:
-            if principal.cross_account:
-                continue
-            logger.debug("Checking for username %s for tenant %s.", principal.username, tenant.schema_name)
-            resp = proxy.request_filtered_principals([principal.username])
-            status_code = resp.get("status_code")
-            data = resp.get("data")
-            if status_code == status.HTTP_200_OK and data:
-                logger.debug(
-                    "Username %s found for tenant %s, no change needed.", principal.username, tenant.schema_name
-                )
-            elif status_code == status.HTTP_200_OK and not data:
-                removed_principals.append(principal.username)
-                principal.delete()
-                logger.info(
-                    "Username %s not found for tenant %s, principal removed.", principal.username, tenant.schema_name
-                )
-            else:
-                logger.warn(
-                    "Unknown status %d when checking username %s" " for tenant %s, no change needed.",
-                    status_code,
-                    principal.username,
-                    tenant.schema_name,
-                )
-        with tenant_context(Tenant.objects.get(schema_name="public")):
-            Principal.objects.filter(username__in=removed_principals, tenant=tenant).delete()
-        logger.info(
-            "Completed clean up of %d principals for tenant %s, %d removed.",
-            len(principals),
-            tenant.schema_name,
-            len(removed_principals),
-        )
+    removed_principals = []
+    principals = list(Principal.objects.filter(tenant=tenant))
+    logger.info("Running clean up on %d principals for tenant %s.", len(principals), tenant.schema_name)
+    for principal in principals:
+        if principal.cross_account:
+            continue
+        logger.debug("Checking for username %s for tenant %s.", principal.username, tenant.schema_name)
+        resp = proxy.request_filtered_principals([principal.username])
+        status_code = resp.get("status_code")
+        data = resp.get("data")
+        if status_code == status.HTTP_200_OK and data:
+            logger.debug("Username %s found for tenant %s, no change needed.", principal.username, tenant.schema_name)
+        elif status_code == status.HTTP_200_OK and not data:
+            removed_principals.append(principal.username)
+            principal.delete()
+            logger.info(
+                "Username %s not found for tenant %s, principal removed.", principal.username, tenant.schema_name
+            )
+        else:
+            logger.warn(
+                "Unknown status %d when checking username %s" " for tenant %s, no change needed.",
+                status_code,
+                principal.username,
+                tenant.schema_name,
+            )
+    logger.info(
+        "Completed clean up of %d principals for tenant %s, %d removed.",
+        len(principals),
+        tenant.schema_name,
+        len(removed_principals),
+    )
 
 
 def clean_tenants_principals():
