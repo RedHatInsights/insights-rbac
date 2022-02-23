@@ -44,6 +44,7 @@ class GroupViewsetTests(IdentityRequest):
 
         self.dummy_role_id = uuid4()
 
+        self.public_tenant = Tenant.objects.get(schema_name="public")
         self.principal = Principal(username=self.user_data["username"], tenant=self.tenant)
         self.principal.save()
         self.principalB = Principal(username="mock_user", tenant=self.tenant)
@@ -62,11 +63,11 @@ class GroupViewsetTests(IdentityRequest):
         self.group.principals.add(self.principal, self.principalB)
         self.group.save()
 
-        self.defGroup = Group(name="groupDef", platform_default=True, system=True, tenant=self.tenant)
+        self.defGroup = Group(name="groupDef", platform_default=True, system=True, tenant=self.public_tenant)
         self.defGroup.save()
         self.defGroup.principals.add(self.principal)
         self.defGroup.save()
-        self.defPolicy = Policy(name="defPolicy", system=True, tenant=self.tenant, group=self.defGroup)
+        self.defPolicy = Policy(name="defPolicy", system=True, tenant=self.public_tenant, group=self.defGroup)
         self.defPolicy.save()
 
         self.emptyGroup = Group(name="groupE", tenant=self.tenant)
@@ -396,7 +397,8 @@ class GroupViewsetTests(IdentityRequest):
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         response_group_uuids = [group["uuid"] for group in response.data.get("data")]
-        self.assertCountEqual(response_group_uuids, [str(self.defGroup.uuid), str(default_group.uuid)])
+        # Tenant default group will be returned instead of the public one
+        self.assertCountEqual(response_group_uuids, [str(default_group.uuid)])
 
     def test_filter_group_list_by_platform_default_false(self):
         """Test that we can filter a list of groups by platform_default flag false."""
@@ -977,39 +979,65 @@ class GroupViewsetTests(IdentityRequest):
 
     def test_system_flag_update_on_add(self):
         """Test that adding a role to a platform_default group flips the system flag."""
-        public_tenant = Tenant.objects.get(schema_name="public")
-
         url = reverse("group-roles", kwargs={"uuid": self.defGroup.uuid})
         client = APIClient()
         test_data = {"roles": [self.roleB.uuid, self.dummy_role_id]}
 
+        default_role = Role.objects.create(
+            name="default_role",
+            description="A default role for a group.",
+            platform_default=True,
+            system=True,
+            tenant=self.public_tenant,
+        )
+        self.defGroup.policies.first().roles.add(default_role)
         self.assertTrue(self.defGroup.system)
-        self.assertEqual(self.defGroup.roles().count(), 0)
-        response = client.post(url, test_data, format="json", **self.headers)
         self.assertEqual(self.defGroup.roles().count(), 1)
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        response = client.post(url, test_data, format="json", **self.headers)
+
+        # Original platform default role does not change
         self.defGroup.refresh_from_db()
-        self.assertEqual(self.defGroup.name, "Custom default access")
-        self.assertFalse(self.defGroup.system)
+        self.assertEqual(self.defGroup.roles().count(), 1)
+        self.assertTrue(self.defGroup.system)
+        self.assertEqual(self.defGroup.tenant, self.public_tenant)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        # New platform default role for tenant created
+        custom_default_group = Group.objects.get(platform_default=True, tenant=self.tenant)
+        self.assertEqual(custom_default_group.name, "Custom default access")
+        self.assertFalse(custom_default_group.system)
+        self.assertEqual(custom_default_group.tenant, self.tenant)
+        self.assertEqual(custom_default_group.roles().count(), 2)
 
     def test_system_flag_update_on_remove(self):
         """Test that removing a role from a platform_default group flips the system flag."""
-        public_tenant = Tenant.objects.get(schema_name="public")
+        default_role = Role.objects.create(
+            name="default_role",
+            description="A default role for a group.",
+            platform_default=True,
+            system=True,
+            tenant=self.public_tenant,
+        )
+        self.defGroup.policies.first().roles.add(default_role)
+        self.assertTrue(self.defGroup.system)
 
         url = reverse("group-roles", kwargs={"uuid": self.defGroup.uuid})
         client = APIClient()
-        url = "{}?roles={}".format(url, self.roleB.uuid)
-
-        self.policy.roles.add(self.roleB)
-        self.policy.save()
-
-        self.defGroup.policies.add(self.policy)
-        self.assertTrue(self.defGroup.system)
+        url = "{}?roles={}".format(url, default_role.uuid)
         response = client.delete(url, format="json", **self.headers)
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
         self.defGroup.refresh_from_db()
-        self.assertEqual(self.defGroup.name, "Custom default access")
-        self.assertFalse(self.defGroup.system)
+        self.assertEqual(self.defGroup.name, "groupDef")
+        self.assertTrue(self.defGroup.system)
+        self.assertTrue(self.defGroup.tenant, self.tenant)
+        self.assertTrue(self.defGroup.roles(), 1)
+
+        # New platform default role for tenant created
+        custom_default_group = Group.objects.get(platform_default=True, tenant=self.tenant)
+        self.assertEqual(custom_default_group.name, "Custom default access")
+        self.assertFalse(custom_default_group.system)
+        self.assertEqual(custom_default_group.tenant, self.tenant)
+        self.assertEqual(custom_default_group.roles().count(), 0)
 
     def test_add_group_roles_bad_group_guid(self):
         group_url = reverse("group-roles", kwargs={"uuid": "master_exploder"})

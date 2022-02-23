@@ -17,6 +17,7 @@
 
 """Handler for system defined group."""
 import logging
+from uuid import uuid4
 
 from django.db import transaction
 from django.db.models import Q
@@ -62,34 +63,30 @@ def seed_group(tenant):
 def set_system_flag_before_update(group, tenant):
     """Update system flag on default groups."""
     if group.system:
-        group = Group.objects.get(system=True)
-        group.name = "Custom default access"
-        group.system = False
-        group.tenant = tenant
-        group.save()
+        group = clone_default_group_in_public_schema(group, tenant)
     return group
 
 
-# NOT USED ANY MORE
 def clone_default_group_in_public_schema(group, tenant):
     """Clone the default group for a tenant into the public schema."""
     tenant_default_policy = group.policies.get(system=True)
-    public_tenant = Tenant.objects.get(schema_name="public")
+    group.name = "Custom default access"
+    group.system = False
+    group.tenant = tenant
+    group.uuid = uuid4()
     clear_pk(group)
     clear_pk(tenant_default_policy)
-    with tenant_context(public_tenant):
-        if Group.objects.filter(name=group.name, platform_default=group.platform_default, tenant=tenant):
-            return
+    tenant_default_policy.uuid = uuid4()
+    tenant_default_policy.name = "System Policy for Group {}".format(group.uuid)
+    if Group.objects.filter(name=group.name, platform_default=group.platform_default, tenant=tenant):
+        return
+    public_default_roles = Role.objects.filter(platform_default=True)
 
-        public_default_roles = (
-            Group.objects.get(platform_default=True, tenant=public_tenant).policies.get(system=True).roles.all()
-        )
-
-        group.save()
-        tenant_default_policy.group = group
-        tenant_default_policy.save()
-        tenant_default_policy.roles.set(public_default_roles)
-        return group
+    group.save()
+    tenant_default_policy.group = group
+    tenant_default_policy.save()
+    tenant_default_policy.roles.set(public_default_roles)
+    return group
 
 
 def add_roles(group, roles_or_role_ids, tenant, user=None, replace=False):
