@@ -244,7 +244,18 @@ class InternalViewsetTests(IdentityRequest):
     def test_run_seeds_with_defaults(self, seed_mock):
         """Test that we can trigger seeds with defaults."""
         response = self.client.post(f"/_private/api/seeds/run/", **self.request.META)
-        seed_mock.assert_called_once_with({})
+        seed_mock.assert_called_once_with({"schema_list": None})
+        self.assertEqual(response.status_code, status.HTTP_202_ACCEPTED)
+        self.assertEqual(response.content.decode(), "Seeds are running in a background worker.")
+
+    @patch("management.tasks.run_seeds_in_worker.delay")
+    def test_run_seeds_for_schema(self, seed_mock):
+        """Test that we can trigger seeds for a schema."""
+        schemas = ["1234", "5678"]
+        response = self.client.post(
+            f"/_private/api/seeds/run/", {"schemas": schemas}, **self.request.META, format="json"
+        )
+        seed_mock.assert_called_once_with({"schema_list": schemas})
         self.assertEqual(response.status_code, status.HTTP_202_ACCEPTED)
         self.assertEqual(response.content.decode(), "Seeds are running in a background worker.")
 
@@ -252,7 +263,7 @@ class InternalViewsetTests(IdentityRequest):
     def test_run_seeds_with_options(self, seed_mock):
         """Test that we can trigger seeds with options."""
         response = self.client.post(f"/_private/api/seeds/run/?seed_types=roles,groups", **self.request.META)
-        seed_mock.assert_called_once_with({"roles": True, "groups": True})
+        seed_mock.assert_called_once_with({"roles": True, "groups": True, "schema_list": None})
         self.assertEqual(response.status_code, status.HTTP_202_ACCEPTED)
         self.assertEqual(response.content.decode(), "Seeds are running in a background worker.")
 
