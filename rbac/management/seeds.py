@@ -34,17 +34,17 @@ def on_complete(completed_log_message, tenant, future):
     logger.info(completed_log_message)
 
 
-def role_seeding(schema_list):
+def role_seeding(schema_list=None):
     """Execute role seeding."""
     run_seeds("role", schema_list)
 
 
-def group_seeding(schema_list):
+def group_seeding(schema_list=None):
     """Execute group seeding."""
     run_seeds("group", schema_list)
 
 
-def permission_seeding(schema_list):
+def permission_seeding(schema_list=None):
     """Execute permission seeding."""
     run_seeds("permission", schema_list)
 
