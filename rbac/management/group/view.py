@@ -38,12 +38,11 @@ from management.principal.proxy import PrincipalProxy
 from management.principal.serializer import PrincipalSerializer
 from management.querysets import get_group_queryset, get_role_queryset
 from management.role.view import RoleViewSet
-from management.utils import get_schema_to_be_synced, validate_and_get_key, validate_group_name, validate_uuid
+from management.utils import validate_and_get_key, validate_group_name, validate_uuid
 from rest_framework import mixins, serializers, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.filters import OrderingFilter
 from rest_framework.response import Response
-from tenant_schemas.utils import tenant_context
 
 from api.models import Tenant
 
@@ -287,9 +286,6 @@ class GroupViewSet(
         """
         validate_uuid(kwargs.get("uuid"), "group uuid validation")
         self.protect_default_groups("delete")
-        group_name = Group.objects.get(uuid=kwargs.get("uuid")).name
-        with tenant_context(get_schema_to_be_synced(request.tenant)):
-            Group.objects.filter(name=group_name, tenant=request.tenant).delete()
         return super().destroy(request=request, args=args, kwargs=kwargs)
 
     def update(self, request, *args, **kwargs):
@@ -316,19 +312,11 @@ class GroupViewSet(
         """
         validate_uuid(kwargs.get("uuid"), "group uuid validation")
         self.protect_default_groups("update")
-        group_name = Group.objects.get(uuid=kwargs.get("uuid")).name
-        with tenant_context(get_schema_to_be_synced(request.tenant)):
-            group_in_public, _ = Group.objects.update_or_create(
-                name=group_name, tenant=request.tenant, defaults=request.data
-            )
         return super().update(request=request, args=args, kwargs=kwargs)
 
     def add_principals(self, group, principals, account):
         """Process list of principals and add them to the group."""
         tenant = self.request.tenant
-        group_name = group.name
-        with tenant_context(get_schema_to_be_synced(tenant)):
-            group_in_another_schema = Group.objects.get(name=group_name, tenant=tenant)
 
         users = [principal.get("username") for principal in principals]
         resp = self.proxy.request_filtered_principals(users, account, limit=len(users))
@@ -342,19 +330,11 @@ class GroupViewSet(
                 principal = Principal.objects.create(username=username, tenant=tenant)
                 logger.info("Created new principal %s for account_id %s.", username, account)
             group.principals.add(principal)
-            with tenant_context(get_schema_to_be_synced(tenant)):
-                principal_in_another_schema, _ = Principal.objects.get_or_create(username=username, tenant=tenant)
-                group_in_another_schema.principals.add(principal_in_another_schema)
         return group
 
     def remove_principals(self, group, principals, account):
         """Process list of principals and remove them from the group."""
         tenant = Tenant.objects.get(schema_name=f"acct{account}")
-        # Remove from another schema.
-        with tenant_context(get_schema_to_be_synced(tenant)):
-            principals_in_another_schema = Principal.objects.filter(username__in=principals, tenant=tenant)
-            group_in_another_schema = Group.objects.get(name=group.name, tenant=tenant)
-            group_in_another_schema.principals.remove(*principals_in_another_schema)
 
         for username in principals:
             try:
@@ -585,7 +565,7 @@ class GroupViewSet(
             if serializer.is_valid(raise_exception=True):
                 roles = request.data.pop(ROLES_KEY, [])
             group = set_system_flag_before_update(group, request.tenant)
-            add_roles(group, roles, request.tenant, user=request.user, duplicate_in_public=True)
+            add_roles(group, roles, request.tenant, user=request.user)
             response_data = GroupRoleSerializerIn(group)
         elif request.method == "GET":
             serialized_roles = self.obtain_roles(request, group)

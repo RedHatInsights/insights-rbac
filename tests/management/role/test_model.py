@@ -30,33 +30,28 @@ class RoleModelTests(IdentityRequest):
         """Set up the group model tests."""
         super().setUp()
 
-        with tenant_context(self.tenant):
-            self.roleA = Role.objects.create(name="roleA", tenant=self.tenant)
-            self.roleB = Role.objects.create(name="roleB", system=True, tenant=self.tenant)
+        self.roleA = Role.objects.create(name="roleA", tenant=self.tenant)
+        self.roleB = Role.objects.create(name="roleB", system=True, tenant=self.tenant)
 
     def tearDown(self):
         """Tear down group model tests."""
-        with tenant_context(self.tenant):
-            Role.objects.all().delete()
+        Role.objects.all().delete()
 
     def test_display_name_for_new_roles(self):
         """Test that newly created roles inherit display_name."""
-        with tenant_context(self.tenant):
-            self.assertEqual(self.roleA.name, "roleA")
-            self.assertEqual(self.roleA.display_name, "roleA")
+        self.assertEqual(self.roleA.name, "roleA")
+        self.assertEqual(self.roleA.display_name, "roleA")
 
     def test_display_name_for_updated_roles(self):
         """Test that existing display_name is maintained on role name update."""
-        with tenant_context(self.tenant):
-            self.roleA.name = "ARole"
-            self.roleA.save()
-            self.assertEqual(self.roleA.name, "ARole")
-            self.assertEqual(self.roleA.display_name, "roleA")
+        self.roleA.name = "ARole"
+        self.roleA.save()
+        self.assertEqual(self.roleA.name, "ARole")
+        self.assertEqual(self.roleA.display_name, "roleA")
 
     def test_display_name_updateable(self):
         """Test that display_name can be updated successfully."""
-        with tenant_context(self.tenant):
-            self.roleA.display_name = "ARole"
-            self.roleA.save()
-            self.assertEqual(self.roleA.name, "roleA")
-            self.assertEqual(self.roleA.display_name, "ARole")
+        self.roleA.display_name = "ARole"
+        self.roleA.save()
+        self.assertEqual(self.roleA.name, "roleA")
+        self.assertEqual(self.roleA.display_name, "ARole")

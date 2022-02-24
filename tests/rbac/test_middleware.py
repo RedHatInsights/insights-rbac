@@ -334,7 +334,8 @@ class AccessHandlingTest(TestCase):
             cls.tenant.save(verbosity=0)
             cls.tenant.create_schema()
 
-        connection.set_tenant(cls.tenant)
+        public_tenant = Tenant.objects.get(schema_name="public")
+        connection.set_tenant(public_tenant)
 
     @classmethod
     def tearDownClass(cls):

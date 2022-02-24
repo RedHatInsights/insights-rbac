@@ -45,32 +45,30 @@ class PermissionViewsetTests(IdentityRequest):
 
         self.display_fields = {"application", "resource_type", "verb", "permission"}
 
-        with tenant_context(self.tenant):
-            self.permissionA = Permission.objects.create(permission="rbac:roles:read", tenant=self.tenant)
-            self.permissionB = Permission.objects.create(permission="rbac:*:*", tenant=self.tenant)
-            self.permissionC = Permission.objects.create(permission="acme:*:*", tenant=self.tenant)
-            self.permissionD = Permission.objects.create(permission="acme:*:write", tenant=self.tenant)
-            self.permissionE = Permission.objects.create(permission="*:*:*", tenant=self.tenant)
-            self.permissionF = Permission.objects.create(permission="*:bar:*", tenant=self.tenant)
-            self.permissionG = Permission.objects.create(permission="*:*:baz", tenant=self.tenant)
-            self.permissionH = Permission.objects.create(permission="*:bar:baz", tenant=self.tenant)
-            self.permissionI = Permission.objects.create(
-                permission="foo:bar:*", description="Description test.", tenant=self.tenant
-            )
-            self.permissionI.permissions.add(self.permissionA)
-            self.permissionJ = Permission.objects.create(permission="cost-management:*:baz", tenant=self.tenant)
+        self.permissionA = Permission.objects.create(permission="rbac:roles:read", tenant=self.tenant)
+        self.permissionB = Permission.objects.create(permission="rbac:*:*", tenant=self.tenant)
+        self.permissionC = Permission.objects.create(permission="acme:*:*", tenant=self.tenant)
+        self.permissionD = Permission.objects.create(permission="acme:*:write", tenant=self.tenant)
+        self.permissionE = Permission.objects.create(permission="*:*:*", tenant=self.tenant)
+        self.permissionF = Permission.objects.create(permission="*:bar:*", tenant=self.tenant)
+        self.permissionG = Permission.objects.create(permission="*:*:baz", tenant=self.tenant)
+        self.permissionH = Permission.objects.create(permission="*:bar:baz", tenant=self.tenant)
+        self.permissionI = Permission.objects.create(
+            permission="foo:bar:*", description="Description test.", tenant=self.tenant
+        )
+        self.permissionI.permissions.add(self.permissionA)
+        self.permissionJ = Permission.objects.create(permission="cost-management:*:baz", tenant=self.tenant)
 
-            self.roleA = Role.objects.create(name="roleA", tenant=self.tenant)
-            self.roleB = Role.objects.create(name="roleB", tenant=self.tenant)
+        self.roleA = Role.objects.create(name="roleA", tenant=self.tenant)
+        self.roleB = Role.objects.create(name="roleB", tenant=self.tenant)
 
-            self.accessA = Access.objects.create(permission=self.permissionA, role=self.roleA, tenant=self.tenant)
-            self.accessB = Access.objects.create(permission=self.permissionB, role=self.roleA, tenant=self.tenant)
-            self.accessC = Access.objects.create(permission=self.permissionC, role=self.roleA, tenant=self.tenant)
+        self.accessA = Access.objects.create(permission=self.permissionA, role=self.roleA, tenant=self.tenant)
+        self.accessB = Access.objects.create(permission=self.permissionB, role=self.roleA, tenant=self.tenant)
+        self.accessC = Access.objects.create(permission=self.permissionC, role=self.roleA, tenant=self.tenant)
 
     def tearDown(self):
         """Tear down permission viewset tests."""
-        with tenant_context(self.tenant):
-            Permission.objects.all().delete()
+        Permission.objects.all().delete()
 
     def test_read_permission_list_success(self):
         """Test that we can read a list of permissions."""
@@ -147,10 +145,9 @@ class PermissionViewsetTests(IdentityRequest):
 
     def test_filters_multiple_application_values(self):
         """Test that we can filter permissions with multiple application values."""
-        with tenant_context(self.tenant):
-            expected_permissions = list(
-                Permission.objects.filter(application__in=["rbac", "acme"]).values_list("permission", flat=True)
-            )
+        expected_permissions = list(
+            Permission.objects.filter(application__in=["rbac", "acme"]).values_list("permission", flat=True)
+        )
 
         url = LIST_URL
         url = f"{url}?application=rbac,acme"
@@ -163,10 +160,9 @@ class PermissionViewsetTests(IdentityRequest):
 
     def test_filters_multiple_resource_type_values(self):
         """Test that we can filter permissions with multiple resource_type values."""
-        with tenant_context(self.tenant):
-            expected_permissions = list(
-                Permission.objects.filter(resource_type__in=["roles", "*"]).values_list("permission", flat=True)
-            )
+        expected_permissions = list(
+            Permission.objects.filter(resource_type__in=["roles", "*"]).values_list("permission", flat=True)
+        )
 
         url = LIST_URL
         url = f"{url}?resource_type=roles,*"
@@ -179,10 +175,9 @@ class PermissionViewsetTests(IdentityRequest):
 
     def test_filters_multiple_verb_values(self):
         """Test that we can filter permissions with multiple verb values."""
-        with tenant_context(self.tenant):
-            expected_permissions = list(
-                Permission.objects.values_list("permission", flat=True).filter(verb__in=["read", "write"])
-            )
+        expected_permissions = list(
+            Permission.objects.values_list("permission", flat=True).filter(verb__in=["read", "write"])
+        )
 
         url = LIST_URL
         url = f"{url}?verb=read,write"
@@ -234,11 +229,10 @@ class PermissionViewsetTests(IdentityRequest):
 
     def test_return_options_of_application(self):
         """Test that we can return options of application."""
-        with tenant_context(self.tenant):
-            expected_all = Permission.objects.values_list("application", flat=True).distinct()
-            expected_filtered = (
-                Permission.objects.filter(verb__in=["read", "write"]).values_list("application", flat=True).distinct()
-            )
+        expected_all = Permission.objects.values_list("application", flat=True).distinct()
+        expected_filtered = (
+            Permission.objects.filter(verb__in=["read", "write"]).values_list("application", flat=True).distinct()
+        )
 
         url_all = f"{OPTION_URL}?field=application"
         url_filtered = f"{OPTION_URL}?field=application&verb=read,write"
@@ -252,11 +246,10 @@ class PermissionViewsetTests(IdentityRequest):
 
     def test_return_options_of_resource_type(self):
         """Test that we can return options of resource_type."""
-        with tenant_context(self.tenant):
-            expected_all = Permission.objects.values_list("resource_type", flat=True).distinct()
-            expected_filtered = (
-                Permission.objects.filter(application="acme").values_list("resource_type", flat=True).distinct()
-            )
+        expected_all = Permission.objects.values_list("resource_type", flat=True).distinct()
+        expected_filtered = (
+            Permission.objects.filter(application="acme").values_list("resource_type", flat=True).distinct()
+        )
 
         url_all = f"{OPTION_URL}?field=resource_type"
         url_filtered = f"{OPTION_URL}?field=resource_type&application=acme"
@@ -270,11 +263,8 @@ class PermissionViewsetTests(IdentityRequest):
 
     def test_return_options_of_verb(self):
         """Test that we can return options of verb."""
-        with tenant_context(self.tenant):
-            expected_all = Permission.objects.values_list("verb", flat=True).distinct()
-            expected_filtered = (
-                Permission.objects.filter(resource_type="roles").values_list("verb", flat=True).distinct()
-            )
+        expected_all = Permission.objects.values_list("verb", flat=True).distinct()
+        expected_filtered = Permission.objects.filter(resource_type="roles").values_list("verb", flat=True).distinct()
 
         url_all = f"{OPTION_URL}?field=verb"
         url_filtered = f"{OPTION_URL}?field=verb&resource_type=roles"
@@ -288,12 +278,11 @@ class PermissionViewsetTests(IdentityRequest):
 
     def test_return_options_of_application_without_globals(self):
         """Test that we can return options of application without globals."""
-        with tenant_context(self.tenant):
-            expected = (
-                Permission.objects.values_list("application", flat=True)
-                .distinct()
-                .exclude(Q(application="*") | Q(resource_type="*") | Q(verb="*"))
-            )
+        expected = (
+            Permission.objects.values_list("application", flat=True)
+            .distinct()
+            .exclude(Q(application="*") | Q(resource_type="*") | Q(verb="*"))
+        )
 
         url = f"{OPTION_URL}?field=application&exclude_globals=true"
         response = CLIENT.get(url, **self.headers)
@@ -303,12 +292,11 @@ class PermissionViewsetTests(IdentityRequest):
 
     def test_return_options_of_resource_type_without_globals(self):
         """Test that we can return options of resource_type without globals."""
-        with tenant_context(self.tenant):
-            expected = (
-                Permission.objects.values_list("resource_type", flat=True)
-                .distinct()
-                .exclude(Q(application="*") | Q(resource_type="*") | Q(verb="*"))
-            )
+        expected = (
+            Permission.objects.values_list("resource_type", flat=True)
+            .distinct()
+            .exclude(Q(application="*") | Q(resource_type="*") | Q(verb="*"))
+        )
 
         url = f"{OPTION_URL}?field=resource_type&exclude_globals=true"
         response = CLIENT.get(url, **self.headers)
@@ -318,12 +306,11 @@ class PermissionViewsetTests(IdentityRequest):
 
     def test_return_options_of_verb_without_globals(self):
         """Test that we can return options of verb without globals."""
-        with tenant_context(self.tenant):
-            expected = (
-                Permission.objects.values_list("verb", flat=True)
-                .distinct()
-                .exclude(Q(application="*") | Q(resource_type="*") | Q(verb="*"))
-            )
+        expected = (
+            Permission.objects.values_list("verb", flat=True)
+            .distinct()
+            .exclude(Q(application="*") | Q(resource_type="*") | Q(verb="*"))
+        )
 
         url = f"{OPTION_URL}?field=verb&exclude_globals=true"
         response = CLIENT.get(url, **self.headers)
@@ -333,10 +320,9 @@ class PermissionViewsetTests(IdentityRequest):
 
     def test_return_options_with_comma_separated_filter(self):
         """Test that we can return options with comma separated filter."""
-        with tenant_context(self.tenant):
-            expected = (
-                Permission.objects.filter(resource_type__in=["roles", "*"]).values_list("verb", flat=True).distinct()
-            )
+        expected = (
+            Permission.objects.filter(resource_type__in=["roles", "*"]).values_list("verb", flat=True).distinct()
+        )
 
         url = f"{OPTION_URL}?field=verb&resource_type=roles,*"
         response = CLIENT.get(url, **self.headers)
@@ -346,10 +332,9 @@ class PermissionViewsetTests(IdentityRequest):
 
     def test_exclude_globals_filters_any_globals_out_when_true(self):
         """Test that we filter out any global permissions when exclude_globals=true."""
-        with tenant_context(self.tenant):
-            expected = list(
-                Permission.objects.filter(permission=self.permissionA.permission).values_list("permission", flat=True)
-            )
+        expected = list(
+            Permission.objects.filter(permission=self.permissionA.permission).values_list("permission", flat=True)
+        )
 
         response = CLIENT.get(f"{LIST_URL}?exclude_globals=true", **self.headers)
         response_permissions = [p.get("permission") for p in response.data.get("data")]
@@ -360,8 +345,7 @@ class PermissionViewsetTests(IdentityRequest):
 
     def test_exclude_globals_filters_no_globals_out_when_false(self):
         """Test that we do not filter out any global permissions when exclude_globals=false."""
-        with tenant_context(self.tenant):
-            expected = list(Permission.objects.values_list("permission", flat=True))
+        expected = list(Permission.objects.values_list("permission", flat=True))
 
         response = CLIENT.get(f"{LIST_URL}?exclude_globals=false", **self.headers)
         response_permissions = [p.get("permission") for p in response.data.get("data")]
@@ -372,8 +356,7 @@ class PermissionViewsetTests(IdentityRequest):
 
     def test_exclude_globals_filters_no_globals_out_by_default(self):
         """Test that we do not filter out any global permissions when exclude_globals is unset."""
-        with tenant_context(self.tenant):
-            expected = list(Permission.objects.values_list("permission", flat=True))
+        expected = list(Permission.objects.values_list("permission", flat=True))
 
         response = CLIENT.get(LIST_URL, **self.headers)
         response_permissions = [p.get("permission") for p in response.data.get("data")]
@@ -391,9 +374,8 @@ class PermissionViewsetTests(IdentityRequest):
     def test_exclude_roles_filters_to_permissions_not_in_roles(self):
         """Test that we filter out any permissions attached to the supplied role(s)."""
         access_list = [self.accessA, self.accessB, self.accessC]
-        with tenant_context(self.tenant):
-            expected = list(Permission.objects.values_list("permission", flat=True))
-            total_count = len(expected)
+        expected = list(Permission.objects.values_list("permission", flat=True))
+        total_count = len(expected)
 
         response = CLIENT.get(f"{LIST_URL}?exclude_roles={self.roleA.uuid},{self.roleB.uuid}", **self.headers)
         response_permissions = [p.get("permission") for p in response.data.get("data")]
@@ -411,10 +393,9 @@ class PermissionViewsetTests(IdentityRequest):
 
     def test_allowed_only_filters_any_roles_not_in_allow_list_out_when_true(self):
         """Test that we filter out any permissions not in the allow list when allowed_only=true."""
-        with tenant_context(self.tenant):
-            expected = list(
-                Permission.objects.filter(permission=self.permissionJ.permission).values_list("permission", flat=True)
-            )
+        expected = list(
+            Permission.objects.filter(permission=self.permissionJ.permission).values_list("permission", flat=True)
+        )
 
         response = CLIENT.get(f"{LIST_URL}?allowed_only=true", **self.headers)
         response_permissions = [p.get("permission") for p in response.data.get("data")]
@@ -431,8 +412,7 @@ class PermissionViewsetTests(IdentityRequest):
 
     def test_allowed_only_filters_no_permissions_out_when_false(self):
         """Test that we do not filter out any permissions not in the allow list when allowed_only=false."""
-        with tenant_context(self.tenant):
-            expected = list(Permission.objects.values_list("permission", flat=True))
+        expected = list(Permission.objects.values_list("permission", flat=True))
 
         response = CLIENT.get(f"{LIST_URL}?allowed_only=false", **self.headers)
         response_permissions = [p.get("permission") for p in response.data.get("data")]
@@ -443,8 +423,7 @@ class PermissionViewsetTests(IdentityRequest):
 
     def test_allowed_only_filters_no_permissions_out_by_default(self):
         """Test that we do not filter out any permissions not in the allow list when allowed_only is unset."""
-        with tenant_context(self.tenant):
-            expected = list(Permission.objects.values_list("permission", flat=True))
+        expected = list(Permission.objects.values_list("permission", flat=True))
 
         response = CLIENT.get(LIST_URL, **self.headers)
         response_permissions = [p.get("permission") for p in response.data.get("data")]
@@ -461,12 +440,11 @@ class PermissionViewsetTests(IdentityRequest):
 
     def test_allowed_only_on_options_filters_any_roles_not_in_allow_list_out_when_true(self):
         """Test that we filter out any permissions not in the allow list when allowed_only=true."""
-        with tenant_context(self.tenant):
-            expected = list(
-                Permission.objects.filter(permission=self.permissionJ.permission)
-                .values_list("application", flat=True)
-                .distinct()
-            )
+        expected = list(
+            Permission.objects.filter(permission=self.permissionJ.permission)
+            .values_list("application", flat=True)
+            .distinct()
+        )
 
         response = CLIENT.get(f"{OPTION_URL}?field=application&allowed_only=true", **self.headers)
 
@@ -476,8 +454,7 @@ class PermissionViewsetTests(IdentityRequest):
 
     def test_allowed_only_on_options_filters_no_permissions_out_when_false(self):
         """Test that we do not filter out any permissions not in the allow list when allowed_only=false."""
-        with tenant_context(self.tenant):
-            expected = Permission.objects.values_list("application", flat=True).distinct()
+        expected = Permission.objects.values_list("application", flat=True).distinct()
 
         response = CLIENT.get(f"{OPTION_URL}?field=application&allowed_only=false", **self.headers)
 
@@ -487,8 +464,7 @@ class PermissionViewsetTests(IdentityRequest):
 
     def test_allowed_only_on_options_filters_no_permissions_out_by_default(self):
         """Test that we do not filter out any permissions not in the allow list when allowed_only is unset."""
-        with tenant_context(self.tenant):
-            expected = Permission.objects.values_list("application", flat=True).distinct()
+        expected = Permission.objects.values_list("application", flat=True).distinct()
 
         response = CLIENT.get(f"{OPTION_URL}?field=application", **self.headers)
 
@@ -514,14 +490,12 @@ class PermissionViewsetTestsNonAdmin(IdentityRequest):
         request = self.request_context["request"]
         self.headers = request.META
 
-        with tenant_context(self.tenant):
-            self.permission = Permission.objects.create(permission="rbac:roles:read", tenant=self.tenant)
-            self.permission.save()
+        self.permission = Permission.objects.create(permission="rbac:roles:read", tenant=self.tenant)
+        self.permission.save()
 
     def tearDown(self):
         """Tear down permission viewset tests."""
-        with tenant_context(self.tenant):
-            Permission.objects.all().delete()
+        Permission.objects.all().delete()
 
     def test_read_permission_list_fail(self):
         """Test that we can not read a list of permissions as a non-admin."""
@@ -530,18 +504,17 @@ class PermissionViewsetTestsNonAdmin(IdentityRequest):
 
     def test_read_permission_list_success_when_rbac_admin_role_assigned(self):
         """Test that we can read a list of permissions as a non-admin if he is assigned rbac admin role."""
-        with tenant_context(self.tenant):
-            # Create admin group and add rbac admin permission to it
-            group = Group.objects.create(name="Admin_group", tenant=self.tenant)
-            policy = Policy.objects.create(name="Admin_policy", tenant=self.tenant, group=group)
-            permission = Permission.objects.create(permission="rbac:*:*", tenant=self.tenant)
-            admin_role = Role.objects.create(name="Admin_role", tenant=self.tenant)
-            access = Access.objects.create(permission=permission, role=admin_role, tenant=self.tenant)
-            policy.roles.add(admin_role)
-            # Add principal to that admin group
-            principal = Principal.objects.create(username=self.user_data["username"], tenant=self.tenant)
-            group.principals.add(principal)
-            group.principals
+        # Create admin group and add rbac admin permission to it
+        group = Group.objects.create(name="Admin_group", tenant=self.tenant)
+        policy = Policy.objects.create(name="Admin_policy", tenant=self.tenant, group=group)
+        permission = Permission.objects.create(permission="rbac:*:*", tenant=self.tenant)
+        admin_role = Role.objects.create(name="Admin_role", tenant=self.tenant)
+        access = Access.objects.create(permission=permission, role=admin_role, tenant=self.tenant)
+        policy.roles.add(admin_role)
+        # Add principal to that admin group
+        principal = Principal.objects.create(username=self.user_data["username"], tenant=self.tenant)
+        group.principals.add(principal)
+        group.principals
         response = CLIENT.get(LIST_URL, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
