@@ -38,17 +38,13 @@ class QuerySetTest(TestCase):
     @classmethod
     def setUpClass(cls):
         try:
-            cls.tenant = Tenant.objects.get(schema_name="test")
+            cls.tenant = Tenant.objects.get(tenant_name="test")
         except:
-            cls.tenant = Tenant(schema_name="test")
-            cls.tenant.save(verbosity=0)
-            cls.tenant.create_schema()
-
-        connection.set_tenant(cls.tenant)
+            cls.tenant = Tenant(tenant_name="test")
+            cls.tenant.save()
 
     @classmethod
     def tearDownClass(cls):
-        connection.set_schema_to_public()
         cls.tenant.delete()
 
     def _create_groups(self):

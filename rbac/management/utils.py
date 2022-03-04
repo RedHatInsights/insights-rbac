@@ -22,10 +22,10 @@ from uuid import UUID
 from django.conf import settings
 from django.core.exceptions import PermissionDenied
 from django.utils.translation import gettext as _
+from api.serializers import create_tenant_name
 from management.models import Access, Group, Policy, Principal, Role
 from management.principal.proxy import PrincipalProxy
 from rest_framework import serializers, status
-from tenant_schemas.utils import tenant_context
 
 from api.models import CrossAccountRequest, Tenant
 
@@ -64,8 +64,9 @@ def get_principal(username, request, verify_principal=True):
     # First check if principal exist on our side,
     # if not call BOP to check if user exist in the account.
     account = request.user.account
+    tenant = request.tenant
     try:
-        principal = Principal.objects.get(username__iexact=username, tenant=request.tenant)
+        principal = Principal.objects.get(username__iexact=username, tenant=tenant)
     except Principal.DoesNotExist:
         if verify_principal:
             proxy = PrincipalProxy()
@@ -80,7 +81,7 @@ def get_principal(username, request, verify_principal=True):
 
         # Avoid possible race condition if the user was created while checking BOP
         principal, created = Principal.objects.get_or_create(
-            username=username, tenant=request.tenant
+            username=username, tenant=tenant
         )  # pylint: disable=unused-variable
     return principal
 
@@ -113,7 +114,7 @@ def groups_for_principal(principal, tenant, **kwargs):
         return set()
     assigned_group_set = principal.group.all()
     if settings.SERVE_FROM_PUBLIC_SCHEMA:
-        public_tenant = Tenant.objects.get(schema_name="public")
+        public_tenant = Tenant.objects.get(tenant_name="public")
         platform_default_group_set = Group.platform_default_set().filter(
             tenant=tenant
         ) or Group.platform_default_set().filter(tenant=public_tenant)
@@ -220,13 +221,12 @@ def validate_limit_and_offset(query_params):
 def roles_for_cross_account_principal(principal):
     """Return roles for cross account principals."""
     target_account, user_id = principal.username.split("-")
-    with tenant_context(Tenant.objects.get(schema_name="public")):
-        role_names = (
-            CrossAccountRequest.objects.filter(target_account=target_account, user_id=user_id, status="approved")
-            .values_list("roles__name", flat=True)
-            .distinct()
-        )
-        role_names_list = list(role_names)
+    role_names = (
+        CrossAccountRequest.objects.filter(target_account=target_account, user_id=user_id, status="approved")
+        .values_list("roles__name", flat=True)
+        .distinct()
+    )
+    role_names_list = list(role_names)
     return Role.objects.filter(name__in=role_names_list)
 
 

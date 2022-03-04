@@ -35,7 +35,7 @@ class Command(BaseCommand):
     def copy_custom_principals_to_public(self, tenant):
         """Copy custom principals from provided tenant to the public schema."""
         principals = Principal.objects.all()
-        public_schema = Tenant.objects.get(schema_name="public")
+        public_schema = Tenant.objects.get(tenant_name="public")
         for principal in principals:
             self.stdout.write(f"Copying principal {principal.username} to public schema for tenant {tenant}.")
             if not principal.tenant:
@@ -52,7 +52,7 @@ class Command(BaseCommand):
     def copy_custom_roles_to_public(self, tenant):
         """Copy custom roles from provided tenant to the public schema."""
         roles = Role.objects.filter(system=False)
-        public_schema = Tenant.objects.get(schema_name="public")
+        public_schema = Tenant.objects.get(tenant_name="public")
         for role in roles:
             self.stdout.write(f"Copying role {role.name} to public schema for tenant {tenant}.")
             if not role.tenant:
@@ -130,7 +130,7 @@ class Command(BaseCommand):
     def copy_custom_groups_to_public(self, tenant):
         """Copy custom groups from provided tenant to the public schema."""
         groups = Group.objects.filter(system=False)
-        public_schema = Tenant.objects.get(schema_name="public")
+        public_schema = Tenant.objects.get(tenant_name="public")
         for group in groups:
             self.stdout.write(f"Copying group {group.name} to public schema for tenant {tenant}.")
             if not group.tenant:
@@ -160,7 +160,7 @@ class Command(BaseCommand):
     def copy_custom_policies_to_public(self, tenant):
         """Copy custom policies from provided tenant to the public schema."""
         policies = Policy.objects.all()
-        public_schema = Tenant.objects.get(schema_name="public")
+        public_schema = Tenant.objects.get(tenant_name="public")
         for policy in policies:
             self.stdout.write(f"Copying policy {policy.name} to public schema for tenant {tenant}.")
             if not policy.tenant:
@@ -203,9 +203,9 @@ class Command(BaseCommand):
         try:
             schema_list = options.get("schema_list")
             if schema_list:
-                tenants = Tenant.objects.exclude(schema_name="public").filter(ready=True, schema_name__in=schema_list)
+                tenants = Tenant.objects.exclude(tenant_name="public").filter(ready=True, schema_name__in=schema_list)
             else:
-                tenants = Tenant.objects.exclude(schema_name="public").filter(ready=True)
+                tenants = Tenant.objects.exclude(tenant_name="public").filter(ready=True)
 
             if not tenants:
                 self.stdout.write("*** No schemas to sync ***")
@@ -213,7 +213,7 @@ class Command(BaseCommand):
 
             for idx, tenant in enumerate(list(tenants)):
                 self.stdout.write(
-                    f"*** Syncing Schemas for '{tenant.id}' - '{tenant.schema_name}' ({idx + 1} of {len(tenants)}) ***"
+                    f"*** Syncing Schemas for '{tenant.id}' - '{tenant.tenant_name}' ({idx + 1} of {len(tenants)}) ***"
                 )
                 with tenant_context(tenant):
                     self.copy_custom_principals_to_public(tenant)

@@ -68,6 +68,6 @@ def extract_header(request, header):
     return (rh_auth_header, json_rh_auth)
 
 
-def create_schema_name(account):
-    """Create a database schema name."""
+def create_tenant_name(account):
+    """Create a database tenant name."""
     return f"acct{account}"

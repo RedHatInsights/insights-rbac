@@ -24,7 +24,7 @@ from django.test import TestCase
 from faker import Faker
 
 from api.models import Tenant
-from api.serializers import create_schema_name
+from api.serializers import create_tenant_name
 from api.common import RH_IDENTITY_HEADER
 
 
@@ -37,20 +37,17 @@ class IdentityRequest(TestCase):
     def setUpClass(cls):
         """Set up each test class."""
         super().setUpClass()
-
         cls.customer_data = cls._create_customer_data()
         cls.user_data = cls._create_user_data()
         cls.request_context = cls._create_request_context(cls.customer_data, cls.user_data)
-        cls.schema_name = cls.customer_data.get("schema_name")
-        cls.tenant = Tenant(schema_name=cls.schema_name, ready=True)
+        cls.tenant_name = cls.customer_data.get("tenant_name")
+        cls.tenant = Tenant(tenant_name=cls.tenant_name, ready=True)
         cls.tenant.save()
-        cls.tenant.create_schema()
         cls.headers = cls.request_context["request"].META
 
     @classmethod
     def tearDownClass(cls):
         """Tear down the class."""
-        connection.set_schema_to_public()
         cls.tenant.delete()
         super().tearDownClass()
 
@@ -58,8 +55,8 @@ class IdentityRequest(TestCase):
     def _create_customer_data(cls):
         """Create customer data."""
         account = cls.fake.ean8()
-        schema = f"acct{account}"
-        customer = {"account_id": account, "schema_name": schema}
+        tenant = f"acct{account}"
+        customer = {"account_id": account, "tenant_name": tenant}
         return customer
 
     @classmethod
@@ -69,7 +66,7 @@ class IdentityRequest(TestCase):
         return user_data
 
     @classmethod
-    def _create_customer(cls, account, create_tenant=True):
+    def _create_customer(cls, account, create_tenant=False):
         """Create a customer.
 
         Args:
@@ -79,13 +76,11 @@ class IdentityRequest(TestCase):
             (Customer) The created customer
 
         """
-        connection.set_schema_to_public()
-        schema_name = create_schema_name(account)
+        tenant_name = create_tenant_name(account)
         tenant = None
         if create_tenant:
-            tenant = Tenant(schema_name=schema_name)
+            tenant = Tenant(tenant_name=tenant_name)
             tenant.save()
-            tenant.create_schema()
         return tenant
 
     @classmethod

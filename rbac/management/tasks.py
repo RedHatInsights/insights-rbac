@@ -29,11 +29,11 @@ def principal_cleanup():
 
 
 @shared_task
-def run_migrations_in_worker(schema_list):
+def run_migrations_in_worker(tenant_list):
     """Celery task to run migrations."""
-    if schema_list:
-        for schema in schema_list:
-            call_command("migrate_schemas", schema_name=schema)
+    if tenant_list:
+        for tenant in tenant_list:
+            call_command("migrate_schemas", tenant_name=tenant)
         return
 
     call_command("migrate_schemas")

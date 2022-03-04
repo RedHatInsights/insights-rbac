@@ -16,7 +16,6 @@
 #
 """Test the permission model."""
 # from django.test import TestCase
-from tenant_schemas.utils import tenant_context
 
 # from unittest.mock import Mock
 
@@ -31,23 +30,20 @@ class PermissionModelTests(IdentityRequest):
         """Set up the permission model tests."""
         super().setUp()
 
-        with tenant_context(self.tenant):
-            self.dependency_permission = Permission.objects.create(permission="rbac:roles:read", tenant=self.tenant)
-            self.permission = Permission.objects.create(permission="rbac:roles:write", tenant=self.tenant)
-            self.permission.save()
-            self.permission.permissions.add(self.dependency_permission)
+        self.dependency_permission = Permission.objects.create(permission="rbac:roles:read", tenant=self.tenant)
+        self.permission = Permission.objects.create(permission="rbac:roles:write", tenant=self.tenant)
+        self.permission.save()
+        self.permission.permissions.add(self.dependency_permission)
 
     def tearDown(self):
         """Tear down permission model tests."""
-        with tenant_context(self.tenant):
-            Permission.objects.all().delete()
+        Permission.objects.all().delete()
 
     def test_permission_has_attributes(self):
         """Test the permission has expected attributes."""
-        with tenant_context(self.tenant):
-            self.assertEqual(self.permission.application, "rbac")
-            self.assertEqual(self.permission.resource_type, "roles")
-            self.assertEqual(self.permission.verb, "write")
-            self.assertEqual(self.permission.permission, "rbac:roles:write")
-            self.assertEqual(list(self.permission.permissions.all()), [self.dependency_permission])
-            self.assertEqual(list(self.dependency_permission.requiring_permissions.all()), [self.permission])
+        self.assertEqual(self.permission.application, "rbac")
+        self.assertEqual(self.permission.resource_type, "roles")
+        self.assertEqual(self.permission.verb, "write")
+        self.assertEqual(self.permission.permission, "rbac:roles:write")
+        self.assertEqual(list(self.permission.permissions.all()), [self.dependency_permission])
+        self.assertEqual(list(self.dependency_permission.requiring_permissions.all()), [self.permission])

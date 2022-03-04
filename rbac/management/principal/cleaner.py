@@ -33,33 +33,33 @@ def clean_tenant_principals(tenant):
     """Check if all the principals in the tenant exist, remove non-existent principals."""
     removed_principals = []
     principals = list(Principal.objects.filter(tenant=tenant))
-    logger.info("Running clean up on %d principals for tenant %s.", len(principals), tenant.schema_name)
+    logger.info("Running clean up on %d principals for tenant %s.", len(principals), tenant.tenant_name)
     for principal in principals:
         if principal.cross_account:
             continue
-        logger.debug("Checking for username %s for tenant %s.", principal.username, tenant.schema_name)
+        logger.debug("Checking for username %s for tenant %s.", principal.username, tenant.tenant_name)
         resp = proxy.request_filtered_principals([principal.username])
         status_code = resp.get("status_code")
         data = resp.get("data")
         if status_code == status.HTTP_200_OK and data:
-            logger.debug("Username %s found for tenant %s, no change needed.", principal.username, tenant.schema_name)
+            logger.debug("Username %s found for tenant %s, no change needed.", principal.username, tenant.tenant_name)
         elif status_code == status.HTTP_200_OK and not data:
             removed_principals.append(principal.username)
             principal.delete()
             logger.info(
-                "Username %s not found for tenant %s, principal removed.", principal.username, tenant.schema_name
+                "Username %s not found for tenant %s, principal removed.", principal.username, tenant.tenant_name
             )
         else:
             logger.warn(
                 "Unknown status %d when checking username %s" " for tenant %s, no change needed.",
                 status_code,
                 principal.username,
-                tenant.schema_name,
+                tenant.tenant_name,
             )
     logger.info(
         "Completed clean up of %d principals for tenant %s, %d removed.",
         len(principals),
-        tenant.schema_name,
+        tenant.tenant_name,
         len(removed_principals),
     )
 
@@ -69,6 +69,6 @@ def clean_tenants_principals():
     logger.info("Start principal clean up.")
 
     for tenant in list(Tenant.objects.all()):
-        logger.info("Running principal clean up for tenant %s.", tenant.schema_name)
+        logger.info("Running principal clean up for tenant %s.", tenant.tenant_name)
         clean_tenant_principals(tenant)
-        logger.info("Completed principal clean up for tenant %s.", tenant.schema_name)
+        logger.info("Completed principal clean up for tenant %s.", tenant.tenant_name)

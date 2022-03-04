@@ -105,7 +105,7 @@ class AccessView(APIView):
         sub_key, ordering = self.validate_and_get_param(request.query_params)
 
         principal = get_principal_from_request(request)
-        cache = AccessCache(request.tenant.schema_name)
+        cache = AccessCache(request.tenant.tenant_name)
         access_policy = cache.get_policy(principal.uuid, sub_key)
         if access_policy is None:
             queryset = self.get_queryset(ordering)

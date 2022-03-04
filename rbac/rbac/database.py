@@ -24,7 +24,7 @@ def config():
     """Database config."""
     if ENVIRONMENT.bool("CLOWDER_ENABLED", default=False):
         db_obj = {
-            "ENGINE": "tenant_schemas.postgresql_backend",
+            "ENGINE": "django.db.backends.postgresql",
             "NAME": LoadedConfig.database.name,
             "USER": LoadedConfig.database.username,
             "PASSWORD": LoadedConfig.database.password,
@@ -42,7 +42,7 @@ def config():
             db_options = {}
     else:
         db_obj = {
-            "ENGINE": "tenant_schemas.postgresql_backend",
+            "ENGINE": "django.db.backends.postgresql",
             "NAME": ENVIRONMENT.get_value("DATABASE_NAME", default=None),
             "USER": ENVIRONMENT.get_value("DATABASE_USER", default=None),
             "PASSWORD": ENVIRONMENT.get_value("DATABASE_PASSWORD", default=None),

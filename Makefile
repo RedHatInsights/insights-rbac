@@ -99,7 +99,7 @@ make-migrations:
 	DJANGO_READ_DOT_ENV_FILE=True $(PYTHON) $(PYDIR)/manage.py makemigrations api management
 
 run-migrations:
-	DJANGO_READ_DOT_ENV_FILE=True $(PYTHON) $(PYDIR)/manage.py migrate_schemas --executor=parallel
+	DJANGO_READ_DOT_ENV_FILE=True $(PYTHON) $(PYDIR)/manage.py migrate
 
 create-test-db-file: run-migrations
 	sleep 1
@@ -244,7 +244,7 @@ oc-reinit: oc-delete-all oc-create-rbac
 
 oc-run-migrations: oc-forward-ports
 	sleep 3
-	DJANGO_READ_DOT_ENV_FILE=True $(PYTHON) $(PYDIR)/manage.py migrate_schemas
+	DJANGO_READ_DOT_ENV_FILE=True $(PYTHON) $(PYDIR)/manage.py migrate
 	make oc-stop-forwarding-ports
 
 oc-stop-forwarding-ports:

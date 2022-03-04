@@ -42,7 +42,7 @@ class Command(BaseCommand):
         tenant_schema_name = options["tenant_schema_name"]
 
         try:
-            tenant = Tenant.objects.get(schema_name=tenant_schema_name)
+            tenant = Tenant.objects.get(tenant_name=tenant_schema_name)
             with transaction.atomic():
                 with tenant_context(tenant):
                     created = tenant.create_schema(check_if_exists=True)

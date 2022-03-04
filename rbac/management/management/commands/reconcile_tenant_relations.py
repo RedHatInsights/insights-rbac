@@ -51,7 +51,7 @@ class Command(BaseCommand):
             for idx, tenant in enumerate(list(tenants)):
                 with tenant_context(tenant):
                     tenant_id = tenant.id
-                    tenant_name = tenant.schema_name
+                    tenant_name = tenant.tenant_name
                     logger.info(
                         f"*** Syncing Tenant '{tenant_id}' - '{tenant_name}' ({idx + 1} of {len(tenants)}) ***"
                     )

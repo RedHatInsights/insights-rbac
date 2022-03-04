@@ -17,7 +17,6 @@
 """Test the internal viewset."""
 from rest_framework import status
 from rest_framework.test import APIClient
-from tenant_schemas.utils import tenant_context
 from unittest.mock import patch
 from django.db.migrations.recorder import MigrationRecorder
 from django.test import TestCase, override_settings
@@ -43,11 +42,10 @@ class InternalViewsetTests(IdentityRequest):
     def setUp(self):
         """Set up the internal viewset tests."""
         super().setUp()
-
         self.client = APIClient()
-        self.customer = self._create_customer_data()
+        self.customer = self.customer_data
         self.internal_request_context = self._create_request_context(
-            self.customer, self.user_data, create_customer=False, is_internal=True, create_tenant=True
+            self.customer, self.user_data, create_customer=False, is_internal=True, create_tenant=False
         )
 
         self.request = self.internal_request_context["request"]
@@ -56,35 +54,33 @@ class InternalViewsetTests(IdentityRequest):
         user.account = self.customer_data["account_id"]
         self.request.user = user
 
-        with tenant_context(self.tenant):
-            self.group = Group(name="System Group", system=True, tenant=self.tenant)
-            self.group.save()
-            self.role = Role.objects.create(
-                name="System Role", description="A role for a group.", system=True, tenant=self.tenant
-            )
-            self.policy = Policy.objects.create(name="System Policy", group=self.group, tenant=self.tenant)
-            self.policy.roles.add(self.role)
-            self.policy.save()
-            self.group.policies.add(self.policy)
-            self.group.save()
+        self.group = Group(name="System Group", system=True, tenant=self.tenant)
+        self.group.save()
+        self.role = Role.objects.create(
+            name="System Role", description="A role for a group.", system=True, tenant=self.tenant
+        )
+        self.policy = Policy.objects.create(name="System Policy", group=self.group, tenant=self.tenant)
+        self.policy.roles.add(self.role)
+        self.policy.save()
+        self.group.policies.add(self.policy)
+        self.group.save()
 
     def tearDown(self):
         """Tear down internal viewset tests."""
-        with tenant_context(self.tenant):
-            Group.objects.all().delete()
-            Role.objects.all().delete()
-            Policy.objects.all().delete()
+        Group.objects.all().delete()
+        Role.objects.all().delete()
+        Policy.objects.all().delete()
 
     def test_delete_tenant_disallowed(self):
         """Test that we cannot delete a tenant when disallowed."""
-        response = self.client.delete(f"/_private/api/tenant/{self.tenant.schema_name}/", **self.request.META)
+        response = self.client.delete(f"/_private/api/tenant/{self.tenant.tenant_name}/", **self.request.META)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(response.content.decode(), "Destructive operations disallowed.")
 
     @override_settings(INTERNAL_DESTRUCTIVE_API_OK_UNTIL=invalid_destructive_time())
     def test_delete_tenant_disallowed_with_past_timestamp(self):
         """Test that we cannot delete a tenant when disallowed."""
-        response = self.client.delete(f"/_private/api/tenant/{self.tenant.schema_name}/", **self.request.META)
+        response = self.client.delete(f"/_private/api/tenant/{self.tenant.tenant_name}/", **self.request.META)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(response.content.decode(), "Destructive operations disallowed.")
 
@@ -92,60 +88,55 @@ class InternalViewsetTests(IdentityRequest):
     @patch.object(Tenant, "delete")
     def test_delete_tenant_allowed_and_unmodified(self, mock):
         """Test that we can delete a tenant when allowed and unmodified."""
-        response = self.client.delete(f"/_private/api/tenant/{self.tenant.schema_name}/", **self.request.META)
+        response = self.client.delete(f"/_private/api/tenant/{self.tenant.tenant_name}/", **self.request.META)
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
 
     @override_settings(INTERNAL_DESTRUCTIVE_API_OK_UNTIL=valid_destructive_time())
     @patch.object(Tenant, "delete")
     def test_delete_tenant_no_schema(self, mock):
-        """Test that we can delete a tenant when allowed and unmodified."""
-        public_tenant = Tenant.objects.get(schema_name="public")
-        with tenant_context(public_tenant):
-            Group.objects.create(name="Custom Group", tenant=public_tenant)
+        """Test that we can delete a tenant with no schema."""
+        public_tenant = Tenant.objects.get(tenant_name="public")
+        Group.objects.create(name="Custom Group", tenant=public_tenant)
 
-        tenant_no_schema = Tenant.objects.create(schema_name="no_schema")
-        response = self.client.delete(f"/_private/api/tenant/{tenant_no_schema.schema_name}/", **self.request.META)
+        tenant_no_schema = Tenant.objects.create(tenant_name="no_schema")
+        response = self.client.delete(f"/_private/api/tenant/{tenant_no_schema.tenant_name}/", **self.request.META)
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
 
     @override_settings(INTERNAL_DESTRUCTIVE_API_OK_UNTIL=valid_destructive_time())
     def test_delete_tenant_allowed_but_multiple_groups(self):
         """Test that we cannot delete a tenant when allowed but modified."""
-        with tenant_context(self.tenant):
-            Group.objects.create(name="Custom Group", tenant=self.tenant)
+        Group.objects.create(name="Custom Group", tenant=self.tenant)
 
-        response = self.client.delete(f"/_private/api/tenant/{self.tenant.schema_name}/", **self.request.META)
+        response = self.client.delete(f"/_private/api/tenant/{self.tenant.tenant_name}/", **self.request.META)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(response.content.decode(), "Tenant cannot be deleted.")
 
     @override_settings(INTERNAL_DESTRUCTIVE_API_OK_UNTIL=valid_destructive_time())
     def test_delete_tenant_allowed_but_group_is_not_system(self):
         """Test that we cannot delete a tenant when allowed but modified."""
-        with tenant_context(self.tenant):
-            self.group.system = False
-            self.group.save()
+        self.group.system = False
+        self.group.save()
 
-        response = self.client.delete(f"/_private/api/tenant/{self.tenant.schema_name}/", **self.request.META)
+        response = self.client.delete(f"/_private/api/tenant/{self.tenant.tenant_name}/", **self.request.META)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(response.content.decode(), "Tenant cannot be deleted.")
 
     @override_settings(INTERNAL_DESTRUCTIVE_API_OK_UNTIL=valid_destructive_time())
     def test_delete_tenant_allowed_but_role_is_not_system(self):
         """Test that we cannot delete a tenant when allowed but modified."""
-        with tenant_context(self.tenant):
-            self.role.system = False
-            self.role.save()
+        self.role.system = False
+        self.role.save()
 
-        response = self.client.delete(f"/_private/api/tenant/{self.tenant.schema_name}/", **self.request.META)
+        response = self.client.delete(f"/_private/api/tenant/{self.tenant.tenant_name}/", **self.request.META)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(response.content.decode(), "Tenant cannot be deleted.")
 
     @override_settings(INTERNAL_DESTRUCTIVE_API_OK_UNTIL=valid_destructive_time())
     def test_delete_tenant_allowed_but_custom_one_role_is_not_system(self):
         """Test that we cannot delete a tenant when allowed but modified."""
-        with tenant_context(self.tenant):
-            Role.objects.create(name="Custom Role", tenant=self.tenant)
+        Role.objects.create(name="Custom Role", tenant=self.tenant)
 
-        response = self.client.delete(f"/_private/api/tenant/{self.tenant.schema_name}/", **self.request.META)
+        response = self.client.delete(f"/_private/api/tenant/{self.tenant.tenant_name}/", **self.request.META)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(response.content.decode(), "Tenant cannot be deleted.")
 
@@ -153,39 +144,34 @@ class InternalViewsetTests(IdentityRequest):
     @patch.object(Tenant, "delete")
     def test_delete_tenant_allowed_and_unmodified_no_roles_or_groups(self, mock):
         """Test that we can delete a tenant when allowed and unmodified when there are no roles or groups."""
-        with tenant_context(self.tenant):
-            Group.objects.all().delete()
-            Role.objects.all().delete()
-            Policy.objects.all().delete()
+        Group.objects.all().delete()
+        Role.objects.all().delete()
+        Policy.objects.all().delete()
 
-        response = self.client.delete(f"/_private/api/tenant/{self.tenant.schema_name}/", **self.request.META)
+        response = self.client.delete(f"/_private/api/tenant/{self.tenant.tenant_name}/", **self.request.META)
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
 
     def test_list_unmodified_tenants(self):
         """Test that only unmodified tenants are returned"""
-        modified_tenant_groups = Tenant.objects.create(schema_name="acctmodifiedgroups")
-        modified_tenant_roles = Tenant.objects.create(schema_name="acctmodifiedroles")
-        unmodified_tenant_2 = Tenant.objects.create(schema_name="acctunmodified2")
+        modified_tenant_groups = Tenant.objects.create(tenant_name="acctmodifiedgroups")
+        modified_tenant_roles = Tenant.objects.create(tenant_name="acctmodifiedroles")
+        unmodified_tenant_2 = Tenant.objects.create(tenant_name="acctunmodified2")
 
         for t in [modified_tenant_groups, modified_tenant_roles, unmodified_tenant_2]:
-            t.create_schema()
             t.ready = True
             t.save()
 
-        with tenant_context(modified_tenant_groups):
-            Group.objects.create(name="Custom Group", tenant=modified_tenant_groups)
+        Group.objects.create(name="Custom Group", tenant=modified_tenant_groups)
 
-        with tenant_context(modified_tenant_roles):
-            Role.objects.create(name="Custom Role", tenant=modified_tenant_roles)
+        Role.objects.create(name="Custom Role", tenant=modified_tenant_roles)
 
-        with tenant_context(unmodified_tenant_2):
-            Group.objects.create(name="System Group", system=True, tenant=unmodified_tenant_2)
-            Role.objects.create(name="System Role", system=True, tenant=unmodified_tenant_2)
+        Group.objects.create(name="System Group", system=True, tenant=unmodified_tenant_2)
+        Role.objects.create(name="System Role", system=True, tenant=unmodified_tenant_2)
 
         response = self.client.get(f"/_private/api/tenant/unmodified/", **self.request.META)
         response_data = json.loads(response.content)
         self.assertCountEqual(
-            response_data["unmodified_tenants"], [self.tenant.schema_name, unmodified_tenant_2.schema_name]
+            response_data["unmodified_tenants"], [self.tenant.tenant_name, unmodified_tenant_2.tenant_name]
         )
         self.assertEqual(response_data["unmodified_tenants_count"], 2)
         self.assertEqual(response_data["total_tenants_count"], 4)
@@ -208,30 +194,6 @@ class InternalViewsetTests(IdentityRequest):
         migration_mock.assert_called_once()
         self.assertEqual(response.status_code, status.HTTP_202_ACCEPTED)
         self.assertEqual(response.content.decode(), "Migrations are running in a background worker.")
-
-    def test_list_migration_progress(self):
-        """Test that we can get the status of migrations."""
-        migration_name = "foo_migration"
-        app_name = "foo_app"
-        tenant_migrations_complete = Tenant.objects.create(schema_name="acctcomplete")
-        tenant_migrations_incomplete = Tenant.objects.create(schema_name="acctincomplete")
-        for t in [tenant_migrations_complete, tenant_migrations_incomplete]:
-            t.create_schema()
-
-        with tenant_context(tenant_migrations_complete):
-            migrations_have_run = MigrationRecorder.Migration.objects.create(name=migration_name, app=app_name)
-
-        url = f"/_private/api/migrations/progress/?migration_name={migration_name}&app={app_name}"
-        response = self.client.get(url, **self.request.META)
-        response_data = json.loads(response.content)
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response_data["migration_name"], migration_name)
-        self.assertEqual(response_data["app_name"], app_name)
-        self.assertEqual(response_data["tenants_completed_count"], 1)
-        self.assertEqual(response_data["percent_completed"], 33)
-        self.assertIn("acctincomplete", response_data["incomplete_tenants"])
-        self.assertNotIn("acctcomplete", response_data["incomplete_tenants"])
-        self.assertEqual(len(response_data["incomplete_tenants"]), 2)
 
     def test_list_migration_progress_without_migration_name(self):
         """Test that we get a 400 when no migration name supplied."""

@@ -86,7 +86,6 @@ ALLOWED_HOSTS = ["*"]
 # Application definition
 
 INSTALLED_APPS = [
-    "tenant_schemas",
     # django
     # 'django.contrib.admin',
     "django.contrib.auth",
@@ -106,7 +105,6 @@ INSTALLED_APPS = [
 ]
 
 SHARED_APPS = (
-    "tenant_schemas",
     "management",
     "api",
     "django.contrib.contenttypes",
@@ -119,8 +117,6 @@ SHARED_APPS = (
 )
 
 TENANT_APPS = ("management",)
-
-DEFAULT_FILE_STORAGE = "tenant_schemas.storage.TenantFileSystemStorage"
 
 MIDDLEWARE = [
     "django_prometheus.middleware.PrometheusBeforeMiddleware",
@@ -165,8 +161,6 @@ TEMPLATES = [
 WSGI_APPLICATION = "rbac.wsgi.application"
 
 DATABASES = {"default": database.config()}
-
-DATABASE_ROUTERS = ("tenant_schemas.routers.TenantSyncRouter",)
 
 #
 TENANT_MODEL = "api.Tenant"

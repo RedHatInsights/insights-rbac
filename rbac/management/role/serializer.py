@@ -291,7 +291,7 @@ def obtain_groups_in(obj, request):
         assigned_groups = Group.objects.filter(policies__in=policy_ids, principals__in=[principal])
         assigned_groups = filter_queryset_by_tenant(assigned_groups, request.tenant)
         if settings.SERVE_FROM_PUBLIC_SCHEMA:
-            public_tenant = Tenant.objects.get(schema_name="public")
+            public_tenant = Tenant.objects.get(tenant_name="public")
             qs = (
                 assigned_groups
                 | (
