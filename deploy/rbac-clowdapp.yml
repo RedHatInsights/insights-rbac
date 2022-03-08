@@ -71,8 +71,8 @@ objects:
             cpu: ${CPU_LIMIT}
             memory: ${MEMORY_LIMIT}
           requests:
-            cpu: 200m
-            memory: 512Mi
+            cpu: ${CPU_REQUEST}
+            memory: ${MEMORY_REQUEST}
         env:
           - name: SENTRY_DSN
             valueFrom:
@@ -207,6 +207,8 @@ objects:
             value: ${REDIS_SOCKET_CONNECT_TIMEOUT}
           - name: REDIS_SOCKET_TIMEOUT
             value: ${REDIS_SOCKET_TIMEOUT}
+          - name: SERVE_FROM_PUBLIC_SCHEMA
+            value: ${SERVE_FROM_PUBLIC_SCHEMA}
 
     - name: worker-service
       minReplicas: ${{MIN_WORKER_REPLICAS}}
@@ -347,6 +349,8 @@ objects:
                 optional: true
           - name: MAX_SEED_THREADS
             value: ${MAX_SEED_THREADS}
+          - name: SERVE_FROM_PUBLIC_SCHEMA
+            value: ${SERVE_FROM_PUBLIC_SCHEMA}
 
     - name: scheduler-service
       minReplicas: ${{MIN_SCHEDULER_REPLICAS}}
@@ -415,6 +419,8 @@ objects:
               key: sentry-dsn
               name: rbac-secret
               optional: true
+        - name: SERVE_FROM_PUBLIC_SCHEMA
+          value: ${SERVE_FROM_PUBLIC_SCHEMA}
 
 - apiVersion: v1
   kind: ConfigMap
@@ -1475,6 +1481,42 @@ objects:
           }
         ]
       }
+    ros.json: |
+      {
+        "roles": [
+          {
+            "name": "Resource Optimization administrator",
+            "description": "Perform any available operation against any Resource Optimization resource.",
+            "system": true,
+            "platform_default": true,
+            "version": 1,
+            "access": [
+              {
+                "permission": "ros:*:*"
+              },
+              {
+                "permission": "inventory:*:read"
+              }
+            ]
+          },
+          {
+            "name": "Resource Optimization user",
+            "description": "A Resource Optimization user role that grants read only permission.",
+            "system": true,
+            "platform_default": true,
+            "version": 1,
+            "access": [
+              {
+                "permission": "ros:*:read"
+              },
+              {
+                "permission": "inventory:*:read"
+              }
+            ]
+          }
+        ]
+      }
+
     policies.json: |
       {
         "roles": [
@@ -1674,6 +1716,10 @@ objects:
           "remediation": ["read", "write", "execute"],
           "*": ["*"]
       }
+    ros.json: |
+      {
+          "*": ["read", "*"]
+      }
     sources.json: |
       {
           "*": ["*"]
@@ -1754,6 +1800,10 @@ parameters:
 - description: ClowdEnv Name
   name: ENV_NAME
   required: true
+- description: Initial amount of memory the Django container will request.
+  displayName: Memory Request
+  name: MEMORY_REQUEST
+  value: 512Mi
 - description: Maximum amount of memory the Django container can use.
   displayName: Memory Limit
   name: MEMORY_LIMIT
@@ -1761,7 +1811,7 @@ parameters:
 - description: Initial amount of cpu the Django container will request.
   displayName: CPU Request
   name: CPU_REQUEST
-  value: 250m
+  value: 200m
 - description: Maximum amount of cpu the Django container can use.
   displayName: CPU Limit
   name: CPU_LIMIT
@@ -1839,7 +1889,7 @@ parameters:
   value: 'False'
 - description: Application allow list for role creation in RBAC
   name: ROLE_CREATE_ALLOW_LIST
-  value: cost-management,remediations,inventory,drift,policies,advisor,catalog,approval,vulnerability,compliance,automation-analytics,notifications,patch,integrations
+  value: cost-management,remediations,inventory,drift,policies,advisor,catalog,approval,vulnerability,compliance,automation-analytics,notifications,patch,integrations,ros
 - description: Timestamp expiration allowance on destructive actions through the internal
     RBAC API
   name: RBAC_DESTRUCTIVE_ENABLED_UNTIL
@@ -1933,3 +1983,6 @@ parameters:
 - description: socket timeout for redis
   name: REDIS_SOCKET_TIMEOUT
   value: "0.1"
+- description: Flag to serve from the public schema
+  name: SERVE_FROM_PUBLIC_SCHEMA
+  value: "False"

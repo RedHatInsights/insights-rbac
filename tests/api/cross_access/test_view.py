@@ -734,12 +734,7 @@ class CrossAccountRequestViewTests(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data.get("status"), update_data.get("status"))
 
-        with tenant_context(tenant):
-            princ = Principal.objects.get(username__iexact=principal_name)
-            self.assertEqual(princ.username, principal_name)
-            self.assertTrue(princ.cross_account)
-
-        # Principal created in public schema too
+        # Principal created in public schema
         princ = Principal.objects.get(username__iexact=principal_name)
         self.assertEqual(princ.username, principal_name)
         self.assertEqual(princ.tenant, tenant)

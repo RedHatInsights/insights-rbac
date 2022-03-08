@@ -16,16 +16,13 @@
 #
 """Test the policy viewset."""
 
-import random
-from decimal import Decimal
 from uuid import uuid4
 
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APIClient
-from tenant_schemas.utils import tenant_context
 
-from api.models import Tenant, User
+from api.models import User
 from management.models import Group, Principal, Policy, Role, Permission
 from tests.identity_request import IdentityRequest
 
@@ -41,26 +38,21 @@ class PolicyViewsetTests(IdentityRequest):
         user.username = self.user_data["username"]
         user.account = self.customer_data["account_id"]
         request.user = user
-        public_tenant = Tenant.objects.get(schema_name="public")
 
-        with tenant_context(self.tenant):
-            self.principal = Principal(username=self.user_data["username"], tenant=self.tenant)
-            self.principal.save()
-            self.group = Group(name="groupA", tenant=self.tenant)
-            self.group.save()
-            self.group.principals.add(self.principal)
-            self.group.save()
-            Permission.objects.create(permission="app:*:*", tenant=self.tenant)
-        with tenant_context(public_tenant):
-            Permission.objects.create(permission="app:*:*", tenant=public_tenant)
+        self.principal = Principal(username=self.user_data["username"], tenant=self.tenant)
+        self.principal.save()
+        self.group = Group(name="groupA", tenant=self.tenant)
+        self.group.save()
+        self.group.principals.add(self.principal)
+        self.group.save()
+        Permission.objects.create(permission="app:*:*", tenant=self.tenant)
 
     def tearDown(self):
         """Tear down policy viewset tests."""
-        with tenant_context(self.tenant):
-            Group.objects.all().delete()
-            Principal.objects.all().delete()
-            Role.objects.all().delete()
-            Policy.objects.all().delete()
+        Group.objects.all().delete()
+        Principal.objects.all().delete()
+        Role.objects.all().delete()
+        Policy.objects.all().delete()
 
     def create_role(self, role_name, in_access_data=None):
         """Create a role."""

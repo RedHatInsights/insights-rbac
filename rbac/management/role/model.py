@@ -21,7 +21,7 @@ from uuid import uuid4
 
 from django.conf import settings
 from django.contrib.postgres.fields import JSONField
-from django.db import connections, models
+from django.db import models
 from django.db.models import signals
 from django.utils import timezone
 from management.cache import AccessCache
@@ -98,7 +98,7 @@ def role_related_obj_change_cache_handler(sender=None, instance=None, using=None
         "invalidating associated user cache keys",
         instance,
     )
-    cache = AccessCache(connections[using].schema_name)
+    cache = AccessCache(instance.tenant.schema_name)
     if instance.role:
         for principal in Principal.objects.filter(group__policies__roles__pk=instance.role.pk):
             cache.delete_policy(principal.uuid)

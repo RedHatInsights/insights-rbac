@@ -34,22 +34,22 @@ def on_complete(completed_log_message, tenant, future):
     logger.info(completed_log_message)
 
 
-def role_seeding():
+def role_seeding(schema_list=None):
     """Execute role seeding."""
-    run_seeds("role")
+    run_seeds("role", schema_list)
 
 
-def group_seeding():
+def group_seeding(schema_list=None):
     """Execute group seeding."""
-    run_seeds("group")
+    run_seeds("group", schema_list)
 
 
-def permission_seeding():
+def permission_seeding(schema_list=None):
     """Execute permission seeding."""
-    run_seeds("permission")
+    run_seeds("permission", schema_list)
 
 
-def run_seeds(seed_type):
+def run_seeds(seed_type, schema_list=None):
     """Update platform objects at startup."""
     # noqa: E402 pylint: disable=C0413
     from api.models import Tenant
@@ -61,7 +61,10 @@ def run_seeds(seed_type):
 
     try:
         with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_SEED_THREADS) as executor:
-            tenants = Tenant.objects.all()
+            if schema_list:
+                tenants = Tenant.objects.filter(schema_name__in=schema_list)
+            else:
+                tenants = Tenant.objects.all()
             tenant_count = tenants.count()
             for idx, tenant in enumerate(list(tenants)):
                 logger.info(

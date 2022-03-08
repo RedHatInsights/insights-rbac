@@ -79,7 +79,7 @@ class QuerySetTest(TestCase):
         """Test get_group_queryset as an admin."""
         self._create_groups()
         user = Mock(spec=User, admin=True)
-        req = Mock(user=user, query_params={})
+        req = Mock(user=user, tenant=self.tenant, query_params={})
         queryset = get_group_queryset(req)
         self.assertEquals(queryset.count(), 5)
 
@@ -90,7 +90,7 @@ class QuerySetTest(TestCase):
         group = Group.objects.first()
         group.principals.add(principal)
         user = Mock(spec=User, admin=True, account="00001", username="test_user")
-        req = Mock(user=user, query_params={"username": "test_user"})
+        req = Mock(user=user, tenant=self.tenant, query_params={"username": "test_user"})
         queryset = get_group_queryset(req)
         self.assertEquals(queryset.count(), 1)
 
@@ -101,7 +101,13 @@ class QuerySetTest(TestCase):
         group = Group.objects.first()
         group.principals.add(principal)
         user = Mock(spec=User, admin=False, account="00001", username="test_user")
-        req = Mock(user=user, method="GET", query_params={"username": "test_user"}, path=reverse("group-list"))
+        req = Mock(
+            user=user,
+            method="GET",
+            tenant=self.tenant,
+            query_params={"username": "test_user"},
+            path=reverse("group-list"),
+        )
         queryset = get_group_queryset(req)
         self.assertEquals(queryset.count(), 1)
 
@@ -113,7 +119,7 @@ class QuerySetTest(TestCase):
         group = Group.objects.first()
         group.principals.add(principal)
         user = Mock(spec=User, admin=False, account="00001", username="test_user")
-        req = Mock(user=user, method="GET", query_params={"username": "test_user2"})
+        req = Mock(user=user, method="GET", tenant=self.tenant, query_params={"username": "test_user2"})
         queryset = get_group_queryset(req)
         self.assertEquals(queryset.count(), 0)
 
@@ -121,7 +127,7 @@ class QuerySetTest(TestCase):
         """Test get_role_queryset as an admin."""
         self._create_roles()
         user = Mock(spec=User, admin=True)
-        req = Mock(user=user, query_params={})
+        req = Mock(user=user, tenant=self.tenant, query_params={})
         queryset = get_role_queryset(req)
         self.assertEquals(queryset.count(), 5)
         self.assertIsNotNone(queryset.last().accessCount)
@@ -131,7 +137,7 @@ class QuerySetTest(TestCase):
         roles = self._setup_roles_for_role_username_queryset_tests()
 
         user = Mock(spec=User, admin=False, username="test_user2")
-        req = Mock(user=user, method="GET", query_params={"username": "test_user2"})
+        req = Mock(user=user, method="GET", tenant=self.tenant, query_params={"username": "test_user2"})
         with self.assertRaises(PermissionDenied):
             get_role_queryset(req)
 
@@ -140,7 +146,7 @@ class QuerySetTest(TestCase):
         roles = self._setup_roles_for_role_username_queryset_tests()
 
         user = Mock(spec=User, admin=False, username="test_user")
-        req = Mock(user=user, method="GET", query_params={"username": "test_user2"})
+        req = Mock(user=user, tenant=self.tenant, method="GET", query_params={"username": "test_user2"})
         queryset = get_role_queryset(req)
         self.assertEquals(list(queryset), [])
         self.assertEquals(queryset.count(), 0)
@@ -150,7 +156,7 @@ class QuerySetTest(TestCase):
         roles = self._setup_roles_for_role_username_queryset_tests()
 
         user = Mock(spec=User, admin=True, account="00001", username="test_user2")
-        req = Mock(user=user, method="GET", query_params={"username": "test_user2"})
+        req = Mock(user=user, method="GET", tenant=self.tenant, query_params={"username": "test_user2"})
         queryset = get_role_queryset(req)
         role = queryset.last()
         self.assertEquals(list(queryset), [roles.first()])
@@ -163,7 +169,12 @@ class QuerySetTest(TestCase):
         roles = self._setup_roles_for_role_username_queryset_tests()
 
         user = Mock(spec=User, admin=True, account="00001", username="test_user2")
-        req = Mock(user=user, method="GET", query_params={SCOPE_KEY: PRINCIPAL_SCOPE, "username": "test_user2"})
+        req = Mock(
+            user=user,
+            method="GET",
+            tenant=self.tenant,
+            query_params={SCOPE_KEY: PRINCIPAL_SCOPE, "username": "test_user2"},
+        )
         queryset = get_role_queryset(req)
         role = queryset.last()
         self.assertEquals(list(queryset), [roles.first()])
@@ -175,7 +186,7 @@ class QuerySetTest(TestCase):
         """Test get_role_queryset as an admin supplying a different username."""
         roles = self._setup_roles_for_role_username_queryset_tests()
         user = Mock(spec=User, admin=True, account="00001", username="admin")
-        req = Mock(user=user, method="GET", query_params={"username": "test_user2"})
+        req = Mock(user=user, method="GET", tenant=self.tenant, query_params={"username": "test_user2"})
         queryset = get_role_queryset(req)
         self.assertEquals(list(queryset), [roles.first()])
         self.assertEquals(queryset.count(), 1)
@@ -185,7 +196,7 @@ class QuerySetTest(TestCase):
         self._create_roles()
         access = {"role": {"read": ["*"]}}
         user = Mock(spec=User, admin=False, access=access)
-        req = Mock(user=user, method="GET", query_params={})
+        req = Mock(user=user, method="GET", tenant=self.tenant, query_params={})
         queryset = get_role_queryset(req)
         self.assertEquals(queryset.count(), 5)
 
@@ -194,7 +205,7 @@ class QuerySetTest(TestCase):
         self._create_roles()
         access = {"role": {"read": [Role.objects.first().uuid]}}
         user = Mock(spec=User, admin=False, access=access)
-        req = Mock(user=user, method="GET", query_params={})
+        req = Mock(user=user, method="GET", tenant=self.tenant, query_params={})
         queryset = get_role_queryset(req)
         self.assertEquals(queryset.count(), 1)
 
@@ -203,7 +214,7 @@ class QuerySetTest(TestCase):
         self._create_roles()
         access = {"role": {"read": []}}
         user = Mock(spec=User, admin=False, access=access)
-        req = Mock(user=user, method="GET", query_params={})
+        req = Mock(user=user, method="GET", tenant=self.tenant, query_params={})
         queryset = get_role_queryset(req)
         self.assertEquals(queryset.count(), 0)
 
@@ -212,7 +223,7 @@ class QuerySetTest(TestCase):
         self._create_roles()
         access = {"role": {"write": ["*"]}}
         user = Mock(spec=User, admin=False, access=access)
-        req = Mock(user=user, method="PUT", query_params={})
+        req = Mock(user=user, method="PUT", tenant=self.tenant, query_params={})
         queryset = get_role_queryset(req)
         self.assertEquals(queryset.count(), 5)
 
@@ -221,7 +232,7 @@ class QuerySetTest(TestCase):
         self._create_roles()
         access = {"role": {"write": [Role.objects.first().uuid]}}
         user = Mock(spec=User, admin=False, access=access)
-        req = Mock(user=user, method="PUT", query_params={})
+        req = Mock(user=user, method="PUT", tenant=self.tenant, query_params={})
         queryset = get_role_queryset(req)
         self.assertEquals(queryset.count(), 1)
 
@@ -230,7 +241,7 @@ class QuerySetTest(TestCase):
         self._create_roles()
         access = {"role": {"write": []}}
         user = Mock(spec=User, admin=False, access=access)
-        req = Mock(user=user, method="PUT", query_params={})
+        req = Mock(user=user, method="PUT", tenant=self.tenant, query_params={})
         queryset = get_role_queryset(req)
         self.assertEquals(queryset.count(), 0)
 
@@ -238,7 +249,7 @@ class QuerySetTest(TestCase):
         """Test get_policy_queryset as an admin."""
         self._create_policies()
         user = Mock(spec=User, admin=True)
-        req = Mock(user=user, query_params={})
+        req = Mock(user=user, tenant=self.tenant, query_params={})
         queryset = get_policy_queryset(req)
         self.assertEquals(queryset.count(), 5)
 
@@ -247,7 +258,7 @@ class QuerySetTest(TestCase):
         self._create_policies()
         access = {"policy": {"read": ["*"]}}
         user = Mock(spec=User, admin=False, access=access)
-        req = Mock(user=user, method="GET", query_params={})
+        req = Mock(user=user, method="GET", tenant=self.tenant, query_params={})
         queryset = get_policy_queryset(req)
         self.assertEquals(queryset.count(), 5)
 
@@ -256,7 +267,7 @@ class QuerySetTest(TestCase):
         self._create_policies()
         access = {"policy": {"read": [Policy.objects.first().uuid]}}
         user = Mock(spec=User, admin=False, access=access)
-        req = Mock(user=user, method="GET", query_params={})
+        req = Mock(user=user, method="GET", tenant=self.tenant, query_params={})
         queryset = get_policy_queryset(req)
         self.assertEquals(queryset.count(), 1)
 
@@ -265,7 +276,7 @@ class QuerySetTest(TestCase):
         self._create_policies()
         access = {"policy": {"read": []}}
         user = Mock(spec=User, admin=False, access=access)
-        req = Mock(user=user, method="GET", query_params={})
+        req = Mock(user=user, method="GET", tenant=self.tenant, query_params={})
         queryset = get_policy_queryset(req)
         self.assertEquals(queryset.count(), 0)
 
@@ -274,7 +285,7 @@ class QuerySetTest(TestCase):
         self._create_policies()
         access = {"policy": {"write": ["*"]}}
         user = Mock(spec=User, admin=False, access=access)
-        req = Mock(user=user, method="PUT", query_params={})
+        req = Mock(user=user, method="PUT", tenant=self.tenant, query_params={})
         queryset = get_policy_queryset(req)
         self.assertEquals(queryset.count(), 5)
 
@@ -283,7 +294,7 @@ class QuerySetTest(TestCase):
         self._create_policies()
         access = {"policy": {"write": [Policy.objects.first().uuid]}}
         user = Mock(spec=User, admin=False, access=access)
-        req = Mock(user=user, method="PUT", query_params={})
+        req = Mock(user=user, method="PUT", tenant=self.tenant, query_params={})
         queryset = get_policy_queryset(req)
         self.assertEquals(queryset.count(), 1)
 
@@ -292,7 +303,7 @@ class QuerySetTest(TestCase):
         self._create_policies()
         access = {"policy": {"write": []}}
         user = Mock(spec=User, admin=False, access=access)
-        req = Mock(user=user, method="PUT", query_params={})
+        req = Mock(user=user, method="PUT", tenant=self.tenant, query_params={})
         queryset = get_policy_queryset(req)
         self.assertEquals(queryset.count(), 0)
 
@@ -301,7 +312,7 @@ class QuerySetTest(TestCase):
         self._create_policies()
         access = {"policy": {"write": []}}
         user = Mock(spec=User, admin=False, access=access)
-        req = Mock(user=user, method="PUT", query_params={SCOPE_KEY: PRINCIPAL_SCOPE})
+        req = Mock(user=user, method="PUT", tenant=self.tenant, query_params={SCOPE_KEY: PRINCIPAL_SCOPE})
         queryset = get_policy_queryset(req)
         self.assertEquals(queryset.count(), 0)
 
@@ -310,7 +321,7 @@ class QuerySetTest(TestCase):
         self._create_policies()
         access = {"policy": {"read": ["*"]}}
         user = Mock(spec=User, admin=False, access=access)
-        req = Mock(user=user, method="GET", query_params={SCOPE_KEY: "bad"})
+        req = Mock(user=user, method="GET", tenant=self.tenant, query_params={SCOPE_KEY: "bad"})
         with self.assertRaises(serializers.ValidationError):
             get_policy_queryset(req)
 

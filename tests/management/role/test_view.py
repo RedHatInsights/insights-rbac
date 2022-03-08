@@ -16,16 +16,13 @@
 #
 """Test the role viewset."""
 
-import random
-from decimal import Decimal
 from uuid import uuid4
 
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APIClient
-from tenant_schemas.utils import tenant_context
 
-from api.models import Tenant, User
+from api.models import User
 from management.models import Group, Permission, Principal, Role, Access, Policy, ResourceDefinition
 from tests.identity_request import IdentityRequest
 from unittest.mock import patch
@@ -64,42 +61,34 @@ class RoleViewsetTests(IdentityRequest):
             "platform_default",
         }
 
-        with tenant_context(self.tenant):
-            self.principal = Principal(username=self.user_data["username"], tenant=self.tenant)
-            self.principal.save()
-            self.policy = Policy.objects.create(name="policyA", tenant=self.tenant)
-            self.group = Group(name="groupA", description="groupA description", tenant=self.tenant)
-            self.group.save()
-            self.group.principals.add(self.principal)
-            self.group.policies.add(self.policy)
-            self.group.save()
+        self.principal = Principal(username=self.user_data["username"], tenant=self.tenant)
+        self.principal.save()
+        self.policy = Policy.objects.create(name="policyA", tenant=self.tenant)
+        self.group = Group(name="groupA", description="groupA description", tenant=self.tenant)
+        self.group.save()
+        self.group.principals.add(self.principal)
+        self.group.policies.add(self.policy)
+        self.group.save()
 
-            self.sysRole = Role(**sys_role_config, tenant=self.tenant)
-            self.sysRole.save()
+        self.sysRole = Role(**sys_role_config, tenant=self.tenant)
+        self.sysRole.save()
 
-            self.defRole = Role(**def_role_config, tenant=self.tenant)
-            self.defRole.save()
-            self.defRole.save()
+        self.defRole = Role(**def_role_config, tenant=self.tenant)
+        self.defRole.save()
+        self.defRole.save()
 
-            self.policy.roles.add(self.defRole, self.sysRole)
-            self.policy.save()
+        self.policy.roles.add(self.defRole, self.sysRole)
+        self.policy.save()
 
-            self.permission = Permission.objects.create(permission="app:*:*", tenant=self.tenant)
-            self.permission2 = Permission.objects.create(permission="app2:*:*", tenant=self.tenant)
-            self.permission3 = Permission.objects.create(permission="app:*:read", tenant=self.tenant)
-            self.permission.permissions.add(self.permission3)
-            self.access = Access.objects.create(permission=self.permission, role=self.defRole, tenant=self.tenant)
-            self.access2 = Access.objects.create(permission=self.permission2, role=self.defRole, tenant=self.tenant)
+        self.permission = Permission.objects.create(permission="app:*:*", tenant=self.tenant)
+        self.permission2 = Permission.objects.create(permission="app2:*:*", tenant=self.tenant)
+        self.permission3 = Permission.objects.create(permission="app:*:read", tenant=self.tenant)
+        self.permission.permissions.add(self.permission3)
+        self.access = Access.objects.create(permission=self.permission, role=self.defRole, tenant=self.tenant)
+        self.access2 = Access.objects.create(permission=self.permission2, role=self.defRole, tenant=self.tenant)
 
-            self.access3 = Access.objects.create(permission=self.permission2, role=self.sysRole, tenant=self.tenant)
-            Permission.objects.create(permission="cost-management:*:*", tenant=self.tenant)
-
-        # Create permission in public schema
-        with tenant_context(Tenant.objects.get(schema_name="public")):
-            Permission.objects.get_or_create(permission="cost-management:*:*", tenant=self.tenant)
-            Permission.objects.get_or_create(permission="app:*:*", tenant=self.tenant)
-            Permission.objects.get_or_create(permission="app2:*:*", tenant=self.tenant)
-            Permission.objects.get_or_create(permission="app:*:read", tenant=self.tenant)
+        self.access3 = Access.objects.create(permission=self.permission2, role=self.sysRole, tenant=self.tenant)
+        Permission.objects.create(permission="cost-management:*:*", tenant=self.tenant)
 
     def create_role(self, role_name, role_display="", in_access_data=None):
         """Create a role."""
@@ -151,16 +140,6 @@ class RoleViewsetTests(IdentityRequest):
             self.assertEqual(access.tenant, self.tenant)
             for rd in ResourceDefinition.objects.filter(access=access):
                 self.assertEqual(rd.tenant, self.tenant)
-
-        # role also gets created in public schema
-        with tenant_context(Tenant.objects.get(schema_name="public")):
-            role_public = Role.objects.get(name="roleA")
-            self.assertEqual(role_public.access.count(), 2)
-            self.assertEqual(role_public.access.first().permission.permission, access_data[0]["permission"])
-            self.assertEqual(
-                role_public.access.first().resourceDefinitions.first().attributeFilter,
-                access_data[0]["resourceDefinitions"][0]["attributeFilter"],
-            )
 
     def test_create_role_with_display_success(self):
         """Test that we can create a role."""
@@ -681,12 +660,6 @@ class RoleViewsetTests(IdentityRequest):
         self.assertEqual(updated_name, response.data.get("display_name"))
         self.assertEqual(updated_description, response.data.get("description"))
 
-        with tenant_context(Tenant.objects.get(schema_name="public")):
-            role_in_public = Role.objects.get(name=updated_name, tenant=self.tenant)
-            self.assertIsNotNone(role_in_public)
-            self.assertEqual(updated_name, role_in_public.display_name)
-            self.assertEqual(updated_description, role_in_public.description)
-
     def test_patch_role_failure(self):
         """Test that we return a 400 with invalid fields in the patch."""
         role_name = "role"
@@ -722,11 +695,6 @@ class RoleViewsetTests(IdentityRequest):
         self.assertIsNotNone(response.data.get("uuid"))
         self.assertEqual(updated_name, response.data.get("name"))
         self.assertEqual("cost-management:*:*", response.data.get("access")[0]["permission"])
-
-        with tenant_context(Tenant.objects.get(schema_name="public")):
-            role_in_public = Role.objects.get(name=updated_name, tenant=self.tenant)
-            self.assertIsNotNone(role_in_public)
-            self.assertEqual("cost-management:*:*", role_in_public.access.first().permission.permission)
 
     def test_update_role_invalid(self):
         """Test that updating an invalid role returns an error."""
@@ -842,8 +810,6 @@ class RoleViewsetTests(IdentityRequest):
         role_name = "roleA"
         response = self.create_role(role_name)
 
-        with tenant_context(Tenant.objects.get(schema_name="public")):
-            self.assertIsNotNone(Role.objects.get(name=role_name, tenant=self.tenant))
         role_uuid = response.data.get("uuid")
         url = reverse("role-detail", kwargs={"uuid": role_uuid})
         client = APIClient()
@@ -853,8 +819,6 @@ class RoleViewsetTests(IdentityRequest):
         # verify the role no longer exists
         response = client.get(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
-        with tenant_context(Tenant.objects.get(schema_name="public")):
-            self.assertIsNone(Role.objects.filter(name=role_name, tenant=self.tenant).first())
 
     def test_delete_system_role(self):
         """Test that system roles are protected from deletion"""

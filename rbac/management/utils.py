@@ -19,6 +19,7 @@ import json
 import os
 from uuid import UUID
 
+from django.conf import settings
 from django.core.exceptions import PermissionDenied
 from django.utils.translation import gettext as _
 from management.models import Access, Group, Policy, Principal, Role
@@ -64,7 +65,7 @@ def get_principal(username, request, verify_principal=True):
     # if not call BOP to check if user exist in the account.
     account = request.user.account
     try:
-        principal = Principal.objects.get(username__iexact=username)
+        principal = Principal.objects.get(username__iexact=username, tenant=request.tenant)
     except Principal.DoesNotExist:
         if verify_principal:
             proxy = PrincipalProxy()
@@ -78,10 +79,9 @@ def get_principal(username, request, verify_principal=True):
                 raise serializers.ValidationError({key: _(message)})
 
         # Avoid possible race condition if the user was created while checking BOP
-        for tenant in schema_handler(request.tenant):
-            principal, created = Principal.objects.get_or_create(
-                username=username, tenant=tenant
-            )  # pylint: disable=unused-variable
+        principal, created = Principal.objects.get_or_create(
+            username=username, tenant=request.tenant
+        )  # pylint: disable=unused-variable
     return principal
 
 
@@ -107,12 +107,18 @@ def access_for_roles(roles, param_applications):
     return set(access)
 
 
-def groups_for_principal(principal, **kwargs):
+def groups_for_principal(principal, tenant, **kwargs):
     """Gathers all groups for a principal, including the default."""
     if principal.cross_account:
         return set()
     assigned_group_set = principal.group.all()
-    platform_default_group_set = Group.platform_default_set()
+    if settings.SERVE_FROM_PUBLIC_SCHEMA:
+        public_tenant = Tenant.objects.get(schema_name="public")
+        platform_default_group_set = Group.platform_default_set().filter(
+            tenant=tenant
+        ) or Group.platform_default_set().filter(tenant=public_tenant)
+    else:
+        platform_default_group_set = Group.platform_default_set()
     prefetch_lookups = kwargs.get("prefetch_lookups_for_groups")
 
     if prefetch_lookups:
@@ -122,24 +128,24 @@ def groups_for_principal(principal, **kwargs):
     return set(assigned_group_set | platform_default_group_set)
 
 
-def policies_for_principal(principal, **kwargs):
+def policies_for_principal(principal, tenant, **kwargs):
     """Gathers all policies for a principal."""
-    groups = groups_for_principal(principal, **kwargs)
+    groups = groups_for_principal(principal, tenant, **kwargs)
     return policies_for_groups(groups)
 
 
-def roles_for_principal(principal, **kwargs):
+def roles_for_principal(principal, tenant, **kwargs):
     """Gathers all roles for a principal."""
     if principal.cross_account:
         return roles_for_cross_account_principal(principal)
-    policies = policies_for_principal(principal, **kwargs)
+    policies = policies_for_principal(principal, tenant, **kwargs)
     return roles_for_policies(policies)
 
 
-def access_for_principal(principal, **kwargs):
+def access_for_principal(principal, tenant, **kwargs):
     """Gathers all access for a principal for an application."""
     application = kwargs.get(APPLICATION_KEY)
-    roles = roles_for_principal(principal, **kwargs)
+    roles = roles_for_principal(principal, tenant, **kwargs)
     access = access_for_roles(roles, application)
     return access
 
@@ -154,6 +160,13 @@ def queryset_by_id(objects, clazz, **kwargs):
         query = query.prefetch_related(prefetch_lookups)
 
     return query
+
+
+def filter_queryset_by_tenant(queryset, tenant):
+    """Limit queryset by appropriate tenant when serving from public schema."""
+    if settings.SERVE_FROM_PUBLIC_SCHEMA and tenant:
+        return queryset.filter(tenant=tenant)
+    return queryset
 
 
 def validate_and_get_key(params, query_key, valid_values, default_value=None, required=True):
@@ -185,6 +198,14 @@ def validate_uuid(uuid, key="UUID Validation"):
         raise serializers.ValidationError({key: _(message)})
 
 
+def validate_group_name(name):
+    """Verify name provided is valid."""
+    if name and name.lower() in ["custom default access", "default access"]:
+        key = "Group name Validation"
+        message = f"{name} is reserved, please use another name."
+        raise serializers.ValidationError({key: _(message)})
+
+
 def validate_limit_and_offset(query_params):
     """Limit and offset should not be negative number."""
     if (int(query_params.get("limit", 10)) < 0) | (int(query_params.get("offset", 0)) < 0):
@@ -207,21 +228,6 @@ def roles_for_cross_account_principal(principal):
         )
         role_names_list = list(role_names)
     return Role.objects.filter(name__in=role_names_list)
-
-
-# this would provide as a handler to yield/run the same command
-# on both the public schema, and the schema that's passed in,
-# without changing the implementation logic in the original method
-def schema_handler(tenant_schema, include_public=True):
-    """Handle events in both public and tenant schemas."""
-    schemas = []
-    if include_public:
-        public_schema = Tenant.objects.get(schema_name="public")
-        schemas.append(public_schema)
-    schemas.append(tenant_schema)
-    for schema in schemas:
-        with tenant_context(schema):
-            yield tenant_schema
 
 
 def clear_pk(entry):

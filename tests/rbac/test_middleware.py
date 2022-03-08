@@ -334,7 +334,8 @@ class AccessHandlingTest(TestCase):
             cls.tenant.save(verbosity=0)
             cls.tenant.create_schema()
 
-        connection.set_tenant(cls.tenant)
+        public_tenant = Tenant.objects.get(schema_name="public")
+        connection.set_tenant(public_tenant)
 
     @classmethod
     def tearDownClass(cls):
@@ -347,6 +348,7 @@ class AccessHandlingTest(TestCase):
             "role": {"read": [], "write": []},
             "policy": {"read": [], "write": []},
             "principal": {"read": [], "write": []},
+            "permission": {"read": [], "write": []},
         }
         access = IdentityHeaderMiddleware._get_access_for_user("test_user", self.tenant)
         self.assertEqual(expected, access)
@@ -359,6 +361,7 @@ class AccessHandlingTest(TestCase):
             "role": {"read": [], "write": []},
             "policy": {"read": [], "write": []},
             "principal": {"read": [], "write": []},
+            "permission": {"read": [], "write": []},
         }
         access = IdentityHeaderMiddleware._get_access_for_user("test_user", self.tenant)
         self.assertEqual(expected, access)
@@ -381,6 +384,7 @@ class AccessHandlingTest(TestCase):
             "role": {"read": [], "write": []},
             "policy": {"read": [], "write": []},
             "principal": {"read": [], "write": []},
+            "permission": {"read": [], "write": []},
         }
         self.assertEqual(expected, access)
 
@@ -413,6 +417,7 @@ class AccessHandlingTest(TestCase):
             "role": {"read": [], "write": []},
             "policy": {"read": [], "write": []},
             "principal": {"read": [], "write": []},
+            "permission": {"read": [], "write": []},
         }
         self.assertEqual(expected, access)
 
@@ -443,6 +448,7 @@ class AccessHandlingTest(TestCase):
             "role": {"read": [], "write": []},
             "policy": {"read": [], "write": []},
             "principal": {"read": [], "write": []},
+            "permission": {"read": [], "write": []},
         }
         self.assertEqual(expected, access)
 
@@ -464,5 +470,6 @@ class AccessHandlingTest(TestCase):
             "role": {"read": ["*"], "write": ["*"]},
             "policy": {"read": ["*"], "write": ["*"]},
             "principal": {"read": ["*"], "write": ["*"]},
+            "permission": {"read": ["*"], "write": ["*"]},
         }
         self.assertEqual(expected, access)
