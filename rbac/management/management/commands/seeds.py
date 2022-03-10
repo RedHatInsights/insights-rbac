@@ -33,7 +33,7 @@ class Command(BaseCommand):
         parser.add_argument("--permissions", action="store_true")
         parser.add_argument("--roles", action="store_true")
         parser.add_argument("--groups", action="store_true")
-        parser.add_argument("--schema_list", action="store_true")
+        parser.add_argument("--schema_list", action="append")
 
     def handle(self, *args, **options):
         """Handle method for command."""
