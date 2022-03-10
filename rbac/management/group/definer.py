@@ -62,7 +62,7 @@ def seed_group(tenant):
             admin_name = "Default Admin access"
             admin_group_description = (
                 "This group contains the roles that all admin users inherit by default. "
-                "Adding or removing roles in this group will affect permissions for all admin users in your organization."
+                "Adding or removing roles in this group will affect permissions for all admin users in your org."
             )
             admin_group, admin_group_created = Group.objects.get_or_create(
                 admin_default=True,
