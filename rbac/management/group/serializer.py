@@ -32,6 +32,7 @@ class GroupInputSerializer(SerializerCreateOverrideMixin, serializers.ModelSeria
     description = serializers.CharField(allow_null=True, required=False)
     principalCount = serializers.IntegerField(read_only=True)
     platform_default = serializers.BooleanField(read_only=True)
+    admin_default = serializers.BooleanField(read_only=True)
     system = serializers.BooleanField(read_only=True)
     roleCount = serializers.SerializerMethodField()
     created = serializers.DateTimeField(read_only=True)
@@ -51,6 +52,7 @@ class GroupInputSerializer(SerializerCreateOverrideMixin, serializers.ModelSeria
             "description",
             "principalCount",
             "platform_default",
+            "admin_default",
             "roleCount",
             "created",
             "modified",
@@ -66,6 +68,7 @@ class GroupSerializer(SerializerCreateOverrideMixin, serializers.ModelSerializer
     description = serializers.CharField(allow_null=True, required=False)
     principals = PrincipalSerializer(read_only=True, many=True)
     platform_default = serializers.BooleanField(read_only=True)
+    admin_default = serializers.BooleanField(read_only=True)
     system = serializers.BooleanField(read_only=True)
     roles = serializers.SerializerMethodField()
     roleCount = serializers.SerializerMethodField()
@@ -82,6 +85,7 @@ class GroupSerializer(SerializerCreateOverrideMixin, serializers.ModelSerializer
             "description",
             "principals",
             "platform_default",
+            "admin_default",
             "created",
             "modified",
             "roles",

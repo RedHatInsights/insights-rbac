@@ -95,6 +95,7 @@ class RoleSerializer(serializers.ModelSerializer):
     applications = serializers.SerializerMethodField()
     system = serializers.BooleanField(read_only=True)
     platform_default = serializers.BooleanField(read_only=True)
+    admin_default = serializers.BooleanField(read_only=True)
     created = serializers.DateTimeField(read_only=True)
     modified = serializers.DateTimeField(read_only=True)
 
@@ -113,6 +114,7 @@ class RoleSerializer(serializers.ModelSerializer):
             "applications",
             "system",
             "platform_default",
+            "admin_default",
             "created",
             "modified",
         )
@@ -162,6 +164,7 @@ class RoleMinimumSerializer(SerializerCreateOverrideMixin, serializers.ModelSeri
     applications = serializers.SerializerMethodField()
     system = serializers.BooleanField(read_only=True)
     platform_default = serializers.BooleanField(read_only=True)
+    admin_default = serializers.BooleanField(read_only=True)
 
     class Meta:
         """Metadata for the serializer."""
@@ -179,6 +182,7 @@ class RoleMinimumSerializer(SerializerCreateOverrideMixin, serializers.ModelSeri
             "applications",
             "system",
             "platform_default",
+            "admin_default",
         )
 
     def get_applications(self, obj):
@@ -220,6 +224,7 @@ class RoleDynamicSerializer(DynamicFieldsModelSerializer):
     applications = serializers.SerializerMethodField()
     system = serializers.BooleanField(read_only=True)
     platform_default = serializers.BooleanField(read_only=True)
+    admin_default = serializers.BooleanField(read_only=True)
 
     class Meta:
         """Metadata for the serializer."""
@@ -239,6 +244,7 @@ class RoleDynamicSerializer(DynamicFieldsModelSerializer):
             "applications",
             "system",
             "platform_default",
+            "admin_default",
         )
 
     def get_applications(self, obj):
