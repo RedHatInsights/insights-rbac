@@ -87,7 +87,7 @@ If a docker container running Postgres is not feasible, it is possible to run Po
 
 You may also run migrations explicitly, and in parallel, by specifying `TENANT_PARALLEL_MIGRATION_MAX_PROCESSES` (the number of concurrent processes to run migrations) and/or `TENANT_PARALLEL_MIGRATION_CHUNKS` (the number of migrations for each process to run at a time). Both of these values default to 2. *Be mindful of the fact that bumping these values will consume more database connections:*
 
-    TENANT_PARALLEL_MIGRATION_MAX_PROCESSES=4 TENANT_PARALLEL_MIGRATION_CHUNKS=2 ./rbac/manage.py migrate_schemas --executor=parallel
+    TENANT_PARALLEL_MIGRATION_MAX_PROCESSES=4 TENANT_PARALLEL_MIGRATION_CHUNKS=2 ./rbac/manage.py migrate_schemas --executor=parallel --schema=public
 
 Seeds
 ^^^^^
@@ -102,7 +102,7 @@ Locally these are sourced from `/rbac/management/role/definitions/*.json`, while
 
 You can also execute the following Django command to run seeds manually. It's recommended that you disable db signals while running seeds with `ACCESS_CACHE_CONNECT_SIGNALS=False`. Caching will be busted after seeding for each tenant has processed. You may also specify the number of concurrent threads in which seeds should be run, by setting `MAX_SEED_THREADS` either in the process, or the app environment. The default value is 2. *Be mindful of the fact that bumping this value will consume more database connections:* ::
 
-  ACCESS_CACHE_CONNECT_SIGNALS=False MAX_SEED_THREADS=2 ./rbac/manage.py seeds [--roles|--groups|--permissions]
+  ACCESS_CACHE_CONNECT_SIGNALS=False MAX_SEED_THREADS=2 ./rbac/manage.py seeds [--roles|--groups|--permissions|--schema_list]
 
 Server
 ^^^^^^
