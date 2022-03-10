@@ -45,6 +45,7 @@ class Group(TenantAwareModel):
     modified = AutoDateTimeField(default=timezone.now)
     platform_default = models.BooleanField(default=False)
     system = models.BooleanField(default=False)
+    admin_default = models.BooleanField(default=False)
 
     def roles(self):
         """Roles for a group."""

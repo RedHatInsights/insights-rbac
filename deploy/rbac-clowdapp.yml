@@ -28,8 +28,6 @@ objects:
           - env:
             - name: INIT_CONTAINER
               value: "True"
-            - name: EPH_ENV
-              value: ${EPH_ENV}
             inheritEnv: true
             args:
               - sh
@@ -1965,8 +1963,6 @@ parameters:
   value: 'rbac'
 - name: CW_NULL_WORKAROUND
   value: 'true'
-- name: EPH_ENV
-  required: true
 - name: CELERY_INITIAL_DELAY_SEC
   value: "30"
 - name: CELERY_PERIOD_SEC
