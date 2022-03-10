@@ -23,6 +23,7 @@ from django.conf import settings
 from django.core.exceptions import PermissionDenied
 from django.utils.translation import gettext as _
 from management.models import Access, Group, Policy, Principal, Role
+from management.permissions.principal_access import PrincipalAccessPermission
 from management.principal.proxy import PrincipalProxy
 from rest_framework import serializers, status
 from tenant_schemas.utils import tenant_context
@@ -32,6 +33,7 @@ from api.models import CrossAccountRequest, Tenant
 
 USERNAME_KEY = "username"
 APPLICATION_KEY = "application"
+PRICIPAL_PERMISSION_INSTANCE = PrincipalAccessPermission()
 
 
 def validate_psk(psk, client_id):
@@ -52,10 +54,9 @@ def get_principal_from_request(request):
     current_user = request.user.username
     qs_user = request.query_params.get(USERNAME_KEY)
 
-    if qs_user and not request.user.admin:
+    if qs_user and not PRICIPAL_PERMISSION_INSTANCE.has_permission(request=request, view=None):
         raise PermissionDenied()
     username = qs_user if qs_user else current_user
-
     return get_principal(username, request, verify_principal=bool(qs_user))
 
 
