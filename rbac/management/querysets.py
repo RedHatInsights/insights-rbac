@@ -20,6 +20,7 @@ from django.db.models.aggregates import Count
 from django.urls import reverse
 from django.utils.translation import gettext as _
 from management.group.model import Group
+from management.permissions.role_access import RoleAccessPermission
 from management.policy.model import Policy
 from management.role.model import Access, Role
 from management.utils import (
@@ -142,7 +143,9 @@ def get_role_queryset(request):
 
     username = request.query_params.get("username")
     if username:
-        if username != request.user.username and not request.user.admin:
+        role_permission = RoleAccessPermission()
+
+        if username != request.user.username and not role_permission.has_permission(request=request, view=None):
             return Role.objects.none()
         else:
             queryset = get_object_principal_queryset(
