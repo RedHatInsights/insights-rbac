@@ -34,8 +34,9 @@ from api.models import Tenant
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 
-def seed_group(tenant):
-    """For a tenant create or update default group."""
+def seed_group():
+    """Create or update default group."""
+    public_tenant = Tenant.objects.get(tenant_name="public")
     with transaction.atomic():
         name = "Default access"
         group_description = (
@@ -46,13 +47,12 @@ def seed_group(tenant):
         group, group_created = Group.objects.get_or_create(
             platform_default=True,
             defaults={"description": group_description, "name": name, "system": True},
-            tenant=tenant,
+            tenant=public_tenant,
         )
 
-        if group.system:
-            platform_roles = Role.objects.filter(platform_default=True)
-            add_roles(group, platform_roles, tenant, replace=True)
-            logger.info("Finished seeding default group.")
+        platform_roles = Role.objects.filter(platform_default=True)
+        add_roles(group, platform_roles, public_tenant, replace=True)
+        logger.info("Finished seeding default group %s.", name)
 
         # Default admin group
         admin_name = "Default admin access"

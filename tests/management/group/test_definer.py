@@ -30,8 +30,8 @@ class GroupDefinerTests(IdentityRequest):
         """Set up the group definer tests."""
         super().setUp()
         self.public_tenant = Tenant.objects.get(tenant_name="public")
-        seed_roles(self.public_tenant)
-        seed_group(self.public_tenant)
+        seed_roles()
+        seed_group()
 
     def test_default_group_seeding_properly(self):
         """Test that default group are seeded properly."""
@@ -55,7 +55,7 @@ class GroupDefinerTests(IdentityRequest):
         self.modify_default_group(system=False)
 
         try:
-            seed_group(self.public_tenant)
+            seed_group()
         except Exception:
             self.fail(msg="update seed_group encountered an exception")
 
@@ -69,7 +69,7 @@ class GroupDefinerTests(IdentityRequest):
         self.modify_default_group()
 
         try:
-            seed_group(self.public_tenant)
+            seed_group()
         except Exception:
             self.fail(msg="update seed_group encountered an exception")
 

@@ -18,7 +18,12 @@
 import logging
 
 from django.core.management.base import BaseCommand
-from management.seeds import group_seeding, permission_seeding, purge_cache, role_seeding
+from django.db import transaction
+from management.group.definer import seed_group
+from management.role.definer import seed_permissions, seed_roles
+from tenant_schemas.utils import tenant_context
+
+from api.models import Tenant
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
@@ -26,31 +31,26 @@ logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 class Command(BaseCommand):
     """Command class for running seeds."""
 
-    help = "Runs the seeding for roles, permissions and groups"
+    help = "Initialize a tenant: create a schema, migrate and seed."
 
     def add_arguments(self, parser):
         """Add arguments to command."""
-        parser.add_argument("--permissions", action="store_true")
-        parser.add_argument("--roles", action="store_true")
-        parser.add_argument("--groups", action="store_true")
+        parser.add_argument("tenant_schema_name")
 
     def handle(self, *args, **options):
         """Handle method for command."""
-        seed_all = not (options["permissions"] or options["roles"] or options["groups"])
+        tenant_schema_name = options["tenant_schema_name"]
 
-        if options["permissions"] or seed_all:
-            logger.info("*** Seeding permissions... ***")
-            permission_seeding()
-            logger.info("*** Permission seeding completed. ***\n")
-
-        if options["roles"] or seed_all:
-            logger.info("*** Seeding roles... ***")
-            role_seeding()
-            logger.info("*** Role seeding completed. ***\n")
-
-        if options["groups"] or seed_all:
-            logger.info("*** Seeding groups... ***")
-            group_seeding()
-            logger.info("*** Group seeding completed. ***\n")
-
-        purge_cache()
+        try:
+            tenant = Tenant.objects.get(tenant_name=tenant_schema_name)
+            with transaction.atomic():
+                with tenant_context(tenant):
+                    created = tenant.create_schema(check_if_exists=True)
+                    if created is not False:
+                        seed_permissions()
+                        seed_roles()
+                        seed_group()
+                    tenant.ready = True
+                    tenant.save()
+        except Tenant.DoesNotExist:
+            logger.error(f"Tenant `{tenant_schema_name}` does not exist.")

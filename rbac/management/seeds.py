@@ -17,17 +17,20 @@
 """Seeds module."""
 import concurrent.futures
 import logging
-from functools import partial
 
 from django.db import connections
+from management.cache import AccessCache
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 
-def on_complete(completed_log_message, future):
+def on_complete(progress, tenant):
     """Explicitly close the connection for the thread."""
+    logger.info(f"Purging policy cache for tenant {tenant.tenatn_name} [{progress}].")
+    cache = AccessCache(tenant.tenant_name)
+    cache.delete_all_policies_for_tenant()
     connections.close_all()
-    logger.info(completed_log_message)
+    logger.info(f"Finished purging policy cache for tenant {tenant.tenant_name} [{progress}].")
 
 
 def role_seeding():
@@ -48,19 +51,27 @@ def permission_seeding():
 def run_seeds(seed_type):
     """Update platform objects at startup."""
     # noqa: E402 pylint: disable=C0413
-    from api.models import Tenant
     from management.group.definer import seed_group
     from management.role.definer import seed_roles, seed_permissions
-    from rbac.settings import MAX_SEED_THREADS
 
     seed_functions = {"role": seed_roles, "group": seed_group, "permission": seed_permissions}
 
     try:
-        with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_SEED_THREADS) as executor:
-            public_tenant = Tenant.objects.get(tenant_name="public")
-            logger.info(f"Seeding {seed_type} changes.")
-            future = executor.submit(seed_functions[seed_type](tenant=public_tenant))
-            completed_log_message = f"Finished seeding {seed_type} changes."
-            future.add_done_callback(partial(on_complete, completed_log_message))
+        logger.info(f"Seeding {seed_type} changes.")
+        seed_functions[seed_type]()
+        logger.info(f"Finished seeding {seed_type}.")
     except Exception as exc:
         logger.error(f"Error encountered during {seed_type} seeding {exc}.")
+
+
+def purge_cache():
+    """Explicitly purge the cache."""
+    from api.models import Tenant
+    from rbac.settings import MAX_SEED_THREADS
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_SEED_THREADS) as executor:
+        tenants = Tenant.objects.all()
+        tenant_count = tenants.count()
+        for idx, tenant in enumerate(list(tenants)):
+            progress = f"[{idx + 1} of {tenant_count}]."
+            executor.submit(on_complete, progress, tenant)
