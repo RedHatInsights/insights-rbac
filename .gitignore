@@ -108,6 +108,7 @@ ENV/
 
 # Local Postgres data
 pg_data/
+.DS_Store
 
 # apidoc
 apidoc/*
