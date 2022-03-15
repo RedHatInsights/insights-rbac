@@ -61,8 +61,8 @@ def seed_group(tenant):
             # Default admin group
             admin_name = "Default admin access"
             admin_group_description = (
-                "This group contains the roles that all admin users inherit by default. "
-                "Adding or removing roles in this group will affect permissions for all admin users in your org."
+                "This group contains the roles that all org admin users inherit by default. "
+                "Adding or removing roles in this group will affect permissions for all org admin users in your org."
             )
             admin_group, admin_group_created = Group.objects.get_or_create(
                 admin_default=True,
@@ -72,7 +72,7 @@ def seed_group(tenant):
             if admin_group.system:
                 platform_roles = Role.objects.filter(admin_default=True)
                 add_roles(admin_group, platform_roles, tenant, replace=True)
-                logger.info("Finished seeding default admin group %s for tenant %s.", name, tenant.schema_name)
+                logger.info("Finished seeding default org admin group %s for tenant %s.", name, tenant.schema_name)
             else:
                 logger.info("Default admin group %s is managed by tenant %s.", name, tenant.schema_name)
     return tenant
