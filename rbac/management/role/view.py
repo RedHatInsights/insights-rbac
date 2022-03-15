@@ -56,6 +56,7 @@ LIST_ROLE_FIELDS = [
     "applications",
     "system",
     "platform_default",
+    "admin_default",
 ]
 VALID_PATCH_FIELDS = ["name", "display_name", "description"]
 

@@ -40,6 +40,7 @@ def _make_role(tenant, data):
         system=True,
         version=data.get("version", 1),
         platform_default=data.get("platform_default", False),
+        admin_default=data.get("admin_default", False),
     )
     role, created = Role.objects.get_or_create(name=name, defaults=defaults, tenant=tenant)
 
