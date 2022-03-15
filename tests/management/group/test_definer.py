@@ -95,17 +95,16 @@ class GroupDefinerTests(IdentityRequest):
 
     def test_admin_default_group_seeding_properly(self):
         """Test that admin default group are seeded properly."""
-        with tenant_context(self.public_tenant):
-            group = Group.objects.get(admin_default=True)
+        group = Group.objects.get(admin_default=True)
 
-            system_policy = group.policies.get(name="System Policy for Group {}".format(group.uuid))
-            self.assertEqual(group.admin_default, True)
-            self.assertEqual(group.system, True)
-            self.assertEqual(group.name, "Default Admin access")
-            self.assertEqual(group.tenant, self.public_tenant)
-            self.assertEqual(system_policy.system, True)
-            self.assertEqual(system_policy.tenant, self.public_tenant)
-            # only admin_default roles would be assigned to the admin_default group
-            for role in group.roles():
-                self.assertTrue(role.admin_default)
-                self.assertEqual(role.tenant, self.public_tenant)
+        system_policy = group.policies.get(name="System Policy for Group {}".format(group.uuid))
+        self.assertEqual(group.admin_default, True)
+        self.assertEqual(group.system, True)
+        self.assertEqual(group.name, "Default admin access")
+        self.assertEqual(group.tenant, self.public_tenant)
+        self.assertEqual(system_policy.system, True)
+        self.assertEqual(system_policy.tenant, self.public_tenant)
+        # only admin_default roles would be assigned to the admin_default group
+        for role in group.roles():
+            self.assertTrue(role.admin_default)
+            self.assertEqual(role.tenant, self.public_tenant)

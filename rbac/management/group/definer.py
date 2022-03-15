@@ -59,7 +59,7 @@ def seed_group(tenant):
                 logger.info("Default group %s is managed by tenant %s.", name, tenant.schema_name)
 
             # Default admin group
-            admin_name = "Default Admin access"
+            admin_name = "Default admin access"
             admin_group_description = (
                 "This group contains the roles that all admin users inherit by default. "
                 "Adding or removing roles in this group will affect permissions for all admin users in your org."
