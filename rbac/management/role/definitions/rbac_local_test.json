@@ -15,6 +15,7 @@
       "name": "User Access principal viewer",
       "description": "Grants a non-org admin read access to principals within user access. This role can only be viewed and assigned by Organization Administrators.",
       "system": true,
+      "platform_default": true,
       "version": 2,
       "access": [
         {

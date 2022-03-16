@@ -19,6 +19,7 @@
         "name": "Cost Cloud Viewer Local Test",
         "description": "A cost management role that grants read permissions on cost reports related to cloud sources, just for testing locally.",
         "system": true,
+        "platform_default": true,
         "version": 2,
         "access": [{
             "permission": "cost-management:aws.account:*"
@@ -27,6 +28,7 @@
         "name": "Cost OpenShift Viewer Local Test",
         "description": "A cost management role that grants read permissions on cost reports related to OpenShift sources, just for testing locally.",
         "system": true,
+        "platform_default": true,
         "version": 2,
         "access": [{
             "permission": "cost-management:openshift.cluster:*"

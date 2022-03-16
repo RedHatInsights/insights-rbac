@@ -52,10 +52,7 @@ def seed_group(tenant):
         if group.system:
             platform_roles = Role.objects.filter(platform_default=True)
             add_roles(group, platform_roles, tenant, replace=True)
-            logger.info("Finished seeding default group %s for tenant %s.", name, tenant.tenant_name)
-        else:
-            logger.info("Default group %s is managed by tenant %s.", name, tenant.tenant_name)
-    return tenant
+            logger.info("Finished seeding default group.")
 
 
 def set_system_flag_before_update(group, tenant):

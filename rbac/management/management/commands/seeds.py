@@ -33,7 +33,6 @@ class Command(BaseCommand):
         parser.add_argument("--permissions", action="store_true")
         parser.add_argument("--roles", action="store_true")
         parser.add_argument("--groups", action="store_true")
-        parser.add_argument("--schema_list", action="store_true")
 
     def handle(self, *args, **options):
         """Handle method for command."""
@@ -41,15 +40,15 @@ class Command(BaseCommand):
 
         if options["permissions"] or seed_all:
             logger.info("*** Seeding permissions... ***")
-            permission_seeding(options["schema_list"])
+            permission_seeding()
             logger.info("*** Permission seeding completed. ***\n")
 
         if options["roles"] or seed_all:
             logger.info("*** Seeding roles... ***")
-            role_seeding(options["schema_list"])
+            role_seeding()
             logger.info("*** Role seeding completed. ***\n")
 
         if options["groups"] or seed_all:
             logger.info("*** Seeding groups... ***")
-            group_seeding(options["schema_list"])
+            group_seeding()
             logger.info("*** Group seeding completed. ***\n")

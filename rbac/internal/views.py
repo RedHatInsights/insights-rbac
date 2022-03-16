@@ -24,12 +24,11 @@ import pytz
 from django.conf import settings
 from django.db import transaction
 from django.db.migrations.recorder import MigrationRecorder
-from django.http import HttpResponse
+from django.http import HttpResponse, Http404
 from django.shortcuts import get_object_or_404
 from management.cache import TenantCache
 from management.models import Group, Role
 from management.tasks import (
-    run_init_tenant_in_worker,
     run_migrations_in_worker,
     run_reconcile_tenant_relations_in_worker,
     run_seeds_in_worker,
@@ -56,7 +55,7 @@ def tenant_is_modified(tenant_name):
     # the search_path on the query will fall back to using the public schema, in
     # which case there will be custom groups/roles, and we won't be able to propertly
     # prune the tenant which has been created without a valid schema
-    tenant = Tenant.objects.get(tenant_name=tenant_name)
+    tenant = get_object_or_404(Tenant, tenant_name=tenant_name)
 
     return (Role.objects.filter(system=False, tenant=tenant).count() != 0) or (
         Group.objects.filter(system=False, tenant=tenant).count() != 0
@@ -143,19 +142,6 @@ def tenant_view(request, tenant_name):
             else:
                 return HttpResponse("Tenant cannot be deleted.", status=400)
     return HttpResponse('Invalid method, only "DELETE" is allowed.', status=405)
-
-
-def tenant_init(request, tenant_schema_name):
-    """View method for resolving 'hung' tenants by re-initing them.
-
-    POST /_private/api/tenant/<schema_name>/init/
-    """
-    if request.method == "POST":
-        msg = f"Initializing schema, running migrations/seeds for tenant {tenant_schema_name} in the background."
-        logger.info(msg)
-        run_init_tenant_in_worker.delay(tenant_schema_name)
-        return HttpResponse(msg, status=202)
-    return HttpResponse('Invalid method, only "POST" is allowed.', status=405)
 
 
 def run_migrations(request):
