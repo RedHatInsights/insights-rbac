@@ -59,6 +59,7 @@ class RoleViewsetTests(IdentityRequest):
             "accessCount",
             "modified",
             "platform_default",
+            "admin_default",
         }
 
         self.principal = Principal(username=self.user_data["username"], tenant=self.tenant)

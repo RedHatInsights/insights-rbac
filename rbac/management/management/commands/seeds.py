@@ -34,6 +34,7 @@ class Command(BaseCommand):
         parser.add_argument("--roles", action="store_true")
         parser.add_argument("--groups", action="store_true")
 
+
     def handle(self, *args, **options):
         """Handle method for command."""
         seed_all = not (options["permissions"] or options["roles"] or options["groups"])

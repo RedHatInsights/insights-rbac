@@ -87,3 +87,4 @@ class GroupDefinerTests(IdentityRequest):
 
         group.system = system
         group.save()
+    

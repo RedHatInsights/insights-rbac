@@ -46,6 +46,7 @@ class Role(TenantAwareModel):
     version = models.PositiveIntegerField(default=1)
     created = models.DateTimeField(default=timezone.now)
     modified = AutoDateTimeField(default=timezone.now)
+    admin_default = models.BooleanField(default=False)
 
     @property
     def role(self):

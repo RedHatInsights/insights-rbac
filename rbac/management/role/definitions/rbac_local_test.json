@@ -4,7 +4,8 @@
       "name": "RBAC Administrator Local Test",
       "description": "Grants a non-org admin full access to configure and manage user access to services hosted on cloud.redhat.com. This role can only be viewed and assigned by Organization Administrators.",
       "system": true,
-      "version": 2,
+      "version": 3,
+      "admin_default": true,
       "access": [
         {
           "permission": "rbac:*:*"

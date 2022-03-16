@@ -813,6 +813,15 @@
             }
           },
           {
+            "name": "admin_default",
+            "in": "query",
+            "description": "An optional flag to return either admin default or non-admin default groups.",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
             "name": "system",
             "in": "query",
             "description": "An optional flag to return either system or non-system groups.",
@@ -3096,6 +3105,10 @@
               "platform_default": {
                 "type": "boolean",
                 "default": false
+              },
+              "admin_default": {
+                "type": "boolean",
+                "default": false
               }
             }
           }
@@ -3709,6 +3722,10 @@
               "platform_default": {
                 "type": "boolean",
                 "default": false
+              },
+              "admin_default": {
+                "type": "boolean",
+                "default": false
               }
             }
           }
@@ -3732,7 +3749,8 @@
               "accessCount",
               "applications",
               "system",
-              "platform_default"
+              "platform_default",
+              "admin_default"
             ],
             "properties": {
               "policyCount": {
@@ -3755,6 +3773,10 @@
                 "default": false
               },
               "platform_default": {
+                "type": "boolean",
+                "default": false
+              },
+              "admin_default": {
                 "type": "boolean",
                 "default": false
               },
