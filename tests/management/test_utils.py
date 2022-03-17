@@ -74,7 +74,7 @@ class UtilsTests(IdentityRequest):
         self.default_admin_policy = Policy.objects.create(name="default admin policy", system=True, tenant=self.tenant)
         self.default_admin_policy.roles.add(self.default_admin_role)
         self.default_admin_group = Group.objects.create(
-            name="Default admin access", system=True, platform_default=False, tenant=self.tenant, admin_default=True
+            name="default admin access", system=True, platform_default=False, tenant=self.tenant, admin_default=True
         )
         self.default_admin_group.policies.add(self.default_admin_policy)
 
