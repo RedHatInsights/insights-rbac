@@ -126,6 +126,10 @@ def groups_for_principal(principal, tenant, **kwargs):
         assigned_group_set = assigned_group_set.prefetch_related(prefetch_lookups)
         platform_default_group_set = platform_default_group_set.prefetch_related(prefetch_lookups)
 
+    if kwargs.get("is_org_admin"):
+        admin_default_group_set = Group.objects.filter(name="Default admin access")
+        return set(assigned_group_set | platform_default_group_set | admin_default_group_set)
+
     return set(assigned_group_set | platform_default_group_set)
 
 
