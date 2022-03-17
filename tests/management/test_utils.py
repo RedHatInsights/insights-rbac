@@ -66,7 +66,7 @@ class UtilsTests(IdentityRequest):
         # setup admin default group/role which all tenant admin users
         # should inherit without explicit association
         self.default_admin_role = Role.objects.create(
-            name="default admin role", platform_default=False, system=True, tenant=self.tenant
+            name="default admin role", platform_default=False, system=True, tenant=self.tenant, admin_default=True
         )
         self.default_admin_access = Access.objects.create(
             permission=self.permission, role=self.default_admin_role, tenant=self.tenant

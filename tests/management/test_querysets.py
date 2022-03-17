@@ -26,10 +26,19 @@ from management.group.model import Group
 from management.policy.model import Policy
 from management.principal.model import Principal
 from management.role.model import Role
-from management.querysets import PRINCIPAL_SCOPE, SCOPE_KEY, get_group_queryset, get_policy_queryset, get_role_queryset
+from management.querysets import (
+    PRINCIPAL_SCOPE,
+    SCOPE_KEY,
+    get_group_queryset,
+    get_policy_queryset,
+    get_role_queryset,
+    get_access_queryset,
+)
+from management.utils import APPLICATION_KEY
 from rest_framework import serializers
 
 from api.models import Tenant, User
+from tests.identity_request import IdentityRequest
 
 
 class QuerySetTest(TestCase):
@@ -350,6 +359,24 @@ class QuerySetTest(TestCase):
         req = Mock(user=user, method="GET", tenant=self.tenant, query_params={SCOPE_KEY: "bad"})
         with self.assertRaises(serializers.ValidationError):
             get_policy_queryset(req)
+
+    def test_get_access_queryset_org_admin(self):
+        """Test get_access_queryset with an org admin"""
+        user_data = {"username": "user_dev", "email": "admin@example.com"}
+        customer = {"account_id": "10001"}
+        request_context = IdentityRequest._create_request_context(customer, user_data, is_org_admin=True)
+
+        request = request_context["request"]
+        role = Role.objects.create(name="role_admin_default", tenant=self.tenant)
+        policy = Policy.objects.create(name="policy_admin_default", tenant=self.tenant)
+        principal = Principal(username="test_user", tenant=self.tenant)
+        principal.save()
+        group = Group.objects.create(name="group_admin_default", tenant=self.tenant, admin_default=True)
+        policy.roles.add(role)
+        group.principals.add(principal)
+        group.policies.add(policy)
+        request.query_params = {APPLICATION_KEY: "app"}
+        print(get_access_queryset(request))
 
     def _setup_roles_for_role_username_queryset_tests(self):
         self._create_groups()
