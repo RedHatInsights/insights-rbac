@@ -158,7 +158,6 @@ TEMPLATES = [
 ]
 
 ASGI_APPLICATION = "rbac.asgi.application"
-WSGI_APPLICATION = "rbac.wsgi.application"
 
 DATABASES = {"default": database.config()}
 

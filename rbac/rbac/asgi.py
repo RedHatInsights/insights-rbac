@@ -1,38 +1,14 @@
-#
-#    Copyright 2019 Red Hat, Inc.
-#
-#    This program is free software: you can redistribute it and/or modify
-#    it under the terms of the GNU Affero General Public License as
-#    published by the Free Software Foundation, either version 3 of the
-#    License, or (at your option) any later version.
-#
-#    This program is distributed in the hope that it will be useful,
-#    but WITHOUT ANY WARRANTY; without even the implied warranty of
-#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-#    GNU Affero General Public License for more details.
-#
-#    You should have received a copy of the GNU Affero General Public License
-#    along with this program.  If not, see <https://www.gnu.org/licenses/>.
-#
-"""
-WSGI config for rbac project.
-
-It exposes the WSGI callable as a module-level variable named ``application``.
-
-For more information on this file, see
-https://docs.djangoproject.com/en/2.0/howto/deployment/wsgi/
-"""
-
 import os
 
 import django
-from channels.auth import AuthMiddlewareStack
-from channels.http import AsgiHandler
-from channels.routing import ProtocolTypeRouter, URLRouter
-import rbac.urls
 
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "rbac.settings")
 django.setup()
+
+from channels.auth import AuthMiddlewareStack  # noqa: E402
+from channels.http import AsgiHandler  # noqa: E402
+from channels.routing import ProtocolTypeRouter, URLRouter  # noqa: E402
+import rbac.urls  # noqa: E402
 
 application = ProtocolTypeRouter(
     {"http": AsgiHandler(), "websocket": AuthMiddlewareStack(URLRouter(rbac.urls.websocket_urlpatterns))}

@@ -10,6 +10,7 @@ class RbacConsumer(AsyncWebsocketConsumer):
     # channel_layer = get_channel_layer()
     #
     # async_to_sync(channel_layer.group_send)("account_1234", {"type": "tam_update","message": "pong!"})
+    # const socket = new WebSocket('ws://localhost:8000/wss/rbac/v1/cross-account-requests/')
 
     @staticmethod
     def channel_group_name(account_number):

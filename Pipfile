@@ -34,6 +34,8 @@ psycopg2 = "==2.8.6"
 psycopg2-binary = "==2.8.6"
 channels = "*"
 channels-redis = "*"
+uvicorn = "*"
+websockets = "*"
 
 [dev-packages]
 astroid = "==2.2.5"
