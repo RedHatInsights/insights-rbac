@@ -11,8 +11,6 @@ class Migration(migrations.Migration):
 
     operations = [
         migrations.AlterField(
-            model_name="tenant",
-            name="schema_name",
-            field=models.CharField(db_index=True, max_length=63, unique=True),
+            model_name="tenant", name="schema_name", field=models.CharField(db_index=True, max_length=63, unique=True),
         ),
     ]

@@ -85,10 +85,7 @@ class CrossAccountRequestViewTests(IdentityRequest):
         self.role_8 = Role.objects.create(name="role_8", system=True, tenant=t)
 
         self.request_1 = CrossAccountRequest.objects.create(
-            target_account=self.account,
-            user_id="1111111",
-            end_date=self.ref_time + timedelta(10),
-            status="approved",
+            target_account=self.account, user_id="1111111", end_date=self.ref_time + timedelta(10), status="approved",
         )
         self.request_1.roles.add(*(self.role_1, self.role_2))
         self.request_2 = CrossAccountRequest.objects.create(
@@ -102,16 +99,10 @@ class CrossAccountRequestViewTests(IdentityRequest):
             status="approved",
         )
         self.request_4 = CrossAccountRequest.objects.create(
-            target_account=self.account,
-            user_id="2222222",
-            end_date=self.ref_time + timedelta(10),
-            status="pending",
+            target_account=self.account, user_id="2222222", end_date=self.ref_time + timedelta(10), status="pending",
         )
         self.request_5 = CrossAccountRequest.objects.create(
-            target_account=self.account,
-            user_id="2222222",
-            end_date=self.ref_time + timedelta(10),
-            status="expired",
+            target_account=self.account, user_id="2222222", end_date=self.ref_time + timedelta(10), status="expired",
         )
         self.request_6 = CrossAccountRequest.objects.create(
             target_account=self.another_account,
