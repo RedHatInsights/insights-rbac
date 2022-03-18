@@ -116,8 +116,6 @@ SHARED_APPS = (
     "django_extensions",
 )
 
-TENANT_APPS = ("management",)
-
 MIDDLEWARE = [
     "django_prometheus.middleware.PrometheusBeforeMiddleware",
     "corsheaders.middleware.CorsMiddleware",
@@ -161,9 +159,6 @@ TEMPLATES = [
 WSGI_APPLICATION = "rbac.wsgi.application"
 
 DATABASES = {"default": database.config()}
-
-#
-TENANT_MODEL = "api.Tenant"
 
 PROMETHEUS_EXPORT_MIGRATIONS = False
 
