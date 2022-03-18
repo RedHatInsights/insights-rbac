@@ -87,7 +87,7 @@ class RequestsRoles(models.Model):
 def cross_account_request_created_handler(sender=None, instance=None, using=None, **kwargs):
     async_to_sync(get_channel_layer().group_send)(
         RbacConsumer.channel_group_name(instance.target_account),
-        {"type": "tam_update", "message": "cross account request was created."},
+        {"type": "cross_account_request_update", "message": "cross account request was created."},
     )
 
 
