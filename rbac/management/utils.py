@@ -160,7 +160,6 @@ def queryset_by_id(objects, clazz, **kwargs):
     wanted_ids = [obj.id for obj in objects]
     prefetch_lookups = kwargs.get("prefetch_lookups_for_ids")
     query = clazz.objects.filter(id__in=wanted_ids).order_by("id")
-
     if prefetch_lookups:
         query = query.prefetch_related(prefetch_lookups)
 
