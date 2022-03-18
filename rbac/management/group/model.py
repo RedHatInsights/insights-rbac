@@ -63,6 +63,10 @@ class Group(TenantAwareModel):
         """Queryset for platform default group."""
         return Group.objects.filter(platform_default=True)
 
+    def admin_default_set():
+        """Queryset for admin default group."""
+        return Group.objects.filter(admin_default=True)
+
     def __policy_ids(self):
         """Policy IDs for a group."""
         return self.policies.values_list("id", flat=True)

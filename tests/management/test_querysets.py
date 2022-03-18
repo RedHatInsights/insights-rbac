@@ -370,7 +370,7 @@ class QuerySetTest(TestCase):
 
         self._setup_group_for_org_admin_tests()
 
-        user = Mock(spec=User, account="00001", username="test_user")
+        user = Mock(spec=User, account="00001", username="test_user", admin=True)
         req = Mock(user=user, method="GET", tenant=self.tenant, query_params={APPLICATION_KEY: "app"})
         req.META = encoded_req.META
 
@@ -386,7 +386,29 @@ class QuerySetTest(TestCase):
 
         self._setup_group_for_org_admin_tests()
 
-        user = Mock(spec=User, account="00001", username="test_user")
+        user = Mock(spec=User, account="00001", username="test_user", admin=False)
+        req = Mock(user=user, method="GET", tenant=self.tenant, query_params={APPLICATION_KEY: "app"})
+        req.META = encoded_req.META
+
+        queryset = get_access_queryset(req)
+        self.assertEquals(queryset.count(), 0)
+
+    def test_get_access_queryset_non_org_admin_rbac_admin(self):
+        """Test get_access_queryset with a non 'org admin' but rbac admin user"""
+        user_data = {"username": "test_user", "email": "admin@example.com"}
+        customer = {"account_id": "10001"}
+        request_context = IdentityRequest._create_request_context(customer, user_data, is_org_admin=False)
+        encoded_req = request_context["request"]
+
+        role = Role.objects.create(name="role_admin_default", tenant=self.tenant)
+        policy = Policy.objects.create(name="policy_admin_default", tenant=self.tenant)
+        group = Group.objects.create(name="group_admin_default", tenant=self.tenant, admin_default=True)
+        policy.roles.add(role)
+        group.policies.add(policy)
+        permission = Permission.objects.create(permission="rbac:*:*", tenant=self.tenant)
+        access = Access.objects.create(permission=permission, role=role, tenant=self.tenant)
+
+        user = Mock(spec=User, account="00001", username="test_user", admin=False)
         req = Mock(user=user, method="GET", tenant=self.tenant, query_params={APPLICATION_KEY: "app"})
         req.META = encoded_req.META
 

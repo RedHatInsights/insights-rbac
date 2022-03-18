@@ -15,13 +15,11 @@
 #    along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Queryset helpers for management module."""
-import binascii
+
 import logging
-from json.decoder import JSONDecodeError
 
 from django.conf import settings
 from django.db.models.aggregates import Count
-from django.http import HttpResponseForbidden
 from django.urls import reverse
 from django.utils.translation import gettext as _
 from management.group.model import Group
@@ -41,9 +39,7 @@ from management.utils import (
 )
 from rest_framework import permissions, serializers
 
-from api.common import RH_IDENTITY_HEADER
 from api.models import Tenant
-from api.serializers import extract_header
 from rbac.env import ENVIRONMENT
 
 
@@ -58,17 +54,6 @@ PRINCIPAL_QUERYSET_MAP = {
     Role.__name__: roles_for_principal,
 }
 logger = logging.getLogger(__name__)
-
-
-def _get_org_admin(request):
-    try:
-        _obj, json_rh_auth = extract_header(request, RH_IDENTITY_HEADER)
-    except (JSONDecodeError, binascii.Error):
-        logger.exception("Invalid X-RH-Identity header.")
-        return HttpResponseForbidden()
-    is_org_admin = json_rh_auth["identity"]["user"]["is_org_admin"]
-
-    return is_org_admin
 
 
 def get_annotated_groups():
@@ -218,7 +203,8 @@ def get_access_queryset(request):
         raise serializers.ValidationError({key: _(message)})
 
     app = request.query_params.get(APPLICATION_KEY)
-    is_org_admin = _get_org_admin(request)
+    is_org_admin = request.user.admin
+
     return get_object_principal_queryset(
         request,
         PRINCIPAL_SCOPE,
