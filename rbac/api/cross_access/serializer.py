@@ -21,7 +21,7 @@ from management.models import Role
 from management.permission.serializer import PermissionSerializer
 from rest_framework import serializers
 
-from api.models import CrossAccountRequest, Tenant
+from api.models import CrossAccountRequest
 
 
 class CrossAccountRequestSerializer(serializers.ModelSerializer):

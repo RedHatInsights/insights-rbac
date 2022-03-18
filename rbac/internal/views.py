@@ -24,7 +24,7 @@ import pytz
 from django.conf import settings
 from django.db import transaction
 from django.db.migrations.recorder import MigrationRecorder
-from django.http import HttpResponse, Http404
+from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from management.cache import TenantCache
 from management.models import Group, Role

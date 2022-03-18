@@ -22,7 +22,6 @@ from uuid import UUID
 from django.conf import settings
 from django.core.exceptions import PermissionDenied
 from django.utils.translation import gettext as _
-from api.serializers import create_tenant_name
 from management.models import Access, Group, Policy, Principal, Role
 from management.permissions.principal_access import PrincipalAccessPermission
 from management.principal.proxy import PrincipalProxy

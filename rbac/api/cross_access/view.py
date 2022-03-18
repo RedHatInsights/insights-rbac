@@ -259,8 +259,8 @@ class CrossAccountRequestViewSet(
     def check_patch_permission(self, request, update_obj):
         """Check if user has right to patch cross access request."""
         if request.user.account == update_obj.target_account:
-            """ For approvers updating requests coming to them, only org admins
-                may update status from pending/approved/denied to approved/denied.
+            """For approvers updating requests coming to them, only org admins
+            may update status from pending/approved/denied to approved/denied.
             """
             if not request.user.admin:
                 self.throw_validation_error("cross-account partial update", "Only org admins may update status.")
@@ -275,8 +275,8 @@ class CrossAccountRequestViewSet(
             if len(request.data.keys()) > 1 or next(iter(request.data)) != "status":
                 self.throw_validation_error("cross-account partial update", "Only status may be updated.")
         elif request.user.user_id == update_obj.user_id:
-            """ For requestors updating their requests, the request status may
-                only be updated from pending to cancelled.
+            """For requestors updating their requests, the request status may
+            only be updated from pending to cancelled.
             """
             if update_obj.status != "pending" or request.data.get("status") != "cancelled":
                 self.throw_validation_error(
