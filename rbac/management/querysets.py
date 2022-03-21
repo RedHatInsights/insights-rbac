@@ -244,6 +244,7 @@ def get_object_principal_queryset(request, scope, clazz, **kwargs):
 
 
 def _filter_admin_default(request, queryset):
+    # If the principal is an org admin, make sure they get any and all admin_default groups
     if request.user.admin:
         if settings.SERVE_FROM_PUBLIC_SCHEMA:
             public_tenant = Tenant.objects.get(schema_name="public")
@@ -255,4 +256,5 @@ def _filter_admin_default(request, queryset):
 
         return queryset | admin_default_group_set
 
+    # if the principal is not an org admin, they don't get any admin_default groups
     return queryset.filter(admin_default=False)
