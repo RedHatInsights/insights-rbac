@@ -118,13 +118,21 @@ def groups_for_principal(principal, tenant, **kwargs):
         platform_default_group_set = Group.platform_default_set().filter(
             tenant=tenant
         ) or Group.platform_default_set().filter(tenant=public_tenant)
+
+        admin_default_group_set = Group.admin_default_set().filter(tenant=tenant) or Group.admin_default_set().filter(
+            tenant=public_tenant
+        )
     else:
         platform_default_group_set = Group.platform_default_set()
+        admin_default_group_set = Group.admin_default_set()
     prefetch_lookups = kwargs.get("prefetch_lookups_for_groups")
 
     if prefetch_lookups:
         assigned_group_set = assigned_group_set.prefetch_related(prefetch_lookups)
         platform_default_group_set = platform_default_group_set.prefetch_related(prefetch_lookups)
+
+    if kwargs.get("is_org_admin"):
+        return set(assigned_group_set | platform_default_group_set | admin_default_group_set)
 
     return set(assigned_group_set | platform_default_group_set)
 
@@ -156,7 +164,6 @@ def queryset_by_id(objects, clazz, **kwargs):
     wanted_ids = [obj.id for obj in objects]
     prefetch_lookups = kwargs.get("prefetch_lookups_for_ids")
     query = clazz.objects.filter(id__in=wanted_ids).order_by("id")
-
     if prefetch_lookups:
         query = query.prefetch_related(prefetch_lookups)
 

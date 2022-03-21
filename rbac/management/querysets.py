@@ -15,6 +15,7 @@
 #    along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Queryset helpers for management module."""
+
 from django.conf import settings
 from django.db.models.aggregates import Count
 from django.urls import reverse
@@ -38,6 +39,7 @@ from rest_framework import permissions, serializers
 
 from api.models import Tenant
 from rbac.env import ENVIRONMENT
+
 
 SCOPE_KEY = "scope"
 ACCOUNT_SCOPE = "account"
@@ -198,6 +200,8 @@ def get_access_queryset(request):
         raise serializers.ValidationError({key: _(message)})
 
     app = request.query_params.get(APPLICATION_KEY)
+    is_org_admin = request.user.admin
+
     return get_object_principal_queryset(
         request,
         PRINCIPAL_SCOPE,
@@ -206,6 +210,7 @@ def get_access_queryset(request):
             APPLICATION_KEY: app,
             "prefetch_lookups_for_ids": "resourceDefinitions",
             "prefetch_lookups_for_groups": "policies__roles__access",
+            "is_org_admin": is_org_admin,
         },
     )
 
