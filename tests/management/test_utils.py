@@ -63,6 +63,21 @@ class UtilsTests(IdentityRequest):
         )
         self.default_group.policies.add(self.default_policy)
 
+        # setup admin default group/role which all tenant admin users
+        # should inherit without explicit association
+        self.default_admin_role = Role.objects.create(
+            name="default admin role", platform_default=False, system=True, tenant=self.tenant, admin_default=True
+        )
+        self.default_admin_access = Access.objects.create(
+            permission=self.permission, role=self.default_admin_role, tenant=self.tenant
+        )
+        self.default_admin_policy = Policy.objects.create(name="default admin policy", system=True, tenant=self.tenant)
+        self.default_admin_policy.roles.add(self.default_admin_role)
+        self.default_admin_group = Group.objects.create(
+            name="default admin access", system=True, platform_default=False, tenant=self.tenant, admin_default=True
+        )
+        self.default_admin_group.policies.add(self.default_admin_policy)
+
     def tearDown(self):
         """Tear down the utils tests."""
         Group.objects.all().delete()
@@ -74,6 +89,18 @@ class UtilsTests(IdentityRequest):
     def test_access_for_principal(self):
         """Test that we get the correct access for a principal."""
         kwargs = {"application": "app"}
+        access = access_for_principal(self.principal, self.tenant, **kwargs)
+        self.assertCountEqual(access, [self.accessA, self.default_access])
+
+    def test_access_for_org_admin(self):
+        """Test that an org admin has access to admin_default groups"""
+        kwargs = {"application": "app", "is_org_admin": True}
+        access = access_for_principal(self.principal, self.tenant, **kwargs)
+        self.assertCountEqual(access, [self.accessA, self.default_access, self.default_admin_access])
+
+    def test_access_for_non_org_admin(self):
+        """Test that an non-(org admin) doesn't have access to admin_default groups"""
+        kwargs = {"application": "app", "is_org_admin": False}
         access = access_for_principal(self.principal, self.tenant, **kwargs)
         self.assertCountEqual(access, [self.accessA, self.default_access])
 
