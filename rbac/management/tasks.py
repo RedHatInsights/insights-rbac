@@ -31,12 +31,8 @@ def principal_cleanup():
 @shared_task
 def run_migrations_in_worker(tenant_list):
     """Celery task to run migrations."""
-    if tenant_list:
-        for tenant in tenant_list:
-            call_command("migrate_schemas", tenant_name=tenant)
-        return
 
-    call_command("migrate_schemas")
+    call_command("migrate")
 
 
 @shared_task
