@@ -16,8 +16,6 @@
 #
 """Queryset helpers for management module."""
 
-import logging
-
 from django.conf import settings
 from django.db.models.aggregates import Count
 from django.urls import reverse
@@ -53,7 +51,6 @@ PRINCIPAL_QUERYSET_MAP = {
     Policy.__name__: policies_for_principal,
     Role.__name__: roles_for_principal,
 }
-logger = logging.getLogger(__name__)
 
 
 def get_annotated_groups():
