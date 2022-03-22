@@ -241,9 +241,6 @@ def run_seeds(request):
     POST /_private/api/seeds/run/?seed_types=permissions,roles,groups
     """
     if request.method == "POST":
-        schema_list = None
-        if request.body:
-            schema_list = json.loads(request.body).get("schemas")
         args = {}
         option_key = "seed_types"
         valid_values = ["permissions", "roles", "groups"]
@@ -253,8 +250,7 @@ def run_seeds(request):
             if not all([value in valid_values for value in seed_types]):
                 return HttpResponse(f'Valid options for "{option_key}": {valid_values}.', status=400)
             args = {type: True for type in seed_types}
-        logger.info(f"Running seeds: {request.method} {request.user.username} {schema_list}")
-        args["schema_list"] = schema_list
+        logger.info(f"Running seeds: {request.method} {request.user.username}")
         run_seeds_in_worker.delay(args)
         return HttpResponse("Seeds are running in a background worker.", status=202)
     return HttpResponse('Invalid method, only "POST" is allowed.', status=405)
