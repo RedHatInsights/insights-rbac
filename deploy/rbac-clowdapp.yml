@@ -1760,16 +1760,16 @@ objects:
   metadata:
     name: rbac-secret
   data:
-    principal-proxy-host: YmFja29mZmljZS1wcm94eS1pbnNpZ2h0cy1zZXJ2aWNlcy5kdW1teS5jaGFuZ2UubWU=
+    django-secret-key: MTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTE=
     principal-proxy-api-token: >-
       MjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMg==
-    principal-proxy-env: c3RhZ2U=
-    django-secret-key: MTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTE=
-    principal-proxy-protocol: aHR0cHM=
-    principal-proxy-source-cert: VHJ1ZQ==
-    principal-proxy-ssl-verify: VHJ1ZQ==
     principal-proxy-client-id: aW5zaWdodHMtcmJhYw==
-    principal-proxy-port: NDQz
+    principal-proxy-env: c3RhZ2U=
+    principal-proxy-host: bWJvcA==
+    principal-proxy-port: ODA5MA==
+    principal-proxy-protocol: aHR0cA==
+    principal-proxy-source-cert: RmFsc2U=
+    principal-proxy-ssl-verify: RmFsc2U=
     sentry-dsn: ''
   type: Opaque
 - apiVersion: v1
