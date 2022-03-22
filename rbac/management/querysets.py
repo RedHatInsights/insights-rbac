@@ -102,28 +102,36 @@ def get_group_queryset(request):
         principal = get_principal(username, request)
         if principal.cross_account:
             return Group.objects.none()
-        return _filter_admin_default(
-            request,
-            filter_queryset_by_tenant(Group.objects.filter(principals__username__iexact=username), request.tenant)
-            | default_group_set,
+        return (
+            _filter_admin_default(
+                request,
+                filter_queryset_by_tenant(Group.objects.filter(principals__username__iexact=username), request.tenant),
+            )
+            | default_group_set
         )
 
     if has_group_all_access(request):
-        return _filter_admin_default(
-            request, filter_queryset_by_tenant(get_annotated_groups(), request.tenant) | default_group_set
+        return (
+            _filter_admin_default(request, filter_queryset_by_tenant(get_annotated_groups(), request.tenant))
+            | default_group_set
         )
 
     access = user_has_perm(request, "group")
 
     if access == "All":
-        return _filter_admin_default(
-            request, filter_queryset_by_tenant(get_annotated_groups(), request.tenant) | default_group_set
+        return (
+            _filter_admin_default(request, filter_queryset_by_tenant(get_annotated_groups(), request.tenant))
+            | default_group_set
         )
+
     if access == "None":
         return Group.objects.none()
 
-    return _filter_admin_default(
-        request, filter_queryset_by_tenant(Group.objects.filter(uuid__in=access), request.tenant) | default_group_set
+    return (
+        _filter_admin_default(
+            request, filter_queryset_by_tenant(Group.objects.filter(uuid__in=access), request.tenant)
+        )
+        | default_group_set
     )
 
 
@@ -245,11 +253,11 @@ def _filter_admin_default(request, queryset):
     if request.user.admin:
         if settings.SERVE_FROM_PUBLIC_SCHEMA:
             public_tenant = Tenant.objects.get(schema_name="public")
-            admin_default_group_set = Group.platform_default_set().filter(
+            admin_default_group_set = Group.admin_default_set().filter(
                 tenant=request.tenant
-            ) or Group.platform_default_set().filter(tenant=public_tenant)
+            ) or Group.admin_default_set().filter(tenant=public_tenant)
         else:
-            admin_default_group_set = Group.platform_default_set()
+            admin_default_group_set = Group.admin_default_set()
 
         return queryset | admin_default_group_set
 
