@@ -1479,6 +1479,37 @@ objects:
           }
         ]
       }
+    rbac.json: |
+      {
+        "roles": [
+          {
+            "name": "User Access administrator",
+            "display_name": "User Access administrator",
+            "description": "Grants a non-org admin full access to configure and manage user access to services hosted on console.redhat.com. This role can only be viewed and assigned by Organization Administrators.",
+            "system": true,
+            "platform_default": false,
+            "version": 2,
+            "access": [
+              {
+                "permission": "rbac:*:*"
+              }
+            ]
+          },
+          {
+            "name": "User Access principal viewer",
+            "display_name": "User Access principal viewer",
+            "description": "Grants a non-org admin read access to principals within user access.",
+            "system": true,
+            "platform_default": false,
+            "version": 1,
+            "access": [
+              {
+                "permission": "rbac:principal:read"
+              }
+            ]
+          }
+        ]
+      }
     ros.json: |
       {
         "roles": [
