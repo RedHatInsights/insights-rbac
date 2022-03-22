@@ -85,9 +85,14 @@ def has_group_all_access(request):
 
 def get_group_queryset(request):
     """Obtain the queryset for groups."""
+    return _filter_admin_default(request, _gather_group_querysets(request))
+
+
+def _gather_group_querysets(request):
+    """Decide which groups to provide for request."""
     scope = request.query_params.get(SCOPE_KEY, ACCOUNT_SCOPE)
     if scope != ACCOUNT_SCOPE:
-        return _filter_admin_default(request, get_object_principal_queryset(request, scope, Group))
+        return get_object_principal_queryset(request, scope, Group)
 
     if settings.SERVE_FROM_PUBLIC_SCHEMA:
         public_tenant = Tenant.objects.get(schema_name="public")
@@ -103,36 +108,21 @@ def get_group_queryset(request):
         if principal.cross_account:
             return Group.objects.none()
         return (
-            _filter_admin_default(
-                request,
-                filter_queryset_by_tenant(Group.objects.filter(principals__username__iexact=username), request.tenant),
-            )
+            filter_queryset_by_tenant(Group.objects.filter(principals__username__iexact=username), request.tenant)
             | default_group_set
         )
 
     if has_group_all_access(request):
-        return (
-            _filter_admin_default(request, filter_queryset_by_tenant(get_annotated_groups(), request.tenant))
-            | default_group_set
-        )
+        return filter_queryset_by_tenant(get_annotated_groups(), request.tenant) | default_group_set
 
     access = user_has_perm(request, "group")
 
     if access == "All":
-        return (
-            _filter_admin_default(request, filter_queryset_by_tenant(get_annotated_groups(), request.tenant))
-            | default_group_set
-        )
-
+        return filter_queryset_by_tenant(get_annotated_groups(), request.tenant) | default_group_set
     if access == "None":
         return Group.objects.none()
 
-    return (
-        _filter_admin_default(
-            request, filter_queryset_by_tenant(Group.objects.filter(uuid__in=access), request.tenant)
-        )
-        | default_group_set
-    )
+    return filter_queryset_by_tenant(Group.objects.filter(uuid__in=access), request.tenant) | default_group_set
 
 
 def annotate_roles_with_counts(queryset):
@@ -249,6 +239,7 @@ def get_object_principal_queryset(request, scope, clazz, **kwargs):
 
 
 def _filter_admin_default(request, queryset):
+    """Filter out admin default groups unless the principal is an org admin."""
     # If the principal is an org admin, make sure they get any and all admin_default groups
     if request.user.admin:
         if settings.SERVE_FROM_PUBLIC_SCHEMA:
@@ -262,4 +253,5 @@ def _filter_admin_default(request, queryset):
         return queryset | admin_default_group_set
 
     # if the principal is not an org admin, they don't get any admin_default groups
-    return queryset.filter(admin_default=False)
+    # with the caveat that the admin default group isn't also platform default
+    return queryset.filter(platform_default=False).filter(admin_default=False)
