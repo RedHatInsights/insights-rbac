@@ -15,7 +15,6 @@
 #    along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Queryset helpers for management module."""
-
 from django.conf import settings
 from django.db.models.aggregates import Count
 from django.urls import reverse
@@ -242,16 +241,13 @@ def _filter_admin_default(request, queryset):
     """Filter out admin default groups unless the principal is an org admin."""
     # If the principal is an org admin, make sure they get any and all admin_default groups
     if request.user.admin:
-        if settings.SERVE_FROM_PUBLIC_SCHEMA:
-            public_tenant = Tenant.objects.get(schema_name="public")
-            admin_default_group_set = Group.admin_default_set().filter(
-                tenant=request.tenant
-            ) or Group.admin_default_set().filter(tenant=public_tenant)
-        else:
-            admin_default_group_set = Group.admin_default_set()
+        public_tenant = Tenant.objects.get(schema_name="public")
+        admin_default_group_set = Group.admin_default_set().filter(
+            tenant=request.tenant
+        ) or Group.admin_default_set().filter(tenant=public_tenant)
 
         return queryset | admin_default_group_set
 
     # if the principal is not an org admin, they don't get any admin_default groups
     # with the caveat that the admin default group isn't also platform default
-    return queryset.filter(platform_default=False).filter(admin_default=False)
+    return queryset.filter(admin_default=False) | queryset.filter(platform_default=True)
