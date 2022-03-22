@@ -48,6 +48,7 @@ def permission_seeding():
 def run_seeds(seed_type):
     """Update platform objects at startup."""
     # noqa: E402 pylint: disable=C0413
+    from api.models import Tenant
     from management.group.definer import seed_group
     from management.role.definer import seed_roles, seed_permissions
     from rbac.settings import MAX_SEED_THREADS
@@ -56,9 +57,9 @@ def run_seeds(seed_type):
 
     try:
         with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_SEED_THREADS) as executor:
-
+            public_tenant = Tenant.objects.get(tenant_name="public")
             logger.info(f"Seeding {seed_type} changes.")
-            future = executor.submit(seed_functions[seed_type])
+            future = executor.submit(seed_functions[seed_type](tenant=public_tenant))
             completed_log_message = f"Finished seeding {seed_type} changes."
             future.add_done_callback(partial(on_complete, completed_log_message))
     except Exception as exc:
