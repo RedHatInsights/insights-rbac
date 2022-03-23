@@ -29,13 +29,11 @@ from django.shortcuts import get_object_or_404
 from management.cache import TenantCache
 from management.models import Group, Role
 from management.tasks import (
-    run_init_tenant_in_worker,
     run_migrations_in_worker,
     run_reconcile_tenant_relations_in_worker,
     run_seeds_in_worker,
     run_sync_schemas_in_worker,
 )
-from tenant_schemas.utils import schema_exists, tenant_context
 
 from api.models import Tenant
 from api.tasks import cross_account_cleanup
@@ -51,23 +49,22 @@ def destructive_ok():
     return now < settings.INTERNAL_DESTRUCTIVE_API_OK_UNTIL
 
 
-def tenant_is_modified(schema_name):
+def tenant_is_modified(tenant_name):
     """Determine whether or not the tenant is modified."""
     # we need to check if the schema exists because if we don't, and it doesn't exist,
     # the search_path on the query will fall back to using the public schema, in
     # which case there will be custom groups/roles, and we won't be able to propertly
     # prune the tenant which has been created without a valid schema
-    if not schema_exists(schema_name):
-        return False
+    tenant = get_object_or_404(Tenant, tenant_name=tenant_name)
 
-    return (Role.objects.filter(system=True).count() != Role.objects.count()) or (
-        Group.objects.filter(system=True).count() != Group.objects.count()
+    return (Role.objects.filter(system=False, tenant=tenant).count() != 0) or (
+        Group.objects.filter(system=False, tenant=tenant).count() != 0
     )
 
 
-def tenant_is_unmodified(schema_name):
+def tenant_is_unmodified(tenant_name):
     """Determine whether or not the tenant is unmodified."""
-    return not tenant_is_modified(schema_name)
+    return not tenant_is_modified(tenant_name)
 
 
 def list_unmodified_tenants(request):
@@ -80,14 +77,13 @@ def list_unmodified_tenants(request):
     offset = int(request.GET.get("offset", 0))
 
     if limit:
-        tenant_qs = Tenant.objects.exclude(schema_name="public")[offset : (limit + offset)]  # noqa: E203
+        tenant_qs = Tenant.objects.exclude(tenant_name="public")[offset : (limit + offset)]  # noqa: E203
     else:
-        tenant_qs = Tenant.objects.exclude(schema_name="public")
+        tenant_qs = Tenant.objects.exclude(tenant_name="public")
     to_return = []
     for tenant_obj in tenant_qs:
-        with tenant_context(tenant_obj):
-            if tenant_is_unmodified(tenant_obj.schema_name):
-                to_return.append(tenant_obj.schema_name)
+        if tenant_is_unmodified(tenant_obj.tenant_name):
+            to_return.append(tenant_obj.tenant_name)
     payload = {
         "unmodified_tenants": to_return,
         "unmodified_tenants_count": len(to_return),
@@ -104,7 +100,7 @@ def list_tenants(request):
     limit = int(request.GET.get("limit", 0))
     offset = int(request.GET.get("offset", 0))
     ready = request.GET.get("ready")
-    tenant_qs = Tenant.objects.exclude(schema_name="public").values_list("id", "schema_name")
+    tenant_qs = Tenant.objects.exclude(tenant_name="public").values_list("id", "tenant_name")
 
     if ready == "true":
         tenant_qs = tenant_qs.filter(ready=True)
@@ -126,40 +122,26 @@ def list_tenants(request):
     return HttpResponse(json.dumps(payload), content_type="application/json")
 
 
-def tenant_view(request, tenant_schema_name):
+def tenant_view(request, tenant_name):
     """View method for internal tenant requests.
 
-    DELETE /_private/api/tenant/<schema_name>/
+    DELETE /_private/api/tenant/<tenant_name>/
     """
     logger.info(f"Tenant view: {request.method} {request.user.username}")
     if request.method == "DELETE":
         if not destructive_ok():
             return HttpResponse("Destructive operations disallowed.", status=400)
 
-        tenant_obj = get_object_or_404(Tenant, schema_name=tenant_schema_name)
+        tenant_obj = get_object_or_404(Tenant, tenant_name=tenant_name)
         with transaction.atomic():
-            with tenant_context(tenant_obj):
-                if tenant_is_unmodified(tenant_obj.schema_name):
-                    logger.warning(f"Deleting tenant {tenant_schema_name}. Requested by {request.user.username}")
-                    TENANTS.delete_tenant(tenant_schema_name)
-                    tenant_obj.delete()
-                    return HttpResponse(status=204)
-                else:
-                    return HttpResponse("Tenant cannot be deleted.", status=400)
+            if tenant_is_unmodified(tenant_obj.tenant_name):
+                logger.warning(f"Deleting tenant {tenant_name}. Requested by {request.user.username}")
+                TENANTS.delete_tenant(tenant_name)
+                tenant_obj.delete()
+                return HttpResponse(status=204)
+            else:
+                return HttpResponse("Tenant cannot be deleted.", status=400)
     return HttpResponse('Invalid method, only "DELETE" is allowed.', status=405)
-
-
-def tenant_init(request, tenant_schema_name):
-    """View method for resolving 'hung' tenants by re-initing them.
-
-    POST /_private/api/tenant/<schema_name>/init/
-    """
-    if request.method == "POST":
-        msg = f"Initializing schema, running migrations/seeds for tenant {tenant_schema_name} in the background."
-        logger.info(msg)
-        run_init_tenant_in_worker.delay(tenant_schema_name)
-        return HttpResponse(msg, status=202)
-    return HttpResponse('Invalid method, only "POST" is allowed.', status=405)
 
 
 def run_migrations(request):
@@ -193,19 +175,18 @@ def migration_progress(request):
         incomplete_tenants = []
 
         if limit:
-            tenant_qs = Tenant.objects.exclude(schema_name="public")[offset : (limit + offset)]  # noqa: E203
+            tenant_qs = Tenant.objects.exclude(tenant_name="public")[offset : (limit + offset)]  # noqa: E203
         else:
-            tenant_qs = Tenant.objects.exclude(schema_name="public")
+            tenant_qs = Tenant.objects.exclude(tenant_name="public")
         tenant_count = tenant_qs.count()
         for idx, tenant in enumerate(list(tenant_qs)):
-            with tenant_context(tenant):
-                migrations_have_run = MigrationRecorder.Migration.objects.filter(
-                    name=migration_name, app=app_name
-                ).exists()
-                if migrations_have_run:
-                    tenants_completed_count += 1
-                else:
-                    incomplete_tenants.append(tenant.schema_name)
+            migrations_have_run = MigrationRecorder.Migration.objects.filter(
+                name=migration_name, app=app_name
+            ).exists()
+            if migrations_have_run:
+                tenants_completed_count += 1
+            else:
+                incomplete_tenants.append(tenant.tenant_name)
         payload = {
             "migration_name": migration_name,
             "app_name": app_name,
@@ -260,9 +241,6 @@ def run_seeds(request):
     POST /_private/api/seeds/run/?seed_types=permissions,roles,groups
     """
     if request.method == "POST":
-        schema_list = None
-        if request.body:
-            schema_list = json.loads(request.body).get("schemas")
         args = {}
         option_key = "seed_types"
         valid_values = ["permissions", "roles", "groups"]
@@ -272,8 +250,7 @@ def run_seeds(request):
             if not all([value in valid_values for value in seed_types]):
                 return HttpResponse(f'Valid options for "{option_key}": {valid_values}.', status=400)
             args = {type: True for type in seed_types}
-        logger.info(f"Running seeds: {request.method} {request.user.username} {schema_list}")
-        args["schema_list"] = schema_list
+        logger.info(f"Running seeds: {request.method} {request.user.username}")
         run_seeds_in_worker.delay(args)
         return HttpResponse("Seeds are running in a background worker.", status=202)
     return HttpResponse('Invalid method, only "POST" is allowed.', status=405)

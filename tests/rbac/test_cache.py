@@ -35,11 +35,9 @@ class AccessCacheTest(TestCase):
     def setUpClass(self):
         """Set up the tenant."""
         super().setUpClass()
-        self.tenant = Tenant.objects.create(schema_name="acct12345")
-        self.tenant.create_schema()
+        self.tenant = Tenant.objects.create(tenant_name="acct12345")
         self.tenant.ready = True
         self.tenant.save()
-        connection.set_schema("acct12345")
 
     def setUp(self):
         """Set up AccessCache tests."""
@@ -55,7 +53,6 @@ class AccessCacheTest(TestCase):
 
     @classmethod
     def tearDownClass(self):
-        connection.set_schema_to_public()
         self.tenant.delete()
         super().tearDownClass()
 
@@ -255,19 +252,17 @@ class TenantCacheTest(TestCase):
     def setUpClass(self):
         """Set up the tenant."""
         super().setUpClass()
-        self.tenant = Tenant.objects.create(schema_name="acct67890")
-        connection.set_schema("acct67890")
+        self.tenant = Tenant.objects.create(tenant_name="acct67890")
 
     @classmethod
     def tearDownClass(self):
-        connection.set_schema_to_public()
         self.tenant.delete()
         super().tearDownClass()
 
     @patch("management.cache.TenantCache.connection")
     def test_tenant_cache_functions_success(self, redis_connection):
-        schema_name = self.tenant.schema_name
-        key = f"rbac::tenant::schema={schema_name}"
+        tenant_name = self.tenant.tenant_name
+        key = f"rbac::tenant::tenant={tenant_name}"
         dump_content = pickle.dumps(self.tenant)
 
         # Save tenant to cache
@@ -277,10 +272,10 @@ class TenantCacheTest(TestCase):
 
         redis_connection.get.return_value = dump_content
         # Get tenant from cache
-        tenant = tenant_cache.get_tenant(schema_name)
+        tenant = tenant_cache.get_tenant(tenant_name)
         redis_connection.get.assert_called_once_with(key)
         self.assertEqual(tenant, self.tenant)
 
         # Delete tenant from cache
-        tenant_cache.delete_tenant(schema_name)
+        tenant_cache.delete_tenant(tenant_name)
         redis_connection.delete.assert_called_once_with(key)

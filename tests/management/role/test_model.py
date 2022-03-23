@@ -16,7 +16,6 @@
 #
 """Test the group model."""
 from django.test import TestCase
-from tenant_schemas.utils import tenant_context
 from unittest.mock import Mock
 
 from management.models import Group, Role, Policy

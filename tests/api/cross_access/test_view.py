@@ -17,17 +17,15 @@
 """Test the cross account request model."""
 from api.models import CrossAccountRequest, Tenant
 from api.cross_access.util import get_cross_principal_name
-from api.serializers import create_schema_name
+from api.serializers import create_tenant_name
 from django.urls import reverse
 from django.utils import timezone
 from management.models import Role, Principal
 from rest_framework import status
 from rest_framework.test import APIClient
-from tenant_schemas.utils import tenant_context
 
 from datetime import datetime, timedelta
 from unittest.mock import patch
-from uuid import uuid4
 from tests.identity_request import IdentityRequest
 
 
@@ -78,51 +76,40 @@ class CrossAccountRequestViewTests(IdentityRequest):
             "roles": ["role_1", "role_2"],
         }
 
-        with tenant_context(Tenant.objects.get(schema_name="public")):
-            t = Tenant.objects.create(schema_name=f"acct{self.data4create['target_account']}")
-            t.create_schema()
-            t.ready = True
-            t.save()
-            self.role_1 = Role.objects.create(name="role_1", system=True, tenant=t)
-            self.role_2 = Role.objects.create(name="role_2", system=True, tenant=t)
-            self.role_9 = Role.objects.create(name="role_9", system=True, tenant=t)
-            self.role_8 = Role.objects.create(name="role_8", system=True, tenant=t)
+        t = Tenant.objects.create(tenant_name=f"acct{self.data4create['target_account']}")
+        t.ready = True
+        t.save()
+        self.role_1 = Role.objects.create(name="role_1", system=True, tenant=t)
+        self.role_2 = Role.objects.create(name="role_2", system=True, tenant=t)
+        self.role_9 = Role.objects.create(name="role_9", system=True, tenant=t)
+        self.role_8 = Role.objects.create(name="role_8", system=True, tenant=t)
 
-            self.request_1 = CrossAccountRequest.objects.create(
-                target_account=self.account,
-                user_id="1111111",
-                end_date=self.ref_time + timedelta(10),
-                status="approved",
-            )
-            self.request_1.roles.add(*(self.role_1, self.role_2))
-            self.request_2 = CrossAccountRequest.objects.create(
-                target_account=self.account, user_id="2222222", end_date=self.ref_time + timedelta(10)
-            )
-            self.request_2.roles.add(*(self.role_1, self.role_2))
-            self.request_3 = CrossAccountRequest.objects.create(
-                target_account=self.another_account,
-                user_id="1111111",
-                end_date=self.ref_time + timedelta(10),
-                status="approved",
-            )
-            self.request_4 = CrossAccountRequest.objects.create(
-                target_account=self.account,
-                user_id="2222222",
-                end_date=self.ref_time + timedelta(10),
-                status="pending",
-            )
-            self.request_5 = CrossAccountRequest.objects.create(
-                target_account=self.account,
-                user_id="2222222",
-                end_date=self.ref_time + timedelta(10),
-                status="expired",
-            )
-            self.request_6 = CrossAccountRequest.objects.create(
-                target_account=self.another_account,
-                user_id="1111111",
-                end_date=self.ref_time + timedelta(10),
-                status="pending",
-            )
+        self.request_1 = CrossAccountRequest.objects.create(
+            target_account=self.account, user_id="1111111", end_date=self.ref_time + timedelta(10), status="approved",
+        )
+        self.request_1.roles.add(*(self.role_1, self.role_2))
+        self.request_2 = CrossAccountRequest.objects.create(
+            target_account=self.account, user_id="2222222", end_date=self.ref_time + timedelta(10)
+        )
+        self.request_2.roles.add(*(self.role_1, self.role_2))
+        self.request_3 = CrossAccountRequest.objects.create(
+            target_account=self.another_account,
+            user_id="1111111",
+            end_date=self.ref_time + timedelta(10),
+            status="approved",
+        )
+        self.request_4 = CrossAccountRequest.objects.create(
+            target_account=self.account, user_id="2222222", end_date=self.ref_time + timedelta(10), status="pending",
+        )
+        self.request_5 = CrossAccountRequest.objects.create(
+            target_account=self.account, user_id="2222222", end_date=self.ref_time + timedelta(10), status="expired",
+        )
+        self.request_6 = CrossAccountRequest.objects.create(
+            target_account=self.another_account,
+            user_id="1111111",
+            end_date=self.ref_time + timedelta(10),
+            status="pending",
+        )
 
     def tearDown(self):
         """Tear down cross account request model tests."""
@@ -441,9 +428,8 @@ class CrossAccountRequestViewTests(IdentityRequest):
 
     def test_create_requests_fail_for_not_canned_role(self):
         """Test the creation of cross account request fail for not supported period."""
-        with tenant_context(Tenant.objects.get(schema_name="public")):
-            self.role_2.system = False
-            self.role_2.save()
+        self.role_2.system = False
+        self.role_2.save()
         self.data4create["roles"] = ["role_1", "role_2"]
         client = APIClient()
         response = client.post(
@@ -488,8 +474,7 @@ class CrossAccountRequestViewTests(IdentityRequest):
     def test_update_request_success_for_requestor(self):
         """Test updating an entire CAR."""
         self.data4create["target_account"] = self.another_account
-        with tenant_context(Tenant.objects.get(schema_name="public")):
-            Tenant.objects.create(schema_name=f"acct{self.another_account}")
+        Tenant.objects.create(tenant_name=f"acct{self.another_account}")
         self.data4create["start_date"] = self.format_date(self.ref_time + timedelta(3))
         self.data4create["end_date"] = self.format_date(self.ref_time + timedelta(5))
         self.data4create["roles"] = ["role_8", "role_9"]
@@ -672,8 +657,7 @@ class CrossAccountRequestViewTests(IdentityRequest):
     def test_update_bad_date_spec_for_requestor(self):
         """Test that PUT with body fields not matching spec fails."""
         self.data4create["target_account"] = self.another_account
-        with tenant_context(Tenant.objects.get(schema_name="public")):
-            Tenant.objects.create(schema_name=f"acct{self.another_account}")
+        Tenant.objects.get_or_create(tenant_name=f"acct{self.another_account}")
         self.data4create["end_date"] = 12252021
 
         car_uuid = self.request_1.request_id
@@ -722,11 +706,11 @@ class CrossAccountRequestViewTests(IdentityRequest):
     def test_create_principal_on_approval(self):
         """Test that moving a car to approved creates a principal."""
         update_data = {"status": "approved"}
-        tenant_schema = create_schema_name(self.request_2.target_account)
+        tenant_name = create_tenant_name(self.request_2.target_account)
         principal_name = get_cross_principal_name(self.request_2.target_account, self.request_2.user_id)
         car_uuid = self.request_2.request_id
         url = reverse("cross-detail", kwargs={"pk": str(car_uuid)})
-        tenant = Tenant.objects.get(schema_name=tenant_schema)
+        tenant = Tenant.objects.get(tenant_name=tenant_name)
 
         client = APIClient()
         response = client.patch(url, update_data, format="json", **self.associate_admin_request.META)
@@ -739,7 +723,7 @@ class CrossAccountRequestViewTests(IdentityRequest):
         self.assertEqual(princ.username, principal_name)
         self.assertEqual(princ.tenant, tenant)
         self.assertTrue(princ.cross_account)
-        self.assertTrue(princ.tenant.schema_name, tenant_schema)
+        self.assertTrue(princ.tenant.tenant_name, tenant_name)
 
     def test_cross_account_request_ordering_filter(self):
         "Test ordering filter for request id, created/start/end date."

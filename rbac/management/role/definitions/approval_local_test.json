@@ -119,6 +119,7 @@
     {
       "name": "Approval Approver",
       "system": true,
+      "platform_default": true,
       "version": 3,
       "description": "An Approval approver role that grants read and create permissions",
       "access": [

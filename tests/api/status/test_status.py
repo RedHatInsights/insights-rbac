@@ -45,9 +45,8 @@ class StatusModelTest(TestCase):
     def setUp(self):
         """Create test case setup."""
         super().setUp()
-        t, created = Tenant.objects.get_or_create(schema_name="public")
+        t, created = Tenant.objects.get_or_create(tenant_name="public")
         if created:
-            t.create_schema()
             t.ready = True
             t.save()
 

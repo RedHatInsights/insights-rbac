@@ -94,7 +94,7 @@ def _gather_group_querysets(request):
         return get_object_principal_queryset(request, scope, Group)
 
     if settings.SERVE_FROM_PUBLIC_SCHEMA:
-        public_tenant = Tenant.objects.get(schema_name="public")
+        public_tenant = Tenant.objects.get(tenant_name="public")
         default_group_set = Group.platform_default_set().filter(
             tenant=request.tenant
         ) or Group.platform_default_set().filter(tenant=public_tenant)
@@ -135,7 +135,7 @@ def get_role_queryset(request):
     base_query = annotate_roles_with_counts(Role.objects.prefetch_related("access"))
 
     if settings.SERVE_FROM_PUBLIC_SCHEMA:
-        public_tenant = Tenant.objects.get(schema_name="public")
+        public_tenant = Tenant.objects.get(tenant_name="public")
         base_query = base_query.filter(tenant__in=[request.tenant, public_tenant])
 
     if scope != ACCOUNT_SCOPE:
@@ -241,7 +241,7 @@ def _filter_admin_default(request, queryset):
     """Filter out admin default groups unless the principal is an org admin."""
     # If the principal is an org admin, make sure they get any and all admin_default groups
     if request.user.admin:
-        public_tenant = Tenant.objects.get(schema_name="public")
+        public_tenant = Tenant.objects.get(tenant_name="public")
         admin_default_group_set = Group.admin_default_set().filter(
             tenant=request.tenant
         ) or Group.admin_default_set().filter(tenant=public_tenant)

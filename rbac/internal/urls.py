@@ -25,13 +25,11 @@ from .views import trigger_error
 urlpatterns = [
     path("api/tenant/unmodified/", views.list_unmodified_tenants),
     path("api/tenant/", views.list_tenants),
-    path("api/tenant/<str:tenant_schema_name>/", views.tenant_view),
-    path("api/tenant/<str:tenant_schema_name>/init/", views.tenant_init),
+    path("api/tenant/<str:tenant_name>/", views.tenant_view),
     path("api/migrations/run/", views.run_migrations),
     path("api/migrations/progress/", views.migration_progress),
     path("api/seeds/run/", views.run_seeds),
     path("api/cars/expire/", views.car_expiry),
     path("api/sentry_debug/", trigger_error),
-    path("api/utils/tenant_reconciliation/", views.tenant_reconciliation),
     path("api/utils/sync_schemas/", views.sync_schemas),
 ]

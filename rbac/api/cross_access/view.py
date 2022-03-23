@@ -27,13 +27,12 @@ from rest_framework import status as http_status
 from rest_framework.filters import OrderingFilter
 from rest_framework.response import Response
 from rest_framework.serializers import ValidationError
-from tenant_schemas.utils import tenant_context
 
 from api.cross_access.access_control import CrossAccountRequestAccessPermission
 from api.cross_access.serializer import CrossAccountRequestDetailSerializer, CrossAccountRequestSerializer
 from api.cross_access.util import create_cross_principal
 from api.models import CrossAccountRequest, Tenant
-from api.serializers import create_schema_name
+from api.serializers import create_tenant_name
 
 QUERY_BY_KEY = "query_by"
 ACCOUNT = "target_account"
@@ -112,9 +111,8 @@ class CrossAccountRequestViewSet(
 
     def create(self, request, *args, **kwargs):
         """Create cross account requests for associate."""
-        with tenant_context(Tenant.objects.get(schema_name="public")):
-            self.validate_and_format_input(request.data)
-            return super().create(request=request, args=args, kwargs=kwargs)
+        self.validate_and_format_input(request.data)
+        return super().create(request=request, args=args, kwargs=kwargs)
 
     def list(self, request, *args, **kwargs):
         """List cross account requests for account/user_id."""
@@ -130,42 +128,39 @@ class CrossAccountRequestViewSet(
         """Patch a cross-account request. Target account admin use it to update status of the request."""
         validate_uuid(kwargs.get("pk"), "cross-account request uuid validation")
 
-        with tenant_context(Tenant.objects.get(schema_name="public")):
-            current = self.get_object()
-            self.check_patch_permission(request, current)
+        current = self.get_object()
+        self.check_patch_permission(request, current)
 
-            self.validate_and_format_patch_input(request.data)
+        self.validate_and_format_patch_input(request.data)
 
-            kwargs["partial"] = True
-            response = super().update(request=request, *args, **kwargs)
-            if response.status_code and response.status_code is http_status.HTTP_200_OK:
-                if request.data.get("status"):
-                    self.update_status(current, request.data.get("status"))
-                    return Response(CrossAccountRequestDetailSerializer(current).data)
-            return response
+        kwargs["partial"] = True
+        response = super().update(request=request, *args, **kwargs)
+        if response.status_code and response.status_code is http_status.HTTP_200_OK:
+            if request.data.get("status"):
+                self.update_status(current, request.data.get("status"))
+                return Response(CrossAccountRequestDetailSerializer(current).data)
+        return response
 
     def update(self, request, *args, **kwargs):
         """Update a cross-account request. TAM requestor use it to update their requesters."""
         validate_uuid(kwargs.get("pk"), "cross-account request uuid validation")
 
-        with tenant_context(Tenant.objects.get(schema_name="public")):
-            current = self.get_object()
-            self.check_update_permission(request, current)
+        current = self.get_object()
+        self.check_update_permission(request, current)
 
-            request.data["target_account"] = current.target_account
-            self.validate_and_format_input(request.data)
+        request.data["target_account"] = current.target_account
+        self.validate_and_format_input(request.data)
 
-            response = super().update(request=request, args=args, kwargs=kwargs)
-            if response.status_code and response.status_code is http_status.HTTP_200_OK:
-                if request.data.get("status"):
-                    self.update_status(current, request.data.get("status"))
-                    return Response(CrossAccountRequestDetailSerializer(current).data)
-            return response
+        response = super().update(request=request, args=args, kwargs=kwargs)
+        if response.status_code and response.status_code is http_status.HTTP_200_OK:
+            if request.data.get("status"):
+                self.update_status(current, request.data.get("status"))
+                return Response(CrossAccountRequestDetailSerializer(current).data)
+        return response
 
     def retrieve(self, request, *args, **kwargs):
         """Retrive cross account requests by request_id."""
-        with tenant_context(Tenant.objects.get(schema_name="public")):
-            result = super().retrieve(request=request, args=args, kwargs=kwargs)
+        result = super().retrieve(request=request, args=args, kwargs=kwargs)
 
         if validate_and_get_key(self.request.query_params, QUERY_BY_KEY, VALID_QUERY_BY_KEY, ACCOUNT) == ACCOUNT:
             user_id = result.data.pop("user_id")
@@ -227,21 +222,18 @@ class CrossAccountRequestViewSet(
             )
 
         try:
-            tenant_schema_name = create_schema_name(target_account)
-            Tenant.objects.get(schema_name=tenant_schema_name)
+            tenant_name = create_tenant_name(target_account)
+            Tenant.objects.get(tenant_name=tenant_name)
         except Tenant.DoesNotExist:
             raise self.throw_validation_error("cross-account-request", f"Account '{target_account}' does not exist.")
 
-        with tenant_context(Tenant.objects.get(schema_name="public")):
-            request_data["roles"] = self.format_roles(request_data.get("roles"))
-
+        request_data["roles"] = self.format_roles(request_data.get("roles"))
         request_data["user_id"] = self.request.user.user_id
 
     def validate_and_format_patch_input(self, request_data):
         """Validate the create api input."""
         if "roles" in request_data:
-            with tenant_context(Tenant.objects.get(schema_name="public")):
-                request_data["roles"] = self.format_roles(request_data.get("roles"))
+            request_data["roles"] = self.format_roles(request_data.get("roles"))
 
     def format_roles(self, roles):
         """Format role list as expected for cross-account-request."""
@@ -267,8 +259,8 @@ class CrossAccountRequestViewSet(
     def check_patch_permission(self, request, update_obj):
         """Check if user has right to patch cross access request."""
         if request.user.account == update_obj.target_account:
-            """ For approvers updating requests coming to them, only org admins
-                may update status from pending/approved/denied to approved/denied.
+            """For approvers updating requests coming to them, only org admins
+            may update status from pending/approved/denied to approved/denied.
             """
             if not request.user.admin:
                 self.throw_validation_error("cross-account partial update", "Only org admins may update status.")
@@ -283,8 +275,8 @@ class CrossAccountRequestViewSet(
             if len(request.data.keys()) > 1 or next(iter(request.data)) != "status":
                 self.throw_validation_error("cross-account partial update", "Only status may be updated.")
         elif request.user.user_id == update_obj.user_id:
-            """ For requestors updating their requests, the request status may
-                only be updated from pending to cancelled.
+            """For requestors updating their requests, the request status may
+            only be updated from pending to cancelled.
             """
             if update_obj.status != "pending" or request.data.get("status") != "cancelled":
                 self.throw_validation_error(
