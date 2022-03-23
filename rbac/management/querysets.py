@@ -241,7 +241,7 @@ def _filter_admin_default(request, queryset):
     """Filter out admin default groups unless the principal is an org admin."""
     # If the principal is an org admin, make sure they get any and all admin_default groups
     if request.user.admin:
-        public_tenant = Tenant.objects.get(schema_name="public")
+        public_tenant = Tenant.objects.get(tenant_name="public")
         admin_default_group_set = Group.admin_default_set().filter(
             tenant=request.tenant
         ) or Group.admin_default_set().filter(tenant=public_tenant)
