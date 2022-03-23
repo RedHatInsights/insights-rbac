@@ -57,10 +57,12 @@ class InternalViewsetTests(IdentityRequest):
         self.request.user = user
 
         with tenant_context(self.tenant):
-            self.group = Group(name="System Group", system=True)
+            self.group = Group(name="System Group", system=True, tenant=self.tenant)
             self.group.save()
-            self.role = Role.objects.create(name="System Role", description="A role for a group.", system=True)
-            self.policy = Policy.objects.create(name="System Policy", group=self.group)
+            self.role = Role.objects.create(
+                name="System Role", description="A role for a group.", system=True, tenant=self.tenant
+            )
+            self.policy = Policy.objects.create(name="System Policy", group=self.group, tenant=self.tenant)
             self.policy.roles.add(self.role)
             self.policy.save()
             self.group.policies.add(self.policy)
@@ -97,8 +99,9 @@ class InternalViewsetTests(IdentityRequest):
     @patch.object(Tenant, "delete")
     def test_delete_tenant_no_schema(self, mock):
         """Test that we can delete a tenant when allowed and unmodified."""
-        with tenant_context(Tenant.objects.get(schema_name="public")):
-            Group.objects.create(name="Custom Group")
+        public_tenant = Tenant.objects.get(schema_name="public")
+        with tenant_context(public_tenant):
+            Group.objects.create(name="Custom Group", tenant=public_tenant)
 
         tenant_no_schema = Tenant.objects.create(schema_name="no_schema")
         response = self.client.delete(f"/_private/api/tenant/{tenant_no_schema.schema_name}/", **self.request.META)
@@ -108,7 +111,7 @@ class InternalViewsetTests(IdentityRequest):
     def test_delete_tenant_allowed_but_multiple_groups(self):
         """Test that we cannot delete a tenant when allowed but modified."""
         with tenant_context(self.tenant):
-            Group.objects.create(name="Custom Group")
+            Group.objects.create(name="Custom Group", tenant=self.tenant)
 
         response = self.client.delete(f"/_private/api/tenant/{self.tenant.schema_name}/", **self.request.META)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
@@ -140,7 +143,7 @@ class InternalViewsetTests(IdentityRequest):
     def test_delete_tenant_allowed_but_custom_one_role_is_not_system(self):
         """Test that we cannot delete a tenant when allowed but modified."""
         with tenant_context(self.tenant):
-            Role.objects.create(name="Custom Role")
+            Role.objects.create(name="Custom Role", tenant=self.tenant)
 
         response = self.client.delete(f"/_private/api/tenant/{self.tenant.schema_name}/", **self.request.META)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
@@ -170,14 +173,14 @@ class InternalViewsetTests(IdentityRequest):
             t.save()
 
         with tenant_context(modified_tenant_groups):
-            Group.objects.create(name="Custom Group")
+            Group.objects.create(name="Custom Group", tenant=modified_tenant_groups)
 
         with tenant_context(modified_tenant_roles):
-            Role.objects.create(name="Custom Role")
+            Role.objects.create(name="Custom Role", tenant=modified_tenant_roles)
 
         with tenant_context(unmodified_tenant_2):
-            Group.objects.create(name="System Group", system=True)
-            Role.objects.create(name="System Role", system=True)
+            Group.objects.create(name="System Group", system=True, tenant=unmodified_tenant_2)
+            Role.objects.create(name="System Role", system=True, tenant=unmodified_tenant_2)
 
         response = self.client.get(f"/_private/api/tenant/unmodified/", **self.request.META)
         response_data = json.loads(response.content)
@@ -241,7 +244,18 @@ class InternalViewsetTests(IdentityRequest):
     def test_run_seeds_with_defaults(self, seed_mock):
         """Test that we can trigger seeds with defaults."""
         response = self.client.post(f"/_private/api/seeds/run/", **self.request.META)
-        seed_mock.assert_called_once_with({})
+        seed_mock.assert_called_once_with({"schema_list": None})
+        self.assertEqual(response.status_code, status.HTTP_202_ACCEPTED)
+        self.assertEqual(response.content.decode(), "Seeds are running in a background worker.")
+
+    @patch("management.tasks.run_seeds_in_worker.delay")
+    def test_run_seeds_for_schema(self, seed_mock):
+        """Test that we can trigger seeds for a schema."""
+        schemas = ["1234", "5678"]
+        response = self.client.post(
+            f"/_private/api/seeds/run/", {"schemas": schemas}, **self.request.META, format="json"
+        )
+        seed_mock.assert_called_once_with({"schema_list": schemas})
         self.assertEqual(response.status_code, status.HTTP_202_ACCEPTED)
         self.assertEqual(response.content.decode(), "Seeds are running in a background worker.")
 
@@ -249,7 +263,7 @@ class InternalViewsetTests(IdentityRequest):
     def test_run_seeds_with_options(self, seed_mock):
         """Test that we can trigger seeds with options."""
         response = self.client.post(f"/_private/api/seeds/run/?seed_types=roles,groups", **self.request.META)
-        seed_mock.assert_called_once_with({"roles": True, "groups": True})
+        seed_mock.assert_called_once_with({"roles": True, "groups": True, "schema_list": None})
         self.assertEqual(response.status_code, status.HTTP_202_ACCEPTED)
         self.assertEqual(response.content.decode(), "Seeds are running in a background worker.")
 

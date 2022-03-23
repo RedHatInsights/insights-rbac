@@ -20,7 +20,7 @@ import logging
 from uuid import uuid4
 
 from django.conf import settings
-from django.db import connections, models
+from django.db import models
 from django.db.models import signals
 from django.utils import timezone
 from management.cache import AccessCache
@@ -45,6 +45,7 @@ class Group(TenantAwareModel):
     modified = AutoDateTimeField(default=timezone.now)
     platform_default = models.BooleanField(default=False)
     system = models.BooleanField(default=False)
+    admin_default = models.BooleanField(default=False)
 
     def roles(self):
         """Roles for a group."""
@@ -62,6 +63,10 @@ class Group(TenantAwareModel):
         """Queryset for platform default group."""
         return Group.objects.filter(platform_default=True)
 
+    def admin_default_set():
+        """Queryset for admin default group."""
+        return Group.objects.filter(admin_default=True)
+
     def __policy_ids(self):
         """Policy IDs for a group."""
         return self.policies.values_list("id", flat=True)
@@ -74,7 +79,7 @@ class Group(TenantAwareModel):
 def group_deleted_cache_handler(sender=None, instance=None, using=None, **kwargs):
     """Signal handler to purge principal caches when a Group is deleted."""
     logger.info("Handling signal for deleted group %s - invalidating policy cache for users in group", instance)
-    cache = AccessCache(connections[using].schema_name)
+    cache = AccessCache(instance.tenant.schema_name)
     for principal in instance.principals.all():
         cache.delete_policy(principal.uuid)
 
@@ -83,7 +88,7 @@ def principals_to_groups_cache_handler(
     sender=None, instance=None, action=None, reverse=None, model=None, pk_set=None, using=None, **kwargs
 ):
     """Signal handler to purge caches when Group membership changes."""
-    cache = AccessCache(connections[using].schema_name)
+    cache = AccessCache(instance.tenant.schema_name)
     if action in ("post_add", "pre_remove"):
         logger.info("Handling signal for %s group membership change - invalidating policy cache", instance)
         if isinstance(instance, Group):

@@ -47,29 +47,27 @@ class AccessViewTests(IdentityRequest):
         user.username = self.user_data["username"]
         user.account = self.customer_data["account_id"]
         request.user = user
+        public_tenant = Tenant.objects.get(schema_name="public")
 
         self.access_data = {
             "permission": "app:*:*",
             "resourceDefinitions": [{"attributeFilter": {"key": "key1", "operation": "equal", "value": "value1"}}],
         }
-        with tenant_context(self.tenant):
-            self.principal = Principal(username=self.user_data["username"])
+        with tenant_context(public_tenant):
+            self.principal = Principal(username=self.user_data["username"], tenant=self.tenant)
             self.principal.save()
-            self.admin_principal = Principal(username="user_admin")
+            self.admin_principal = Principal(username="user_admin", tenant=self.tenant)
             self.admin_principal.save()
-            self.group = Group(name="groupA")
+            self.group = Group(name="groupA", tenant=self.tenant)
             self.group.save()
             self.group.principals.add(self.principal)
             self.group.save()
-            self.permission = Permission.objects.create(permission="app:*:*")
-            Permission.objects.create(permission="app:foo:bar")
-        with tenant_context(Tenant.objects.get(schema_name="public")):
-            Permission.objects.create(permission="app:foo:bar")
-            Permission.objects.create(permission="app:*:*")
+            self.permission = Permission.objects.create(permission="app:*:*", tenant=self.tenant)
+            Permission.objects.create(permission="app:foo:bar", tenant=self.tenant)
 
     def tearDown(self):
         """Tear down access view tests."""
-        with tenant_context(self.tenant):
+        with tenant_context(Tenant.objects.get(schema_name="public")):
             Group.objects.all().delete()
             Principal.objects.all().delete()
             Role.objects.all().delete()
@@ -101,20 +99,27 @@ class AccessViewTests(IdentityRequest):
 
     def create_platform_default_resource(self):
         """Setup default group and role."""
-        with tenant_context(self.tenant):
-            default_permission = Permission.objects.create(permission="default:*:*")
-            default_role = Role.objects.create(name="default role", platform_default=True, system=True)
-            default_access = Access.objects.create(permission=default_permission, role=default_role)
-            default_policy = Policy.objects.create(name="default policy", system=True)
+        with tenant_context(Tenant.objects.get(schema_name="public")):
+            default_permission = Permission.objects.create(permission="default:*:*", tenant=self.tenant)
+            default_role = Role.objects.create(
+                name="default role", platform_default=True, system=True, tenant=self.tenant
+            )
+            default_access = Access.objects.create(
+                permission=default_permission, role=default_role, tenant=self.tenant
+            )
+            default_policy = Policy.objects.create(name="default policy", system=True, tenant=self.tenant)
             default_policy.roles.add(default_role)
-            default_group = Group.objects.create(name="default group", system=True, platform_default=True)
+            default_group = Group.objects.create(
+                name="default group", system=True, platform_default=True, tenant=self.tenant
+            )
             default_group.policies.add(default_policy)
 
     def create_role_and_permission(self, role_name, permission):
-        role = Role.objects.create(name=role_name)
-        assigned_permission = Permission.objects.create(permission=permission)
-        access = Access.objects.create(role=role, permission=assigned_permission)
-        return role
+        with tenant_context(Tenant.objects.get(schema_name="public")):
+            role = Role.objects.create(name=role_name, tenant=self.tenant)
+            assigned_permission = Permission.objects.create(permission=permission, tenant=self.tenant)
+            access = Access.objects.create(role=role, permission=assigned_permission, tenant=self.tenant)
+            return role
 
     def test_get_access_success(self):
         """Test that we can obtain the expected access without pagination."""
@@ -123,7 +128,7 @@ class AccessViewTests(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         role_uuid = response.data.get("uuid")
         role = Role.objects.get(uuid=role_uuid)
-        access = Access.objects.create(role=role, permission=self.permission)
+        access = Access.objects.create(role=role, permission=self.permission, tenant=self.tenant)
         policy_name = "policyA"
         response = self.create_policy(policy_name, self.group.uuid, [role_uuid])
         # Create platform default group, and add roles to it.
@@ -174,11 +179,9 @@ class AccessViewTests(IdentityRequest):
         request_context = self._create_request_context(self.customer_data, user_data, is_org_admin=False)
         request = request_context["request"]
         headers = request.META
+        with tenant_context(Tenant.objects.get(schema_name="public")):
+            Principal.objects.create(username=user_name, cross_account=True, tenant=self.tenant)
 
-        with tenant_context(self.tenant):
-            Principal.objects.create(username=user_name, cross_account=True)
-            self.create_role_and_permission("Test Role one", "test:assigned:permission1")
-            self.create_role_and_permission("Test Role two", "test:assigned:permission2")
         response = client.get(url, **headers)
 
         # only assigned role permissions without platform default permission
@@ -198,7 +201,7 @@ class AccessViewTests(IdentityRequest):
         response = self.create_role(role_name, access_data)
         role_uuid = response.data.get("uuid")
         role = Role.objects.get(uuid=role_uuid)
-        access = Access.objects.create(role=role, permission=self.permission)
+        access = Access.objects.create(role=role, permission=self.permission, tenant=self.tenant)
         self.create_policy(policy_name, self.group.uuid, [role_uuid])
 
         url = "{}?application=&username={}".format(reverse("access"), self.principal.username)
@@ -221,7 +224,7 @@ class AccessViewTests(IdentityRequest):
         response = self.create_role(role_name, access_data)
         role_uuid = response.data.get("uuid")
         role = Role.objects.get(uuid=role_uuid)
-        access = Access.objects.create(role=role, permission=self.permission)
+        access = Access.objects.create(role=role, permission=self.permission, tenant=self.tenant)
         self.create_policy(policy_name, self.group.uuid, [role_uuid])
 
         url = "{}?application={}&username={}".format(reverse("access"), "app,app2", self.principal.username)

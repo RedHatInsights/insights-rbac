@@ -16,12 +16,14 @@
 #
 
 """Serializer for role management."""
+from django.conf import settings
 from django.utils.translation import gettext as _
 from management.group.model import Group
 from management.serializer_override_mixin import SerializerCreateOverrideMixin
-from management.utils import get_principal_from_request, schema_handler
+from management.utils import filter_queryset_by_tenant, get_principal_from_request
 from rest_framework import serializers
 
+from api.models import Tenant
 from .model import Access, Permission, ResourceDefinition, Role
 
 ALLOWED_OPERATIONS = ["in", "equal"]
@@ -93,6 +95,7 @@ class RoleSerializer(serializers.ModelSerializer):
     applications = serializers.SerializerMethodField()
     system = serializers.BooleanField(read_only=True)
     platform_default = serializers.BooleanField(read_only=True)
+    admin_default = serializers.BooleanField(read_only=True)
     created = serializers.DateTimeField(read_only=True)
     modified = serializers.DateTimeField(read_only=True)
 
@@ -111,6 +114,7 @@ class RoleSerializer(serializers.ModelSerializer):
             "applications",
             "system",
             "platform_default",
+            "admin_default",
             "created",
             "modified",
         )
@@ -126,9 +130,9 @@ class RoleSerializer(serializers.ModelSerializer):
         description = validated_data.pop("description", None)
         access_list = validated_data.pop("access")
         tenant = self.context["request"].tenant
-        for tenant_schema in schema_handler(tenant):
-            role = Role.objects.create(name=name, description=description, display_name=display_name, tenant=tenant)
-            create_access_for_role(role, access_list, tenant)
+
+        role = Role.objects.create(name=name, description=description, display_name=display_name, tenant=tenant)
+        create_access_for_role(role, access_list, tenant)
 
         return role
 
@@ -139,10 +143,9 @@ class RoleSerializer(serializers.ModelSerializer):
         role_name = instance.name
         update_data = validate_role_update(instance, validated_data)
 
-        for tenant_schema in schema_handler(tenant):
-            instance = update_role(role_name, update_data, tenant)
+        instance = update_role(role_name, update_data, tenant)
 
-            create_access_for_role(instance, access_list, tenant)
+        create_access_for_role(instance, access_list, tenant)
 
         return instance
 
@@ -161,6 +164,7 @@ class RoleMinimumSerializer(SerializerCreateOverrideMixin, serializers.ModelSeri
     applications = serializers.SerializerMethodField()
     system = serializers.BooleanField(read_only=True)
     platform_default = serializers.BooleanField(read_only=True)
+    admin_default = serializers.BooleanField(read_only=True)
 
     class Meta:
         """Metadata for the serializer."""
@@ -178,6 +182,7 @@ class RoleMinimumSerializer(SerializerCreateOverrideMixin, serializers.ModelSeri
             "applications",
             "system",
             "platform_default",
+            "admin_default",
         )
 
     def get_applications(self, obj):
@@ -219,6 +224,7 @@ class RoleDynamicSerializer(DynamicFieldsModelSerializer):
     applications = serializers.SerializerMethodField()
     system = serializers.BooleanField(read_only=True)
     platform_default = serializers.BooleanField(read_only=True)
+    admin_default = serializers.BooleanField(read_only=True)
 
     class Meta:
         """Metadata for the serializer."""
@@ -238,6 +244,7 @@ class RoleDynamicSerializer(DynamicFieldsModelSerializer):
             "applications",
             "system",
             "platform_default",
+            "admin_default",
         )
 
     def get_applications(self, obj):
@@ -267,8 +274,7 @@ class RolePatchSerializer(RoleSerializer):
         role_name = instance.name
         update_data = validate_role_update(instance, validated_data)
 
-        for tenant_schema in schema_handler(tenant):
-            instance = update_role(role_name, update_data, tenant, clear_access=False)
+        instance = update_role(role_name, update_data, tenant, clear_access=False)
         return instance
 
 
@@ -289,9 +295,22 @@ def obtain_groups_in(obj, request):
     if scope_param == "principal" or username_param:
         principal = get_principal_from_request(request)
         assigned_groups = Group.objects.filter(policies__in=policy_ids, principals__in=[principal])
-        return (assigned_groups | Group.platform_default_set()).distinct()
+        assigned_groups = filter_queryset_by_tenant(assigned_groups, request.tenant)
+        if settings.SERVE_FROM_PUBLIC_SCHEMA:
+            public_tenant = Tenant.objects.get(schema_name="public")
+            qs = (
+                assigned_groups
+                | (
+                    Group.platform_default_set().filter(tenant=request.tenant)
+                    or Group.platform_default_set().filter(tenant=public_tenant)
+                )
+            ).distinct()
+            return filter_queryset_by_tenant(qs, request.tenant)
+        else:
+            qs = (assigned_groups | Group.platform_default_set()).distinct()
+            return filter_queryset_by_tenant(qs, request.tenant)
 
-    return Group.objects.filter(policies__in=policy_ids).distinct()
+    return filter_queryset_by_tenant(Group.objects.filter(policies__in=policy_ids).distinct(), request.tenant)
 
 
 def create_access_for_role(role, access_list, tenant):

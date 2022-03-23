@@ -16,15 +16,11 @@
 #
 """Test the principal viewset."""
 
-import random
-from decimal import Decimal
 from unittest.mock import patch, ANY
-from uuid import uuid4
 
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APIClient
-from tenant_schemas.utils import tenant_context
 
 from api.models import Tenant, User
 from management.models import *
@@ -38,10 +34,8 @@ class PrincipalViewNonAdminTests(IdentityRequest):
     def setUp(self):
         """Set up the principal view nonadmin tests."""
         super().setUp()
-        with tenant_context(Tenant.objects.get(schema_name="public")):
-            non_admin_tenant_name = "acct1234"
-            self.non_admin_tenant = Tenant.objects.create(schema_name=non_admin_tenant_name, ready=True)
-            self.non_admin_tenant.create_schema()
+        non_admin_tenant_name = "acct1234"
+        self.non_admin_tenant = Tenant.objects.create(schema_name=non_admin_tenant_name)
 
         self.user_data = {"username": "non_admin", "email": "non_admin@example.com"}
         self.customer = {"account_id": "1234", "schema_name": non_admin_tenant_name}
@@ -50,14 +44,12 @@ class PrincipalViewNonAdminTests(IdentityRequest):
         request = self.request_context["request"]
         self.headers = request.META
 
-        with tenant_context(self.tenant):
-            self.principal = Principal(username="test_user")
-            self.principal.save()
+        self.principal = Principal(username="test_user", tenant=self.tenant)
+        self.principal.save()
 
     def tearDown(self):
         """Tear down principal nonadmin viewset tests."""
-        with tenant_context(self.tenant):
-            Principal.objects.all().delete()
+        Principal.objects.all().delete()
 
     def test_non_admin_cannot_read_principal_list_without_permissions(self):
         """Test that we can not read a list of principals as a non-admin without permissions."""
@@ -73,21 +65,20 @@ class PrincipalViewNonAdminTests(IdentityRequest):
     )
     def test_non_admin_can_read_principal_list_with_permissions(self, mock_request):
         """Test that we can read a list of principals as a non-admin with proper permissions."""
-        with tenant_context(self.non_admin_tenant):
-            non_admin_principal = Principal.objects.create(username="non_admin", tenant=self.non_admin_tenant)
-            group = Group.objects.create(name="Non-admin group", tenant=self.non_admin_tenant)
-            group.principals.add(non_admin_principal)
-            policy = Policy.objects.create(name="Non-admin policy", group=group, tenant=self.non_admin_tenant)
-            role = Role.objects.create(name="Non-admin role", tenant=self.non_admin_tenant)
-            policy.roles.add(role)
-            permission = Permission.objects.create(
-                application="rbac",
-                resource_type="principals",
-                verb="read",
-                permission="rbac:principal:read",
-                tenant=self.non_admin_tenant,
-            )
-            access = Access.objects.create(permission=permission, role=role, tenant=self.non_admin_tenant)
+        non_admin_principal = Principal.objects.create(username="non_admin", tenant=self.non_admin_tenant)
+        group = Group.objects.create(name="Non-admin group", tenant=self.non_admin_tenant)
+        group.principals.add(non_admin_principal)
+        policy = Policy.objects.create(name="Non-admin policy", group=group, tenant=self.non_admin_tenant)
+        role = Role.objects.create(name="Non-admin role", tenant=self.non_admin_tenant)
+        policy.roles.add(role)
+        permission = Permission.objects.create(
+            application="rbac",
+            resource_type="principals",
+            verb="read",
+            permission="rbac:principal:read",
+            tenant=self.non_admin_tenant,
+        )
+        access = Access.objects.create(permission=permission, role=role, tenant=self.non_admin_tenant)
 
         url = reverse("principals")
         client = APIClient()
@@ -120,14 +111,12 @@ class PrincipalViewsetTests(IdentityRequest):
         user.account = self.customer_data["account_id"]
         request.user = user
 
-        with tenant_context(self.tenant):
-            self.principal = Principal(username="test_user")
-            self.principal.save()
+        self.principal = Principal(username="test_user", tenant=self.tenant)
+        self.principal.save()
 
     def tearDown(self):
         """Tear down principal viewset tests."""
-        with tenant_context(self.tenant):
-            Principal.objects.all().delete()
+        Principal.objects.all().delete()
 
     @patch(
         "management.principal.proxy.PrincipalProxy.request_principals",
@@ -136,8 +125,9 @@ class PrincipalViewsetTests(IdentityRequest):
     def test_read_principal_list_success(self, mock_request):
         """Test that we can read a list of principals."""
         # Create a cross_account user in rbac.
-        with tenant_context(self.tenant):
-            cross_account_principal = Principal.objects.create(username="cross_account_user", cross_account=True)
+        cross_account_principal = Principal.objects.create(
+            username="cross_account_user", cross_account=True, tenant=self.tenant
+        )
 
         url = reverse("principals")
         client = APIClient()
@@ -202,8 +192,9 @@ class PrincipalViewsetTests(IdentityRequest):
     def test_read_principal_filtered_list_success_without_cross_account_user(self, mock_request):
         """Test that we can read a filtered list of principals."""
         # Create a cross_account user in rbac.
-        with tenant_context(self.tenant):
-            cross_account_principal = Principal.objects.create(username="cross_account_user", cross_account=True)
+        cross_account_principal = Principal.objects.create(
+            username="cross_account_user", cross_account=True, tenant=self.tenant
+        )
 
         url = f'{reverse("principals")}?usernames=test_user,cross_account_user&offset=30'
         client = APIClient()

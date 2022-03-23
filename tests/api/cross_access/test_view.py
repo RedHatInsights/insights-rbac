@@ -83,10 +83,10 @@ class CrossAccountRequestViewTests(IdentityRequest):
             t.create_schema()
             t.ready = True
             t.save()
-            self.role_1 = Role.objects.create(name="role_1", system=True)
-            self.role_2 = Role.objects.create(name="role_2", system=True)
-            self.role_9 = Role.objects.create(name="role_9", system=True)
-            self.role_8 = Role.objects.create(name="role_8", system=True)
+            self.role_1 = Role.objects.create(name="role_1", system=True, tenant=t)
+            self.role_2 = Role.objects.create(name="role_2", system=True, tenant=t)
+            self.role_9 = Role.objects.create(name="role_9", system=True, tenant=t)
+            self.role_8 = Role.objects.create(name="role_8", system=True, tenant=t)
 
             self.request_1 = CrossAccountRequest.objects.create(
                 target_account=self.account,
@@ -734,12 +734,7 @@ class CrossAccountRequestViewTests(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data.get("status"), update_data.get("status"))
 
-        with tenant_context(tenant):
-            princ = Principal.objects.get(username__iexact=principal_name)
-            self.assertEqual(princ.username, principal_name)
-            self.assertTrue(princ.cross_account)
-
-        # Principal created in public schema too
+        # Principal created in public schema
         princ = Principal.objects.get(username__iexact=principal_name)
         self.assertEqual(princ.username, principal_name)
         self.assertEqual(princ.tenant, tenant)

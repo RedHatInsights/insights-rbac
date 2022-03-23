@@ -15,15 +15,19 @@
 #    along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Queryset helpers for management module."""
+
+from django.conf import settings
 from django.db.models.aggregates import Count
 from django.urls import reverse
 from django.utils.translation import gettext as _
 from management.group.model import Group
+from management.permissions.role_access import RoleAccessPermission
 from management.policy.model import Policy
 from management.role.model import Access, Role
 from management.utils import (
     APPLICATION_KEY,
     access_for_principal,
+    filter_queryset_by_tenant,
     get_principal,
     get_principal_from_request,
     groups_for_principal,
@@ -33,7 +37,9 @@ from management.utils import (
 )
 from rest_framework import permissions, serializers
 
+from api.models import Tenant
 from rbac.env import ENVIRONMENT
+
 
 SCOPE_KEY = "scope"
 ACCOUNT_SCOPE = "account"
@@ -83,24 +89,35 @@ def get_group_queryset(request):
     if scope != ACCOUNT_SCOPE:
         return get_object_principal_queryset(request, scope, Group)
 
+    if settings.SERVE_FROM_PUBLIC_SCHEMA:
+        public_tenant = Tenant.objects.get(schema_name="public")
+        default_group_set = Group.platform_default_set().filter(
+            tenant=request.tenant
+        ) or Group.platform_default_set().filter(tenant=public_tenant)
+    else:
+        default_group_set = Group.platform_default_set()
+
     username = request.query_params.get("username")
     if username:
         principal = get_principal(username, request)
         if principal.cross_account:
             return Group.objects.none()
-        return Group.objects.filter(principals__username__iexact=username) | Group.platform_default_set()
+        return (
+            filter_queryset_by_tenant(Group.objects.filter(principals__username__iexact=username), request.tenant)
+            | default_group_set
+        )
 
     if has_group_all_access(request):
-        return get_annotated_groups() | Group.platform_default_set()
+        return filter_queryset_by_tenant(get_annotated_groups(), request.tenant) | default_group_set
 
     access = user_has_perm(request, "group")
 
     if access == "All":
-        return get_annotated_groups() | Group.platform_default_set()
+        return filter_queryset_by_tenant(get_annotated_groups(), request.tenant) | default_group_set
     if access == "None":
         return Group.objects.none()
 
-    return Group.objects.filter(uuid__in=access) | Group.platform_default_set()
+    return filter_queryset_by_tenant(Group.objects.filter(uuid__in=access), request.tenant) | default_group_set
 
 
 def annotate_roles_with_counts(queryset):
@@ -113,6 +130,10 @@ def get_role_queryset(request):
     scope = request.query_params.get(SCOPE_KEY, ACCOUNT_SCOPE)
     base_query = annotate_roles_with_counts(Role.objects.prefetch_related("access"))
 
+    if settings.SERVE_FROM_PUBLIC_SCHEMA:
+        public_tenant = Tenant.objects.get(schema_name="public")
+        base_query = base_query.filter(tenant__in=[request.tenant, public_tenant])
+
     if scope != ACCOUNT_SCOPE:
         queryset = get_object_principal_queryset(
             request,
@@ -124,7 +145,9 @@ def get_role_queryset(request):
 
     username = request.query_params.get("username")
     if username:
-        if username != request.user.username and not request.user.admin:
+        role_permission = RoleAccessPermission()
+
+        if username != request.user.username and not role_permission.has_permission(request=request, view=None):
             return Role.objects.none()
         else:
             queryset = get_object_principal_queryset(
@@ -133,7 +156,6 @@ def get_role_queryset(request):
                 Role,
                 **{"prefetch_lookups_for_ids": "access", "prefetch_lookups_for_groups": "policies__roles"},
             )
-
             return annotate_roles_with_counts(queryset)
 
     if ENVIRONMENT.get_value("ALLOW_ANY", default=False, cast=bool):
@@ -145,7 +167,7 @@ def get_role_queryset(request):
         return base_query
     if access == "None":
         return Role.objects.none()
-    return annotate_roles_with_counts(Role.objects.filter(uuid__in=access))
+    return annotate_roles_with_counts(filter_queryset_by_tenant(Role.objects.filter(uuid__in=access), request.tenant))
 
 
 def get_policy_queryset(request):
@@ -155,16 +177,16 @@ def get_policy_queryset(request):
         return get_object_principal_queryset(request, scope, Policy)
 
     if ENVIRONMENT.get_value("ALLOW_ANY", default=False, cast=bool):
-        return Policy.objects.all()
+        return filter_queryset_by_tenant(Policy.objects.all(), request.tenant)
     if request.user.admin:
-        return Policy.objects.all()
+        return filter_queryset_by_tenant(Policy.objects.all(), request.tenant)
     access = user_has_perm(request, "policy")
 
     if access == "All":
-        return Policy.objects.all()
+        return filter_queryset_by_tenant(Policy.objects.all(), request.tenant)
     if access == "None":
         return Policy.objects.none()
-    return Policy.objects.filter(uuid__in=access)
+    return filter_queryset_by_tenant(Policy.objects.filter(uuid__in=access), request.tenant)
 
 
 def get_access_queryset(request):
@@ -178,6 +200,8 @@ def get_access_queryset(request):
         raise serializers.ValidationError({key: _(message)})
 
     app = request.query_params.get(APPLICATION_KEY)
+    is_org_admin = request.user.admin
+
     return get_object_principal_queryset(
         request,
         PRINCIPAL_SCOPE,
@@ -186,6 +210,7 @@ def get_access_queryset(request):
             APPLICATION_KEY: app,
             "prefetch_lookups_for_ids": "resourceDefinitions",
             "prefetch_lookups_for_groups": "policies__roles__access",
+            "is_org_admin": is_org_admin,
         },
     )
 
@@ -204,5 +229,5 @@ def get_object_principal_queryset(request, scope, clazz, **kwargs):
 
     object_principal_func = PRINCIPAL_QUERYSET_MAP.get(clazz.__name__)
     principal = get_principal_from_request(request)
-    objects = object_principal_func(principal, **kwargs)
+    objects = object_principal_func(principal, request.tenant, **kwargs)
     return queryset_by_id(objects, clazz, **kwargs)

@@ -334,7 +334,8 @@ class AccessHandlingTest(TestCase):
             cls.tenant.save(verbosity=0)
             cls.tenant.create_schema()
 
-        connection.set_tenant(cls.tenant)
+        public_tenant = Tenant.objects.get(schema_name="public")
+        connection.set_tenant(public_tenant)
 
     @classmethod
     def tearDownClass(cls):
@@ -347,32 +348,34 @@ class AccessHandlingTest(TestCase):
             "role": {"read": [], "write": []},
             "policy": {"read": [], "write": []},
             "principal": {"read": [], "write": []},
+            "permission": {"read": [], "write": []},
         }
         access = IdentityHeaderMiddleware._get_access_for_user("test_user", self.tenant)
         self.assertEqual(expected, access)
 
     def test_principal_no_access(self):
         """Test access for existing principal with no access definitions."""
-        Principal.objects.create(username="test_user")
+        Principal.objects.create(username="test_user", tenant=self.tenant)
         expected = {
             "group": {"read": [], "write": []},
             "role": {"read": [], "write": []},
             "policy": {"read": [], "write": []},
             "principal": {"read": [], "write": []},
+            "permission": {"read": [], "write": []},
         }
         access = IdentityHeaderMiddleware._get_access_for_user("test_user", self.tenant)
         self.assertEqual(expected, access)
 
     def test_principal_with_access_no_res_defs(self):
         """Test a user with defined access without any resource definitions."""
-        principal = Principal.objects.create(username="test_user")
-        group = Group.objects.create(name="group1")
+        principal = Principal.objects.create(username="test_user", tenant=self.tenant)
+        group = Group.objects.create(name="group1", tenant=self.tenant)
         group.principals.add(principal)
         group.save()
-        role = Role.objects.create(name="role1")
-        perm = Permission.objects.create(permission="rbac:group:write")
-        access = Access.objects.create(permission=perm, role=role)
-        policy = Policy.objects.create(name="policy1", group=group)
+        role = Role.objects.create(name="role1", tenant=self.tenant)
+        perm = Permission.objects.create(permission="rbac:group:write", tenant=self.tenant)
+        access = Access.objects.create(permission=perm, role=role, tenant=self.tenant)
+        policy = Policy.objects.create(name="policy1", group=group, tenant=self.tenant)
         policy.roles.add(role)
         policy.save()
         access = IdentityHeaderMiddleware._get_access_for_user("test_user", self.tenant)
@@ -381,30 +384,31 @@ class AccessHandlingTest(TestCase):
             "role": {"read": [], "write": []},
             "policy": {"read": [], "write": []},
             "principal": {"read": [], "write": []},
+            "permission": {"read": [], "write": []},
         }
         self.assertEqual(expected, access)
 
     def test_principal_with_access_with_res_defs(self):
         """Test a user with defined access with any resource definitions."""
-        principal = Principal.objects.create(username="test_user")
-        group = Group.objects.create(name="group1")
+        principal = Principal.objects.create(username="test_user", tenant=self.tenant)
+        group = Group.objects.create(name="group1", tenant=self.tenant)
         group.principals.add(principal)
         group.save()
-        role = Role.objects.create(name="role1")
-        perm = Permission.objects.create(permission="rbac:group:foo:bar")
-        Access.objects.create(permission=perm, role=role)
-        perm2 = Permission.objects.create(permission="rbac:group:write")
-        access = Access.objects.create(permission=perm2, role=role)
+        role = Role.objects.create(name="role1", tenant=self.tenant)
+        perm = Permission.objects.create(permission="rbac:group:foo:bar", tenant=self.tenant)
+        Access.objects.create(permission=perm, role=role, tenant=self.tenant)
+        perm2 = Permission.objects.create(permission="rbac:group:write", tenant=self.tenant)
+        access = Access.objects.create(permission=perm2, role=role, tenant=self.tenant)
         ResourceDefinition.objects.create(
-            access=access, attributeFilter={"key": "group", "operation": "equal", "value": "1"}
+            access=access, attributeFilter={"key": "group", "operation": "equal", "value": "1"}, tenant=self.tenant
         )
         ResourceDefinition.objects.create(
-            access=access, attributeFilter={"key": "group", "operation": "in", "value": "3,5"}
+            access=access, attributeFilter={"key": "group", "operation": "in", "value": "3,5"}, tenant=self.tenant
         )
         ResourceDefinition.objects.create(
-            access=access, attributeFilter={"key": "group", "operation": "equal", "value": "*"}
+            access=access, attributeFilter={"key": "group", "operation": "equal", "value": "*"}, tenant=self.tenant
         )
-        policy = Policy.objects.create(name="policy1", group=group)
+        policy = Policy.objects.create(name="policy1", group=group, tenant=self.tenant)
         policy.roles.add(role)
         policy.save()
         access = IdentityHeaderMiddleware._get_access_for_user("test_user", self.tenant)
@@ -413,28 +417,29 @@ class AccessHandlingTest(TestCase):
             "role": {"read": [], "write": []},
             "policy": {"read": [], "write": []},
             "principal": {"read": [], "write": []},
+            "permission": {"read": [], "write": []},
         }
         self.assertEqual(expected, access)
 
     def test_principal_with_access_with_wildcard_op(self):
         """Test a user with defined access with wildcard operation."""
-        principal = Principal.objects.create(username="test_user")
-        group = Group.objects.create(name="group1")
+        principal = Principal.objects.create(username="test_user", tenant=self.tenant)
+        group = Group.objects.create(name="group1", tenant=self.tenant)
         group.principals.add(principal)
         group.save()
-        role = Role.objects.create(name="role1")
-        perm = Permission.objects.create(permission="rbac:group:*")
-        access = Access.objects.create(permission=perm, role=role)
+        role = Role.objects.create(name="role1", tenant=self.tenant)
+        perm = Permission.objects.create(permission="rbac:group:*", tenant=self.tenant)
+        access = Access.objects.create(permission=perm, role=role, tenant=self.tenant)
         ResourceDefinition.objects.create(
-            access=access, attributeFilter={"key": "group", "operation": "equal", "value": "1"}
+            access=access, attributeFilter={"key": "group", "operation": "equal", "value": "1"}, tenant=self.tenant
         )
         ResourceDefinition.objects.create(
-            access=access, attributeFilter={"key": "group", "operation": "in", "value": "3,5"}
+            access=access, attributeFilter={"key": "group", "operation": "in", "value": "3,5"}, tenant=self.tenant
         )
         ResourceDefinition.objects.create(
-            access=access, attributeFilter={"key": "group", "operation": "equal", "value": "*"}
+            access=access, attributeFilter={"key": "group", "operation": "equal", "value": "*"}, tenant=self.tenant
         )
-        policy = Policy.objects.create(name="policy1", group=group)
+        policy = Policy.objects.create(name="policy1", group=group, tenant=self.tenant)
         policy.roles.add(role)
         policy.save()
         access = IdentityHeaderMiddleware._get_access_for_user("test_user", self.tenant)
@@ -443,19 +448,20 @@ class AccessHandlingTest(TestCase):
             "role": {"read": [], "write": []},
             "policy": {"read": [], "write": []},
             "principal": {"read": [], "write": []},
+            "permission": {"read": [], "write": []},
         }
         self.assertEqual(expected, access)
 
     def test_principal_with_access_with_wildcard_access(self):
         """Test a user with defined access with wildcard access."""
-        principal = Principal.objects.create(username="test_user")
-        group = Group.objects.create(name="group1")
+        principal = Principal.objects.create(username="test_user", tenant=self.tenant)
+        group = Group.objects.create(name="group1", tenant=self.tenant)
         group.principals.add(principal)
         group.save()
-        role = Role.objects.create(name="role1")
-        perm = Permission.objects.create(permission="rbac:*:*")
-        access = Access.objects.create(permission=perm, role=role)
-        policy = Policy.objects.create(name="policy1", group=group)
+        role = Role.objects.create(name="role1", tenant=self.tenant)
+        perm = Permission.objects.create(permission="rbac:*:*", tenant=self.tenant)
+        access = Access.objects.create(permission=perm, role=role, tenant=self.tenant)
+        policy = Policy.objects.create(name="policy1", group=group, tenant=self.tenant)
         policy.roles.add(role)
         policy.save()
         access = IdentityHeaderMiddleware._get_access_for_user("test_user", self.tenant)
@@ -464,5 +470,6 @@ class AccessHandlingTest(TestCase):
             "role": {"read": ["*"], "write": ["*"]},
             "policy": {"read": ["*"], "write": ["*"]},
             "principal": {"read": ["*"], "write": ["*"]},
+            "permission": {"read": ["*"], "write": ["*"]},
         }
         self.assertEqual(expected, access)

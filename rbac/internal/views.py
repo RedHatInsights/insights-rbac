@@ -29,6 +29,7 @@ from django.shortcuts import get_object_or_404
 from management.cache import TenantCache
 from management.models import Group, Role
 from management.tasks import (
+    run_init_tenant_in_worker,
     run_migrations_in_worker,
     run_reconcile_tenant_relations_in_worker,
     run_seeds_in_worker,
@@ -95,6 +96,36 @@ def list_unmodified_tenants(request):
     return HttpResponse(json.dumps(payload), content_type="application/json")
 
 
+def list_tenants(request):
+    """List tenant details.
+
+    GET /_private/api/tenant/?ready=<true|false>&limit=<limit>&offset=<offset>
+    """
+    limit = int(request.GET.get("limit", 0))
+    offset = int(request.GET.get("offset", 0))
+    ready = request.GET.get("ready")
+    tenant_qs = Tenant.objects.exclude(schema_name="public").values_list("id", "schema_name")
+
+    if ready == "true":
+        tenant_qs = tenant_qs.filter(ready=True)
+    if ready == "false":
+        tenant_qs = tenant_qs.filter(ready=False)
+    if limit:
+        tenant_qs = tenant_qs[offset : (limit + offset)]  # noqa: E203
+
+    ready_tenants = tenant_qs.filter(ready=True)
+    not_ready_tenants = tenant_qs.filter(ready=False)
+
+    payload = {
+        "ready_tenants": list(ready_tenants),
+        "ready_tenants_count": len(ready_tenants),
+        "not_ready_tenants": list(not_ready_tenants),
+        "not_ready_tenants_count": len(not_ready_tenants),
+        "total_tenants_count": tenant_qs.count(),
+    }
+    return HttpResponse(json.dumps(payload), content_type="application/json")
+
+
 def tenant_view(request, tenant_schema_name):
     """View method for internal tenant requests.
 
@@ -115,7 +146,20 @@ def tenant_view(request, tenant_schema_name):
                     return HttpResponse(status=204)
                 else:
                     return HttpResponse("Tenant cannot be deleted.", status=400)
-    return HttpResponse(f'Invalid method, only "DELETE" is allowed.', status=405)
+    return HttpResponse('Invalid method, only "DELETE" is allowed.', status=405)
+
+
+def tenant_init(request, tenant_schema_name):
+    """View method for resolving 'hung' tenants by re-initing them.
+
+    POST /_private/api/tenant/<schema_name>/init/
+    """
+    if request.method == "POST":
+        msg = f"Initializing schema, running migrations/seeds for tenant {tenant_schema_name} in the background."
+        logger.info(msg)
+        run_init_tenant_in_worker.delay(tenant_schema_name)
+        return HttpResponse(msg, status=202)
+    return HttpResponse('Invalid method, only "POST" is allowed.', status=405)
 
 
 def run_migrations(request):
@@ -130,7 +174,7 @@ def run_migrations(request):
         logger.info(f"Running migrations: {request.method} {request.user.username} {schema_list}")
         run_migrations_in_worker.delay(schema_list)
         return HttpResponse("Migrations are running in a background worker.", status=202)
-    return HttpResponse(f'Invalid method, only "POST" is allowed.', status=405)
+    return HttpResponse('Invalid method, only "POST" is allowed.', status=405)
 
 
 def migration_progress(request):
@@ -172,7 +216,7 @@ def migration_progress(request):
         }
 
         return HttpResponse(json.dumps(payload), content_type="application/json")
-    return HttpResponse(f'Invalid method, only "GET" is allowed.', status=405)
+    return HttpResponse('Invalid method, only "GET" is allowed.', status=405)
 
 
 def tenant_reconciliation(request):
@@ -188,7 +232,7 @@ def tenant_reconciliation(request):
         run_reconcile_tenant_relations_in_worker.delay(args)
         return HttpResponse(msg, status=202)
 
-    return HttpResponse(f'Invalid method, only "GET" and "POST" are allowed.', status=405)
+    return HttpResponse('Invalid method, only "GET" and "POST" are allowed.', status=405)
 
 
 def sync_schemas(request):
@@ -207,7 +251,7 @@ def sync_schemas(request):
         run_sync_schemas_in_worker.delay(args)
         return HttpResponse(msg, status=202)
 
-    return HttpResponse(f'Invalid method, only "POST" is allowed.', status=405)
+    return HttpResponse('Invalid method, only "POST" is allowed.', status=405)
 
 
 def run_seeds(request):
@@ -216,6 +260,9 @@ def run_seeds(request):
     POST /_private/api/seeds/run/?seed_types=permissions,roles,groups
     """
     if request.method == "POST":
+        schema_list = None
+        if request.body:
+            schema_list = json.loads(request.body).get("schemas")
         args = {}
         option_key = "seed_types"
         valid_values = ["permissions", "roles", "groups"]
@@ -225,10 +272,11 @@ def run_seeds(request):
             if not all([value in valid_values for value in seed_types]):
                 return HttpResponse(f'Valid options for "{option_key}": {valid_values}.', status=400)
             args = {type: True for type in seed_types}
-        logger.info(f"Running seeds: {request.method} {request.user.username}")
+        logger.info(f"Running seeds: {request.method} {request.user.username} {schema_list}")
+        args["schema_list"] = schema_list
         run_seeds_in_worker.delay(args)
         return HttpResponse("Seeds are running in a background worker.", status=202)
-    return HttpResponse(f'Invalid method, only "POST" is allowed.', status=405)
+    return HttpResponse('Invalid method, only "POST" is allowed.', status=405)
 
 
 def car_expiry(request):
@@ -240,7 +288,7 @@ def car_expiry(request):
         logger.info("Running cross-account request expiration check.")
         cross_account_cleanup.delay()
         return HttpResponse("Expiry checks are running in a background worker.", status=202)
-    return HttpResponse(f'Invalid method, only "POST" is allowed.', status=405)
+    return HttpResponse('Invalid method, only "POST" is allowed.', status=405)
 
 
 class SentryDiagnosticError(Exception):

@@ -37,9 +37,7 @@ from management.utils import validate_uuid
 from rest_framework import mixins, serializers, viewsets
 from rest_framework.decorators import action
 from rest_framework.filters import OrderingFilter
-from tenant_schemas.utils import tenant_context
 
-from api.models import Tenant
 from .model import Role
 from .serializer import RoleSerializer
 
@@ -58,6 +56,7 @@ LIST_ROLE_FIELDS = [
     "applications",
     "system",
     "platform_default",
+    "admin_default",
 ]
 VALID_PATCH_FIELDS = ["name", "display_name", "description"]
 
@@ -312,12 +311,6 @@ class RoleViewSet(
             error = {key: [_(message)]}
             raise serializers.ValidationError(error)
         with transaction.atomic():
-            # Remove role in public schema.
-            with tenant_context(Tenant.objects.get(schema_name="public")):
-                role_public = Role.objects.get(name=role.name, tenant=request.tenant)
-                self.delete_policies_if_no_role_attached(role_public)
-                role_public.delete()
-
             self.delete_policies_if_no_role_attached(role)
             return super().destroy(request=request, args=args, kwargs=kwargs)
 
@@ -400,7 +393,7 @@ class RoleViewSet(
         """Return access objects for specified role."""
         validate_uuid(uuid, "role uuid validation")
         try:
-            role = Role.objects.get(uuid=uuid)
+            role = Role.objects.get(uuid=uuid, tenant=request.tenant)
         except (Role.DoesNotExist, ValidationError):
             raise Http404()
 

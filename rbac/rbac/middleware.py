@@ -18,18 +18,15 @@
 """Custom RBAC Middleware."""
 import binascii
 import logging
-import time
 from json.decoder import JSONDecodeError
 
 from django.conf import settings
-from django.db import connections, transaction
+from django.db import connection, connections
 from django.http import Http404, HttpResponse
 from django.urls import resolve
 from django.utils.deprecation import MiddlewareMixin
 from management.cache import TenantCache
-from management.group.definer import seed_group  # noqa: I100, I201
 from management.models import Principal
-from management.role.definer import seed_permissions, seed_roles
 from management.utils import APPLICATION_KEY, access_for_principal, validate_psk
 from prometheus_client import Counter
 from tenant_schemas.middleware import BaseTenantMiddleware
@@ -85,23 +82,7 @@ class IdentityHeaderMiddleware(BaseTenantMiddleware):
                 except Tenant.DoesNotExist:
                     raise Http404()
             else:
-                tenant, created = Tenant.objects.get_or_create(schema_name=tenant_schema)
-                if created:
-                    try:
-                        with transaction.atomic():
-                            tenant.create_schema(check_if_exists=True)
-                            seed_permissions(tenant=tenant)
-                            seed_roles(tenant=tenant)
-                            seed_group(tenant=tenant)
-                            tenant.ready = True
-                            tenant.save()
-                    except Exception as e:
-                        tenant.delete()
-                        raise e
-                else:
-                    while not tenant.ready:
-                        time.sleep(0.5)
-                        tenant.refresh_from_db()
+                tenant, created = Tenant.objects.get_or_create(schema_name=tenant_schema, defaults={"ready": True})
             TENANTS.save_tenant(tenant)
         return tenant
 
@@ -123,13 +104,19 @@ class IdentityHeaderMiddleware(BaseTenantMiddleware):
             "role": {"read": [], "write": []},
             "policy": {"read": [], "write": []},
             "principal": {"read": [], "write": []},
+            "permission": {"read": [], "write": []},
         }
 
-        with tenant_context(tenant):
+        if settings.SERVE_FROM_PUBLIC_SCHEMA:
+            schema_tenant = Tenant.objects.get(schema_name="public")
+        else:
+            schema_tenant = tenant
+
+        with tenant_context(schema_tenant):
             try:  # pylint: disable=R1702
-                principal = Principal.objects.get(username__iexact=username)
+                principal = Principal.objects.get(username__iexact=username, tenant=tenant)
                 kwargs = {APPLICATION_KEY: "rbac"}
-                access_list = access_for_principal(principal, **kwargs)
+                access_list = access_for_principal(principal, tenant, **kwargs)
                 for access_item in access_list:  # pylint: disable=too-many-nested-blocks
                     resource_type = access_item.permission.resource_type
                     operation = access_item.permission.verb
@@ -138,7 +125,7 @@ class IdentityHeaderMiddleware(BaseTenantMiddleware):
                         operation = "write"
                     res_list = ["*"]
                     if resource_type == "*":
-                        for resource in ("group", "role", "policy", "principal"):
+                        for resource in ("group", "role", "policy", "principal", "permission"):
                             if (
                                 resource in access.keys()
                                 and operation in access.get(resource, {}).keys()  # noqa: W504
@@ -197,7 +184,6 @@ class IdentityHeaderMiddleware(BaseTenantMiddleware):
                 except Tenant.DoesNotExist:
                     request.user = user
                     tenant = self.get_tenant(model=None, hostname=None, request=request)
-
                 user.access = IdentityHeaderMiddleware._get_access_for_user(user.username, tenant)
             # Cross account request check
             internal = json_rh_auth.get("identity", {}).get("internal", {})
@@ -230,6 +216,9 @@ class IdentityHeaderMiddleware(BaseTenantMiddleware):
 
             super().process_request(request)
             # We are now in the database context of the tenant
+            if settings.SERVE_FROM_PUBLIC_SCHEMA:
+                connection.set_schema_to_public()
+
             assert request.tenant
 
     def process_response(self, request, response):  # pylint: disable=no-self-use
