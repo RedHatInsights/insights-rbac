@@ -249,5 +249,5 @@ def _filter_admin_default(request, queryset):
         return queryset | admin_default_group_set
 
     # if the principal is not an org admin, they don't get any admin_default groups
-    # with the caveat that the admin default group isn't also platform default
+    # EXCEPT if the admin_default group(s) is also a platform_default group(s), then we include it.
     return queryset.filter(admin_default=False) | queryset.filter(platform_default=True)
