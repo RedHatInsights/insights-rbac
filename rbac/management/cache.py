@@ -81,9 +81,9 @@ class BasicCache:
 class TenantCache(BasicCache):
     """Redis-based caching of tenant."""
 
-    def key_for(self, schema_name):
+    def key_for(self, tenant_name):
         """Redis key for a given tenant."""
-        return f"rbac::tenant::schema={schema_name}"
+        return f"rbac::tenant::tenant={tenant_name}"
 
     def get_from_redis(self, key):
         """Override the method to get tenant based on key."""
@@ -91,9 +91,9 @@ class TenantCache(BasicCache):
         if obj:
             return pickle.loads(obj)
 
-    def get_tenant(self, schema_name):
-        """Get the tenant by schema_name."""
-        return super().get_cached(schema_name, f"Error querying tenant {schema_name}")
+    def get_tenant(self, tenant_name):
+        """Get the tenant by tenant_name."""
+        return super().get_cached(tenant_name, f"Error querying tenant {tenant_name}")
 
     def set_cache(self, pipe, key, item):
         """Override the method to set tenant to cache."""
@@ -103,11 +103,11 @@ class TenantCache(BasicCache):
 
     def save_tenant(self, tenant):
         """Write the tenant for a request to Redis."""
-        super().save(tenant.schema_name, tenant, "tenant")
+        super().save(tenant.tenant_name, tenant, "tenant")
 
-    def delete_tenant(self, schema_name):
+    def delete_tenant(self, tenant_name):
         """Purge the given tenant from the cache."""
-        super().delete_cached(schema_name, "tenant")
+        super().delete_cached(tenant_name, "tenant")
 
 
 class AccessCache(BasicCache):

@@ -29,14 +29,9 @@ def principal_cleanup():
 
 
 @shared_task
-def run_migrations_in_worker(schema_list):
+def run_migrations_in_worker(tenant_list):
     """Celery task to run migrations."""
-    if schema_list:
-        for schema in schema_list:
-            call_command("migrate_schemas", schema_name=schema)
-        return
-
-    call_command("migrate_schemas")
+    call_command("migrate")
 
 
 @shared_task
@@ -55,9 +50,3 @@ def run_reconcile_tenant_relations_in_worker(kwargs):
 def run_sync_schemas_in_worker(kwargs):
     """Celery task to sync schemas."""
     call_command("sync_schemas", **kwargs)
-
-
-@shared_task
-def run_init_tenant_in_worker(tenant_schema_name):
-    """Initialize tenant."""
-    call_command("init_tenant", tenant_schema_name)

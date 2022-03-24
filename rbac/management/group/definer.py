@@ -28,7 +28,6 @@ from management.policy.model import Policy
 from management.role.model import Role
 from management.utils import clear_pk
 from rest_framework import serializers
-from tenant_schemas.utils import tenant_context
 
 from api.models import Tenant
 
@@ -37,45 +36,41 @@ logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 def seed_group(tenant):
     """For a tenant create or update default group."""
-    with tenant_context(tenant):
-        with transaction.atomic():
-            name = "Default access"
-            group_description = (
-                "This group contains the roles that all users inherit by default. "
-                "Adding or removing roles in this group will affect permissions for all users in your organization."
-            )
+    with transaction.atomic():
+        name = "Default access"
+        group_description = (
+            "This group contains the roles that all users inherit by default. "
+            "Adding or removing roles in this group will affect permissions for all users in your organization."
+        )
 
-            group, group_created = Group.objects.get_or_create(
-                platform_default=True,
-                defaults={"description": group_description, "name": name, "system": True},
-                tenant=tenant,
-            )
+        group, group_created = Group.objects.get_or_create(
+            platform_default=True,
+            defaults={"description": group_description, "name": name, "system": True},
+            tenant=tenant,
+        )
 
-            if group.system:
-                platform_roles = Role.objects.filter(platform_default=True)
-                add_roles(group, platform_roles, tenant, replace=True)
-                logger.info("Finished seeding default group %s for tenant %s.", name, tenant.schema_name)
-            else:
-                logger.info("Default group %s is managed by tenant %s.", name, tenant.schema_name)
+        if group.system:
+            platform_roles = Role.objects.filter(platform_default=True)
+            add_roles(group, platform_roles, tenant, replace=True)
+            logger.info("Finished seeding default group.")
 
-            # Default admin group
-            admin_name = "Default admin access"
-            admin_group_description = (
-                "This group contains the roles that all org admin users inherit by default. "
-                "Adding or removing roles in this group will affect permissions for all org admin users in your org."
-            )
-            admin_group, admin_group_created = Group.objects.get_or_create(
-                admin_default=True,
-                defaults={"description": admin_group_description, "name": admin_name, "system": True},
-                tenant=tenant,
-            )
-            if admin_group.system:
-                platform_roles = Role.objects.filter(admin_default=True)
-                add_roles(admin_group, platform_roles, tenant, replace=True)
-                logger.info("Finished seeding default org admin group %s for tenant %s.", name, tenant.schema_name)
-            else:
-                logger.info("Default admin group %s is managed by tenant %s.", name, tenant.schema_name)
-    return tenant
+        # Default admin group
+        admin_name = "Default admin access"
+        admin_group_description = (
+            "This group contains the roles that all org admin users inherit by default. "
+            "Adding or removing roles in this group will affect permissions for all org admin users in your org."
+        )
+        admin_group, admin_group_created = Group.objects.get_or_create(
+            admin_default=True,
+            defaults={"description": admin_group_description, "name": admin_name, "system": True},
+            tenant=tenant,
+        )
+        if admin_group.system:
+            platform_roles = Role.objects.filter(admin_default=True)
+            add_roles(admin_group, platform_roles, tenant, replace=True)
+            logger.info("Finished seeding default org admin group %s for tenant %s.", name, tenant.tenant_name)
+        else:
+            logger.info("Default admin group %s is managed by tenant %s.", name, tenant.tenant_name)
 
 
 def set_system_flag_before_update(group, tenant):
@@ -125,13 +120,13 @@ def add_roles(group, roles_or_role_ids, tenant, user=None, replace=False):
     )
 
     if system_policy_created:
-        logger.info(f"Created new system policy for tenant {tenant.schema_name}.")
+        logger.info(f"Created new system policy for tenant {tenant.tenant_name}.")
     else:
         if replace:
             system_policy.roles.clear()
 
     roles = Role.objects.filter(
-        Q(tenant=tenant) | Q(tenant=Tenant.objects.get(schema_name="public")), name__in=role_names
+        Q(tenant=tenant) | Q(tenant=Tenant.objects.get(tenant_name="public")), name__in=role_names
     )
     for role in roles:
         accesses = role.access.all()

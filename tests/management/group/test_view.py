@@ -44,7 +44,7 @@ class GroupViewsetTests(IdentityRequest):
 
         self.dummy_role_id = uuid4()
 
-        self.public_tenant = Tenant.objects.get(schema_name="public")
+        self.public_tenant = Tenant.objects.get(tenant_name="public")
         self.principal = Principal(username=self.user_data["username"], tenant=self.tenant)
         self.principal.save()
         self.principalB = Principal(username="mock_user", tenant=self.tenant)

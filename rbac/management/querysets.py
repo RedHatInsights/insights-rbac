@@ -15,7 +15,6 @@
 #    along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Queryset helpers for management module."""
-
 from django.conf import settings
 from django.db.models.aggregates import Count
 from django.urls import reverse
@@ -85,12 +84,17 @@ def has_group_all_access(request):
 
 def get_group_queryset(request):
     """Obtain the queryset for groups."""
+    return _filter_admin_default(request, _gather_group_querysets(request))
+
+
+def _gather_group_querysets(request):
+    """Decide which groups to provide for request."""
     scope = request.query_params.get(SCOPE_KEY, ACCOUNT_SCOPE)
     if scope != ACCOUNT_SCOPE:
         return get_object_principal_queryset(request, scope, Group)
 
     if settings.SERVE_FROM_PUBLIC_SCHEMA:
-        public_tenant = Tenant.objects.get(schema_name="public")
+        public_tenant = Tenant.objects.get(tenant_name="public")
         default_group_set = Group.platform_default_set().filter(
             tenant=request.tenant
         ) or Group.platform_default_set().filter(tenant=public_tenant)
@@ -131,7 +135,7 @@ def get_role_queryset(request):
     base_query = annotate_roles_with_counts(Role.objects.prefetch_related("access"))
 
     if settings.SERVE_FROM_PUBLIC_SCHEMA:
-        public_tenant = Tenant.objects.get(schema_name="public")
+        public_tenant = Tenant.objects.get(tenant_name="public")
         base_query = base_query.filter(tenant__in=[request.tenant, public_tenant])
 
     if scope != ACCOUNT_SCOPE:
@@ -231,3 +235,17 @@ def get_object_principal_queryset(request, scope, clazz, **kwargs):
     principal = get_principal_from_request(request)
     objects = object_principal_func(principal, request.tenant, **kwargs)
     return queryset_by_id(objects, clazz, **kwargs)
+
+
+def _filter_admin_default(request, queryset):
+    """Filter out admin default groups unless the principal is an org admin."""
+    # If the principal is an org admin, make sure they get any and all admin_default groups
+    if request.user.admin:
+        public_tenant = Tenant.objects.get(tenant_name="public")
+        admin_default_group_set = Group.admin_default_set().filter(
+            tenant=request.tenant
+        ) or Group.admin_default_set().filter(tenant=public_tenant)
+
+        return queryset | admin_default_group_set
+
+    return queryset

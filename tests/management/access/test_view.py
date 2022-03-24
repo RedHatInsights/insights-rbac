@@ -27,7 +27,6 @@ from django.urls import reverse
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APIClient
-from tenant_schemas.utils import tenant_context
 
 from api.models import Tenant, User
 from datetime import timedelta
@@ -47,31 +46,29 @@ class AccessViewTests(IdentityRequest):
         user.username = self.user_data["username"]
         user.account = self.customer_data["account_id"]
         request.user = user
-        public_tenant = Tenant.objects.get(schema_name="public")
+        public_tenant = Tenant.objects.get(tenant_name="public")
 
         self.access_data = {
             "permission": "app:*:*",
             "resourceDefinitions": [{"attributeFilter": {"key": "key1", "operation": "equal", "value": "value1"}}],
         }
-        with tenant_context(public_tenant):
-            self.principal = Principal(username=self.user_data["username"], tenant=self.tenant)
-            self.principal.save()
-            self.admin_principal = Principal(username="user_admin", tenant=self.tenant)
-            self.admin_principal.save()
-            self.group = Group(name="groupA", tenant=self.tenant)
-            self.group.save()
-            self.group.principals.add(self.principal)
-            self.group.save()
-            self.permission = Permission.objects.create(permission="app:*:*", tenant=self.tenant)
-            Permission.objects.create(permission="app:foo:bar", tenant=self.tenant)
+        self.principal = Principal(username=self.user_data["username"], tenant=self.tenant)
+        self.principal.save()
+        self.admin_principal = Principal(username="user_admin", tenant=self.tenant)
+        self.admin_principal.save()
+        self.group = Group(name="groupA", tenant=self.tenant)
+        self.group.save()
+        self.group.principals.add(self.principal)
+        self.group.save()
+        self.permission = Permission.objects.create(permission="app:*:*", tenant=self.tenant)
+        Permission.objects.create(permission="app:foo:bar", tenant=self.tenant)
 
     def tearDown(self):
         """Tear down access view tests."""
-        with tenant_context(Tenant.objects.get(schema_name="public")):
-            Group.objects.all().delete()
-            Principal.objects.all().delete()
-            Role.objects.all().delete()
-            Policy.objects.all().delete()
+        Group.objects.all().delete()
+        Principal.objects.all().delete()
+        Role.objects.all().delete()
+        Policy.objects.all().delete()
 
     def create_role(self, role_name, in_access_data=None):
         """Create a role."""
@@ -99,27 +96,21 @@ class AccessViewTests(IdentityRequest):
 
     def create_platform_default_resource(self):
         """Setup default group and role."""
-        with tenant_context(Tenant.objects.get(schema_name="public")):
-            default_permission = Permission.objects.create(permission="default:*:*", tenant=self.tenant)
-            default_role = Role.objects.create(
-                name="default role", platform_default=True, system=True, tenant=self.tenant
-            )
-            default_access = Access.objects.create(
-                permission=default_permission, role=default_role, tenant=self.tenant
-            )
-            default_policy = Policy.objects.create(name="default policy", system=True, tenant=self.tenant)
-            default_policy.roles.add(default_role)
-            default_group = Group.objects.create(
-                name="default group", system=True, platform_default=True, tenant=self.tenant
-            )
-            default_group.policies.add(default_policy)
+        default_permission = Permission.objects.create(permission="default:*:*", tenant=self.tenant)
+        default_role = Role.objects.create(name="default role", platform_default=True, system=True, tenant=self.tenant)
+        default_access = Access.objects.create(permission=default_permission, role=default_role, tenant=self.tenant)
+        default_policy = Policy.objects.create(name="default policy", system=True, tenant=self.tenant)
+        default_policy.roles.add(default_role)
+        default_group = Group.objects.create(
+            name="default group", system=True, platform_default=True, tenant=self.tenant
+        )
+        default_group.policies.add(default_policy)
 
     def create_role_and_permission(self, role_name, permission):
-        with tenant_context(Tenant.objects.get(schema_name="public")):
-            role = Role.objects.create(name=role_name, tenant=self.tenant)
-            assigned_permission = Permission.objects.create(permission=permission, tenant=self.tenant)
-            access = Access.objects.create(role=role, permission=assigned_permission, tenant=self.tenant)
-            return role
+        role = Role.objects.create(name=role_name, tenant=self.tenant)
+        assigned_permission = Permission.objects.create(permission=permission, tenant=self.tenant)
+        access = Access.objects.create(role=role, permission=assigned_permission, tenant=self.tenant)
+        return role
 
     def test_get_access_success(self):
         """Test that we can obtain the expected access without pagination."""
@@ -179,8 +170,7 @@ class AccessViewTests(IdentityRequest):
         request_context = self._create_request_context(self.customer_data, user_data, is_org_admin=False)
         request = request_context["request"]
         headers = request.META
-        with tenant_context(Tenant.objects.get(schema_name="public")):
-            Principal.objects.create(username=user_name, cross_account=True, tenant=self.tenant)
+        Principal.objects.create(username=user_name, cross_account=True, tenant=self.tenant)
 
         response = client.get(url, **headers)
 
@@ -348,9 +338,9 @@ class AccessViewTests(IdentityRequest):
         policy_name = "policyA"
         response = self.create_policy(policy_name, self.group.uuid, [role_uuid, test_role.uuid])
 
-        schema_name = self.tenant.schema_name
+        tenant_name = self.tenant.tenant_name
         principal_id = self.principal.uuid
-        key = f"rbac::policy::tenant={schema_name}::user={principal_id}"
+        key = f"rbac::policy::tenant={tenant_name}::user={principal_id}"
         client = APIClient()
 
         ######## access_policy are cached with desired sub_key ############
@@ -395,9 +385,9 @@ class AccessViewTests(IdentityRequest):
         policy_name = "policyA"
         response = self.create_policy(policy_name, self.group.uuid, [role_uuid, test_role.uuid])
 
-        schema_name = self.tenant.schema_name
+        tenant_name = self.tenant.tenant_name
         principal_id = self.principal.uuid
-        key = f"rbac::policy::tenant={schema_name}::user={principal_id}"
+        key = f"rbac::policy::tenant={tenant_name}::user={principal_id}"
         client = APIClient()
 
         #### Sort by application ####

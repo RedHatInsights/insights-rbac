@@ -27,7 +27,7 @@ class RoleDefinerTests(IdentityRequest):
     def setUp(self):
         """Set up the role definer tests."""
         super().setUp()
-        self.public_tenant = Tenant.objects.get(schema_name="public")
+        self.public_tenant = Tenant.objects.get(tenant_name="public")
 
     def test_role_create(self):
         """ Test that we can run a role seeding update. """

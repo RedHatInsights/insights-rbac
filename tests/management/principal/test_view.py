@@ -35,10 +35,10 @@ class PrincipalViewNonAdminTests(IdentityRequest):
         """Set up the principal view nonadmin tests."""
         super().setUp()
         non_admin_tenant_name = "acct1234"
-        self.non_admin_tenant = Tenant.objects.create(schema_name=non_admin_tenant_name)
+        self.non_admin_tenant = Tenant.objects.create(tenant_name=non_admin_tenant_name)
 
         self.user_data = {"username": "non_admin", "email": "non_admin@example.com"}
-        self.customer = {"account_id": "1234", "schema_name": non_admin_tenant_name}
+        self.customer = {"account_id": "1234", "tenant_name": non_admin_tenant_name}
         self.request_context = self._create_request_context(self.customer, self.user_data, is_org_admin=False)
 
         request = self.request_context["request"]

@@ -16,27 +16,20 @@
 #
 """API models for import organization."""
 from django.db import models
-from tenant_schemas.models import TenantMixin
 
 from api.cross_access.model import CrossAccountRequest  # noqa: F401
 from api.status.model import Status  # noqa: F401
 
 
-class Tenant(TenantMixin):
+class Tenant(models.Model):
     """The model used to create a tenant schema."""
 
     ready = models.BooleanField(default=False)
-
-    # Override the mixin domain url to make it nullable, non-unique
-    domain_url = None
-
-    # Delete all schemas when a tenant is removed
-    auto_drop_schema = True
-    auto_create_schema = False
+    tenant_name = models.CharField(max_length=63, unique=True, db_index=True)
 
     def __str__(self):
         """Get string representation of Tenant."""
-        return f"Tenant ({self.schema_name})"
+        return f"Tenant ({self.tenant_name})"
 
 
 class TenantAwareModel(models.Model):

@@ -21,7 +21,6 @@ import logging
 from json.decoder import JSONDecodeError
 
 from django.conf import settings
-from django.db import connection, connections
 from django.http import Http404, HttpResponse
 from django.urls import resolve
 from django.utils.deprecation import MiddlewareMixin
@@ -29,12 +28,10 @@ from management.cache import TenantCache
 from management.models import Principal
 from management.utils import APPLICATION_KEY, access_for_principal, validate_psk
 from prometheus_client import Counter
-from tenant_schemas.middleware import BaseTenantMiddleware
-from tenant_schemas.utils import tenant_context
 
 from api.common import RH_IDENTITY_HEADER, RH_INSIGHTS_REQUEST_ID, RH_RBAC_ACCOUNT, RH_RBAC_CLIENT_ID, RH_RBAC_PSK
 from api.models import Tenant, User
-from api.serializers import create_schema_name, extract_header
+from api.serializers import create_tenant_name, extract_header
 
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
@@ -62,7 +59,7 @@ class HttpResponseUnauthorizedRequest(HttpResponse):
     status_code = 401
 
 
-class IdentityHeaderMiddleware(BaseTenantMiddleware):
+class IdentityHeaderMiddleware(MiddlewareMixin):
     """A subclass of RemoteUserMiddleware.
 
     Processes the provided identity found on the request.
@@ -72,23 +69,18 @@ class IdentityHeaderMiddleware(BaseTenantMiddleware):
 
     def get_tenant(self, model, hostname, request):
         """Override the tenant selection logic."""
-        connections["default"].set_schema_to_public()
-        tenant_schema = create_schema_name(request.user.account)
-        tenant = TENANTS.get_tenant(tenant_schema)
+        tenant_name = create_tenant_name(request.user.account)
+        tenant = TENANTS.get_tenant(tenant_name)
         if tenant is None:
             if request.user.system:
                 try:
-                    tenant = Tenant.objects.get(schema_name=tenant_schema)
+                    tenant = Tenant.objects.get(tenant_name=tenant_name)
                 except Tenant.DoesNotExist:
                     raise Http404()
             else:
-                tenant, created = Tenant.objects.get_or_create(schema_name=tenant_schema, defaults={"ready": True})
+                tenant, created = Tenant.objects.get_or_create(tenant_name=tenant_name, defaults={"ready": True})
             TENANTS.save_tenant(tenant)
         return tenant
-
-    def hostname_from_request(self, request):
-        """Behold. The tenant_schemas expects to pivot schemas based on hostname. We're not."""
-        return ""
 
     @staticmethod  # noqa: C901
     def _get_access_for_user(username, tenant):  # pylint: disable=too-many-locals,too-many-branches
@@ -107,47 +99,41 @@ class IdentityHeaderMiddleware(BaseTenantMiddleware):
             "permission": {"read": [], "write": []},
         }
 
-        if settings.SERVE_FROM_PUBLIC_SCHEMA:
-            schema_tenant = Tenant.objects.get(schema_name="public")
-        else:
-            schema_tenant = tenant
-
-        with tenant_context(schema_tenant):
-            try:  # pylint: disable=R1702
-                principal = Principal.objects.get(username__iexact=username, tenant=tenant)
-                kwargs = {APPLICATION_KEY: "rbac"}
-                access_list = access_for_principal(principal, tenant, **kwargs)
-                for access_item in access_list:  # pylint: disable=too-many-nested-blocks
-                    resource_type = access_item.permission.resource_type
-                    operation = access_item.permission.verb
-                    res_list = []
-                    if operation == "*":
-                        operation = "write"
-                    res_list = ["*"]
-                    if resource_type == "*":
-                        for resource in ("group", "role", "policy", "principal", "permission"):
-                            if (
-                                resource in access.keys()
-                                and operation in access.get(resource, {}).keys()  # noqa: W504
-                                and isinstance(access.get(resource, {}).get(operation), list)  # noqa: W504
-                            ):  # noqa: E127
-                                access[resource][operation] += res_list
-                                if operation == "write":
-                                    access[resource]["read"] += res_list
-                    elif (
-                        resource_type in access.keys()
-                        and operation in access.get(resource_type, {}).keys()  # noqa: W504
-                        and isinstance(access.get(resource_type, {}).get(operation), list)  # noqa: W504
-                    ):
-                        access[resource_type][operation] += res_list
-                        if operation == "write":
-                            access[resource_type]["read"] += res_list
-                    for res_type, res_ops_obj in access.items():
-                        for op_type, op_list in res_ops_obj.items():
-                            if "*" in op_list:
-                                access[res_type][op_type] = ["*"]
-            except Principal.DoesNotExist:
-                return access
+        try:  # pylint: disable=R1702
+            principal = Principal.objects.get(username__iexact=username, tenant=tenant)
+            kwargs = {APPLICATION_KEY: "rbac"}
+            access_list = access_for_principal(principal, tenant, **kwargs)
+            for access_item in access_list:  # pylint: disable=too-many-nested-blocks
+                resource_type = access_item.permission.resource_type
+                operation = access_item.permission.verb
+                res_list = []
+                if operation == "*":
+                    operation = "write"
+                res_list = ["*"]
+                if resource_type == "*":
+                    for resource in ("group", "role", "policy", "principal", "permission"):
+                        if (
+                            resource in access.keys()
+                            and operation in access.get(resource, {}).keys()  # noqa: W504
+                            and isinstance(access.get(resource, {}).get(operation), list)  # noqa: W504
+                        ):  # noqa: E127
+                            access[resource][operation] += res_list
+                            if operation == "write":
+                                access[resource]["read"] += res_list
+                elif (
+                    resource_type in access.keys()
+                    and operation in access.get(resource_type, {}).keys()  # noqa: W504
+                    and isinstance(access.get(resource_type, {}).get(operation), list)  # noqa: W504
+                ):
+                    access[resource_type][operation] += res_list
+                    if operation == "write":
+                        access[resource_type]["read"] += res_list
+                for res_type, res_ops_obj in access.items():
+                    for op_type, op_list in res_ops_obj.items():
+                        if "*" in op_list:
+                            access[res_type][op_type] = ["*"]
+        except Principal.DoesNotExist:
+            return access
 
         return access
 
@@ -179,11 +165,12 @@ class IdentityHeaderMiddleware(BaseTenantMiddleware):
             user.system = False
             if not user.admin and not (request.path.endswith("/access/") and request.method == "GET"):
                 try:
-                    schema_name = create_schema_name(user.account)
-                    tenant = Tenant.objects.filter(schema_name=schema_name).get()
+                    tenant_name = create_tenant_name(user.account)
+                    tenant = Tenant.objects.filter(tenant_name=tenant_name).get()
                 except Tenant.DoesNotExist:
                     request.user = user
                     tenant = self.get_tenant(model=None, hostname=None, request=request)
+
                 user.access = IdentityHeaderMiddleware._get_access_for_user(user.username, tenant)
             # Cross account request check
             internal = json_rh_auth.get("identity", {}).get("internal", {})
@@ -213,13 +200,7 @@ class IdentityHeaderMiddleware(BaseTenantMiddleware):
             raise error
         if user.username and user.account:
             request.user = user
-
-            super().process_request(request)
-            # We are now in the database context of the tenant
-            if settings.SERVE_FROM_PUBLIC_SCHEMA:
-                connection.set_schema_to_public()
-
-            assert request.tenant
+            request.tenant = self.get_tenant(model=None, hostname=None, request=request)
 
     def process_response(self, request, response):  # pylint: disable=no-self-use
         """Process response for identity middleware.

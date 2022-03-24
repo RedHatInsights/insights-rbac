@@ -48,17 +48,13 @@ class QuerySetTest(TestCase):
     @classmethod
     def setUpClass(cls):
         try:
-            cls.tenant = Tenant.objects.get(schema_name="test")
+            cls.tenant = Tenant.objects.get(tenant_name="test")
         except:
-            cls.tenant = Tenant(schema_name="test")
-            cls.tenant.save(verbosity=0)
-            cls.tenant.create_schema()
-
-        connection.set_tenant(cls.tenant)
+            cls.tenant = Tenant(tenant_name="test")
+            cls.tenant.save()
 
     @classmethod
     def tearDownClass(cls):
-        connection.set_schema_to_public()
         cls.tenant.delete()
 
     def _create_groups(self):
@@ -130,6 +126,48 @@ class QuerySetTest(TestCase):
         group.principals.add(principal)
         user = Mock(spec=User, admin=False, account="00001", username="test_user")
         req = Mock(user=user, method="GET", tenant=self.tenant, query_params={"username": "test_user2"})
+        queryset = get_group_queryset(req)
+        self.assertEquals(queryset.count(), 0)
+
+    def test_get_user_group_queryset_admin_default_org_admin(self):
+        """Test get_group_queryset as an org admin searching for admin default groups."""
+        principal = Principal.objects.create(username="test_user", tenant=self.tenant)
+        group = Group.objects.create(name="group_admin_default", tenant=self.tenant, admin_default=True)
+        group.principals.add(principal)
+        user = Mock(spec=User, admin=True, account="00001", username="test_user")
+        req = Mock(user=user, tenant=self.tenant, query_params={"username": "test_user"})
+        queryset = get_group_queryset(req)
+        self.assertEquals(queryset.count(), 1)
+
+    def test_get_user_group_queryset_admin_default_non_org_admin(self):
+        """Test get_group_queryset not as an org admin, searching for admin default groups."""
+        principal = Principal.objects.create(username="test_user", tenant=self.tenant)
+        group = Group.objects.create(name="group_admin_default", tenant=self.tenant, admin_default=True)
+        user = Mock(spec=User, admin=False, account="00001", username="test_user")
+        req = Mock(user=user, tenant=self.tenant, query_params={"username": "test_user"})
+        queryset = get_group_queryset(req)
+        self.assertEquals(queryset.count(), 0)
+
+    def test_get_user_group_queryset_admin_and_platform_default(self):
+        """Test get_group_queryset not as an org admin, searching for groups that are admin and platform default."""
+        principal = Principal.objects.create(username="test_user", tenant=self.tenant)
+        group = Group.objects.create(
+            name="group_admin_default", tenant=self.tenant, admin_default=True, platform_default=True
+        )
+        user = Mock(spec=User, admin=False, account="00001", username="test_user")
+        req = Mock(user=user, tenant=self.tenant, query_params={"username": "test_user"})
+        queryset = get_group_queryset(req)
+        self.assertEquals(queryset.count(), 1)
+
+    def test_get_user_group_queryset_admin_default_rbac_admin(self):
+        """Test get_group_queryset not as an org admin, but as an RBAC admin searching for admin default groups."""
+        principal = Principal.objects.create(username="test_user", tenant=self.tenant)
+        group = Group.objects.create(name="group_admin_default", tenant=self.tenant, admin_default=True)
+        permission = Permission.objects.create(permission="rbac:*:*", tenant=self.tenant)
+        rbac_admin_role = Role.objects.create(name="RBAC admin role", tenant=self.tenant)
+        access = Access.objects.create(permission=permission, role=rbac_admin_role, tenant=self.tenant)
+        user = Mock(spec=User, admin=False, account="00001", username="test_user", access=access)
+        req = Mock(user=user, tenant=self.tenant, query_params={"username": "test_user"})
         queryset = get_group_queryset(req)
         self.assertEquals(queryset.count(), 0)
 

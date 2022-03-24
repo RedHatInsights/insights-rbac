@@ -28,7 +28,7 @@ from rest_framework import status
 from rest_framework.test import APIClient
 
 from api.models import Tenant, User
-from api.serializers import create_schema_name
+from api.serializers import create_tenant_name
 from tests.identity_request import IdentityRequest
 from rbac.middleware import HttpResponseUnauthorizedRequest, IdentityHeaderMiddleware, TENANTS
 from management.models import Access, Group, Permission, Principal, Policy, ResourceDefinition, Role
@@ -95,7 +95,7 @@ class RbacTenantMiddlewareTest(IdentityRequest):
         super().setUp()
         self.user_data = self._create_user_data()
         self.customer = self._create_customer_data()
-        self.schema_name = create_schema_name(self.customer["account_id"])
+        self.tenant_name = create_tenant_name(self.customer["account_id"])
         self.request_context = self._create_request_context(self.customer, self.user_data, create_customer=False)
         self.request = self.request_context["request"]
         self.request.path = "/api/v1/providers/"
@@ -109,7 +109,7 @@ class RbacTenantMiddlewareTest(IdentityRequest):
         mock_request = self.request
         middleware = IdentityHeaderMiddleware()
         result = middleware.get_tenant(Tenant, "localhost", mock_request)
-        self.assertEqual(result.schema_name, create_schema_name(mock_request.user.account))
+        self.assertEqual(result.tenant_name, create_tenant_name(mock_request.user.account))
 
     def test_get_tenant_with_no_user(self):
         """Test that a 401 is returned."""
@@ -129,7 +129,7 @@ class IdentityHeaderMiddlewareTest(IdentityRequest):
         super().setUp()
         self.user_data = self._create_user_data()
         self.customer = self._create_customer_data()
-        self.schema_name = create_schema_name(self.customer["account_id"])
+        self.tenant_name = create_tenant_name(self.customer["account_id"])
         self.request_context = self._create_request_context(self.customer, self.user_data, create_customer=False)
         self.request = self.request_context["request"]
         self.request.path = "/api/v1/providers/"
@@ -192,7 +192,7 @@ class IdentityHeaderMiddlewareTest(IdentityRequest):
         middleware.process_request(mock_request)
         self.assertTrue(hasattr(mock_request, "user"))
         self.assertEqual(mock_request.user.username, self.user_data["username"])
-        tenant = Tenant.objects.get(schema_name=self.schema_name)
+        tenant = Tenant.objects.get(tenant_name=self.tenant_name)
         self.assertIsNotNone(tenant)
 
     def test_process_no_customer(self):
@@ -207,7 +207,7 @@ class IdentityHeaderMiddlewareTest(IdentityRequest):
         middleware.process_request(mock_request)
         self.assertTrue(hasattr(mock_request, "user"))
         with self.assertRaises(Tenant.DoesNotExist):
-            Tenant.objects.get(schema_name=self.schema_name)
+            Tenant.objects.get(tenant_name=self.tenant_name)
 
     def test_race_condition_customer(self):
         """Test case where another request may create the tenant in a race condition."""
@@ -243,9 +243,7 @@ class ServiceToService(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
     def test_no_identity_and_invalid_psk_returns_401(self):
-        connection.set_schema_to_public()
-        t = Tenant.objects.create(schema_name=f"acct{self.account_id}")
-        t.create_schema()
+        t = Tenant.objects.create(tenant_name=f"acct{self.account_id}")
         t.ready = True
         t.save()
 
@@ -257,9 +255,7 @@ class ServiceToService(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
     def test_no_identity_and_invalid_account_returns_404(self):
-        connection.set_schema_to_public()
-        t = Tenant.objects.create(schema_name=f"acct{self.account_id}")
-        t.create_schema()
+        t = Tenant.objects.create(tenant_name=f"acct{self.account_id}")
         t.ready = True
         t.save()
         url = reverse("group-list")
@@ -270,9 +266,7 @@ class ServiceToService(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
     def test_no_identity_and_invalid_client_id_returns_401(self):
-        connection.set_schema_to_public()
-        t = Tenant.objects.create(schema_name=f"acct{self.account_id}")
-        t.create_schema()
+        t = Tenant.objects.create(tenant_name=f"acct{self.account_id}")
         t.ready = True
         t.save()
         url = reverse("group-list")
@@ -283,9 +277,7 @@ class ServiceToService(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
     def test_no_identity_and_valid_psk_client_id_and_account_returns_200(self):
-        connection.set_schema_to_public()
-        t = Tenant.objects.create(schema_name=f"acct{self.account_id}")
-        t.create_schema()
+        t = Tenant.objects.create(tenant_name=f"acct{self.account_id}")
         t.ready = True
         t.save()
         url = reverse("group-list")
@@ -328,18 +320,13 @@ class AccessHandlingTest(TestCase):
     @classmethod
     def setUpClass(cls):
         try:
-            cls.tenant = Tenant.objects.get(schema_name="test")
+            cls.tenant = Tenant.objects.get(tenant_name="test")
         except:
-            cls.tenant = Tenant(schema_name="test", ready=True)
-            cls.tenant.save(verbosity=0)
-            cls.tenant.create_schema()
-
-        public_tenant = Tenant.objects.get(schema_name="public")
-        connection.set_tenant(public_tenant)
+            cls.tenant = Tenant(tenant_name="test", ready=True)
+            cls.tenant.save()
 
     @classmethod
     def tearDownClass(cls):
-        connection.set_schema_to_public()
         cls.tenant.delete()
 
     def test_no_principal_found(self):

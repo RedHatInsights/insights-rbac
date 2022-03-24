@@ -334,7 +334,7 @@ class GroupViewSet(
 
     def remove_principals(self, group, principals, account):
         """Process list of principals and remove them from the group."""
-        tenant = Tenant.objects.get(schema_name=f"acct{account}")
+        tenant = Tenant.objects.get(tenant_name=f"acct{account}")
 
         for username in principals:
             try:

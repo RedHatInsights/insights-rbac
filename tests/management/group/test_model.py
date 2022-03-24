@@ -16,7 +16,6 @@
 #
 """Test the group model."""
 from django.test import TestCase
-from tenant_schemas.utils import tenant_context
 from unittest.mock import Mock
 
 from management.models import Group, Role, Policy
@@ -30,30 +29,26 @@ class GroupModelTests(IdentityRequest):
         """Set up the group model tests."""
         super().setUp()
 
-        with tenant_context(self.tenant):
-            self.group = Group.objects.create(name="groupA", tenant=self.tenant)
-            self.roleA = Role.objects.create(name="roleA", tenant=self.tenant)
-            self.roleB = Role.objects.create(name="roleB", tenant=self.tenant)
-            self.policy = Policy(name="policyA", group=self.group, tenant=self.tenant)
-            self.policy.save()
-            self.policy.roles.add(self.roleA)
-            self.policy.save()
-            self.group.policies.add(self.policy)
-            self.group.save()
+        self.group = Group.objects.create(name="groupA", tenant=self.tenant)
+        self.roleA = Role.objects.create(name="roleA", tenant=self.tenant)
+        self.roleB = Role.objects.create(name="roleB", tenant=self.tenant)
+        self.policy = Policy(name="policyA", group=self.group, tenant=self.tenant)
+        self.policy.save()
+        self.policy.roles.add(self.roleA)
+        self.policy.save()
+        self.group.policies.add(self.policy)
+        self.group.save()
 
     def tearDown(self):
         """Tear down group model tests."""
-        with tenant_context(self.tenant):
-            Group.objects.all().delete()
-            Policy.objects.all().delete()
-            Role.objects.all().delete()
+        Group.objects.all().delete()
+        Policy.objects.all().delete()
+        Role.objects.all().delete()
 
     def test_roles_for_group(self):
         """Test that we can get roles for a group."""
-        with tenant_context(self.tenant):
-            self.assertEqual(list(self.group.roles()), [self.roleA])
+        self.assertEqual(list(self.group.roles()), [self.roleA])
 
     def test_role_count_for_group(self):
         """Test the role count for a group."""
-        with tenant_context(self.tenant):
-            self.assertEqual(self.group.role_count(), 1)
+        self.assertEqual(self.group.role_count(), 1)

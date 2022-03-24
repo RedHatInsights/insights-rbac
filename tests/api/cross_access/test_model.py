@@ -22,7 +22,6 @@ from django.utils import timezone
 from management.models import Role
 from api.models import Tenant
 from rest_framework.serializers import ValidationError
-from tenant_schemas.utils import tenant_context
 
 from datetime import timedelta
 from unittest.mock import Mock
@@ -34,7 +33,7 @@ class CrossAccountRequestModelTests(TestCase):
     def setUp(self):
         """Set up the cross account request model tests."""
         super().setUp()
-        self.tenant = Tenant.objects.create(schema_name="foo")
+        self.tenant = Tenant.objects.create(tenant_name="foo")
 
         self.ref_time = timezone.now()
         self.request = CrossAccountRequest.objects.create(

@@ -20,9 +20,8 @@ from django.db import transaction
 from management.models import Role
 from management.permission.serializer import PermissionSerializer
 from rest_framework import serializers
-from tenant_schemas.utils import tenant_context
 
-from api.models import CrossAccountRequest, Tenant
+from api.models import CrossAccountRequest
 
 
 class CrossAccountRequestSerializer(serializers.ModelSerializer):
@@ -82,8 +81,7 @@ class CrossAccountRequestDetailSerializer(serializers.ModelSerializer):
 
     def get_roles(self, obj):
         """Roles constructor for the serializer."""
-        with tenant_context(Tenant.objects.get(schema_name="public")):
-            serialized_roles = [RoleSerializer(role).data for role in obj.roles.all()]
+        serialized_roles = [RoleSerializer(role).data for role in obj.roles.all()]
         return serialized_roles
 
     def create(self, validated_data):

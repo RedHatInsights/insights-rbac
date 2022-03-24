@@ -20,7 +20,6 @@ from django.db.models import Q
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APIClient
-from tenant_schemas.utils import tenant_context
 
 from api.models import User
 from management.models import Group, Permission, Policy, Principal, Role, Access

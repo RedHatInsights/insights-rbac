@@ -20,36 +20,32 @@ import logging
 from functools import partial
 
 from django.db import connections
-from management.cache import AccessCache
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 
-def on_complete(completed_log_message, tenant, future):
+def on_complete(completed_log_message, future):
     """Explicitly close the connection for the thread."""
-    logger.info("Purging policy cache.")
-    cache = AccessCache(tenant.schema_name)
-    cache.delete_all_policies_for_tenant()
     connections.close_all()
     logger.info(completed_log_message)
 
 
-def role_seeding(schema_list=None):
+def role_seeding():
     """Execute role seeding."""
-    run_seeds("role", schema_list)
+    run_seeds("role")
 
 
-def group_seeding(schema_list=None):
+def group_seeding():
     """Execute group seeding."""
-    run_seeds("group", schema_list)
+    run_seeds("group")
 
 
-def permission_seeding(schema_list=None):
+def permission_seeding():
     """Execute permission seeding."""
-    run_seeds("permission", schema_list)
+    run_seeds("permission")
 
 
-def run_seeds(seed_type, schema_list=None):
+def run_seeds(seed_type):
     """Update platform objects at startup."""
     # noqa: E402 pylint: disable=C0413
     from api.models import Tenant
@@ -61,20 +57,10 @@ def run_seeds(seed_type, schema_list=None):
 
     try:
         with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_SEED_THREADS) as executor:
-            if schema_list:
-                tenants = Tenant.objects.filter(schema_name__in=schema_list)
-            else:
-                tenants = Tenant.objects.all()
-            tenant_count = tenants.count()
-            for idx, tenant in enumerate(list(tenants)):
-                logger.info(
-                    f"Seeding {seed_type} changes for tenant {tenant.schema_name} [{idx + 1} of {tenant_count}]."
-                )
-                future = executor.submit(seed_functions[seed_type], tenant)
-                completed_log_message = (
-                    f"Finished seeding {seed_type} changes for tenant "
-                    f"{tenant.schema_name} [{idx + 1} of {tenant_count}]."
-                )
-                future.add_done_callback(partial(on_complete, completed_log_message, tenant))
+            public_tenant = Tenant.objects.get(tenant_name="public")
+            logger.info(f"Seeding {seed_type} changes.")
+            future = executor.submit(seed_functions[seed_type](tenant=public_tenant))
+            completed_log_message = f"Finished seeding {seed_type} changes."
+            future.add_done_callback(partial(on_complete, completed_log_message))
     except Exception as exc:
         logger.error(f"Error encountered during {seed_type} seeding {exc}.")
