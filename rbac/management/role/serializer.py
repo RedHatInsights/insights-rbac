@@ -270,6 +270,7 @@ class RolePatchSerializer(RoleSerializer):
 
     def update(self, instance, validated_data):
         """Patch the role object."""
+        print("here")
         tenant = self.context["request"].tenant
         role_name = instance.name
         update_data = validate_role_update(instance, validated_data)
@@ -330,6 +331,11 @@ def validate_role_update(instance, validated_data):
     if instance.system:
         key = "role.update"
         message = "System roles may not be updated."
+        error = {key: [_(message)]}
+        raise serializers.ValidationError(error)
+    if instance.admin_default:
+        key = "role.update"
+        message = "Default admin roles may not be updated."
         error = {key: [_(message)]}
         raise serializers.ValidationError(error)
     updated_name = validated_data.get("name", instance.name)
