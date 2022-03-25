@@ -23,6 +23,7 @@ import os
 from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
+from management.notifications.notification_hanlders import role_obj_change_notification_handler
 from management.permission.model import Permission
 from management.role.model import Access, ResourceDefinition, Role
 
@@ -51,6 +52,7 @@ def _make_role(data):
             role.display_name = display_name
             role.save()
         logger.info("Created system role %s.", name)
+        role_obj_change_notification_handler(role, "added")
     else:
         if role.version != defaults["version"]:
             Role.objects.filter(name=name).update(**defaults, display_name=display_name, modified=timezone.now())

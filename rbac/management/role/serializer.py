@@ -18,6 +18,7 @@
 """Serializer for role management."""
 from django.utils.translation import gettext as _
 from management.group.model import Group
+from management.notifications.notification_hanlders import role_obj_change_notification_handler
 from management.serializer_override_mixin import SerializerCreateOverrideMixin
 from management.utils import filter_queryset_by_tenant, get_principal_from_request
 from rest_framework import serializers
@@ -133,6 +134,7 @@ class RoleSerializer(serializers.ModelSerializer):
         role = Role.objects.create(name=name, description=description, display_name=display_name, tenant=tenant)
         create_access_for_role(role, access_list, tenant)
 
+        role_obj_change_notification_handler(role, "created", self.context["request"].user)
         return role
 
     def update(self, instance, validated_data):
@@ -146,6 +148,7 @@ class RoleSerializer(serializers.ModelSerializer):
 
         create_access_for_role(instance, access_list, tenant)
 
+        role_obj_change_notification_handler(instance, "updated", self.context["request"].user)
         return instance
 
 
