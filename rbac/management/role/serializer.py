@@ -270,7 +270,6 @@ class RolePatchSerializer(RoleSerializer):
 
     def update(self, instance, validated_data):
         """Patch the role object."""
-        print("here")
         tenant = self.context["request"].tenant
         role_name = instance.name
         update_data = validate_role_update(instance, validated_data)

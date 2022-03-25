@@ -147,11 +147,16 @@ class GroupViewSet(
         return GroupSerializer
 
     def protect_default_groups(self, action):
-        """Deny modifications on platform_default groups."""
+        """Deny modifications on platform_default and admin_default groups."""
         group = self.get_object()
         if group.platform_default:
             key = "group"
             message = "{} cannot be performed on platform default groups.".format(action.upper())
+            error = {key: [_(message)]}
+            raise serializers.ValidationError(error)
+        if group.admin_default:
+            key = "group"
+            message = "{} cannot be performed on admin default groups.".format(action.upper())
             error = {key: [_(message)]}
             raise serializers.ValidationError(error)
 
