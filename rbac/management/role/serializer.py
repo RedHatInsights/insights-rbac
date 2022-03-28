@@ -332,11 +332,6 @@ def validate_role_update(instance, validated_data):
         message = "System roles may not be updated."
         error = {key: [_(message)]}
         raise serializers.ValidationError(error)
-    if instance.admin_default:
-        key = "role.update"
-        message = "Default admin roles may not be updated."
-        error = {key: [_(message)]}
-        raise serializers.ValidationError(error)
     updated_name = validated_data.get("name", instance.name)
     updated_display_name = validated_data.get("display_name", instance.display_name)
     updated_description = validated_data.get("description", instance.description)

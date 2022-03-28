@@ -465,6 +465,24 @@ class GroupViewsetTests(IdentityRequest):
         response = client.put(url, test_data, format="json", **self.headers)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={"status_code": 200, "data": [{"username": "test_user"}]},
+    )
+    def test_add_group_principals_admin_default(self, mock_request):
+        """Test that adding a principal to a group returns successfully."""
+        # Create a group and a cross account user.
+        cross_account_user = Principal.objects.create(
+            username="cross_account_user", cross_account=True, tenant=self.tenant
+        )
+
+        url = reverse("group-principals", kwargs={"uuid": self.adminGroup.uuid})
+        client = APIClient()
+        username = "test_user"
+        test_data = {"principals": [{"username": username}, {"username": "cross_account_user"}]}
+        response = client.post(url, test_data, format="json", **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
     def test_update_group_invalid(self):
         """Test that updating an invalid group returns an error."""
         url = reverse("group-detail", kwargs={"uuid": uuid4()})

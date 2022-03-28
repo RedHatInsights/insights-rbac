@@ -50,6 +50,7 @@ class RoleViewsetTests(IdentityRequest):
         admin_def_role_config = {
             "name": "admin_default_role",
             "display_name": "admin_default_display",
+            "system": True,
             "admin_default": True,
         }
 
@@ -887,7 +888,7 @@ class RoleViewsetTests(IdentityRequest):
         client = APIClient()
         response = client.get(url, **self.headers)
 
-        self.assertEqual(len(response.data.get("data")), 1)
+        self.assertEqual(len(response.data.get("data")), 2)
         role = response.data.get("data")[0]
         self.assertEqual(role.get("system"), True)
 
@@ -895,6 +896,6 @@ class RoleViewsetTests(IdentityRequest):
         client = APIClient()
         response = client.get(url, **self.headers)
 
-        self.assertEqual(len(response.data.get("data")), 2)
+        self.assertEqual(len(response.data.get("data")), 1)
         role = response.data.get("data")[0]
         self.assertEqual(role.get("system"), False)
