@@ -20,6 +20,7 @@ import logging
 
 from management.principal.model import Principal
 from management.principal.proxy import PrincipalProxy
+from management.utils import account_id_for_tenant
 from rest_framework import status
 
 from api.models import Tenant
@@ -38,7 +39,8 @@ def clean_tenant_principals(tenant):
         if principal.cross_account:
             continue
         logger.debug("Checking for username %s for tenant %s.", principal.username, tenant.tenant_name)
-        resp = proxy.request_filtered_principals([principal.username])
+        account = account_id_for_tenant(tenant)
+        resp = proxy.request_filtered_principals([principal.username], account=account)
         status_code = resp.get("status_code")
         data = resp.get("data")
         if status_code == status.HTTP_200_OK and data:
