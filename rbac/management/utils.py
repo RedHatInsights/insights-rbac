@@ -234,3 +234,8 @@ def clear_pk(entry):
     """Clear the ID and PK values for provided postgres entry."""
     entry.id = None
     entry.pk = None
+
+
+def account_id_for_tenant(tenant):
+    """Return the account id from a tenant's name."""
+    return tenant.tenant_name.replace("acct", "")

@@ -47,6 +47,13 @@ class RoleViewsetTests(IdentityRequest):
 
         def_role_config = {"name": "default_role", "display_name": "default_display", "platform_default": True}
 
+        admin_def_role_config = {
+            "name": "admin_default_role",
+            "display_name": "admin_default_display",
+            "system": True,
+            "admin_default": True,
+        }
+
         self.display_fields = {
             "applications",
             "description",
@@ -71,6 +78,9 @@ class RoleViewsetTests(IdentityRequest):
         self.group.policies.add(self.policy)
         self.group.save()
 
+        self.adminRole = Role(**admin_def_role_config, tenant=self.tenant)
+        self.adminRole.save()
+
         self.sysRole = Role(**sys_role_config, tenant=self.tenant)
         self.sysRole.save()
 
@@ -78,7 +88,7 @@ class RoleViewsetTests(IdentityRequest):
         self.defRole.save()
         self.defRole.save()
 
-        self.policy.roles.add(self.defRole, self.sysRole)
+        self.policy.roles.add(self.defRole, self.sysRole, self.adminRole)
         self.policy.save()
 
         self.permission = Permission.objects.create(permission="app:*:*", tenant=self.tenant)
@@ -372,7 +382,7 @@ class RoleViewsetTests(IdentityRequest):
         for keyname in ["meta", "links", "data"]:
             self.assertIn(keyname, response.data)
         self.assertIsInstance(response.data.get("data"), list)
-        self.assertEqual(len(response.data.get("data")), 3)
+        self.assertEqual(len(response.data.get("data")), 4)
 
         role = None
 
@@ -457,14 +467,14 @@ class RoleViewsetTests(IdentityRequest):
         url = "{}?name={}".format(URL, "role")
         client = APIClient()
         response = client.get(url, **self.headers)
-        self.assertEqual(response.data.get("meta").get("count"), 2)
+        self.assertEqual(response.data.get("meta").get("count"), 3)
 
     def test_get_role_by_partial_name_explicit(self):
         """Test that getting roles by name returns partial match when specified."""
         url = "{}?name={}&name_match={}".format(URL, "role", "partial")
         client = APIClient()
         response = client.get(url, **self.headers)
-        self.assertEqual(response.data.get("meta").get("count"), 2)
+        self.assertEqual(response.data.get("meta").get("count"), 3)
 
     def test_get_role_by_name_invalid_criteria(self):
         """Test that getting roles by name fails with invalid name_match."""
@@ -494,14 +504,14 @@ class RoleViewsetTests(IdentityRequest):
         url = "{}?display_name={}".format(URL, "display")
         client = APIClient()
         response = client.get(url, **self.headers)
-        self.assertEqual(response.data.get("meta").get("count"), 2)
+        self.assertEqual(response.data.get("meta").get("count"), 3)
 
     def test_get_role_by_partial_display_name_explicit(self):
         """Test that getting roles by display_name returns partial match when specified."""
         url = "{}?display_name={}&name_match={}".format(URL, "display", "partial")
         client = APIClient()
         response = client.get(url, **self.headers)
-        self.assertEqual(response.data.get("meta").get("count"), 2)
+        self.assertEqual(response.data.get("meta").get("count"), 3)
 
     def test_get_role_by_display_name_invalid_criteria(self):
         """Test that getting roles by display_name fails with invalid name_match."""
@@ -597,7 +607,7 @@ class RoleViewsetTests(IdentityRequest):
         client = APIClient()
         response = client.get(url, **self.headers)
 
-        self.assertEqual(len(response.data.get("data")), 2)
+        self.assertEqual(len(response.data.get("data")), 3)
 
         role = response.data.get("data")[0]
         self.assertEqual(new_diaplay_fields, set(role.keys()))
@@ -615,7 +625,7 @@ class RoleViewsetTests(IdentityRequest):
         client = APIClient()
         response = client.get(url, **self.headers)
 
-        self.assertEqual(len(response.data.get("data")), 2)
+        self.assertEqual(len(response.data.get("data")), 3)
 
         role = response.data.get("data")[0]
         self.assertEqual(new_diaplay_fields, set(role.keys()))
@@ -832,6 +842,23 @@ class RoleViewsetTests(IdentityRequest):
         response = client.get(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
+    def test_update_admin_default_role(self):
+        """Test that admin default roles are protected from deletion"""
+        url = reverse("role-detail", kwargs={"uuid": self.adminRole.uuid})
+        client = APIClient()
+        access_data = [
+            {
+                "admin_default": True,
+                "permission": "app:*:*",
+                "resourceDefinitions": [{"attributeFilter": {"key": "key1", "operation": "equal", "value": "value1"}}],
+            },
+            {"permission": "app:*:read", "resourceDefinitions": []},
+        ]
+
+        test_data = {"name": "role_name", "display_name": "role_display", "access": access_data}
+        response = client.put(url, test_data, format="json", **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
     def test_delete_default_role(self):
         """Test that default roles are protected from deletion"""
         url = reverse("role-detail", kwargs={"uuid": self.defRole.uuid})
@@ -855,13 +882,13 @@ class RoleViewsetTests(IdentityRequest):
         client = APIClient()
         response = client.get(URL, **self.headers)
 
-        self.assertEqual(len(response.data.get("data")), 2)
+        self.assertEqual(len(response.data.get("data")), 3)
 
         url = f"{URL}?system=true"
         client = APIClient()
         response = client.get(url, **self.headers)
 
-        self.assertEqual(len(response.data.get("data")), 1)
+        self.assertEqual(len(response.data.get("data")), 2)
         role = response.data.get("data")[0]
         self.assertEqual(role.get("system"), True)
 

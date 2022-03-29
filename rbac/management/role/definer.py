@@ -26,11 +26,14 @@ from django.utils import timezone
 from management.permission.model import Permission
 from management.role.model import Access, ResourceDefinition, Role
 
+from api.models import Tenant
+
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 
-def _make_role(tenant, data):
+def _make_role(data):
     """Create the role object in the database."""
+    public_tenant = Tenant.objects.get(tenant_name="public")
     name = data.pop("name")
     display_name = data.get("display_name", name)
     access_list = data.get("access")
@@ -41,48 +44,45 @@ def _make_role(tenant, data):
         platform_default=data.get("platform_default", False),
         admin_default=data.get("admin_default", False),
     )
-    role, created = Role.objects.get_or_create(name=name, defaults=defaults, tenant=tenant)
+    role, created = Role.objects.get_or_create(name=name, defaults=defaults, tenant=public_tenant)
 
     if created:
         if role.display_name != display_name:
             role.display_name = display_name
             role.save()
-        logger.info("Created role %s for tenant %s.", name, tenant.tenant_name)
+        logger.info("Created system role %s.", name)
     else:
         if role.version != defaults["version"]:
             Role.objects.filter(name=name).update(**defaults, display_name=display_name, modified=timezone.now())
-            logger.info("Updated role %s for tenant %s.", name, tenant.tenant_name)
+            logger.info("Updated system role %s.", name)
             role.access.all().delete()
         else:
-            logger.info("No change in role %s for tenant %s", name, tenant.tenant_name)
+            logger.info("No change in system role %s", name)
             return role
     for access_item in access_list:
         resource_def_list = access_item.pop("resourceDefinitions", [])
-        permission, created = Permission.objects.get_or_create(**access_item, tenant=tenant)
+        permission, created = Permission.objects.get_or_create(**access_item, tenant=public_tenant)
 
-        access_obj = Access.objects.create(permission=permission, role=role, tenant=tenant)
+        access_obj = Access.objects.create(permission=permission, role=role, tenant=public_tenant)
         for resource_def_item in resource_def_list:
-            ResourceDefinition.objects.create(**resource_def_item, access=access_obj, tenant=tenant)
+            ResourceDefinition.objects.create(**resource_def_item, access=access_obj, tenant=public_tenant)
     return role
 
 
-def _update_or_create_roles(tenant, roles):
+def _update_or_create_roles(roles):
     """Update or create roles from list."""
     current_role_ids = set()
     for role_json in roles:
         try:
-            role = _make_role(tenant, role_json)
+            role = _make_role(role_json)
             current_role_ids.add(role.id)
         except Exception as e:
-            logger.error(
-                f"Failed to update or create role: {role_json.get('name')} "
-                f"for tenant: {tenant.tenant_name} with error: {e}"
-            )
+            logger.error(f"Failed to update or create system role: {role_json.get('name')} " f"with error: {e}")
     return current_role_ids
 
 
-def seed_roles(tenant):
-    """For a tenant update or create system defined roles."""
+def seed_roles():
+    """Update or create system defined roles."""
     roles_directory = os.path.join(settings.BASE_DIR, "management", "role", "definitions")
     role_files = [
         f
@@ -96,18 +96,19 @@ def seed_roles(tenant):
             with open(role_file_path) as json_file:
                 data = json.load(json_file)
                 role_list = data.get("roles")
-                file_role_ids = _update_or_create_roles(tenant, role_list)
+                file_role_ids = _update_or_create_roles(role_list)
                 current_role_ids.update(file_role_ids)
 
     roles_to_delete = Role.objects.filter(system=True).exclude(id__in=current_role_ids)
     logger.info(f"The following '{roles_to_delete.count()}' roles(s) eligible for removal: {roles_to_delete.values()}")
     # Currently read-only to ensure we don't have any orphaned roles which should be added to the config
     # Role.objects.filter(system=True).exclude(id__in=current_role_ids).delete()
-    return tenant
 
 
-def seed_permissions(tenant):
-    """For a tenant update or create defined permissions."""
+def seed_permissions():
+    """Update or create defined permissions."""
+    public_tenant = Tenant.objects.get(tenant_name="public")
+
     permission_directory = os.path.join(settings.BASE_DIR, "management", "role", "permissions")
     permission_files = [
         f
@@ -132,16 +133,14 @@ def seed_permissions(tenant):
                                 permission, created = Permission.objects.update_or_create(
                                     permission=f"{app_name}:{resource}:{operation}",
                                     defaults={"description": permission_description},
-                                    tenant=tenant,
+                                    tenant=public_tenant,
                                 )
                             else:
                                 permission, created = Permission.objects.update_or_create(
-                                    permission=f"{app_name}:{resource}:{operation_object}", tenant=tenant
+                                    permission=f"{app_name}:{resource}:{operation_object}", tenant=public_tenant
                                 )
                             if created:
-                                logger.info(
-                                    f"Created permission {permission.permission} " f"for tenant {tenant.tenant_name}."
-                                )
+                                logger.info(f"Created permission {permission.permission}.")
                             current_permission_ids.add(permission.id)
 
                         # need to iterate over the objects with requirements AFTER all perms are created
@@ -157,8 +156,7 @@ def seed_permissions(tenant):
                                 permission.permissions.add(*required_permissions)
                 except Exception as e:
                     logger.error(
-                        f"Failed to update or create permissions for: "
-                        f"{app_name}:{resource} for tenant: {tenant.tenant_name} with error: {e}"
+                        f"Failed to update or create permissions for: " f"{app_name}:{resource} with error: {e}"
                     )
     perms_to_delete = Permission.objects.exclude(id__in=current_permission_ids)
     logger.info(
@@ -166,4 +164,3 @@ def seed_permissions(tenant):
     )
     # Currently read-only to ensure we don't have any orphaned permissions which should be added to the config
     # Permission.objects.exclude(id__in=current_permission_ids).delete()
-    return tenant

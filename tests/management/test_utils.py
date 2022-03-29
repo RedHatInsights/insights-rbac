@@ -15,8 +15,15 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Test the utils module."""
+from api.models import Tenant
 from management.models import Group, Permission, Principal, Policy, Role, Access
-from management.utils import access_for_principal, groups_for_principal, policies_for_principal, roles_for_principal
+from management.utils import (
+    access_for_principal,
+    groups_for_principal,
+    policies_for_principal,
+    roles_for_principal,
+    account_id_for_tenant,
+)
 from tests.identity_request import IdentityRequest
 
 
@@ -118,3 +125,8 @@ class UtilsTests(IdentityRequest):
         """Test that we get the correct groups for a principal."""
         roles = roles_for_principal(self.principal, self.tenant)
         self.assertCountEqual(roles, [self.roleA, self.default_role])
+
+    def test_account_number_from_tenant_name(self):
+        """Test that we get the expected account number from a tenant name."""
+        tenant = Tenant.objects.create(tenant_name="acct1234")
+        self.assertEqual(account_id_for_tenant(tenant), "1234")

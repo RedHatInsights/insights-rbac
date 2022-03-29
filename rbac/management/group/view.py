@@ -147,11 +147,11 @@ class GroupViewSet(
         return GroupSerializer
 
     def protect_default_groups(self, action):
-        """Deny modifications on platform_default groups."""
+        """Deny modifications on platform_default and admin_default groups."""
         group = self.get_object()
-        if group.platform_default:
+        if group.platform_default or group.admin_default:
             key = "group"
-            message = "{} cannot be performed on platform default groups.".format(action.upper())
+            message = "{} cannot be performed on default groups.".format(action.upper())
             error = {key: [_(message)]}
             raise serializers.ValidationError(error)
 
@@ -428,6 +428,7 @@ class GroupViewSet(
         group = self.get_object()
         account = self.request.user.account
         if request.method == "POST":
+            self.protect_default_groups("add principals")
             if not request.user.admin:
                 for role in group.roles_with_access():
                     for access in role.access.all():
@@ -464,6 +465,7 @@ class GroupViewSet(
                 return Response(status=resp.get("status_code"), data=resp.get("errors"))
             response = self.get_paginated_response(resp.get("data"))
         else:
+            self.protect_default_groups("remove principals")
             if USERNAMES_KEY not in request.query_params:
                 key = "detail"
                 message = "Query parameter {} is required.".format(USERNAMES_KEY)
