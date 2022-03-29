@@ -24,14 +24,6 @@ objects:
           apiPath: rbac
       podSpec:
         image: ${IMAGE}:${IMAGE_TAG}
-        initContainers:
-          - env:
-            - name: INIT_CONTAINER
-              value: "True"
-            inheritEnv: true
-            args:
-              - sh
-              - /opt/app-root/src/deploy/init-container-setup.sh
         livenessProbe:
           httpGet:
             path: /api/rbac/v1/status/
@@ -197,8 +189,6 @@ objects:
             value: ${APP_NAMESPACE}
           - name: CW_NULL_WORKAROUND
             value: ${CW_NULL_WORKAROUND)
-          - name: INIT_CONTAINER
-            value: "False"
           - name: REDIS_MAX_CONNECTIONS
             value: ${REDIS_MAX_CONNECTIONS}
           - name: REDIS_SOCKET_CONNECT_TIMEOUT
@@ -212,6 +202,14 @@ objects:
       minReplicas: ${{MIN_WORKER_REPLICAS}}
       podSpec:
         image: ${IMAGE}:${IMAGE_TAG}
+        initContainers:
+          - env:
+            - name: INIT_CONTAINER
+              value: "True"
+            inheritEnv: true
+            args:
+              - sh
+              - /opt/app-root/src/deploy/init-container-setup.sh
         command:
           - /bin/bash
           - '-c'
