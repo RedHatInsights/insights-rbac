@@ -25,7 +25,7 @@ from rest_framework.test import APIClient
 from api.models import User
 from management.models import Group, Permission, Principal, Role, Access, Policy, ResourceDefinition
 from tests.identity_request import IdentityRequest
-from unittest.mock import patch
+from unittest.mock import call, patch
 
 
 URL = reverse("role-list")
@@ -119,38 +119,47 @@ class RoleViewsetTests(IdentityRequest):
         response = client.post(URL, test_data, format="json", **self.headers)
         return response
 
-    def test_create_role_success(self):
+    @patch("management.notifications.producer_util.NotificationProducer.send_kafka_message")
+    def test_create_role_success(self, send_kafka_message):
         """Test that we can create a role."""
-        role_name = "roleA"
-        access_data = [
-            {
-                "permission": "app:*:*",
-                "resourceDefinitions": [{"attributeFilter": {"key": "keyA", "operation": "equal", "value": "valueA"}}],
-            },
-            {"permission": "app:*:read", "resourceDefinitions": []},
-        ]
-        response = self.create_role(role_name, in_access_data=access_data)
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        with self.settings(NOTIFICATION_ENABLED=True):
+            role_name = "roleA"
+            access_data = [
+                {
+                    "permission": "app:*:*",
+                    "resourceDefinitions": [
+                        {"attributeFilter": {"key": "keyA", "operation": "equal", "value": "valueA"}}
+                    ],
+                },
+                {"permission": "app:*:read", "resourceDefinitions": []},
+            ]
+            response = self.create_role(role_name, in_access_data=access_data)
+            self.assertEqual(response.status_code, status.HTTP_201_CREATED)
 
-        # test that we can retrieve the role
-        url = reverse("role-detail", kwargs={"uuid": response.data.get("uuid")})
-        client = APIClient()
-        response = client.get(url, **self.headers)
-        uuid = response.data.get("uuid")
-        role = Role.objects.get(uuid=uuid)
+            # test that we can retrieve the role
+            url = reverse("role-detail", kwargs={"uuid": response.data.get("uuid")})
+            client = APIClient()
+            response = client.get(url, **self.headers)
+            uuid = response.data.get("uuid")
+            role = Role.objects.get(uuid=uuid)
 
-        self.assertIsNotNone(uuid)
-        self.assertIsNotNone(response.data.get("name"))
-        self.assertEqual(role_name, response.data.get("name"))
-        self.assertIsNotNone(response.data.get("display_name"))
-        self.assertEqual(role_name, response.data.get("display_name"))
-        self.assertIsInstance(response.data.get("access"), list)
-        self.assertEqual(access_data, response.data.get("access"))
-        self.assertEqual(role.tenant, self.tenant)
-        for access in role.access.all():
-            self.assertEqual(access.tenant, self.tenant)
-            for rd in ResourceDefinition.objects.filter(access=access):
-                self.assertEqual(rd.tenant, self.tenant)
+            self.assertIsNotNone(uuid)
+            self.assertIsNotNone(response.data.get("name"))
+            self.assertEqual(role_name, response.data.get("name"))
+            self.assertIsNotNone(response.data.get("display_name"))
+            self.assertEqual(role_name, response.data.get("display_name"))
+            self.assertIsInstance(response.data.get("access"), list)
+            self.assertEqual(access_data, response.data.get("access"))
+            self.assertEqual(role.tenant, self.tenant)
+            for access in role.access.all():
+                self.assertEqual(access.tenant, self.tenant)
+                for rd in ResourceDefinition.objects.filter(access=access):
+                    self.assertEqual(rd.tenant, self.tenant)
+            send_kafka_message.assert_called_once_with(
+                "custom-role-created",
+                self.customer_data["account_id"],
+                {"name": role.name, "username": self.user_data["username"], "uuid": str(role.uuid)},
+            )
 
     def test_create_role_with_display_success(self):
         """Test that we can create a role."""
@@ -688,24 +697,31 @@ class RoleViewsetTests(IdentityRequest):
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
-    def test_update_role_success(self):
+    @patch("management.notifications.producer_util.NotificationProducer.send_kafka_message")
+    def test_update_role_success(self, send_kafka_message):
         """Test that we can update an existing role."""
-        role_name = "roleA"
-        response = self.create_role(role_name)
-        updated_name = role_name + "_update"
-        role_uuid = response.data.get("uuid")
-        test_data = response.data
-        test_data["name"] = updated_name
-        test_data["access"][0]["permission"] = "cost-management:*:*"
-        del test_data["uuid"]
-        url = reverse("role-detail", kwargs={"uuid": role_uuid})
-        client = APIClient()
-        response = client.put(url, test_data, format="json", **self.headers)
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        with self.settings(NOTIFICATION_ENABLED=True):
+            role_name = "roleA"
+            response = self.create_role(role_name)
+            updated_name = role_name + "_update"
+            role_uuid = response.data.get("uuid")
+            test_data = response.data
+            test_data["name"] = updated_name
+            test_data["access"][0]["permission"] = "cost-management:*:*"
+            del test_data["uuid"]
+            url = reverse("role-detail", kwargs={"uuid": role_uuid})
+            client = APIClient()
+            response = client.put(url, test_data, format="json", **self.headers)
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
 
-        self.assertIsNotNone(response.data.get("uuid"))
-        self.assertEqual(updated_name, response.data.get("name"))
-        self.assertEqual("cost-management:*:*", response.data.get("access")[0]["permission"])
+            self.assertIsNotNone(response.data.get("uuid"))
+            self.assertEqual(updated_name, response.data.get("name"))
+            self.assertEqual("cost-management:*:*", response.data.get("access")[0]["permission"])
+            assert send_kafka_message.call_args_list[1] == call(
+                "custom-role-updated",
+                self.customer_data["account_id"],
+                {"name": updated_name, "username": self.user_data["username"], "uuid": response.data.get("uuid")},
+            )
 
     def test_update_role_invalid(self):
         """Test that updating an invalid role returns an error."""
@@ -816,20 +832,28 @@ class RoleViewsetTests(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(response.data.get("errors")[0].get("detail"), f"Permission does not exist: {permission}")
 
-    def test_delete_role_success(self):
+    @patch("management.notifications.producer_util.NotificationProducer.send_kafka_message")
+    def test_delete_role_success(self, send_kafka_message):
         """Test that we can delete an existing role."""
-        role_name = "roleA"
-        response = self.create_role(role_name)
+        with self.settings(NOTIFICATION_ENABLED=True):
+            role_name = "roleA"
+            response = self.create_role(role_name)
 
-        role_uuid = response.data.get("uuid")
-        url = reverse("role-detail", kwargs={"uuid": role_uuid})
-        client = APIClient()
-        response = client.delete(url, **self.headers)
-        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+            role_uuid = response.data.get("uuid")
+            url = reverse("role-detail", kwargs={"uuid": role_uuid})
+            client = APIClient()
+            response = client.delete(url, **self.headers)
+            self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
 
-        # verify the role no longer exists
-        response = client.get(url, **self.headers)
-        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+            assert send_kafka_message.call_args_list[1] == call(
+                "custom-role-deleted",
+                self.customer_data["account_id"],
+                {"name": role_name, "username": self.user_data["username"], "uuid": role_uuid},
+            )
+
+            # verify the role no longer exists
+            response = client.get(url, **self.headers)
+            self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
     def test_delete_system_role(self):
         """Test that system roles are protected from deletion"""

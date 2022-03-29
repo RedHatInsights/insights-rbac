@@ -16,7 +16,7 @@
 #
 """Test the group viewset."""
 import random
-from unittest.mock import patch, ANY
+from unittest.mock import call, patch, ANY
 from uuid import uuid4
 
 from django.db import transaction
@@ -112,27 +112,34 @@ class GroupViewsetTests(IdentityRequest):
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
         return_value={"status_code": 200, "data": []},
     )
-    def test_create_group_success(self, mock_request):
+    @patch("management.notifications.producer_util.NotificationProducer.send_kafka_message")
+    def test_create_group_success(self, send_kafka_message, mock_request):
         """Test that we can create a group."""
-        group_name = "groupC"
-        test_data = {"name": group_name}
+        with self.settings(NOTIFICATION_ENABLED=True):
+            group_name = "groupC"
+            test_data = {"name": group_name}
 
-        # create a group
-        url = reverse("group-list")
-        client = APIClient()
-        response = client.post(url, test_data, format="json", **self.headers)
-        uuid = response.data.get("uuid")
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+            # create a group
+            url = reverse("group-list")
+            client = APIClient()
+            response = client.post(url, test_data, format="json", **self.headers)
+            uuid = response.data.get("uuid")
+            self.assertEqual(response.status_code, status.HTTP_201_CREATED)
 
-        # test that we can retrieve the group
-        url = reverse("group-detail", kwargs={"uuid": response.data.get("uuid")})
-        response = client.get(url, **self.headers)
-        group = Group.objects.get(uuid=uuid)
+            # test that we can retrieve the group
+            url = reverse("group-detail", kwargs={"uuid": response.data.get("uuid")})
+            response = client.get(url, **self.headers)
+            group = Group.objects.get(uuid=uuid)
 
-        self.assertIsNotNone(uuid)
-        self.assertIsNotNone(response.data.get("name"))
-        self.assertEqual(group_name, response.data.get("name"))
-        self.assertEqual(group.tenant, self.tenant)
+            self.assertIsNotNone(uuid)
+            self.assertIsNotNone(response.data.get("name"))
+            self.assertEqual(group_name, response.data.get("name"))
+            self.assertEqual(group.tenant, self.tenant)
+            send_kafka_message.assert_called_once_with(
+                "group-created",
+                self.customer_data["account_id"],
+                {"name": group_name, "username": self.user_data["username"], "uuid": str(group.uuid)},
+            )
 
     def test_create_default_group(self):
         """Test that system groups can be created."""
@@ -472,17 +479,24 @@ class GroupViewsetTests(IdentityRequest):
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
         return_value={"status_code": 200, "data": []},
     )
-    def test_update_group_success(self, mock_request):
+    @patch("management.notifications.producer_util.NotificationProducer.send_kafka_message")
+    def test_update_group_success(self, send_kafka_message, mock_request):
         """Test that we can update an existing group."""
-        updated_name = self.group.name + "_update"
-        test_data = {"name": updated_name}
-        url = reverse("group-detail", kwargs={"uuid": self.group.uuid})
-        client = APIClient()
-        response = client.put(url, test_data, format="json", **self.headers)
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        with self.settings(NOTIFICATION_ENABLED=True):
+            updated_name = self.group.name + "_update"
+            test_data = {"name": updated_name}
+            url = reverse("group-detail", kwargs={"uuid": self.group.uuid})
+            client = APIClient()
+            response = client.put(url, test_data, format="json", **self.headers)
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
 
-        self.assertIsNotNone(response.data.get("uuid"))
-        self.assertEqual(updated_name, response.data.get("name"))
+            self.assertIsNotNone(response.data.get("uuid"))
+            self.assertEqual(updated_name, response.data.get("name"))
+            send_kafka_message.assert_called_once_with(
+                "group-updated",
+                self.customer_data["account_id"],
+                {"name": updated_name, "username": self.user_data["username"], "uuid": str(self.group.uuid)},
+            )
 
     def test_update_default_group(self):
         """Test that platform_default groups are protected from updates"""
@@ -532,16 +546,23 @@ class GroupViewsetTests(IdentityRequest):
         response = client.put(url, {}, format="json", **self.headers)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
-    def test_delete_group_success(self):
+    @patch("management.notifications.producer_util.NotificationProducer.send_kafka_message")
+    def test_delete_group_success(self, send_kafka_message):
         """Test that we can delete an existing group."""
-        url = reverse("group-detail", kwargs={"uuid": self.group.uuid})
-        client = APIClient()
-        response = client.delete(url, **self.headers)
-        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+        with self.settings(NOTIFICATION_ENABLED=True):
+            url = reverse("group-detail", kwargs={"uuid": self.group.uuid})
+            client = APIClient()
+            response = client.delete(url, **self.headers)
+            self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
 
-        # verify the group no longer exists
-        response = client.get(url, **self.headers)
-        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+            # verify the group no longer exists
+            response = client.get(url, **self.headers)
+            self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+            send_kafka_message.assert_called_once_with(
+                "group-deleted",
+                self.customer_data["account_id"],
+                {"name": self.group.name, "username": self.user_data["username"], "uuid": str(self.group.uuid)},
+            )
 
     def test_delete_default_group(self):
         """Test that platform_default groups are protected from deletion"""
@@ -608,26 +629,39 @@ class GroupViewsetTests(IdentityRequest):
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
         return_value={"status_code": 200, "data": [{"username": "test_user"}]},
     )
-    def test_add_group_principals_success(self, mock_request):
+    @patch("management.notifications.producer_util.NotificationProducer.send_kafka_message")
+    def test_add_group_principals_success(self, send_kafka_message, mock_request):
         """Test that adding a principal to a group returns successfully."""
         # Create a group and a cross account user.
-        test_group = Group.objects.create(name="test", tenant=self.tenant)
-        cross_account_user = Principal.objects.create(
-            username="cross_account_user", cross_account=True, tenant=self.tenant
-        )
+        with self.settings(NOTIFICATION_ENABLED=True):
+            test_group = Group.objects.create(name="test", tenant=self.tenant)
+            cross_account_user = Principal.objects.create(
+                username="cross_account_user", cross_account=True, tenant=self.tenant
+            )
 
-        url = reverse("group-principals", kwargs={"uuid": test_group.uuid})
-        client = APIClient()
-        username = "test_user"
-        test_data = {"principals": [{"username": username}, {"username": "cross_account_user"}]}
-        response = client.post(url, test_data, format="json", **self.headers)
-        principal = Principal.objects.get(username=username)
+            url = reverse("group-principals", kwargs={"uuid": test_group.uuid})
+            client = APIClient()
+            username = "test_user"
+            test_data = {"principals": [{"username": username}, {"username": cross_account_user.username}]}
+            response = client.post(url, test_data, format="json", **self.headers)
+            principal = Principal.objects.get(username=username)
 
-        # Only the user exists in IT will be added to the group.
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(response.data.get("principals")), 1)
-        self.assertEqual(response.data.get("principals")[0], {"username": username})
-        self.assertEqual(principal.tenant, self.tenant)
+            # Only the user exists in IT will be added to the group.
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            self.assertEqual(len(response.data.get("principals")), 1)
+            self.assertEqual(response.data.get("principals")[0], {"username": username})
+            self.assertEqual(principal.tenant, self.tenant)
+            send_kafka_message.assert_called_once_with(
+                "group-updated",
+                self.customer_data["account_id"],
+                {
+                    "name": test_group.name,
+                    "username": self.user_data["username"],
+                    "uuid": str(test_group.uuid),
+                    "operation": "added",
+                    "principal": username,
+                },
+            )
 
     @patch(
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
@@ -686,17 +720,30 @@ class GroupViewsetTests(IdentityRequest):
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
         return_value={"status_code": 200, "data": [{"username": "test_user"}]},
     )
-    def test_remove_group_principals_success(self, mock_request):
+    @patch("management.notifications.producer_util.NotificationProducer.send_kafka_message")
+    def test_remove_group_principals_success(self, send_kafka_message, mock_request):
         """Test that removing a principal to a group returns successfully."""
-        test_user = Principal.objects.create(username="test_user", tenant=self.tenant)
-        self.group.principals.add(test_user)
+        with self.settings(NOTIFICATION_ENABLED=True):
+            test_user = Principal.objects.create(username="test_user", tenant=self.tenant)
+            self.group.principals.add(test_user)
 
-        url = reverse("group-principals", kwargs={"uuid": self.group.uuid})
-        client = APIClient()
+            url = reverse("group-principals", kwargs={"uuid": self.group.uuid})
+            client = APIClient()
 
-        url = "{}?usernames={}".format(url, "test_user")
-        response = client.delete(url, format="json", **self.headers)
-        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+            url = "{}?usernames={}".format(url, "test_user")
+            response = client.delete(url, format="json", **self.headers)
+            self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+            send_kafka_message.assert_called_once_with(
+                "group-updated",
+                self.customer_data["account_id"],
+                {
+                    "name": self.group.name,
+                    "username": self.user_data["username"],
+                    "uuid": str(self.group.uuid),
+                    "operation": "removed",
+                    "principal": test_user.username,
+                },
+            )
 
     def test_remove_group_principals_invalid(self):
         """Test that removing a principal returns an error with invalid data format."""
@@ -1057,67 +1104,113 @@ class GroupViewsetTests(IdentityRequest):
         self.assertEqual(system_policy.tenant, self.tenant)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
-    def test_system_flag_update_on_add(self):
+    @patch("management.notifications.producer_util.NotificationProducer.send_kafka_message")
+    def test_system_flag_update_on_add(self, send_kafka_message):
         """Test that adding a role to a platform_default group flips the system flag."""
-        url = reverse("group-roles", kwargs={"uuid": self.defGroup.uuid})
-        client = APIClient()
-        test_data = {"roles": [self.roleB.uuid, self.dummy_role_id]}
+        with self.settings(NOTIFICATION_ENABLED=True):
+            url = reverse("group-roles", kwargs={"uuid": self.defGroup.uuid})
+            client = APIClient()
+            test_data = {"roles": [self.roleB.uuid, self.dummy_role_id]}
 
-        default_role = Role.objects.create(
-            name="default_role",
-            description="A default role for a group.",
-            platform_default=True,
-            system=True,
-            tenant=self.public_tenant,
-        )
-        self.defGroup.policies.first().roles.add(default_role)
-        self.assertTrue(self.defGroup.system)
-        self.assertEqual(self.defGroup.roles().count(), 1)
-        response = client.post(url, test_data, format="json", **self.headers)
+            default_role = Role.objects.create(
+                name="default_role",
+                description="A default role for a group.",
+                platform_default=True,
+                system=True,
+                tenant=self.public_tenant,
+            )
+            self.defGroup.policies.first().roles.add(default_role)
+            self.assertTrue(self.defGroup.system)
+            self.assertEqual(self.defGroup.roles().count(), 1)
+            response = client.post(url, test_data, format="json", **self.headers)
 
-        # Original platform default role does not change
-        self.defGroup.refresh_from_db()
-        self.assertEqual(self.defGroup.roles().count(), 1)
-        self.assertTrue(self.defGroup.system)
-        self.assertEqual(self.defGroup.tenant, self.public_tenant)
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
+            # Original platform default role does not change
+            self.defGroup.refresh_from_db()
+            self.assertEqual(self.defGroup.roles().count(), 1)
+            self.assertTrue(self.defGroup.system)
+            self.assertEqual(self.defGroup.tenant, self.public_tenant)
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
 
-        # New platform default role for tenant created
-        custom_default_group = Group.objects.get(platform_default=True, tenant=self.tenant)
-        self.assertEqual(custom_default_group.name, "Custom default access")
-        self.assertFalse(custom_default_group.system)
-        self.assertEqual(custom_default_group.tenant, self.tenant)
-        self.assertEqual(custom_default_group.roles().count(), 2)
+            # New platform default role for tenant created
+            custom_default_group = Group.objects.get(platform_default=True, tenant=self.tenant)
+            self.assertEqual(custom_default_group.name, "Custom default access")
+            self.assertFalse(custom_default_group.system)
+            self.assertEqual(custom_default_group.tenant, self.tenant)
+            self.assertEqual(custom_default_group.roles().count(), 2)
 
-    def test_system_flag_update_on_remove(self):
+            assert send_kafka_message.call_args_list[0] == call(
+                "platform-default-group-turned-into-custom",
+                self.customer_data["account_id"],
+                {
+                    "name": custom_default_group.name,
+                    "username": self.user_data["username"],
+                    "uuid": str(custom_default_group.uuid),
+                },
+            )
+            assert send_kafka_message.call_args_list[1] == call(
+                "custom-default-access-updated",
+                self.customer_data["account_id"],
+                {
+                    "name": custom_default_group.name,
+                    "username": self.user_data["username"],
+                    "uuid": str(custom_default_group.uuid),
+                    "operation": "added",
+                    "role": {"uuid": str(self.roleB.uuid), "name": self.roleB.name},
+                },
+            )
+
+    @patch("management.notifications.producer_util.NotificationProducer.send_kafka_message")
+    def test_system_flag_update_on_remove(self, send_kafka_message):
         """Test that removing a role from a platform_default group flips the system flag."""
-        default_role = Role.objects.create(
-            name="default_role",
-            description="A default role for a group.",
-            platform_default=True,
-            system=True,
-            tenant=self.public_tenant,
-        )
-        self.defGroup.policies.first().roles.add(default_role)
-        self.assertTrue(self.defGroup.system)
+        with self.settings(NOTIFICATION_ENABLED=True):
+            default_role = Role.objects.create(
+                name="default_role",
+                description="A default role for a group.",
+                platform_default=True,
+                system=True,
+                tenant=self.public_tenant,
+            )
+            self.defGroup.policies.first().roles.add(default_role)
+            self.assertTrue(self.defGroup.system)
 
-        url = reverse("group-roles", kwargs={"uuid": self.defGroup.uuid})
-        client = APIClient()
-        url = "{}?roles={}".format(url, default_role.uuid)
-        response = client.delete(url, format="json", **self.headers)
-        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
-        self.defGroup.refresh_from_db()
-        self.assertEqual(self.defGroup.name, "groupDef")
-        self.assertTrue(self.defGroup.system)
-        self.assertTrue(self.defGroup.tenant, self.tenant)
-        self.assertTrue(self.defGroup.roles(), 1)
+            url = reverse("group-roles", kwargs={"uuid": self.defGroup.uuid})
+            client = APIClient()
+            url = "{}?roles={}".format(url, default_role.uuid)
+            response = client.delete(url, format="json", **self.headers)
+            self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+            self.defGroup.refresh_from_db()
+            self.assertEqual(self.defGroup.name, "groupDef")
+            self.assertTrue(self.defGroup.system)
+            self.assertTrue(self.defGroup.tenant, self.tenant)
+            self.assertTrue(self.defGroup.roles(), 1)
 
-        # New platform default role for tenant created
-        custom_default_group = Group.objects.get(platform_default=True, tenant=self.tenant)
-        self.assertEqual(custom_default_group.name, "Custom default access")
-        self.assertFalse(custom_default_group.system)
-        self.assertEqual(custom_default_group.tenant, self.tenant)
-        self.assertEqual(custom_default_group.roles().count(), 0)
+            # New platform default role for tenant created
+            custom_default_group = Group.objects.get(platform_default=True, tenant=self.tenant)
+            self.assertEqual(custom_default_group.name, "Custom default access")
+            self.assertFalse(custom_default_group.system)
+            self.assertEqual(custom_default_group.tenant, self.tenant)
+            self.assertEqual(custom_default_group.roles().count(), 0)
+
+            assert send_kafka_message.call_args_list[0] == call(
+                "platform-default-group-turned-into-custom",
+                self.customer_data["account_id"],
+                {
+                    "name": custom_default_group.name,
+                    "username": self.user_data["username"],
+                    "uuid": str(custom_default_group.uuid),
+                },
+            )
+            assert send_kafka_message.call_args_list[1] == call(
+                "custom-default-access-updated",
+                self.customer_data["account_id"],
+                {
+                    "name": custom_default_group.name,
+                    "username": self.user_data["username"],
+                    "uuid": str(custom_default_group.uuid),
+                    "operation": "removed",
+                    "role": {"uuid": str(default_role.uuid), "name": default_role.name},
+                },
+            )
 
     def test_add_group_roles_bad_group_guid(self):
         group_url = reverse("group-roles", kwargs={"uuid": "master_exploder"})
@@ -1171,19 +1264,44 @@ class GroupViewsetTests(IdentityRequest):
         self.assertEqual(roles[0].get("description"), self.role.description)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
-    def test_add_group_multiple_roles_success(self):
+    @patch("management.notifications.producer_util.NotificationProducer.send_kafka_message")
+    def test_add_group_multiple_roles_success(self, send_kafka_message):
         """Test that adding multiple roles to a group returns successfully."""
-        groupC = Group.objects.create(name="groupC", tenant=self.tenant)
-        url = reverse("group-roles", kwargs={"uuid": groupC.uuid})
-        client = APIClient()
-        test_data = {"roles": [self.role.uuid, self.roleB.uuid]}
+        with self.settings(NOTIFICATION_ENABLED=True):
+            groupC = Group.objects.create(name="groupC", tenant=self.tenant)
+            url = reverse("group-roles", kwargs={"uuid": groupC.uuid})
+            client = APIClient()
+            test_data = {"roles": [self.role.uuid, self.roleB.uuid]}
 
-        self.assertCountEqual([], list(groupC.roles()))
+            self.assertCountEqual([], list(groupC.roles()))
 
-        response = client.post(url, test_data, format="json", **self.headers)
+            response = client.post(url, test_data, format="json", **self.headers)
 
-        self.assertCountEqual([self.role, self.roleB], list(groupC.roles()))
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
+            self.assertCountEqual([self.role, self.roleB], list(groupC.roles()))
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+            assert send_kafka_message.call_args_list[0] == call(
+                "group-updated",
+                self.customer_data["account_id"],
+                {
+                    "name": groupC.name,
+                    "username": self.user_data["username"],
+                    "uuid": str(groupC.uuid),
+                    "operation": "added",
+                    "role": {"uuid": str(self.role.uuid), "name": self.role.name},
+                },
+            )
+            assert send_kafka_message.call_args_list[1] == call(
+                "group-updated",
+                self.customer_data["account_id"],
+                {
+                    "name": groupC.name,
+                    "username": self.user_data["username"],
+                    "uuid": str(groupC.uuid),
+                    "operation": "added",
+                    "role": {"uuid": str(self.roleB.uuid), "name": self.roleB.name},
+                },
+            )
 
     def test_add_group_multiple_roles_invalid(self):
         """Test that adding invalid roles to a group fails the request and does not add any."""
@@ -1229,19 +1347,43 @@ class GroupViewsetTests(IdentityRequest):
         self.assertCountEqual([self.role, self.roleB], list(self.groupB.roles()))
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
 
-    def test_remove_group_multiple_roles_success(self):
+    @patch("management.notifications.producer_util.NotificationProducer.send_kafka_message")
+    def test_remove_group_multiple_roles_success(self, send_kafka_message):
         """Test that removing multiple roles from a group returns successfully."""
-        url = reverse("group-roles", kwargs={"uuid": self.group.uuid})
-        client = APIClient()
-        url = "{}?roles={},{}".format(url, self.role.uuid, self.roleB.uuid)
+        with self.settings(NOTIFICATION_ENABLED=True):
+            url = reverse("group-roles", kwargs={"uuid": self.group.uuid})
+            client = APIClient()
+            url = "{}?roles={},{}".format(url, self.role.uuid, self.roleB.uuid)
 
-        self.policy.roles.add(self.roleB)
-        self.assertCountEqual([self.role, self.roleB], list(self.group.roles()))
+            self.policy.roles.add(self.roleB)
+            self.assertCountEqual([self.role, self.roleB], list(self.group.roles()))
 
-        response = client.delete(url, format="json", **self.headers)
+            response = client.delete(url, format="json", **self.headers)
 
-        self.assertCountEqual([], list(self.group.roles()))
-        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+            self.assertCountEqual([], list(self.group.roles()))
+            self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+            assert send_kafka_message.call_args_list[0] == call(
+                "group-updated",
+                self.customer_data["account_id"],
+                {
+                    "name": self.group.name,
+                    "username": self.user_data["username"],
+                    "uuid": str(self.group.uuid),
+                    "operation": "removed",
+                    "role": {"uuid": str(self.role.uuid), "name": self.role.name},
+                },
+            )
+            assert send_kafka_message.call_args_list[1] == call(
+                "group-updated",
+                self.customer_data["account_id"],
+                {
+                    "name": self.group.name,
+                    "username": self.user_data["username"],
+                    "uuid": str(self.group.uuid),
+                    "operation": "removed",
+                    "role": {"uuid": str(self.roleB.uuid), "name": self.roleB.name},
+                },
+            )
 
     def test_remove_group_multiple_roles_invalid(self):
         """Test that removing invalid roles from a group fails the request and does not remove any."""

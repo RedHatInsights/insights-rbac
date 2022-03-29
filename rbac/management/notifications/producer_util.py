@@ -29,26 +29,42 @@ with open(os.path.join(settings.BASE_DIR, "management", "notifications", "messag
     message_template = json.load(template)
 
 
-def create_message(event_type, account_id, payload):
-    """Create message based on template."""
-    message = message_template
-    message["event_type"] = event_type
-    message["timestamp"] = datetime.now().isoformat()
-    message["account_id"] = account_id
-    message["events"][0]["payload"] = payload
-    return message
+class FakeKafkaProducer:
+    """Fake kafaka producer to enable local development without kafka server."""
+
+    def send(self, topic, value=None, headers=None):
+        """No operation method."""
+        pass
 
 
-producer = KafkaProducer(bootstrap_servers=settings.KAFKA_SERVER)
 notification_topic = "platform.notifications.ingress"
 
 
-def send_kafka_message(event_type, account_id, payload):
-    """Send message to kafka server."""
-    message = create_message(event_type, account_id, payload)
-    serialized_data = pickle.dumps(message)
+class NotificationProducer:
+    """Kafka message producer to emit events to notification service."""
 
-    producer.send(notification_topic, value=serialized_data, headers=[("rh-message-id", uuid4().bytes)])
+    def __init__(self):
+        """Init method to return fake kafka when flag is set to false."""
+        if settings.NOTIFICATION_ENABLED:
+            self.producer = KafkaProducer(bootstrap_servers=settings.KAFKA_SERVER)
+        else:
+            self.producer = FakeKafkaProducer()
+
+    def create_message(self, event_type, account_id, payload):
+        """Create message based on template."""
+        message = message_template
+        message["event_type"] = event_type
+        message["timestamp"] = datetime.now().isoformat()
+        message["account_id"] = account_id
+        message["events"][0]["payload"] = payload
+        return message
+
+    def send_kafka_message(self, event_type, account_id, payload):
+        """Send message to kafka server."""
+        message = self.create_message(event_type, account_id, payload)
+        serialized_data = pickle.dumps(message)
+
+        self.producer.send(notification_topic, value=serialized_data, headers=[("rh-message-id", uuid4().bytes)])
 
 
 """

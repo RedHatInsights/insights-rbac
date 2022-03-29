@@ -156,4 +156,4 @@ def remove_roles(group, role_ids, tenant, user):
                 policy.roles.remove(role)
 
                 # Send notifications
-                group_role_change_notification_handler(user, group, role, "remove")
+                group_role_change_notification_handler(user, group, role, "removed")
