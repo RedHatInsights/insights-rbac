@@ -26,6 +26,8 @@ class Tenant(models.Model):
 
     ready = models.BooleanField(default=False)
     tenant_name = models.CharField(max_length=63, unique=True, db_index=True)
+    account_id = models.CharField(max_length=36)
+    org_id = models.CharField(max_length=36)
 
     def __str__(self):
         """Get string representation of Tenant."""
