@@ -195,8 +195,6 @@ objects:
             value: ${REDIS_SOCKET_CONNECT_TIMEOUT}
           - name: REDIS_SOCKET_TIMEOUT
             value: ${REDIS_SOCKET_TIMEOUT}
-          - name: SERVE_FROM_PUBLIC_SCHEMA
-            value: ${SERVE_FROM_PUBLIC_SCHEMA}
 
     - name: worker-service
       minReplicas: ${{MIN_WORKER_REPLICAS}}
@@ -345,8 +343,6 @@ objects:
                 optional: true
           - name: MAX_SEED_THREADS
             value: ${MAX_SEED_THREADS}
-          - name: SERVE_FROM_PUBLIC_SCHEMA
-            value: ${SERVE_FROM_PUBLIC_SCHEMA}
 
     - name: scheduler-service
       minReplicas: ${{MIN_SCHEDULER_REPLICAS}}
@@ -415,8 +411,6 @@ objects:
               key: sentry-dsn
               name: rbac-secret
               optional: true
-        - name: SERVE_FROM_PUBLIC_SCHEMA
-          value: ${SERVE_FROM_PUBLIC_SCHEMA}
 
 - apiVersion: v1
   kind: ConfigMap
@@ -1977,6 +1971,3 @@ parameters:
 - description: socket timeout for redis
   name: REDIS_SOCKET_TIMEOUT
   value: "0.1"
-- description: Flag to serve from the public schema
-  name: SERVE_FROM_PUBLIC_SCHEMA
-  value: "False"
