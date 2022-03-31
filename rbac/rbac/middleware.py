@@ -78,7 +78,12 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
                 except Tenant.DoesNotExist:
                     raise Http404()
             else:
-                tenant, created = Tenant.objects.get_or_create(tenant_name=tenant_name, defaults={"ready": True})
+                tenant, created = Tenant.objects.get_or_create(
+                    tenant_name=tenant_name,
+                    account_id=request.user.account,
+                    org_id=request.user.org_id,
+                    defaults={"ready": True},
+                )
             TENANTS.save_tenant(tenant)
         return tenant
 
@@ -157,6 +162,7 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
         try:
             _, json_rh_auth = extract_header(request, self.header)
             user.account = json_rh_auth.get("identity", {})["account_number"]
+            user.org_id = json_rh_auth.get("identity", {}).get("org_id")
             user_info = json_rh_auth.get("identity", {}).get("user", {})
             user.username = user_info["username"]
             user.admin = user_info.get("is_org_admin")
