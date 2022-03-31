@@ -29,7 +29,7 @@ def principal_cleanup():
 
 
 @shared_task
-def run_migrations_in_worker(tenant_list):
+def run_migrations_in_worker():
     """Celery task to run migrations."""
     call_command("migrate")
 

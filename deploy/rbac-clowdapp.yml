@@ -24,14 +24,6 @@ objects:
           apiPath: rbac
       podSpec:
         image: ${IMAGE}:${IMAGE_TAG}
-        initContainers:
-          - env:
-            - name: INIT_CONTAINER
-              value: "True"
-            inheritEnv: true
-            args:
-              - sh
-              - /opt/app-root/src/deploy/init-container-setup.sh
         livenessProbe:
           httpGet:
             path: /api/rbac/v1/status/
@@ -197,21 +189,25 @@ objects:
             value: ${APP_NAMESPACE}
           - name: CW_NULL_WORKAROUND
             value: ${CW_NULL_WORKAROUND)
-          - name: INIT_CONTAINER
-            value: "False"
           - name: REDIS_MAX_CONNECTIONS
             value: ${REDIS_MAX_CONNECTIONS}
           - name: REDIS_SOCKET_CONNECT_TIMEOUT
             value: ${REDIS_SOCKET_CONNECT_TIMEOUT}
           - name: REDIS_SOCKET_TIMEOUT
             value: ${REDIS_SOCKET_TIMEOUT}
-          - name: SERVE_FROM_PUBLIC_SCHEMA
-            value: ${SERVE_FROM_PUBLIC_SCHEMA}
 
     - name: worker-service
       minReplicas: ${{MIN_WORKER_REPLICAS}}
       podSpec:
         image: ${IMAGE}:${IMAGE_TAG}
+        initContainers:
+          - env:
+            - name: INIT_CONTAINER
+              value: "True"
+            inheritEnv: true
+            args:
+              - sh
+              - /opt/app-root/src/deploy/init-container-setup.sh
         command:
           - /bin/bash
           - '-c'
@@ -347,8 +343,6 @@ objects:
                 optional: true
           - name: MAX_SEED_THREADS
             value: ${MAX_SEED_THREADS}
-          - name: SERVE_FROM_PUBLIC_SCHEMA
-            value: ${SERVE_FROM_PUBLIC_SCHEMA}
 
     - name: scheduler-service
       minReplicas: ${{MIN_SCHEDULER_REPLICAS}}
@@ -417,8 +411,6 @@ objects:
               key: sentry-dsn
               name: rbac-secret
               optional: true
-        - name: SERVE_FROM_PUBLIC_SCHEMA
-          value: ${SERVE_FROM_PUBLIC_SCHEMA}
 
 - apiVersion: v1
   kind: ConfigMap
@@ -2010,6 +2002,3 @@ parameters:
 - description: socket timeout for redis
   name: REDIS_SOCKET_TIMEOUT
   value: "0.1"
-- description: Flag to serve from the public schema
-  name: SERVE_FROM_PUBLIC_SCHEMA
-  value: "False"

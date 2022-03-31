@@ -150,11 +150,8 @@ def run_migrations(request):
     POST /_private/api/migrations/run/
     """
     if request.method == "POST":
-        schema_list = None
-        if request.body:
-            schema_list = json.loads(request.body).get("schemas")
-        logger.info(f"Running migrations: {request.method} {request.user.username} {schema_list}")
-        run_migrations_in_worker.delay(schema_list)
+        logger.info(f"Running migrations: {request.method} {request.user.username}")
+        run_migrations_in_worker.delay()
         return HttpResponse("Migrations are running in a background worker.", status=202)
     return HttpResponse('Invalid method, only "POST" is allowed.', status=405)
 
