@@ -68,6 +68,7 @@ class CrossAccountRequestViewTests(IdentityRequest):
             |     123456     | 1111111 |    now     | now_10day | pending  |       |
         """
         self.another_account = "123456"
+        self.org_id = "54321"
 
         self.data4create = {
             "target_account": "012345",
@@ -85,11 +86,14 @@ class CrossAccountRequestViewTests(IdentityRequest):
         self.role_8 = Role.objects.create(name="role_8", system=True, tenant=t)
 
         self.request_1 = CrossAccountRequest.objects.create(
-            target_account=self.account, user_id="1111111", end_date=self.ref_time + timedelta(10), status="approved",
+            target_account=self.account, user_id="1111111", end_date=self.ref_time + timedelta(10), status="approved"
         )
         self.request_1.roles.add(*(self.role_1, self.role_2))
         self.request_2 = CrossAccountRequest.objects.create(
-            target_account=self.account, user_id="2222222", end_date=self.ref_time + timedelta(10)
+            target_account=self.account,
+            target_org=self.org_id,
+            user_id="2222222",
+            end_date=self.ref_time + timedelta(10),
         )
         self.request_2.roles.add(*(self.role_1, self.role_2))
         self.request_3 = CrossAccountRequest.objects.create(
@@ -99,10 +103,10 @@ class CrossAccountRequestViewTests(IdentityRequest):
             status="approved",
         )
         self.request_4 = CrossAccountRequest.objects.create(
-            target_account=self.account, user_id="2222222", end_date=self.ref_time + timedelta(10), status="pending",
+            target_account=self.account, user_id="2222222", end_date=self.ref_time + timedelta(10), status="pending"
         )
         self.request_5 = CrossAccountRequest.objects.create(
-            target_account=self.account, user_id="2222222", end_date=self.ref_time + timedelta(10), status="expired",
+            target_account=self.account, user_id="2222222", end_date=self.ref_time + timedelta(10), status="expired"
         )
         self.request_6 = CrossAccountRequest.objects.create(
             target_account=self.another_account,
@@ -760,3 +764,29 @@ class CrossAccountRequestViewTests(IdentityRequest):
             f"{URL_LIST}?query_by=user_id&order_by=-end_date", **self.associate_non_admin_request.META
         )
         self.assertEqual(response.data["data"][0].get("request_id"), str(self.request_3.request_id))
+
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={
+            "status_code": 200,
+            "data": [
+                {
+                    "username": "test_user",
+                    "email": "test_user@email.com",
+                    "first_name": "user",
+                    "last_name": "test",
+                    "account_number": "567890",
+                    "user_id": "1111111",
+                }
+            ],
+        },
+    )
+    def test_list_requests_query_by_org_id_success(self, mock_request):
+        """Test that cross account request stores org_id."""
+        client = APIClient()
+        response = client.get(f"{URL_LIST}{self.request_2.request_id}/", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data.get("email"), "test_user@email.com")
+        self.assertEqual(response.data.get("target_org"), self.org_id)
+        self.assertEqual(len(response.data.get("roles")), 2)

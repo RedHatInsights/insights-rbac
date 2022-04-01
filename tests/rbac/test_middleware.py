@@ -120,6 +120,20 @@ class RbacTenantMiddlewareTest(IdentityRequest):
         result = middleware.process_request(mock_request)
         self.assertIsInstance(result, HttpResponseUnauthorizedRequest)
 
+    def test_get_tenant_with_org_id(self):
+        """Test that the customer tenant is returned containing an org_id."""
+        user = User()
+        user.username = self.user_data["username"]
+        user.account = self.customer["account_id"]
+        user.org_id = "45321"
+        self.request.user = user
+        mock_request = self.request
+        middleware = IdentityHeaderMiddleware()
+        result = middleware.get_tenant(Tenant, "localhost", mock_request)
+        self.assertEqual(result.tenant_name, create_tenant_name(mock_request.user.account))
+        self.assertEqual(result.account_id, mock_request.user.account)
+        self.assertEqual(result.org_id, mock_request.user.org_id)
+
 
 class IdentityHeaderMiddlewareTest(IdentityRequest):
     """Tests against the rbac tenant middleware."""
