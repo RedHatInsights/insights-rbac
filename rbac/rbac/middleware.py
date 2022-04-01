@@ -80,9 +80,7 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
             else:
                 tenant, created = Tenant.objects.get_or_create(
                     tenant_name=tenant_name,
-                    account_id=request.user.account,
-                    org_id=request.user.org_id,
-                    defaults={"ready": True},
+                    defaults={"ready": True, "account_id": request.user.account, "org_id": request.user.org_id},
                 )
             TENANTS.save_tenant(tenant)
         return tenant
