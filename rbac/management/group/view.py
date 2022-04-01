@@ -96,6 +96,7 @@ class GroupFilter(CommonFilters):
     uuid = filters.CharFilter(field_name="uuid", method="uuid_filter")
     system = filters.BooleanFilter(field_name="system")
     platform_default = filters.BooleanFilter(field_name="platform_default")
+    admin_default = filters.BooleanFilter(field_name="admin_default")
 
     class Meta:
         model = Group

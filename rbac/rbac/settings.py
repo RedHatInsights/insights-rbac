@@ -372,6 +372,3 @@ try:
         INTERNAL_DESTRUCTIVE_API_OK_UNTIL = INTERNAL_DESTRUCTIVE_API_OK_UNTIL.replace(tzinfo=pytz.UTC)
 except ValueError as e:
     INTERNAL_DESTRUCTIVE_API_OK_UNTIL = datetime.datetime(1970, 1, 1, tzinfo=pytz.UTC)
-
-# Prep for public schema changeover
-SERVE_FROM_PUBLIC_SCHEMA = ENVIRONMENT.bool("SERVE_FROM_PUBLIC_SCHEMA", default=False)
