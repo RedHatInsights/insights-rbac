@@ -55,7 +55,7 @@ def seed_group():
         )
 
         platform_roles = Role.objects.filter(platform_default=True)
-        add_roles(group, platform_roles, public_tenant)
+        update_group_roles(group, platform_roles, public_tenant)
         logger.info("Finished seeding default group %s.", name)
 
         # Default admin group
@@ -69,8 +69,8 @@ def seed_group():
             defaults={"description": admin_group_description, "name": admin_name, "system": True},
             tenant=public_tenant,
         )
-        platform_roles = Role.objects.filter(admin_default=True)
-        add_roles(admin_group, platform_roles, public_tenant)
+        admin_roles = Role.objects.filter(admin_default=True)
+        update_group_roles(admin_group, admin_roles, public_tenant)
         logger.info("Finished seeding default org admin group %s.", name)
 
 
@@ -142,9 +142,13 @@ def add_roles(group, roles_or_role_ids, tenant, user=None):
             group_role_change_notification_handler(user, group, role, "added")
 
 
-def remove_roles(group, role_ids, tenant, user):
+def remove_roles(group, roles_or_role_ids, tenant, user=None):
     """Process list of roles and remove them from the group."""
-    roles = Role.objects.filter(uuid__in=role_ids)
+    if not isinstance(roles_or_role_ids, QuerySet):
+        # If given an iterable of UUIDs, get the corresponding objects
+        roles = Role.objects.filter(uuid__in=roles_or_role_ids)
+    else:
+        roles = roles_or_role_ids
     role_names = list(roles.values_list("name", flat=True))
 
     group = Group.objects.get(name=group.name, tenant=tenant)
@@ -157,3 +161,14 @@ def remove_roles(group, role_ids, tenant, user):
 
                 # Send notifications
                 group_role_change_notification_handler(user, group, role, "removed")
+
+
+def update_group_roles(group, roleset, tenant):
+    """Update group roles based on roleset."""
+    # Add roles to group, which will only add roles in roleset but not in group.
+    add_roles(group, roleset, tenant)
+
+    # Remove roles not in roleset from group.
+    role_ids = list(roleset.values_list("uuid", flat=True))
+    roles_to_remove = group.roles().exclude(uuid__in=role_ids)
+    remove_roles(group, roles_to_remove, tenant)

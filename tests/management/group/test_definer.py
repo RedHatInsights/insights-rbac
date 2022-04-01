@@ -15,6 +15,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Test the group definer."""
+from unittest.mock import call, patch
 from api.models import Tenant
 
 from management.group.definer import seed_group, add_roles
@@ -64,29 +65,58 @@ class GroupDefinerTests(IdentityRequest):
         self.assertEqual(group.tenant, self.public_tenant)
         group.roles().get(name="Ansible Automation Access Local Test")
 
-    def test_default_group_seeding_reassign_roles(self):
+    @patch("management.notifications.producer_util.NotificationProducer.send_kafka_message")
+    def test_default_group_seeding_reassign_roles(self, send_kafka_message):
         """Test that previous assigned roles would be eliminated before assigning new roles."""
         self.modify_default_group()
+        new_platform_role = Role.objects.create(
+            name="new_platform_role", platform_default=True, tenant=self.public_tenant
+        )
+        role_to_remove = Role.objects.get(name="RBAC Administrator Local Test")
+        with self.settings(NOTIFICATION_ENABLED=True):
+            try:
+                seed_group()
+            except Exception:
+                self.fail(msg="update seed_group encountered an exception")
 
-        try:
-            seed_group()
-        except Exception:
-            self.fail(msg="update seed_group encountered an exception")
+            group = Group.objects.get(platform_default=True, tenant=self.public_tenant)
+            self.assertEqual(group.system, True)
+            self.assertRaises(Role.DoesNotExist, group.roles().get, name=role_to_remove.name)
+            self.assertIsNotNone(group.roles().get(name=new_platform_role.name))
+            for role in group.roles():
+                self.assertTrue(role.platform_default)
 
-        group = Group.objects.get(platform_default=True)
-        self.assertEqual(group.system, True)
-        self.assertRaises(Role.DoesNotExist, group.roles().get, name="RBAC Administrator")
-        for role in group.roles():
-            self.assertTrue(role.platform_default)
+            assert send_kafka_message.call_args_list[0] == call(
+                "rh-new-role-added-to-default-access",
+                self.customer_data["account_id"],
+                {
+                    "name": group.name,
+                    "username": "Red Hat",
+                    "uuid": str(group.uuid),
+                    "role": {"name": new_platform_role.name, "uuid": str(new_platform_role.uuid)},
+                },
+            )
+            assert send_kafka_message.call_args_list[1] == call(
+                "rh-new-role-removed-from-default-access",
+                self.customer_data["account_id"],
+                {
+                    "name": group.name,
+                    "username": "Red Hat",
+                    "uuid": str(group.uuid),
+                    "role": {"name": role_to_remove.name, "uuid": str(role_to_remove.uuid)},
+                },
+            )
 
     def modify_default_group(self, system=True):
         """Add a role to the default group and/or change the system flag"""
         group = Group.objects.get(platform_default=True)
-        roles = Role.objects.filter(name="RBAC Administrator").values_list("uuid", flat=True)
-        add_roles(group, roles, self.tenant)
+        roles = Role.objects.filter(name="RBAC Administrator Local Test")
+        add_roles(group, roles, self.public_tenant)
 
         group.system = system
         group.save()
+
+        self.assertIsNotNone(group.roles().get(name=roles.first().name))
 
     def test_admin_default_group_seeding_properly(self):
         """Test that admin default group are seeded properly."""

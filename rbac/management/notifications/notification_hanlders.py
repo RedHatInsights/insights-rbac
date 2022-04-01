@@ -32,7 +32,7 @@ def notify_all(event_type, payload):
     """Notify all tenants."""
     # To avoid memory overloaded, use iterator:
     # https://docs.djangoproject.com/en/4.0/ref/models/querysets/#django.db.models.query.QuerySet.iterator
-    for tenant in Tenant.objects.all().iterator():
+    for tenant in Tenant.objects.exclude(tenant_name="public").iterator():
         # Tenant name pattern is acct12345
         account_id = tenant.tenant_name.split("acct")[-1]
         producer.send_kafka_message(event_type, account_id, payload)
@@ -63,6 +63,7 @@ def role_obj_change_notification_handler(role_obj, operation, user=None):
 
     if role_obj.system:
         handle_system_role_change_notification(role_obj, operation)
+        return
 
     account_id = user.account
     payload = {"username": user.username, "name": role_obj.name, "uuid": str(role_obj.uuid)}
@@ -106,7 +107,6 @@ def handle_platform_group_role_change_notification(group_obj, role_obj, operatio
         "name": group_obj.name,
         "uuid": str(group_obj.uuid),
         "role": {"name": role_obj.name, "uuid": str(role_obj.uuid)},
-        "operation": operation,
     }
     if operation == "added":
         event_type = "rh-new-role-added-to-default-access"
@@ -125,7 +125,7 @@ def group_role_change_notification_handler(user, group_obj, role_obj, operation)
 
     # Handle Red Hat managed platform group
     if group_obj.platform_default and group_obj.system:
-        handle_platform_group_role_change_notification(group_obj, role_obj, "added")
+        handle_platform_group_role_change_notification(group_obj, role_obj, operation)
         return
 
     # Handle custom group
