@@ -122,17 +122,22 @@ class RbacTenantMiddlewareTest(IdentityRequest):
 
     def test_get_tenant_with_org_id(self):
         """Test that the customer tenant is returned containing an org_id."""
+        user_data = self._create_user_data()
+        customer = self._create_customer_data()
+        customer["org_id"] = "45321"
+        request_context = self._create_request_context(customer, user_data, create_customer=True)
+        request = request_context["request"]
+        request.path = "/api/v1/providers/"
+        request.META["QUERY_STRING"] = ""
         user = User()
         user.username = self.user_data["username"]
         user.account = self.customer["account_id"]
         user.org_id = "45321"
-        self.request.user = user
-        mock_request = self.request
+        request.user = user
+
         middleware = IdentityHeaderMiddleware()
-        result = middleware.get_tenant(Tenant, "localhost", mock_request)
-        self.assertEqual(result.tenant_name, create_tenant_name(mock_request.user.account))
-        self.assertEqual(result.account_id, mock_request.user.account)
-        self.assertEqual(result.org_id, mock_request.user.org_id)
+        middleware.process_request(request)
+        self.assertEqual(Tenant.objects.filter(org_id=user.org_id).count(), 1)
 
 
 class IdentityHeaderMiddlewareTest(IdentityRequest):
@@ -252,6 +257,7 @@ class IdentityHeaderMiddlewareTest(IdentityRequest):
         middleware = IdentityHeaderMiddleware()
         middleware.process_request(request)
         self.assertEqual(Tenant.objects.filter(tenant_name="test_user").count(), 1)
+        self.assertEqual(Tenant.objects.filter(tenant_name="test_user").first().org_id, None)
 
 
 class ServiceToService(IdentityRequest):
