@@ -36,8 +36,7 @@ from management.tasks import (
 )
 
 from api.models import Tenant
-from api.tasks import cross_account_cleanup
-from management.utils import account_id_for_tenant
+from api.tasks import cross_account_cleanup, populate_tenant_account_id_in_worker
 
 
 logger = logging.getLogger(__name__)
@@ -267,15 +266,14 @@ def car_expiry(request):
 
 
 def populate_tenant_account_id(request):
+    """View method for populating Tenant#account_id values.
+
+    POST /_private/api/utils/populate_tenant_account_id/
+    """
     if request.method == "POST":
         logger.info("Setting account_id on all Tenant objects.")
-        tenants = Tenant.objects.filter(account_id__isnull=True).exclude(tenant_name="public")
-        for tenant in tenants:
-            with transaction.atomic():
-                tenant.account_id = account_id_for_tenant(tenant)
-                tenant.save()
-        return HttpResponse("All Tenant objects updated with account_id.", status=200)
-
+        populate_tenant_account_id_in_worker.delay()
+        return HttpResponse("Tenant objects account_id values being updated in background worker.", status=200)
     return HttpResponse('Invalid method, only "POST" is allowed.', status=405)
 
 
