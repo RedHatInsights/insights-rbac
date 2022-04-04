@@ -35,7 +35,7 @@ class RbacConsumer(AsyncWebsocketConsumer):
 
     async def disconnect(self, close_code):
         """Discard channel groups on disconnect."""
-        await self.channel_layer.group_discard(self.channel_group_name(self.account_number), self.channel_name)
+        await self.channel_layer.group_discard(self.channel_group_name, self.channel_name)
 
     async def receive(self, text_data):
         """No-op receiving messages."""
