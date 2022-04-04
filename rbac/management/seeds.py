@@ -15,22 +15,9 @@
 #    along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Seeds module."""
-import concurrent.futures
 import logging
 
-from django.db import connections
-from management.cache import AccessCache
-
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
-
-
-def on_complete(progress, tenant):
-    """Explicitly close the connection for the thread."""
-    logger.info(f"Purging policy cache for tenant {tenant.tenant_name} [{progress}].")
-    cache = AccessCache(tenant.tenant_name)
-    cache.delete_all_policies_for_tenant()
-    connections.close_all()
-    logger.info(f"Finished purging policy cache for tenant {tenant.tenant_name} [{progress}].")
 
 
 def role_seeding():
@@ -62,16 +49,3 @@ def run_seeds(seed_type):
         logger.info(f"Finished seeding {seed_type}.")
     except Exception as exc:
         logger.error(f"Error encountered during {seed_type} seeding {exc}.")
-
-
-def purge_cache():
-    """Explicitly purge the cache."""
-    from api.models import Tenant
-    from rbac.settings import MAX_SEED_THREADS
-
-    with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_SEED_THREADS) as executor:
-        tenants = Tenant.objects.all()
-        tenant_count = tenants.count()
-        for idx, tenant in enumerate(list(tenants)):
-            progress = f"[{idx + 1} of {tenant_count}]."
-            executor.submit(on_complete, progress, tenant)
