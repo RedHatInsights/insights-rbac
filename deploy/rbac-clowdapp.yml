@@ -163,6 +163,8 @@ objects:
                 optional: true
           - name: MAX_SEED_THREADS
             value: ${MAX_SEED_THREADS}
+          - name: ACCESS_CACHE_CONNECT_SIGNALS
+            value: 'False'
 
     - name: scheduler-service
       minReplicas: ${{MIN_SCHEDULER_REPLICAS}}
