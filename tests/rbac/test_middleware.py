@@ -301,6 +301,7 @@ class ServiceToService(IdentityRequest):
         url = reverse("group-list")
         client = APIClient()
         self.service_headers["HTTP_X_RH_RBAC_ACCOUNT"] = "1212"
+        self.service_headers["HTTP_X_RH_RBAC_ORG_ID"] = "1212"
         response = client.get(url, **self.service_headers)
 
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
@@ -322,6 +323,7 @@ class ServiceToService(IdentityRequest):
         t.save()
         url = reverse("group-list")
         client = APIClient()
+        self.service_headers["HTTP_X_RH_RBAC_ORG_ID"] = "1212"
         response = client.get(url, **self.service_headers)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
