@@ -40,6 +40,9 @@ def notify_all(event_type, payload):
 
 def handle_system_role_change_notification(role_obj, operation):
     """Signal handler for sending notification message when system Role object changes."""
+    if not settings.NOTIFICATION_ENABLED:
+        return
+
     payload = {"username": "Red Hat", "name": role_obj.name, "uuid": str(role_obj.uuid)}
     # Role created
     if operation == "created":
@@ -102,6 +105,8 @@ def group_obj_change_notification_handler(user, group_obj, operation):
 
 def handle_platform_group_role_change_notification(group_obj, role_obj, operation):
     """Signal handler for sending notification message when roles of platform group changes."""
+    if not settings.NOTIFICATION_ENABLED:
+        return
     payload = {
         "username": "Red Hat",
         "name": group_obj.name,
