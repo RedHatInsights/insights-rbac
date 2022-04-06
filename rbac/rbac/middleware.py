@@ -197,7 +197,7 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
             account = request.META.get(RH_RBAC_ACCOUNT)
             org_id = request.META.get(RH_RBAC_ORG_ID)
             client_id = request.META.get(RH_RBAC_CLIENT_ID)
-            has_system_auth_headers = request_psk and account and client_id and org_id
+            has_system_auth_headers = request_psk and account and client_id
 
             if has_system_auth_headers and validate_psk(request_psk, client_id):
                 user.username = client_id
