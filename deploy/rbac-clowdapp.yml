@@ -423,7 +423,7 @@ objects:
     app-config: /opt/app-root/src/rbac/gunicorn.py
     app-domain: ${APP_DOMAIN}
     app-home: /opt/app-root/src/rbac
-    app-module: rbac.wsgi
+    app-module: rbac.asgi
     app-namespace: rbac-stage
     database-engine: postgresql
     database-name: rbac
@@ -1983,7 +1983,7 @@ parameters:
 - name: APP_HOME
   value: '/opt/app-root/src/rbac'
 - name: APP_MODULE
-  value: 'rbac.wsgi'
+  value: 'rbac.asgi'
 - name: APP_NAMESPACE
   value: 'rbac'
 - name: CW_NULL_WORKAROUND
