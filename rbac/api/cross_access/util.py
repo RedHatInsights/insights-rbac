@@ -44,7 +44,7 @@ def check_cross_request_expiry():
     logger.info("Completed clean up of %d cross-account requests, %d expired.", len(cars), len(expired_cars))
 
 
-def create_cross_principal(target_account, user_id):
+def create_cross_principal(target_account, user_id, target_org=None):
     """Create a cross account principal in the target account."""
     # Principal would have the pattern acctxxx-123456.
     principal_name = get_cross_principal_name(target_account, user_id)

@@ -375,3 +375,4 @@ except ValueError as e:
 
 # Prep for public schema changeover
 SERVE_FROM_PUBLIC_SCHEMA = ENVIRONMENT.bool("SERVE_FROM_PUBLIC_SCHEMA", default=False)
+AUTHENTICATE_WITH_ORG_ID = ENVIRONMENT.bool("AUTHENTICATE_WITH_ORG_ID", default=False)
