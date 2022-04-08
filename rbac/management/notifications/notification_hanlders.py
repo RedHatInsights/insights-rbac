@@ -129,7 +129,8 @@ def group_role_change_notification_handler(user, group_obj, role_obj, operation)
         return
 
     # Handle Red Hat managed platform group
-    if group_obj.platform_default and group_obj.system:
+
+    if (group_obj.platform_default or group_obj.admin_default) and group_obj.system:
         handle_platform_group_role_change_notification(group_obj, role_obj, operation)
         return
 
