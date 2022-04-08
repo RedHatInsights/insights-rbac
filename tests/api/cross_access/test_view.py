@@ -402,6 +402,7 @@ class CrossAccountRequestViewTests(IdentityRequest):
     def test_create_requests_towards_their_own_account_fail(self):
         """Test the creation of cross account request towards their own account fails."""
         self.data4create["target_account"] = self.account
+        self.data4create["target_org"] = self.org_id
         client = APIClient()
         response = client.post(
             f"{URL_LIST}?", self.data4create, format="json", **self.associate_non_admin_request.META

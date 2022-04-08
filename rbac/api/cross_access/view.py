@@ -169,10 +169,10 @@ class CrossAccountRequestViewSet(
 
         current = self.get_object()
         self.check_update_permission(request, current)
-
-        request.data["target_account"] = current.target_account
         if settings.AUTHENTICATE_WITH_ORG_ID:
             request.data["target_org"] = current.target_org
+        else:
+            request.data["target_account"] = current.target_account
 
         self.validate_and_format_input(request.data)
 
@@ -256,12 +256,18 @@ class CrossAccountRequestViewSet(
             if not request_data.__contains__(field):
                 self.throw_validation_error("cross-account-request", f"Field {field} must be specified.")
 
-        target_account = request_data.get("target_account")
-        target_org = request_data.get("target_org")
-        if target_account == self.request.user.account or target_org == self.request.user.org_id:
-            self.throw_validation_error(
-                "cross-account-request", "Creating a cross access request for your own account is not allowed."
-            )
+        if settings.AUTHENTICATE_WITH_ORG_ID:
+            target_org = request_data.get("target_org")
+            if target_org == self.request.user.org_id:
+                self.throw_validation_error(
+                    "cross-account-request", "Creating a cross access request for your own account is not allowed."
+                )
+        else:
+            target_account = request_data.get("target_account")
+            if target_account == self.request.user.account:
+                self.throw_validation_error(
+                    "cross-account-request", "Creating a cross access request for your own account is not allowed."
+                )
 
         if settings.AUTHENTICATE_WITH_ORG_ID:
             try:
