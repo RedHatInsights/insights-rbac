@@ -92,7 +92,7 @@ class PrincipalProxy:  # pylint: disable=too-few-public-methods
 
         return params
 
-    def _process_data(self, data, account, account_filter, org_id=None, org_id_filter=None, return_id=False):
+    def _process_data(self, data, account=None, account_filter=None, org_id=None, org_id_filter=None, return_id=False):
         """Process data for uniform output."""
         processed_data = []
         for item in data:
@@ -100,8 +100,8 @@ class PrincipalProxy:  # pylint: disable=too-few-public-methods
                 if org_id_filter:
                     if org_id == item.get("org_id"):
                         processed_data.append(self._call_item(item, return_id))
-                    else:
-                        processed_data.append(self._call_item(item, return_id))
+                else:
+                    processed_data.append(self._call_item(item, return_id))
             else:
                 if account_filter:
                     if account == item.get("account_number"):
