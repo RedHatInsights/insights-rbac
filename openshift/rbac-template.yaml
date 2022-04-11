@@ -744,7 +744,7 @@ parameters:
 - description: Python module name of the application (optional).
   displayName: Application Module Name
   name: APP_MODULE
-  value: rbac.wsgi
+  value: rbac.asgi
 - description: Set this to a long random string.
   displayName: Django Secret Key
   from: '[a-zA-Z0-9]{50}'
