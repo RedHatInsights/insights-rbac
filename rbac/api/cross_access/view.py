@@ -262,19 +262,17 @@ class CrossAccountRequestViewSet(
                 self.throw_validation_error(
                     "cross-account-request", "Creating a cross access request for your own account is not allowed."
                 )
+
+            try:
+                Tenant.objects.get(org_id=target_org)
+            except Tenant.DoesNotExist:
+                raise self.throw_validation_error("cross-account-request", f"Org ID '{target_org}' does not exist.")
         else:
             target_account = request_data.get("target_account")
             if target_account == self.request.user.account:
                 self.throw_validation_error(
                     "cross-account-request", "Creating a cross access request for your own account is not allowed."
                 )
-
-        if settings.AUTHENTICATE_WITH_ORG_ID:
-            try:
-                Tenant.objects.get(org_id=target_org)
-            except Tenant.DoesNotExist:
-                raise self.throw_validation_error("cross-account-request", f"Org ID '{target_org}' does not exist.")
-        else:
             try:
                 tenant_name = create_tenant_name(target_account)
                 Tenant.objects.get(tenant_name=tenant_name)
