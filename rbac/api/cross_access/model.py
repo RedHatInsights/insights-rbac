@@ -36,7 +36,8 @@ class CrossAccountRequest(models.Model):
     """Cross account access request."""
 
     request_id = models.UUIDField(default=uuid4, editable=False, unique=True, null=False, primary_key=True)
-    target_account = models.CharField(max_length=15, default=None)
+    target_account = models.CharField(max_length=36, default=None)
+    target_org = models.CharField(max_length=36, default=None, null=True)
     user_id = models.CharField(max_length=15, default=None)
     created = models.DateTimeField(default=timezone.now)
     start_date = models.DateTimeField(default=timezone.now)
