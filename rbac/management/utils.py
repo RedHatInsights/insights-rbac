@@ -19,7 +19,6 @@ import json
 import os
 from uuid import UUID
 
-from django.conf import settings
 from django.core.exceptions import PermissionDenied
 from django.utils.translation import gettext as _
 from management.models import Access, Group, Policy, Principal, Role
@@ -113,18 +112,14 @@ def groups_for_principal(principal, tenant, **kwargs):
     if principal.cross_account:
         return set()
     assigned_group_set = principal.group.all()
-    if settings.SERVE_FROM_PUBLIC_SCHEMA:
-        public_tenant = Tenant.objects.get(tenant_name="public")
-        platform_default_group_set = Group.platform_default_set().filter(
-            tenant=tenant
-        ) or Group.platform_default_set().filter(tenant=public_tenant)
+    public_tenant = Tenant.objects.get(tenant_name="public")
+    platform_default_group_set = Group.platform_default_set().filter(
+        tenant=tenant
+    ) or Group.platform_default_set().filter(tenant=public_tenant)
 
-        admin_default_group_set = Group.admin_default_set().filter(tenant=tenant) or Group.admin_default_set().filter(
-            tenant=public_tenant
-        )
-    else:
-        platform_default_group_set = Group.platform_default_set()
-        admin_default_group_set = Group.admin_default_set()
+    admin_default_group_set = Group.admin_default_set().filter(tenant=tenant) or Group.admin_default_set().filter(
+        tenant=public_tenant
+    )
     prefetch_lookups = kwargs.get("prefetch_lookups_for_groups")
 
     if prefetch_lookups:
@@ -172,9 +167,7 @@ def queryset_by_id(objects, clazz, **kwargs):
 
 def filter_queryset_by_tenant(queryset, tenant):
     """Limit queryset by appropriate tenant when serving from public schema."""
-    if settings.SERVE_FROM_PUBLIC_SCHEMA and tenant:
-        return queryset.filter(tenant=tenant)
-    return queryset
+    return queryset.filter(tenant=tenant)
 
 
 def validate_and_get_key(params, query_key, valid_values, default_value=None, required=True):

@@ -17,7 +17,7 @@ ENV NODEJS_VERSION=14 \
     ENABLE_PIPENV=true \
     APP_CONFIG=/opt/app-root/src/rbac/gunicorn.py \
     APP_HOME=/opt/app-root/src/rbac \
-    APP_MODULE=rbac.wsgi \
+    APP_MODULE=rbac.asgi \
     APP_NAMESPACE=rbac
 
 

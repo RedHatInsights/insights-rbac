@@ -86,6 +86,7 @@ ALLOWED_HOSTS = ["*"]
 # Application definition
 
 INSTALLED_APPS = [
+    "channels",
     # django
     # 'django.contrib.admin',
     "django.contrib.auth",
@@ -156,7 +157,7 @@ TEMPLATES = [
     }
 ]
 
-WSGI_APPLICATION = "rbac.wsgi.application"
+ASGI_APPLICATION = "rbac.asgi.application"
 
 DATABASES = {"default": database.config()}
 
@@ -373,5 +374,6 @@ try:
 except ValueError as e:
     INTERNAL_DESTRUCTIVE_API_OK_UNTIL = datetime.datetime(1970, 1, 1, tzinfo=pytz.UTC)
 
-# Prep for public schema changeover
-SERVE_FROM_PUBLIC_SCHEMA = ENVIRONMENT.bool("SERVE_FROM_PUBLIC_SCHEMA", default=False)
+CHANNEL_LAYERS = {
+    "default": {"BACKEND": "channels_redis.core.RedisChannelLayer", "CONFIG": {"hosts": [(REDIS_HOST, REDIS_PORT)]}}
+}
