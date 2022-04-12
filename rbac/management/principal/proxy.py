@@ -200,19 +200,36 @@ class PrincipalProxy:  # pylint: disable=too-few-public-methods
         resp = {"status_code": response.status_code}
         if response.status_code == status.HTTP_200_OK:
             """ Testing if account numbers match """
-            try:
-                data = response.json()
-                if isinstance(data, dict):
-                    userList = self._process_data(
-                        data.get("users"), account, account_filter, org_id, org_id_filter, return_id
-                    )
-                    resp["data"] = {"userCount": data.get("userCount"), "users": userList}
-                else:
-                    userList = self._process_data(data, account, account_filter, org_id, org_id_filter, return_id)
-                    resp["data"] = userList
-            except ValueError:
-                resp["status_code"] = status.HTTP_500_INTERNAL_SERVER_ERROR
-                error = unexpected_error
+            if settings.AUTHENTICATE_WITH_ORG_ID:
+                try:
+                    data = response.json()
+                    if isinstance(data, dict):
+                        userList = self._process_data(data.get("users"), org_id, org_id_filter, return_id)
+                        resp["data"] = {"userCount": data.get("userCount"), "users": userList}
+                    else:
+                        userList = self._process_data(
+                            data, org_id=org_id, org_id_filter=org_id_filter, return_id=return_id
+                        )
+                        resp["data"] = userList
+                except ValueError:
+                    resp["status_code"] = status.HTTP_500_INTERNAL_SERVER_ERROR
+                    error = unexpected_error
+            else:
+                try:
+                    data = response.json()
+                    if isinstance(data, dict):
+                        userList = self._process_data(
+                            data.get("users"), account=account, account_filter=account_filter, return_id=return_id
+                        )
+                        resp["data"] = {"userCount": data.get("userCount"), "users": userList}
+                    else:
+                        userList = self._process_data(
+                            data, account=account, account_filter=account_filter, return_id=return_id
+                        )
+                        resp["data"] = userList
+                except ValueError:
+                    resp["status_code"] = status.HTTP_500_INTERNAL_SERVER_ERROR
+                    error = unexpected_error
         elif response.status_code == status.HTTP_404_NOT_FOUND:
             error = {"detail": "Not Found.", "status": str(response.status_code), "source": "principals"}
         else:
