@@ -52,3 +52,4 @@ class User:
     access = {}
     system = False
     is_active = True
+    org_id = None

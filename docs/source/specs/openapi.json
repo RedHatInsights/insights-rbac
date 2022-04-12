@@ -3335,6 +3335,10 @@
             "type": "string",
             "example": "12345"
           },
+          "target_org": {
+            "type": "string",
+            "example": "12345"
+          },
           "start_date": {
             "type": "string",
             "example": "01/01/2021"
@@ -3466,6 +3470,10 @@
             "type": "string",
             "example": "12345"
           },
+          "target_org": {
+            "type": "string",
+            "example": "12345"
+          },
           "status": {
             "type": "string",
             "example": "pending"
@@ -3493,6 +3501,10 @@
             "example": "2ad8cac5-336e-44c6-9b16-15ac84224d4b"
           },
           "target_account": {
+            "type": "string",
+            "example": "12345"
+          },
+          "target_org": {
             "type": "string",
             "example": "12345"
           },

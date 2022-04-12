@@ -29,7 +29,14 @@ from management.models import Principal
 from management.utils import APPLICATION_KEY, access_for_principal, validate_psk
 from prometheus_client import Counter
 
-from api.common import RH_IDENTITY_HEADER, RH_INSIGHTS_REQUEST_ID, RH_RBAC_ACCOUNT, RH_RBAC_CLIENT_ID, RH_RBAC_PSK
+from api.common import (
+    RH_IDENTITY_HEADER,
+    RH_INSIGHTS_REQUEST_ID,
+    RH_RBAC_ACCOUNT,
+    RH_RBAC_CLIENT_ID,
+    RH_RBAC_ORG_ID,
+    RH_RBAC_PSK,
+)
 from api.models import Tenant, User
 from api.serializers import create_tenant_name, extract_header
 
@@ -78,7 +85,10 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
                 except Tenant.DoesNotExist:
                     raise Http404()
             else:
-                tenant, created = Tenant.objects.get_or_create(tenant_name=tenant_name, defaults={"ready": True})
+                tenant, created = Tenant.objects.get_or_create(
+                    tenant_name=tenant_name,
+                    defaults={"ready": True, "account_id": request.user.account, "org_id": request.user.org_id},
+                )
             TENANTS.save_tenant(tenant)
         return tenant
 
@@ -157,6 +167,7 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
         try:
             _, json_rh_auth = extract_header(request, self.header)
             user.account = json_rh_auth.get("identity", {})["account_number"]
+            user.org_id = json_rh_auth.get("identity", {}).get("org_id")
             user_info = json_rh_auth.get("identity", {}).get("user", {})
             user.username = user_info["username"]
             user.admin = user_info.get("is_org_admin")
@@ -184,12 +195,14 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
         except (KeyError, JSONDecodeError):
             request_psk = request.META.get(RH_RBAC_PSK)
             account = request.META.get(RH_RBAC_ACCOUNT)
+            org_id = request.META.get(RH_RBAC_ORG_ID)
             client_id = request.META.get(RH_RBAC_CLIENT_ID)
             has_system_auth_headers = request_psk and account and client_id
 
             if has_system_auth_headers and validate_psk(request_psk, client_id):
                 user.username = client_id
                 user.account = account
+                user.org_id = org_id
                 user.admin = True
                 user.system = True
             else:

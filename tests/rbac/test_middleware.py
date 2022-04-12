@@ -120,6 +120,25 @@ class RbacTenantMiddlewareTest(IdentityRequest):
         result = middleware.process_request(mock_request)
         self.assertIsInstance(result, HttpResponseUnauthorizedRequest)
 
+    def test_get_tenant_with_org_id(self):
+        """Test that the customer tenant is returned containing an org_id."""
+        user_data = self._create_user_data()
+        customer = self._create_customer_data()
+        customer["org_id"] = "45321"
+        request_context = self._create_request_context(customer, user_data, create_customer=True)
+        request = request_context["request"]
+        request.path = "/api/v1/providers/"
+        request.META["QUERY_STRING"] = ""
+        user = User()
+        user.username = self.user_data["username"]
+        user.account = self.customer["account_id"]
+        user.org_id = "45321"
+        request.user = user
+
+        middleware = IdentityHeaderMiddleware()
+        middleware.process_request(request)
+        self.assertEqual(Tenant.objects.filter(org_id=user.org_id).count(), 1)
+
 
 class IdentityHeaderMiddlewareTest(IdentityRequest):
     """Tests against the rbac tenant middleware."""
@@ -218,6 +237,27 @@ class IdentityHeaderMiddlewareTest(IdentityRequest):
         orig_cust = IdentityHeaderMiddleware().get_tenant(None, None, mock_request)
         dup_cust = IdentityHeaderMiddleware().get_tenant(None, None, mock_request)
         self.assertEqual(orig_cust, dup_cust)
+
+    def test_tenant_process_without_org_id(self):
+        """Test that an existing tenant doesn't create a new one when providing an org_id."""
+        tenant = Tenant.objects.create(tenant_name="test_user")
+
+        user_data = self._create_user_data()
+        customer = self._create_customer_data()
+        request_context = self._create_request_context(customer, user_data, create_customer=False)
+        request = request_context["request"]
+        request.path = "/api/v1/providers/"
+        request.META["QUERY_STRING"] = ""
+        user = User()
+        user.username = self.user_data["username"]
+        user.account = self.customer["account_id"]
+        user.org_id = "45321"
+        request.user = user
+
+        middleware = IdentityHeaderMiddleware()
+        middleware.process_request(request)
+        self.assertEqual(Tenant.objects.filter(tenant_name="test_user").count(), 1)
+        self.assertEqual(Tenant.objects.filter(tenant_name="test_user").first().org_id, None)
 
 
 class ServiceToService(IdentityRequest):
