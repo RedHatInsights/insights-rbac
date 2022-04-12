@@ -227,3 +227,21 @@ class InternalViewsetTests(IdentityRequest):
         self.assertEqual(
             response.content.decode(), "Valid options for \"seed_types\": ['permissions', 'roles', 'groups']."
         )
+
+    @patch("api.tasks.populate_tenant_account_id_in_worker.delay")
+    def test_populate_tenant_account_id(self, populate_mock):
+        """Test that we can trigger population of account id's for tenants."""
+        response = self.client.post(f"/_private/api/utils/populate_tenant_account_id/", **self.request.META)
+        populate_mock.assert_called_once_with()
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            response.content.decode(), "Tenant objects account_id values being updated in background worker."
+        )
+
+    @patch("api.tasks.populate_tenant_account_id_in_worker.delay")
+    def test_populate_tenant_account_id_get_failure(self, populate_mock):
+        """Test that we get a bad request for not using POST method."""
+        response = self.client.get(f"/_private/api/utils/populate_tenant_account_id/", **self.request.META)
+        populate_mock.assert_not_called()
+        self.assertEqual(response.status_code, status.HTTP_405_METHOD_NOT_ALLOWED)
+        self.assertEqual(response.content.decode(), 'Invalid method, only "POST" is allowed.')

@@ -36,7 +36,7 @@ from management.tasks import (
 )
 
 from api.models import Tenant
-from api.tasks import cross_account_cleanup
+from api.tasks import cross_account_cleanup, populate_tenant_account_id_in_worker
 
 
 logger = logging.getLogger(__name__)
@@ -262,6 +262,18 @@ def car_expiry(request):
         logger.info("Running cross-account request expiration check.")
         cross_account_cleanup.delay()
         return HttpResponse("Expiry checks are running in a background worker.", status=202)
+    return HttpResponse('Invalid method, only "POST" is allowed.', status=405)
+
+
+def populate_tenant_account_id(request):
+    """View method for populating Tenant#account_id values.
+
+    POST /_private/api/utils/populate_tenant_account_id/
+    """
+    if request.method == "POST":
+        logger.info("Setting account_id on all Tenant objects.")
+        populate_tenant_account_id_in_worker.delay()
+        return HttpResponse("Tenant objects account_id values being updated in background worker.", status=200)
     return HttpResponse('Invalid method, only "POST" is allowed.', status=405)
 
 
