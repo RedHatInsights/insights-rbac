@@ -56,7 +56,8 @@ class IdentityRequest(TestCase):
         """Create customer data."""
         account = cls.fake.ean8()
         tenant = f"acct{account}"
-        customer = {"account_id": account, "tenant_name": tenant}
+        org_id = cls.fake.ean8()
+        customer = {"account_id": account, "tenant_name": tenant, "org_id": org_id}
         return customer
 
     @classmethod
@@ -66,7 +67,7 @@ class IdentityRequest(TestCase):
         return user_data
 
     @classmethod
-    def _create_customer(cls, account, create_tenant=False):
+    def _create_customer(cls, account, create_tenant=False, org_id=None):
         """Create a customer.
 
         Args:
@@ -79,7 +80,7 @@ class IdentityRequest(TestCase):
         tenant_name = create_tenant_name(account)
         tenant = None
         if create_tenant:
-            tenant = Tenant(tenant_name=tenant_name)
+            tenant = Tenant(tenant_name=tenant_name, account_id=account, org_id=org_id)
             tenant.save()
         return tenant
 
@@ -97,10 +98,11 @@ class IdentityRequest(TestCase):
         """Create the request context for a user."""
         customer = customer_data
         account = customer.get("account_id")
+        org_id = customer.get("org_id", None)
         if create_customer:
-            cls.customer = cls._create_customer(account, create_tenant=create_tenant)
+            cls.customer = cls._create_customer(account, create_tenant=create_tenant, org_id=org_id)
 
-        identity = cls._build_identity(user_data, account, is_org_admin, is_internal)
+        identity = cls._build_identity(user_data, account, org_id, is_org_admin, is_internal)
         if cross_account:
             identity["identity"]["internal"] = {"cross_access": True}
         json_identity = json_dumps(identity)
@@ -111,8 +113,8 @@ class IdentityRequest(TestCase):
         return request_context
 
     @classmethod
-    def _build_identity(cls, user_data, account, is_org_admin, is_internal):
-        identity = {"identity": {"account_number": account}}
+    def _build_identity(cls, user_data, account, org_id, is_org_admin, is_internal):
+        identity = {"identity": {"account_number": account, "org_id": org_id}}
         if user_data is not None:
             identity["identity"]["user"] = {
                 "username": user_data.get("username"),

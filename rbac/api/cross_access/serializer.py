@@ -28,7 +28,8 @@ class CrossAccountRequestSerializer(serializers.ModelSerializer):
     """Serializer for the cross access request model."""
 
     request_id = serializers.UUIDField(read_only=True)
-    target_account = serializers.CharField(max_length=15)
+    target_account = serializers.CharField(max_length=36)
+    target_org = serializers.CharField(max_length=36, required=False)
     user_id = serializers.CharField(max_length=15)
     start_date = serializers.DateTimeField(format="%d %b %Y")
     end_date = serializers.DateTimeField(format="%d %b %Y")
@@ -39,7 +40,16 @@ class CrossAccountRequestSerializer(serializers.ModelSerializer):
         """Metadata for the serializer."""
 
         model = CrossAccountRequest
-        fields = ("request_id", "target_account", "user_id", "start_date", "end_date", "created", "status")
+        fields = (
+            "request_id",
+            "target_account",
+            "target_org",
+            "user_id",
+            "start_date",
+            "end_date",
+            "created",
+            "status",
+        )
 
 
 class RoleSerializer(serializers.ModelSerializer):
@@ -65,7 +75,8 @@ class CrossAccountRequestDetailSerializer(serializers.ModelSerializer):
     """Serializer for the cross access request model with details."""
 
     request_id = serializers.UUIDField(read_only=True)
-    target_account = serializers.CharField(max_length=15)
+    target_account = serializers.CharField(max_length=36)
+    target_org = serializers.CharField(max_length=36, required=False)
     user_id = serializers.CharField(max_length=15)
     start_date = serializers.DateTimeField(format="%m/%d/%Y", input_formats=["%m/%d/%Y"])
     end_date = serializers.DateTimeField(format="%m/%d/%Y", input_formats=["%m/%d/%Y"])
@@ -77,7 +88,17 @@ class CrossAccountRequestDetailSerializer(serializers.ModelSerializer):
         """Metadata for the serializer."""
 
         model = CrossAccountRequest
-        fields = ("request_id", "target_account", "user_id", "start_date", "end_date", "created", "status", "roles")
+        fields = (
+            "request_id",
+            "target_account",
+            "target_org",
+            "user_id",
+            "start_date",
+            "end_date",
+            "created",
+            "status",
+            "roles",
+        )
 
     def get_roles(self, obj):
         """Roles constructor for the serializer."""

@@ -248,7 +248,7 @@ objects:
           - name: APP_HOME
             value: /opt/app-root/src/rbac
           - name: APP_MODULE
-            value: rbac.wsgi
+            value: rbac.asgi
           image: quay.io/cloudservices/rbac:${IMAGE_TAG}
           livenessProbe:
             failureThreshold: 3

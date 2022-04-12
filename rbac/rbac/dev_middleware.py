@@ -40,6 +40,7 @@ class DevelopmentIdentityHeaderMiddleware(MiddlewareMixin):  # pylint: disable=t
             identity_header = {
                 "identity": {
                     "account_number": "10001",
+                    "org_id": "11111",
                     "type": "User",
                     "user": {
                         "username": "user_dev",
