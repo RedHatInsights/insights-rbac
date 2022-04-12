@@ -1,7 +1,7 @@
 {
     "_meta": {
         "hash": {
-            "sha256": "140450a9ac54245648a83cbf82c33737f882d2bacb2b86e604be05a11b7dca8e"
+            "sha256": "1369dc9f6d5d8f24c19155f3fc72b49dffcbd33fe88746202ee90a3c60a23867"
         },
         "pipfile-spec": 6,
         "requires": {
@@ -489,6 +489,14 @@
             ],
             "markers": "python_version >= '2.6' and python_version not in '3.0, 3.1, 3.2, 3.3'",
             "version": "==0.10.0"
+        },
+        "kafka-python": {
+            "hashes": [
+                "sha256:04dfe7fea2b63726cd6f3e79a2d86e709d608d74406638c5da33a01d45a9d7e3",
+                "sha256:2d92418c7cb1c298fa6c7f0fb3519b520d0d7526ac6cb7ae2a4fc65a51a94b6e"
+            ],
+            "index": "pypi",
+            "version": "==2.0.2"
         },
         "kombu": {
             "hashes": [
@@ -1862,7 +1870,7 @@
                 "sha256:f290617f74a610849bd8f5514e34ae3d09eafd521dceaa6cf68b3f4414266d4e",
                 "sha256:f30ddd110634c2d7534b2d4e0e22967e88366b0d356b24de87419cc4410c41b7"
             ],
-            "markers": "implementation_name == 'cpython'",
+            "markers": "python_version >= '3.6'",
             "version": "==1.5.2"
         },
         "typing-extensions": {

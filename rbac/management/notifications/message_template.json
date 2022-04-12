@@ -1,0 +1,14 @@
+{
+    "bundle": "console",
+    "application": "rbac",
+    "event_type": "",
+    "timestamp": "",
+    "account_id": "",
+    "context": "",
+    "events": [
+        {
+            "metadata": {},
+            "payload": ""
+        }
+    ]
+}

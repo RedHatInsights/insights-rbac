@@ -413,7 +413,10 @@ objects:
             value: ${REDIS_SOCKET_CONNECT_TIMEOUT}
           - name: REDIS_SOCKET_TIMEOUT
             value: ${REDIS_SOCKET_TIMEOUT}
-
+          - name: KAFKA_BOOTSTRAP_HOST
+            value: ${KAFKA_BOOTSTRAP_HOST
+          - name: KAFKA_BOOTSTRAP_PORT
+            value: ${KAFKA_BOOTSTRAP_PORT}
 - apiVersion: v1
   kind: ConfigMap
   metadata:
@@ -2004,3 +2007,9 @@ parameters:
 - description: socket timeout for redis
   name: REDIS_SOCKET_TIMEOUT
   value: "0.1"
+- description: Host for kafka
+  name: KAFKA_BOOTSTRAP_HOST
+  value: platform-mq-kafka-bootstrap.platform-mq-stage.svc.cluster.local
+- description: Port of kafka
+  name: KAFKA_BOOTSTRAP_PORT
+  value: "9092"
