@@ -1,9 +1,9 @@
 {
     "bundle": "console",
     "application": "rbac",
-    "event_type": "my-event",
-    "timestamp": "2021-08-24T21:36:10.395413+00:00",
-    "account_id": "12345678",
+    "event_type": "",
+    "timestamp": "",
+    "account_id": "",
     "context": "",
     "events": [
         {

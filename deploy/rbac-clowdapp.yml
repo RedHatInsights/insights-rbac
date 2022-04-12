@@ -2009,7 +2009,7 @@ parameters:
   value: "0.1"
 - description: Host for kafka
   name: KAFKA_BOOTSTRAP_HOST
-  value: platform-mq-kafka-bootstrap.platform-mq-prod.svc.cluster.local
+  value: platform-mq-kafka-bootstrap.platform-mq-stage.svc.cluster.local
 - description: Port of kafka
   name: KAFKA_BOOTSTRAP_PORT
   value: "9092"
