@@ -84,15 +84,6 @@
           },
           {
             "in": "query",
-            "name": "org_id",
-            "required": false,
-            "description": "Parameter for filtering resource by an org id. Value can be a comma-separated list of ids. To be used in tandem with ?query_by=user_id to further filter a user's requests by org id.",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
             "name": "approved_only",
             "required": false,
             "description": "Parameter for filtering resource which have been approved.",
@@ -3335,7 +3326,6 @@
       "CrossAccountRequestIn": {
         "required": [
           "target_account",
-          "target_org",
           "start_date",
           "end_date",
           "roles"
