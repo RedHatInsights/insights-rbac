@@ -19,6 +19,7 @@
 from unittest.mock import patch, ANY
 
 from django.urls import reverse
+from django.conf import settings
 from rest_framework import status
 from rest_framework.test import APIClient
 
@@ -35,10 +36,12 @@ class PrincipalViewNonAdminTests(IdentityRequest):
         """Set up the principal view nonadmin tests."""
         super().setUp()
         non_admin_tenant_name = "acct1234"
-        self.non_admin_tenant = Tenant.objects.create(tenant_name=non_admin_tenant_name)
+        self.non_admin_tenant = Tenant.objects.create(
+            tenant_name=non_admin_tenant_name, account_id="1234", org_id="4321"
+        )
 
         self.user_data = {"username": "non_admin", "email": "non_admin@example.com"}
-        self.customer = {"account_id": "1234", "tenant_name": non_admin_tenant_name}
+        self.customer = {"account_id": "1234", "org_id": "4321", "tenant_name": non_admin_tenant_name}
         self.request_context = self._create_request_context(self.customer, self.user_data, is_org_admin=False)
 
         request = self.request_context["request"]
@@ -329,7 +332,10 @@ class PrincipalViewsetTests(IdentityRequest):
 
     @patch(
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
-        return_value={"status_code": 200, "data": [{"username": "test_user", "account_number": "1234", "id": "5678"}]},
+        return_value={
+            "status_code": 200,
+            "data": [{"username": "test_user", "account_number": "1234", "org_id": "4321", "id": "5678"}],
+        },
     )
     def test_read_principal_list_account(self, mock_request):
         """Test that we can handle a request with matching accounts"""
@@ -346,7 +352,10 @@ class PrincipalViewsetTests(IdentityRequest):
             self.assertIn(keyname, response.data)
         self.assertIsInstance(response.data.get("data"), list)
         self.assertEqual(response.data.get("meta").get("count"), 1)
-        resp = proxy._process_data(response.data.get("data"), account="1234", account_filter=True, return_id=True)
+        if settings.AUTHENTICATE_WITH_ORG_ID:
+            resp = proxy._process_data(response.data.get("data"), org_id="4321", org_id_filter=True, return_id=True)
+        else:
+            resp = proxy._process_data(response.data.get("data"), account="1234", account_filter=True, return_id=True)
         self.assertEqual(len(resp), 1)
 
         self.assertEqual(resp[0]["username"], "test_user")
@@ -354,7 +363,10 @@ class PrincipalViewsetTests(IdentityRequest):
 
     @patch(
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
-        return_value={"status_code": 200, "data": [{"username": "test_user", "account_number": "54321"}]},
+        return_value={
+            "status_code": 200,
+            "data": [{"username": "test_user", "account_number": "54321", "org_id": "54322"}],
+        },
     )
     def test_read_principal_list_account_fail(self, mock_request):
         """Test that we can handle a request with matching accounts"""
@@ -367,14 +379,20 @@ class PrincipalViewsetTests(IdentityRequest):
         for keyname in ["meta", "links", "data"]:
             self.assertIn(keyname, response.data)
         self.assertIsInstance(response.data.get("data"), list)
-        resp = proxy._process_data(response.data.get("data"), account="1234", account_filter=True)
+        if settings.AUTHENTICATE_WITH_ORG_ID:
+            resp = proxy._process_data(response.data.get("data"), org_id="4321", org_id_filter=True)
+        else:
+            resp = proxy._process_data(response.data.get("data"), account="1234", account_filter=True)
         self.assertEqual(len(resp), 0)
 
         self.assertNotEqual(resp, "test_user")
 
     @patch(
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
-        return_value={"status_code": 200, "data": [{"username": "test_user", "account_number": "54321"}]},
+        return_value={
+            "status_code": 200,
+            "data": [{"username": "test_user", "account_number": "54321", "org_id": "54322"}],
+        },
     )
     def test_read_principal_list_account_filter(self, mock_request):
         """Test that we can handle a request with matching accounts"""
@@ -388,14 +406,20 @@ class PrincipalViewsetTests(IdentityRequest):
             self.assertIn(keyname, response.data)
         self.assertIsInstance(response.data.get("data"), list)
         self.assertEqual(response.data.get("meta").get("count"), 1)
-        resp = proxy._process_data(response.data.get("data"), account="1234", account_filter=False)
+        if settings.AUTHENTICATE_WITH_ORG_ID:
+            resp = proxy._process_data(response.data.get("data"), org_id="4321", org_id_filter=False)
+        else:
+            resp = proxy._process_data(response.data.get("data"), account="1234", account_filter=False)
         self.assertEqual(len(resp), 1)
 
         self.assertEqual(resp[0]["username"], "test_user")
 
     @patch(
         "management.principal.proxy.PrincipalProxy.request_principals",
-        return_value={"status_code": 200, "data": [{"username": "test_user", "account_number": "54321"}]},
+        return_value={
+            "status_code": 200,
+            "data": [{"username": "test_user", "account_number": "54321", "org_id": "54322"}],
+        },
     )
     def test_read_principal_list_by_email(self, mock_request):
         """Test that we can handle a request with an email address"""
@@ -408,7 +432,10 @@ class PrincipalViewsetTests(IdentityRequest):
             self.assertIn(keyname, response.data)
         self.assertIsInstance(response.data.get("data"), list)
         self.assertEqual(response.data.get("meta").get("count"), 1)
-        resp = proxy._process_data(response.data.get("data"), account="54321", account_filter=False)
+        if settings.AUTHENTICATE_WITH_ORG_ID:
+            resp = proxy._process_data(response.data.get("data"), org_id="54322", org_id_filter=False)
+        else:
+            resp = proxy._process_data(response.data.get("data"), account="54321", account_filter=False)
         self.assertEqual(len(resp), 1)
 
         mock_request.assert_called_once_with(
@@ -485,7 +512,14 @@ class PrincipalViewsetTests(IdentityRequest):
         "management.principal.proxy.PrincipalProxy.request_principals",
         return_value={
             "status_code": 200,
-            "data": [{"username": "test_user", "account_number": "54321", "email": "test_user@example.com"}],
+            "data": [
+                {
+                    "username": "test_user",
+                    "account_number": "54321",
+                    "org_id": "54322",
+                    "email": "test_user@example.com",
+                }
+            ],
         },
     )
     def test_read_principal_list_by_email_partial_matching(self, mock_request):
@@ -499,7 +533,10 @@ class PrincipalViewsetTests(IdentityRequest):
             self.assertIn(keyname, response.data)
         self.assertIsInstance(response.data.get("data"), list)
         self.assertEqual(response.data.get("meta").get("count"), 1)
-        resp = proxy._process_data(response.data.get("data"), account="54321", account_filter=False)
+        if settings.AUTHENTICATE_WITH_ORG_ID:
+            resp = proxy._process_data(response.data.get("data"), org_id="54322", org_id_filter=False)
+        else:
+            resp = proxy._process_data(response.data.get("data"), account="54321", account_filter=False)
         self.assertEqual(len(resp), 1)
 
         mock_request.assert_called_once_with(
