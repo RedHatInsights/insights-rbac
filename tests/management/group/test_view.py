@@ -433,6 +433,41 @@ class GroupViewsetTests(IdentityRequest):
             ],
         )
 
+    def test_filter_group_list_by_admin_default_true(self):
+        """Test that we can filter a list of groups by admin default flag true."""
+        default_group = Group.objects.create(
+            name="Default admin access", admin_default=True, system=False, tenant=self.tenant
+        )
+
+        url = f"{reverse('group-list')}?admin_default=true"
+        client = APIClient()
+        response = client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        response_group_uuids = [group["uuid"] for group in response.data.get("data")]
+        # Tenant default group will be returned instead of the public one
+        self.assertCountEqual(response_group_uuids, [str(default_group.uuid)])
+
+    def test_filter_group_list_by_admin_default_false(self):
+        """Test that we can filter a list of groups by admin_default flag false."""
+        url = f"{reverse('group-list')}?admin_default=false"
+        client = APIClient()
+        response = client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data.get("data")), 5)
+        response_group_uuids = [group["uuid"] for group in response.data.get("data")]
+        self.assertCountEqual(
+            response_group_uuids,
+            [
+                str(self.group.uuid),
+                str(self.groupB.uuid),
+                str(self.emptyGroup.uuid),
+                str(self.groupMultiRole.uuid),
+                str(self.defGroup.uuid),
+            ],
+        )
+
     @patch(
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
         return_value={"status_code": 200, "data": []},

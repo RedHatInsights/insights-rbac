@@ -16,7 +16,6 @@
 #
 
 """Serializer for role management."""
-from django.conf import settings
 from django.utils.translation import gettext as _
 from management.group.model import Group
 from management.serializer_override_mixin import SerializerCreateOverrideMixin
@@ -296,19 +295,15 @@ def obtain_groups_in(obj, request):
         principal = get_principal_from_request(request)
         assigned_groups = Group.objects.filter(policies__in=policy_ids, principals__in=[principal])
         assigned_groups = filter_queryset_by_tenant(assigned_groups, request.tenant)
-        if settings.SERVE_FROM_PUBLIC_SCHEMA:
-            public_tenant = Tenant.objects.get(tenant_name="public")
-            qs = (
-                assigned_groups
-                | (
-                    Group.platform_default_set().filter(tenant=request.tenant)
-                    or Group.platform_default_set().filter(tenant=public_tenant)
-                )
-            ).distinct()
-            return filter_queryset_by_tenant(qs, request.tenant)
-        else:
-            qs = (assigned_groups | Group.platform_default_set()).distinct()
-            return filter_queryset_by_tenant(qs, request.tenant)
+        public_tenant = Tenant.objects.get(tenant_name="public")
+        qs = (
+            assigned_groups
+            | (
+                Group.platform_default_set().filter(tenant=request.tenant)
+                or Group.platform_default_set().filter(tenant=public_tenant)
+            )
+        ).distinct()
+        return filter_queryset_by_tenant(qs, request.tenant)
 
     return filter_queryset_by_tenant(Group.objects.filter(policies__in=policy_ids).distinct(), request.tenant)
 

@@ -15,7 +15,6 @@
 #    along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Queryset helpers for management module."""
-from django.conf import settings
 from django.db.models.aggregates import Count
 from django.urls import reverse
 from django.utils.translation import gettext as _
@@ -93,13 +92,10 @@ def _gather_group_querysets(request):
     if scope != ACCOUNT_SCOPE:
         return get_object_principal_queryset(request, scope, Group)
 
-    if settings.SERVE_FROM_PUBLIC_SCHEMA:
-        public_tenant = Tenant.objects.get(tenant_name="public")
-        default_group_set = Group.platform_default_set().filter(
-            tenant=request.tenant
-        ) or Group.platform_default_set().filter(tenant=public_tenant)
-    else:
-        default_group_set = Group.platform_default_set()
+    public_tenant = Tenant.objects.get(tenant_name="public")
+    default_group_set = Group.platform_default_set().filter(
+        tenant=request.tenant
+    ) or Group.platform_default_set().filter(tenant=public_tenant)
 
     username = request.query_params.get("username")
     if username:
@@ -132,11 +128,10 @@ def annotate_roles_with_counts(queryset):
 def get_role_queryset(request):
     """Obtain the queryset for roles."""
     scope = request.query_params.get(SCOPE_KEY, ACCOUNT_SCOPE)
-    base_query = annotate_roles_with_counts(Role.objects.prefetch_related("access"))
-
-    if settings.SERVE_FROM_PUBLIC_SCHEMA:
-        public_tenant = Tenant.objects.get(tenant_name="public")
-        base_query = base_query.filter(tenant__in=[request.tenant, public_tenant])
+    public_tenant = Tenant.objects.get(tenant_name="public")
+    base_query = annotate_roles_with_counts(Role.objects.prefetch_related("access")).filter(
+        tenant__in=[request.tenant, public_tenant]
+    )
 
     if scope != ACCOUNT_SCOPE:
         queryset = get_object_principal_queryset(

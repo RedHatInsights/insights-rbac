@@ -20,10 +20,12 @@ The `urlpatterns` list routes URLs to views. For more information please see:
     https://docs.djangoproject.com/en/2.0/topics/http/urls/
 """
 import os
+import re
 
 from django.conf.urls import include, url
 from django.contrib.staticfiles.urls import staticfiles_urlpatterns
 from django.urls import path
+from management import consumers
 
 API_PATH_PREFIX = os.getenv("API_PATH_PREFIX", "api/")
 if API_PATH_PREFIX != "":
@@ -31,6 +33,8 @@ if API_PATH_PREFIX != "":
         API_PATH_PREFIX = API_PATH_PREFIX[1:]
     if not API_PATH_PREFIX.endswith("/"):
         API_PATH_PREFIX = API_PATH_PREFIX + "/"
+
+WSS_PATH_PREFIX = re.sub("api", "wss", API_PATH_PREFIX)
 
 # pylint: disable=invalid-name
 urlpatterns = [
@@ -41,3 +45,6 @@ urlpatterns = [
 ]
 
 urlpatterns += staticfiles_urlpatterns()
+websocket_urlpatterns = [
+    url(r"^{}v1/cross-account-requests/$".format(WSS_PATH_PREFIX), consumers.RbacConsumer.as_asgi())
+]

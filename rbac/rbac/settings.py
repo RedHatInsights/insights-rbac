@@ -86,6 +86,7 @@ ALLOWED_HOSTS = ["*"]
 # Application definition
 
 INSTALLED_APPS = [
+    "channels",
     # django
     # 'django.contrib.admin',
     "django.contrib.auth",
@@ -156,7 +157,7 @@ TEMPLATES = [
     }
 ]
 
-WSGI_APPLICATION = "rbac.wsgi.application"
+ASGI_APPLICATION = "rbac.asgi.application"
 
 DATABASES = {"default": database.config()}
 
@@ -376,3 +377,7 @@ except ValueError as e:
 # Prep for public schema changeover
 SERVE_FROM_PUBLIC_SCHEMA = ENVIRONMENT.bool("SERVE_FROM_PUBLIC_SCHEMA", default=False)
 AUTHENTICATE_WITH_ORG_ID = ENVIRONMENT.bool("AUTHENTICATE_WITH_ORG_ID", default=False)
+
+CHANNEL_LAYERS = {
+    "default": {"BACKEND": "channels_redis.core.RedisChannelLayer", "CONFIG": {"hosts": [(REDIS_HOST, REDIS_PORT)]}}
+

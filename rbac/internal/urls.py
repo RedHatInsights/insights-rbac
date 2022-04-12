@@ -32,4 +32,5 @@ urlpatterns = [
     path("api/cars/expire/", views.car_expiry),
     path("api/sentry_debug/", trigger_error),
     path("api/utils/sync_schemas/", views.sync_schemas),
+    path("api/utils/populate_tenant_account_id/", views.populate_tenant_account_id),
 ]
