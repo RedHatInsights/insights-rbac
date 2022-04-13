@@ -22,6 +22,7 @@ from rest_framework import permissions
 QUERY_BY_KEY = "query_by"
 USER_ID = "user_id"
 ACCOUNT = "target_account"
+ORG_ID = "target_org"
 VALID_QUERY_BY_KEY = [ACCOUNT, USER_ID]
 
 
