@@ -40,7 +40,7 @@ class RoleDefinerTests(IdentityRequest):
             self.assertTrue(len(roles))
             self.assertFalse(Role.objects.get(name="RBAC Administrator Local Test").platform_default)
 
-            send_kafka_message.assert_called_with(
+            send_kafka_message.assert_any_call(
                 "rh-new-role-available",
                 self.customer_data["account_id"],
                 {"name": roles.first().name, "username": "Red Hat", "uuid": str(roles.first().uuid)},
