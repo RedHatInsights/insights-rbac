@@ -372,7 +372,7 @@ class AccessHandlingTest(TestCase):
         try:
             cls.tenant = Tenant.objects.get(tenant_name="test")
         except:
-            cls.tenant = Tenant(tenant_name="test", ready=True)
+            cls.tenant = Tenant(tenant_name="test", account_id="11111", org_id="22222", ready=True)
             cls.tenant.save()
 
     @classmethod

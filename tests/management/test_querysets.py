@@ -50,7 +50,7 @@ class QuerySetTest(TestCase):
         try:
             cls.tenant = Tenant.objects.get(tenant_name="test")
         except:
-            cls.tenant = Tenant(tenant_name="test")
+            cls.tenant = Tenant(tenant_name="test", account_id="11111", org_id="22222")
             cls.tenant.save()
 
     @classmethod
