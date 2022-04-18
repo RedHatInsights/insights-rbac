@@ -100,7 +100,7 @@ def list_tenants(request):
     limit = int(request.GET.get("limit", 0))
     offset = int(request.GET.get("offset", 0))
     ready = request.GET.get("ready")
-    tenant_qs = Tenant.objects.exclude(tenant_name="public").values_list("id", "tenant_name")
+    tenant_qs = Tenant.objects.exclude(tenant_name="public").values("id", "tenant_name", "account_id", "org_id")
 
     if ready == "true":
         tenant_qs = tenant_qs.filter(ready=True)
@@ -111,12 +111,15 @@ def list_tenants(request):
 
     ready_tenants = tenant_qs.filter(ready=True)
     not_ready_tenants = tenant_qs.filter(ready=False)
+    tenants_without_account_id = tenant_qs.filter(account_id__isnull=True)
 
     payload = {
         "ready_tenants": list(ready_tenants),
         "ready_tenants_count": len(ready_tenants),
         "not_ready_tenants": list(not_ready_tenants),
         "not_ready_tenants_count": len(not_ready_tenants),
+        "tenants_without_account_id": list(tenants_without_account_id),
+        "tenants_without_account_id_count": len(tenants_without_account_id),
         "total_tenants_count": tenant_qs.count(),
     }
     return HttpResponse(json.dumps(payload), content_type="application/json")

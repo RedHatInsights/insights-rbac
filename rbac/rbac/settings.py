@@ -381,3 +381,7 @@ AUTHENTICATE_WITH_ORG_ID = ENVIRONMENT.bool("AUTHENTICATE_WITH_ORG_ID", default=
 CHANNEL_LAYERS = {
     "default": {"BACKEND": "channels_redis.core.RedisChannelLayer", "CONFIG": {"hosts": [(REDIS_HOST, REDIS_PORT)]}}
 }
+
+KAFKA_HOST = ENVIRONMENT.get_value("KAFKA_BOOTSTRAP_HOST", default="localhost")
+KAFKA_PORT = ENVIRONMENT.get_value("KAFKA_BOOTSTRAP_PORT", default="9092")
+KAFKA_SERVER = f"{KAFKA_HOST}:{KAFKA_PORT}"
