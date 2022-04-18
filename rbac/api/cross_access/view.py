@@ -16,10 +16,10 @@
 #
 
 """View for cross access request."""
+from django.conf import settings
 from django.db.models import Q
 from django.utils import timezone
 from django_filters import rest_framework as filters
-from django.conf import settings
 from management.models import Role
 from management.principal.proxy import PrincipalProxy
 from management.utils import validate_and_get_key, validate_limit_and_offset, validate_uuid
@@ -54,7 +54,7 @@ class CrossAccountRequestFilter(filters.FilterSet):
     """Filter for cross account request."""
 
     def org_id_filter(self, queryset, field, values):
-        """Filter to lookup requests by target_org"""
+        """Filter to lookup requests by target_org."""
         org_ids = values.split(",")
         return queryset.filter(target_org__in=org_ids)
 

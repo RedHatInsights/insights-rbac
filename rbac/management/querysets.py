@@ -15,6 +15,7 @@
 #    along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Queryset helpers for management module."""
+from django.conf import settings
 from django.db.models.aggregates import Count
 from django.urls import reverse
 from django.utils.translation import gettext as _
@@ -41,8 +42,9 @@ from rbac.env import ENVIRONMENT
 
 SCOPE_KEY = "scope"
 ACCOUNT_SCOPE = "account"
+ORG_ID_SCOPE = "org_id"
 PRINCIPAL_SCOPE = "principal"
-VALID_SCOPES = [ACCOUNT_SCOPE, PRINCIPAL_SCOPE]
+VALID_SCOPES = [ACCOUNT_SCOPE, ORG_ID_SCOPE, PRINCIPAL_SCOPE]
 PRINCIPAL_QUERYSET_MAP = {
     Access.__name__: access_for_principal,
     Group.__name__: groups_for_principal,
@@ -88,9 +90,14 @@ def get_group_queryset(request):
 
 def _gather_group_querysets(request):
     """Decide which groups to provide for request."""
-    scope = request.query_params.get(SCOPE_KEY, ACCOUNT_SCOPE)
-    if scope != ACCOUNT_SCOPE:
-        return get_object_principal_queryset(request, scope, Group)
+    if settings.AUTHENTICATE_WITH_ORG_ID:
+        scope = request.query_params.get(SCOPE_KEY, ORG_ID_SCOPE)
+        if scope != ORG_ID_SCOPE:
+            return get_object_principal_queryset(request, scope, Group)
+    else:
+        scope = request.query_params.get(SCOPE_KEY, ACCOUNT_SCOPE)
+        if scope != ACCOUNT_SCOPE:
+            return get_object_principal_queryset(request, scope, Group)
 
     public_tenant = Tenant.objects.get(tenant_name="public")
     default_group_set = Group.platform_default_set().filter(
@@ -133,7 +140,7 @@ def get_role_queryset(request):
         tenant__in=[request.tenant, public_tenant]
     )
 
-    if scope != ACCOUNT_SCOPE:
+    if scope != (ACCOUNT_SCOPE or ORG_ID_SCOPE):
         queryset = get_object_principal_queryset(
             request,
             scope,
@@ -171,9 +178,14 @@ def get_role_queryset(request):
 
 def get_policy_queryset(request):
     """Obtain the queryset for policies."""
-    scope = request.query_params.get(SCOPE_KEY, ACCOUNT_SCOPE)
-    if scope != ACCOUNT_SCOPE:
-        return get_object_principal_queryset(request, scope, Policy)
+    if settings.AUTHENTICATE_WITH_ORG_ID:
+        scope = request.query_params.get(SCOPE_KEY, ORG_ID_SCOPE)
+        if scope != ORG_ID_SCOPE:
+            return get_object_principal_queryset(request, scope, Policy)
+    else:
+        scope = request.query_params.get(SCOPE_KEY, ACCOUNT_SCOPE)
+        if scope != ACCOUNT_SCOPE:
+            return get_object_principal_queryset(request, scope, Policy)
 
     if ENVIRONMENT.get_value("ALLOW_ANY", default=False, cast=bool):
         return filter_queryset_by_tenant(Policy.objects.all(), request.tenant)

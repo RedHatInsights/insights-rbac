@@ -18,6 +18,7 @@
 """View for group management."""
 import logging
 
+from django.conf import settings
 from django.db.models.aggregates import Count
 from django.utils.translation import gettext as _
 from django_filters import rest_framework as filters
@@ -315,36 +316,62 @@ class GroupViewSet(
         self.protect_default_groups("update")
         return super().update(request=request, args=args, kwargs=kwargs)
 
-    def add_principals(self, group, principals, account):
+    def add_principals(self, group, principals, account=None, org_id=None):
         """Process list of principals and add them to the group."""
         tenant = self.request.tenant
 
         users = [principal.get("username") for principal in principals]
-        resp = self.proxy.request_filtered_principals(users, account, limit=len(users))
-        if "errors" in resp:
-            return resp
-        for item in resp.get("data", []):
-            username = item["username"]
-            try:
-                principal = Principal.objects.get(username__iexact=username, tenant=tenant)
-            except Principal.DoesNotExist:
-                principal = Principal.objects.create(username=username, tenant=tenant)
-                logger.info("Created new principal %s for account_id %s.", username, account)
-            group.principals.add(principal)
-        return group
+        if settings.AUTHENTICATE_WITH_ORG_ID:
+            resp = self.proxy.request_filtered_principals(users, org_id=org_id, limit=len(users))
+            if "errors" in resp:
+                return resp
+            for item in resp.get("data", []):
+                username = item["username"]
+                try:
+                    principal = Principal.objects.get(username__iexact=username, tenant=tenant)
+                except Principal.DoesNotExist:
+                    principal = Principal.objects.create(username=username, tenant=tenant)
+                    logger.info("Created new principal %s for org_id %s.", username, org_id)
+                group.principals.add(principal)
+            return group
+        else:
+            resp = self.proxy.request_filtered_principals(users, account=account, limit=len(users))
+            if "errors" in resp:
+                return resp
+            for item in resp.get("data", []):
+                username = item["username"]
+                try:
+                    principal = Principal.objects.get(username__iexact=username, tenant=tenant)
+                except Principal.DoesNotExist:
+                    principal = Principal.objects.create(username=username, tenant=tenant)
+                    logger.info("Created new principal %s for account_id %s.", username, account)
+                group.principals.add(principal)
+            return group
 
-    def remove_principals(self, group, principals, account):
+    def remove_principals(self, group, principals, account=None, org_id=None):
         """Process list of principals and remove them from the group."""
-        tenant = Tenant.objects.get(tenant_name=f"acct{account}")
+        if settings.AUTHENTICATE_WITH_ORG_ID:
+            tenant = Tenant.objects.get(org_id=org_id)
 
-        for username in principals:
-            try:
-                principal = Principal.objects.get(username__iexact=username, tenant=tenant)
-            except Principal.DoesNotExist:
-                logger.info("No principal %s found for account %s.", username, account)
-            if principal:
-                group.principals.remove(principal)
-        return group
+            for username in principals:
+                try:
+                    principal = Principal.objects.get(username__iexact=username, tenant=tenant)
+                except Principal.DoesNotExist:
+                    logger.info("No principal %s found for org id %s.", username, org_id)
+                if principal:
+                    group.principals.remove(principal)
+            return group
+        else:
+            tenant = Tenant.objects.get(tenant_name=f"acct{account}")
+
+            for username in principals:
+                try:
+                    principal = Principal.objects.get(username__iexact=username, tenant=tenant)
+                except Principal.DoesNotExist:
+                    logger.info("No principal %s found for account %s.", username, account)
+                if principal:
+                    group.principals.remove(principal)
+            return group
 
     @action(detail=True, methods=["get", "post", "delete"])
     def principals(self, request, uuid=None):
@@ -428,6 +455,7 @@ class GroupViewSet(
         validate_uuid(uuid, "group uuid validation")
         group = self.get_object()
         account = self.request.user.account
+        org_id = self.request.user.org_id
         if request.method == "POST":
             self.protect_default_groups("add principals")
             if not request.user.admin:
@@ -440,7 +468,10 @@ class GroupViewSet(
             serializer = GroupPrincipalInputSerializer(data=request.data)
             if serializer.is_valid(raise_exception=True):
                 principals = serializer.data.pop("principals")
-            resp = self.add_principals(group, principals, account)
+            if settings.AUTHENTICATE_WITH_ORG_ID:
+                resp = self.add_principals(group, principals, org_id=org_id)
+            else:
+                resp = self.add_principals(group, principals, account=account)
             if isinstance(resp, dict) and "errors" in resp:
                 return Response(status=resp["status_code"], data=resp["errors"])
             output = GroupSerializer(resp)
@@ -461,7 +492,14 @@ class GroupViewSet(
                 sort_order = "des" if sort_field == "-username" else "asc"
             else:
                 sort_order = None
-            resp = proxy.request_filtered_principals(username_list, account, options={"sort_order": sort_order})
+            if settings.AUTHENTICATE_WITH_ORG_ID:
+                resp = proxy.request_filtered_principals(
+                    username_list, org_id=org_id, options={"sort_order": sort_order}
+                )
+            else:
+                resp = proxy.request_filtered_principals(
+                    username_list, account=account, options={"sort_order": sort_order}
+                )
             if isinstance(resp, dict) and "errors" in resp:
                 return Response(status=resp.get("status_code"), data=resp.get("errors"))
             response = self.get_paginated_response(resp.get("data"))
@@ -473,7 +511,10 @@ class GroupViewSet(
                 raise serializers.ValidationError({key: _(message)})
             username = request.query_params.get(USERNAMES_KEY, "")
             principals = [name.strip() for name in username.split(",")]
-            self.remove_principals(group, principals, account)
+            if settings.AUTHENTICATE_WITH_ORG_ID:
+                self.remove_principals(group, principals, org_id=org_id)
+            else:
+                self.remove_principals(group, principals, account=account)
             response = Response(status=status.HTTP_204_NO_CONTENT)
         return response
 
