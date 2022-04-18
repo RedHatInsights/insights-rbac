@@ -260,7 +260,7 @@ class CrossAccountRequestViewSet(
             target_org = request_data.get("target_org")
             if target_org == self.request.user.org_id:
                 self.throw_validation_error(
-                    "cross-account-request", "Creating a cross access request for your own account is not allowed."
+                    "cross-account-request", "Creating a cross access request for your own org is not allowed."
                 )
 
             try:
