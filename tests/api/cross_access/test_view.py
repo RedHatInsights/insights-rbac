@@ -409,10 +409,16 @@ class CrossAccountRequestViewTests(IdentityRequest):
         )
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertEqual(
-            response.data.get("errors")[0].get("detail"),
-            "Creating a cross access request for your own account is not allowed.",
-        )
+        if settings.AUTHENTICATE_WITH_ORG_ID:
+            self.assertEqual(
+                response.data.get("errors")[0].get("detail"),
+                "Creating a cross access request for your own org id is not allowed.",
+            )
+        else:
+            self.assertEqual(
+                response.data.get("errors")[0].get("detail"),
+                "Creating a cross access request for your own account is not allowed.",
+            )
 
     def test_create_requests_fail_for_none_associate(self):
         """Test the creation of cross account request fail for none red hat associate."""
