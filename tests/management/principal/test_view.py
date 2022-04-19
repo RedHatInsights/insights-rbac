@@ -88,7 +88,11 @@ class PrincipalViewNonAdminTests(IdentityRequest):
         response = client.get(url, **self.headers)
 
         mock_request.assert_called_once_with(
-            ANY, limit=10, offset=0, options={"sort_order": "asc", "status": "enabled", "admin_only": "false"}
+            account=self.customer["account_id"],
+            limit=10,
+            offset=0,
+            options={"sort_order": "asc", "status": "enabled", "admin_only": "false"},
+            org_id=self.customer["org_id"],
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         for keyname in ["meta", "links", "data"]:
@@ -112,6 +116,7 @@ class PrincipalViewsetTests(IdentityRequest):
         user = User()
         user.username = self.user_data["username"]
         user.account = self.customer_data["account_id"]
+        user.org_id = self.customer_data["org_id"]
         request.user = user
 
         self.principal = Principal(username="test_user", tenant=self.tenant)
@@ -137,7 +142,11 @@ class PrincipalViewsetTests(IdentityRequest):
         response = client.get(url, **self.headers)
 
         mock_request.assert_called_once_with(
-            ANY, limit=10, offset=0, options={"sort_order": "asc", "status": "enabled", "admin_only": "false"}
+            account=self.customer_data["account_id"],
+            limit=10,
+            offset=0,
+            options={"sort_order": "asc", "status": "enabled", "admin_only": "false"},
+            org_id=self.customer_data["org_id"],
         )
         # /principals/ endpoint won't return the cross_account_principal, which does not exist in IT.
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -173,7 +182,11 @@ class PrincipalViewsetTests(IdentityRequest):
         response = client.get(url, **self.headers)
 
         mock_request.assert_called_once_with(
-            ANY, limit=10, offset=0, options={"sort_order": "asc", "status": "enabled", "admin_only": "false"}
+            account=self.customer_data["account_id"],
+            limit=10,
+            offset=0,
+            options={"sort_order": "asc", "status": "enabled", "admin_only": "false"},
+            org_id=self.customer_data["org_id"],
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         for keyname in ["meta", "links", "data"]:
@@ -255,11 +268,12 @@ class PrincipalViewsetTests(IdentityRequest):
         response = client.get(url, **self.headers)
 
         mock_request.assert_called_once_with(
-            ANY,
+            account=self.customer_data["account_id"],
             input={"principalStartsWith": "test_us"},
             limit=10,
             offset=30,
             options={"sort_order": "asc", "status": "enabled"},
+            org_id=self.customer_data["org_id"],
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         for keyname in ["meta", "links", "data"]:
@@ -283,11 +297,12 @@ class PrincipalViewsetTests(IdentityRequest):
         response = client.get(url, **self.headers)
 
         mock_request.assert_called_once_with(
-            ANY,
+            account=self.customer_data["account_id"],
             input={"principalStartsWith": "test_us", "emailStartsWith": "test"},
             limit=10,
             offset=30,
             options={"sort_order": "asc", "status": "enabled"},
+            org_id=self.customer_data["org_id"],
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         for keyname in ["meta", "links", "data"]:
@@ -439,11 +454,12 @@ class PrincipalViewsetTests(IdentityRequest):
         self.assertEqual(len(resp), 1)
 
         mock_request.assert_called_once_with(
-            ANY,
+            account=self.customer_data["account_id"],
             input={"primaryEmail": "test_user@example.com"},
             limit=10,
             offset=0,
             options={"sort_order": "asc", "status": "enabled"},
+            org_id=self.customer_data["org_id"],
         )
 
         self.assertEqual(resp[0]["username"], "test_user")
@@ -467,7 +483,11 @@ class PrincipalViewsetTests(IdentityRequest):
         self.assertIsInstance(response.data.get("data"), list)
         self.assertEqual(response.data.get("meta").get("count"), "1")
         mock_request.assert_called_once_with(
-            ANY, limit=10, offset=0, options={"sort_order": "asc", "status": "disabled", "admin_only": "false"}
+            account=self.customer_data["account_id"],
+            limit=10,
+            offset=0,
+            options={"sort_order": "asc", "status": "disabled", "admin_only": "false"},
+            org_id=self.customer_data["org_id"],
         )
 
     @patch(
@@ -489,7 +509,11 @@ class PrincipalViewsetTests(IdentityRequest):
         self.assertIsInstance(response.data.get("data"), list)
         self.assertEqual(response.data.get("meta").get("count"), "1")
         mock_request.assert_called_once_with(
-            ANY, limit=10, offset=0, options={"sort_order": "asc", "status": "enabled", "admin_only": "true"}
+            account=self.customer_data["account_id"],
+            limit=10,
+            offset=0,
+            options={"sort_order": "asc", "status": "enabled", "admin_only": "true"},
+            org_id=self.customer_data["org_id"],
         )
 
     def test_read_users_with_invalid_status_value(self):
@@ -540,11 +564,12 @@ class PrincipalViewsetTests(IdentityRequest):
         self.assertEqual(len(resp), 1)
 
         mock_request.assert_called_once_with(
-            ANY,
+            account=self.customer_data["account_id"],
             input={"emailStartsWith": "test_use"},
             limit=10,
             offset=0,
             options={"sort_order": "asc", "status": "enabled"},
+            org_id=self.customer_data["org_id"],
         )
 
         self.assertEqual(resp[0]["username"], "test_user")

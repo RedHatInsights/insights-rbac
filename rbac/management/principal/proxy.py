@@ -241,22 +241,35 @@ class PrincipalProxy:  # pylint: disable=too-few-public-methods
         bop_request_status_count.labels(method=metrics_method, status=resp.get("status_code")).inc()
         return resp
 
-    def request_principals(self, account, input=None, limit=None, offset=None, options={}):
+    def request_principals(self, account=None, org_id=None, input=None, limit=None, offset=None, options={}):
         """Request principals for an account."""
-        if input:
-            payload = input
-            account_principals_path = f"/v1/accounts/{account}/usersBy"
-            method = requests.post
+        if settings.AUTHENTICATE_WITH_ORG_ID:
+            if input:
+                payload = input
+                account_principals_path = f"/v3/accounts/{org_id}/usersBy"
+                method = requests.post
+            else:
+                account_principals_path = f"/v3/accounts/{org_id}/users"
+                method = requests.get
+                payload = None
         else:
-            account_principals_path = f"/v2/accounts/{account}/users"
-            method = requests.get
-            payload = None
+            if input:
+                payload = input
+                account_principals_path = f"/v1/accounts/{account}/usersBy"
+                method = requests.post
+            else:
+                account_principals_path = f"/v2/accounts/{account}/users"
+                method = requests.get
+                payload = None
 
         params = self._create_params(limit, offset, options)
         url = "{}://{}:{}{}{}".format(self.protocol, self.host, self.port, self.path, account_principals_path)
 
-        # For v2 account users endpoints are already filtered by account
-        return self._request_principals(url, params=params, account_filter=False, method=method, data=payload)
+        if settings.AUTHENTICATE_WITH_ORG_ID:
+            return self._request_principals(url, params=params, org_id_filter=False, method=method, data=payload)
+        else:
+            # For v2 account users endpoints are already filtered by account
+            return self._request_principals(url, params=params, account_filter=False, method=method, data=payload)
 
     def request_filtered_principals(self, principals, account=None, org_id=None, limit=None, offset=None, options={}):
         """Request specific principals for an account."""
