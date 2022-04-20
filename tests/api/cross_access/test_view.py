@@ -752,24 +752,30 @@ class CrossAccountRequestViewTests(IdentityRequest):
     def test_create_principal_on_approval(self):
         """Test that moving a car to approved creates a principal."""
         update_data = {"status": "approved"}
-        tenant_name = create_tenant_name(self.request_2.target_account)
-        principal_name = get_cross_principal_name(self.request_2.target_account, self.request_2.user_id)
-        car_uuid = self.request_2.request_id
-        url = reverse("cross-detail", kwargs={"pk": str(car_uuid)})
-        tenant = Tenant.objects.get(tenant_name=tenant_name)
+        if settings.AUTHENTICATE_WITH_ORG_ID:
+            principal_name = get_cross_principal_name(self.request_2.target_org, self.request_2.user_id)
+            car_uuid = self.request_2.request_id
+            url = reverse("cross-detail", kwargs={"pk": str(car_uuid)})
+            tenant = Tenant.objects.get(org_id=self.request_2.target_org)
+        else:
+            tenant_name = create_tenant_name(self.request_2.target_account)
+            principal_name = get_cross_principal_name(self.request_2.target_account, self.request_2.user_id)
+            car_uuid = self.request_2.request_id
+            url = reverse("cross-detail", kwargs={"pk": str(car_uuid)})
+            tenant = Tenant.objects.get(tenant_name=tenant_name)
 
         client = APIClient()
         response = client.patch(url, update_data, format="json", **self.associate_admin_request.META)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data.get("status"), update_data.get("status"))
-
         # Principal created in public schema
         princ = Principal.objects.get(username__iexact=principal_name)
         self.assertEqual(princ.username, principal_name)
         self.assertEqual(princ.tenant, tenant)
         self.assertTrue(princ.cross_account)
-        self.assertTrue(princ.tenant.tenant_name, tenant_name)
+        if not settings.AUTHENTICATE_WITH_ORG_ID:
+            self.assertTrue(princ.tenant.tenant_name, tenant_name)
 
     def test_cross_account_request_ordering_filter(self):
         "Test ordering filter for request id, created/start/end date."
