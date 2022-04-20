@@ -18,6 +18,7 @@
 """Handler for cross-account request clean up."""
 import logging
 
+from django.conf import settings
 from django.db.models import Q
 from django.utils import timezone
 from management.models import Principal
@@ -47,9 +48,13 @@ def check_cross_request_expiry():
 def create_cross_principal(target_account, user_id, target_org=None):
     """Create a cross account principal in the target account."""
     # Principal would have the pattern acctxxx-123456.
-    principal_name = get_cross_principal_name(target_account, user_id)
-    tenant_name = create_tenant_name(target_account)
-    associate_tenant = Tenant.objects.get(tenant_name=tenant_name)
+    if settings.AUTHENTICATE_WITH_ORG_ID:
+        principal_name = get_cross_principal_name(target_org, user_id)
+        associate_tenant = Tenant.objects.get(org_id=target_org)
+    else:
+        principal_name = get_cross_principal_name(target_account, user_id)
+        tenant_name = create_tenant_name(target_account)
+        associate_tenant = Tenant.objects.get(tenant_name=tenant_name)
     # Create the principal in public schema
     cross_account_principal = create_principal_with_tenant(principal_name, associate_tenant)
 

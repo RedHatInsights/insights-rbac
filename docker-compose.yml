@@ -20,6 +20,7 @@ services:
         - DJANGO_READ_DOT_ENV_FILE=True
         - DEVELOPMENT=${DEVELOPMENT-False}
         - DJANGO_DEBUG=${DJANGO_DEBUG-True}
+        - AUTHENTICATE_WITH_ORG_ID=True
       privileged: true
       ports:
           - 9080:8000
