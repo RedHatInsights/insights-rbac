@@ -20,6 +20,7 @@ from django.conf import settings
 from django.db.models import Q
 from django.utils import timezone
 from django_filters import rest_framework as filters
+from management.filters import CommonFilters
 from management.models import Role
 from management.principal.proxy import PrincipalProxy
 from management.utils import validate_and_get_key, validate_limit_and_offset, validate_uuid
@@ -55,8 +56,7 @@ class CrossAccountRequestFilter(filters.FilterSet):
 
     def org_id_filter(self, queryset, field, values):
         """Filter to lookup requests by target_org."""
-        org_ids = values.split(",")
-        return queryset.filter(target_org__in=org_ids)
+        return CommonFilters.multiple_values_in(self, queryset, "target_org", values)
 
     def account_filter(self, queryset, field, values):
         """Filter to lookup requests by target_account."""

@@ -187,6 +187,7 @@ class PrincipalProxy:  # pylint: disable=too-few-public-methods
         }
         try:
             kwargs = {"headers": headers, "params": params, "json": data, "verify": self.ssl_verify}
+
             if self.source_cert:
                 kwargs["verify"] = self.client_cert
             response = method(url, **kwargs)
