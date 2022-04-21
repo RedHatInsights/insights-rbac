@@ -97,7 +97,7 @@ class GroupDefinerTests(IdentityRequest):
                 },
             )
             assert send_kafka_message.call_args_list[1] == call(
-                "rh-new-role-removed-from-default-access",
+                "rh-role-removed-from-default-access",
                 self.customer_data["account_id"],
                 {
                     "name": group.name,

@@ -32,7 +32,7 @@ class RoleDefinerTests(IdentityRequest):
 
     @patch("management.notifications.producer_util.NotificationProducer.send_kafka_message")
     def test_role_create(self, send_kafka_message):
-        """ Test that we can run a role seeding update. """
+        """Test that we can run a role seeding update."""
         with self.settings(NOTIFICATIONS_ENABLED=True):
             self.try_seed_roles()
 
@@ -78,7 +78,7 @@ class RoleDefinerTests(IdentityRequest):
 
     @patch("management.notifications.producer_util.NotificationProducer.send_kafka_message")
     def test_role_update_platform_default_role(self, send_kafka_message):
-        """ Test that role seeding updates send out notificaiton. """
+        """Test that role seeding updates send out notificaiton."""
         self.try_seed_roles()
 
         # Update non platform default role

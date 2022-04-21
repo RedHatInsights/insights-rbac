@@ -20,6 +20,7 @@ import logging
 
 from django.conf import settings
 from management.notifications.producer_util import NotificationProducer
+from management.utils import account_id_for_tenant
 
 from api.models import Tenant
 
@@ -34,7 +35,7 @@ def notify_all(event_type, payload):
     # https://docs.djangoproject.com/en/4.0/ref/models/querysets/#django.db.models.query.QuerySet.iterator
     for tenant in Tenant.objects.exclude(tenant_name="public").iterator():
         # Tenant name pattern is acct12345
-        account_id = tenant.tenant_name.split("acct")[-1]
+        account_id = account_id_for_tenant(tenant)
         producer.send_kafka_message(event_type, account_id, payload)
 
 
@@ -43,7 +44,7 @@ def handle_system_role_change_notification(role_obj, operation):
     if not settings.NOTIFICATIONS_ENABLED:
         return
 
-    payload = {"username": "Red Hat", "name": role_obj.name, "uuid": str(role_obj.uuid)}
+    payload = payload_builder("Red Hat", role_obj)
     # Role created
     if operation == "created":
         event_type = "rh-new-role-available"
@@ -69,7 +70,7 @@ def role_obj_change_notification_handler(role_obj, operation, user=None):
         return
 
     account_id = user.account
-    payload = {"username": user.username, "name": role_obj.name, "uuid": str(role_obj.uuid)}
+    payload = payload_builder(user.username, role_obj)
     # Role created
     if operation == "created":
         event_type = "custom-role-created"
@@ -88,7 +89,7 @@ def group_obj_change_notification_handler(user, group_obj, operation):
     if not settings.NOTIFICATIONS_ENABLED:
         return
     account_id = user.account
-    payload = {"username": user.username, "name": group_obj.name, "uuid": str(group_obj.uuid)}
+    payload = payload_builder(user.username, group_obj)
     # Group created
     if operation == "created":
         if not group_obj.system:
@@ -107,16 +108,12 @@ def handle_platform_group_role_change_notification(group_obj, role_obj, operatio
     """Signal handler for sending notification message when roles of platform group changes."""
     if not settings.NOTIFICATIONS_ENABLED:
         return
-    payload = {
-        "username": "Red Hat",
-        "name": group_obj.name,
-        "uuid": str(group_obj.uuid),
-        "role": {"name": role_obj.name, "uuid": str(role_obj.uuid)},
-    }
+    payload = payload_builder("Red Hat", group_obj, extra_info=("role", role_obj))
+
     if operation == "added":
         event_type = "rh-new-role-added-to-default-access"
     elif operation == "removed":
-        event_type = "rh-new-role-removed-from-default-access"
+        event_type = "rh-role-removed-from-default-access"
     else:
         raise Exception("Not recorgnized operation for updating Red Hat managed platform default access group.")
 
@@ -136,13 +133,8 @@ def group_role_change_notification_handler(user, group_obj, role_obj, operation)
 
     # Handle custom group
     account_id = user.account
-    payload = {
-        "username": user.username,
-        "name": group_obj.name,
-        "uuid": str(group_obj.uuid),
-        "operation": operation,
-        "role": {"uuid": str(role_obj.uuid), "name": role_obj.name},
-    }
+    payload = payload_builder(user.username, group_obj, operation, ("role", role_obj))
+
     if group_obj.platform_default:
         event_type = "custom-default-access-updated"
     else:
@@ -157,13 +149,8 @@ def group_principal_change_notification_handler(user, group_obj, principal, oper
         return
 
     account_id = user.account
-    payload = {
-        "username": user.username,
-        "name": group_obj.name,
-        "uuid": str(group_obj.uuid),
-        "operation": operation,
-        "principal": principal,
-    }
+    payload = payload_builder(user.username, group_obj, operation, ("principal", principal))
+
     event_type = "group-updated"
     producer.send_kafka_message(event_type, account_id, payload)
 
@@ -173,7 +160,25 @@ def group_flag_change_notification_handler(user, group_obj):
     if not settings.NOTIFICATIONS_ENABLED:
         return
     account_id = user.account
-    payload = {"username": user.username, "name": group_obj.name, "uuid": str(group_obj.uuid)}
+    payload = payload_builder(user.username, group_obj)
+
     event_type = "platform-default-group-turned-into-custom"
 
     producer.send_kafka_message(event_type, account_id, payload)
+
+
+def payload_builder(username, resource_obj, operation=None, extra_info=None):
+    """Payload builder for notifications message."""
+    payload = {"username": username, "name": resource_obj.name, "uuid": str(resource_obj.uuid)}
+    if operation:
+        payload["operation"] = operation
+
+    if extra_info:
+        if extra_info[0] == "role":
+            payload["role"] = {"name": extra_info[1].name, "uuid": str(extra_info[1].uuid)}
+        elif extra_info[0] == "principal":
+            payload["principal"] = extra_info[1]
+        else:
+            raise Exception(f"Unknow extra_info {extra_info[0]}, valid ones are role/principal")
+
+    return payload

@@ -76,5 +76,5 @@ def consume_message():
         )
     for message in consumer:
         deserialized_data = pickle.loads(message.value)
-        print(deserialized_data)
+        print(json.dumps(deserialized_data, indent=4, sort_keys=True)
 """
