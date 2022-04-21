@@ -2014,5 +2014,5 @@ parameters:
   name: KAFKA_BOOTSTRAP_PORT
   value: "9092"
 - description: Enable sending out notification events
-  name: NOTIFICATION_ENABLED
+  name: NOTIFICATIONS_ENABLED
   value: 'False'

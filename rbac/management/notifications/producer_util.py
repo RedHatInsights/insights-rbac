@@ -45,7 +45,7 @@ class NotificationProducer:
 
     def __init__(self):
         """Init method to return fake kafka when flag is set to false."""
-        if settings.NOTIFICATION_ENABLED:
+        if settings.NOTIFICATIONS_ENABLED:
             self.producer = KafkaProducer(bootstrap_servers=settings.KAFKA_SERVER)
         else:
             self.producer = FakeKafkaProducer()

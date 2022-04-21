@@ -40,7 +40,7 @@ def notify_all(event_type, payload):
 
 def handle_system_role_change_notification(role_obj, operation):
     """Signal handler for sending notification message when system Role object changes."""
-    if not settings.NOTIFICATION_ENABLED:
+    if not settings.NOTIFICATIONS_ENABLED:
         return
 
     payload = {"username": "Red Hat", "name": role_obj.name, "uuid": str(role_obj.uuid)}
@@ -61,7 +61,7 @@ def handle_system_role_change_notification(role_obj, operation):
 
 def role_obj_change_notification_handler(role_obj, operation, user=None):
     """Signal handler for sending notification message when Role object changes."""
-    if not settings.NOTIFICATION_ENABLED:
+    if not settings.NOTIFICATIONS_ENABLED:
         return
 
     if role_obj.system:
@@ -85,7 +85,7 @@ def role_obj_change_notification_handler(role_obj, operation, user=None):
 
 def group_obj_change_notification_handler(user, group_obj, operation):
     """Signal handler for sending notification message when Group object changes."""
-    if not settings.NOTIFICATION_ENABLED:
+    if not settings.NOTIFICATIONS_ENABLED:
         return
     account_id = user.account
     payload = {"username": user.username, "name": group_obj.name, "uuid": str(group_obj.uuid)}
@@ -105,7 +105,7 @@ def group_obj_change_notification_handler(user, group_obj, operation):
 
 def handle_platform_group_role_change_notification(group_obj, role_obj, operation):
     """Signal handler for sending notification message when roles of platform group changes."""
-    if not settings.NOTIFICATION_ENABLED:
+    if not settings.NOTIFICATIONS_ENABLED:
         return
     payload = {
         "username": "Red Hat",
@@ -125,7 +125,7 @@ def handle_platform_group_role_change_notification(group_obj, role_obj, operatio
 
 def group_role_change_notification_handler(user, group_obj, role_obj, operation):
     """Signal handler for sending notification message when role of group changes."""
-    if not settings.NOTIFICATION_ENABLED:
+    if not settings.NOTIFICATIONS_ENABLED:
         return
 
     # Handle Red Hat managed platform group
@@ -153,7 +153,7 @@ def group_role_change_notification_handler(user, group_obj, role_obj, operation)
 
 def group_principal_change_notification_handler(user, group_obj, principal, operation):
     """Signal handler for sending notification message when principal of group changes."""
-    if not settings.NOTIFICATION_ENABLED:
+    if not settings.NOTIFICATIONS_ENABLED:
         return
 
     account_id = user.account
@@ -170,7 +170,7 @@ def group_principal_change_notification_handler(user, group_obj, principal, oper
 
 def group_flag_change_notification_handler(user, group_obj):
     """Signal handler for sending notification message when flag of group changes."""
-    if not settings.NOTIFICATION_ENABLED:
+    if not settings.NOTIFICATIONS_ENABLED:
         return
     account_id = user.account
     payload = {"username": user.username, "name": group_obj.name, "uuid": str(group_obj.uuid)}

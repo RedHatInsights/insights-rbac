@@ -122,7 +122,7 @@ class RoleViewsetTests(IdentityRequest):
     @patch("management.notifications.producer_util.NotificationProducer.send_kafka_message")
     def test_create_role_success(self, send_kafka_message):
         """Test that we can create a role."""
-        with self.settings(NOTIFICATION_ENABLED=True):
+        with self.settings(NOTIFICATIONS_ENABLED=True):
             role_name = "roleA"
             access_data = [
                 {
@@ -700,7 +700,7 @@ class RoleViewsetTests(IdentityRequest):
     @patch("management.notifications.producer_util.NotificationProducer.send_kafka_message")
     def test_update_role_success(self, send_kafka_message):
         """Test that we can update an existing role."""
-        with self.settings(NOTIFICATION_ENABLED=True):
+        with self.settings(NOTIFICATIONS_ENABLED=True):
             role_name = "roleA"
             response = self.create_role(role_name)
             updated_name = role_name + "_update"
@@ -835,7 +835,7 @@ class RoleViewsetTests(IdentityRequest):
     @patch("management.notifications.producer_util.NotificationProducer.send_kafka_message")
     def test_delete_role_success(self, send_kafka_message):
         """Test that we can delete an existing role."""
-        with self.settings(NOTIFICATION_ENABLED=True):
+        with self.settings(NOTIFICATIONS_ENABLED=True):
             role_name = "roleA"
             response = self.create_role(role_name)
 

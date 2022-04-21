@@ -115,7 +115,7 @@ class GroupViewsetTests(IdentityRequest):
     @patch("management.notifications.producer_util.NotificationProducer.send_kafka_message")
     def test_create_group_success(self, send_kafka_message, mock_request):
         """Test that we can create a group."""
-        with self.settings(NOTIFICATION_ENABLED=True):
+        with self.settings(NOTIFICATIONS_ENABLED=True):
             group_name = "groupC"
             test_data = {"name": group_name}
 
@@ -482,7 +482,7 @@ class GroupViewsetTests(IdentityRequest):
     @patch("management.notifications.producer_util.NotificationProducer.send_kafka_message")
     def test_update_group_success(self, send_kafka_message, mock_request):
         """Test that we can update an existing group."""
-        with self.settings(NOTIFICATION_ENABLED=True):
+        with self.settings(NOTIFICATIONS_ENABLED=True):
             updated_name = self.group.name + "_update"
             test_data = {"name": updated_name}
             url = reverse("group-detail", kwargs={"uuid": self.group.uuid})
@@ -549,7 +549,7 @@ class GroupViewsetTests(IdentityRequest):
     @patch("management.notifications.producer_util.NotificationProducer.send_kafka_message")
     def test_delete_group_success(self, send_kafka_message):
         """Test that we can delete an existing group."""
-        with self.settings(NOTIFICATION_ENABLED=True):
+        with self.settings(NOTIFICATIONS_ENABLED=True):
             url = reverse("group-detail", kwargs={"uuid": self.group.uuid})
             client = APIClient()
             response = client.delete(url, **self.headers)
@@ -633,7 +633,7 @@ class GroupViewsetTests(IdentityRequest):
     def test_add_group_principals_success(self, send_kafka_message, mock_request):
         """Test that adding a principal to a group returns successfully."""
         # Create a group and a cross account user.
-        with self.settings(NOTIFICATION_ENABLED=True):
+        with self.settings(NOTIFICATIONS_ENABLED=True):
             test_group = Group.objects.create(name="test", tenant=self.tenant)
             cross_account_user = Principal.objects.create(
                 username="cross_account_user", cross_account=True, tenant=self.tenant
@@ -723,7 +723,7 @@ class GroupViewsetTests(IdentityRequest):
     @patch("management.notifications.producer_util.NotificationProducer.send_kafka_message")
     def test_remove_group_principals_success(self, send_kafka_message, mock_request):
         """Test that removing a principal to a group returns successfully."""
-        with self.settings(NOTIFICATION_ENABLED=True):
+        with self.settings(NOTIFICATIONS_ENABLED=True):
             test_user = Principal.objects.create(username="test_user", tenant=self.tenant)
             self.group.principals.add(test_user)
 
@@ -1107,7 +1107,7 @@ class GroupViewsetTests(IdentityRequest):
     @patch("management.notifications.producer_util.NotificationProducer.send_kafka_message")
     def test_system_flag_update_on_add(self, send_kafka_message):
         """Test that adding a role to a platform_default group flips the system flag."""
-        with self.settings(NOTIFICATION_ENABLED=True):
+        with self.settings(NOTIFICATIONS_ENABLED=True):
             url = reverse("group-roles", kwargs={"uuid": self.defGroup.uuid})
             client = APIClient()
             test_data = {"roles": [self.roleB.uuid, self.dummy_role_id]}
@@ -1162,7 +1162,7 @@ class GroupViewsetTests(IdentityRequest):
     @patch("management.notifications.producer_util.NotificationProducer.send_kafka_message")
     def test_system_flag_update_on_remove(self, send_kafka_message):
         """Test that removing a role from a platform_default group flips the system flag."""
-        with self.settings(NOTIFICATION_ENABLED=True):
+        with self.settings(NOTIFICATIONS_ENABLED=True):
             default_role = Role.objects.create(
                 name="default_role",
                 description="A default role for a group.",
@@ -1267,7 +1267,7 @@ class GroupViewsetTests(IdentityRequest):
     @patch("management.notifications.producer_util.NotificationProducer.send_kafka_message")
     def test_add_group_multiple_roles_success(self, send_kafka_message):
         """Test that adding multiple roles to a group returns successfully."""
-        with self.settings(NOTIFICATION_ENABLED=True):
+        with self.settings(NOTIFICATIONS_ENABLED=True):
             groupC = Group.objects.create(name="groupC", tenant=self.tenant)
             url = reverse("group-roles", kwargs={"uuid": groupC.uuid})
             client = APIClient()
@@ -1350,7 +1350,7 @@ class GroupViewsetTests(IdentityRequest):
     @patch("management.notifications.producer_util.NotificationProducer.send_kafka_message")
     def test_remove_group_multiple_roles_success(self, send_kafka_message):
         """Test that removing multiple roles from a group returns successfully."""
-        with self.settings(NOTIFICATION_ENABLED=True):
+        with self.settings(NOTIFICATIONS_ENABLED=True):
             url = reverse("group-roles", kwargs={"uuid": self.group.uuid})
             client = APIClient()
             url = "{}?roles={},{}".format(url, self.role.uuid, self.roleB.uuid)
