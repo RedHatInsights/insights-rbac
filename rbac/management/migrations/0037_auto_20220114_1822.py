@@ -11,6 +11,14 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        migrations.AddField(model_name="group", name="admin_default", field=models.BooleanField(default=False),),
-        migrations.AddField(model_name="role", name="admin_default", field=models.BooleanField(default=False),),
+        migrations.AddField(
+            model_name="group",
+            name="admin_default",
+            field=models.BooleanField(default=False),
+        ),
+        migrations.AddField(
+            model_name="role",
+            name="admin_default",
+            field=models.BooleanField(default=False),
+        ),
     ]

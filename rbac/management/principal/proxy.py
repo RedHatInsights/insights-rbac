@@ -190,7 +190,7 @@ class PrincipalProxy:  # pylint: disable=too-few-public-methods
         error = None
         resp = {"status_code": response.status_code}
         if response.status_code == status.HTTP_200_OK:
-            """ Testing if account numbers match """
+            """Testing if account numbers match"""
             try:
                 data = response.json()
                 if isinstance(data, dict):

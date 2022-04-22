@@ -1,14 +1,14 @@
 default_language_version:
-  python: python3.6
+  python: python3.9
 repos:
 - repo: https://github.com/psf/black
-  rev: 19.3b0
+  rev: "22.3.0"
   hooks:
   - id: black
-    args: ["-l", "119", "-t", "py36"]
+    args: ["-l", "119", "-t", "py39"]
     require_serial: true
 - repo: https://gitlab.com/pycqa/flake8
-  rev: "3.7.9"
+  rev: "4.0.1"
   hooks:
   - id: flake8
     args: ["rbac"]
