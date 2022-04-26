@@ -29,8 +29,8 @@ LABEL summary="$SUMMARY" \
       io.k8s.description="$DESCRIPTION" \
       io.k8s.display-name="insights-rbac" \
       io.openshift.expose-services="8080:http" \
-      io.openshift.tags="python,python36,rh-python36" \
-      com.redhat.component="python36-docker" \
+      io.openshift.tags="python,python38,rh-python38" \
+      com.redhat.component="python38-docker" \
       name="insights-rbac" \
       version="1" \
       maintainer="Red Hat Insights"
@@ -55,7 +55,8 @@ COPY . ${APP_ROOT}/src
 # - In order to drop the root user, we have to make some directories world
 #   writable as OpenShift default security model is to run the container
 #   under random UID.
-RUN virtualenv ${APP_ROOT} && \
+RUN pip install virtualenv && \
+    virtualenv ${APP_ROOT} && \
     chown -R 1001:0 ${APP_ROOT} && \
     fix-permissions ${APP_ROOT} -P && \
     rpm-file-permissions && \
