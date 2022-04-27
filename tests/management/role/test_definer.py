@@ -30,7 +30,7 @@ class RoleDefinerTests(IdentityRequest):
         self.public_tenant = Tenant.objects.get(tenant_name="public")
 
     def test_role_create(self):
-        """ Test that we can run a role seeding update. """
+        """Test that we can run a role seeding update."""
         self.try_seed_roles()
 
         roles = Role.objects.filter(platform_default=True)
@@ -38,7 +38,7 @@ class RoleDefinerTests(IdentityRequest):
         self.assertFalse(Role.objects.get(name="RBAC Administrator Local Test").platform_default)
 
     def test_role_update(self):
-        """ Test that role seeding update will re-create the roles. """
+        """Test that role seeding update will re-create the roles."""
         self.try_seed_roles()
 
         # delete all the roles and re-create roles again when seed_roles is called
@@ -56,7 +56,7 @@ class RoleDefinerTests(IdentityRequest):
                 self.assertEqual(rd.tenant, self.public_tenant)
 
     def test_role_update_version_diff(self):
-        """ Test that role seeding updates attribute when version is changed. """
+        """Test that role seeding updates attribute when version is changed."""
         self.try_seed_roles()
 
         # set the version to zero, so it would update attribute when seed_roles is called
@@ -68,14 +68,14 @@ class RoleDefinerTests(IdentityRequest):
         self.assertTrue(len(roles))
 
     def try_seed_roles(self):
-        """ Try to seed roles """
+        """Try to seed roles"""
         try:
             seed_roles()
         except Exception:
             self.fail(msg="seed_roles encountered an exception")
 
     def test_try_seed_permissions(self):
-        """ Test permission seeding. """
+        """Test permission seeding."""
         self.assertFalse(len(Permission.objects.all()))
 
         try:
@@ -93,7 +93,7 @@ class RoleDefinerTests(IdentityRequest):
         self.assertEqual(permission.tenant, self.public_tenant)
 
     def test_try_seed_permissions_update_description(self):
-        """ Test permission seeding update description, skip string configs. """
+        """Test permission seeding update description, skip string configs."""
         permission_string = "approval_local_test:templates:read"
         self.assertFalse(len(Permission.objects.all()))
         Permission.objects.create(permission=permission_string, tenant=self.public_tenant)

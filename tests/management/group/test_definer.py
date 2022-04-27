@@ -80,7 +80,7 @@ class GroupDefinerTests(IdentityRequest):
             self.assertTrue(role.platform_default)
 
     def modify_default_group(self, system=True):
-        """ Add a role to the default group and/or change the system flag"""
+        """Add a role to the default group and/or change the system flag"""
         group = Group.objects.get(platform_default=True)
         roles = Role.objects.filter(name="RBAC Administrator").values_list("uuid", flat=True)
         add_roles(group, roles, self.tenant)

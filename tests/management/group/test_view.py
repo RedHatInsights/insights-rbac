@@ -217,7 +217,7 @@ class GroupViewsetTests(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
     def test_group_filter_by_guids_with_invalid_guid(self):
-        """ Test that an invalid guid in a list of guids returns an error."""
+        """Test that an invalid guid in a list of guids returns an error."""
         url = "{}?uuids=invalid"
         client = APIClient()
         response = client.get(url, **self.headers)
@@ -597,7 +597,7 @@ class GroupViewsetTests(IdentityRequest):
         self.assertEqual(response.data[0]["source"], "principals")
 
     def test_add_group_principal_invalid_guid(self):
-        """Test that adding a principal to a group with an invalid GUID causes a 400. """
+        """Test that adding a principal to a group with an invalid GUID causes a 400."""
         url = reverse("group-principals", kwargs={"uuid": "invalid_guid"})
         client = APIClient()
         test_data = {"principals": [{"username": self.principal.username}]}

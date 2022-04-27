@@ -11,11 +11,29 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        migrations.AlterField(model_name="group", name="name", field=models.CharField(max_length=150),),
-        migrations.AlterField(model_name="policy", name="name", field=models.CharField(max_length=150),),
-        migrations.AlterField(model_name="principal", name="username", field=models.CharField(max_length=150),),
         migrations.AlterField(
-            model_name="role", name="display_name", field=models.CharField(default="", max_length=150),
+            model_name="group",
+            name="name",
+            field=models.CharField(max_length=150),
         ),
-        migrations.AlterField(model_name="role", name="name", field=models.CharField(max_length=150),),
+        migrations.AlterField(
+            model_name="policy",
+            name="name",
+            field=models.CharField(max_length=150),
+        ),
+        migrations.AlterField(
+            model_name="principal",
+            name="username",
+            field=models.CharField(max_length=150),
+        ),
+        migrations.AlterField(
+            model_name="role",
+            name="display_name",
+            field=models.CharField(default="", max_length=150),
+        ),
+        migrations.AlterField(
+            model_name="role",
+            name="name",
+            field=models.CharField(max_length=150),
+        ),
     ]
