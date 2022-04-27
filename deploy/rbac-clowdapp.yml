@@ -2016,3 +2016,6 @@ parameters:
 - description: Enable sending out notification events
   name: NOTIFICATIONS_ENABLED
   value: 'False'
+- description: Enable sending out notification events of Red Hat changes
+  name: NOTIFICATIONS_RH_ENABLED
+  value: 'False'

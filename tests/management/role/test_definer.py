@@ -33,7 +33,7 @@ class RoleDefinerTests(IdentityRequest):
     @patch("management.notifications.producer_util.NotificationProducer.send_kafka_message")
     def test_role_create(self, send_kafka_message):
         """Test that we can run a role seeding update."""
-        with self.settings(NOTIFICATIONS_ENABLED=True):
+        with self.settings(NOTIFICATIONS_RH_ENABLED=True, NOTIFICATIONS_ENABLED=True):
             self.try_seed_roles()
 
             roles = Role.objects.filter(platform_default=True)
@@ -97,7 +97,7 @@ class RoleDefinerTests(IdentityRequest):
         platform_role_to_update.save()
         access.save()
 
-        with self.settings(NOTIFICATIONS_ENABLED=True):
+        with self.settings(NOTIFICATIONS_RH_ENABLED=True, NOTIFICATIONS_ENABLED=True):
             seed_roles()
 
             platform_role_to_update.refresh_from_db()

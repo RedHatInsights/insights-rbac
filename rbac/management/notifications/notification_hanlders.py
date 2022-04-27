@@ -41,7 +41,7 @@ def notify_all(event_type, payload):
 
 def handle_system_role_change_notification(role_obj, operation):
     """Signal handler for sending notification message when system Role object changes."""
-    if not settings.NOTIFICATIONS_ENABLED:
+    if not settings.NOTIFICATIONS_RH_ENABLED:
         return
 
     payload = payload_builder("Red Hat", role_obj)
@@ -106,7 +106,7 @@ def group_obj_change_notification_handler(user, group_obj, operation):
 
 def handle_platform_group_role_change_notification(group_obj, role_obj, operation):
     """Signal handler for sending notification message when roles of platform group changes."""
-    if not settings.NOTIFICATIONS_ENABLED:
+    if not settings.NOTIFICATIONS_RH_ENABLED:
         return
     payload = payload_builder("Red Hat", group_obj, extra_info=("role", role_obj))
 

@@ -73,7 +73,7 @@ class GroupDefinerTests(IdentityRequest):
             name="new_platform_role", platform_default=True, tenant=self.public_tenant
         )
         role_to_remove = Role.objects.get(name="RBAC Administrator Local Test")
-        with self.settings(NOTIFICATIONS_ENABLED=True):
+        with self.settings(NOTIFICATIONS_RH_ENABLED=True, NOTIFICATIONS_ENABLED=True):
             try:
                 seed_group()
             except Exception:
