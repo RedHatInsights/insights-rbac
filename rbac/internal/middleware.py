@@ -22,11 +22,14 @@ from json.decoder import JSONDecodeError
 
 from django.conf import settings
 from django.http import HttpResponseForbidden
+from django.shortcuts import get_object_or_404
+from django.urls import resolve
 from django.utils.deprecation import MiddlewareMixin
 
 from api.common import RH_IDENTITY_HEADER
-from api.models import User
+from api.models import User, Tenant
 from api.serializers import extract_header
+from rbac.middleware import IdentityHeaderMiddleware
 
 
 logger = logging.getLogger(__name__)
@@ -58,8 +61,14 @@ class InternalIdentityHeaderMiddleware(MiddlewareMixin):
             logger.error("Malformed X-RH-Identity header.")
             return HttpResponseForbidden()
 
+        if "integration" in resolve(request.path).url_name:
+            return IdentityHeaderMiddleware.process_request(self, request)
+
         request.user = user
 
     def process_response(self, request, response):
         """Process responses for internal identity middleware."""
         return response
+
+    def get_tenant(self, request):
+        request.tenant = get_object_or_404(Tenant, tenant_name=self.tenant_re.match(request.path_info).group('tenant_id'))

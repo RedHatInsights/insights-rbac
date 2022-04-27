@@ -96,16 +96,31 @@ class GroupFilter(CommonFilters):
             queryset = queryset.filter(policies__roles__name__icontains=role_name)
         return queryset
 
+    def principal_filter(self, queryset, field, values):
+        """Filter for groups containing principals."""
+        if not values:
+            key = "groups_filter"
+            message = "No principals provided to filter groups!"
+            error = {key: [_(message)]}
+            raise serializers.ValidationError(error)
+        principals = [value.lower() for value in values.split(",")]
+
+        for principal in principals:
+            queryset = queryset.filter(principals__username__icontains=principal)
+
+        return queryset
+
     name = filters.CharFilter(field_name="name", method="name_filter")
     role_names = filters.CharFilter(field_name="role_names", method="roles_filter")
     uuid = filters.CharFilter(field_name="uuid", method="uuid_filter")
+    principals = filters.CharFilter(field_name="principals", method="principal_filter")
     system = filters.BooleanFilter(field_name="system")
     platform_default = filters.BooleanFilter(field_name="platform_default")
     admin_default = filters.BooleanFilter(field_name="admin_default")
 
     class Meta:
         model = Group
-        fields = ["name", "role_names", "uuid"]
+        fields = ["name", "role_names", "uuid", "principals"]
 
 
 class GroupViewSet(

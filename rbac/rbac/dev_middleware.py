@@ -41,8 +41,8 @@ class DevelopmentIdentityHeaderMiddleware(MiddlewareMixin):  # pylint: disable=t
                 "identity": {
                     "account_number": "10001",
                     "org_id": "11111",
-                    "type": "User",
-                    "user": {
+                    "type": "Associate",
+                    "associate": {
                         "username": "user_dev",
                         "email": "user_dev@foo.com",
                         "is_org_admin": True,

@@ -74,7 +74,7 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
 
     header = RH_IDENTITY_HEADER
 
-    def get_tenant(self, model, hostname, request):
+    def get_tenant(self, request):
         """Override the tenant selection logic."""
         if settings.AUTHENTICATE_WITH_ORG_ID:
             tenant_name = create_tenant_name(request.user.account)
@@ -184,7 +184,11 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
             _, json_rh_auth = extract_header(request, self.header)
             user.account = json_rh_auth.get("identity", {})["account_number"]
             user.org_id = json_rh_auth.get("identity", {}).get("org_id")
-            user_info = json_rh_auth.get("identity", {}).get("user", {})
+            usertype = json_rh_auth.get("identity", {}).get("type")
+            if usertype.lower() == "associate":
+                user_info = json_rh_auth.get("identity", {}).get("associate", {})
+            else:
+                user_info = json_rh_auth.get("identity", {}).get("user", {})
             user.username = user_info["username"]
             user.admin = user_info.get("is_org_admin")
             user.internal = user_info.get("is_internal")
@@ -239,7 +243,7 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
             raise error
         if user.username and (user.account or user.org_id):
             request.user = user
-            request.tenant = self.get_tenant(model=None, hostname=None, request=request)
+            request.tenant = self.get_tenant(request=request)
 
     def process_response(self, request, response):  # pylint: disable=no-self-use
         """Process response for identity middleware.
