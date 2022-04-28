@@ -25,11 +25,53 @@ from django.db import transaction
 from django.utils import timezone
 from management.notifications.notification_hanlders import role_obj_change_notification_handler
 from management.permission.model import Permission
-from management.role.model import Access, ResourceDefinition, Role
+from management.role.model import Access, ExtRoleRelation, ResourceDefinition, Role
 
 from api.models import Tenant
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
+
+
+def _process_ext_relation():
+    """Create ext relation and attach them to corresponding role."""
+    relation_directory = os.path.join(settings.BASE_DIR, "management", "role", "ext_relations")
+    relation_files = [
+        f
+        for f in os.listdir(relation_directory)
+        if os.path.isfile(os.path.join(relation_directory, f)) and f.endswith(".json")
+    ]
+    current_relation_ids = set()
+    with transaction.atomic():
+        for relation_file_name in relation_files:
+            relation_file_path = os.path.join(relation_directory, relation_file_name)
+            ext_tenant_name = os.path.splitext(relation_file_name)[0]
+            with open(relation_file_path) as json_file:
+                data_list = json.load(json_file)
+                ext_relation_ids = _update_or_create_ext_relation(data_list, ext_tenant_name)
+                current_relation_ids.update(ext_relation_ids)
+
+    ext_relations_to_delete = ExtRoleRelation.objects.exclude(id__in=current_relation_ids)
+    logger.info(
+        f"The following '{ext_relations_to_delete.count()}' external relation(s) eligible for removal: \
+        {ext_relations_to_delete.values()}"
+    )
+
+
+def _update_or_create_ext_relation(data_list, ext_tenant_name):
+    public_tenant = Tenant.objects.get(tenant_name="public")
+    ext_relation_ids = set()
+    for data in data_list:
+        role = Role.objects.get(name=data["role"], tenant=public_tenant)
+        defaults = dict(
+            description=data.get("description", None), ext_tenant=ext_tenant_name, role=role, tenant=public_tenant
+        )
+        ext_relation, created = ExtRoleRelation.objects.update_or_create(ext_id=data["id"], defaults=defaults)
+
+        if created:
+            logger.info("Created external relationships %s.", data["id"])
+        ext_relation_ids.add(ext_relation.id)
+
+    return ext_relation_ids
 
 
 def _make_role(data):
@@ -106,6 +148,8 @@ def seed_roles():
     logger.info(f"The following '{roles_to_delete.count()}' roles(s) eligible for removal: {roles_to_delete.values()}")
     # Currently read-only to ensure we don't have any orphaned roles which should be added to the config
     # Role.objects.filter(system=True).exclude(id__in=current_role_ids).delete()
+
+    _process_ext_relation()
 
 
 def seed_permissions():

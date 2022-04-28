@@ -20,5 +20,5 @@
 from management.permission.model import Permission
 from management.principal.model import Principal
 from management.group.model import Group
-from management.role.model import Access, ResourceDefinition, Role
+from management.role.model import Access, ExtRoleRelation, ResourceDefinition, Role
 from management.policy.model import Policy

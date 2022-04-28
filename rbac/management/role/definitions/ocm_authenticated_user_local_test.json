@@ -1,0 +1,10 @@
+{
+  "roles": [
+    {
+      "name": "OCM Authenticated User Local Test",
+      "description": "A role for ocm to link to their autenticated user.",
+      "system": true,
+      "version": 2
+    }
+  ]
+}
