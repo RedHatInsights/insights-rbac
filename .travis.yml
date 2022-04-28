@@ -10,7 +10,7 @@ services:
   - redis-server
 
 addons:
-  postgresql: '9.6'
+  postgresql: '10.17'
 
 env:
   DATABASE_NAME=rbac_test
