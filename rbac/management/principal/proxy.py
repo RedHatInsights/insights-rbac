@@ -231,6 +231,7 @@ class PrincipalProxy:  # pylint: disable=too-few-public-methods
                 except ValueError:
                     resp["status_code"] = status.HTTP_500_INTERNAL_SERVER_ERROR
                     error = unexpected_error
+
         elif response.status_code == status.HTTP_404_NOT_FOUND:
             error = {"detail": "Not Found.", "status": str(response.status_code), "source": "principals"}
         else:

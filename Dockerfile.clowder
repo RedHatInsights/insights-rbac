@@ -1,4 +1,4 @@
-FROM registry.redhat.io/ubi8/python-36
+FROM registry.redhat.io/ubi8/python-38
 
 ENV NODEJS_VERSION=10 \
     NODEJS_SCL=rh-nodejs10 \

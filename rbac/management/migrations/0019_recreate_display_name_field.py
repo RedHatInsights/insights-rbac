@@ -10,8 +10,13 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        migrations.RemoveField(model_name="role", name="display_name",),
+        migrations.RemoveField(
+            model_name="role",
+            name="display_name",
+        ),
         migrations.AddField(
-            model_name="role", name="display_name", field=models.CharField(null=True, max_length=150),
+            model_name="role",
+            name="display_name",
+            field=models.CharField(null=True, max_length=150),
         ),
     ]
