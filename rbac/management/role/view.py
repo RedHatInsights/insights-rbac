@@ -30,11 +30,12 @@ from django.utils.translation import gettext as _
 from django_filters import rest_framework as filters
 from management.filters import CommonFilters
 from management.models import Permission
+from management.notifications.notification_hanlders import role_obj_change_notification_handler
 from management.permissions import RoleAccessPermission
 from management.querysets import get_role_queryset
 from management.role.serializer import AccessSerializer, RoleDynamicSerializer, RolePatchSerializer
 from management.utils import validate_uuid
-from rest_framework import mixins, serializers, viewsets
+from rest_framework import mixins, serializers, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.filters import OrderingFilter
 
@@ -312,7 +313,10 @@ class RoleViewSet(
             raise serializers.ValidationError(error)
         with transaction.atomic():
             self.delete_policies_if_no_role_attached(role)
-            return super().destroy(request=request, args=args, kwargs=kwargs)
+            response = super().destroy(request=request, args=args, kwargs=kwargs)
+        if response.status_code == status.HTTP_204_NO_CONTENT:
+            role_obj_change_notification_handler(role, "deleted", request.user)
+        return response
 
     def partial_update(self, request, *args, **kwargs):
         """Patch a role."""

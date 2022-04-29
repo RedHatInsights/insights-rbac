@@ -15,6 +15,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Test the role definer."""
+from unittest.mock import call, patch
 from management.role.definer import seed_roles, seed_permissions
 from api.models import Tenant
 from tests.identity_request import IdentityRequest
@@ -29,13 +30,21 @@ class RoleDefinerTests(IdentityRequest):
         super().setUp()
         self.public_tenant = Tenant.objects.get(tenant_name="public")
 
-    def test_role_create(self):
+    @patch("management.notifications.producer_util.NotificationProducer.send_kafka_message")
+    def test_role_create(self, send_kafka_message):
         """Test that we can run a role seeding update."""
-        self.try_seed_roles()
+        with self.settings(NOTIFICATIONS_RH_ENABLED=True, NOTIFICATIONS_ENABLED=True):
+            self.try_seed_roles()
 
-        roles = Role.objects.filter(platform_default=True)
-        self.assertTrue(len(roles))
-        self.assertFalse(Role.objects.get(name="RBAC Administrator Local Test").platform_default)
+            roles = Role.objects.filter(platform_default=True)
+            self.assertTrue(len(roles))
+            self.assertFalse(Role.objects.get(name="RBAC Administrator Local Test").platform_default)
+
+            send_kafka_message.assert_any_call(
+                "rh-new-role-available",
+                self.customer_data["account_id"],
+                {"name": roles.first().name, "username": "Red Hat", "uuid": str(roles.first().uuid)},
+            )
 
     def test_role_update(self):
         """Test that role seeding update will re-create the roles."""
@@ -66,6 +75,53 @@ class RoleDefinerTests(IdentityRequest):
         seed_roles()
         roles = Role.objects.filter(platform_default=True)
         self.assertTrue(len(roles))
+
+    @patch("management.notifications.producer_util.NotificationProducer.send_kafka_message")
+    def test_role_update_platform_default_role(self, send_kafka_message):
+        """Test that role seeding updates send out notificaiton."""
+        self.try_seed_roles()
+
+        # Update non platform default role
+        non_platform_role_to_update = Role.objects.get(name="RBAC Administrator Local Test")
+        non_platform_role_to_update.version = 0
+        access = non_platform_role_to_update.access.first()
+        access.permission = Permission.objects.get(permission="rbac:principal:read")
+        non_platform_role_to_update.save()
+        access.save()
+
+        # Update platform default role
+        platform_role_to_update = Role.objects.get(name="User Access principal viewer")
+        platform_role_to_update.version = 0
+        access = platform_role_to_update.access.first()
+        access.permission = Permission.objects.get(permission="rbac:*:*")
+        platform_role_to_update.save()
+        access.save()
+
+        with self.settings(NOTIFICATIONS_RH_ENABLED=True, NOTIFICATIONS_ENABLED=True):
+            seed_roles()
+
+            platform_role_to_update.refresh_from_db()
+            non_platform_role_to_update.refresh_from_db()
+            self.assertEqual(non_platform_role_to_update.access.first().permission.permission, "rbac:*:*")
+            self.assertEqual(platform_role_to_update.access.first().permission.permission, "rbac:principal:read")
+            assert send_kafka_message.call_args_list[0] == call(
+                "rh-non-platform-default-role-updated",
+                self.customer_data["account_id"],
+                {
+                    "name": non_platform_role_to_update.name,
+                    "username": "Red Hat",
+                    "uuid": str(non_platform_role_to_update.uuid),
+                },
+            )
+            assert send_kafka_message.call_args_list[1] == call(
+                "rh-platform-default-role-updated",
+                self.customer_data["account_id"],
+                {
+                    "name": platform_role_to_update.name,
+                    "username": "Red Hat",
+                    "uuid": str(platform_role_to_update.uuid),
+                },
+            )
 
     def try_seed_roles(self):
         """Try to seed roles"""
