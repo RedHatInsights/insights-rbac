@@ -33,6 +33,10 @@ from management.group.serializer import (
     GroupSerializer,
     RoleMinimumSerializer,
 )
+from management.notifications.notification_hanlders import (
+    group_obj_change_notification_handler,
+    group_principal_change_notification_handler,
+)
 from management.permissions import GroupAccessPermission
 from management.principal.model import Principal
 from management.principal.proxy import PrincipalProxy
@@ -288,7 +292,11 @@ class GroupViewSet(
         """
         validate_uuid(kwargs.get("uuid"), "group uuid validation")
         self.protect_default_groups("delete")
-        return super().destroy(request=request, args=args, kwargs=kwargs)
+        group = self.get_object()
+        response = super().destroy(request=request, args=args, kwargs=kwargs)
+        if response.status_code == status.HTTP_204_NO_CONTENT:
+            group_obj_change_notification_handler(request.user, group, "deleted")
+        return response
 
     def update(self, request, *args, **kwargs):
         """Update a group.
@@ -346,6 +354,7 @@ class GroupViewSet(
                     principal = Principal.objects.create(username=username, tenant=tenant)
                     logger.info("Created new principal %s for account_id %s.", username, account)
                 group.principals.add(principal)
+                group_principal_change_notification_handler(self.request.user, group, username, "added")
             return group
 
     def remove_principals(self, group, principals, account=None, org_id=None):
@@ -360,6 +369,7 @@ class GroupViewSet(
                     logger.info("No principal %s found for org id %s.", username, org_id)
                 if principal:
                     group.principals.remove(principal)
+                    group_principal_change_notification_handler(self.request.user, group, username, "removed")
             return group
         else:
             tenant = Tenant.objects.get(tenant_name=f"acct{account}")
@@ -371,6 +381,7 @@ class GroupViewSet(
                     logger.info("No principal %s found for account %s.", username, account)
                 if principal:
                     group.principals.remove(principal)
+                    group_principal_change_notification_handler(self.request.user, group, username, "removed")
             return group
 
     @action(detail=True, methods=["get", "post", "delete"])
@@ -608,7 +619,7 @@ class GroupViewSet(
             serializer = GroupRoleSerializerIn(data=request.data)
             if serializer.is_valid(raise_exception=True):
                 roles = request.data.pop(ROLES_KEY, [])
-            group = set_system_flag_before_update(group, request.tenant)
+            group = set_system_flag_before_update(group, request.tenant, request.user)
             add_roles(group, roles, request.tenant, user=request.user)
             response_data = GroupRoleSerializerIn(group)
         elif request.method == "GET":
@@ -625,8 +636,8 @@ class GroupViewSet(
             role_ids = request.query_params.get(ROLES_KEY, "").split(",")
             serializer = GroupRoleSerializerIn(data={"roles": role_ids})
             if serializer.is_valid(raise_exception=True):
-                group = set_system_flag_before_update(group, request.tenant)
-                remove_roles(group, role_ids, request.tenant)
+                group = set_system_flag_before_update(group, request.tenant, request.user)
+                remove_roles(group, role_ids, request.tenant, request.user)
 
             return Response(status=status.HTTP_204_NO_CONTENT)
 
