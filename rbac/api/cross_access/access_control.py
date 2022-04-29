@@ -23,7 +23,7 @@ QUERY_BY_KEY = "query_by"
 USER_ID = "user_id"
 ACCOUNT = "target_account"
 ORG_ID = "target_org"
-VALID_QUERY_BY_KEY = [ACCOUNT, USER_ID]
+VALID_QUERY_BY_KEY = [ACCOUNT, USER_ID, ORG_ID]
 
 
 class CrossAccountRequestAccessPermission(permissions.BasePermission):
@@ -41,8 +41,10 @@ class CrossAccountRequestAccessPermission(permissions.BasePermission):
                 return True
 
             # For list
-            query_by = validate_and_get_key(request.query_params, QUERY_BY_KEY, VALID_QUERY_BY_KEY, ACCOUNT)
-            if query_by == ACCOUNT:
+            query_by = validate_and_get_key(
+                request.query_params, QUERY_BY_KEY, VALID_QUERY_BY_KEY, ACCOUNT=None, ORG_ID=None
+            )
+            if query_by == ACCOUNT or query_by == ORG_ID:
                 return request.user.admin
             elif query_by == USER_ID:
                 return request.user.internal
