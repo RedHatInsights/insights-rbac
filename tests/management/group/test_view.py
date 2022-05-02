@@ -645,6 +645,7 @@ class GroupViewsetTests(IdentityRequest):
             client = APIClient()
             username = "test_user"
             test_data = {"principals": [{"username": username}, {"username": cross_account_user.username}]}
+
             response = client.post(url, test_data, format="json", **self.headers)
             principal = Principal.objects.get(username=username)
 

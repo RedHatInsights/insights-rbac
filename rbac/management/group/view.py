@@ -341,6 +341,7 @@ class GroupViewSet(
                     principal = Principal.objects.create(username=username, tenant=tenant)
                     logger.info("Created new principal %s for org_id %s.", username, org_id)
                 group.principals.add(principal)
+                group_principal_change_notification_handler(self.request.user, group, username, "added")
             return group
         else:
             resp = self.proxy.request_filtered_principals(users, account=account, limit=len(users))
