@@ -130,7 +130,7 @@ class IdentityRequest(TestCase):
 
         if is_internal:
             identity["identity"]["type"] = "Associate"
-            identity["identity"]["associate"] = {"email": user_data["email"]}
+            identity["identity"]["associate"] = identity.get("identity").get("user")
             identity["identity"]["user"]["is_internal"] = True
         else:
             identity["identity"]["type"] = "User"

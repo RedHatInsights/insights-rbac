@@ -106,7 +106,7 @@ class GroupFilter(CommonFilters):
         principals = [value.lower() for value in values.split(",")]
 
         for principal in principals:
-            queryset = queryset.filter(principals__username__icontains=principal)
+            queryset = queryset.filter(principals__username__iexact=principal)
 
         return queryset
 

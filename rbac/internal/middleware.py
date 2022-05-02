@@ -27,7 +27,7 @@ from django.urls import resolve
 from django.utils.deprecation import MiddlewareMixin
 
 from api.common import RH_IDENTITY_HEADER
-from api.models import User, Tenant
+from api.models import Tenant, User
 from api.serializers import extract_header
 from rbac.middleware import IdentityHeaderMiddleware
 
@@ -61,7 +61,8 @@ class InternalIdentityHeaderMiddleware(MiddlewareMixin):
             logger.error("Malformed X-RH-Identity header.")
             return HttpResponseForbidden()
 
-        if "integration" in resolve(request.path).url_name:
+        target = resolve(request.path)
+        if target and "integration" in target:
             return IdentityHeaderMiddleware.process_request(self, request)
 
         request.user = user
@@ -71,4 +72,7 @@ class InternalIdentityHeaderMiddleware(MiddlewareMixin):
         return response
 
     def get_tenant(self, request):
-        request.tenant = get_object_or_404(Tenant, tenant_name=self.tenant_re.match(request.path_info).group('tenant_id'))
+        """Ensure internal requests carry proper tenant id."""
+        request.tenant = get_object_or_404(
+            Tenant, tenant_name=self.tenant_re.match(request.path_info).group("tenant_id")
+        )

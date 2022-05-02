@@ -239,8 +239,8 @@ class IdentityHeaderMiddlewareTest(IdentityRequest):
         mock_request.user = User()
         mock_request.user.username = self.user_data["username"]
         mock_request.user.account = self.customer_data["account_id"]
-        orig_cust = IdentityHeaderMiddleware().get_tenant(None, None, mock_request)
-        dup_cust = IdentityHeaderMiddleware().get_tenant(None, None, mock_request)
+        orig_cust = IdentityHeaderMiddleware().get_tenant(mock_request)
+        dup_cust = IdentityHeaderMiddleware().get_tenant(mock_request)
         self.assertEqual(orig_cust, dup_cust)
 
     def test_tenant_process_without_org_id(self):

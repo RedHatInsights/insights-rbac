@@ -16,46 +16,43 @@
 #
 
 """View for OCM group/role API."""
-from audioop import reverse
-import datetime
-import json
+
 import logging
 
-import pytz
-from django.conf import settings
-from django.db import transaction
-from django.db.migrations.recorder import MigrationRecorder
-from django.http import Http404, HttpResponse
+from django.http import HttpResponseBadRequest
 from django.shortcuts import redirect, reverse
-from management import views
 from management.cache import TenantCache
-from management.models import Group, Role
-
-
-from api.models import Tenant
 
 
 logger = logging.getLogger(__name__)
 TENANTS = TenantCache()
 
+
 def groups(request, account_number):
+    """Formant and pass internal groups request to /groups/ API."""
     username = request.GET.get("username")
     if username:
         base_url = reverse("group-list")
-        url = f'{base_url}?principals={username}'
+        url = f"{base_url}?principals={username}"
         return redirect(url)
     else:
-        return Http404
+        return HttpResponseBadRequest("Username must be supplied.")
+
 
 def groups_for_principal(request, account_number, username):
+    """Format and pass internal groups for principal request to /groups/ API."""
     base_url = reverse("group-list")
-    url = f'{base_url}?principals={username}'
+    url = f"{base_url}?principals={username}"
     return redirect(url)
 
+
 def roles_from_group(request, account_number, uuid):
+    """Pass internal /groups/<uuid>/roles/ request to /groups/ API."""
     return redirect("group-roles", uuid=uuid)
 
-def roles_for_group(request, account_number, username, uuid):
-    base_url = reverse("group-roles", kwargs={'uuid': uuid})
-    url = f'{base_url}?principals={username}'
+
+def roles_for_group_principal(request, account_number, username, uuid):
+    """Pass internal /principal/<username>/groups/<uuid>/roles/ request to /groups/ API."""
+    base_url = reverse("group-roles", kwargs={"uuid": uuid})
+    url = f"{base_url}?principals={username}"
     return redirect(url)
