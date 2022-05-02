@@ -165,6 +165,10 @@ objects:
             value: ${MAX_SEED_THREADS}
           - name: ACCESS_CACHE_CONNECT_SIGNALS
             value: 'False'
+          - name: NOTIFICATIONS_ENABLED
+            value: ${NOTIFICATIONS_ENABLED}
+          - name: NOTIFICATIONS_RH_ENABLED
+            value: ${NOTIFICATIONS_RH_ENABLED}
 
     - name: scheduler-service
       minReplicas: ${{MIN_SCHEDULER_REPLICAS}}
@@ -417,6 +421,8 @@ objects:
             value: ${KAFKA_BOOTSTRAP_HOST
           - name: KAFKA_BOOTSTRAP_PORT
             value: ${KAFKA_BOOTSTRAP_PORT}
+          - name: NOTIFICATIONS_ENABLED
+            value: ${NOTIFICATIONS_ENABLED}
 - apiVersion: v1
   kind: ConfigMap
   metadata:
