@@ -321,7 +321,7 @@ class RoleViewSet(
     def partial_update(self, request, *args, **kwargs):
         """Patch a role."""
         validate_uuid(kwargs.get("uuid"), "role uuid validation")
-        payload = json.loads(request.body)
+        payload = json.loads(request.body or "{}")
         for field in payload:
             if field not in VALID_PATCH_FIELDS:
                 key = "role"
