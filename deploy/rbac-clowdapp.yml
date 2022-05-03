@@ -15,6 +15,10 @@ objects:
     database:
       name: rbac
     inMemoryDb: true
+    kafkaTopics:
+    - topicName: platform.notifications.ingress
+      partitions: 3
+      replicas: 3
     deployments:
     - name: worker-service
       minReplicas: ${{MIN_WORKER_REPLICAS}}
