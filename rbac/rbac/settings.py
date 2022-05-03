@@ -380,7 +380,7 @@ CHANNEL_LAYERS = {
 
 # Kafka settings
 if ENVIRONMENT.bool("CLOWDER_ENABLED", default=False):
-    kafka_broker = LoadedConfig.kafka.broker[0]
+    kafka_broker = LoadedConfig.kafka.brokers[0]
     KAFKA_HOST = kafka_broker.hostname
     KAFKA_PORT = kafka_broker.port
 else:
