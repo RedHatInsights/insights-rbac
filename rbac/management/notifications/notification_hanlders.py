@@ -36,7 +36,11 @@ def notify_all(event_type, payload):
     for tenant in Tenant.objects.exclude(tenant_name="public").iterator():
         # Tenant name pattern is acct12345
         account_id = account_id_for_tenant(tenant)
-        producer.send_kafka_message(event_type, account_id, payload)
+        if settings.AUTHENTICATE_WITH_ORG_ID:
+            org_id = tenant.org_id
+        else:
+            org_id = None
+        producer.send_kafka_message(event_type, account_id, payload, org_id=org_id)
 
 
 def handle_system_role_change_notification(role_obj, operation):
@@ -70,6 +74,10 @@ def role_obj_change_notification_handler(role_obj, operation, user=None):
         return
 
     account_id = user.account
+    if settings.AUTHENTICATE_WITH_ORG_ID:
+        org_id = user.org_id
+    else:
+        org_id = None
     payload = payload_builder(user.username, role_obj)
     # Role created
     if operation == "created":
@@ -81,7 +89,7 @@ def role_obj_change_notification_handler(role_obj, operation, user=None):
     elif operation == "updated":
         event_type = "custom-role-updated"
 
-    producer.send_kafka_message(event_type, account_id, payload)
+    producer.send_kafka_message(event_type, account_id, payload, org_id=org_id)
 
 
 def group_obj_change_notification_handler(user, group_obj, operation):
@@ -89,6 +97,10 @@ def group_obj_change_notification_handler(user, group_obj, operation):
     if not settings.NOTIFICATIONS_ENABLED:
         return
     account_id = user.account
+    if settings.AUTHENTICATE_WITH_ORG_ID:
+        org_id = user.org_id
+    else:
+        org_id = None
     payload = payload_builder(user.username, group_obj)
     # Group created
     if operation == "created":
@@ -101,7 +113,7 @@ def group_obj_change_notification_handler(user, group_obj, operation):
     # Group updated
     else:
         event_type = "group-updated"
-    producer.send_kafka_message(event_type, account_id, payload)
+    producer.send_kafka_message(event_type, account_id, payload, org_id=org_id)
 
 
 def handle_platform_group_role_change_notification(group_obj, role_obj, operation):
@@ -133,6 +145,10 @@ def group_role_change_notification_handler(user, group_obj, role_obj, operation)
 
     # Handle custom group
     account_id = user.account
+    if settings.AUTHENTICATE_WITH_ORG_ID:
+        org_id = user.org_id
+    else:
+        org_id = None
     payload = payload_builder(user.username, group_obj, operation, ("role", role_obj))
 
     if group_obj.platform_default:
@@ -140,7 +156,7 @@ def group_role_change_notification_handler(user, group_obj, role_obj, operation)
     else:
         event_type = "group-updated"
 
-    producer.send_kafka_message(event_type, account_id, payload)
+    producer.send_kafka_message(event_type, account_id, payload, org_id=org_id)
 
 
 def group_principal_change_notification_handler(user, group_obj, principal, operation):
@@ -149,10 +165,14 @@ def group_principal_change_notification_handler(user, group_obj, principal, oper
         return
 
     account_id = user.account
+    if settings.AUTHENTICATE_WITH_ORG_ID:
+        org_id = user.org_id
+    else:
+        org_id = None
     payload = payload_builder(user.username, group_obj, operation, ("principal", principal))
 
     event_type = "group-updated"
-    producer.send_kafka_message(event_type, account_id, payload)
+    producer.send_kafka_message(event_type, account_id, payload, org_id=org_id)
 
 
 def group_flag_change_notification_handler(user, group_obj):
@@ -160,11 +180,15 @@ def group_flag_change_notification_handler(user, group_obj):
     if not settings.NOTIFICATIONS_ENABLED:
         return
     account_id = user.account
+    if settings.AUTHENTICATE_WITH_ORG_ID:
+        org_id = user.org_id
+    else:
+        org_id = None
     payload = payload_builder(user.username, group_obj)
 
     event_type = "platform-default-group-turned-into-custom"
 
-    producer.send_kafka_message(event_type, account_id, payload)
+    producer.send_kafka_message(event_type, account_id, payload, org_id=org_id)
 
 
 def payload_builder(username, resource_obj, operation=None, extra_info=None):

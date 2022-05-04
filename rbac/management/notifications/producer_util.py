@@ -50,18 +50,20 @@ class NotificationProducer:
         else:
             self.producer = FakeKafkaProducer()
 
-    def create_message(self, event_type, account_id, payload):
+    def create_message(self, event_type, account_id, payload, org_id=None):
         """Create message based on template."""
         message = message_template
+        if settings.AUTHENTICATE_WITH_ORG_ID:
+            message["org_id"] = org_id
         message["event_type"] = event_type
         message["timestamp"] = datetime.now().isoformat()
         message["account_id"] = account_id
         message["events"][0]["payload"] = payload
         return message
 
-    def send_kafka_message(self, event_type, account_id, payload):
+    def send_kafka_message(self, event_type, account_id, payload, org_id=None):
         """Send message to kafka server."""
-        message = self.create_message(event_type, account_id, payload)
+        message = self.create_message(event_type, account_id, payload, org_id=org_id)
         serialized_data = pickle.dumps(message)
 
         self.producer.send(notification_topic, value=serialized_data, headers=[("rh-message-id", uuid4().bytes)])

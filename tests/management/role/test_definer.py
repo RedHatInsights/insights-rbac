@@ -15,6 +15,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Test the role definer."""
+from django.conf import settings
 from unittest.mock import call, patch
 from management.role.definer import seed_roles, seed_permissions
 from api.models import Tenant
@@ -37,6 +38,12 @@ class RoleDefinerTests(IdentityRequest):
             self.try_seed_roles()
 
             roles = Role.objects.filter(platform_default=True)
+
+            if settings.AUTHENTICATE_WITH_ORG_ID:
+                org_id = self.customer_data["org_id"]
+            else:
+                org_id = None
+
             self.assertTrue(len(roles))
             self.assertFalse(Role.objects.get(name="RBAC Administrator Local Test").platform_default)
 
@@ -44,6 +51,7 @@ class RoleDefinerTests(IdentityRequest):
                 "rh-new-role-available",
                 self.customer_data["account_id"],
                 {"name": roles.first().name, "username": "Red Hat", "uuid": str(roles.first().uuid)},
+                org_id=org_id,
             )
 
     def test_role_update(self):
@@ -97,6 +105,11 @@ class RoleDefinerTests(IdentityRequest):
         platform_role_to_update.save()
         access.save()
 
+        if settings.AUTHENTICATE_WITH_ORG_ID:
+            org_id = self.customer_data["org_id"]
+        else:
+            org_id = None
+
         with self.settings(NOTIFICATIONS_RH_ENABLED=True, NOTIFICATIONS_ENABLED=True):
             seed_roles()
 
@@ -112,6 +125,7 @@ class RoleDefinerTests(IdentityRequest):
                     "username": "Red Hat",
                     "uuid": str(non_platform_role_to_update.uuid),
                 },
+                org_id=org_id,
             )
             assert send_kafka_message.call_args_list[1] == call(
                 "rh-platform-default-role-updated",
@@ -121,6 +135,7 @@ class RoleDefinerTests(IdentityRequest):
                     "username": "Red Hat",
                     "uuid": str(platform_role_to_update.uuid),
                 },
+                org_id=org_id,
             )
 
     def try_seed_roles(self):

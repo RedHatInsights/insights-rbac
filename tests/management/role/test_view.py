@@ -18,6 +18,7 @@
 
 from uuid import uuid4
 
+from django.conf import settings
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APIClient
@@ -143,6 +144,11 @@ class RoleViewsetTests(IdentityRequest):
             uuid = response.data.get("uuid")
             role = Role.objects.get(uuid=uuid)
 
+            if settings.AUTHENTICATE_WITH_ORG_ID:
+                org_id = self.customer_data["org_id"]
+            else:
+                org_id = None
+
             self.assertIsNotNone(uuid)
             self.assertIsNotNone(response.data.get("name"))
             self.assertEqual(role_name, response.data.get("name"))
@@ -159,6 +165,7 @@ class RoleViewsetTests(IdentityRequest):
                 "custom-role-created",
                 self.customer_data["account_id"],
                 {"name": role.name, "username": self.user_data["username"], "uuid": str(role.uuid)},
+                org_id=org_id,
             )
 
     def test_create_role_with_display_success(self):
@@ -712,6 +719,12 @@ class RoleViewsetTests(IdentityRequest):
             url = reverse("role-detail", kwargs={"uuid": role_uuid})
             client = APIClient()
             response = client.put(url, test_data, format="json", **self.headers)
+
+            if settings.AUTHENTICATE_WITH_ORG_ID:
+                org_id = self.customer_data["org_id"]
+            else:
+                org_id = None
+
             self.assertEqual(response.status_code, status.HTTP_200_OK)
 
             self.assertIsNotNone(response.data.get("uuid"))
@@ -721,6 +734,7 @@ class RoleViewsetTests(IdentityRequest):
                 "custom-role-updated",
                 self.customer_data["account_id"],
                 {"name": updated_name, "username": self.user_data["username"], "uuid": response.data.get("uuid")},
+                org_id=org_id,
             )
 
     def test_update_role_invalid(self):
@@ -843,12 +857,19 @@ class RoleViewsetTests(IdentityRequest):
             url = reverse("role-detail", kwargs={"uuid": role_uuid})
             client = APIClient()
             response = client.delete(url, **self.headers)
+
+            if settings.AUTHENTICATE_WITH_ORG_ID:
+                org_id = self.customer_data["org_id"]
+            else:
+                org_id = None
+
             self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
 
             assert send_kafka_message.call_args_list[1] == call(
                 "custom-role-deleted",
                 self.customer_data["account_id"],
                 {"name": role_name, "username": self.user_data["username"], "uuid": role_uuid},
+                org_id=org_id,
             )
 
             # verify the role no longer exists
