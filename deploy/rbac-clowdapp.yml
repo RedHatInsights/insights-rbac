@@ -2019,3 +2019,6 @@ parameters:
 - description: Enable sending out notification events of Red Hat changes
   name: NOTIFICATIONS_RH_ENABLED
   value: 'False'
+- description: Enable RBAC tenancy using Org ID
+  name: AUTHENTICATE_WITH_ORG_ID
+  value: 'False'
