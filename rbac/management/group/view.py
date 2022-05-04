@@ -160,6 +160,12 @@ class GroupViewSet(
             error = {key: [_(message)]}
             raise serializers.ValidationError(error)
 
+    def protect_default_admin_group_roles(self, group):
+        """Disallow default admin access roles from being updated."""
+        if group.admin_default:
+            error = {"group": [_("Default admin access cannot be modified.")]}
+            raise serializers.ValidationError(error)
+
     def create(self, request, *args, **kwargs):
         """Create a group.
 
@@ -574,6 +580,7 @@ class GroupViewSet(
         validate_uuid(uuid, "group uuid validation")
         group = self.get_object()
         if request.method == "POST":
+            self.protect_default_admin_group_roles(group)
             serializer = GroupRoleSerializerIn(data=request.data)
             if serializer.is_valid(raise_exception=True):
                 roles = request.data.pop(ROLES_KEY, [])
