@@ -500,6 +500,14 @@ class GroupViewsetTests(IdentityRequest):
         response = client.put(url, test_data, format="json", **self.headers)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
+    def test_update_admin_default_group_roles(self):
+        """Test that admin_default groups' roles are protected from updates"""
+        url = reverse("group-roles", kwargs={"uuid": self.adminGroup.uuid})
+        test_data = {"roles": [self.roleB.uuid]}
+        client = APIClient()
+        response = client.post(url, test_data, format="json", **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
     @patch(
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
         return_value={"status_code": 200, "data": [{"username": "test_user"}]},
