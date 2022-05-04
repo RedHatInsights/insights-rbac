@@ -17,6 +17,7 @@
 
 """Serializer for group management."""
 from management.group.model import Group
+from management.notifications.notification_hanlders import group_obj_change_notification_handler
 from management.principal.proxy import PrincipalProxy
 from management.principal.serializer import PrincipalInputSerializer, PrincipalSerializer
 from management.role.serializer import RoleMinimumSerializer
@@ -58,6 +59,18 @@ class GroupInputSerializer(SerializerCreateOverrideMixin, serializers.ModelSeria
             "modified",
             "system",
         )
+
+    def create(self, validated_data):
+        """Create the role object in the database."""
+        group = super().create(validated_data)
+        group_obj_change_notification_handler(self.context["request"].user, group, "created")
+        return group
+
+    def update(self, instance, validated_data):
+        """Update the role object in the database."""
+        group = super().update(instance, validated_data)
+        group_obj_change_notification_handler(self.context["request"].user, group, "updated")
+        return group
 
 
 class GroupSerializer(SerializerCreateOverrideMixin, serializers.ModelSerializer):

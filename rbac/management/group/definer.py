@@ -24,6 +24,10 @@ from django.db.models import Q
 from django.db.models.query import QuerySet
 from django.utils.translation import gettext as _
 from management.group.model import Group
+from management.notifications.notification_hanlders import (
+    group_flag_change_notification_handler,
+    group_role_change_notification_handler,
+)
 from management.policy.model import Policy
 from management.role.model import Role
 from management.utils import clear_pk
@@ -51,7 +55,7 @@ def seed_group():
         )
 
         platform_roles = Role.objects.filter(platform_default=True)
-        add_roles(group, platform_roles, public_tenant, replace=True)
+        update_group_roles(group, platform_roles, public_tenant)
         logger.info("Finished seeding default group %s.", name)
 
         # Default admin group
@@ -65,15 +69,16 @@ def seed_group():
             defaults={"description": admin_group_description, "name": admin_name, "system": True},
             tenant=public_tenant,
         )
-        platform_roles = Role.objects.filter(admin_default=True)
-        add_roles(admin_group, platform_roles, public_tenant, replace=True)
+        admin_roles = Role.objects.filter(admin_default=True)
+        update_group_roles(admin_group, admin_roles, public_tenant)
         logger.info("Finished seeding default org admin group %s.", name)
 
 
-def set_system_flag_before_update(group, tenant):
+def set_system_flag_before_update(group, tenant, user):
     """Update system flag on default groups."""
     if group.system:
         group = clone_default_group_in_public_schema(group, tenant)
+        group_flag_change_notification_handler(user, group)
     return group
 
 
@@ -100,7 +105,7 @@ def clone_default_group_in_public_schema(group, tenant):
     return group
 
 
-def add_roles(group, roles_or_role_ids, tenant, user=None, replace=False):
+def add_roles(group, roles_or_role_ids, tenant, user=None):
     """Process list of roles and add them to the group."""
     if not isinstance(roles_or_role_ids, QuerySet):
         # If given an iterable of UUIDs, get the corresponding objects
@@ -118,9 +123,6 @@ def add_roles(group, roles_or_role_ids, tenant, user=None, replace=False):
 
     if system_policy_created:
         logger.info(f"Created new system policy for tenant {tenant.tenant_name}.")
-    else:
-        if replace:
-            system_policy.roles.clear()
 
     roles = Role.objects.filter(
         Q(tenant=tenant) | Q(tenant=Tenant.objects.get(tenant_name="public")), name__in=role_names
@@ -132,15 +134,41 @@ def add_roles(group, roles_or_role_ids, tenant, user=None, replace=False):
                 key = "add-roles"
                 message = f"Non-admin users cannot add RBAC role {role.display_name} to groups."
                 raise serializers.ValidationError({key: _(message)})
-        system_policy.roles.add(role)
+        # Only add the role if it was not attached
+        if not system_policy.roles.filter(pk=role.pk).exists():
+            system_policy.roles.add(role)
+
+            # Send notifications
+            group_role_change_notification_handler(user, group, role, "added")
 
 
-def remove_roles(group, role_ids, tenant):
+def remove_roles(group, roles_or_role_ids, tenant, user=None):
     """Process list of roles and remove them from the group."""
-    roles = Role.objects.filter(uuid__in=role_ids)
+    if not isinstance(roles_or_role_ids, QuerySet):
+        # If given an iterable of UUIDs, get the corresponding objects
+        roles = Role.objects.filter(uuid__in=roles_or_role_ids)
+    else:
+        roles = roles_or_role_ids
     role_names = list(roles.values_list("name", flat=True))
 
     group = Group.objects.get(name=group.name, tenant=tenant)
     roles = group.roles().filter(name__in=role_names)
     for policy in group.policies.all():
-        policy.roles.remove(*roles)
+        # Only remove the role if it was attached
+        for role in roles:
+            if policy.roles.filter(pk=role.pk).exists():
+                policy.roles.remove(role)
+
+                # Send notifications
+                group_role_change_notification_handler(user, group, role, "removed")
+
+
+def update_group_roles(group, roleset, tenant):
+    """Update group roles based on roleset."""
+    # Add roles to group, which will only add roles in roleset but not in group.
+    add_roles(group, roleset, tenant)
+
+    # Remove roles not in roleset from group.
+    role_ids = list(roleset.values_list("uuid", flat=True))
+    roles_to_remove = group.roles().exclude(uuid__in=role_ids)
+    remove_roles(group, roles_to_remove, tenant)
