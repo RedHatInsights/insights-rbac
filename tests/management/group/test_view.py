@@ -1355,6 +1355,15 @@ class GroupViewsetTests(IdentityRequest):
         self.assertCountEqual([self.role, self.roleB], list(self.groupB.roles()))
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
 
+    def test_remove_admin_default_group_roles(self):
+        """Test that admin_default groups' roles are protected from removal"""
+        url = reverse("group-roles", kwargs={"uuid": self.adminGroup.uuid})
+        client = APIClient()
+        url = "{}?roles={}".format(url, self.role.uuid)
+
+        response = client.delete(url, format="json", **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
     @patch("management.notifications.producer_util.NotificationProducer.send_kafka_message")
     def test_remove_group_multiple_roles_success(self, send_kafka_message):
         """Test that removing multiple roles from a group returns successfully."""

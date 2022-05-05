@@ -593,6 +593,7 @@ class GroupViewSet(
             serializer = self.get_serializer(page, many=True)
             return self.get_paginated_response(serializer.data)
         else:
+            self.protect_default_admin_group_roles(group)
             if ROLES_KEY not in request.query_params:
                 key = "detail"
                 message = "Query parameter {} is required.".format(ROLES_KEY)
