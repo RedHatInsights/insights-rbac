@@ -15,6 +15,7 @@
 #    along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Producer to send messages to kafka server."""
+import logging
 import json
 import os
 import pickle
@@ -24,6 +25,7 @@ from uuid import uuid4
 from django.conf import settings
 from kafka import KafkaProducer
 
+logger = logging.getLogger(__name__)
 
 with open(os.path.join(settings.BASE_DIR, "management", "notifications", "message_template.json")) as template:
     message_template = json.load(template)
@@ -61,10 +63,12 @@ class NotificationProducer:
 
     def send_kafka_message(self, event_type, account_id, payload):
         """Send message to kafka server."""
+        logger.info("5555555555555555555555555555")
         message = self.create_message(event_type, account_id, payload)
         serialized_data = pickle.dumps(message)
-
+        logger.info("6666666666666666666666666666")
         self.producer.send(notification_topic, value=serialized_data, headers=[("rh-message-id", uuid4().bytes)])
+        logger.info("777777777777777777777777777")
 
 
 """

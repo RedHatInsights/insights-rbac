@@ -37,6 +37,7 @@ channels-redis = "*"
 uvicorn = {extras = ["standard"], version = "*"}
 websockets = "*"
 kafka-python = "*"
+pre-commit = "*"
 
 [dev-packages]
 astroid = "==2.2.5"

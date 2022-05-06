@@ -384,8 +384,8 @@ if ENVIRONMENT.bool("CLOWDER_ENABLED", default=False):
     KAFKA_HOST = kafka_broker.hostname
     KAFKA_PORT = kafka_broker.port
 else:
-    KAFKA_HOST = "localhost"
-    KAFKA_PORT = "9092"
+    KAFKA_HOST = "kafka"
+    KAFKA_PORT = "29092"
 KAFKA_SERVER = f"{KAFKA_HOST}:{KAFKA_PORT}"
 
 NOTIFICATIONS_ENABLED = ENVIRONMENT.get_value("NOTIFICATIONS_ENABLED", default=False)

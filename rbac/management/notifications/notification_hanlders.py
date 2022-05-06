@@ -86,10 +86,13 @@ def role_obj_change_notification_handler(role_obj, operation, user=None):
 
 def group_obj_change_notification_handler(user, group_obj, operation):
     """Signal handler for sending notification message when Group object changes."""
+    logger.info("11111111111111111111")
     if not settings.NOTIFICATIONS_ENABLED:
         return
+    logger.info("22222222222222222222")
     account_id = user.account
     payload = payload_builder(user.username, group_obj)
+    logger.info("33333333333333333333")
     # Group created
     if operation == "created":
         if not group_obj.system:
@@ -101,6 +104,7 @@ def group_obj_change_notification_handler(user, group_obj, operation):
     # Group updated
     else:
         event_type = "group-updated"
+    logger.info("44444444444444444444444444")
     producer.send_kafka_message(event_type, account_id, payload)
 
 

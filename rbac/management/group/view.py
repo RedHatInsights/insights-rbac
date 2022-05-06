@@ -235,6 +235,8 @@ class GroupViewSet(
             }
 
         """
+
+        logger.info(request.META)
         return super().list(request=request, args=args, kwargs=kwargs)
 
     def retrieve(self, request, *args, **kwargs):
@@ -292,8 +294,11 @@ class GroupViewSet(
         validate_uuid(kwargs.get("uuid"), "group uuid validation")
         self.protect_default_groups("delete")
         group = self.get_object()
+        logger.info("*******************************************")
         response = super().destroy(request=request, args=args, kwargs=kwargs)
+        logger.info("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
         if response.status_code == status.HTTP_204_NO_CONTENT:
+            logger.info("#######################################")
             group_obj_change_notification_handler(request.user, group, "deleted")
         return response
 
