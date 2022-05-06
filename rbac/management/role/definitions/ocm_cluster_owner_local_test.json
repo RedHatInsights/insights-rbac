@@ -2,9 +2,13 @@
   "roles": [
     {
       "name": "OCM Cluster Owner Local Test",
-      "description": "A role for ocm to link to their cluster owner.",
+      "description": "This role provides cluster owner permission.",
       "system": true,
-      "version": 2
+      "version": 2,
+      "external": {
+        "id": "ClusterOwner",
+        "tenant": "ocm"
+      }
     }
   ]
 }

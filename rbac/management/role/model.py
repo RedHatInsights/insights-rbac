@@ -91,12 +91,17 @@ class ResourceDefinition(TenantAwareModel):
             return self.access.role
 
 
+class ExtTenant(TenantAwareModel):
+    """External tenant."""
+
+    name = models.CharField(max_length=20, null=False, unique=True)
+
+
 class ExtRoleRelation(TenantAwareModel):
     """External relation info of role."""
 
-    ext_tenant = models.CharField(max_length=10, null=False)
+    ext_tenant = models.ForeignKey(ExtTenant, null=True, on_delete=models.CASCADE, related_name="extRoleRelation")
     ext_id = models.CharField(max_length=20, null=False)
-    description = models.TextField()
     role = models.OneToOneField(Role, on_delete=models.CASCADE, null=False)
 
     class Meta:

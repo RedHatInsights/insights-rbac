@@ -17,7 +17,7 @@
 """Test the group model."""
 from django.db import IntegrityError, transaction
 
-from management.models import ExtRoleRelation, Role
+from management.models import ExtRoleRelation, ExtTenant, Role
 from tests.identity_request import IdentityRequest
 
 
@@ -56,27 +56,30 @@ class RoleModelTests(IdentityRequest):
 
     def test_ext_role_relation_creation(self):
         """Test external role relation creation."""
+        ocm = ExtTenant.objects.create(name="ocm")
         # Can not create without role
         with transaction.atomic():
-            self.assertRaises(IntegrityError, ExtRoleRelation.objects.create, ext_id="OCMRoleTest1", ext_tenant="ocm")
+            self.assertRaises(IntegrityError, ExtRoleRelation.objects.create, ext_id="OCMRoleTest1", ext_tenant=ocm)
 
         # Ext_id with ext_tenant is unique, conflict would raise exception
-        ExtRoleRelation.objects.create(ext_id="OCMRoleTest1", ext_tenant="ocm", role=self.roleA)
+        ExtRoleRelation.objects.create(ext_id="OCMRoleTest1", ext_tenant=ocm, role=self.roleA)
         with transaction.atomic():
             self.assertRaises(
                 IntegrityError,
                 ExtRoleRelation.objects.create,
                 ext_id="OCMRoleTest1",
-                ext_tenant="ocm",
+                ext_tenant=ocm,
                 role=self.roleB,
             )
 
         # Same ext_id but different ext_tenant is fine
-        ExtRoleRelation.objects.create(ext_id="OCMRoleTest1", ext_tenant="kcp", role=self.roleB)
+        kcp = ExtTenant.objects.create(name="kcp")
+        ExtRoleRelation.objects.create(ext_id="OCMRoleTest1", ext_tenant=kcp, role=self.roleB)
 
     def test_ext_role_relation_attachment(self):
         """Test that the external role relation could be attached to a role."""
-        ext_relation1 = ExtRoleRelation.objects.create(ext_id="OCMRoleTest1", ext_tenant="ocm", role=self.roleA)
+        ocm = ExtTenant.objects.create(name="ocm")
+        ext_relation1 = ExtRoleRelation.objects.create(ext_id="OCMRoleTest1", ext_tenant=ocm, role=self.roleA)
 
         # Can access role from relation and vice versa
         ext_relation1.role.name = self.roleA.name
@@ -88,6 +91,6 @@ class RoleModelTests(IdentityRequest):
                 IntegrityError,
                 ExtRoleRelation.objects.create,
                 ext_id="OCMRoleTest2",
-                ext_tenant="ocm",
+                ext_tenant=ocm,
                 role=self.roleA,
             )

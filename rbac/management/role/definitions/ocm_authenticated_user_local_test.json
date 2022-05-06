@@ -2,9 +2,13 @@
   "roles": [
     {
       "name": "OCM Authenticated User Local Test",
-      "description": "A role for ocm to link to their autenticated user.",
+      "description": "This role provides authenticated user permission.",
       "system": true,
-      "version": 2
+      "version": 2,
+      "external": {
+        "id": "AuthenticatedUser",
+        "tenant": "ocm"
+      }
     }
   ]
 }

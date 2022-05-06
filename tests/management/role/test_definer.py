@@ -132,7 +132,7 @@ class RoleDefinerTests(IdentityRequest):
 
         # External role relations are seeded
         ext_relations = ExtRoleRelation.objects.all()
-        self.assertIsNotNone(ext_relations)
+        self.assertNotEqual(len(ext_relations), 0)
         for relation in ext_relations:
             self.assertIsNotNone(relation.role)
 
@@ -141,6 +141,8 @@ class RoleDefinerTests(IdentityRequest):
         origin_role = ext_relation.role
         ext_relation.role = Role.objects.get(name="RBAC Administrator Local Test")
         ext_relation.save()
+        origin_role.version = 1
+        origin_role.save()
         seed_roles()
 
         ext_relation.refresh_from_db()
