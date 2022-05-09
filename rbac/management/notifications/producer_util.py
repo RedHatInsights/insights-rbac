@@ -43,12 +43,16 @@ notification_topic = "platform.notifications.ingress"
 class NotificationProducer:
     """Kafka message producer to emit events to notification service."""
 
-    def __init__(self):
+    def get_producer(self):
         """Init method to return fake kafka when flag is set to false."""
+        if hasattr(self, "producer"):
+            return self.producer
+
         if settings.NOTIFICATIONS_ENABLED:
             self.producer = KafkaProducer(bootstrap_servers=settings.KAFKA_SERVER)
         else:
             self.producer = FakeKafkaProducer()
+        return self.producer
 
     def create_message(self, event_type, account_id, payload):
         """Create message based on template."""
@@ -61,10 +65,11 @@ class NotificationProducer:
 
     def send_kafka_message(self, event_type, account_id, payload):
         """Send message to kafka server."""
+        producer = self.get_producer()
         message = self.create_message(event_type, account_id, payload)
         serialized_data = pickle.dumps(message)
 
-        self.producer.send(notification_topic, value=serialized_data, headers=[("rh-message-id", uuid4().bytes)])
+        producer.send(notification_topic, value=serialized_data, headers=[("rh-message-id", uuid4().bytes)])
 
 
 """
