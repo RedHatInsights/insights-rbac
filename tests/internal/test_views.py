@@ -18,6 +18,7 @@
 from rest_framework import status
 from rest_framework.test import APIClient
 from unittest.mock import patch
+from django.conf import settings
 from django.db.migrations.recorder import MigrationRecorder
 from django.test import TestCase, override_settings
 from datetime import datetime, timedelta
@@ -73,14 +74,20 @@ class InternalViewsetTests(IdentityRequest):
 
     def test_delete_tenant_disallowed(self):
         """Test that we cannot delete a tenant when disallowed."""
-        response = self.client.delete(f"/_private/api/tenant/{self.tenant.tenant_name}/", **self.request.META)
+        if settings.AUTHENTICATE_WITH_ORG_ID:
+            response = self.client.delete(f"/_private/api/tenant/{self.tenant.org_id}/", **self.request.META)
+        else:
+            response = self.client.delete(f"/_private/api/tenant/{self.tenant.tenant_name}/", **self.request.META)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(response.content.decode(), "Destructive operations disallowed.")
 
     @override_settings(INTERNAL_DESTRUCTIVE_API_OK_UNTIL=invalid_destructive_time())
     def test_delete_tenant_disallowed_with_past_timestamp(self):
         """Test that we cannot delete a tenant when disallowed."""
-        response = self.client.delete(f"/_private/api/tenant/{self.tenant.tenant_name}/", **self.request.META)
+        if settings.AUTHENTICATE_WITH_ORG_ID:
+            response = self.client.delete(f"/_private/api/tenant/{self.tenant.org_id}/", **self.request.META)
+        else:
+            response = self.client.delete(f"/_private/api/tenant/{self.tenant.tenant_name}/", **self.request.META)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(response.content.decode(), "Destructive operations disallowed.")
 
@@ -88,7 +95,10 @@ class InternalViewsetTests(IdentityRequest):
     @patch.object(Tenant, "delete")
     def test_delete_tenant_allowed_and_unmodified(self, mock):
         """Test that we can delete a tenant when allowed and unmodified."""
-        response = self.client.delete(f"/_private/api/tenant/{self.tenant.tenant_name}/", **self.request.META)
+        if settings.AUTHENTICATE_WITH_ORG_ID:
+            response = self.client.delete(f"/_private/api/tenant/{self.tenant.org_id}/", **self.request.META)
+        else:
+            response = self.client.delete(f"/_private/api/tenant/{self.tenant.tenant_name}/", **self.request.META)
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
 
     @override_settings(INTERNAL_DESTRUCTIVE_API_OK_UNTIL=valid_destructive_time())
@@ -98,8 +108,11 @@ class InternalViewsetTests(IdentityRequest):
         public_tenant = Tenant.objects.get(tenant_name="public")
         Group.objects.create(name="Custom Group", tenant=public_tenant)
 
-        tenant_no_schema = Tenant.objects.create(tenant_name="no_schema")
-        response = self.client.delete(f"/_private/api/tenant/{tenant_no_schema.tenant_name}/", **self.request.META)
+        tenant_no_schema = Tenant.objects.create(tenant_name="no_schema", org_id="1234")
+        if settings.AUTHENTICATE_WITH_ORG_ID:
+            response = self.client.delete(f"/_private/api/tenant/{tenant_no_schema.org_id}/", **self.request.META)
+        else:
+            response = self.client.delete(f"/_private/api/tenant/{tenant_no_schema.tenant_name}/", **self.request.META)
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
 
     @override_settings(INTERNAL_DESTRUCTIVE_API_OK_UNTIL=valid_destructive_time())
@@ -107,7 +120,10 @@ class InternalViewsetTests(IdentityRequest):
         """Test that we cannot delete a tenant when allowed but modified."""
         Group.objects.create(name="Custom Group", tenant=self.tenant)
 
-        response = self.client.delete(f"/_private/api/tenant/{self.tenant.tenant_name}/", **self.request.META)
+        if settings.AUTHENTICATE_WITH_ORG_ID:
+            response = self.client.delete(f"/_private/api/tenant/{self.tenant.org_id}/", **self.request.META)
+        else:
+            response = self.client.delete(f"/_private/api/tenant/{self.tenant.tenant_name}/", **self.request.META)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(response.content.decode(), "Tenant cannot be deleted.")
 
@@ -117,7 +133,10 @@ class InternalViewsetTests(IdentityRequest):
         self.group.system = False
         self.group.save()
 
-        response = self.client.delete(f"/_private/api/tenant/{self.tenant.tenant_name}/", **self.request.META)
+        if settings.AUTHENTICATE_WITH_ORG_ID:
+            response = self.client.delete(f"/_private/api/tenant/{self.tenant.org_id}/", **self.request.META)
+        else:
+            response = self.client.delete(f"/_private/api/tenant/{self.tenant.tenant_name}/", **self.request.META)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(response.content.decode(), "Tenant cannot be deleted.")
 
@@ -127,7 +146,10 @@ class InternalViewsetTests(IdentityRequest):
         self.role.system = False
         self.role.save()
 
-        response = self.client.delete(f"/_private/api/tenant/{self.tenant.tenant_name}/", **self.request.META)
+        if settings.AUTHENTICATE_WITH_ORG_ID:
+            response = self.client.delete(f"/_private/api/tenant/{self.tenant.org_id}/", **self.request.META)
+        else:
+            response = self.client.delete(f"/_private/api/tenant/{self.tenant.tenant_name}/", **self.request.META)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(response.content.decode(), "Tenant cannot be deleted.")
 
@@ -136,7 +158,10 @@ class InternalViewsetTests(IdentityRequest):
         """Test that we cannot delete a tenant when allowed but modified."""
         Role.objects.create(name="Custom Role", tenant=self.tenant)
 
-        response = self.client.delete(f"/_private/api/tenant/{self.tenant.tenant_name}/", **self.request.META)
+        if settings.AUTHENTICATE_WITH_ORG_ID:
+            response = self.client.delete(f"/_private/api/tenant/{self.tenant.org_id}/", **self.request.META)
+        else:
+            response = self.client.delete(f"/_private/api/tenant/{self.tenant.tenant_name}/", **self.request.META)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(response.content.decode(), "Tenant cannot be deleted.")
 
@@ -148,14 +173,17 @@ class InternalViewsetTests(IdentityRequest):
         Role.objects.all().delete()
         Policy.objects.all().delete()
 
-        response = self.client.delete(f"/_private/api/tenant/{self.tenant.tenant_name}/", **self.request.META)
+        if settings.AUTHENTICATE_WITH_ORG_ID:
+            response = self.client.delete(f"/_private/api/tenant/{self.tenant.org_id}/", **self.request.META)
+        else:
+            response = self.client.delete(f"/_private/api/tenant/{self.tenant.tenant_name}/", **self.request.META)
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
 
     def test_list_unmodified_tenants(self):
         """Test that only unmodified tenants are returned"""
-        modified_tenant_groups = Tenant.objects.create(tenant_name="acctmodifiedgroups")
-        modified_tenant_roles = Tenant.objects.create(tenant_name="acctmodifiedroles")
-        unmodified_tenant_2 = Tenant.objects.create(tenant_name="acctunmodified2")
+        modified_tenant_groups = Tenant.objects.create(tenant_name="acctmodifiedgroups", org_id="1111")
+        modified_tenant_roles = Tenant.objects.create(tenant_name="acctmodifiedroles", org_id="2222")
+        unmodified_tenant_2 = Tenant.objects.create(tenant_name="acctunmodified2", org_id="3333")
 
         for t in [modified_tenant_groups, modified_tenant_roles, unmodified_tenant_2]:
             t.ready = True
@@ -170,9 +198,14 @@ class InternalViewsetTests(IdentityRequest):
 
         response = self.client.get(f"/_private/api/tenant/unmodified/", **self.request.META)
         response_data = json.loads(response.content)
-        self.assertCountEqual(
-            response_data["unmodified_tenants"], [self.tenant.tenant_name, unmodified_tenant_2.tenant_name]
-        )
+        if settings.AUTHENTICATE_WITH_ORG_ID:
+            self.assertCountEqual(
+                response_data["unmodified_tenants"], [self.tenant.org_id, unmodified_tenant_2.org_id]
+            )
+        else:
+            self.assertCountEqual(
+                response_data["unmodified_tenants"], [self.tenant.tenant_name, unmodified_tenant_2.tenant_name]
+            )
         self.assertEqual(response_data["unmodified_tenants_count"], 2)
         self.assertEqual(response_data["total_tenants_count"], 4)
 
