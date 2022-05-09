@@ -17,20 +17,35 @@
 
 """Describes the urls and patterns for internal routes."""
 
+from django.conf import settings
 from django.urls import path
 
 from . import views
 from .views import trigger_error
 
-urlpatterns = [
-    path("api/tenant/unmodified/", views.list_unmodified_tenants),
-    path("api/tenant/", views.list_tenants),
-    path("api/tenant/<str:tenant_name>/", views.tenant_view),
-    path("api/migrations/run/", views.run_migrations),
-    path("api/migrations/progress/", views.migration_progress),
-    path("api/seeds/run/", views.run_seeds),
-    path("api/cars/expire/", views.car_expiry),
-    path("api/sentry_debug/", trigger_error),
-    path("api/utils/sync_schemas/", views.sync_schemas),
-    path("api/utils/populate_tenant_account_id/", views.populate_tenant_account_id),
-]
+if settings.AUTHENTICATE_WITH_ORG_ID:
+    urlpatterns = [
+        path("api/tenant/unmodified/", views.list_unmodified_tenants),
+        path("api/tenant/", views.list_tenants),
+        path("api/tenant/<str:org_id>/", views.tenant_view),
+        path("api/migrations/run/", views.run_migrations),
+        path("api/migrations/progress/", views.migration_progress),
+        path("api/seeds/run/", views.run_seeds),
+        path("api/cars/expire/", views.car_expiry),
+        path("api/sentry_debug/", trigger_error),
+        path("api/utils/sync_schemas/", views.sync_schemas),
+        path("api/utils/populate_tenant_account_id/", views.populate_tenant_account_id),
+    ]
+else:
+    urlpatterns = [
+        path("api/tenant/unmodified/", views.list_unmodified_tenants),
+        path("api/tenant/", views.list_tenants),
+        path("api/tenant/<str:tenant_name>/", views.tenant_view),
+        path("api/migrations/run/", views.run_migrations),
+        path("api/migrations/progress/", views.migration_progress),
+        path("api/seeds/run/", views.run_seeds),
+        path("api/cars/expire/", views.car_expiry),
+        path("api/sentry_debug/", trigger_error),
+        path("api/utils/sync_schemas/", views.sync_schemas),
+        path("api/utils/populate_tenant_account_id/", views.populate_tenant_account_id),
+    ]

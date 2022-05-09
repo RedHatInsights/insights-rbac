@@ -49,7 +49,7 @@ def destructive_ok():
     return now < settings.INTERNAL_DESTRUCTIVE_API_OK_UNTIL
 
 
-def tenant_is_modified(tenant_name, org_id=None):
+def tenant_is_modified(tenant_name=None, org_id=None):
     """Determine whether or not the tenant is modified."""
     # we need to check if the schema exists because if we don't, and it doesn't exist,
     # the search_path on the query will fall back to using the public schema, in
@@ -65,9 +65,9 @@ def tenant_is_modified(tenant_name, org_id=None):
     )
 
 
-def tenant_is_unmodified(tenant_name, org_id=None):
+def tenant_is_unmodified(tenant_name=None, org_id=None):
     """Determine whether or not the tenant is unmodified."""
-    return not tenant_is_modified(tenant_name, org_id=org_id)
+    return not tenant_is_modified(tenant_name=tenant_name, org_id=org_id)
 
 
 def list_unmodified_tenants(request):
@@ -85,7 +85,7 @@ def list_unmodified_tenants(request):
         tenant_qs = Tenant.objects.exclude(tenant_name="public")
     to_return = []
     for tenant_obj in tenant_qs:
-        if tenant_is_unmodified(tenant_obj.tenant_name, org_id=tenant_obj.org_id):
+        if tenant_is_unmodified(tenant_name=tenant_obj.tenant_name, org_id=tenant_obj.org_id):
             if settings.AUTHENTICATE_WITH_ORG_ID:
                 to_return.append(tenant_obj.org_id)
             else:
@@ -131,21 +131,21 @@ def list_tenants(request):
     return HttpResponse(json.dumps(payload), content_type="application/json")
 
 
-def tenant_view(request, tenant_name):
+def tenant_view(request, org_id):
     """View method for internal tenant requests.
 
-    DELETE /_private/api/tenant/<tenant_name>/
+    DELETE /_private/api/tenant/<org_id>/
     """
     logger.info(f"Tenant view: {request.method} {request.user.username}")
     if request.method == "DELETE":
         if not destructive_ok():
             return HttpResponse("Destructive operations disallowed.", status=400)
 
-        tenant_obj = get_object_or_404(Tenant, tenant_name=tenant_name)
+        tenant_obj = get_object_or_404(Tenant, org_id=org_id)
         with transaction.atomic():
-            if tenant_is_unmodified(tenant_obj.tenant_name):
-                logger.warning(f"Deleting tenant {tenant_name}. Requested by {request.user.username}")
-                TENANTS.delete_tenant(tenant_name)
+            if tenant_is_unmodified(tenant_name=tenant_obj.tenant_name, org_id=org_id):
+                logger.warning(f"Deleting tenant {org_id}. Requested by {request.user.username}")
+                TENANTS.delete_tenant(org_id)
                 tenant_obj.delete()
                 return HttpResponse(status=204)
             else:
