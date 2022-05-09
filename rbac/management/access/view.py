@@ -16,6 +16,7 @@
 #
 
 """View for principal access."""
+from django.conf import settings
 from management.cache import AccessCache
 from management.querysets import get_access_queryset
 from management.role.serializer import AccessSerializer
@@ -105,7 +106,10 @@ class AccessView(APIView):
         sub_key, ordering = self.validate_and_get_param(request.query_params)
 
         principal = get_principal_from_request(request)
-        cache = AccessCache(request.tenant.tenant_name)
+        if settings.AUTHENTICATE_WITH_ORG_ID:
+            cache = AccessCache(request.tenant.org_id)
+        else:
+            cache = AccessCache(request.tenant.tenant_name)
         access_policy = cache.get_policy(principal.uuid, sub_key)
         if access_policy is None:
             queryset = self.get_queryset(ordering)

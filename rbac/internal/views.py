@@ -49,22 +49,25 @@ def destructive_ok():
     return now < settings.INTERNAL_DESTRUCTIVE_API_OK_UNTIL
 
 
-def tenant_is_modified(tenant_name):
+def tenant_is_modified(tenant_name, org_id=None):
     """Determine whether or not the tenant is modified."""
     # we need to check if the schema exists because if we don't, and it doesn't exist,
     # the search_path on the query will fall back to using the public schema, in
     # which case there will be custom groups/roles, and we won't be able to propertly
     # prune the tenant which has been created without a valid schema
-    tenant = get_object_or_404(Tenant, tenant_name=tenant_name)
+    if settings.AUTHENTICATE_WITH_ORG_ID:
+        tenant = get_object_or_404(Tenant, org_id=org_id)
+    else:
+        tenant = get_object_or_404(Tenant, tenant_name=tenant_name)
 
     return (Role.objects.filter(system=False, tenant=tenant).count() != 0) or (
         Group.objects.filter(system=False, tenant=tenant).count() != 0
     )
 
 
-def tenant_is_unmodified(tenant_name):
+def tenant_is_unmodified(tenant_name, org_id=None):
     """Determine whether or not the tenant is unmodified."""
-    return not tenant_is_modified(tenant_name)
+    return not tenant_is_modified(tenant_name, org_id=org_id)
 
 
 def list_unmodified_tenants(request):
@@ -82,8 +85,11 @@ def list_unmodified_tenants(request):
         tenant_qs = Tenant.objects.exclude(tenant_name="public")
     to_return = []
     for tenant_obj in tenant_qs:
-        if tenant_is_unmodified(tenant_obj.tenant_name):
-            to_return.append(tenant_obj.tenant_name)
+        if tenant_is_unmodified(tenant_obj.tenant_name, org_id=tenant_obj.org_id):
+            if settings.AUTHENTICATE_WITH_ORG_ID:
+                to_return.append(tenant_obj.org_id)
+            else:
+                to_return.append(tenant_obj.tenant_name)
     payload = {
         "unmodified_tenants": to_return,
         "unmodified_tenants_count": len(to_return),
@@ -186,7 +192,10 @@ def migration_progress(request):
             if migrations_have_run:
                 tenants_completed_count += 1
             else:
-                incomplete_tenants.append(tenant.tenant_name)
+                if settings.AUTHENTICATE_WITH_ORG_ID:
+                    incomplete_tenants.append(tenant.org_id)
+                else:
+                    incomplete_tenants.append(tenant.tenant_name)
         payload = {
             "migration_name": migration_name,
             "app_name": app_name,
