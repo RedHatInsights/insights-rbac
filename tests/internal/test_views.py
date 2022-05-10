@@ -249,8 +249,12 @@ class InternalViewsetTests(IdentityRequest):
 
     def test_get_invalid_default_admin_groups(self):
         """Test that we can get invalid groups."""
-        invalid_admin_default_group = Group.objects.create(admin_default=True, system=False, tenant=self.tenant, name="Invalid Default Admin Group")
-        valid_admin_default_group = Group.objects.create(admin_default=True, system=True, tenant=self.public_tenant, name="Valid Default Admin Group")
+        invalid_admin_default_group = Group.objects.create(
+            admin_default=True, system=False, tenant=self.tenant, name="Invalid Default Admin Group"
+        )
+        valid_admin_default_group = Group.objects.create(
+            admin_default=True, system=True, tenant=self.public_tenant, name="Valid Default Admin Group"
+        )
         response = self.client.get(f"/_private/api/utils/invalid_default_admin_groups/", **self.request.META)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         response_data = json.loads(response.content)
@@ -267,8 +271,12 @@ class InternalViewsetTests(IdentityRequest):
     @override_settings(INTERNAL_DESTRUCTIVE_API_OK_UNTIL=valid_destructive_time())
     def test_delete_invalid_default_admin_groups(self):
         """Test that we can delete invalid groups when allowed."""
-        invalid_admin_default_group = Group.objects.create(admin_default=True, system=False, tenant=self.tenant, name="Invalid Default Admin Group")
-        valid_admin_default_group = Group.objects.create(admin_default=True, system=True, tenant=self.public_tenant, name="Valid Default Admin Group")
+        invalid_admin_default_group = Group.objects.create(
+            admin_default=True, system=False, tenant=self.tenant, name="Invalid Default Admin Group"
+        )
+        valid_admin_default_group = Group.objects.create(
+            admin_default=True, system=True, tenant=self.public_tenant, name="Valid Default Admin Group"
+        )
         self.assertEqual(Group.objects.count(), 3)
         response = self.client.delete(f"/_private/api/utils/invalid_default_admin_groups/", **self.request.META)
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
