@@ -37,4 +37,4 @@ class ProducerTest(TestCase):
         NotificationProducer().send_kafka_message(self.event_type, self.account_id, self.payload)
 
         producer.send.assert_called_once()
-        producer.send.assert_called_once_with(self.topic, headers=TypeMatcher(list), value=TypeMatcher(bytes))
+        producer.send.assert_called_once_with(self.topic, headers=TypeMatcher(list), value=TypeMatcher(str))
