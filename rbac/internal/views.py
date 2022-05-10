@@ -292,7 +292,9 @@ def invalid_default_admin_groups(request):
 
     if request.method == "GET":
         payload = {
-            "invalid_default_admin_groups": list(invalid_default_admin_groups.values("name")),
+            "invalid_default_admin_groups": list(
+                invalid_default_admin_groups.values("name", "admin_default", "system", "platform_default", "tenant")
+            ),
             "invalid_default_admin_groups_count": invalid_default_admin_groups.count(),
         }
         return HttpResponse(json.dumps(payload), content_type="application/json")
