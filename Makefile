@@ -8,7 +8,7 @@ OC_SOURCE	= registry.access.redhat.com/openshift3/ose
 OC_VERSION	= v3.9
 OC_DATA_DIR	= ${HOME}/.oc/openshift.local.data
 
-PGSQL_VERSION   = 9.6
+PGSQL_VERSION   = 10.17
 
 PORT=8000
 APP_HOME=$(shell pwd)/$(PYDIR)

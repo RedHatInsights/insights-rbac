@@ -63,7 +63,7 @@ services:
       - "6379:6379"
 
   db:
-    image: postgres:9.6
+    image: postgres:10.17
     environment:
     - POSTGRES_DB=postgres
     - POSTGRES_USER=postgres
