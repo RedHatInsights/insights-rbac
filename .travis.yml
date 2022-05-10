@@ -10,7 +10,11 @@ services:
   - redis-server
 
 addons:
-  postgresql: '9.6'
+  postgresql: '10'
+  apt:
+    packages:
+      - postgresql-10
+      - postgresql-client-10
 
 env:
   DATABASE_NAME=rbac_test

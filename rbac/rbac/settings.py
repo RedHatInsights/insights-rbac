@@ -382,8 +382,15 @@ CHANNEL_LAYERS = {
     "default": {"BACKEND": "channels_redis.core.RedisChannelLayer", "CONFIG": {"hosts": [(REDIS_HOST, REDIS_PORT)]}}
 }
 
-KAFKA_HOST = ENVIRONMENT.get_value("KAFKA_BOOTSTRAP_HOST", default="localhost")
-KAFKA_PORT = ENVIRONMENT.get_value("KAFKA_BOOTSTRAP_PORT", default="9092")
+# Kafka settings
+if ENVIRONMENT.bool("CLOWDER_ENABLED", default=False):
+    kafka_broker = LoadedConfig.kafka.brokers[0]
+    KAFKA_HOST = kafka_broker.hostname
+    KAFKA_PORT = kafka_broker.port
+else:
+    KAFKA_HOST = "localhost"
+    KAFKA_PORT = "9092"
 KAFKA_SERVER = f"{KAFKA_HOST}:{KAFKA_PORT}"
+
 NOTIFICATIONS_ENABLED = ENVIRONMENT.get_value("NOTIFICATIONS_ENABLED", default=False)
 NOTIFICATIONS_RH_ENABLED = ENVIRONMENT.get_value("NOTIFICATIONS_RH_ENABLED", default=False)
