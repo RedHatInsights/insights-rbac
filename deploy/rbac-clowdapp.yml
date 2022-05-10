@@ -417,6 +417,8 @@ objects:
             value: ${KAFKA_BOOTSTRAP_HOST
           - name: KAFKA_BOOTSTRAP_PORT
             value: ${KAFKA_BOOTSTRAP_PORT}
+          - name: AUTHENTICATE_WITH_ORG_ID
+            value: ${AUTHENTICATE_WITH_ORG_ID}
 - apiVersion: v1
   kind: ConfigMap
   metadata:
