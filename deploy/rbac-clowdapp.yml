@@ -467,7 +467,7 @@ objects:
             - -t
             - api_crossaccountrequest
             - --ean-translator-addr
-            - ${TENANT_TRANSLATOR_PROTOCOL}://${TENANT_TRANSLATOR_HOST}:${TENANT_TRANSLATOR_PORT}
+            - http://${TENANT_TRANSLATOR_HOST}:${TENANT_TRANSLATOR_PORT}
           env:
             - name: TENANT_TRANSLATOR_PROTOCOL
               value: ${TENANT_TRANSLATOR_PROTOCOL}
