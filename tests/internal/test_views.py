@@ -64,6 +64,7 @@ class InternalViewsetTests(IdentityRequest):
         self.policy.save()
         self.group.policies.add(self.policy)
         self.group.save()
+        self.public_tenant = Tenant.objects.get(tenant_name="public")
 
     def tearDown(self):
         """Tear down internal viewset tests."""
@@ -245,3 +246,49 @@ class InternalViewsetTests(IdentityRequest):
         populate_mock.assert_not_called()
         self.assertEqual(response.status_code, status.HTTP_405_METHOD_NOT_ALLOWED)
         self.assertEqual(response.content.decode(), 'Invalid method, only "POST" is allowed.')
+
+    def test_get_invalid_default_admin_groups(self):
+        """Test that we can get invalid groups."""
+        invalid_admin_default_group = Group.objects.create(
+            admin_default=True, system=False, tenant=self.tenant, name="Invalid Default Admin Group"
+        )
+        valid_admin_default_group = Group.objects.create(
+            admin_default=True, system=True, tenant=self.public_tenant, name="Valid Default Admin Group"
+        )
+        response = self.client.get(f"/_private/api/utils/invalid_default_admin_groups/", **self.request.META)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        response_data = json.loads(response.content)
+        self.assertEqual(response_data["invalid_default_admin_groups_count"], 1)
+        self.assertEqual(len(response_data["invalid_default_admin_groups"]), 1)
+        self.assertEqual(
+            response_data["invalid_default_admin_groups"][0],
+            {
+                "name": invalid_admin_default_group.name,
+                "admin_default": invalid_admin_default_group.admin_default,
+                "system": invalid_admin_default_group.system,
+                "platform_default": invalid_admin_default_group.platform_default,
+                "tenant": invalid_admin_default_group.tenant.id,
+            },
+        )
+
+    def test_delete_invalid_default_admin_groups_disallowed(self):
+        """Test that we cannot delete invalid groups when disallowed."""
+        response = self.client.delete(f"/_private/api/utils/invalid_default_admin_groups/", **self.request.META)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.content.decode(), "Destructive operations disallowed.")
+
+    @override_settings(INTERNAL_DESTRUCTIVE_API_OK_UNTIL=valid_destructive_time())
+    def test_delete_invalid_default_admin_groups(self):
+        """Test that we can delete invalid groups when allowed."""
+        invalid_admin_default_group = Group.objects.create(
+            admin_default=True, system=False, tenant=self.tenant, name="Invalid Default Admin Group"
+        )
+        valid_admin_default_group = Group.objects.create(
+            admin_default=True, system=True, tenant=self.public_tenant, name="Valid Default Admin Group"
+        )
+        self.assertEqual(Group.objects.count(), 3)
+        response = self.client.delete(f"/_private/api/utils/invalid_default_admin_groups/", **self.request.META)
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertEqual(Group.objects.count(), 2)
+        self.assertEqual(Group.objects.filter(id=valid_admin_default_group.id).exists(), True)
+        self.assertEqual(Group.objects.filter(id=invalid_admin_default_group.id).exists(), False)
