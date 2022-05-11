@@ -260,7 +260,16 @@ class InternalViewsetTests(IdentityRequest):
         response_data = json.loads(response.content)
         self.assertEqual(response_data["invalid_default_admin_groups_count"], 1)
         self.assertEqual(len(response_data["invalid_default_admin_groups"]), 1)
-        self.assertEqual(response_data["invalid_default_admin_groups"][0], {"name": invalid_admin_default_group.name})
+        self.assertEqual(
+            response_data["invalid_default_admin_groups"][0],
+            {
+                "name": invalid_admin_default_group.name,
+                "admin_default": invalid_admin_default_group.admin_default,
+                "system": invalid_admin_default_group.system,
+                "platform_default": invalid_admin_default_group.platform_default,
+                "tenant": invalid_admin_default_group.tenant.id,
+            },
+        )
 
     def test_delete_invalid_default_admin_groups_disallowed(self):
         """Test that we cannot delete invalid groups when disallowed."""
