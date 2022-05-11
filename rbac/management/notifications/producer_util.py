@@ -66,7 +66,7 @@ class NotificationProducer:
         """Send message to kafka server."""
         producer = self.get_producer()
         message = self.create_message(event_type, account_id, payload)
-        json_data = json.dumps(message)
+        json_data = json.dumps(message).encode("utf-8")
 
         producer.send(notification_topic, value=json_data, headers=[("rh-message-id", uuid4().bytes)])
 
