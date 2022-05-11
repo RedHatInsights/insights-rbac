@@ -288,7 +288,9 @@ def invalid_default_admin_groups(request):
     """
     logger.info(f"Invalid default admin groups: {request.method} {request.user.username}")
     public_tenant = Tenant.objects.get(tenant_name="public")
-    invalid_default_admin_groups = Group.objects.filter(admin_default=True, system=False).exclude(tenant=public_tenant)
+    invalid_default_admin_groups = Group.objects.filter(
+        admin_default=True, system=False, platform_default=False
+    ).exclude(tenant=public_tenant)
 
     if request.method == "GET":
         payload = {
