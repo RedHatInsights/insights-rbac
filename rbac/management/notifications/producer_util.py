@@ -17,7 +17,6 @@
 """Producer to send messages to kafka server."""
 import json
 import os
-import pickle
 from datetime import datetime
 from uuid import uuid4
 
@@ -67,9 +66,9 @@ class NotificationProducer:
         """Send message to kafka server."""
         producer = self.get_producer()
         message = self.create_message(event_type, account_id, payload)
-        serialized_data = pickle.dumps(message)
+        json_data = json.dumps(message).encode("utf-8")
 
-        producer.send(notification_topic, value=serialized_data, headers=[("rh-message-id", uuid4().bytes)])
+        producer.send(notification_topic, value=json_data, headers=[("rh-message-id", uuid4().bytes)])
 
 
 """
