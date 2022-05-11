@@ -15,6 +15,10 @@ objects:
     database:
       name: rbac
     inMemoryDb: true
+    kafkaTopics:
+    - topicName: platform.notifications.ingress
+      partitions: 3
+      replicas: 3
     deployments:
     - name: worker-service
       minReplicas: ${{MIN_WORKER_REPLICAS}}
@@ -165,6 +169,10 @@ objects:
             value: ${MAX_SEED_THREADS}
           - name: ACCESS_CACHE_CONNECT_SIGNALS
             value: 'False'
+          - name: NOTIFICATIONS_ENABLED
+            value: ${NOTIFICATIONS_ENABLED}
+          - name: NOTIFICATIONS_RH_ENABLED
+            value: ${NOTIFICATIONS_RH_ENABLED}
 
     - name: scheduler-service
       minReplicas: ${{MIN_SCHEDULER_REPLICAS}}
@@ -413,12 +421,10 @@ objects:
             value: ${REDIS_SOCKET_CONNECT_TIMEOUT}
           - name: REDIS_SOCKET_TIMEOUT
             value: ${REDIS_SOCKET_TIMEOUT}
-          - name: KAFKA_BOOTSTRAP_HOST
-            value: ${KAFKA_BOOTSTRAP_HOST
-          - name: KAFKA_BOOTSTRAP_PORT
-            value: ${KAFKA_BOOTSTRAP_PORT}
           - name: AUTHENTICATE_WITH_ORG_ID
             value: ${AUTHENTICATE_WITH_ORG_ID}
+          - name: NOTIFICATIONS_ENABLED
+            value: ${NOTIFICATIONS_ENABLED}
 - apiVersion: v1
   kind: ConfigMap
   metadata:
@@ -2009,12 +2015,6 @@ parameters:
 - description: socket timeout for redis
   name: REDIS_SOCKET_TIMEOUT
   value: "0.1"
-- description: Host for kafka
-  name: KAFKA_BOOTSTRAP_HOST
-  value: platform-mq-kafka-bootstrap.platform-mq-stage.svc.cluster.local
-- description: Port of kafka
-  name: KAFKA_BOOTSTRAP_PORT
-  value: "9092"
 - description: Enable sending out notification events
   name: NOTIFICATIONS_ENABLED
   value: 'False'
