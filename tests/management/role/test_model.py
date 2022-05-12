@@ -83,7 +83,7 @@ class RoleModelTests(IdentityRequest):
 
         # Can access role from relation and vice versa
         ext_relation1.role.name = self.roleA.name
-        self.roleA.extrolerelation.id = ext_relation1.id
+        self.roleA.ext_relation.id = ext_relation1.id
 
         # Can not attach a role belong to another external relation
         with transaction.atomic():

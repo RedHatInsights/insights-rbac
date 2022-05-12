@@ -100,9 +100,9 @@ class ExtTenant(models.Model):
 class ExtRoleRelation(models.Model):
     """External relation info of role."""
 
-    ext_tenant = models.ForeignKey(ExtTenant, null=True, on_delete=models.CASCADE, related_name="extRoleRelation")
+    ext_tenant = models.ForeignKey(ExtTenant, null=True, on_delete=models.CASCADE, related_name="ext_role_relation")
     ext_id = models.CharField(max_length=20, null=False)
-    role = models.OneToOneField(Role, on_delete=models.CASCADE, null=False)
+    role = models.OneToOneField(Role, on_delete=models.CASCADE, null=False, related_name="ext_relation")
 
     class Meta:
         constraints = [

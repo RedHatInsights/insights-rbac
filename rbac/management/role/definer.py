@@ -35,20 +35,28 @@ logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 def _add_ext_relation_if_it_exists(external_relation, role):
     if not external_relation:
         return
+
     ext_id = external_relation.get("id")
     ext_tenant_name = external_relation.get("tenant")
+
+    if hasattr(role, "ext_relation"):
+        pre_relation = role.ext_relation
+        # If the role already has same external relation, no-op
+        if pre_relation and pre_relation.ext_id == ext_id and pre_relation.ext_tenant.name == ext_tenant_name:
+            return
+        else:
+            pre_relation.delete()
 
     ext_tenant, created = ExtTenant.objects.get_or_create(name=ext_tenant_name)
     if created:
         logger.info("Created external tenant %s.", ext_tenant_name)
+
     defaults = dict(ext_tenant=ext_tenant, role=role)
+    _, created = ExtRoleRelation.objects.update_or_create(ext_id=ext_id, defaults=defaults)
 
-    ext_relation, created = ExtRoleRelation.objects.update_or_create(ext_id=ext_id, defaults=defaults)
-
-    if created:
-        logger.info("Created external relationships %s.", ext_id)
-
-    return ext_relation.id
+    logger.info(
+        "Added external relationships %s of external tenant %s to role %s.", ext_id, ext_tenant_name, role.name
+    )
 
 
 def _make_role(data):

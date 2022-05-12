@@ -28,11 +28,16 @@ class Migration(migrations.Migration):
                     models.ForeignKey(
                         null=True,
                         on_delete=django.db.models.deletion.CASCADE,
-                        related_name="extRoleRelation",
+                        related_name="ext_role_relation",
                         to="management.ExtTenant",
                     ),
                 ),
-                ("role", models.OneToOneField(on_delete=django.db.models.deletion.CASCADE, to="management.Role")),
+                (
+                    "role",
+                    models.OneToOneField(
+                        on_delete=django.db.models.deletion.CASCADE, to="management.Role", related_name="ext_relation"
+                    ),
+                ),
             ],
         ),
         migrations.AddConstraint(
