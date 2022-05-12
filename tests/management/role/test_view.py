@@ -704,6 +704,22 @@ class RoleViewsetTests(IdentityRequest):
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
+    def test_patch_role_without_payload(self):
+        """Test that we no-op when no payload supplied."""
+        role_name = "role"
+        response = self.create_role(role_name)
+        updated_name = role_name + "_update"
+        updated_description = role_name + "This is a test"
+        role_uuid = response.data.get("uuid")
+        url = reverse("role-detail", kwargs={"uuid": role_uuid})
+        client = APIClient()
+        response = client.patch(
+            url,
+            format="json",
+            **self.headers,
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
     @patch("management.notifications.producer_util.NotificationProducer.send_kafka_message")
     def test_update_role_success(self, send_kafka_message):
         """Test that we can update an existing role."""

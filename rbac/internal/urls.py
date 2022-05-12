@@ -33,4 +33,5 @@ urlpatterns = [
     path("api/sentry_debug/", trigger_error),
     path("api/utils/sync_schemas/", views.sync_schemas),
     path("api/utils/populate_tenant_account_id/", views.populate_tenant_account_id),
+    path("api/utils/invalid_default_admin_groups/", views.invalid_default_admin_groups),
 ]
