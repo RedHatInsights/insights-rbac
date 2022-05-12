@@ -438,6 +438,10 @@ objects:
             - org_id
             - -t
             - api_tenant
+            - -b
+            - 100
+            - --ean-translator-timeout
+            - 20
             - --ean-translator-addr
             - http://${TENANT_TRANSLATOR_HOST}:${TENANT_TRANSLATOR_PORT}
           env:
@@ -468,6 +472,11 @@ objects:
             - target_org
             - -t
             - api_crossaccountrequest
+            - -b
+            - 100
+            - --ean-translator-timeout
+            - 20
+            - --ean-translator-addr
             - --ean-translator-addr
             - http://${TENANT_TRANSLATOR_HOST}:${TENANT_TRANSLATOR_PORT}
           env:
