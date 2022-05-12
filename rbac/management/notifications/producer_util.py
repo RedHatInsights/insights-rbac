@@ -68,7 +68,7 @@ class NotificationProducer:
         message = self.create_message(event_type, account_id, payload)
         json_data = json.dumps(message).encode("utf-8")
 
-        producer.send(notification_topic, value=json_data, headers=[("rh-message-id", uuid4().bytes)])
+        producer.send(notification_topic, value=json_data, headers=[("rh-message-id", str(uuid4()).encode("utf-8"))])
 
 
 """

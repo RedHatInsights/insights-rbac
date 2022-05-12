@@ -20,6 +20,7 @@ from unittest.mock import call, patch, ANY
 from uuid import uuid4
 
 from django.db import transaction
+from django.conf import settings
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APIClient
@@ -39,6 +40,7 @@ class GroupViewsetTests(IdentityRequest):
         user = User()
         user.username = self.user_data["username"]
         user.account = self.customer_data["account_id"]
+        user.org_id = self.customer_data["org_id"]
         user.admin = True
         request.user = user
 
@@ -651,6 +653,7 @@ class GroupViewsetTests(IdentityRequest):
             client = APIClient()
             username = "test_user"
             test_data = {"principals": [{"username": username}, {"username": cross_account_user.username}]}
+
             response = client.post(url, test_data, format="json", **self.headers)
             principal = Principal.objects.get(username=username)
 
@@ -1036,7 +1039,10 @@ class GroupViewsetTests(IdentityRequest):
         response = client.get(url, **self.headers)
         principals = response.data.get("data")
 
-        mock_request.assert_called_with([], ANY, options={"sort_order": None})
+        if settings.AUTHENTICATE_WITH_ORG_ID:
+            mock_request.assert_called_with([], options={"sort_order": None}, org_id=self.customer_data["org_id"])
+        else:
+            mock_request.assert_called_with([], account=self.customer_data["account_id"], options={"sort_order": None})
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(principals), 0)
 
@@ -1052,7 +1058,14 @@ class GroupViewsetTests(IdentityRequest):
         response = client.get(url, **self.headers)
         principals = response.data.get("data")
 
-        mock_request.assert_called_with([self.principal.username], ANY, options={"sort_order": None})
+        if settings.AUTHENTICATE_WITH_ORG_ID:
+            mock_request.assert_called_with(
+                [self.principal.username], options={"sort_order": None}, org_id=self.customer_data["org_id"]
+            )
+        else:
+            mock_request.assert_called_with(
+                [self.principal.username], account=self.customer_data["account_id"], options={"sort_order": None}
+            )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(principals), 1)
 
@@ -1067,7 +1080,15 @@ class GroupViewsetTests(IdentityRequest):
         response = client.get(url, **self.headers)
         principals = response.data.get("data")
         expected_principals = sorted([self.principal.username, self.principalB.username])
-        mock_request.assert_called_with(expected_principals, ANY, options={"sort_order": "asc"})
+
+        if settings.AUTHENTICATE_WITH_ORG_ID:
+            mock_request.assert_called_with(
+                expected_principals, options={"sort_order": "asc"}, org_id=self.customer_data["org_id"]
+            )
+        else:
+            mock_request.assert_called_with(
+                expected_principals, account=self.customer_data["account_id"], options={"sort_order": "asc"}
+            )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(principals), 1)
 

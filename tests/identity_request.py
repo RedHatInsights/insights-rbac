@@ -41,7 +41,12 @@ class IdentityRequest(TestCase):
         cls.user_data = cls._create_user_data()
         cls.request_context = cls._create_request_context(cls.customer_data, cls.user_data)
         cls.tenant_name = cls.customer_data.get("tenant_name")
-        cls.tenant = Tenant(tenant_name=cls.tenant_name, ready=True)
+        cls.tenant = Tenant(
+            tenant_name=cls.tenant_name,
+            account_id=cls.customer_data["account_id"],
+            org_id=cls.customer_data["org_id"],
+            ready=True,
+        )
         cls.tenant.save()
         cls.headers = cls.request_context["request"].META
 

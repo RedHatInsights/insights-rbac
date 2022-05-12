@@ -45,6 +45,7 @@ class AccessViewTests(IdentityRequest):
         user = User()
         user.username = self.user_data["username"]
         user.account = self.customer_data["account_id"]
+        user.org_id = self.customer_data["org_id"]
         request.user = user
         public_tenant = Tenant.objects.get(tenant_name="public")
 
@@ -148,6 +149,7 @@ class AccessViewTests(IdentityRequest):
         client = APIClient()
         url = "{}?application=".format(reverse("access"))
         account_id = self.customer_data["account_id"]
+        org_id = self.customer_data["org_id"]
         user_id = "123456"
         user_name = f"{account_id}-{user_id}"
 
@@ -155,13 +157,21 @@ class AccessViewTests(IdentityRequest):
         ## This CAR will provide permission: "test:assigned:permission"
         role = self.create_role_and_permission("Test Role one", "test:assigned:permission1")
         cross_account_request = CrossAccountRequest.objects.create(
-            target_account=account_id, user_id=user_id, end_date=timezone.now() + timedelta(10), status="approved"
+            target_account=account_id,
+            user_id=user_id,
+            target_org=org_id,
+            end_date=timezone.now() + timedelta(10),
+            status="approved",
         )
         cross_account_request.roles.add(role)
         ## CAR below will provide permission: "app:*:*"
         role = self.create_role_and_permission("Test Role two", "test:assigned:permission2")
         cross_account_request = CrossAccountRequest.objects.create(
-            target_account=account_id, user_id=user_id, end_date=timezone.now() + timedelta(20), status="approved"
+            target_account=account_id,
+            user_id=user_id,
+            target_org=org_id,
+            end_date=timezone.now() + timedelta(20),
+            status="approved",
         )
         cross_account_request.roles.add(role)
 
