@@ -35,14 +35,13 @@ logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 def _add_ext_relation_if_it_exists(external_relation, role):
     if not external_relation:
         return
-    public_tenant = Tenant.objects.get(tenant_name="public")
     ext_id = external_relation.get("id")
     ext_tenant_name = external_relation.get("tenant")
 
-    ext_tenant, created = ExtTenant.objects.get_or_create(name=ext_tenant_name, tenant=public_tenant)
+    ext_tenant, created = ExtTenant.objects.get_or_create(name=ext_tenant_name)
     if created:
         logger.info("Created external tenant %s.", ext_tenant_name)
-    defaults = dict(ext_tenant=ext_tenant, role=role, tenant=public_tenant)
+    defaults = dict(ext_tenant=ext_tenant, role=role)
 
     ext_relation, created = ExtRoleRelation.objects.update_or_create(ext_id=ext_id, defaults=defaults)
 

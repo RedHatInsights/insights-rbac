@@ -91,13 +91,13 @@ class ResourceDefinition(TenantAwareModel):
             return self.access.role
 
 
-class ExtTenant(TenantAwareModel):
+class ExtTenant(models.Model):
     """External tenant."""
 
     name = models.CharField(max_length=20, null=False, unique=True)
 
 
-class ExtRoleRelation(TenantAwareModel):
+class ExtRoleRelation(models.Model):
     """External relation info of role."""
 
     ext_tenant = models.ForeignKey(ExtTenant, null=True, on_delete=models.CASCADE, related_name="extRoleRelation")
