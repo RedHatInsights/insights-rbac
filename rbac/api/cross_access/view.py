@@ -307,7 +307,7 @@ class CrossAccountRequestViewSet(
         """Update the status of a cross-account-request."""
         car.status = status
         if status == "approved":
-            create_cross_principal(car.target_account, car.user_id, car.target_org)
+            create_cross_principal(car.user_id, target_account=car.target_account, target_org=car.target_org)
         car.save()
 
     def check_patch_permission(self, request, update_obj):
