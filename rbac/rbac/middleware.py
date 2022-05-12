@@ -87,8 +87,8 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
                         raise Http404()
                 else:
                     tenant, created = Tenant.objects.get_or_create(
-                        tenant_name=tenant_name,
-                        defaults={"ready": True, "account_id": request.user.account, "org_id": request.user.org_id},
+                        org_id=request.user.org_id,
+                        defaults={"ready": True, "account_id": request.user.account, "tenant_name": tenant_name},
                     )
                 TENANTS.save_tenant(tenant)
         else:

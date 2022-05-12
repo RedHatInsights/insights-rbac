@@ -374,8 +374,7 @@ try:
 except ValueError as e:
     INTERNAL_DESTRUCTIVE_API_OK_UNTIL = datetime.datetime(1970, 1, 1, tzinfo=pytz.UTC)
 
-# Prep for public schema changeover
-SERVE_FROM_PUBLIC_SCHEMA = ENVIRONMENT.bool("SERVE_FROM_PUBLIC_SCHEMA", default=False)
+
 AUTHENTICATE_WITH_ORG_ID = ENVIRONMENT.bool("AUTHENTICATE_WITH_ORG_ID", default=False)
 
 CHANNEL_LAYERS = {
