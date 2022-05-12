@@ -18,6 +18,7 @@
 """Handler for principal clean up."""
 import logging
 
+from django.conf import settings
 from management.principal.model import Principal
 from management.principal.proxy import PrincipalProxy
 from management.utils import account_id_for_tenant
@@ -40,7 +41,11 @@ def clean_tenant_principals(tenant):
             continue
         logger.debug("Checking for username %s for tenant %s.", principal.username, tenant.tenant_name)
         account = account_id_for_tenant(tenant)
-        resp = proxy.request_filtered_principals([principal.username], account=account)
+        org_id = tenant.org_id
+        if settings.AUTHENTICATE_WITH_ORG_ID:
+            resp = proxy.request_filtered_principals([principal.username], org_id=org_id)
+        else:
+            resp = proxy.request_filtered_principals([principal.username], account=account)
         status_code = resp.get("status_code")
         data = resp.get("data")
         if status_code == status.HTTP_200_OK and data:

@@ -18,6 +18,7 @@
 import collections
 import os
 from unittest.mock import Mock
+from django.conf import settings
 
 from django.db import connection
 from django.test import TestCase
@@ -102,6 +103,7 @@ class RbacTenantMiddlewareTest(IdentityRequest):
         user = User()
         user.username = self.user_data["username"]
         user.account = self.customer_data["account_id"]
+        user.org_id = self.customer_data["org_id"]
         self.request.user = user
 
     def test_get_tenant_with_user(self):
@@ -109,7 +111,10 @@ class RbacTenantMiddlewareTest(IdentityRequest):
         mock_request = self.request
         middleware = IdentityHeaderMiddleware()
         result = middleware.get_tenant(Tenant, "localhost", mock_request)
-        self.assertEqual(result.tenant_name, create_tenant_name(mock_request.user.account))
+        if settings.AUTHENTICATE_WITH_ORG_ID:
+            self.assertEqual(result.org_id, mock_request.user.org_id)
+        else:
+            self.assertEqual(result.tenant_name, create_tenant_name(mock_request.user.account))
 
     def test_get_tenant_with_no_user(self):
         """Test that a 401 is returned."""
@@ -268,10 +273,12 @@ class ServiceToService(IdentityRequest):
         self.env = EnvironmentVarGuard()
         self.env.set("SERVICE_PSKS", '{"catalog": {"secret": "abc123"}}')
         self.account_id = "1234"
+        self.org_id = "4321"
         self.service_headers = {
             "HTTP_X_RH_RBAC_PSK": "abc123",
             "HTTP_X_RH_RBAC_ACCOUNT": self.account_id,
             "HTTP_X_RH_RBAC_CLIENT_ID": "catalog",
+            "HTTP_X_RH_RBAC_ORG_ID": self.org_id,
         }
 
     def test_no_identity_or_service_headers_returns_401(self):
@@ -283,7 +290,7 @@ class ServiceToService(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
     def test_no_identity_and_invalid_psk_returns_401(self):
-        t = Tenant.objects.create(tenant_name=f"acct{self.account_id}")
+        t = Tenant.objects.create(tenant_name=f"acct{self.account_id}", account_id=self.account_id, org_id=self.org_id)
         t.ready = True
         t.save()
 
@@ -295,18 +302,21 @@ class ServiceToService(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
     def test_no_identity_and_invalid_account_returns_404(self):
-        t = Tenant.objects.create(tenant_name=f"acct{self.account_id}")
+        t = Tenant.objects.create(tenant_name=f"acct{self.account_id}", account_id=self.account_id, org_id=self.org_id)
         t.ready = True
         t.save()
         url = reverse("group-list")
         client = APIClient()
-        self.service_headers["HTTP_X_RH_RBAC_ACCOUNT"] = "1212"
+        if settings.AUTHENTICATE_WITH_ORG_ID:
+            self.service_headers["HTTP_X_RH_RBAC_ORG_ID"] = "1212"
+        else:
+            self.service_headers["HTTP_X_RH_RBAC_ACCOUNT"] = "1212"
         response = client.get(url, **self.service_headers)
 
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
     def test_no_identity_and_invalid_client_id_returns_401(self):
-        t = Tenant.objects.create(tenant_name=f"acct{self.account_id}")
+        t = Tenant.objects.create(tenant_name=f"acct{self.account_id}", account_id=self.account_id, org_id=self.org_id)
         t.ready = True
         t.save()
         url = reverse("group-list")
@@ -317,7 +327,7 @@ class ServiceToService(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
     def test_no_identity_and_valid_psk_client_id_and_account_returns_200(self):
-        t = Tenant.objects.create(tenant_name=f"acct{self.account_id}")
+        t = Tenant.objects.create(tenant_name=f"acct{self.account_id}", account_id=self.account_id, org_id=self.org_id)
         t.ready = True
         t.save()
         url = reverse("group-list")
@@ -362,7 +372,7 @@ class AccessHandlingTest(TestCase):
         try:
             cls.tenant = Tenant.objects.get(tenant_name="test")
         except:
-            cls.tenant = Tenant(tenant_name="test", ready=True)
+            cls.tenant = Tenant(tenant_name="test", account_id="11111", org_id="22222", ready=True)
             cls.tenant.save()
 
     @classmethod

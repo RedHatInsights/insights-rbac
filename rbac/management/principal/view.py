@@ -146,7 +146,9 @@ class PrincipalView(APIView):
 
         if not usernames and not email:
             options["admin_only"] = validate_and_get_key(query_params, ADMIN_ONLY_KEY, VALID_ADMIN_ONLY_VALUE, "false")
-            resp = proxy.request_principals(user.account, limit=limit, offset=offset, options=options)
+            resp = proxy.request_principals(
+                account=user.account, org_id=user.org_id, limit=limit, offset=offset, options=options
+            )
             return resp, ""
         proxyInput = {}
         resp = None
@@ -169,5 +171,7 @@ class PrincipalView(APIView):
                 proxyInput["emailStartsWith"] = email
             else:
                 proxyInput["primaryEmail"] = email
-        resp = proxy.request_principals(user.account, input=proxyInput, limit=limit, offset=offset, options=options)
+        resp = proxy.request_principals(
+            account=user.account, org_id=user.org_id, input=proxyInput, limit=limit, offset=offset, options=options
+        )
         return resp, ""

@@ -421,6 +421,8 @@ objects:
             value: ${REDIS_SOCKET_CONNECT_TIMEOUT}
           - name: REDIS_SOCKET_TIMEOUT
             value: ${REDIS_SOCKET_TIMEOUT}
+          - name: AUTHENTICATE_WITH_ORG_ID
+            value: ${AUTHENTICATE_WITH_ORG_ID}
           - name: NOTIFICATIONS_ENABLED
             value: ${NOTIFICATIONS_ENABLED}
 - apiVersion: v1
@@ -2018,4 +2020,7 @@ parameters:
   value: 'False'
 - description: Enable sending out notification events of Red Hat changes
   name: NOTIFICATIONS_RH_ENABLED
+  value: 'False'
+- description: Enable RBAC tenancy using Org ID
+  name: AUTHENTICATE_WITH_ORG_ID
   value: 'False'

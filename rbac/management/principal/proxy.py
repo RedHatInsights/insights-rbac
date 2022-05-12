@@ -92,15 +92,22 @@ class PrincipalProxy:  # pylint: disable=too-few-public-methods
 
         return params
 
-    def _process_data(self, data, account, account_filter, return_id=False):
+    def _process_data(self, data, account=None, account_filter=None, org_id=None, org_id_filter=None, return_id=False):
         """Process data for uniform output."""
         processed_data = []
         for item in data:
-            if account_filter:
-                if account == item.get("account_number"):
+            if settings.AUTHENTICATE_WITH_ORG_ID:
+                if org_id_filter:
+                    if org_id == item.get("org_id"):
+                        processed_data.append(self._call_item(item, return_id))
+                else:
                     processed_data.append(self._call_item(item, return_id))
             else:
-                processed_data.append(self._call_item(item, return_id))
+                if account_filter:
+                    if account == item.get("account_number"):
+                        processed_data.append(self._call_item(item, return_id))
+                else:
+                    processed_data.append(self._call_item(item, return_id))
 
         return processed_data
 
@@ -140,6 +147,8 @@ class PrincipalProxy:  # pylint: disable=too-few-public-methods
         url,
         account=None,
         account_filter=False,
+        org_id=None,
+        org_id_filter=False,
         method=requests.get,
         params=None,
         data=None,
@@ -178,6 +187,7 @@ class PrincipalProxy:  # pylint: disable=too-few-public-methods
         }
         try:
             kwargs = {"headers": headers, "params": params, "json": data, "verify": self.ssl_verify}
+
             if self.source_cert:
                 kwargs["verify"] = self.client_cert
             response = method(url, **kwargs)
@@ -191,17 +201,37 @@ class PrincipalProxy:  # pylint: disable=too-few-public-methods
         resp = {"status_code": response.status_code}
         if response.status_code == status.HTTP_200_OK:
             """Testing if account numbers match"""
-            try:
-                data = response.json()
-                if isinstance(data, dict):
-                    userList = self._process_data(data.get("users"), account, account_filter, return_id)
-                    resp["data"] = {"userCount": data.get("userCount"), "users": userList}
-                else:
-                    userList = self._process_data(data, account, account_filter, return_id)
-                    resp["data"] = userList
-            except ValueError:
-                resp["status_code"] = status.HTTP_500_INTERNAL_SERVER_ERROR
-                error = unexpected_error
+            if settings.AUTHENTICATE_WITH_ORG_ID:
+                try:
+                    data = response.json()
+                    if isinstance(data, dict):
+                        userList = self._process_data(data.get("users"), org_id, org_id_filter, return_id)
+                        resp["data"] = {"userCount": data.get("userCount"), "users": userList}
+                    else:
+                        userList = self._process_data(
+                            data, org_id=org_id, org_id_filter=org_id_filter, return_id=return_id
+                        )
+                        resp["data"] = userList
+                except ValueError:
+                    resp["status_code"] = status.HTTP_500_INTERNAL_SERVER_ERROR
+                    error = unexpected_error
+            else:
+                try:
+                    data = response.json()
+                    if isinstance(data, dict):
+                        userList = self._process_data(
+                            data.get("users"), account=account, account_filter=account_filter, return_id=return_id
+                        )
+                        resp["data"] = {"userCount": data.get("userCount"), "users": userList}
+                    else:
+                        userList = self._process_data(
+                            data, account=account, account_filter=account_filter, return_id=return_id
+                        )
+                        resp["data"] = userList
+                except ValueError:
+                    resp["status_code"] = status.HTTP_500_INTERNAL_SERVER_ERROR
+                    error = unexpected_error
+
         elif response.status_code == status.HTTP_404_NOT_FOUND:
             error = {"detail": "Not Found.", "status": str(response.status_code), "source": "principals"}
         else:
@@ -213,25 +243,42 @@ class PrincipalProxy:  # pylint: disable=too-few-public-methods
         bop_request_status_count.labels(method=metrics_method, status=resp.get("status_code")).inc()
         return resp
 
-    def request_principals(self, account, input=None, limit=None, offset=None, options={}):
+    def request_principals(self, account=None, org_id=None, input=None, limit=None, offset=None, options={}):
         """Request principals for an account."""
-        if input:
-            payload = input
-            account_principals_path = f"/v1/accounts/{account}/usersBy"
-            method = requests.post
+        if settings.AUTHENTICATE_WITH_ORG_ID:
+            if input:
+                payload = input
+                account_principals_path = f"/v3/accounts/{org_id}/usersBy"
+                method = requests.post
+            else:
+                account_principals_path = f"/v3/accounts/{org_id}/users"
+                method = requests.get
+                payload = None
         else:
-            account_principals_path = f"/v2/accounts/{account}/users"
-            method = requests.get
-            payload = None
+            if input:
+                payload = input
+                account_principals_path = f"/v1/accounts/{account}/usersBy"
+                method = requests.post
+            else:
+                account_principals_path = f"/v2/accounts/{account}/users"
+                method = requests.get
+                payload = None
 
         params = self._create_params(limit, offset, options)
         url = "{}://{}:{}{}{}".format(self.protocol, self.host, self.port, self.path, account_principals_path)
 
-        # For v2 account users endpoints are already filtered by account
-        return self._request_principals(url, params=params, account_filter=False, method=method, data=payload)
+        if settings.AUTHENTICATE_WITH_ORG_ID:
+            return self._request_principals(url, params=params, org_id_filter=False, method=method, data=payload)
+        else:
+            # For v2 account users endpoints are already filtered by account
+            return self._request_principals(url, params=params, account_filter=False, method=method, data=payload)
 
-    def request_filtered_principals(self, principals, account=None, limit=None, offset=None, options={}):
+    def request_filtered_principals(self, principals, account=None, org_id=None, limit=None, offset=None, options={}):
         """Request specific principals for an account."""
+        if org_id is None:
+            org_id_filter = False
+        else:
+            org_id_filter = True
         if account is None:
             account_filter = False
         else:
@@ -248,6 +295,8 @@ class PrincipalProxy:  # pylint: disable=too-few-public-methods
             url,
             account=account,
             account_filter=account_filter,
+            org_id=org_id,
+            org_id_filter=org_id_filter,
             method=requests.post,
             params=params,
             data=payload,
