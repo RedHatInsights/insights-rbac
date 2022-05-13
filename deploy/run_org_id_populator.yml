@@ -6,5 +6,5 @@ metadata:
 spec:
   appName: rbac
   jobs:
-    - tenant-org_id-populator
-    - cross-account-request-target_org-populator
+    - tenant-org-id-populator
+    - cross-account-request-target-org-populator

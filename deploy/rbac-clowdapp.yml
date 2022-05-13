@@ -426,7 +426,7 @@ objects:
           - name: NOTIFICATIONS_ENABLED
             value: ${NOTIFICATIONS_ENABLED}
     jobs:
-      - name: tenant-org_id-populator
+      - name: tenant-org-id-populator
         podSpec:
           image: quay.io/cloudservices/tenant-utils:latest
           command:
@@ -456,7 +456,7 @@ objects:
             requests:
               cpu: 50m
               memory: 512Mi
-      - name: cross-account-request-target_org-populator
+      - name: cross-account-request-target-org-populator
         podSpec:
           image: quay.io/cloudservices/tenant-utils:latest
           command:
