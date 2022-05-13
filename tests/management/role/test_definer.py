@@ -49,8 +49,8 @@ class RoleDefinerTests(IdentityRequest):
 
             send_kafka_message.assert_any_call(
                 "rh-new-role-available",
-                self.customer_data["account_id"],
                 {"name": roles.first().name, "username": "Red Hat", "uuid": str(roles.first().uuid)},
+                account_id=self.customer_data["account_id"],
                 org_id=org_id,
             )
 
@@ -119,22 +119,22 @@ class RoleDefinerTests(IdentityRequest):
             self.assertEqual(platform_role_to_update.access.first().permission.permission, "rbac:principal:read")
             assert send_kafka_message.call_args_list[0] == call(
                 "rh-non-platform-default-role-updated",
-                self.customer_data["account_id"],
                 {
                     "name": non_platform_role_to_update.name,
                     "username": "Red Hat",
                     "uuid": str(non_platform_role_to_update.uuid),
                 },
+                account_id=self.customer_data["account_id"],
                 org_id=org_id,
             )
             assert send_kafka_message.call_args_list[1] == call(
                 "rh-platform-default-role-updated",
-                self.customer_data["account_id"],
                 {
                     "name": platform_role_to_update.name,
                     "username": "Red Hat",
                     "uuid": str(platform_role_to_update.uuid),
                 },
+                account_id=self.customer_data["account_id"],
                 org_id=org_id,
             )
 

@@ -144,8 +144,8 @@ class GroupViewsetTests(IdentityRequest):
             self.assertEqual(group.tenant, self.tenant)
             send_kafka_message.assert_called_once_with(
                 "group-created",
-                self.customer_data["account_id"],
                 {"name": group_name, "username": self.user_data["username"], "uuid": str(group.uuid)},
+                account_id=self.customer_data["account_id"],
                 org_id=org_id,
             )
 
@@ -508,8 +508,8 @@ class GroupViewsetTests(IdentityRequest):
             self.assertEqual(updated_name, response.data.get("name"))
             send_kafka_message.assert_called_once_with(
                 "group-updated",
-                self.customer_data["account_id"],
                 {"name": updated_name, "username": self.user_data["username"], "uuid": str(self.group.uuid)},
+                account_id=self.customer_data["account_id"],
                 org_id=org_id,
             )
 
@@ -588,8 +588,8 @@ class GroupViewsetTests(IdentityRequest):
             self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
             send_kafka_message.assert_called_once_with(
                 "group-deleted",
-                self.customer_data["account_id"],
                 {"name": self.group.name, "username": self.user_data["username"], "uuid": str(self.group.uuid)},
+                account_id=self.customer_data["account_id"],
                 org_id=org_id,
             )
 
@@ -689,7 +689,6 @@ class GroupViewsetTests(IdentityRequest):
 
             send_kafka_message.assert_called_once_with(
                 "group-updated",
-                self.customer_data["account_id"],
                 {
                     "name": test_group.name,
                     "username": self.user_data["username"],
@@ -697,6 +696,7 @@ class GroupViewsetTests(IdentityRequest):
                     "operation": "added",
                     "principal": username,
                 },
+                account_id=self.customer_data["account_id"],
                 org_id=org_id,
             )
 
@@ -777,7 +777,6 @@ class GroupViewsetTests(IdentityRequest):
             self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
             send_kafka_message.assert_called_once_with(
                 "group-updated",
-                self.customer_data["account_id"],
                 {
                     "name": self.group.name,
                     "username": self.user_data["username"],
@@ -785,6 +784,7 @@ class GroupViewsetTests(IdentityRequest):
                     "operation": "removed",
                     "principal": test_user.username,
                 },
+                account_id=self.customer_data["account_id"],
                 org_id=org_id,
             )
 
@@ -1206,17 +1206,16 @@ class GroupViewsetTests(IdentityRequest):
 
             assert send_kafka_message.call_args_list[0] == call(
                 "platform-default-group-turned-into-custom",
-                self.customer_data["account_id"],
                 {
                     "name": custom_default_group.name,
                     "username": self.user_data["username"],
                     "uuid": str(custom_default_group.uuid),
                 },
+                account_id=self.customer_data["account_id"],
                 org_id=org_id,
             )
             assert send_kafka_message.call_args_list[1] == call(
                 "custom-default-access-updated",
-                self.customer_data["account_id"],
                 {
                     "name": custom_default_group.name,
                     "username": self.user_data["username"],
@@ -1224,6 +1223,7 @@ class GroupViewsetTests(IdentityRequest):
                     "operation": "added",
                     "role": {"uuid": str(self.roleB.uuid), "name": self.roleB.name},
                 },
+                account_id=self.customer_data["account_id"],
                 org_id=org_id,
             )
 
@@ -1266,17 +1266,16 @@ class GroupViewsetTests(IdentityRequest):
 
             assert send_kafka_message.call_args_list[0] == call(
                 "platform-default-group-turned-into-custom",
-                self.customer_data["account_id"],
                 {
                     "name": custom_default_group.name,
                     "username": self.user_data["username"],
                     "uuid": str(custom_default_group.uuid),
                 },
+                account_id=self.customer_data["account_id"],
                 org_id=org_id,
             )
             assert send_kafka_message.call_args_list[1] == call(
                 "custom-default-access-updated",
-                self.customer_data["account_id"],
                 {
                     "name": custom_default_group.name,
                     "username": self.user_data["username"],
@@ -1284,6 +1283,7 @@ class GroupViewsetTests(IdentityRequest):
                     "operation": "removed",
                     "role": {"uuid": str(default_role.uuid), "name": default_role.name},
                 },
+                account_id=self.customer_data["account_id"],
                 org_id=org_id,
             )
 
@@ -1362,7 +1362,6 @@ class GroupViewsetTests(IdentityRequest):
 
             assert send_kafka_message.call_args_list[0] == call(
                 "group-updated",
-                self.customer_data["account_id"],
                 {
                     "name": groupC.name,
                     "username": self.user_data["username"],
@@ -1370,11 +1369,11 @@ class GroupViewsetTests(IdentityRequest):
                     "operation": "added",
                     "role": {"uuid": str(self.role.uuid), "name": self.role.name},
                 },
+                account_id=self.customer_data["account_id"],
                 org_id=org_id,
             )
             assert send_kafka_message.call_args_list[1] == call(
                 "group-updated",
-                self.customer_data["account_id"],
                 {
                     "name": groupC.name,
                     "username": self.user_data["username"],
@@ -1382,6 +1381,7 @@ class GroupViewsetTests(IdentityRequest):
                     "operation": "added",
                     "role": {"uuid": str(self.roleB.uuid), "name": self.roleB.name},
                 },
+                account_id=self.customer_data["account_id"],
                 org_id=org_id,
             )
 
@@ -1460,7 +1460,6 @@ class GroupViewsetTests(IdentityRequest):
             self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
             assert send_kafka_message.call_args_list[0] == call(
                 "group-updated",
-                self.customer_data["account_id"],
                 {
                     "name": self.group.name,
                     "username": self.user_data["username"],
@@ -1468,11 +1467,11 @@ class GroupViewsetTests(IdentityRequest):
                     "operation": "removed",
                     "role": {"uuid": str(self.role.uuid), "name": self.role.name},
                 },
+                account_id=self.customer_data["account_id"],
                 org_id=org_id,
             )
             assert send_kafka_message.call_args_list[1] == call(
                 "group-updated",
-                self.customer_data["account_id"],
                 {
                     "name": self.group.name,
                     "username": self.user_data["username"],
@@ -1480,6 +1479,7 @@ class GroupViewsetTests(IdentityRequest):
                     "operation": "removed",
                     "role": {"uuid": str(self.roleB.uuid), "name": self.roleB.name},
                 },
+                account_id=self.customer_data["account_id"],
                 org_id=org_id,
             )
 

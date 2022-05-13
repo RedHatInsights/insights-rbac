@@ -163,8 +163,8 @@ class RoleViewsetTests(IdentityRequest):
                     self.assertEqual(rd.tenant, self.tenant)
             send_kafka_message.assert_called_once_with(
                 "custom-role-created",
-                self.customer_data["account_id"],
                 {"name": role.name, "username": self.user_data["username"], "uuid": str(role.uuid)},
+                account_id=self.customer_data["account_id"],
                 org_id=org_id,
             )
 
@@ -748,8 +748,8 @@ class RoleViewsetTests(IdentityRequest):
             self.assertEqual("cost-management:*:*", response.data.get("access")[0]["permission"])
             assert send_kafka_message.call_args_list[1] == call(
                 "custom-role-updated",
-                self.customer_data["account_id"],
                 {"name": updated_name, "username": self.user_data["username"], "uuid": response.data.get("uuid")},
+                account_id=self.customer_data["account_id"],
                 org_id=org_id,
             )
 
@@ -883,8 +883,8 @@ class RoleViewsetTests(IdentityRequest):
 
             assert send_kafka_message.call_args_list[1] == call(
                 "custom-role-deleted",
-                self.customer_data["account_id"],
                 {"name": role_name, "username": self.user_data["username"], "uuid": role_uuid},
+                account_id=self.customer_data["account_id"],
                 org_id=org_id,
             )
 

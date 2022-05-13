@@ -93,24 +93,24 @@ class GroupDefinerTests(IdentityRequest):
                 org_id = None
             assert send_kafka_message.call_args_list[0] == call(
                 "rh-new-role-added-to-default-access",
-                self.customer_data["account_id"],
                 {
                     "name": group.name,
                     "username": "Red Hat",
                     "uuid": str(group.uuid),
                     "role": {"name": new_platform_role.name, "uuid": str(new_platform_role.uuid)},
                 },
+                account_id=self.customer_data["account_id"],
                 org_id=org_id,
             )
             assert send_kafka_message.call_args_list[1] == call(
                 "rh-role-removed-from-default-access",
-                self.customer_data["account_id"],
                 {
                     "name": group.name,
                     "username": "Red Hat",
                     "uuid": str(group.uuid),
                     "role": {"name": role_to_remove.name, "uuid": str(role_to_remove.uuid)},
                 },
+                account_id=self.customer_data["account_id"],
                 org_id=org_id,
             )
 
