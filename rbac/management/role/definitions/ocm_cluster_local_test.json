@@ -1,6 +1,16 @@
 {
   "roles": [
     {
+      "name": "OCM Cluster Owner Local Test",
+      "description": "This role provides cluster owner permission.",
+      "system": true,
+      "version": 2,
+      "external": {
+        "id": "ClusterOwner",
+        "tenant": "ocm"
+      }
+    },
+    {
       "name": "OCM Authenticated User Local Test",
       "description": "This role provides authenticated user permission.",
       "system": true,
