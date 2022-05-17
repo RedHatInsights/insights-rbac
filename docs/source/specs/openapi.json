@@ -323,7 +323,7 @@
         ],
         "summary": "Update a cross account request",
         "operationId": "putCrossAccountRequest",
-        "description": "Update a cross account request",
+        "description": "For TAM requestor to update the start_date/end_date/roles of an existing cross account request.",
         "parameters": [
           {
             "name": "uuid",
@@ -407,9 +407,9 @@
         "tags": [
           "CrossAccountRequest"
         ],
-        "summary": "Update a cross account request",
+        "summary": "Patch a cross account request",
         "operationId": "patchCrossAccountRequest",
-        "description": "Update a cross account request",
+        "description": "Patch the start_date/end_date/roles of an existing request. Could be used by TAM requestor to cancel request or target account admin to approve/deny request.",
         "parameters": [
           {
             "name": "uuid",
@@ -3377,16 +3377,6 @@
               "type": "string",
               "example": "Role Name"
             }
-          },
-          "status": {
-            "type": "string",
-            "enum": [
-              "pending",
-              "approved",
-              "expired",
-              "cancelled",
-              "denied"
-            ]
           }
         }
       },

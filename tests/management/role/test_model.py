@@ -15,10 +15,9 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Test the group model."""
-from django.test import TestCase
-from unittest.mock import Mock
+from django.db import IntegrityError, transaction
 
-from management.models import Group, Role, Policy
+from management.models import ExtRoleRelation, ExtTenant, Role
 from tests.identity_request import IdentityRequest
 
 
@@ -54,3 +53,44 @@ class RoleModelTests(IdentityRequest):
         self.roleA.save()
         self.assertEqual(self.roleA.name, "roleA")
         self.assertEqual(self.roleA.display_name, "ARole")
+
+    def test_ext_role_relation_creation(self):
+        """Test external role relation creation."""
+        ocm = ExtTenant.objects.create(name="ocm")
+        # Can not create without role
+        with transaction.atomic():
+            self.assertRaises(IntegrityError, ExtRoleRelation.objects.create, ext_id="OCMRoleTest1", ext_tenant=ocm)
+
+        # Ext_id with ext_tenant is unique, conflict would raise exception
+        ExtRoleRelation.objects.create(ext_id="OCMRoleTest1", ext_tenant=ocm, role=self.roleA)
+        with transaction.atomic():
+            self.assertRaises(
+                IntegrityError,
+                ExtRoleRelation.objects.create,
+                ext_id="OCMRoleTest1",
+                ext_tenant=ocm,
+                role=self.roleB,
+            )
+
+        # Same ext_id but different ext_tenant is fine
+        kcp = ExtTenant.objects.create(name="kcp")
+        ExtRoleRelation.objects.create(ext_id="OCMRoleTest1", ext_tenant=kcp, role=self.roleB)
+
+    def test_ext_role_relation_attachment(self):
+        """Test that the external role relation could be attached to a role."""
+        ocm = ExtTenant.objects.create(name="ocm")
+        ext_relation1 = ExtRoleRelation.objects.create(ext_id="OCMRoleTest1", ext_tenant=ocm, role=self.roleA)
+
+        # Can access role from relation and vice versa
+        ext_relation1.role.name = self.roleA.name
+        self.roleA.ext_relation.id = ext_relation1.id
+
+        # Can not attach a role belong to another external relation
+        with transaction.atomic():
+            self.assertRaises(
+                IntegrityError,
+                ExtRoleRelation.objects.create,
+                ext_id="OCMRoleTest2",
+                ext_tenant=ocm,
+                role=self.roleA,
+            )
