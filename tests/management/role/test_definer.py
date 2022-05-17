@@ -19,7 +19,7 @@ from unittest.mock import call, patch
 from management.role.definer import seed_roles, seed_permissions
 from api.models import Tenant
 from tests.identity_request import IdentityRequest
-from management.models import Role, Permission, Access, ResourceDefinition
+from management.models import Access, ExtRoleRelation, Permission, ResourceDefinition, Role
 
 
 class RoleDefinerTests(IdentityRequest):
@@ -129,6 +129,24 @@ class RoleDefinerTests(IdentityRequest):
             seed_roles()
         except Exception:
             self.fail(msg="seed_roles encountered an exception")
+
+        # External role relations are seeded
+        ext_relations = ExtRoleRelation.objects.all()
+        self.assertNotEqual(len(ext_relations), 0)
+        for relation in ext_relations:
+            self.assertIsNotNone(relation.role)
+
+        # Update relatoin to point to a new role. Seed again would update relation back.
+        ext_relation = ExtRoleRelation.objects.first()
+        origin_role = ext_relation.role
+        ext_relation.role = Role.objects.get(name="RBAC Administrator Local Test")
+        ext_relation.save()
+        origin_role.version = 1
+        origin_role.save()
+        seed_roles()
+
+        ext_relation.refresh_from_db()
+        self.assertEqual(origin_role, ext_relation.role)
 
     def test_try_seed_permissions(self):
         """Test permission seeding."""
