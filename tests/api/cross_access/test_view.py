@@ -519,6 +519,7 @@ class CrossAccountRequestViewTests(IdentityRequest):
         self.data4create["start_date"] = self.format_date(self.ref_time + timedelta(3))
         self.data4create["end_date"] = self.format_date(self.ref_time + timedelta(5))
         self.data4create["roles"] = ["role_8", "role_9"]
+        self.data4create["status"] = "pending"
 
         car_uuid = self.request_1.request_id
         self.request_1.target_account = self.another_account
