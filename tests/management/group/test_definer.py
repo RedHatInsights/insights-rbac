@@ -18,6 +18,7 @@
 from unittest.mock import call, patch
 from api.models import Tenant
 
+from django.conf import settings
 from management.group.definer import seed_group, add_roles
 from management.role.definer import seed_roles
 from tests.identity_request import IdentityRequest
@@ -86,25 +87,31 @@ class GroupDefinerTests(IdentityRequest):
             for role in group.roles():
                 self.assertTrue(role.platform_default)
 
+            if settings.AUTHENTICATE_WITH_ORG_ID:
+                org_id = self.customer_data["org_id"]
+            else:
+                org_id = None
             assert send_kafka_message.call_args_list[0] == call(
                 "rh-new-role-added-to-default-access",
-                self.customer_data["account_id"],
                 {
                     "name": group.name,
                     "username": "Red Hat",
                     "uuid": str(group.uuid),
                     "role": {"name": new_platform_role.name, "uuid": str(new_platform_role.uuid)},
                 },
+                account_id=self.customer_data["account_id"],
+                org_id=org_id,
             )
             assert send_kafka_message.call_args_list[1] == call(
                 "rh-role-removed-from-default-access",
-                self.customer_data["account_id"],
                 {
                     "name": group.name,
                     "username": "Red Hat",
                     "uuid": str(group.uuid),
                     "role": {"name": role_to_remove.name, "uuid": str(role_to_remove.uuid)},
                 },
+                account_id=self.customer_data["account_id"],
+                org_id=org_id,
             )
 
     def modify_default_group(self, system=True):

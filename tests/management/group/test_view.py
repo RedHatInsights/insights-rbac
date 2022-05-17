@@ -121,6 +121,11 @@ class GroupViewsetTests(IdentityRequest):
             group_name = "groupC"
             test_data = {"name": group_name}
 
+            if settings.AUTHENTICATE_WITH_ORG_ID:
+                org_id = self.customer_data["org_id"]
+            else:
+                org_id = None
+
             # create a group
             url = reverse("group-list")
             client = APIClient()
@@ -139,8 +144,9 @@ class GroupViewsetTests(IdentityRequest):
             self.assertEqual(group.tenant, self.tenant)
             send_kafka_message.assert_called_once_with(
                 "group-created",
-                self.customer_data["account_id"],
                 {"name": group_name, "username": self.user_data["username"], "uuid": str(group.uuid)},
+                account_id=self.customer_data["account_id"],
+                org_id=org_id,
             )
 
     def test_create_default_group(self):
@@ -487,6 +493,12 @@ class GroupViewsetTests(IdentityRequest):
         with self.settings(NOTIFICATIONS_ENABLED=True):
             updated_name = self.group.name + "_update"
             test_data = {"name": updated_name}
+
+            if settings.AUTHENTICATE_WITH_ORG_ID:
+                org_id = self.customer_data["org_id"]
+            else:
+                org_id = None
+
             url = reverse("group-detail", kwargs={"uuid": self.group.uuid})
             client = APIClient()
             response = client.put(url, test_data, format="json", **self.headers)
@@ -496,8 +508,9 @@ class GroupViewsetTests(IdentityRequest):
             self.assertEqual(updated_name, response.data.get("name"))
             send_kafka_message.assert_called_once_with(
                 "group-updated",
-                self.customer_data["account_id"],
                 {"name": updated_name, "username": self.user_data["username"], "uuid": str(self.group.uuid)},
+                account_id=self.customer_data["account_id"],
+                org_id=org_id,
             )
 
     def test_update_default_group(self):
@@ -565,13 +578,19 @@ class GroupViewsetTests(IdentityRequest):
             response = client.delete(url, **self.headers)
             self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
 
+            if settings.AUTHENTICATE_WITH_ORG_ID:
+                org_id = self.customer_data["org_id"]
+            else:
+                org_id = None
+
             # verify the group no longer exists
             response = client.get(url, **self.headers)
             self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
             send_kafka_message.assert_called_once_with(
                 "group-deleted",
-                self.customer_data["account_id"],
                 {"name": self.group.name, "username": self.user_data["username"], "uuid": str(self.group.uuid)},
+                account_id=self.customer_data["account_id"],
+                org_id=org_id,
             )
 
     def test_delete_default_group(self):
@@ -649,6 +668,11 @@ class GroupViewsetTests(IdentityRequest):
                 username="cross_account_user", cross_account=True, tenant=self.tenant
             )
 
+            if settings.AUTHENTICATE_WITH_ORG_ID:
+                org_id = self.customer_data["org_id"]
+            else:
+                org_id = None
+
             url = reverse("group-principals", kwargs={"uuid": test_group.uuid})
             client = APIClient()
             username = "test_user"
@@ -662,9 +686,9 @@ class GroupViewsetTests(IdentityRequest):
             self.assertEqual(len(response.data.get("principals")), 1)
             self.assertEqual(response.data.get("principals")[0], {"username": username})
             self.assertEqual(principal.tenant, self.tenant)
+
             send_kafka_message.assert_called_once_with(
                 "group-updated",
-                self.customer_data["account_id"],
                 {
                     "name": test_group.name,
                     "username": self.user_data["username"],
@@ -672,6 +696,8 @@ class GroupViewsetTests(IdentityRequest):
                     "operation": "added",
                     "principal": username,
                 },
+                account_id=self.customer_data["account_id"],
+                org_id=org_id,
             )
 
     @patch(
@@ -741,12 +767,16 @@ class GroupViewsetTests(IdentityRequest):
             url = reverse("group-principals", kwargs={"uuid": self.group.uuid})
             client = APIClient()
 
+            if settings.AUTHENTICATE_WITH_ORG_ID:
+                org_id = self.customer_data["org_id"]
+            else:
+                org_id = None
+
             url = "{}?usernames={}".format(url, "test_user")
             response = client.delete(url, format="json", **self.headers)
             self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
             send_kafka_message.assert_called_once_with(
                 "group-updated",
-                self.customer_data["account_id"],
                 {
                     "name": self.group.name,
                     "username": self.user_data["username"],
@@ -754,6 +784,8 @@ class GroupViewsetTests(IdentityRequest):
                     "operation": "removed",
                     "principal": test_user.username,
                 },
+                account_id=self.customer_data["account_id"],
+                org_id=org_id,
             )
 
     def test_remove_group_principals_invalid(self):
@@ -1141,6 +1173,11 @@ class GroupViewsetTests(IdentityRequest):
             client = APIClient()
             test_data = {"roles": [self.roleB.uuid, self.dummy_role_id]}
 
+            if settings.AUTHENTICATE_WITH_ORG_ID:
+                org_id = self.customer_data["org_id"]
+            else:
+                org_id = None
+
             default_role = Role.objects.create(
                 name="default_role",
                 description="A default role for a group.",
@@ -1169,16 +1206,16 @@ class GroupViewsetTests(IdentityRequest):
 
             assert send_kafka_message.call_args_list[0] == call(
                 "platform-default-group-turned-into-custom",
-                self.customer_data["account_id"],
                 {
                     "name": custom_default_group.name,
                     "username": self.user_data["username"],
                     "uuid": str(custom_default_group.uuid),
                 },
+                account_id=self.customer_data["account_id"],
+                org_id=org_id,
             )
             assert send_kafka_message.call_args_list[1] == call(
                 "custom-default-access-updated",
-                self.customer_data["account_id"],
                 {
                     "name": custom_default_group.name,
                     "username": self.user_data["username"],
@@ -1186,6 +1223,8 @@ class GroupViewsetTests(IdentityRequest):
                     "operation": "added",
                     "role": {"uuid": str(self.roleB.uuid), "name": self.roleB.name},
                 },
+                account_id=self.customer_data["account_id"],
+                org_id=org_id,
             )
 
     @patch("management.notifications.producer_util.NotificationProducer.send_kafka_message")
@@ -1201,6 +1240,11 @@ class GroupViewsetTests(IdentityRequest):
             )
             self.defGroup.policies.first().roles.add(default_role)
             self.assertTrue(self.defGroup.system)
+
+            if settings.AUTHENTICATE_WITH_ORG_ID:
+                org_id = self.customer_data["org_id"]
+            else:
+                org_id = None
 
             url = reverse("group-roles", kwargs={"uuid": self.defGroup.uuid})
             client = APIClient()
@@ -1222,16 +1266,16 @@ class GroupViewsetTests(IdentityRequest):
 
             assert send_kafka_message.call_args_list[0] == call(
                 "platform-default-group-turned-into-custom",
-                self.customer_data["account_id"],
                 {
                     "name": custom_default_group.name,
                     "username": self.user_data["username"],
                     "uuid": str(custom_default_group.uuid),
                 },
+                account_id=self.customer_data["account_id"],
+                org_id=org_id,
             )
             assert send_kafka_message.call_args_list[1] == call(
                 "custom-default-access-updated",
-                self.customer_data["account_id"],
                 {
                     "name": custom_default_group.name,
                     "username": self.user_data["username"],
@@ -1239,6 +1283,8 @@ class GroupViewsetTests(IdentityRequest):
                     "operation": "removed",
                     "role": {"uuid": str(default_role.uuid), "name": default_role.name},
                 },
+                account_id=self.customer_data["account_id"],
+                org_id=org_id,
             )
 
     def test_add_group_roles_bad_group_guid(self):
@@ -1302,6 +1348,11 @@ class GroupViewsetTests(IdentityRequest):
             client = APIClient()
             test_data = {"roles": [self.role.uuid, self.roleB.uuid]}
 
+            if settings.AUTHENTICATE_WITH_ORG_ID:
+                org_id = self.customer_data["org_id"]
+            else:
+                org_id = None
+
             self.assertCountEqual([], list(groupC.roles()))
 
             response = client.post(url, test_data, format="json", **self.headers)
@@ -1311,7 +1362,6 @@ class GroupViewsetTests(IdentityRequest):
 
             assert send_kafka_message.call_args_list[0] == call(
                 "group-updated",
-                self.customer_data["account_id"],
                 {
                     "name": groupC.name,
                     "username": self.user_data["username"],
@@ -1319,10 +1369,11 @@ class GroupViewsetTests(IdentityRequest):
                     "operation": "added",
                     "role": {"uuid": str(self.role.uuid), "name": self.role.name},
                 },
+                account_id=self.customer_data["account_id"],
+                org_id=org_id,
             )
             assert send_kafka_message.call_args_list[1] == call(
                 "group-updated",
-                self.customer_data["account_id"],
                 {
                     "name": groupC.name,
                     "username": self.user_data["username"],
@@ -1330,6 +1381,8 @@ class GroupViewsetTests(IdentityRequest):
                     "operation": "added",
                     "role": {"uuid": str(self.roleB.uuid), "name": self.roleB.name},
                 },
+                account_id=self.customer_data["account_id"],
+                org_id=org_id,
             )
 
     def test_add_group_multiple_roles_invalid(self):
@@ -1393,6 +1446,11 @@ class GroupViewsetTests(IdentityRequest):
             client = APIClient()
             url = "{}?roles={},{}".format(url, self.role.uuid, self.roleB.uuid)
 
+            if settings.AUTHENTICATE_WITH_ORG_ID:
+                org_id = self.customer_data["org_id"]
+            else:
+                org_id = None
+
             self.policy.roles.add(self.roleB)
             self.assertCountEqual([self.role, self.roleB], list(self.group.roles()))
 
@@ -1402,7 +1460,6 @@ class GroupViewsetTests(IdentityRequest):
             self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
             assert send_kafka_message.call_args_list[0] == call(
                 "group-updated",
-                self.customer_data["account_id"],
                 {
                     "name": self.group.name,
                     "username": self.user_data["username"],
@@ -1410,10 +1467,11 @@ class GroupViewsetTests(IdentityRequest):
                     "operation": "removed",
                     "role": {"uuid": str(self.role.uuid), "name": self.role.name},
                 },
+                account_id=self.customer_data["account_id"],
+                org_id=org_id,
             )
             assert send_kafka_message.call_args_list[1] == call(
                 "group-updated",
-                self.customer_data["account_id"],
                 {
                     "name": self.group.name,
                     "username": self.user_data["username"],
@@ -1421,6 +1479,8 @@ class GroupViewsetTests(IdentityRequest):
                     "operation": "removed",
                     "role": {"uuid": str(self.roleB.uuid), "name": self.roleB.name},
                 },
+                account_id=self.customer_data["account_id"],
+                org_id=org_id,
             )
 
     def test_remove_group_multiple_roles_invalid(self):
