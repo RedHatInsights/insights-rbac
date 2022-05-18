@@ -119,20 +119,20 @@ class IntegrationViewsTests(IdentityRequest):
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         # Expecting ["Group All", "Group A"]
+        expected = []
+        expected.append(Group.objects.get(name="Group A"))
+        expected.append(Group.objects.get(name="Group All"))
         self.assertEqual(response.data.get("meta").get("count"), 2)
+        self.assertTrue(expected, response.data)
 
-    def test_groups_nonexistent_user(self):
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={"status_code": 200, "data": []},
+    )
+    def test_groups_nonexistent_user(self, mock_request):
         """Test that a request for groups of a nonexistent user returns 0."""
         response = self.client.get(
             f"/_private/api/tenant/{self.tenant.tenant_name}/groups/?username=user_x", **self.request.META, follow=True
-        )
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data.get("meta").get("count"), 0)
-
-    def test_groups_empty_user(self):
-        """Test that a request for groups without a ?username param returns as a bad request."""
-        response = self.client.get(
-            f"/_private/api/tenant/{self.tenant.tenant_name}/groups/", **self.request.META, follow=True
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
@@ -159,7 +159,7 @@ class IntegrationViewsTests(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
     def test_groups_for_principal_filter(self):
-        """Test that only the groups a user is a member of are returned for a /tenant/<id>/principal/user_a/groups/ request."""
+        """Test that only the groups a user is a member of are returned for a /tenant/<id>/groups/?username= request."""
         response = self.client.get(
             f"/_private/api/tenant/{self.tenant.tenant_name}/groups/?username=user_a", **self.request.META, follow=True
         )
@@ -167,13 +167,16 @@ class IntegrationViewsTests(IdentityRequest):
         # Expecting ["Group All", "Group A"]
         self.assertEqual(response.data.get("meta").get("count"), 2)
 
-    def test_groups_for_principal_nonexsistant_user(self):
-        """Test that only the groups a user is a member of are returned for a /tenant/<id>/principal/user_x/groups/ request."""
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={"status_code": 200, "data": []},
+    )
+    def test_groups_for_principal_nonexistant_user(self, mock_request):
+        """Test that an error is return for nonexistant ."""
         response = self.client.get(
             f"/_private/api/tenant/{self.tenant.tenant_name}/groups/?username=user_x", **self.request.META, follow=True
         )
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data.get("meta").get("count"), 0)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
     def test_roles_from_group_valid(self):
         """Test that a valid request to /tenant/<id>/groups/<uuid>/roles/ from an internal account works."""

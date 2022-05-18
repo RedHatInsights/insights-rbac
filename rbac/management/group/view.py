@@ -151,7 +151,7 @@ class GroupViewSet(
 
     def get_queryset(self):
         """Obtain queryset for requesting user based on access."""
-        return get_group_queryset(self.request)
+        return get_group_queryset(self.request, self.args, self.kwargs)
 
     def get_serializer_class(self):
         """Get serializer based on route."""
@@ -311,6 +311,7 @@ class GroupViewSet(
         @apiSuccessExample {json} Success-Response:
             HTTP/1.1 204 NO CONTENT
         """
+        import pdb; pdb.set_trace()
         validate_uuid(kwargs.get("uuid"), "group uuid validation")
         self.protect_default_groups("delete")
         group = self.get_object()
@@ -552,7 +553,7 @@ class GroupViewSet(
         return response
 
     @action(detail=True, methods=["get", "post", "delete"])
-    def roles(self, request, uuid=None):
+    def roles(self, request, uuid=None, principals=None):
         """Get, add or remove roles from a group."""
         """
         @api {get} /api/v1/groups/:uuid/roles/   Get roles for a group

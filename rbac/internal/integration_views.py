@@ -19,40 +19,33 @@
 
 import logging
 
-from django.http import HttpResponseBadRequest
-from django.shortcuts import redirect, reverse
 from management.cache import TenantCache
+from management.group.view import GroupViewSet
 
 
 logger = logging.getLogger(__name__)
 TENANTS = TenantCache()
 
 
-def groups(request, account_number):
-    """Formant and pass internal groups request to /groups/ API."""
-    username = request.GET.get("username")
-    if username:
-        base_url = reverse("group-list")
-        url = f"{base_url}?principals={username}"
-        return redirect(url)
-    else:
-        return HttpResponseBadRequest("Username must be supplied.")
+def groups(request, org_id):
+    """Format and pass internal groups request to /groups/ API."""
+    view = GroupViewSet.as_view({"get": "list"})
+    return view(request)
 
 
-def groups_for_principal(request, account_number, username):
-    """Format and pass internal groups for principal request to /groups/ API."""
-    base_url = reverse("group-list")
-    url = f"{base_url}?principals={username}"
-    return redirect(url)
+def groups_for_principal(request, org_id, principals):
+    """Format and pass /principal/<username>/groups/ request to /groups/ API."""
+    view = GroupViewSet.as_view({"get": "list"})
+    return view(request, principals=principals)
 
 
-def roles_from_group(request, account_number, uuid):
+def roles_from_group(request, org_id, uuid):
     """Pass internal /groups/<uuid>/roles/ request to /groups/ API."""
-    return redirect("group-roles", uuid=uuid)
+    view = GroupViewSet.as_view({"get": "roles"})
+    return view(request, uuid=uuid)
 
 
-def roles_for_group_principal(request, account_number, username, uuid):
+def roles_for_group_principal(request, org_id, principals, uuid):
     """Pass internal /principal/<username>/groups/<uuid>/roles/ request to /groups/ API."""
-    base_url = reverse("group-roles", kwargs={"uuid": uuid})
-    url = f"{base_url}?principals={username}"
-    return redirect(url)
+    view = GroupViewSet.as_view({"get": "roles"})
+    return view(request, uuid=uuid, principals=principals)

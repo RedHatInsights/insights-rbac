@@ -83,12 +83,12 @@ def has_group_all_access(request):
     )
 
 
-def get_group_queryset(request):
+def get_group_queryset(request, args, kwargs):
     """Obtain the queryset for groups."""
-    return _filter_admin_default(request, _gather_group_querysets(request))
+    return _filter_admin_default(request, _gather_group_querysets(request, args, kwargs))
 
 
-def _gather_group_querysets(request):
+def _gather_group_querysets(request, args, kwargs):
     """Decide which groups to provide for request."""
     if settings.AUTHENTICATE_WITH_ORG_ID:
         scope = request.query_params.get(SCOPE_KEY, ORG_ID_SCOPE)
@@ -104,7 +104,7 @@ def _gather_group_querysets(request):
         tenant=request.tenant
     ) or Group.platform_default_set().filter(tenant=public_tenant)
 
-    username = request.query_params.get("username")
+    username = request.query_params.get("username") or kwargs.get("principals")
     if username:
         principal = get_principal(username, request)
         if principal.cross_account:

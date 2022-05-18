@@ -27,9 +27,9 @@ from django.urls import resolve
 from django.utils.deprecation import MiddlewareMixin
 
 from api.common import RH_IDENTITY_HEADER
-from api.models import Tenant, User
+from api.models import Tenant
 from api.serializers import extract_header
-from rbac.middleware import IdentityHeaderMiddleware
+from .utils import build_internal_user
 
 
 logger = logging.getLogger(__name__)
@@ -51,28 +51,20 @@ class InternalIdentityHeaderMiddleware(MiddlewareMixin):
             logger.exception("Invalid X-RH-Identity header.")
             return HttpResponseForbidden()
 
-        user = User()
+        user = build_internal_user(request, json_rh_auth)
         try:
             if not json_rh_auth["identity"]["type"] == "Associate":
                 return HttpResponseForbidden()
             user.username = json_rh_auth["identity"]["associate"]["email"]
             user.admin = True
+            user.account = resolve(request.path).kwargs.get("org_id")
+            request.tenant = get_object_or_404(Tenant, tenant_name=user.account)
         except KeyError:
             logger.error("Malformed X-RH-Identity header.")
             return HttpResponseForbidden()
-
-        target = resolve(request.path)
-        if target and "integration" in target:
-            return IdentityHeaderMiddleware.process_request(self, request)
 
         request.user = user
 
     def process_response(self, request, response):
         """Process responses for internal identity middleware."""
         return response
-
-    def get_tenant(self, request):
-        """Ensure internal requests carry proper tenant id."""
-        request.tenant = get_object_or_404(
-            Tenant, tenant_name=self.tenant_re.match(request.path_info).group("tenant_id")
-        )
