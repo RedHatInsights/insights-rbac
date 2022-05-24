@@ -13,6 +13,9 @@ export IQE_CJI_TIMEOUT="30m"  # This is the time to wait for smoke test to compl
 CICD_URL=https://raw.githubusercontent.com/RedHatInsights/bonfire/master/cicd
 curl -s $CICD_URL/bootstrap.sh > .cicd_bootstrap.sh && source .cicd_bootstrap.sh
 
+# Temp: install bonfire beta
+pip install --upgrade --pre crc-bonfire
+
 # Build the image and push to quay
 source $CICD_ROOT/build.sh
 
