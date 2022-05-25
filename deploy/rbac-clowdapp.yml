@@ -440,6 +440,8 @@ objects:
             - api_tenant
             - --ean-translator-addr
             - http://${TENANT_TRANSLATOR_HOST}:${TENANT_TRANSLATOR_PORT}
+            - --batch-size
+            - "50"
           env:
             - name: LOG_FORMAT
               value: ${LOG_FORMAT}
@@ -466,6 +468,8 @@ objects:
             - api_crossaccountrequest
             - --ean-translator-addr
             - http://${TENANT_TRANSLATOR_HOST}:${TENANT_TRANSLATOR_PORT}
+            - --batch-size
+            - "50"
           env:
             - name: LOG_FORMAT
               value: ${LOG_FORMAT}
