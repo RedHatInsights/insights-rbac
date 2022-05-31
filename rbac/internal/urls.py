@@ -20,7 +20,6 @@
 from django.urls import path
 
 from . import integration_views, views
-from .views import trigger_error
 
 urlpatterns = [
     path("api/tenant/unmodified/", views.list_unmodified_tenants),
@@ -46,7 +45,7 @@ urlpatterns = [
     path("api/migrations/progress/", views.migration_progress),
     path("api/seeds/run/", views.run_seeds),
     path("api/cars/expire/", views.car_expiry),
-    path("api/sentry_debug/", trigger_error),
+    path("api/sentry_debug/", views.trigger_error),
     path("api/utils/sync_schemas/", views.sync_schemas),
     path("api/utils/populate_tenant_account_id/", views.populate_tenant_account_id),
     path("api/utils/invalid_default_admin_groups/", views.invalid_default_admin_groups),

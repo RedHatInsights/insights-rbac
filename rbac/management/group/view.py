@@ -311,7 +311,6 @@ class GroupViewSet(
         @apiSuccessExample {json} Success-Response:
             HTTP/1.1 204 NO CONTENT
         """
-        import pdb; pdb.set_trace()
         validate_uuid(kwargs.get("uuid"), "group uuid validation")
         self.protect_default_groups("delete")
         group = self.get_object()

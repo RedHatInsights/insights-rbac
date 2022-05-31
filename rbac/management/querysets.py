@@ -83,7 +83,7 @@ def has_group_all_access(request):
     )
 
 
-def get_group_queryset(request, args, kwargs):
+def get_group_queryset(request, args=None, kwargs=None):
     """Obtain the queryset for groups."""
     return _filter_admin_default(request, _gather_group_querysets(request, args, kwargs))
 
@@ -104,7 +104,9 @@ def _gather_group_querysets(request, args, kwargs):
         tenant=request.tenant
     ) or Group.platform_default_set().filter(tenant=public_tenant)
 
-    username = request.query_params.get("username") or kwargs.get("principals")
+    username = request.query_params.get("username")
+    if not username and kwargs:
+        username = kwargs.get("principals")
     if username:
         principal = get_principal(username, request)
         if principal.cross_account:
