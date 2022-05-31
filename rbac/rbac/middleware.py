@@ -218,7 +218,7 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
                         logger.error("Cross accout request permission denied. Requester is not internal user.")
                         return HttpResponseUnauthorizedRequest()
                     user.username = f"{user.account}-{user.user_id}"
-        except (KeyError, JSONDecodeError):
+        except (KeyError, TypeError, JSONDecodeError):
             request_psk = request.META.get(RH_RBAC_PSK)
             account = request.META.get(RH_RBAC_ACCOUNT)
             org_id = request.META.get(RH_RBAC_ORG_ID)

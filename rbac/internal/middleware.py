@@ -49,7 +49,6 @@ class InternalIdentityHeaderMiddleware(MiddlewareMixin):
         except (JSONDecodeError, binascii.Error):
             logger.exception("Invalid X-RH-Identity header.")
             return HttpResponseForbidden()
-
         user = build_internal_user(request, json_rh_auth)
         try:
             if not json_rh_auth["identity"]["type"] == "Associate":
@@ -59,8 +58,8 @@ class InternalIdentityHeaderMiddleware(MiddlewareMixin):
             path_org_id = resolve(request.path).kwargs.get("org_id")
             if path_org_id:
                 user.account = path_org_id
-            request.tenant = get_object_or_404(Tenant, tenant_name=create_tenant_name(user.account))
-        except KeyError:
+                request.tenant = get_object_or_404(Tenant, tenant_name=create_tenant_name(user.account))
+        except (KeyError, TypeError):
             logger.error("Malformed X-RH-Identity header.")
             return HttpResponseForbidden()
 
