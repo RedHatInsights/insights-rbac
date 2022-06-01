@@ -36,9 +36,9 @@ def build_internal_user(request, json_rh_auth):
             return HttpResponseForbidden()
         user.username = json_rh_auth["identity"]["associate"]["email"]
         user.admin = True
-        user.account = resolve(request.path).kwargs.get("org_id")
-        if not user.account:
-            user.account = json_rh_auth["identity"]["account_number"]
+        user.org_id = resolve(request.path).kwargs.get("org_id")
+        if not user.org_id:
+            user.org_id = json_rh_auth["identity"]["org_id"]
         return user
     except KeyError:
         logger.error("Malformed X-RH-Identity header.")

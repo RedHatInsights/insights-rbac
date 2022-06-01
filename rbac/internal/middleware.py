@@ -28,7 +28,7 @@ from django.utils.deprecation import MiddlewareMixin
 
 from api.common import RH_IDENTITY_HEADER
 from api.models import Tenant
-from api.serializers import create_tenant_name, extract_header
+from api.serializers import extract_header
 from .utils import build_internal_user
 
 logger = logging.getLogger(__name__)
@@ -57,8 +57,8 @@ class InternalIdentityHeaderMiddleware(MiddlewareMixin):
             user.admin = True
             path_org_id = resolve(request.path).kwargs.get("org_id")
             if path_org_id:
-                user.account = path_org_id
-                request.tenant = get_object_or_404(Tenant, tenant_name=create_tenant_name(user.account))
+                user.org_id = path_org_id
+                request.tenant = get_object_or_404(Tenant, org_id=user.org_id)
         except (KeyError, TypeError):
             logger.error("Malformed X-RH-Identity header.")
             return HttpResponseForbidden()
