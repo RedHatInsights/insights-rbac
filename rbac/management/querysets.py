@@ -33,6 +33,7 @@ from management.utils import (
     policies_for_principal,
     queryset_by_id,
     roles_for_principal,
+    verify_principal_with_proxy,
 )
 from rest_framework import permissions, serializers
 
@@ -145,7 +146,11 @@ def get_role_queryset(request):
             request,
             scope,
             Role,
-            **{"prefetch_lookups_for_ids": "access", "prefetch_lookups_for_groups": "policies__roles"},
+            **{
+                "prefetch_lookups_for_ids": "access",
+                "prefetch_lookups_for_groups": "policies__roles",
+                "is_org_admin": request.user.admin,
+            },
         )
         return annotate_roles_with_counts(queryset)
 
@@ -156,6 +161,7 @@ def get_role_queryset(request):
         if username != request.user.username and not role_permission.has_permission(request=request, view=None):
             return Role.objects.none()
         else:
+            verify_principal_with_proxy(username, request, verify_principal=True)
             queryset = get_object_principal_queryset(
                 request,
                 PRINCIPAL_SCOPE,
@@ -211,7 +217,14 @@ def get_access_queryset(request):
         raise serializers.ValidationError({key: _(message)})
 
     app = request.query_params.get(APPLICATION_KEY)
-    is_org_admin = request.user.admin
+    # If we are querying on a username we need to check if the username is an org_admin
+    # not the user making the request
+    username = request.query_params.get("username")
+    if username:
+        proxy_resp = verify_principal_with_proxy(username, request, True)
+        is_org_admin = proxy_resp.get("data")
+    else:
+        is_org_admin = request.user.admin
 
     return get_object_principal_queryset(
         request,
