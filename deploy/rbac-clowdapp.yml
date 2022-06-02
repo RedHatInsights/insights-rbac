@@ -440,11 +440,9 @@ objects:
             - api_tenant
             - --ean-translator-addr
             - http://${TENANT_TRANSLATOR_HOST}:${TENANT_TRANSLATOR_PORT}
+            - --batch-size
+            - "50"
           env:
-            - name: TENANT_TRANSLATOR_HOST
-              value: ${TENANT_TRANSLATOR_HOST}
-            - name: TENANT_TRANSLATOR_PORT
-              value: ${TENANT_TRANSLATOR_PORT}
             - name: LOG_FORMAT
               value: ${LOG_FORMAT}
             - name: LOG_BATCH_FREQUENCY
@@ -470,11 +468,9 @@ objects:
             - api_crossaccountrequest
             - --ean-translator-addr
             - http://${TENANT_TRANSLATOR_HOST}:${TENANT_TRANSLATOR_PORT}
+            - --batch-size
+            - "50"
           env:
-            - name: TENANT_TRANSLATOR_HOST
-              value: ${TENANT_TRANSLATOR_HOST}
-            - name: TENANT_TRANSLATOR_PORT
-              value: ${TENANT_TRANSLATOR_PORT}
             - name: LOG_FORMAT
               value: ${LOG_FORMAT}
             - name: LOG_BATCH_FREQUENCY
@@ -2085,3 +2081,7 @@ parameters:
 - description: Enable RBAC tenancy using Org ID
   name: AUTHENTICATE_WITH_ORG_ID
   value: 'False'
+- name: TENANT_TRANSLATOR_HOST
+  required: true
+- name: TENANT_TRANSLATOR_PORT
+  value: '8892'
