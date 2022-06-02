@@ -27,13 +27,13 @@ from management.utils import (
     APPLICATION_KEY,
     access_for_principal,
     filter_queryset_by_tenant,
+    get_admin_from_proxy,
     get_principal,
     get_principal_from_request,
     groups_for_principal,
     policies_for_principal,
     queryset_by_id,
     roles_for_principal,
-    get_admin_from_proxy,
 )
 from rest_framework import permissions, serializers
 
@@ -161,7 +161,10 @@ def get_role_queryset(request):
         if username != request.user.username and not role_permission.has_permission(request=request, view=None):
             return Role.objects.none()
         else:
-            is_org_admin = get_admin_from_proxy(username, request)
+            if settings.BYPASS_BOP_VERIFICATION:
+                is_org_admin = request.user.admin
+            else:
+                is_org_admin = get_admin_from_proxy(username, request)
 
             queryset = get_object_principal_queryset(
                 request,
@@ -225,10 +228,10 @@ def get_access_queryset(request):
     # If we are querying on a username we need to check if the username is an org_admin
     # not the user making the request
     username = request.query_params.get("username")
-    if username:
-        is_org_admin = get_admin_from_proxy(username, request)
-    else:
+    if not username or settings.BYPASS_BOP_VERIFICATION:
         is_org_admin = request.user.admin
+    else:
+        is_org_admin = get_admin_from_proxy(username, request)
 
     return get_object_principal_queryset(
         request,
