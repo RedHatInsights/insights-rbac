@@ -33,7 +33,7 @@ from management.utils import (
     policies_for_principal,
     queryset_by_id,
     roles_for_principal,
-    verify_principal_with_proxy,
+    get_admin_from_proxy,
 )
 from rest_framework import permissions, serializers
 
@@ -161,12 +161,17 @@ def get_role_queryset(request):
         if username != request.user.username and not role_permission.has_permission(request=request, view=None):
             return Role.objects.none()
         else:
-            verify_principal_with_proxy(username, request, verify_principal=True)
+            is_org_admin = get_admin_from_proxy(username, request)
+
             queryset = get_object_principal_queryset(
                 request,
                 PRINCIPAL_SCOPE,
                 Role,
-                **{"prefetch_lookups_for_ids": "access", "prefetch_lookups_for_groups": "policies__roles"},
+                **{
+                    "prefetch_lookups_for_ids": "access",
+                    "prefetch_lookups_for_groups": "policies__roles",
+                    "is_org_admin": is_org_admin,
+                },
             )
             return annotate_roles_with_counts(queryset)
 
@@ -221,8 +226,7 @@ def get_access_queryset(request):
     # not the user making the request
     username = request.query_params.get("username")
     if username:
-        proxy_resp = verify_principal_with_proxy(username, request, True)
-        is_org_admin = proxy_resp.get("data")
+        is_org_admin = get_admin_from_proxy(username, request)
     else:
         is_org_admin = request.user.admin
 
