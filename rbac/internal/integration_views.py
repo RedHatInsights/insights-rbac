@@ -39,7 +39,7 @@ def groups_for_principal(request, org_id, principals):
     return view(request, principals=principals)
 
 
-def roles_from_group(request, org_id, uuid):
+def roles_for_group(request, org_id, uuid):
     """Pass internal /groups/<uuid>/roles/ request to /groups/ API."""
     view = GroupViewSet.as_view({"get": "roles"})
     return view(request, uuid=uuid)

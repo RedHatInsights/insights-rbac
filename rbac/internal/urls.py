@@ -28,7 +28,7 @@ urlpatterns = [
     path("api/tenant/<str:org_id>/groups/", integration_views.groups, name="integration-groups"),
     path(
         "api/tenant/<str:org_id>/groups/<str:uuid>/roles/",
-        integration_views.roles_from_group,
+        integration_views.roles_for_group,
         name="integration-group-roles",
     ),
     path(

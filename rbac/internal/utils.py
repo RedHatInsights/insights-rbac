@@ -19,7 +19,6 @@
 
 import logging
 
-from django.http import HttpResponseForbidden
 from django.urls import resolve
 
 from api.models import User
@@ -33,7 +32,7 @@ def build_internal_user(request, json_rh_auth):
     user = User()
     try:
         if not json_rh_auth["identity"]["type"] == "Associate":
-            return HttpResponseForbidden()
+            return None
         user.username = json_rh_auth["identity"]["associate"]["email"]
         user.admin = True
         user.org_id = resolve(request.path).kwargs.get("org_id")
@@ -41,5 +40,4 @@ def build_internal_user(request, json_rh_auth):
             user.org_id = json_rh_auth["identity"]["org_id"]
         return user
     except KeyError:
-        logger.error("Malformed X-RH-Identity header.")
-        return HttpResponseForbidden()
+        return None
