@@ -43,9 +43,9 @@ class AccessViewTests(IdentityRequest):
         super().setUp()
         request = self.request_context["request"]
         user = User()
-        user.username = self.user_data["username"]
-        user.account = self.customer_data["account_id"]
-        user.org_id = self.customer_data["org_id"]
+        user.username = "test_user"
+        user.account = "1111111"
+        user.org_id = "100001"
         request.user = user
         public_tenant = Tenant.objects.get(tenant_name="public")
 
@@ -53,7 +53,7 @@ class AccessViewTests(IdentityRequest):
             "permission": "app:*:*",
             "resourceDefinitions": [{"attributeFilter": {"key": "key1", "operation": "equal", "value": "value1"}}],
         }
-        self.principal = Principal(username=self.user_data["username"], tenant=self.tenant)
+        self.principal = Principal(username=user.username, tenant=self.tenant)
         self.principal.save()
         self.admin_principal = Principal(username="user_admin", tenant=self.tenant)
         self.admin_principal.save()
@@ -190,7 +190,24 @@ class AccessViewTests(IdentityRequest):
         permissions = [access["permission"] for access in response.data.get("data")]
         self.assertListEqual(permissions, ["test:assigned:permission1", "test:assigned:permission2"])
 
-    def test_get_access_no_app_supplied(self):
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={
+            "status_code": 200,
+            "data": [
+                {
+                    "org_id": "100001",
+                    "is_org_admin": True,
+                    "is_internal": False,
+                    "id": 52567473,
+                    "username": "test_user",
+                    "account_number": "1111111",
+                    "is_active": True,
+                }
+            ],
+        },
+    )
+    def test_get_access_no_app_supplied(self, mock_request):
         """Test that we return all permissions when no app supplied."""
         role_name = "roleA"
         policy_name = "policyA"
@@ -213,7 +230,24 @@ class AccessViewTests(IdentityRequest):
         self.assertEqual(len(response.data.get("data")), 2)
         self.assertEqual(response.data.get("meta").get("limit"), 2)
 
-    def test_get_access_multiple_apps_supplied(self):
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={
+            "status_code": 200,
+            "data": [
+                {
+                    "org_id": "100001",
+                    "is_org_admin": True,
+                    "is_internal": False,
+                    "id": 52567473,
+                    "username": "test_user",
+                    "account_number": "1111111",
+                    "is_active": True,
+                }
+            ],
+        },
+    )
+    def test_get_access_multiple_apps_supplied(self, mock_request):
         """Test that we return all permissions for multiple apps when supplied."""
         role_name = "roleA"
         policy_name = "policyA"
@@ -227,14 +261,31 @@ class AccessViewTests(IdentityRequest):
         access = Access.objects.create(role=role, permission=self.permission, tenant=self.tenant)
         self.create_policy(policy_name, self.group.uuid, [role_uuid])
 
-        url = "{}?application={}&username={}".format(reverse("access"), "app,app2", self.principal.username)
+        url = "{}?application={}&username={}".format(reverse("access"), "app,app2", "test_user")
         client = APIClient()
         response = client.get(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertIsInstance(response.data.get("data"), list)
         self.assertEqual(len(response.data.get("data")), 2)
 
-    def test_get_access_no_partial_match(self):
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={
+            "status_code": 200,
+            "data": [
+                {
+                    "org_id": "100001",
+                    "is_org_admin": True,
+                    "is_internal": False,
+                    "id": 52567473,
+                    "username": "test_user",
+                    "account_number": "1111111",
+                    "is_active": True,
+                }
+            ],
+        },
+    )
+    def test_get_access_no_partial_match(self, mock_request):
         """Test that we can have a partial match on app/permission."""
         role_name = "roleA"
         policy_name = "policyA"
@@ -255,7 +306,24 @@ class AccessViewTests(IdentityRequest):
         self.assertEqual(len(response.data.get("data")), 0)
         self.assertEqual(response.data.get("meta").get("limit"), 0)
 
-    def test_get_access_no_subset_match(self):
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={
+            "status_code": 200,
+            "data": [
+                {
+                    "org_id": "100001",
+                    "is_org_admin": True,
+                    "is_internal": False,
+                    "id": 52567473,
+                    "username": "test_user",
+                    "account_number": "1111111",
+                    "is_active": True,
+                }
+            ],
+        },
+    )
+    def test_get_access_no_subset_match(self, mock_request):
         """Test that we cannot have a subset match on app/permission."""
         role_name = "roleA"
         policy_name = "policyA"
@@ -276,7 +344,24 @@ class AccessViewTests(IdentityRequest):
         self.assertEqual(len(response.data.get("data")), 0)
         self.assertEqual(response.data.get("meta").get("limit"), 0)
 
-    def test_get_access_no_match(self):
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={
+            "status_code": 200,
+            "data": [
+                {
+                    "org_id": "100001",
+                    "is_org_admin": True,
+                    "is_internal": False,
+                    "id": 52567473,
+                    "username": "test_user",
+                    "account_number": "1111111",
+                    "is_active": True,
+                }
+            ],
+        },
+    )
+    def test_get_access_no_match(self, mock_request):
         """Test that we only match on the application name of the permission data."""
         role_name = "roleA"
         policy_name = "policyA"
