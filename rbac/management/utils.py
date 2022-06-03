@@ -91,6 +91,7 @@ def verify_principal_with_proxy(username, request, verify_principal=True):
     account = request.user.account
     org_id = request.user.org_id
     proxy = PrincipalProxy()
+    return None
     if verify_principal:
         if settings.AUTHENTICATE_WITH_ORG_ID:
             resp = proxy.request_filtered_principals([username], org_id=org_id)
@@ -274,6 +275,7 @@ def account_id_for_tenant(tenant):
 
 def get_admin_from_proxy(username, request):
     """Return org_admin status of a username from the proxy."""
+    return False
     bop_resp = verify_principal_with_proxy(username, request, verify_principal=True)
 
     if bop_resp.get("data") == []:
