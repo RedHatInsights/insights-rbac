@@ -149,6 +149,7 @@ def get_role_queryset(request):
             **{
                 "prefetch_lookups_for_ids": "access",
                 "prefetch_lookups_for_groups": "policies__roles",
+                "is_org_admin": request.user.admin,
             },
         )
         return annotate_roles_with_counts(queryset)
@@ -265,8 +266,13 @@ def get_object_principal_queryset(request, scope, clazz, **kwargs):
 
 def _filter_admin_default(request, queryset):
     """Filter out admin default groups unless the principal is an org admin."""
+    username = request.query_params.get("username")
+    if not username or settings.BYPASS_BOP_VERIFICATION:
+        is_org_admin = request.user.admin
+    else:
+        is_org_admin = get_admin_from_proxy(username, request)
     # If the principal is an org admin, make sure they get any and all admin_default groups
-    if request.user.admin:
+    if is_org_admin:
         public_tenant = Tenant.objects.get(tenant_name="public")
         admin_default_group_set = Group.admin_default_set().filter(
             tenant=request.tenant
