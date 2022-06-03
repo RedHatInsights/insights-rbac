@@ -142,17 +142,6 @@ def get_role_queryset(request):
     )
 
     if scope != (ACCOUNT_SCOPE or ORG_ID_SCOPE):
-        username = request.query_params.get("username")
-        is_org_admin = request.user.admin
-        if username:
-            role_permission = RoleAccessPermission()
-
-            if username != request.user.username and not role_permission.has_permission(request=request, view=None):
-                return Role.objects.none()
-            else:
-                if not settings.BYPASS_BOP_VERIFICATION:
-                    is_org_admin = get_admin_from_proxy(username, request)
-
         queryset = get_object_principal_queryset(
             request,
             scope,
@@ -160,7 +149,6 @@ def get_role_queryset(request):
             **{
                 "prefetch_lookups_for_ids": "access",
                 "prefetch_lookups_for_groups": "policies__roles",
-                "is_org_admin": is_org_admin,
             },
         )
         return annotate_roles_with_counts(queryset)
