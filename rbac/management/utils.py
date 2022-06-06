@@ -69,7 +69,6 @@ def get_principal(username, request, verify_principal=True, from_query=False):
     # First check if principal exist on our side,
     # if not call BOP to check if user exist in the account.
     tenant = request.tenant
-
     try:
         # If the username was provided through a query we must verify if it is an org admin from the BOP
         if from_query:

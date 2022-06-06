@@ -39,13 +39,13 @@ class DevelopmentIdentityHeaderMiddleware(MiddlewareMixin):  # pylint: disable=t
         if hasattr(request, "META"):
             identity_header = {
                 "identity": {
-                    "account_number": "10001",
-                    "org_id": "11111",
+                    "account_number": "1214624",
+                    "org_id": "11789772",
                     "type": "User",
                     "user": {
-                        "username": "user_dev",
+                        "username": "kwalsh",
                         "email": "user_dev@foo.com",
-                        "is_org_admin": True,
+                        "is_org_admin": False,
                         "is_internal": True,
                         "user_id": "51736777",
                     },
