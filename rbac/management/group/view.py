@@ -96,16 +96,31 @@ class GroupFilter(CommonFilters):
             queryset = queryset.filter(policies__roles__name__icontains=role_name)
         return queryset
 
+    def principal_filter(self, queryset, field, values):
+        """Filter for groups containing principals."""
+        if not values:
+            key = "groups_filter"
+            message = "No principals provided to filter groups!"
+            error = {key: [_(message)]}
+            raise serializers.ValidationError(error)
+        principals = [value.lower() for value in values.split(",")]
+
+        for principal in principals:
+            queryset = queryset.filter(principals__username__iexact=principal)
+
+        return queryset
+
     name = filters.CharFilter(field_name="name", method="name_filter")
     role_names = filters.CharFilter(field_name="role_names", method="roles_filter")
     uuid = filters.CharFilter(field_name="uuid", method="uuid_filter")
+    principals = filters.CharFilter(field_name="principals", method="principal_filter")
     system = filters.BooleanFilter(field_name="system")
     platform_default = filters.BooleanFilter(field_name="platform_default")
     admin_default = filters.BooleanFilter(field_name="admin_default")
 
     class Meta:
         model = Group
-        fields = ["name", "role_names", "uuid"]
+        fields = ["name", "role_names", "uuid", "principals"]
 
 
 class GroupViewSet(
@@ -136,7 +151,7 @@ class GroupViewSet(
 
     def get_queryset(self):
         """Obtain queryset for requesting user based on access."""
-        return get_group_queryset(self.request)
+        return get_group_queryset(self.request, self.args, self.kwargs)
 
     def get_serializer_class(self):
         """Get serializer based on route."""
@@ -537,7 +552,7 @@ class GroupViewSet(
         return response
 
     @action(detail=True, methods=["get", "post", "delete"])
-    def roles(self, request, uuid=None):
+    def roles(self, request, uuid=None, principals=None):
         """Get, add or remove roles from a group."""
         """
         @api {get} /api/v1/groups/:uuid/roles/   Get roles for a group
