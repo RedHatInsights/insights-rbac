@@ -280,6 +280,14 @@ def get_admin_from_proxy(username, request):
         message = "No data found for principal with username {}.".format(username)
         raise serializers.ValidationError({key: _(message)})
 
-    index = next((i for i, x in enumerate(bop_resp.get("data")) if x["username"] == username), None)
+    index = next(
+        (i for i, x in enumerate(bop_resp.get("data")) if x["username"].casefold() == username.casefold()), None
+    )
+
+    if index is None:
+        key = "detail"
+        message = "No data found for principal with username {}.".format(username)
+        raise serializers.ValidationError({key: _(message)})
+
     is_org_admin = bop_resp.get("data")[index]["is_org_admin"]
     return is_org_admin
