@@ -37,21 +37,36 @@ class DevelopmentIdentityHeaderMiddleware(MiddlewareMixin):  # pylint: disable=t
 
         """
         if hasattr(request, "META"):
-            identity_header = {
-                "identity": {
-                    "account_number": "1214624",
-                    "org_id": "11789772",
-                    "type": "User",
-                    "user": {
-                        "username": "kwalsh",
-                        "email": "user_dev@foo.com",
-                        "is_org_admin": False,
-                        "is_internal": True,
-                        "user_id": "51736777",
-                    },
-                    "internal": {"cross_access": False},
+            user_type = request.headers.get("User-Type")
+            if user_type and user_type in ["associate", "internal", "turnpike"]:
+                identity_header = {
+                    "identity": {
+                        "associate": {
+                            "Role": ["role"],
+                            "email": "associate_dev@bar.com",
+                            "givenName": "Associate",
+                            "surname": "dev",
+                        },
+                        "auth_type": "saml-auth",
+                        "type": "Associate",
+                    }
                 }
-            }
+            else:
+                identity_header = {
+                    "identity": {
+                        "account_number": "10001",
+                        "org_id": "11111",
+                        "type": "User",
+                        "user": {
+                            "username": "user_dev",
+                            "email": "user_dev@foo.com",
+                            "is_org_admin": True,
+                            "is_internal": True,
+                            "user_id": "51736777",
+                        },
+                        "internal": {"cross_access": False},
+                    }
+                }
             json_identity = json_dumps(identity_header)
             dev_header = b64encode(json_identity.encode("utf-8"))
             request.META[self.header] = dev_header
