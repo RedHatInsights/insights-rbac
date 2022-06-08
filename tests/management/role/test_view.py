@@ -23,7 +23,7 @@ from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APIClient
 
-from api.models import User
+from api.models import User, Tenant
 from management.models import Group, Permission, Principal, Role, Access, Policy, ResourceDefinition
 from tests.identity_request import IdentityRequest
 from unittest.mock import call, patch
@@ -69,6 +69,38 @@ class RoleViewsetTests(IdentityRequest):
             "platform_default",
             "admin_default",
         }
+
+        self.test_tenant = Tenant(tenant_name="acct1111111", account_id="1111111", org_id="100001", ready=True)
+        self.test_tenant.save()
+        self.test_principal = Principal(username="test_user", tenant=self.test_tenant)
+        self.test_principal.save()
+
+        user_data = {"username": "test_user", "email": "test@gmail.com"}
+        request_context = self._create_request_context(
+            {"account_id": "1111111", "tenant_name": "acct1111111", "org_id": "100001"}, user_data, is_org_admin=True
+        )
+        request = request_context["request"]
+        self.test_headers = request.META
+
+        self.test_policy = Policy.objects.create(name="policyA", tenant=self.test_tenant)
+        self.test_group = Group(name="groupA", description="groupA description", tenant=self.test_tenant)
+        self.test_group.save()
+        self.test_group.principals.add(self.test_principal)
+        self.test_group.policies.add(self.test_policy)
+        self.test_group.save()
+
+        self.test_adminRole = Role(**admin_def_role_config, tenant=self.test_tenant)
+        self.test_adminRole.save()
+
+        self.test_sysRole = Role(**sys_role_config, tenant=self.test_tenant)
+        self.test_sysRole.save()
+
+        self.test_defRole = Role(**def_role_config, tenant=self.test_tenant)
+        self.test_defRole.save()
+        self.test_defRole.save()
+
+        self.test_policy.roles.add(self.test_defRole, self.test_sysRole, self.test_adminRole)
+        self.test_policy.save()
 
         self.principal = Principal(username=self.user_data["username"], tenant=self.tenant)
         self.principal.save()
@@ -611,7 +643,24 @@ class RoleViewsetTests(IdentityRequest):
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
-    def test_list_role_with_additional_fields_username_success(self):
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={
+            "status_code": 200,
+            "data": [
+                {
+                    "org_id": "100001",
+                    "is_org_admin": True,
+                    "is_internal": False,
+                    "id": 52567473,
+                    "username": "test_user",
+                    "account_number": "1111111",
+                    "is_active": True,
+                }
+            ],
+        },
+    )
+    def test_list_role_with_additional_fields_username_success(self, mock_request):
         """Test that we can read a list of roles and add fields for username."""
         field_1 = "groups_in_count"
         field_2 = "groups_in"
@@ -619,9 +668,9 @@ class RoleViewsetTests(IdentityRequest):
         new_diaplay_fields.add(field_1)
         new_diaplay_fields.add(field_2)
 
-        url = "{}?add_fields={},{}&username={}".format(URL, field_1, field_2, self.user_data["username"])
+        url = "{}?add_fields={},{}&username={}".format(URL, field_1, field_2, self.test_principal.username)
         client = APIClient()
-        response = client.get(url, **self.headers)
+        response = client.get(url, **self.test_headers)
 
         self.assertEqual(len(response.data.get("data")), 3)
 

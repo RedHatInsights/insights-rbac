@@ -52,42 +52,59 @@ def get_principal_from_request(request):
     """Obtain principal from the request object."""
     current_user = request.user.username
     qs_user = request.query_params.get(USERNAME_KEY)
-
+    username = current_user
+    from_query = False
     if qs_user and not PRICIPAL_PERMISSION_INSTANCE.has_permission(request=request, view=None):
         raise PermissionDenied()
-    username = qs_user if qs_user else current_user
-    return get_principal(username, request, verify_principal=bool(qs_user))
+
+    if qs_user:
+        username = qs_user
+        from_query = True
+
+    return get_principal(username, request, verify_principal=bool(qs_user), from_query=from_query)
 
 
-def get_principal(username, request, verify_principal=True):
+def get_principal(username, request, verify_principal=True, from_query=False):
     """Get principals from username."""
     # First check if principal exist on our side,
     # if not call BOP to check if user exist in the account.
-    account = request.user.account
-    org_id = request.user.org_id
     tenant = request.tenant
     try:
+        # If the username was provided through a query we must verify if it is an org admin from the BOP
+        if from_query:
+            verify_principal_with_proxy(username, request, verify_principal=verify_principal)
         principal = Principal.objects.get(username__iexact=username, tenant=tenant)
     except Principal.DoesNotExist:
-        if verify_principal:
-            proxy = PrincipalProxy()
-            if settings.AUTHENTICATE_WITH_ORG_ID:
-                resp = proxy.request_filtered_principals([username], org_id=org_id)
-            else:
-                resp = proxy.request_filtered_principals([username], account)
-            if isinstance(resp, dict) and "errors" in resp:
-                raise Exception("Dependency error: request to get users from dependent service failed.")
-
-            if resp.get("data") == []:
-                key = "detail"
-                message = "No data found for principal with username {}.".format(username)
-                raise serializers.ValidationError({key: _(message)})
+        verify_principal_with_proxy(username, request, verify_principal=verify_principal)
 
         # Avoid possible race condition if the user was created while checking BOP
         principal, created = Principal.objects.get_or_create(
             username=username, tenant=tenant
         )  # pylint: disable=unused-variable
+
     return principal
+
+
+def verify_principal_with_proxy(username, request, verify_principal=True):
+    """Verify username through the BOP."""
+    account = request.user.account
+    org_id = request.user.org_id
+    proxy = PrincipalProxy()
+    if verify_principal:
+        if settings.AUTHENTICATE_WITH_ORG_ID:
+            resp = proxy.request_filtered_principals([username], org_id=org_id)
+        else:
+            resp = proxy.request_filtered_principals([username], account)
+
+        if isinstance(resp, dict) and "errors" in resp:
+            raise Exception("Dependency error: request to get users from dependent service failed.")
+
+        if resp.get("data") == []:
+            key = "detail"
+            message = "No data found for principal with username {}.".format(username)
+            raise serializers.ValidationError({key: _(message)})
+
+        return resp
 
 
 def policies_for_groups(groups):
@@ -252,3 +269,25 @@ def clear_pk(entry):
 def account_id_for_tenant(tenant):
     """Return the account id from a tenant's name."""
     return tenant.tenant_name.replace("acct", "")
+
+
+def get_admin_from_proxy(username, request):
+    """Return org_admin status of a username from the proxy."""
+    bop_resp = verify_principal_with_proxy(username, request, verify_principal=True)
+
+    if bop_resp.get("data") == []:
+        key = "detail"
+        message = "No data found for principal with username {}.".format(username)
+        raise serializers.ValidationError({key: _(message)})
+
+    index = next(
+        (i for i, x in enumerate(bop_resp.get("data")) if x["username"].casefold() == username.casefold()), None
+    )
+
+    if index is None:
+        key = "detail"
+        message = "No data found for principal with username {}.".format(username)
+        raise serializers.ValidationError({key: _(message)})
+
+    is_org_admin = bop_resp.get("data")[index]["is_org_admin"]
+    return is_org_admin

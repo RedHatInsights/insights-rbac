@@ -21,26 +21,29 @@ from django.urls import path
 
 from . import integration_views, views
 
-urlpatterns = [
-    path("api/tenant/unmodified/", views.list_unmodified_tenants),
-    path("api/tenant/", views.list_tenants),
-    path("api/tenant/<str:tenant_name>/", views.tenant_view),
-    path("api/tenant/<str:org_id>/groups/", integration_views.groups, name="integration-groups"),
+integration_urlpatterns = [
+    path("api/integrations/tenant/<str:org_id>/groups/", integration_views.groups, name="integration-groups"),
     path(
-        "api/tenant/<str:org_id>/groups/<str:uuid>/roles/",
+        "api/integrations/tenant/<str:org_id>/groups/<str:uuid>/roles/",
         integration_views.roles_for_group,
         name="integration-group-roles",
     ),
     path(
-        "api/tenant/<str:org_id>/principal/<str:principals>/groups/",
+        "api/integrations/tenant/<str:org_id>/principal/<str:principals>/groups/",
         integration_views.groups_for_principal,
         name="integration-princ-groups",
     ),
     path(
-        "api/tenant/<str:org_id>/principal/<str:principals>/groups/<str:uuid>/roles/",
+        "api/integrations/tenant/<str:org_id>/principal/<str:principals>/groups/<str:uuid>/roles/",
         integration_views.roles_for_group_principal,
         name="integration-princ-roles",
     ),
+]
+
+urlpatterns = [
+    path("api/tenant/unmodified/", views.list_unmodified_tenants),
+    path("api/tenant/", views.list_tenants),
+    path("api/tenant/<str:tenant_name>/", views.tenant_view),
     path("api/migrations/run/", views.run_migrations),
     path("api/migrations/progress/", views.migration_progress),
     path("api/seeds/run/", views.run_seeds),
@@ -50,3 +53,5 @@ urlpatterns = [
     path("api/utils/populate_tenant_account_id/", views.populate_tenant_account_id),
     path("api/utils/invalid_default_admin_groups/", views.invalid_default_admin_groups),
 ]
+
+urlpatterns.extend(integration_urlpatterns)

@@ -27,6 +27,7 @@ from management.utils import (
     APPLICATION_KEY,
     access_for_principal,
     filter_queryset_by_tenant,
+    get_admin_from_proxy,
     get_principal,
     get_principal_from_request,
     groups_for_principal,
@@ -147,7 +148,11 @@ def get_role_queryset(request):
             request,
             scope,
             Role,
-            **{"prefetch_lookups_for_ids": "access", "prefetch_lookups_for_groups": "policies__roles"},
+            **{
+                "prefetch_lookups_for_ids": "access",
+                "prefetch_lookups_for_groups": "policies__roles",
+                "is_org_admin": request.user.admin,
+            },
         )
         return annotate_roles_with_counts(queryset)
 
@@ -158,11 +163,20 @@ def get_role_queryset(request):
         if username != request.user.username and not role_permission.has_permission(request=request, view=None):
             return Role.objects.none()
         else:
+            if settings.BYPASS_BOP_VERIFICATION:
+                is_org_admin = request.user.admin
+            else:
+                is_org_admin = get_admin_from_proxy(username, request)
+
             queryset = get_object_principal_queryset(
                 request,
                 PRINCIPAL_SCOPE,
                 Role,
-                **{"prefetch_lookups_for_ids": "access", "prefetch_lookups_for_groups": "policies__roles"},
+                **{
+                    "prefetch_lookups_for_ids": "access",
+                    "prefetch_lookups_for_groups": "policies__roles",
+                    "is_org_admin": is_org_admin,
+                },
             )
             return annotate_roles_with_counts(queryset)
 
@@ -213,7 +227,13 @@ def get_access_queryset(request):
         raise serializers.ValidationError({key: _(message)})
 
     app = request.query_params.get(APPLICATION_KEY)
-    is_org_admin = request.user.admin
+    # If we are querying on a username we need to check if the username is an org_admin
+    # not the user making the request
+    username = request.query_params.get("username")
+    if not username or settings.BYPASS_BOP_VERIFICATION:
+        is_org_admin = request.user.admin
+    else:
+        is_org_admin = get_admin_from_proxy(username, request)
 
     return get_object_principal_queryset(
         request,
@@ -248,8 +268,13 @@ def get_object_principal_queryset(request, scope, clazz, **kwargs):
 
 def _filter_admin_default(request, queryset):
     """Filter out admin default groups unless the principal is an org admin."""
+    username = request.query_params.get("username")
+    if not username or settings.BYPASS_BOP_VERIFICATION:
+        is_org_admin = request.user.admin
+    else:
+        is_org_admin = get_admin_from_proxy(username, request)
     # If the principal is an org admin, make sure they get any and all admin_default groups
-    if request.user.admin:
+    if is_org_admin:
         public_tenant = Tenant.objects.get(tenant_name="public")
         admin_default_group_set = Group.admin_default_set().filter(
             tenant=request.tenant

@@ -46,6 +46,21 @@ class GroupViewsetTests(IdentityRequest):
 
         self.dummy_role_id = uuid4()
 
+        self.test_tenant = Tenant(tenant_name="acct1111111", account_id="1111111", org_id="100001", ready=True)
+        self.test_tenant.save()
+        self.test_principal = Principal(username="test_user", tenant=self.test_tenant)
+        self.test_principal.save()
+        self.test_principalB = Principal(username="mock_user", tenant=self.test_tenant)
+        self.test_principalB.save()
+        self.test_principalC = Principal(username="user_not_attaced_to_group_explicitly", tenant=self.test_tenant)
+        self.test_principalC.save()
+        user_data = {"username": "test_user", "email": "test@gmail.com"}
+        test_request_context = self._create_request_context(
+            {"account_id": "1111111", "tenant_name": "acct1111111", "org_id": "100001"}, user_data, is_org_admin=True
+        )
+        test_request = test_request_context["request"]
+        self.test_headers = test_request.META
+
         self.public_tenant = Tenant.objects.get(tenant_name="public")
         self.principal = Principal(username=self.user_data["username"], tenant=self.tenant)
         self.principal.save()
@@ -67,14 +82,14 @@ class GroupViewsetTests(IdentityRequest):
 
         self.defGroup = Group(name="groupDef", platform_default=True, system=True, tenant=self.public_tenant)
         self.defGroup.save()
-        self.defGroup.principals.add(self.principal)
+        self.defGroup.principals.add(self.principal, self.test_principal)
         self.defGroup.save()
         self.defPolicy = Policy(name="defPolicy", system=True, tenant=self.public_tenant, group=self.defGroup)
         self.defPolicy.save()
 
         self.adminGroup = Group(name="groupAdmin", admin_default=True, tenant=self.public_tenant)
         self.adminGroup.save()
-        self.adminGroup.principals.add(self.principal)
+        self.adminGroup.principals.add(self.principal, self.test_principal)
         self.adminGroup.save()
         self.adminPolicy = Policy(name="adminPolicy", tenant=self.public_tenant, group=self.adminGroup)
         self.adminPolicy.save()
@@ -83,7 +98,7 @@ class GroupViewsetTests(IdentityRequest):
         self.emptyGroup.save()
 
         self.groupB = Group.objects.create(name="groupB", tenant=self.tenant)
-        self.groupB.principals.add(self.principal)
+        self.groupB.principals.add(self.principal, self.principal)
         self.policyB = Policy.objects.create(name="policyB", group=self.groupB, tenant=self.tenant)
         self.roleB = Role.objects.create(name="roleB", system=False, tenant=self.tenant)
         self.policyB.roles.add(self.roleB)
@@ -656,7 +671,7 @@ class GroupViewsetTests(IdentityRequest):
 
     @patch(
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
-        return_value={"status_code": 200, "data": [{"username": "test_user"}]},
+        return_value={"status_code": 200, "data": [{"username": "test_add_user"}]},
     )
     @patch("management.notifications.producer_util.NotificationProducer.send_kafka_message")
     def test_add_group_principals_success(self, send_kafka_message, mock_request):
@@ -675,7 +690,7 @@ class GroupViewsetTests(IdentityRequest):
 
             url = reverse("group-principals", kwargs={"uuid": test_group.uuid})
             client = APIClient()
-            username = "test_user"
+            username = "test_add_user"
             test_data = {"principals": [{"username": username}, {"username": cross_account_user.username}]}
 
             response = client.post(url, test_data, format="json", **self.headers)
@@ -740,6 +755,7 @@ class GroupViewsetTests(IdentityRequest):
 
         client = APIClient()
         url = reverse("group-principals", kwargs={"uuid": self.group.uuid})
+
         response = client.get(url, **self.headers)
 
         call_args, kwargs = mock_request.call_args_list[0]
@@ -804,49 +820,115 @@ class GroupViewsetTests(IdentityRequest):
 
     @patch(
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
-        return_value={"status_code": 200, "data": []},
+        return_value={
+            "status_code": 200,
+            "data": [
+                {
+                    "org_id": "100001",
+                    "is_org_admin": True,
+                    "is_internal": False,
+                    "id": 52567473,
+                    "username": "test_user",
+                    "account_number": "1111111",
+                    "is_active": True,
+                }
+            ],
+        },
     )
     def test_get_group_by_username(self, mock_request):
         """Test that getting groups for a principal returns successfully."""
         url = reverse("group-list")
-        url = "{}?username={}".format(url, self.principal.username)
+        url = "{}?username={}".format(url, self.test_principal.username)
         client = APIClient()
-        response = client.get(url, **self.headers)
+        response = client.get(url, **self.test_headers)
         self.assertEqual(response.data.get("meta").get("count"), 4)
-
-        # User who is not added to a group explicitly will return platform default group
-        url = reverse("group-list")
-        url = "{}?username={}".format(url, self.principalC.username)
-        client = APIClient()
-        response = client.get(url, **self.headers)
-        self.assertEqual(response.data.get("meta").get("count"), 2)
 
         # Return bad request when user does not exist
         url = reverse("group-list")
         url = "{}?username={}".format(url, uuid4())
         client = APIClient()
-        response = client.get(url, **self.headers)
+        response = client.get(url, **self.test_headers)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
-    def test_get_group_by_username_for_cross_account_principal(self):
-        """Test that getting groups for a cross account principal won't have platform default group."""
-        self.principalC.cross_account = True
-        self.principalC.save()
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={
+            "status_code": 200,
+            "data": [
+                {
+                    "org_id": "100001",
+                    "is_org_admin": False,
+                    "is_internal": False,
+                    "id": 52567473,
+                    "username": "user_not_attaced_to_group_explicitly",
+                    "account_number": "1111111",
+                    "is_active": True,
+                }
+            ],
+        },
+    )
+    def test_get_group_by_username_no_assigned_group(self, mock_request):
+        """Test that getting groups for a principal not assigned to a group returns successfully."""
+        # User who is not added to a group explicitly will return platform default group
         url = reverse("group-list")
         url = "{}?username={}".format(url, self.principalC.username)
         client = APIClient()
+        response = client.get(url, **self.test_headers)
+        self.assertEqual(response.data.get("meta").get("count"), 2)
+
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={
+            "status_code": 200,
+            "data": [
+                {
+                    "org_id": "100001",
+                    "is_org_admin": True,
+                    "is_internal": False,
+                    "id": 52567473,
+                    "username": "user_not_attaced_to_group_explicitly",
+                    "account_number": "1111111",
+                    "is_active": True,
+                }
+            ],
+        },
+    )
+    def test_get_group_by_username_for_cross_account_principal(self, mock_request):
+        """Test that getting groups for a cross account principal won't have platform default group."""
+        self.test_principalC.cross_account = True
+        self.test_principalC.save()
+        url = reverse("group-list")
+        url = "{}?username={}".format(url, self.test_principalC.username)
+        client = APIClient()
 
         # User who is not added to a group explicitly will not return platform default group if he is cross account principal.
-        response = client.get(url, **self.headers)
+        response = client.get(url, **self.test_headers)
         self.assertEqual(response.data.get("meta").get("count"), 1)
 
-    def test_get_group_by_username_with_capitalization(self):
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={
+            "status_code": 200,
+            "data": [
+                {
+                    "org_id": "100001",
+                    "is_org_admin": True,
+                    "is_internal": False,
+                    "id": 52567473,
+                    "username": "test_user",
+                    "account_number": "1111111",
+                    "is_active": True,
+                }
+            ],
+        },
+    )
+    def test_get_group_by_username_with_capitalization(self, mock_request):
         """Test that getting groups for a user name with capitalization returns successfully."""
         url = reverse("group-list")
-        username = "".join(random.choice([k.upper(), k]) for k in self.principal.username)
+        username = "".join(random.choice([k.upper(), k]) for k in self.test_principal.username)
         url = "{}?username={}".format(url, username)
         client = APIClient()
-        response = client.get(url, **self.headers)
+        response = client.get(url, **self.test_headers)
         self.assertEqual(response.data.get("meta").get("count"), 4)
 
     def test_get_group_roles_success(self):
