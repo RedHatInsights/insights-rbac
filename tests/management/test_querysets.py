@@ -15,7 +15,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Test the Management queryset helpers."""
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from django.core.exceptions import PermissionDenied
 from django.db import connection
@@ -48,9 +48,9 @@ class QuerySetTest(TestCase):
     @classmethod
     def setUpClass(cls):
         try:
-            cls.tenant = Tenant.objects.get(tenant_name="test")
+            cls.tenant = Tenant.objects.get(tenant_name="acct1111111")
         except:
-            cls.tenant = Tenant(tenant_name="test", account_id="11111", org_id="22222")
+            cls.tenant = Tenant(tenant_name="acct1111111", account_id="1111111", org_id="100001", ready=True)
             cls.tenant.save()
 
     @classmethod
@@ -89,7 +89,24 @@ class QuerySetTest(TestCase):
         queryset = get_group_queryset(req)
         self.assertEquals(queryset.count(), 5)
 
-    def test_get_user_group_queryset_admin(self):
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={
+            "status_code": 200,
+            "data": [
+                {
+                    "org_id": "100001",
+                    "is_org_admin": True,
+                    "is_internal": False,
+                    "id": 52567473,
+                    "username": "test_user",
+                    "account_number": "1111111",
+                    "is_active": True,
+                }
+            ],
+        },
+    )
+    def test_get_user_group_queryset_admin(self, mock_request):
         """Test get_group_queryset as an admin."""
         self._create_groups()
         principal = Principal.objects.create(username="test_user", tenant=self.tenant)
@@ -100,7 +117,24 @@ class QuerySetTest(TestCase):
         queryset = get_group_queryset(req)
         self.assertEquals(queryset.count(), 1)
 
-    def test_get_group_queryset_get_users_own_groups(self):
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={
+            "status_code": 200,
+            "data": [
+                {
+                    "org_id": "100001",
+                    "is_org_admin": True,
+                    "is_internal": False,
+                    "id": 52567473,
+                    "username": "test_user",
+                    "account_number": "1111111",
+                    "is_active": True,
+                }
+            ],
+        },
+    )
+    def test_get_group_queryset_get_users_own_groups(self, mock_request):
         """Test get_group_queryset to get a users own groups."""
         self._create_groups()
         principal = Principal.objects.create(username="test_user", tenant=self.tenant)
@@ -117,7 +151,24 @@ class QuerySetTest(TestCase):
         queryset = get_group_queryset(req)
         self.assertEquals(queryset.count(), 1)
 
-    def test_get_group_queryset_get_users_other_users_groups(self):
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={
+            "status_code": 200,
+            "data": [
+                {
+                    "org_id": "100001",
+                    "is_org_admin": True,
+                    "is_internal": False,
+                    "id": 52567473,
+                    "username": "test_user2",
+                    "account_number": "1111111",
+                    "is_active": True,
+                }
+            ],
+        },
+    )
+    def test_get_group_queryset_get_users_other_users_groups(self, mock_request):
         """Test get_group_queryset to get a users other users groups."""
         self._create_groups()
         principal = Principal.objects.create(username="test_user", tenant=self.tenant)
@@ -129,7 +180,24 @@ class QuerySetTest(TestCase):
         queryset = get_group_queryset(req)
         self.assertEquals(queryset.count(), 0)
 
-    def test_get_user_group_queryset_admin_default_org_admin(self):
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={
+            "status_code": 200,
+            "data": [
+                {
+                    "org_id": "100001",
+                    "is_org_admin": True,
+                    "is_internal": False,
+                    "id": 52567473,
+                    "username": "test_user",
+                    "account_number": "1111111",
+                    "is_active": True,
+                }
+            ],
+        },
+    )
+    def test_get_user_group_queryset_admin_default_org_admin(self, mock_request):
         """Test get_group_queryset as an org admin searching for admin default groups."""
         principal = Principal.objects.create(username="test_user", tenant=self.tenant)
         group = Group.objects.create(name="group_admin_default", tenant=self.tenant, admin_default=True)
@@ -139,7 +207,24 @@ class QuerySetTest(TestCase):
         queryset = get_group_queryset(req)
         self.assertEquals(queryset.count(), 1)
 
-    def test_get_user_group_queryset_admin_default_non_org_admin(self):
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={
+            "status_code": 200,
+            "data": [
+                {
+                    "org_id": "100001",
+                    "is_org_admin": False,
+                    "is_internal": False,
+                    "id": 52567473,
+                    "username": "test_user",
+                    "account_number": "1111111",
+                    "is_active": True,
+                }
+            ],
+        },
+    )
+    def test_get_user_group_queryset_admin_default_non_org_admin(self, mock_request):
         """Test get_group_queryset not as an org admin, searching for admin default groups."""
         principal = Principal.objects.create(username="test_user", tenant=self.tenant)
         group = Group.objects.create(name="group_admin_default", tenant=self.tenant, admin_default=True)
@@ -148,7 +233,24 @@ class QuerySetTest(TestCase):
         queryset = get_group_queryset(req)
         self.assertEquals(queryset.count(), 0)
 
-    def test_get_user_group_queryset_admin_and_platform_default(self):
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={
+            "status_code": 200,
+            "data": [
+                {
+                    "org_id": "100001",
+                    "is_org_admin": True,
+                    "is_internal": False,
+                    "id": 52567473,
+                    "username": "test_user",
+                    "account_number": "1111111",
+                    "is_active": True,
+                }
+            ],
+        },
+    )
+    def test_get_user_group_queryset_admin_and_platform_default(self, mock_request):
         """Test get_group_queryset not as an org admin, searching for groups that are admin and platform default."""
         principal = Principal.objects.create(username="test_user", tenant=self.tenant)
         group = Group.objects.create(
@@ -159,7 +261,24 @@ class QuerySetTest(TestCase):
         queryset = get_group_queryset(req)
         self.assertEquals(queryset.count(), 1)
 
-    def test_get_user_group_queryset_admin_default_rbac_admin(self):
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={
+            "status_code": 200,
+            "data": [
+                {
+                    "org_id": "100001",
+                    "is_org_admin": False,
+                    "is_internal": False,
+                    "id": 52567473,
+                    "username": "test_user",
+                    "account_number": "1111111",
+                    "is_active": True,
+                }
+            ],
+        },
+    )
+    def test_get_user_group_queryset_admin_default_rbac_admin(self, mock_request):
         """Test get_group_queryset not as an org admin, but as an RBAC admin searching for admin default groups."""
         principal = Principal.objects.create(username="test_user", tenant=self.tenant)
         group = Group.objects.create(name="group_admin_default", tenant=self.tenant, admin_default=True)
@@ -180,7 +299,24 @@ class QuerySetTest(TestCase):
         self.assertEquals(queryset.count(), 5)
         self.assertIsNotNone(queryset.last().accessCount)
 
-    def test_get_role_queryset_non_admin_username(self):
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={
+            "status_code": 200,
+            "data": [
+                {
+                    "org_id": "100001",
+                    "is_org_admin": True,
+                    "is_internal": False,
+                    "id": 52567473,
+                    "username": "test_user2",
+                    "account_number": "1111111",
+                    "is_active": True,
+                }
+            ],
+        },
+    )
+    def test_get_role_queryset_non_admin_username(self, mock_request):
         """Test get_role_queryset as a non-admin supplying a username."""
         roles = self._setup_roles_for_role_username_queryset_tests()
 
@@ -189,7 +325,24 @@ class QuerySetTest(TestCase):
         with self.assertRaises(PermissionDenied):
             get_role_queryset(req)
 
-    def test_get_role_queryset_non_admin_username_with_perms_diff_user(self):
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={
+            "status_code": 200,
+            "data": [
+                {
+                    "org_id": "100001",
+                    "is_org_admin": True,
+                    "is_internal": False,
+                    "id": 52567473,
+                    "username": "test_user2",
+                    "account_number": "1111111",
+                    "is_active": True,
+                }
+            ],
+        },
+    )
+    def test_get_role_queryset_non_admin_username_with_perms_diff_user(self, mock_request):
         """Test get_role_queryset as a non-admin supplying a username."""
         roles = self._setup_roles_for_role_username_queryset_tests()
 
@@ -202,7 +355,24 @@ class QuerySetTest(TestCase):
         req = Mock(user=user, method="GET", query_params={"username": "test_user2"}, tenant=self.tenant)
         get_role_queryset(req)
 
-    def test_get_role_queryset_non_admin_username_with_perms(self):
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={
+            "status_code": 200,
+            "data": [
+                {
+                    "org_id": "100001",
+                    "is_org_admin": True,
+                    "is_internal": False,
+                    "id": 52567473,
+                    "username": "test_user2",
+                    "account_number": "1111111",
+                    "is_active": True,
+                }
+            ],
+        },
+    )
+    def test_get_role_queryset_non_admin_username_with_perms(self, mock_request):
         """Test get_role_queryset as a non-admin supplying a username."""
         roles = self._setup_roles_for_role_username_queryset_tests()
 
@@ -225,7 +395,24 @@ class QuerySetTest(TestCase):
         self.assertEquals(list(queryset), [])
         self.assertEquals(queryset.count(), 0)
 
-    def test_get_role_queryset_admin_username(self):
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={
+            "status_code": 200,
+            "data": [
+                {
+                    "org_id": "100001",
+                    "is_org_admin": True,
+                    "is_internal": False,
+                    "id": 52567473,
+                    "username": "test_user2",
+                    "account_number": "1111111",
+                    "is_active": True,
+                }
+            ],
+        },
+    )
+    def test_get_role_queryset_admin_username(self, mock_request):
         """Test get_role_queryset as an admin supplying a username."""
         roles = self._setup_roles_for_role_username_queryset_tests()
 
@@ -238,7 +425,24 @@ class QuerySetTest(TestCase):
         self.assertTrue(hasattr(role, "accessCount"))
         self.assertTrue(hasattr(role, "policyCount"))
 
-    def test_get_role_queryset_principal_scope(self):
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={
+            "status_code": 200,
+            "data": [
+                {
+                    "org_id": "100001",
+                    "is_org_admin": True,
+                    "is_internal": False,
+                    "id": 52567473,
+                    "username": "test_user2",
+                    "account_number": "1111111",
+                    "is_active": True,
+                }
+            ],
+        },
+    )
+    def test_get_role_queryset_principal_scope(self, mock_request):
         """Test get_role_queryset with principal scope."""
         roles = self._setup_roles_for_role_username_queryset_tests()
 
@@ -256,7 +460,24 @@ class QuerySetTest(TestCase):
         self.assertTrue(hasattr(role, "accessCount"))
         self.assertTrue(hasattr(role, "policyCount"))
 
-    def test_get_role_queryset_admin_username_different(self):
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={
+            "status_code": 200,
+            "data": [
+                {
+                    "org_id": "100001",
+                    "is_org_admin": True,
+                    "is_internal": False,
+                    "id": 52567473,
+                    "username": "test_user2",
+                    "account_number": "1111111",
+                    "is_active": True,
+                }
+            ],
+        },
+    )
+    def test_get_role_queryset_admin_username_different(self, mock_request):
         """Test get_role_queryset as an admin supplying a different username."""
         roles = self._setup_roles_for_role_username_queryset_tests()
         user = Mock(spec=User, admin=True, account="00001", username="admin")
@@ -431,7 +652,24 @@ class QuerySetTest(TestCase):
         queryset = get_access_queryset(req)
         self.assertEquals(queryset.count(), 0)
 
-    def test_get_access_queryset_non_org_admin_rbac_admin(self):
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={
+            "status_code": 200,
+            "data": [
+                {
+                    "org_id": "100001",
+                    "is_org_admin": True,
+                    "is_internal": False,
+                    "id": 52567473,
+                    "username": "test_user",
+                    "account_number": "1111111",
+                    "is_active": True,
+                }
+            ],
+        },
+    )
+    def test_get_access_queryset_non_org_admin_rbac_admin(self, mock_request):
         """Test get_access_queryset with a non 'org admin' but rbac admin user"""
         user_data = {"username": "test_user", "email": "admin@example.com"}
         customer = {"account_id": "10001"}

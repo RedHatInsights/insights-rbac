@@ -90,7 +90,24 @@ class IntegrationViewsTests(IdentityRequest):
         Role.objects.all().delete()
         Policy.objects.all().delete()
 
-    def test_groups_valid_account(self):
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={
+            "status_code": 200,
+            "data": [
+                {
+                    "org_id": "100001",
+                    "is_org_admin": False,
+                    "is_internal": False,
+                    "id": 52567473,
+                    "username": "user_admin",
+                    "account_number": "1111111",
+                    "is_active": True,
+                }
+            ],
+        },
+    )
+    def test_groups_valid_account(self, mock_request):
         """Test that a request to /tenant/<id>/groups/?username= from an internal account works."""
         response = self.client.get(
             f"/_private/api/tenant/{self.tenant.org_id}/groups/?username=user_admin",
@@ -112,7 +129,24 @@ class IntegrationViewsTests(IdentityRequest):
         )
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
-    def test_groups_user_filter(self):
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={
+            "status_code": 200,
+            "data": [
+                {
+                    "org_id": "100001",
+                    "is_org_admin": False,
+                    "is_internal": False,
+                    "id": 52567473,
+                    "username": "user_a",
+                    "account_number": "1111111",
+                    "is_active": True,
+                }
+            ],
+        },
+    )
+    def test_groups_user_filter(self, mock_request):
         """Test that only the groups a user is a member of are returned for a /tenant/<id>/groups/?username= request."""
         response = self.client.get(
             f"/_private/api/tenant/{self.tenant.org_id}/groups/?username=user_a", **self.request.META, follow=True
@@ -158,7 +192,24 @@ class IntegrationViewsTests(IdentityRequest):
         )
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
-    def test_groups_for_principal_filter(self):
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={
+            "status_code": 200,
+            "data": [
+                {
+                    "org_id": "100001",
+                    "is_org_admin": False,
+                    "is_internal": False,
+                    "id": 52567473,
+                    "username": "user_a",
+                    "account_number": "1111111",
+                    "is_active": True,
+                }
+            ],
+        },
+    )
+    def test_groups_for_principal_filter(self, mock_request):
         """Test that only the groups a user is a member of are returned for a /tenant/<id>/groups/?username= request."""
         response = self.client.get(
             f"/_private/api/tenant/{self.tenant.org_id}/groups/?username=user_a", **self.request.META, follow=True
