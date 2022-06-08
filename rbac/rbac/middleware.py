@@ -87,8 +87,8 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
                         raise Http404()
                 else:
                     tenant, created = Tenant.objects.get_or_create(
-                        tenant_name=tenant_name,
-                        defaults={"ready": True, "account_id": request.user.account, "org_id": request.user.org_id},
+                        org_id=request.user.org_id,
+                        defaults={"ready": True, "account_id": request.user.account, "tenant_name": tenant_name},
                     )
                 TENANTS.save_tenant(tenant)
         else:
@@ -184,7 +184,7 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
             _, json_rh_auth = extract_header(request, self.header)
             user.account = json_rh_auth.get("identity", {})["account_number"]
             user.org_id = json_rh_auth.get("identity", {}).get("org_id")
-            user_info = json_rh_auth.get("identity", {}).get("user", {})
+            user_info = json_rh_auth.get("identity", {}).get("user")
             user.username = user_info["username"]
             user.admin = user_info.get("is_org_admin")
             user.internal = user_info.get("is_internal")
@@ -218,7 +218,7 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
                         logger.error("Cross accout request permission denied. Requester is not internal user.")
                         return HttpResponseUnauthorizedRequest()
                     user.username = f"{user.account}-{user.user_id}"
-        except (KeyError, JSONDecodeError):
+        except (KeyError, TypeError, JSONDecodeError):
             request_psk = request.META.get(RH_RBAC_PSK)
             account = request.META.get(RH_RBAC_ACCOUNT)
             org_id = request.META.get(RH_RBAC_ORG_ID)

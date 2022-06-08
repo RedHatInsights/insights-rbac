@@ -107,7 +107,7 @@ ENV/
 .mypy_cache/
 
 # Local Postgres data
-pg_data/
+pg_data*
 .DS_Store
 
 # apidoc

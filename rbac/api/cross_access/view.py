@@ -176,12 +176,7 @@ class CrossAccountRequestViewSet(
 
         self.validate_and_format_input(request.data)
 
-        response = super().update(request=request, args=args, kwargs=kwargs)
-        if response.status_code and response.status_code is http_status.HTTP_200_OK:
-            if request.data.get("status"):
-                self.update_status(current, request.data.get("status"))
-                return Response(CrossAccountRequestDetailSerializer(current).data)
-        return response
+        return super().update(request=request, args=args, kwargs=kwargs)
 
     def retrieve(self, request, *args, **kwargs):
         """Retrive cross account requests by request_id."""
@@ -307,7 +302,8 @@ class CrossAccountRequestViewSet(
         """Update the status of a cross-account-request."""
         car.status = status
         if status == "approved":
-            create_cross_principal(car.target_account, car.user_id, car.target_org)
+            create_cross_principal(car.user_id, target_account=car.target_account, target_org=car.target_org)
+
         car.save()
 
     def check_patch_permission(self, request, update_obj):

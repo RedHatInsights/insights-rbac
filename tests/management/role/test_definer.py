@@ -15,11 +15,12 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Test the role definer."""
+from django.conf import settings
 from unittest.mock import call, patch
 from management.role.definer import seed_roles, seed_permissions
 from api.models import Tenant
 from tests.identity_request import IdentityRequest
-from management.models import Role, Permission, Access, ResourceDefinition
+from management.models import Access, ExtRoleRelation, Permission, ResourceDefinition, Role
 
 
 class RoleDefinerTests(IdentityRequest):
@@ -37,13 +38,20 @@ class RoleDefinerTests(IdentityRequest):
             self.try_seed_roles()
 
             roles = Role.objects.filter(platform_default=True)
+
+            if settings.AUTHENTICATE_WITH_ORG_ID:
+                org_id = self.customer_data["org_id"]
+            else:
+                org_id = None
+
             self.assertTrue(len(roles))
             self.assertFalse(Role.objects.get(name="RBAC Administrator Local Test").platform_default)
 
             send_kafka_message.assert_any_call(
                 "rh-new-role-available",
-                self.customer_data["account_id"],
                 {"name": roles.first().name, "username": "Red Hat", "uuid": str(roles.first().uuid)},
+                account_id=self.customer_data["account_id"],
+                org_id=org_id,
             )
 
     def test_role_update(self):
@@ -97,6 +105,11 @@ class RoleDefinerTests(IdentityRequest):
         platform_role_to_update.save()
         access.save()
 
+        if settings.AUTHENTICATE_WITH_ORG_ID:
+            org_id = self.customer_data["org_id"]
+        else:
+            org_id = None
+
         with self.settings(NOTIFICATIONS_RH_ENABLED=True, NOTIFICATIONS_ENABLED=True):
             seed_roles()
 
@@ -106,21 +119,23 @@ class RoleDefinerTests(IdentityRequest):
             self.assertEqual(platform_role_to_update.access.first().permission.permission, "rbac:principal:read")
             assert send_kafka_message.call_args_list[0] == call(
                 "rh-non-platform-default-role-updated",
-                self.customer_data["account_id"],
                 {
                     "name": non_platform_role_to_update.name,
                     "username": "Red Hat",
                     "uuid": str(non_platform_role_to_update.uuid),
                 },
+                account_id=self.customer_data["account_id"],
+                org_id=org_id,
             )
             assert send_kafka_message.call_args_list[1] == call(
                 "rh-platform-default-role-updated",
-                self.customer_data["account_id"],
                 {
                     "name": platform_role_to_update.name,
                     "username": "Red Hat",
                     "uuid": str(platform_role_to_update.uuid),
                 },
+                account_id=self.customer_data["account_id"],
+                org_id=org_id,
             )
 
     def try_seed_roles(self):
@@ -129,6 +144,24 @@ class RoleDefinerTests(IdentityRequest):
             seed_roles()
         except Exception:
             self.fail(msg="seed_roles encountered an exception")
+
+        # External role relations are seeded
+        ext_relations = ExtRoleRelation.objects.all()
+        self.assertNotEqual(len(ext_relations), 0)
+        for relation in ext_relations:
+            self.assertIsNotNone(relation.role)
+
+        # Update relatoin to point to a new role. Seed again would update relation back.
+        ext_relation = ExtRoleRelation.objects.first()
+        origin_role = ext_relation.role
+        ext_relation.role = Role.objects.get(name="RBAC Administrator Local Test")
+        ext_relation.save()
+        origin_role.version = 1
+        origin_role.save()
+        seed_roles()
+
+        ext_relation.refresh_from_db()
+        self.assertEqual(origin_role, ext_relation.role)
 
     def test_try_seed_permissions(self):
         """Test permission seeding."""

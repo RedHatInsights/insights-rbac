@@ -91,6 +91,25 @@ class ResourceDefinition(TenantAwareModel):
             return self.access.role
 
 
+class ExtTenant(models.Model):
+    """External tenant."""
+
+    name = models.CharField(max_length=20, null=False, unique=True)
+
+
+class ExtRoleRelation(models.Model):
+    """External relation info of role."""
+
+    ext_tenant = models.ForeignKey(ExtTenant, null=True, on_delete=models.CASCADE, related_name="ext_role_relation")
+    ext_id = models.CharField(max_length=20, null=False)
+    role = models.OneToOneField(Role, on_delete=models.CASCADE, null=False, related_name="ext_relation")
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["ext_tenant", "ext_id"], name="unique external id per external tenant")
+        ]
+
+
 def role_related_obj_change_cache_handler(sender=None, instance=None, using=None, **kwargs):
     """Signal handler for invalidating Principal cache on Role object change."""
     logger.info(

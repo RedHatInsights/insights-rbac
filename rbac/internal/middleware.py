@@ -22,12 +22,14 @@ from json.decoder import JSONDecodeError
 
 from django.conf import settings
 from django.http import HttpResponseForbidden
+from django.shortcuts import get_object_or_404
+from django.urls import resolve
 from django.utils.deprecation import MiddlewareMixin
 
 from api.common import RH_IDENTITY_HEADER
-from api.models import User
+from api.models import Tenant
 from api.serializers import extract_header
-
+from .utils import build_internal_user
 
 logger = logging.getLogger(__name__)
 
@@ -47,14 +49,15 @@ class InternalIdentityHeaderMiddleware(MiddlewareMixin):
         except (JSONDecodeError, binascii.Error):
             logger.exception("Invalid X-RH-Identity header.")
             return HttpResponseForbidden()
-
-        user = User()
+        user = build_internal_user(request, json_rh_auth)
+        if not user:
+            logger.error("Malformed X-RH-Identity header.")
+            return HttpResponseForbidden()
         try:
-            if not json_rh_auth["identity"]["type"] == "Associate":
-                return HttpResponseForbidden()
-            user.username = json_rh_auth["identity"]["associate"]["email"]
-            user.admin = True
-        except KeyError:
+            path_org_id = resolve(request.path).kwargs.get("org_id")
+            if path_org_id:
+                request.tenant = get_object_or_404(Tenant, org_id=user.org_id)
+        except (KeyError, TypeError):
             logger.error("Malformed X-RH-Identity header.")
             return HttpResponseForbidden()
 

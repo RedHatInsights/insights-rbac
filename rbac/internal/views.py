@@ -289,6 +289,34 @@ def populate_tenant_account_id(request):
     return HttpResponse('Invalid method, only "POST" is allowed.', status=405)
 
 
+def invalid_default_admin_groups(request):
+    """View method for querying/removing invalid default admin groups.
+
+    GET /_private/api/utils/invalid_default_admin_groups/
+    DELETE /_private/api/utils/invalid_default_admin_groups/
+    """
+    logger.info(f"Invalid default admin groups: {request.method} {request.user.username}")
+    public_tenant = Tenant.objects.get(tenant_name="public")
+    invalid_default_admin_groups = Group.objects.filter(
+        admin_default=True, system=False, platform_default=False
+    ).exclude(tenant=public_tenant)
+
+    if request.method == "GET":
+        payload = {
+            "invalid_default_admin_groups": list(
+                invalid_default_admin_groups.values("name", "admin_default", "system", "platform_default", "tenant")
+            ),
+            "invalid_default_admin_groups_count": invalid_default_admin_groups.count(),
+        }
+        return HttpResponse(json.dumps(payload), content_type="application/json")
+    if request.method == "DELETE":
+        if not destructive_ok():
+            return HttpResponse("Destructive operations disallowed.", status=400)
+        invalid_default_admin_groups.delete()
+        return HttpResponse(status=204)
+    return HttpResponse('Invalid method, only "DELETE" and "GET" are allowed.', status=405)
+
+
 class SentryDiagnosticError(Exception):
     """Raise this to create an event in Sentry."""
 

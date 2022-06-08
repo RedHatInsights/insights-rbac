@@ -15,6 +15,10 @@ objects:
     database:
       name: rbac
     inMemoryDb: true
+    kafkaTopics:
+    - topicName: platform.notifications.ingress
+      partitions: 3
+      replicas: 3
     deployments:
     - name: worker-service
       minReplicas: ${{MIN_WORKER_REPLICAS}}
@@ -165,6 +169,10 @@ objects:
             value: ${MAX_SEED_THREADS}
           - name: ACCESS_CACHE_CONNECT_SIGNALS
             value: 'False'
+          - name: NOTIFICATIONS_ENABLED
+            value: ${NOTIFICATIONS_ENABLED}
+          - name: NOTIFICATIONS_RH_ENABLED
+            value: ${NOTIFICATIONS_RH_ENABLED}
 
     - name: scheduler-service
       minReplicas: ${{MIN_SCHEDULER_REPLICAS}}
@@ -413,10 +421,67 @@ objects:
             value: ${REDIS_SOCKET_CONNECT_TIMEOUT}
           - name: REDIS_SOCKET_TIMEOUT
             value: ${REDIS_SOCKET_TIMEOUT}
-          - name: KAFKA_BOOTSTRAP_HOST
-            value: ${KAFKA_BOOTSTRAP_HOST
-          - name: KAFKA_BOOTSTRAP_PORT
-            value: ${KAFKA_BOOTSTRAP_PORT}
+          - name: AUTHENTICATE_WITH_ORG_ID
+            value: ${AUTHENTICATE_WITH_ORG_ID}
+          - name: NOTIFICATIONS_ENABLED
+            value: ${NOTIFICATIONS_ENABLED}
+    jobs:
+      - name: tenant-org-id-populator
+        podSpec:
+          image: quay.io/cloudservices/tenant-utils:latest
+          command:
+            - ./org-id-column-populator
+            - -C
+            - -a
+            - account_id
+            - -o
+            - org_id
+            - -t
+            - api_tenant
+            - --ean-translator-addr
+            - http://${TENANT_TRANSLATOR_HOST}:${TENANT_TRANSLATOR_PORT}
+            - --batch-size
+            - "50"
+          env:
+            - name: LOG_FORMAT
+              value: ${LOG_FORMAT}
+            - name: LOG_BATCH_FREQUENCY
+              value: '1'
+          resources:
+            limits:
+              cpu: 300m
+              memory: 1Gi
+            requests:
+              cpu: 50m
+              memory: 512Mi
+      - name: cross-account-request-target-org-populator
+        podSpec:
+          image: quay.io/cloudservices/tenant-utils:latest
+          command:
+            - ./org-id-column-populator
+            - -C
+            - -a
+            - target_account
+            - -o
+            - target_org
+            - -t
+            - api_crossaccountrequest
+            - --ean-translator-addr
+            - http://${TENANT_TRANSLATOR_HOST}:${TENANT_TRANSLATOR_PORT}
+            - --batch-size
+            - "50"
+          env:
+            - name: LOG_FORMAT
+              value: ${LOG_FORMAT}
+            - name: LOG_BATCH_FREQUENCY
+              value: '1'
+          resources:
+            limits:
+              cpu: 300m
+              memory: 1Gi
+            requests:
+              cpu: 50m
+              memory: 512Mi
 - apiVersion: v1
   kind: ConfigMap
   metadata:
@@ -2007,15 +2072,16 @@ parameters:
 - description: socket timeout for redis
   name: REDIS_SOCKET_TIMEOUT
   value: "0.1"
-- description: Host for kafka
-  name: KAFKA_BOOTSTRAP_HOST
-  value: platform-mq-kafka-bootstrap.platform-mq-stage.svc.cluster.local
-- description: Port of kafka
-  name: KAFKA_BOOTSTRAP_PORT
-  value: "9092"
 - description: Enable sending out notification events
   name: NOTIFICATIONS_ENABLED
   value: 'False'
 - description: Enable sending out notification events of Red Hat changes
   name: NOTIFICATIONS_RH_ENABLED
   value: 'False'
+- description: Enable RBAC tenancy using Org ID
+  name: AUTHENTICATE_WITH_ORG_ID
+  value: 'False'
+- name: TENANT_TRANSLATOR_HOST
+  required: true
+- name: TENANT_TRANSLATOR_PORT
+  value: '8892'

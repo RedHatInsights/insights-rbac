@@ -96,16 +96,31 @@ class GroupFilter(CommonFilters):
             queryset = queryset.filter(policies__roles__name__icontains=role_name)
         return queryset
 
+    def principal_filter(self, queryset, field, values):
+        """Filter for groups containing principals."""
+        if not values:
+            key = "groups_filter"
+            message = "No principals provided to filter groups!"
+            error = {key: [_(message)]}
+            raise serializers.ValidationError(error)
+        principals = [value.lower() for value in values.split(",")]
+
+        for principal in principals:
+            queryset = queryset.filter(principals__username__iexact=principal)
+
+        return queryset
+
     name = filters.CharFilter(field_name="name", method="name_filter")
     role_names = filters.CharFilter(field_name="role_names", method="roles_filter")
     uuid = filters.CharFilter(field_name="uuid", method="uuid_filter")
+    principals = filters.CharFilter(field_name="principals", method="principal_filter")
     system = filters.BooleanFilter(field_name="system")
     platform_default = filters.BooleanFilter(field_name="platform_default")
     admin_default = filters.BooleanFilter(field_name="admin_default")
 
     class Meta:
         model = Group
-        fields = ["name", "role_names", "uuid"]
+        fields = ["name", "role_names", "uuid", "principals"]
 
 
 class GroupViewSet(
@@ -136,7 +151,7 @@ class GroupViewSet(
 
     def get_queryset(self):
         """Obtain queryset for requesting user based on access."""
-        return get_group_queryset(self.request)
+        return get_group_queryset(self.request, self.args, self.kwargs)
 
     def get_serializer_class(self):
         """Get serializer based on route."""
@@ -159,6 +174,12 @@ class GroupViewSet(
             key = "group"
             message = "{} cannot be performed on default groups.".format(action.upper())
             error = {key: [_(message)]}
+            raise serializers.ValidationError(error)
+
+    def protect_default_admin_group_roles(self, group):
+        """Disallow default admin access roles from being updated."""
+        if group.admin_default:
+            error = {"group": [_("Default admin access cannot be modified.")]}
             raise serializers.ValidationError(error)
 
     def create(self, request, *args, **kwargs):
@@ -341,6 +362,7 @@ class GroupViewSet(
                     principal = Principal.objects.create(username=username, tenant=tenant)
                     logger.info("Created new principal %s for org_id %s.", username, org_id)
                 group.principals.add(principal)
+                group_principal_change_notification_handler(self.request.user, group, username, "added")
             return group
         else:
             resp = self.proxy.request_filtered_principals(users, account=account, limit=len(users))
@@ -530,7 +552,7 @@ class GroupViewSet(
         return response
 
     @action(detail=True, methods=["get", "post", "delete"])
-    def roles(self, request, uuid=None):
+    def roles(self, request, uuid=None, principals=None):
         """Get, add or remove roles from a group."""
         """
         @api {get} /api/v1/groups/:uuid/roles/   Get roles for a group
@@ -616,6 +638,7 @@ class GroupViewSet(
         validate_uuid(uuid, "group uuid validation")
         group = self.get_object()
         if request.method == "POST":
+            self.protect_default_admin_group_roles(group)
             serializer = GroupRoleSerializerIn(data=request.data)
             if serializer.is_valid(raise_exception=True):
                 roles = request.data.pop(ROLES_KEY, [])
@@ -628,6 +651,7 @@ class GroupViewSet(
             serializer = self.get_serializer(page, many=True)
             return self.get_paginated_response(serializer.data)
         else:
+            self.protect_default_admin_group_roles(group)
             if ROLES_KEY not in request.query_params:
                 key = "detail"
                 message = "Query parameter {} is required.".format(ROLES_KEY)

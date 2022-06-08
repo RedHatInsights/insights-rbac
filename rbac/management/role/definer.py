@@ -25,11 +25,38 @@ from django.db import transaction
 from django.utils import timezone
 from management.notifications.notification_hanlders import role_obj_change_notification_handler
 from management.permission.model import Permission
-from management.role.model import Access, ResourceDefinition, Role
+from management.role.model import Access, ExtRoleRelation, ExtTenant, ResourceDefinition, Role
 
 from api.models import Tenant
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
+
+
+def _add_ext_relation_if_it_exists(external_relation, role):
+    if not external_relation:
+        return
+
+    ext_id = external_relation.get("id")
+    ext_tenant_name = external_relation.get("tenant")
+
+    if hasattr(role, "ext_relation"):
+        pre_relation = role.ext_relation
+        # If the role already has same external relation, no-op
+        if pre_relation and pre_relation.ext_id == ext_id and pre_relation.ext_tenant.name == ext_tenant_name:
+            return
+        else:
+            pre_relation.delete()
+
+    ext_tenant, created = ExtTenant.objects.get_or_create(name=ext_tenant_name)
+    if created:
+        logger.info("Created external tenant %s.", ext_tenant_name)
+
+    defaults = dict(ext_tenant=ext_tenant, role=role)
+    _, created = ExtRoleRelation.objects.update_or_create(ext_id=ext_id, defaults=defaults)
+
+    logger.info(
+        "Added external relationships %s of external tenant %s to role %s.", ext_id, ext_tenant_name, role.name
+    )
 
 
 def _make_role(data):
@@ -62,13 +89,17 @@ def _make_role(data):
         else:
             logger.info("No change in system role %s", name)
             return role
-    for access_item in access_list:
-        resource_def_list = access_item.pop("resourceDefinitions", [])
-        permission, created = Permission.objects.get_or_create(**access_item, tenant=public_tenant)
 
-        access_obj = Access.objects.create(permission=permission, role=role, tenant=public_tenant)
-        for resource_def_item in resource_def_list:
-            ResourceDefinition.objects.create(**resource_def_item, access=access_obj, tenant=public_tenant)
+    if access_list:  # Allow external roles to have none access object
+        for access_item in access_list:
+            resource_def_list = access_item.pop("resourceDefinitions", [])
+            permission, created = Permission.objects.get_or_create(**access_item, tenant=public_tenant)
+
+            access_obj = Access.objects.create(permission=permission, role=role, tenant=public_tenant)
+            for resource_def_item in resource_def_list:
+                ResourceDefinition.objects.create(**resource_def_item, access=access_obj, tenant=public_tenant)
+
+    _add_ext_relation_if_it_exists(data.get("external"), role)
     return role
 
 
