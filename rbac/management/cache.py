@@ -103,7 +103,7 @@ class TenantCache(BasicCache):
 
     def save_tenant(self, tenant):
         """Write the tenant for a request to Redis."""
-        if settings.AUTHENTICATE_WTIH_ORG_ID:
+        if settings.AUTHENTICATE_WITH_ORG_ID:
             super().save(tenant.org_id, tenant, "tenant")
         else:
             super().save(tenant.tenant_name, tenant, "tenant")
