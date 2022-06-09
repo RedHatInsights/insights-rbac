@@ -17,7 +17,6 @@
 
 """Describes the urls and patterns for internal routes."""
 
-from django.conf import settings
 from django.urls import path
 
 from . import integration_views, views
@@ -44,6 +43,7 @@ integration_urlpatterns = [
 urlpatterns = [
     path("api/tenant/unmodified/", views.list_unmodified_tenants),
     path("api/tenant/", views.list_tenants),
+    path("api/tenant/<str:org_id>/", views.tenant_view),
     path("api/migrations/run/", views.run_migrations),
     path("api/migrations/progress/", views.migration_progress),
     path("api/seeds/run/", views.run_seeds),
@@ -53,10 +53,5 @@ urlpatterns = [
     path("api/utils/populate_tenant_account_id/", views.populate_tenant_account_id),
     path("api/utils/invalid_default_admin_groups/", views.invalid_default_admin_groups),
 ]
-
-if settings.AUTHENTICATE_WITH_ORG_ID:
-    urlpatterns.append(path("api/tenant/<str:org_id>/", views.tenant_view))
-else:
-    urlpatterns.append(path("api/tenant/<str:tenant_name>/", views.tenant_view))
 
 urlpatterns.extend(integration_urlpatterns)

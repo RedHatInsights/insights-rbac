@@ -55,10 +55,7 @@ def tenant_is_modified(tenant_name=None, org_id=None):
     # the search_path on the query will fall back to using the public schema, in
     # which case there will be custom groups/roles, and we won't be able to propertly
     # prune the tenant which has been created without a valid schema
-    if settings.AUTHENTICATE_WITH_ORG_ID:
-        tenant = get_object_or_404(Tenant, org_id=org_id)
-    else:
-        tenant = get_object_or_404(Tenant, tenant_name=tenant_name)
+    tenant = get_object_or_404(Tenant, org_id=org_id)
 
     return (Role.objects.filter(system=False, tenant=tenant).count() != 0) or (
         Group.objects.filter(system=False, tenant=tenant).count() != 0
