@@ -135,14 +135,14 @@ class RbacTenantMiddlewareTest(IdentityRequest):
         request.path = "/api/v1/providers/"
         request.META["QUERY_STRING"] = ""
         user = User()
-        user.username = self.user_data["username"]
-        user.account = self.customer["account_id"]
+        user.username = user_data["username"]
+        user.account = customer["account_id"]
         user.org_id = "45321"
         request.user = user
 
         middleware = IdentityHeaderMiddleware()
         middleware.process_request(request)
-        self.assertEqual(Tenant.objects.filter(org_id=user.org_id).count(), 1)
+        self.assertEqual(request.tenant.org_id, user.org_id)
 
 
 class IdentityHeaderMiddlewareTest(IdentityRequest):
