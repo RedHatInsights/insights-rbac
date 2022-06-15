@@ -365,7 +365,7 @@ class CrossAccountRequestViewSet(
                 "Please use PATCH to update the status of the request.",
             )
 
-        # Do not allow updating the target_account or target_account.
+        # Do not allow updating the target_org or target_account.
         if request.data.get("target_org") and str(request.data.get("target_org")) != update_obj.target_org:
             self.throw_validation_error("cross-account-update", "Target org must stay the same.")
 
