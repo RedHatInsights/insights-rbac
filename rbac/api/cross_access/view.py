@@ -365,13 +365,9 @@ class CrossAccountRequestViewSet(
                 "Please use PATCH to update the status of the request.",
             )
 
-        # Do not allow updating the target_account.
-        if settings.AUTHENTICATE_WITH_ORG_ID:
-            if request.data.get("target_org") and str(request.data.get("target_org")) != update_obj.target_org:
-                self.throw_validation_error("cross-account-update", "Target account must stay the same.")
-        else:
-            if (
-                request.data.get("target_account")
-                and str(request.data.get("target_account")) != update_obj.target_account
-            ):
-                self.throw_validation_error("cross-account-update", "Target account must stay the same.")
+        # Do not allow updating the target_account or target_account.
+        if request.data.get("target_org") and str(request.data.get("target_org")) != update_obj.target_org:
+            self.throw_validation_error("cross-account-update", "Target account must stay the same.")
+
+        if request.data.get("target_account") and str(request.data.get("target_account")) != update_obj.target_account:
+            self.throw_validation_error("cross-account-update", "Target account must stay the same.")
