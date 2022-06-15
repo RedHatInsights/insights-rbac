@@ -367,7 +367,7 @@ class CrossAccountRequestViewSet(
 
         # Do not allow updating the target_account or target_account.
         if request.data.get("target_org") and str(request.data.get("target_org")) != update_obj.target_org:
-            self.throw_validation_error("cross-account-update", "Target account must stay the same.")
+            self.throw_validation_error("cross-account-update", "Target org must stay the same.")
 
         if request.data.get("target_account") and str(request.data.get("target_account")) != update_obj.target_account:
             self.throw_validation_error("cross-account-update", "Target account must stay the same.")

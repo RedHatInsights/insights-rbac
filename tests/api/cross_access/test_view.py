@@ -542,6 +542,7 @@ class CrossAccountRequestViewTests(IdentityRequest):
     def test_update_request_fail_acct_for_requestor(self):
         """Test that updating the account of a CAR fails."""
         self.data4create["target_account"] = "10001"
+        self.data4create["target_org"] = self.another_org_id
 
         car_uuid = self.request_6.request_id
         url = reverse("cross-detail", kwargs={"pk": car_uuid})
@@ -551,6 +552,19 @@ class CrossAccountRequestViewTests(IdentityRequest):
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(response.data.get("errors")[0].get("detail"), "Target account must stay the same.")
+
+    def test_update_request_fail_org_for_requestor(self):
+        """Test that updating the target org of a CAR fails."""
+        self.data4create["target_org"] = "1000001"
+
+        car_uuid = self.request_6.request_id
+        url = reverse("cross-detail", kwargs={"pk": car_uuid})
+
+        client = APIClient()
+        response = client.put(url, self.data4create, format="json", **self.associate_admin_request.META)
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data.get("errors")[0].get("detail"), "Target org must stay the same.")
 
     def test_update_request_expired_for_requestor(self):
         """Test that updating an expired CAR fails."""
