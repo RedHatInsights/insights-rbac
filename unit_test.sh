@@ -1,4 +1,4 @@
-# Deploy ephemeral db
+## Deploy ephemeral db
 source $CICD_ROOT/deploy_ephemeral_db.sh
 
 # Map env vars set by `deploy_ephemeral_db.sh` if vars the app uses are different
