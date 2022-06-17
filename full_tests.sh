@@ -8,6 +8,9 @@ export IQE_PLUGINS="rbac"  # name of the IQE plugin for this APP
 export IQE_MARKER_EXPRESSION="api"  # This is the value passed to pytest -m
 export IQE_FILTER_EXPRESSION=""  # This is the value passed to pytest -k
 export IQE_CJI_TIMEOUT="30m"  # This is the time to wait for smoke test to complete or fail
+export IQE_REQUIREMENTS=""
+export IQE_REQUIREMENTS_PRIORITY=""
+export IQE_TEST_IMPORTANCE=""
 
 # Install bonfire repo/initialize
 CICD_URL=https://raw.githubusercontent.com/RedHatInsights/bonfire/master/cicd
