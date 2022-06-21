@@ -25,8 +25,8 @@ class Tenant(models.Model):
     """The model used to create a tenant schema."""
 
     ready = models.BooleanField(default=False)
-    tenant_name = models.CharField(max_length=63, unique=True, db_index=True)
-    account_id = models.CharField(max_length=36, unique=True, default=None, null=True)
+    tenant_name = models.CharField(max_length=63, db_index=True)
+    account_id = models.CharField(max_length=36, default=None, null=True)
     org_id = models.CharField(max_length=36, unique=True, default=None, null=True)
 
     def __str__(self):
