@@ -18,26 +18,28 @@
 """Describes the urls and patterns for internal routes."""
 
 from django.urls import path
+from internal.openapi import openapi
 
 from . import integration_views, views
 
 integration_urlpatterns = [
-    path("api/integrations/tenant/<str:org_id>/groups/", integration_views.groups, name="integration-groups"),
+    path("api/v1/integrations/tenant/<str:org_id>/groups/", integration_views.groups, name="integration-groups"),
     path(
-        "api/integrations/tenant/<str:org_id>/groups/<str:uuid>/roles/",
+        "api/v1/integrations/tenant/<str:org_id>/groups/<str:uuid>/roles/",
         integration_views.roles_for_group,
         name="integration-group-roles",
     ),
     path(
-        "api/integrations/tenant/<str:org_id>/principal/<str:principals>/groups/",
+        "api/v1/integrations/tenant/<str:org_id>/principal/<str:principals>/groups/",
         integration_views.groups_for_principal,
         name="integration-princ-groups",
     ),
     path(
-        "api/integrations/tenant/<str:org_id>/principal/<str:principals>/groups/<str:uuid>/roles/",
+        "api/v1/integrations/tenant/<str:org_id>/principal/<str:principals>/groups/<str:uuid>/roles/",
         integration_views.roles_for_group_principal,
         name="integration-princ-roles",
     ),
+    path("api/v1/openapi.json", openapi, name="openapi"),
 ]
 
 urlpatterns = [
