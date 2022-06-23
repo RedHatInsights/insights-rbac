@@ -158,6 +158,7 @@ class PrincipalView(APIView):
                 resp = proxy.request_filtered_principals(
                     principals,
                     account=user.account,
+                    org_id=user.org_id,
                     limit=limit,
                     offset=offset,
                     options={"sort_order": options["sort_order"]},
