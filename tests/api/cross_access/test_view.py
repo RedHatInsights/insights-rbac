@@ -264,7 +264,11 @@ class CrossAccountRequestViewTests(IdentityRequest):
     def test_list_requests_query_by_user_id_with_combined_filters_success(self):
         """Test listing cross account request based on user id of identity."""
         expired_request = CrossAccountRequest.objects.create(
-            target_account="098765", user_id="1111111", end_date=self.ref_time + timedelta(10), status="approved"
+            target_account="098765",
+            target_org="567890",
+            user_id="1111111",
+            end_date=self.ref_time + timedelta(10),
+            status="approved",
         )
         CrossAccountRequest.objects.filter(request_id=expired_request.request_id).update(end_date=timezone.now())
 
