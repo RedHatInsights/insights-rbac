@@ -20,6 +20,7 @@ from json import dumps as json_dumps
 from unittest.mock import Mock
 
 from django.db import connection
+from django.conf import settings
 from django.test import TestCase
 from faker import Faker
 
@@ -59,7 +60,10 @@ class IdentityRequest(TestCase):
     @classmethod
     def _create_customer_data(cls):
         """Create customer data."""
-        account = cls.fake.ean8()
+        if settings.AUTHENTICATE_WITH_ORG_ID:
+            account = ""
+        else:
+            account = cls.fake.ean8()
         tenant = f"acct{account}"
         org_id = cls.fake.ean8()
         customer = {"account_id": account, "tenant_name": tenant, "org_id": org_id}

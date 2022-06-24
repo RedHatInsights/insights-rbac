@@ -97,6 +97,7 @@ class RbacTenantMiddlewareTest(IdentityRequest):
         self.user_data = self._create_user_data()
         self.customer = self._create_customer_data()
         self.tenant_name = create_tenant_name(self.customer["account_id"])
+        self.org_id = self.customer["org_id"]
         self.request_context = self._create_request_context(self.customer, self.user_data, create_customer=False)
         self.request = self.request_context["request"]
         self.request.path = "/api/v1/providers/"
@@ -154,6 +155,7 @@ class IdentityHeaderMiddlewareTest(IdentityRequest):
         self.user_data = self._create_user_data()
         self.customer = self._create_customer_data()
         self.tenant_name = create_tenant_name(self.customer["account_id"])
+        self.org_id = self.customer["org_id"]
         self.request_context = self._create_request_context(self.customer, self.user_data, create_customer=False)
         self.request = self.request_context["request"]
         self.request.path = "/api/v1/providers/"
@@ -216,7 +218,10 @@ class IdentityHeaderMiddlewareTest(IdentityRequest):
         middleware.process_request(mock_request)
         self.assertTrue(hasattr(mock_request, "user"))
         self.assertEqual(mock_request.user.username, self.user_data["username"])
-        tenant = Tenant.objects.get(tenant_name=self.tenant_name)
+        if settings.AUTHENTICATE_WITH_ORG_ID:
+            tenant = Tenant.objects.get(org_id=self.org_id)
+        else:
+            tenant = Tenant.objects.get(tenant_name=self.tenant_name)
         self.assertIsNotNone(tenant)
 
     def test_process_no_customer(self):
@@ -230,8 +235,12 @@ class IdentityHeaderMiddlewareTest(IdentityRequest):
         middleware = IdentityHeaderMiddleware()
         middleware.process_request(mock_request)
         self.assertTrue(hasattr(mock_request, "user"))
-        with self.assertRaises(Tenant.DoesNotExist):
-            Tenant.objects.get(tenant_name=self.tenant_name)
+        if settings.AUTHENTICATE_WITH_ORG_ID:
+            with self.assertRaises(Tenant.DoesNotExist):
+                Tenant.objects.get(org_id=self.org_id)
+        else:
+            with self.assertRaises(Tenant.DoesNotExist):
+                Tenant.objects.get(tenant_name=self.tenant_name)
 
     def test_race_condition_customer(self):
         """Test case where another request may create the tenant in a race condition."""
