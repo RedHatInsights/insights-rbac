@@ -3737,6 +3737,14 @@
               "admin_default": {
                 "type": "boolean",
                 "default": false
+              },
+              "external_role_id": {
+                "type": "string",
+                "example": "ExternalRoleId"
+              },
+              "external_tenant_name": {
+                "type": "string",
+                "example": "ExternalTenant"
               }
             }
           }
@@ -3800,6 +3808,14 @@
                 "items": {
                   "$ref": "#/components/schemas/AdditionalGroup"
                 }
+              },
+              "external_role_id": {
+                "type": "string",
+                "example": "ExternalRoleId"
+              },
+              "external_tenant_name": {
+                "type": "string",
+                "example": "ExternalTenant"
               }
             }
           }
