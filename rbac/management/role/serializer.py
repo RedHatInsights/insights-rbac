@@ -98,6 +98,8 @@ class RoleSerializer(serializers.ModelSerializer):
     admin_default = serializers.BooleanField(read_only=True)
     created = serializers.DateTimeField(read_only=True)
     modified = serializers.DateTimeField(read_only=True)
+    external_role_id = serializers.SerializerMethodField()
+    external_tenant_name = serializers.SerializerMethodField()
 
     class Meta:
         """Metadata for the serializer."""
@@ -117,6 +119,8 @@ class RoleSerializer(serializers.ModelSerializer):
             "admin_default",
             "created",
             "modified",
+            "external_role_id",
+            "external_tenant_name",
         )
 
     def get_applications(self, obj):
@@ -151,6 +155,14 @@ class RoleSerializer(serializers.ModelSerializer):
         role_obj_change_notification_handler(instance, "updated", self.context["request"].user)
         return instance
 
+    def get_external_role_id(self, obj):
+        """Get the external role id if it's from an external tenant."""
+        return obj.external_role_id()
+
+    def get_external_tenant_name(self, obj):
+        """Get the external tenant name if it's from an external tenant."""
+        return obj.external_tenant_name()
+
 
 class RoleMinimumSerializer(SerializerCreateOverrideMixin, serializers.ModelSerializer):
     """Serializer for the Role model that doesn't return access info."""
@@ -167,6 +179,8 @@ class RoleMinimumSerializer(SerializerCreateOverrideMixin, serializers.ModelSeri
     system = serializers.BooleanField(read_only=True)
     platform_default = serializers.BooleanField(read_only=True)
     admin_default = serializers.BooleanField(read_only=True)
+    external_role_id = serializers.SerializerMethodField()
+    external_tenant_name = serializers.SerializerMethodField()
 
     class Meta:
         """Metadata for the serializer."""
@@ -185,11 +199,21 @@ class RoleMinimumSerializer(SerializerCreateOverrideMixin, serializers.ModelSeri
             "system",
             "platform_default",
             "admin_default",
+            "external_role_id",
+            "external_tenant_name",
         )
 
     def get_applications(self, obj):
         """Get the list of applications in the role."""
         return obtain_applications(obj)
+
+    def get_external_role_id(self, obj):
+        """Get the external role id if it's from an external tenant."""
+        return obj.external_role_id()
+
+    def get_external_tenant_name(self, obj):
+        """Get the external tenant name if it's from an external tenant."""
+        return obj.external_tenant_name()
 
 
 class DynamicFieldsModelSerializer(SerializerCreateOverrideMixin, serializers.ModelSerializer):
@@ -227,6 +251,8 @@ class RoleDynamicSerializer(DynamicFieldsModelSerializer):
     system = serializers.BooleanField(read_only=True)
     platform_default = serializers.BooleanField(read_only=True)
     admin_default = serializers.BooleanField(read_only=True)
+    external_role_id = serializers.SerializerMethodField()
+    external_tenant_name = serializers.SerializerMethodField()
 
     class Meta:
         """Metadata for the serializer."""
@@ -247,6 +273,8 @@ class RoleDynamicSerializer(DynamicFieldsModelSerializer):
             "system",
             "platform_default",
             "admin_default",
+            "external_role_id",
+            "external_tenant_name",
         )
 
     def get_applications(self, obj):
@@ -262,6 +290,14 @@ class RoleDynamicSerializer(DynamicFieldsModelSerializer):
         """Get the groups where the role is in."""
         request = self.context.get("request")
         return obtain_groups_in(obj, request).values("name", "uuid", "description")
+
+    def get_external_role_id(self, obj):
+        """Get the external role id if it's from an external tenant."""
+        return obj.external_role_id()
+
+    def get_external_tenant_name(self, obj):
+        """Get the external tenant name if it's from an external tenant."""
+        return obj.external_tenant_name()
 
 
 class RolePatchSerializer(RoleSerializer):

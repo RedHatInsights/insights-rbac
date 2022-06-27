@@ -58,6 +58,8 @@ LIST_ROLE_FIELDS = [
     "system",
     "platform_default",
     "admin_default",
+    "external_role_id",
+    "external_tenant_name",
 ]
 VALID_PATCH_FIELDS = ["name", "display_name", "description"]
 
