@@ -66,6 +66,14 @@ class Role(TenantAwareModel):
             self.display_name = self.name
         super(Role, self).save(*args, **kwargs)
 
+    def external_role_id(self):
+        """Return external role id."""
+        return self.ext_relation.ext_id if hasattr(self, "ext_relation") else None
+
+    def external_tenant_name(self):
+        """Return external tenant name."""
+        return self.ext_relation.ext_tenant.name if hasattr(self, "ext_relation") else None
+
 
 class Access(TenantAwareModel):
     """An access object."""
