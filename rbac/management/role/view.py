@@ -59,7 +59,7 @@ LIST_ROLE_FIELDS = [
     "platform_default",
     "admin_default",
     "external_role_id",
-    "external_tenant_name",
+    "external_tenant",
 ]
 VALID_PATCH_FIELDS = ["name", "display_name", "description"]
 
@@ -88,7 +88,7 @@ class RoleFilter(CommonFilters):
         """Filter to lookup display_name, partial or exact."""
         return self.name_filter(queryset, field, value, "display_name")
 
-    def external_tenant_name_filter(self, queryset, field, value):
+    def external_tenant_filter(self, queryset, field, value):
         """Filter to lookup external tenant name, partial or exact."""
         return queryset.filter(ext_relation__ext_tenant__name__iexact=value)
 
@@ -97,7 +97,7 @@ class RoleFilter(CommonFilters):
     application = filters.CharFilter(field_name="application", method="application_filter")
     permission = filters.CharFilter(field_name="permission", method="permission_filter")
     system = filters.BooleanFilter(field_name="system")
-    external_tenant = filters.CharFilter(field_name="external_tenant_name", method="external_tenant_name_filter")
+    external_tenant = filters.CharFilter(field_name="external_tenant", method="external_tenant_filter")
 
     class Meta:
         model = Role

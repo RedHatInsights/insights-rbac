@@ -3760,7 +3760,7 @@
                 "type": "string",
                 "example": "ExternalRoleId"
               },
-              "external_tenant_name": {
+              "external_tenant": {
                 "type": "string",
                 "example": "ExternalTenant"
               }
@@ -3831,7 +3831,7 @@
                 "type": "string",
                 "example": "ExternalRoleId"
               },
-              "external_tenant_name": {
+              "external_tenant": {
                 "type": "string",
                 "example": "ExternalTenant"
               }

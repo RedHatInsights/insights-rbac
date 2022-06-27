@@ -99,7 +99,7 @@ class RoleSerializer(serializers.ModelSerializer):
     created = serializers.DateTimeField(read_only=True)
     modified = serializers.DateTimeField(read_only=True)
     external_role_id = serializers.SerializerMethodField()
-    external_tenant_name = serializers.SerializerMethodField()
+    external_tenant = serializers.SerializerMethodField()
 
     class Meta:
         """Metadata for the serializer."""
@@ -120,7 +120,7 @@ class RoleSerializer(serializers.ModelSerializer):
             "created",
             "modified",
             "external_role_id",
-            "external_tenant_name",
+            "external_tenant",
         )
 
     def get_applications(self, obj):
@@ -159,7 +159,7 @@ class RoleSerializer(serializers.ModelSerializer):
         """Get the external role id if it's from an external tenant."""
         return obj.external_role_id()
 
-    def get_external_tenant_name(self, obj):
+    def get_external_tenant(self, obj):
         """Get the external tenant name if it's from an external tenant."""
         return obj.external_tenant_name()
 
@@ -180,7 +180,7 @@ class RoleMinimumSerializer(SerializerCreateOverrideMixin, serializers.ModelSeri
     platform_default = serializers.BooleanField(read_only=True)
     admin_default = serializers.BooleanField(read_only=True)
     external_role_id = serializers.SerializerMethodField()
-    external_tenant_name = serializers.SerializerMethodField()
+    external_tenant = serializers.SerializerMethodField()
 
     class Meta:
         """Metadata for the serializer."""
@@ -200,7 +200,7 @@ class RoleMinimumSerializer(SerializerCreateOverrideMixin, serializers.ModelSeri
             "platform_default",
             "admin_default",
             "external_role_id",
-            "external_tenant_name",
+            "external_tenant",
         )
 
     def get_applications(self, obj):
@@ -211,7 +211,7 @@ class RoleMinimumSerializer(SerializerCreateOverrideMixin, serializers.ModelSeri
         """Get the external role id if it's from an external tenant."""
         return obj.external_role_id()
 
-    def get_external_tenant_name(self, obj):
+    def get_external_tenant(self, obj):
         """Get the external tenant name if it's from an external tenant."""
         return obj.external_tenant_name()
 
@@ -252,7 +252,7 @@ class RoleDynamicSerializer(DynamicFieldsModelSerializer):
     platform_default = serializers.BooleanField(read_only=True)
     admin_default = serializers.BooleanField(read_only=True)
     external_role_id = serializers.SerializerMethodField()
-    external_tenant_name = serializers.SerializerMethodField()
+    external_tenant = serializers.SerializerMethodField()
 
     class Meta:
         """Metadata for the serializer."""
@@ -274,7 +274,7 @@ class RoleDynamicSerializer(DynamicFieldsModelSerializer):
             "platform_default",
             "admin_default",
             "external_role_id",
-            "external_tenant_name",
+            "external_tenant",
         )
 
     def get_applications(self, obj):
@@ -295,7 +295,7 @@ class RoleDynamicSerializer(DynamicFieldsModelSerializer):
         """Get the external role id if it's from an external tenant."""
         return obj.external_role_id()
 
-    def get_external_tenant_name(self, obj):
+    def get_external_tenant(self, obj):
         """Get the external tenant name if it's from an external tenant."""
         return obj.external_tenant_name()
 

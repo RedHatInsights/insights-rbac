@@ -69,7 +69,7 @@ class RoleViewsetTests(IdentityRequest):
             "platform_default",
             "admin_default",
             "external_role_id",
-            "external_tenant_name",
+            "external_tenant",
         }
 
         self.test_tenant = Tenant(tenant_name="acct1111111", account_id="1111111", org_id="100001", ready=True)
