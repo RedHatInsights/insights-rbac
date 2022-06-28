@@ -24,7 +24,17 @@ from rest_framework import status
 from rest_framework.test import APIClient
 
 from api.models import User, Tenant
-from management.models import Group, Permission, Principal, Role, Access, Policy, ResourceDefinition
+from management.models import (
+    Group,
+    Permission,
+    Principal,
+    Role,
+    Access,
+    Policy,
+    ResourceDefinition,
+    ExtRoleRelation,
+    ExtTenant,
+)
 from tests.identity_request import IdentityRequest
 from unittest.mock import call, patch
 
@@ -122,6 +132,9 @@ class RoleViewsetTests(IdentityRequest):
         self.defRole = Role(**def_role_config, tenant=self.tenant)
         self.defRole.save()
         self.defRole.save()
+
+        self.ext_tenant = ExtTenant.objects.create(name="foo")
+        self.ext_role_relation = ExtRoleRelation.objects.create(role=self.defRole, ext_tenant=self.ext_tenant)
 
         self.policy.roles.add(self.defRole, self.sysRole, self.adminRole)
         self.policy.save()
@@ -1011,3 +1024,18 @@ class RoleViewsetTests(IdentityRequest):
         self.assertEqual(len(response.data.get("data")), 1)
         role = response.data.get("data")[0]
         self.assertEqual(role.get("system"), False)
+
+    def test_external_tenant_filter(self):
+        """Test that we can filter roles based on external_tenant."""
+        client = APIClient()
+        response = client.get(URL, **self.headers)
+
+        self.assertEqual(len(response.data.get("data")), 3)
+
+        url = f"{URL}?external_tenant=foo"
+        client = APIClient()
+        response = client.get(url, **self.headers)
+
+        self.assertEqual(len(response.data.get("data")), 1)
+        role = response.data.get("data")[0]
+        self.assertEqual(role.get("external_tenant"), "foo")
