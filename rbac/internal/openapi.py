@@ -23,7 +23,7 @@ from rest_framework.decorators import api_view, permission_classes, renderer_cla
 from rest_framework.renderers import JSONRenderer
 from rest_framework.response import Response
 
-OPENAPI_FILE_PATH_DEFAULT = "rbac/internal/specs"
+OPENAPI_FILE_PATH_DEFAULT = "internal/specs"
 OPENAPI_FILE_NAME = "openapi.json"
 
 
