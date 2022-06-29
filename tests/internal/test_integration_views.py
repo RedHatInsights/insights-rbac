@@ -110,7 +110,7 @@ class IntegrationViewsTests(IdentityRequest):
     def test_groups_valid_account(self, mock_request):
         """Test that a request to /tenant/<id>/groups/?username= from an internal account works."""
         response = self.client.get(
-            f"/_private/api/integrations/tenant/{self.tenant.org_id}/groups/?username=user_admin",
+            f"/_private/api/v1/integrations/tenant/{self.tenant.org_id}/groups/?username=user_admin",
             **self.request.META,
             follow=True,
         )
@@ -125,7 +125,7 @@ class IntegrationViewsTests(IdentityRequest):
         )
         request = external_request_context["request"]
         response = self.client.get(
-            f"/_private/api/integrations/tenant/{self.tenant.org_id}/groups/?username=user_a",
+            f"/_private/api/v1/integrations/tenant/{self.tenant.org_id}/groups/?username=user_a",
             **request.META,
             follow=True,
         )
@@ -151,7 +151,7 @@ class IntegrationViewsTests(IdentityRequest):
     def test_groups_user_filter(self, mock_request):
         """Test that only the groups a user is a member of are returned for a /tenant/<id>/groups/?username= request."""
         response = self.client.get(
-            f"/_private/api/integrations/tenant/{self.tenant.org_id}/groups/?username=user_a",
+            f"/_private/api/v1/integrations/tenant/{self.tenant.org_id}/groups/?username=user_a",
             **self.request.META,
             follow=True,
         )
@@ -170,7 +170,7 @@ class IntegrationViewsTests(IdentityRequest):
     def test_groups_nonexistent_user(self, mock_request):
         """Test that a request for groups of a nonexistent user returns 0."""
         response = self.client.get(
-            f"/_private/api/integrations/tenant/{self.tenant.org_id}/groups/?username=user_x",
+            f"/_private/api/v1/integrations/tenant/{self.tenant.org_id}/groups/?username=user_x",
             **self.request.META,
             follow=True,
         )
@@ -179,7 +179,7 @@ class IntegrationViewsTests(IdentityRequest):
     def test_groups_for_principal_valid_account(self):
         """Test that a request to /tenant/<id>/principal/<username>/groups/ from an internal account works."""
         response = self.client.get(
-            f"/_private/api/integrations/tenant/{self.tenant.org_id}/principal/user_admin/groups/",
+            f"/_private/api/v1/integrations/tenant/{self.tenant.org_id}/principal/user_admin/groups/",
             **self.request.META,
             follow=True,
         )
@@ -194,7 +194,7 @@ class IntegrationViewsTests(IdentityRequest):
         )
         request = external_request_context["request"]
         response = self.client.get(
-            f"/_private/api/integrations/tenant/{self.tenant.org_id}/principal/user_a/groups/",
+            f"/_private/api/v1/integrations/tenant/{self.tenant.org_id}/principal/user_a/groups/",
             **request.META,
             follow=True,
         )
@@ -220,7 +220,7 @@ class IntegrationViewsTests(IdentityRequest):
     def test_groups_for_principal_filter(self, mock_request):
         """Test that only the groups a user is a member of are returned for a /tenant/<id>/groups/?username= request."""
         response = self.client.get(
-            f"/_private/api/integrations/tenant/{self.tenant.org_id}/groups/?username=user_a",
+            f"/_private/api/v1/integrations/tenant/{self.tenant.org_id}/groups/?username=user_a",
             **self.request.META,
             follow=True,
         )
@@ -235,7 +235,7 @@ class IntegrationViewsTests(IdentityRequest):
     def test_groups_for_principal_nonexistant_user(self, mock_request):
         """Test that an error is return for nonexistant ."""
         response = self.client.get(
-            f"/_private/api/integrations/tenant/{self.tenant.org_id}/groups/?username=user_x",
+            f"/_private/api/v1/integrations/tenant/{self.tenant.org_id}/groups/?username=user_x",
             **self.request.META,
             follow=True,
         )
@@ -245,7 +245,7 @@ class IntegrationViewsTests(IdentityRequest):
         """Test that a valid request to /tenant/<id>/groups/<uuid>/roles/ from an internal account works."""
         group_all_uuid = Group.objects.get(name="Group All").uuid
         response = self.client.get(
-            f"/_private/api/integrations/tenant/{self.tenant.org_id}/groups/{group_all_uuid}/roles/",
+            f"/_private/api/v1/integrations/tenant/{self.tenant.org_id}/groups/{group_all_uuid}/roles/",
             **self.request.META,
             follow=True,
         )
@@ -256,7 +256,7 @@ class IntegrationViewsTests(IdentityRequest):
     def test_roles_from_group_invalid_uuid(self):
         """Test that a request to /tenant/<id>/groups/<uuid>/roles/ with an invalid uuid fails."""
         response = self.client.get(
-            f"/_private/api/integrations/tenant/{self.tenant.org_id}/groups/{uuid.uuid4}/roles/",
+            f"/_private/api/v1/integrations/tenant/{self.tenant.org_id}/groups/{uuid.uuid4}/roles/",
             **self.request.META,
             follow=True,
         )
@@ -270,7 +270,7 @@ class IntegrationViewsTests(IdentityRequest):
         )
         request = external_request_context["request"]
         response = self.client.get(
-            f"/_private/api/integrations/tenant/{self.tenant.org_id}/groups/{group_all_uuid}/roles/",
+            f"/_private/api/v1/integrations/tenant/{self.tenant.org_id}/groups/{group_all_uuid}/roles/",
             **request.META,
             follow=True,
         )
@@ -280,7 +280,7 @@ class IntegrationViewsTests(IdentityRequest):
         """Test that a valid request to /tenant/<id>/groups/<uuid>/roles/ from an internal properly filters groups."""
         group_a_uuid = Group.objects.get(name="Group A").uuid
         response = self.client.get(
-            f"/_private/api/integrations/tenant/{self.tenant.org_id}/groups/{group_a_uuid}/roles/",
+            f"/_private/api/v1/integrations/tenant/{self.tenant.org_id}/groups/{group_a_uuid}/roles/",
             **self.request.META,
             follow=True,
         )
@@ -292,7 +292,7 @@ class IntegrationViewsTests(IdentityRequest):
         """Test that a valid request to /tenant/<id>/principal/user_admin/groups/<uuid>/roles/ from an internal account works."""
         group_all_uuid = Group.objects.get(name="Group All").uuid
         response = self.client.get(
-            f"/_private/api/integrations/tenant/{self.tenant.org_id}/principal/user_admin/groups/{group_all_uuid}/roles/",
+            f"/_private/api/v1/integrations/tenant/{self.tenant.org_id}/principal/user_admin/groups/{group_all_uuid}/roles/",
             **self.request.META,
             follow=True,
         )
@@ -308,7 +308,7 @@ class IntegrationViewsTests(IdentityRequest):
         )
         request = external_request_context["request"]
         response = self.client.get(
-            f"/_private/api/integrations/tenant/{self.tenant.org_id}/principal/user_admin/groups/{group_all_uuid}/roles/",
+            f"/_private/api/v1/integrations/tenant/{self.tenant.org_id}/principal/user_admin/groups/{group_all_uuid}/roles/",
             **request.META,
             follow=True,
         )
@@ -318,7 +318,7 @@ class IntegrationViewsTests(IdentityRequest):
         """Test that a request to /tenant/<id>/principal/user_admin/groups/<uuid>/roles/ with an invalid uuid fails."""
         group_all_uuid = Group.objects.get(name="Group All").uuid
         response = self.client.get(
-            f"/_private/api/integrations/tenant/{self.tenant.org_id}/principal/user_admin/groups/{uuid.uuid4}/roles/",
+            f"/_private/api/v1/integrations/tenant/{self.tenant.org_id}/principal/user_admin/groups/{uuid.uuid4}/roles/",
             **self.request.META,
             follow=True,
         )
@@ -329,7 +329,7 @@ class IntegrationViewsTests(IdentityRequest):
         # user_a in Group A
         group_a_uuid = Group.objects.get(name="Group A").uuid
         response = self.client.get(
-            f"/_private/api/integrations/tenant/{self.tenant.org_id}/principal/user_a/groups/{group_a_uuid}/roles/",
+            f"/_private/api/v1/integrations/tenant/{self.tenant.org_id}/principal/user_a/groups/{group_a_uuid}/roles/",
             **self.request.META,
             follow=True,
         )
@@ -340,7 +340,7 @@ class IntegrationViewsTests(IdentityRequest):
         # user_b not in Group A
         group_a_uuid = Group.objects.get(name="Group A").uuid
         response = self.client.get(
-            f"/_private/api/integrations/tenant/{self.tenant.org_id}/principal/user_b/groups/{group_a_uuid}/roles/",
+            f"/_private/api/v1/integrations/tenant/{self.tenant.org_id}/principal/user_b/groups/{group_a_uuid}/roles/",
             **self.request.META,
             follow=True,
         )
