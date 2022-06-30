@@ -37,7 +37,7 @@ class CrossAccountRequestModelTests(TestCase):
 
         self.ref_time = timezone.now()
         self.request = CrossAccountRequest.objects.create(
-            target_account="123456", user_id="567890", end_date=self.ref_time + timedelta(10)
+            target_account="123456", target_org="654321", user_id="567890", end_date=self.ref_time + timedelta(10)
         )
 
     def tearDown(self):
@@ -47,6 +47,7 @@ class CrossAccountRequestModelTests(TestCase):
     def test_request_creation_success(self):
         """Test the creation of cross account request."""
         self.assertEqual(self.request.target_account, "123456")
+        self.assertEqual(self.request.target_org, "654321")
         self.assertEqual(self.request.user_id, "567890")
         self.assertIsNotNone(self.request.start_date)
         self.assertEqual(self.request.end_date, self.ref_time + timedelta(10))
@@ -69,6 +70,7 @@ class CrossAccountRequestModelTests(TestCase):
             ValidationError,
             CrossAccountRequest.objects.create,
             target_account="123456",
+            target_org="654321",
             user_id="567890",
             end_date=self.ref_time + timedelta(10),
             status="unknown",
@@ -84,6 +86,7 @@ class CrossAccountRequestModelTests(TestCase):
             ValidationError,
             CrossAccountRequest.objects.create,
             target_account="123456",
+            target_org="654321",
             user_id="567890",
             end_date=self.ref_time - timedelta(10),
         )
@@ -94,7 +97,11 @@ class CrossAccountRequestModelTests(TestCase):
         # Omitted end date
         with transaction.atomic():
             self.assertRaises(
-                IntegrityError, CrossAccountRequest.objects.create, target_account="123456", user_id="567890"
+                IntegrityError,
+                CrossAccountRequest.objects.create,
+                target_account="123456",
+                target_org="654321",
+                user_id="567890",
             )
 
         # End date earlier than now
@@ -102,6 +109,7 @@ class CrossAccountRequestModelTests(TestCase):
             ValidationError,
             CrossAccountRequest.objects.create,
             target_account="8888888",
+            target_org="7777777",
             user_id="567890",
             end_date=timezone.now() - timedelta(1),
         )
@@ -110,7 +118,7 @@ class CrossAccountRequestModelTests(TestCase):
         """Test the start date and end date can be the same."""
         self.assertEqual(CrossAccountRequest.objects.count(), 1)
         CrossAccountRequest.objects.create(
-            target_account="4321", user_id="9876", start_date=self.ref_time, end_date=self.ref_time
+            target_account="4321", target_org="1234", user_id="9876", start_date=self.ref_time, end_date=self.ref_time
         )
         self.assertEqual(CrossAccountRequest.objects.count(), 2)
 
