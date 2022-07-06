@@ -30,10 +30,11 @@ logger = logging.getLogger(__name__)
 def build_internal_user(request, json_rh_auth):
     """Build user object for internal requests."""
     user = User()
+    valid_identity_types = ["Associate", "X509"]
     try:
-        if not json_rh_auth["identity"]["type"] == "Associate":
+        if not json_rh_auth["identity"]["type"] in valid_identity_types:
             return None
-        user.username = json_rh_auth["identity"]["associate"]["email"]
+        user.username = json_rh_auth["identity"].get("associate", {}).get("email", "system")
         user.admin = True
         user.org_id = resolve(request.path).kwargs.get("org_id")
         return user
