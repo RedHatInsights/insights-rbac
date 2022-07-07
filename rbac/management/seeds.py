@@ -18,8 +18,8 @@
 import concurrent.futures
 import logging
 
-from django.db import connections
 from django.conf import settings
+from django.db import connections
 from management.cache import AccessCache
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
