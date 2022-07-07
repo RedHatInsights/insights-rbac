@@ -117,7 +117,10 @@ def role_related_obj_change_cache_handler(sender=None, instance=None, using=None
         "invalidating associated user cache keys",
         instance,
     )
-    cache = AccessCache(instance.tenant.tenant_name)
+    if settings.AUTHENTICATE_WITH_ORG_ID:
+        cache = AccessCache(instance.tenant.org_id)
+    else:
+        cache = AccessCache(instance.tenant.tenant_name)
     if instance.role:
         for principal in Principal.objects.filter(group__policies__roles__pk=instance.role.pk):
             cache.delete_policy(principal.uuid)

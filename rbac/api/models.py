@@ -15,6 +15,7 @@
 #    along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """API models for import organization."""
+from django.conf import settings
 from django.db import models
 
 from api.cross_access.model import CrossAccountRequest  # noqa: F401
@@ -31,7 +32,10 @@ class Tenant(models.Model):
 
     def __str__(self):
         """Get string representation of Tenant."""
-        return f"Tenant ({self.tenant_name})"
+        if settings.AUTHENTICATE_WITH_ORG_ID:
+            return f"Tenant ({self.org_id})"
+        else:
+            return f"Tenant ({self.tenant_name})"
 
 
 class TenantAwareModel(models.Model):
