@@ -19,6 +19,7 @@ import concurrent.futures
 import logging
 
 from django.db import connections
+from django.conf import settings
 from management.cache import AccessCache
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
@@ -27,7 +28,10 @@ logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 def on_complete(progress, tenant):
     """Explicitly close the connection for the thread."""
     logger.info(f"Purging policy cache for tenant {tenant.tenant_name} [{progress}].")
-    cache = AccessCache(tenant.tenant_name)
+    if settings.AUTHENTICATE_WITH_ORG_ID:
+        cache = AccessCache(tenant.org_id)
+    else:
+        cache = AccessCache(tenant.tenant_name)
     cache.delete_all_policies_for_tenant()
     connections.close_all()
     logger.info(f"Finished purging policy cache for tenant {tenant.tenant_name} [{progress}].")
