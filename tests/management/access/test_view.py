@@ -30,7 +30,7 @@ from rest_framework.test import APIClient
 
 from api.models import Tenant, User
 from datetime import timedelta
-from management.cache import AccessCache
+from management.cache import AccessCache, TenantCache
 from management.models import Group, Permission, Principal, Policy, Role, Access
 from tests.identity_request import IdentityRequest
 
@@ -54,8 +54,16 @@ class AccessViewTests(IdentityRequest):
             "resourceDefinitions": [{"attributeFilter": {"key": "key1", "operation": "equal", "value": "value1"}}],
         }
 
+        test_tenant_org_id = "100001"
+
+        # we need to delete old test_tenant's that may exist in cache
+        TENANTS = TenantCache()
+        TENANTS.delete_tenant(test_tenant_org_id)
+
         # items with test_ prefix have hard coded attributes for new BOP requests
-        self.test_tenant = Tenant(tenant_name="acct1111111", account_id="1111111", org_id="100001", ready=True)
+        self.test_tenant = Tenant(
+            tenant_name="acct1111111", account_id="1111111", org_id=test_tenant_org_id, ready=True
+        )
         self.test_tenant.save()
         self.test_principal = Principal(username="test_user", tenant=self.test_tenant)
         self.test_principal.save()

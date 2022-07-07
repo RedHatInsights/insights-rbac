@@ -15,6 +15,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Test the cross account request model."""
+
 from api.models import CrossAccountRequest, Tenant
 from api.cross_access.util import get_cross_principal_name
 from api.serializers import create_tenant_name
@@ -42,7 +43,6 @@ class CrossAccountRequestViewTests(IdentityRequest):
     def setUp(self):
         """Set up the cross account request for tests."""
         super().setUp()
-
         self.ref_time = timezone.now()
         self.account = self.customer_data["account_id"]
         self.org_id = self.customer_data["org_id"]
@@ -50,6 +50,17 @@ class CrossAccountRequestViewTests(IdentityRequest):
             self.customer_data, self.user_data, create_customer=False, is_org_admin=False, is_internal=True
         )
         self.associate_non_admin_request = self.associate_non_admin_request_context["request"]
+
+        self.not_anemic_customer_data = self._create_customer_data()
+        self.not_anemic_account = "21112"
+        self.not_anemic_org_id = self.not_anemic_customer_data["org_id"]
+        self.not_anemic_customer_data["account_id"] = self.not_anemic_account
+        self.not_anemic_customer_data["tenant_name"] = f"acct{self.not_anemic_account}"
+        self.associate_not_anemic_request_context = self._create_request_context(
+            self.not_anemic_customer_data, self.user_data, create_customer=False, is_org_admin=False, is_internal=True
+        )
+        self.associate_not_anemic_request = self.associate_not_anemic_request_context["request"]
+        self.not_anemic_headers = self.associate_not_anemic_request_context["request"].META
 
         self.associate_admin_request_context = self._create_request_context(
             self.customer_data, self.user_data, create_customer=False, is_org_admin=True, is_internal=True
@@ -134,6 +145,13 @@ class CrossAccountRequestViewTests(IdentityRequest):
             user_id="1111111",
             end_date=self.ref_time + timedelta(10),
             status="pending",
+        )
+        self.not_anemic_request_1 = CrossAccountRequest.objects.create(
+            target_account=self.not_anemic_account,
+            target_org=self.not_anemic_org_id,
+            user_id="1111111",
+            end_date=self.ref_time + timedelta(10),
+            status="approved",
         )
 
     def tearDown(self):
@@ -232,30 +250,35 @@ class CrossAccountRequestViewTests(IdentityRequest):
         response = client.get(f"{URL_LIST}?query_by=user_id", **self.associate_non_admin_request.META)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(response.data["data"]), 3)
+        self.assertEqual(len(response.data["data"]), 4)
         request_ids = [data.get("request_id") for data in response.data["data"]]
         for request_id in request_ids:
             self.assertTrue(
                 request_id
-                in [str(self.request_1.request_id), str(self.request_3.request_id), str(self.request_6.request_id)]
+                in [
+                    str(self.request_1.request_id),
+                    str(self.request_3.request_id),
+                    str(self.request_6.request_id),
+                    str(self.not_anemic_request_1.request_id),
+                ]
             )
 
     def test_list_requests_query_by_user_id_filter_by_account_success(self):
         """Test listing cross account request based on user id of identity."""
         client = APIClient()
         response = client.get(
-            f"{URL_LIST}?query_by=user_id&account={self.account}", **self.associate_non_admin_request.META
+            f"{URL_LIST}?query_by=user_id&account={self.not_anemic_account}", **self.associate_not_anemic_request.META
         )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data["data"]), 1)
         self.assertEqual(response.data["data"][0].get("user_id"), "1111111")
-        self.assertEqual(response.data["data"][0].get("target_account"), self.account)
+        self.assertEqual(response.data["data"][0].get("target_account"), self.not_anemic_account)
         self.assertEqual(response.data["data"][0].get("status"), "approved")
 
         response = client.get(
-            f"{URL_LIST}?query_by=user_id&account={self.account},{self.another_account}",
-            **self.associate_non_admin_request.META,
+            f"{URL_LIST}?query_by=user_id&account={self.not_anemic_account},{self.another_account}",
+            **self.associate_not_anemic_request.META,
         )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -805,16 +828,16 @@ class CrossAccountRequestViewTests(IdentityRequest):
         )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(response.data["data"]), 3)
+        self.assertEqual(len(response.data["data"]), 4)
         self.assertTrue(response.data["data"][0].get("request_id") < response.data["data"][1].get("request_id"))
 
         # Sorting the dates
         ## request_1 is created a little bit ealier than request_6, therefore, the
-        ## first should be request_6
+        ## first should be not_anemic_request_1
         response = client.get(
             f"{URL_LIST}?query_by=user_id&order_by=-created", **self.associate_non_admin_request.META
         )
-        self.assertEqual(response.data["data"][0].get("request_id"), str(self.request_6.request_id))
+        self.assertEqual(response.data["data"][0].get("request_id"), str(self.not_anemic_request_1.request_id))
 
         ## set start_date of request_3 to a day later
         self.request_3.start_date = self.ref_time + timedelta(1)
