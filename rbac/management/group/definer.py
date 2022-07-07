@@ -19,6 +19,7 @@
 import logging
 from uuid import uuid4
 
+from django.conf import settings
 from django.db import transaction
 from django.db.models import Q
 from django.db.models.query import QuerySet
@@ -122,7 +123,10 @@ def add_roles(group, roles_or_role_ids, tenant, user=None):
     )
 
     if system_policy_created:
-        logger.info(f"Created new system policy for tenant {tenant.tenant_name}.")
+        if settings.AUTHENTICATE_WITH_ORG_ID:
+            logger.info(f"Created new system policy for tenant {tenant.org_id}.")
+        else:
+            logger.info(f"Created new system policy for tenant {tenant.tenant_name}.")
 
     roles = Role.objects.filter(
         Q(tenant=tenant) | Q(tenant=Tenant.objects.get(tenant_name="public")), name__in=role_names

@@ -26,6 +26,7 @@ from rest_framework import status
 from rest_framework.test import APIClient
 
 from api.models import Tenant, User
+from management.cache import AccessCache, TenantCache
 from management.models import Group, Principal, Policy, Role
 from tests.identity_request import IdentityRequest
 
@@ -46,7 +47,15 @@ class GroupViewsetTests(IdentityRequest):
 
         self.dummy_role_id = uuid4()
 
-        self.test_tenant = Tenant(tenant_name="acct1111111", account_id="1111111", org_id="100001", ready=True)
+        test_tenant_org_id = "100001"
+
+        # we need to delete old test_tenant's that may exist in cache
+        TENANTS = TenantCache()
+        TENANTS.delete_tenant(test_tenant_org_id)
+
+        self.test_tenant = Tenant(
+            tenant_name="acct1111111", account_id="1111111", org_id=test_tenant_org_id, ready=True
+        )
         self.test_tenant.save()
         self.test_principal = Principal(username="test_user", tenant=self.test_tenant)
         self.test_principal.save()
@@ -56,7 +65,9 @@ class GroupViewsetTests(IdentityRequest):
         self.test_principalC.save()
         user_data = {"username": "test_user", "email": "test@gmail.com"}
         test_request_context = self._create_request_context(
-            {"account_id": "1111111", "tenant_name": "acct1111111", "org_id": "100001"}, user_data, is_org_admin=True
+            {"account_id": "1111111", "tenant_name": "acct1111111", "org_id": test_tenant_org_id},
+            user_data,
+            is_org_admin=True,
         )
         test_request = test_request_context["request"]
         self.test_headers = test_request.META

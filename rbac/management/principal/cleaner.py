@@ -35,11 +35,15 @@ def clean_tenant_principals(tenant):
     """Check if all the principals in the tenant exist, remove non-existent principals."""
     removed_principals = []
     principals = list(Principal.objects.filter(tenant=tenant))
-    logger.info("Running clean up on %d principals for tenant %s.", len(principals), tenant.tenant_name)
+    if settings.AUTHENTICATE_WITH_ORG_ID:
+        tenant_id = tenant.org_id
+    else:
+        tenant_id = tenant.tenant_name
+    logger.info("Running clean up on %d principals for tenant %s.", len(principals), tenant_id)
     for principal in principals:
         if principal.cross_account:
             continue
-        logger.debug("Checking for username %s for tenant %s.", principal.username, tenant.tenant_name)
+        logger.debug("Checking for username %s for tenant %s.", principal.username, tenant_id)
         account = account_id_for_tenant(tenant)
         org_id = tenant.org_id
         if settings.AUTHENTICATE_WITH_ORG_ID:
@@ -49,24 +53,22 @@ def clean_tenant_principals(tenant):
         status_code = resp.get("status_code")
         data = resp.get("data")
         if status_code == status.HTTP_200_OK and data:
-            logger.debug("Username %s found for tenant %s, no change needed.", principal.username, tenant.tenant_name)
+            logger.debug("Username %s found for tenant %s, no change needed.", principal.username, tenant_id)
         elif status_code == status.HTTP_200_OK and not data:
             removed_principals.append(principal.username)
             principal.delete()
-            logger.info(
-                "Username %s not found for tenant %s, principal removed.", principal.username, tenant.tenant_name
-            )
+            logger.info("Username %s not found for tenant %s, principal removed.", principal.username, tenant_id)
         else:
             logger.warn(
                 "Unknown status %d when checking username %s" " for tenant %s, no change needed.",
                 status_code,
                 principal.username,
-                tenant.tenant_name,
+                tenant_id,
             )
     logger.info(
         "Completed clean up of %d principals for tenant %s, %d removed.",
         len(principals),
-        tenant.tenant_name,
+        tenant_id,
         len(removed_principals),
     )
 
