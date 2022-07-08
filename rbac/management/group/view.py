@@ -680,7 +680,15 @@ class GroupViewSet(
     def filtered_roles(self, roles, request):
         """Return filtered roles for group from query params."""
         role_filters = self.filters_from_params(VALID_GROUP_ROLE_FILTERS, "role", request)
+        role_filters = self.add_role_external_tenant_filter(role_filters, request)
         return roles.filter(**role_filters)
+
+    def add_role_external_tenant_filter(self, role_filters, request):
+        """Add role external tenant filter if param is on the request."""
+        role_external_tenant = request.query_params.get("role_external_tenant")
+        if role_external_tenant:
+            role_filters["ext_relation__ext_tenant__name__iexact"] = role_external_tenant
+        return role_filters
 
     def filtered_principals(self, group, request):
         """Return filtered principals for group from query params."""
