@@ -1367,6 +1367,15 @@
             }
           },
           {
+            "name": "role_external_tenant",
+            "in": "query",
+            "required": false,
+            "description": "Parameter for filtering group roles by role `external_tenant` using string search.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "$ref": "#/components/parameters/QueryLimit"
           },
           {
@@ -1720,6 +1729,15 @@
             "in": "query",
             "description": "The permission(s) to filter roles by. This is an exact match. You may also use a comma-separated list to match on multiple permissions.",
             "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "external_tenant",
+            "in": "query",
+            "required": false,
+            "description": "Parameter for filtering roles by external tenant name using string search.",
             "schema": {
               "type": "string"
             }
@@ -3737,6 +3755,14 @@
               "admin_default": {
                 "type": "boolean",
                 "default": false
+              },
+              "external_role_id": {
+                "type": "string",
+                "example": "ExternalRoleId"
+              },
+              "external_tenant": {
+                "type": "string",
+                "example": "ExternalTenant"
               }
             }
           }
@@ -3800,6 +3826,14 @@
                 "items": {
                   "$ref": "#/components/schemas/AdditionalGroup"
                 }
+              },
+              "external_role_id": {
+                "type": "string",
+                "example": "ExternalRoleId"
+              },
+              "external_tenant": {
+                "type": "string",
+                "example": "ExternalTenant"
               }
             }
           }
