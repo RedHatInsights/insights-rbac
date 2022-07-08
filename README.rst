@@ -134,7 +134,7 @@ Serivce to Service Requests
 
 RBAC also allows for service-to-service requests. These requests require a PSK, and some additional headers in order to authorize the request as an "admin". To test this locally, do the following:
 
-First disable the local setting of the identity header in `dev_middleware.py` by [commenting this line out](https://github.com/RedHatInsights/insights-rbac/blob/master/rbac/rbac/dev_middleware.py#L53)
+First disable the local setting of the identity header in `dev_middleware.py` by [commenting this line out](https://github.com/RedHatInsights/insights-rbac/blob/b207668440faf8f951dec75ffef8891343b4131b/rbac/rbac/dev_middleware.py#L72)
 
 Next, start the server with: ::
 

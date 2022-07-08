@@ -17,7 +17,7 @@ Is any special local setup required?
 - [ ] does this require migration changes?
   - [ ] if yes, are they backwards compatible?
 - [ ] is there known, direct impact to dependent teams/components?
-  -  if yes, how will this be handled?
+  - [ ] if yes, how will this be handled?
 
 ## Secure Coding Practices Checklist Link
 - https://github.com/RedHatInsights/secure-coding-checklist
