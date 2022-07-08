@@ -27,7 +27,7 @@ from rest_framework.test import APIClient
 
 from api.models import Tenant, User
 from management.cache import AccessCache, TenantCache
-from management.models import Group, Principal, Policy, Role
+from management.models import Group, Principal, Policy, Role, ExtRoleRelation, ExtTenant
 from tests.identity_request import IdentityRequest
 
 
@@ -84,6 +84,8 @@ class GroupViewsetTests(IdentityRequest):
         self.role = Role.objects.create(
             name="roleA", description="A role for a group.", system=True, tenant=self.tenant
         )
+        self.ext_tenant = ExtTenant.objects.create(name="foo")
+        self.ext_role_relation = ExtRoleRelation.objects.create(role=self.role, ext_tenant=self.ext_tenant)
         self.policy = Policy.objects.create(name="policyA", group=self.group, tenant=self.tenant)
         self.policy.roles.add(self.role)
         self.policy.save()
@@ -1121,6 +1123,18 @@ class GroupViewsetTests(IdentityRequest):
         """Test role filters for getting roles for a group."""
         url = reverse("group-roles", kwargs={"uuid": self.group.uuid})
         url = "{}?role_description={}&role_name={}".format(url, self.role.description, self.role.name)
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        roles = response.data.get("data")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(roles), 1)
+        self.assertEqual(roles[0].get("uuid"), str(self.role.uuid))
+
+    def test_group_filter_by_role_external_tenant(self):
+        """Test that filtering groups by role_external_tenant succeeds."""
+        url = reverse("group-roles", kwargs={"uuid": self.group.uuid})
+        url = "{}?role_external_tenant={}".format(url, "foo")
         client = APIClient()
         response = client.get(url, **self.headers)
         roles = response.data.get("data")
