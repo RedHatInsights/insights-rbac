@@ -44,7 +44,7 @@ if settings.AUTHENTICATE_WITH_ORG_ID:
     PARAMS_FOR_CREATION = ["target_org", "start_date", "end_date", "roles"]
     VALID_QUERY_BY_KEY = [ORG_ID, USER_ID]
 else:
-    PARAMS_FOR_CREATION = ["target_account", "start_date", "end_date", "roles"]
+    PARAMS_FOR_CREATION = ["target_org", "target_account", "start_date", "end_date", "roles"]
     VALID_QUERY_BY_KEY = [ACCOUNT, USER_ID]
 VALID_PATCH_FIELDS = ["start_date", "end_date", "roles", "status"]
 
