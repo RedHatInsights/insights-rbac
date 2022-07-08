@@ -21,6 +21,7 @@ from unittest import skipIf
 from unittest.mock import call, MagicMock, patch
 from rbac.settings import ACCESS_CACHE_ENABLED
 
+from django.conf import settings
 from django.db import connection
 from django.test import TestCase
 
@@ -262,7 +263,11 @@ class TenantCacheTest(TestCase):
     @patch("management.cache.TenantCache.connection")
     def test_tenant_cache_functions_success(self, redis_connection):
         tenant_name = self.tenant.tenant_name
-        key = f"rbac::tenant::tenant={tenant_name}"
+        tenant_org_id = self.tenant.org_id
+        if settings.AUTHENTICATE_WITH_ORG_ID:
+            key = f"rbac::tenant::tenant={tenant_org_id}"
+        else:
+            key = f"rbac::tenant::tenant={tenant_name}"
         dump_content = pickle.dumps(self.tenant)
 
         # Save tenant to cache
@@ -272,10 +277,16 @@ class TenantCacheTest(TestCase):
 
         redis_connection.get.return_value = dump_content
         # Get tenant from cache
-        tenant = tenant_cache.get_tenant(tenant_name)
+        if settings.AUTHENTICATE_WITH_ORG_ID:
+            tenant = tenant_cache.get_tenant(tenant_org_id)
+        else:
+            tenant = tenant_cache.get_tenant(tenant_name)
         redis_connection.get.assert_called_once_with(key)
         self.assertEqual(tenant, self.tenant)
 
         # Delete tenant from cache
-        tenant_cache.delete_tenant(tenant_name)
+        if settings.AUTHENTICATE_WITH_ORG_ID:
+            tenant_cache.delete_tenant(tenant_org_id)
+        else:
+            tenant_cache.delete_tenant(tenant_name)
         redis_connection.delete.assert_called_once_with(key)

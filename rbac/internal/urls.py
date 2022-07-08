@@ -45,7 +45,7 @@ integration_urlpatterns = [
 urlpatterns = [
     path("api/tenant/unmodified/", views.list_unmodified_tenants),
     path("api/tenant/", views.list_tenants),
-    path("api/tenant/<str:tenant_name>/", views.tenant_view),
+    path("api/tenant/<str:org_id>/", views.tenant_view),
     path("api/migrations/run/", views.run_migrations),
     path("api/migrations/progress/", views.migration_progress),
     path("api/seeds/run/", views.run_seeds),

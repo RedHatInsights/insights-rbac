@@ -79,7 +79,10 @@ class Group(TenantAwareModel):
 def group_deleted_cache_handler(sender=None, instance=None, using=None, **kwargs):
     """Signal handler to purge principal caches when a Group is deleted."""
     logger.info("Handling signal for deleted group %s - invalidating policy cache for users in group", instance)
-    cache = AccessCache(instance.tenant.tenant_name)
+    if settings.AUTHENTICATE_WITH_ORG_ID:
+        cache = AccessCache(instance.tenant.org_id)
+    else:
+        cache = AccessCache(instance.tenant.tenant_name)
     for principal in instance.principals.all():
         cache.delete_policy(principal.uuid)
 
@@ -88,7 +91,10 @@ def principals_to_groups_cache_handler(
     sender=None, instance=None, action=None, reverse=None, model=None, pk_set=None, using=None, **kwargs
 ):
     """Signal handler to purge caches when Group membership changes."""
-    cache = AccessCache(instance.tenant.tenant_name)
+    if settings.AUTHENTICATE_WITH_ORG_ID:
+        cache = AccessCache(instance.tenant.org_id)
+    else:
+        cache = AccessCache(instance.tenant.tenant_name)
     if action in ("post_add", "pre_remove"):
         logger.info("Handling signal for %s group membership change - invalidating policy cache", instance)
         if isinstance(instance, Group):

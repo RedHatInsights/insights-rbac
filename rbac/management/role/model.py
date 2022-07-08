@@ -66,6 +66,14 @@ class Role(TenantAwareModel):
             self.display_name = self.name
         super(Role, self).save(*args, **kwargs)
 
+    def external_role_id(self):
+        """Return external role id."""
+        return self.ext_relation.ext_id if hasattr(self, "ext_relation") else None
+
+    def external_tenant_name(self):
+        """Return external tenant name."""
+        return self.ext_relation.ext_tenant.name if hasattr(self, "ext_relation") else None
+
 
 class Access(TenantAwareModel):
     """An access object."""
@@ -117,7 +125,10 @@ def role_related_obj_change_cache_handler(sender=None, instance=None, using=None
         "invalidating associated user cache keys",
         instance,
     )
-    cache = AccessCache(instance.tenant.tenant_name)
+    if settings.AUTHENTICATE_WITH_ORG_ID:
+        cache = AccessCache(instance.tenant.org_id)
+    else:
+        cache = AccessCache(instance.tenant.tenant_name)
     if instance.role:
         for principal in Principal.objects.filter(group__policies__roles__pk=instance.role.pk):
             cache.delete_policy(principal.uuid)
