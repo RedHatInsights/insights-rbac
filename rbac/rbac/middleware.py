@@ -17,6 +17,7 @@
 
 """Custom RBAC Middleware."""
 import binascii
+import json
 import logging
 from json.decoder import JSONDecodeError
 
@@ -183,13 +184,23 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
         try:
             _, json_rh_auth = extract_header(request, self.header)
             user.account = json_rh_auth.get("identity", {})["account_number"]
-            user.org_id = json_rh_auth.get("identity", {}).get("org_id")
+            user.org_id = json_rh_auth.get("identity", {}).get("org_id") or json_rh_auth.get("identity").get(
+                "internal"
+            ).get("org_id")
             user_info = json_rh_auth.get("identity", {}).get("user")
             user.username = user_info["username"]
             user.admin = user_info.get("is_org_admin")
             user.internal = user_info.get("is_internal")
             user.user_id = user_info.get("user_id")
             user.system = False
+
+            if not user.org_id:
+                payload = {
+                    "code": 400,
+                    "message": "An org_id must be provided in the identity header.",
+                }
+                return HttpResponse(json.dumps(payload), content_type="application/json", status=400)
+
             if settings.AUTHENTICATE_WITH_ORG_ID:
                 if not user.admin and not (request.path.endswith("/access/") and request.method == "GET"):
                     try:
