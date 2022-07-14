@@ -22,6 +22,7 @@ import logging
 from json.decoder import JSONDecodeError
 
 from django.conf import settings
+from django.db import IntegrityError
 from django.http import Http404, HttpResponse
 from django.urls import resolve
 from django.utils.deprecation import MiddlewareMixin
@@ -87,10 +88,17 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
                     except Tenant.DoesNotExist:
                         raise Http404()
                 else:
-                    tenant, created = Tenant.objects.get_or_create(
-                        org_id=request.user.org_id,
-                        defaults={"ready": True, "account_id": request.user.account, "tenant_name": tenant_name},
-                    )
+                    try:
+                        tenant, created = Tenant.objects.get_or_create(
+                            org_id=request.user.org_id,
+                            defaults={"ready": True, "account_id": request.user.account, "tenant_name": tenant_name},
+                        )
+                    except IntegrityError:
+                        payload = {
+                            "code": 400,
+                            "message": f"The account {request.user.account} already paired with a different org_id.",
+                        }
+                        return HttpResponse(json.dumps(payload), content_type="application/json", status=400)
                 TENANTS.save_tenant(tenant)
         else:
             tenant_name = create_tenant_name(request.user.account)
@@ -253,7 +261,10 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
             raise error
         if user.username and (user.account or user.org_id):
             request.user = user
-            request.tenant = self.get_tenant(model=None, hostname=None, request=request)
+            response = self.get_tenant(model=None, hostname=None, request=request)
+            if type(response) == HttpResponse:
+                return response
+            request.tenant = response
 
     def process_response(self, request, response):  # pylint: disable=no-self-use
         """Process response for identity middleware.
