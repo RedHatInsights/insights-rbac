@@ -190,6 +190,13 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
             user.internal = user_info.get("is_internal")
             user.user_id = user_info.get("user_id")
             user.system = False
+
+            if not user.org_id:
+                try:
+                    user.org_id = json_rh_auth.get("identity").get("internal")["org_id"]
+                except KeyError:
+                    return HttpResponse("An org_id must be provided in the identity header.", status=400)
+
             if settings.AUTHENTICATE_WITH_ORG_ID:
                 if not user.admin and not (request.path.endswith("/access/") and request.method == "GET"):
                     try:
