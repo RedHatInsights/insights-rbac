@@ -394,6 +394,8 @@ if ENVIRONMENT.bool("CLOWDER_ENABLED", default=False):
             "sasl_mechanism" : LoadedConfig.kafka.sasl.saslMechanism.upper(),
             "security_protocol" : LoadedConfig.kafka.sasl.securityProtocol.upper()
         }
+    else:
+        KAFKA_AUTH = False
 else:
     KAFKA_HOST = "localhost"
     KAFKA_PORT = "9092"
