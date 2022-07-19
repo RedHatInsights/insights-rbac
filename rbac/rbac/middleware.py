@@ -52,6 +52,23 @@ req_sys_counter = Counter(
 TENANTS = TenantCache()
 
 
+def catch_integrity_error(func):
+    """Catch IntegrityErrors that are raised during process_request."""
+
+    def inner(self, request):
+        try:
+            return func(self, request)
+        except IntegrityError as e:
+            payload = {
+                "code": 400,
+                "message": f"IntegrityError while processing request for org_id: {request.user.org_id}",
+            }
+            logger.error(f"{payload['message']}\n{e.__str__()}")
+            return HttpResponse(json.dumps(payload), content_type="application/json", status=400)
+
+    return inner
+
+
 def is_no_auth(request):
     """Check condition for needing to authenticate the user."""
     no_auth_list = ["status", "apidoc", "metrics", "openapi.json"]
@@ -88,17 +105,10 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
                     except Tenant.DoesNotExist:
                         raise Http404()
                 else:
-                    try:
-                        tenant, created = Tenant.objects.get_or_create(
-                            org_id=request.user.org_id,
-                            defaults={"ready": True, "account_id": request.user.account, "tenant_name": tenant_name},
-                        )
-                    except IntegrityError:
-                        payload = {
-                            "code": 400,
-                            "message": f"The account {request.user.account} already paired with a different org_id.",
-                        }
-                        return HttpResponse(json.dumps(payload), content_type="application/json", status=400)
+                    tenant, created = Tenant.objects.get_or_create(
+                        org_id=request.user.org_id,
+                        defaults={"ready": True, "account_id": request.user.account, "tenant_name": tenant_name},
+                    )
                 TENANTS.save_tenant(tenant)
         else:
             tenant_name = create_tenant_name(request.user.account)
@@ -172,6 +182,7 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
 
         return access
 
+    @catch_integrity_error
     def process_request(self, request):  # pylint: disable=R1710
         """Process request for identity middleware.
 
@@ -261,10 +272,7 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
             raise error
         if user.username and (user.account or user.org_id):
             request.user = user
-            response = self.get_tenant(model=None, hostname=None, request=request)
-            if type(response) == HttpResponse:
-                return response
-            request.tenant = response
+            request.tenant = self.get_tenant(model=None, hostname=None, request=request)
 
     def process_response(self, request, response):  # pylint: disable=no-self-use
         """Process response for identity middleware.
