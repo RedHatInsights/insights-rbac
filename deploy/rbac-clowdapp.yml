@@ -425,6 +425,8 @@ objects:
             value: ${AUTHENTICATE_WITH_ORG_ID}
           - name: NOTIFICATIONS_ENABLED
             value: ${NOTIFICATIONS_ENABLED}
+          - name: GUNICORN_WORKER_MULTIPLIER
+            value: ${GUNICORN_WORKER_MULTIPLIER}
     jobs:
       - name: tenant-org-id-populator
         podSpec:
@@ -2085,3 +2087,5 @@ parameters:
   required: true
 - name: TENANT_TRANSLATOR_PORT
   value: '8892'
+- name: GUNICORN_WORKER_MULTIPLIER
+  value: '2'
