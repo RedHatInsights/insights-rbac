@@ -22,6 +22,7 @@ import logging
 from json.decoder import JSONDecodeError
 
 from django.conf import settings
+from django.db import IntegrityError
 from django.http import Http404, HttpResponse
 from django.urls import resolve
 from django.utils.deprecation import MiddlewareMixin
@@ -49,6 +50,23 @@ req_sys_counter = Counter(
     ["behalf", "method", "view", "status"],
 )
 TENANTS = TenantCache()
+
+
+def catch_integrity_error(func):
+    """Catch IntegrityErrors that are raised during process_request."""
+
+    def inner(self, request):
+        try:
+            return func(self, request)
+        except IntegrityError as e:
+            payload = {
+                "code": 400,
+                "message": f"IntegrityError while processing request for org_id: {request.user.org_id}",
+            }
+            logger.error(f"{payload['message']}\n{e.__str__()}")
+            return HttpResponse(json.dumps(payload), content_type="application/json", status=400)
+
+    return inner
 
 
 def is_no_auth(request):
@@ -164,6 +182,7 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
 
         return access
 
+    @catch_integrity_error
     def process_request(self, request):  # pylint: disable=R1710
         """Process request for identity middleware.
 
