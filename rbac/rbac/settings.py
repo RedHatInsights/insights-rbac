@@ -400,7 +400,7 @@ if ENVIRONMENT.bool("CLOWDER_ENABLED", default=False):
             }
         else:
             KAFKA_AUTH = False
-    except NameError:
+    except AttributeError:
         KAFKA_AUTH = False
 else:
     KAFKA_HOST = "localhost"
