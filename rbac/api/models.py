@@ -26,9 +26,9 @@ class Tenant(models.Model):
     """The model used to create a tenant schema."""
 
     ready = models.BooleanField(default=False)
-    tenant_name = models.CharField(max_length=63, unique=True, db_index=True)
-    account_id = models.CharField(max_length=36, unique=True, default=None, null=True)
-    org_id = models.CharField(max_length=36, unique=True, default=None, null=True)
+    tenant_name = models.CharField(max_length=63)
+    account_id = models.CharField(max_length=36, default=None, null=True)
+    org_id = models.CharField(max_length=36, unique=True, default=None, db_index=True, null=True)
 
     def __str__(self):
         """Get string representation of Tenant."""
