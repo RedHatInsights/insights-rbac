@@ -167,12 +167,12 @@ class GroupViewSet(
             return GroupInputSerializer
         return GroupSerializer
 
-    def protect_default_groups(self, action):
-        """Deny modifications on platform_default and admin_default groups."""
+    def protect_system_groups(self, action):
+        """Deny modifications on system groups."""
         group = self.get_object()
-        if group.platform_default or group.admin_default:
+        if group.system:
             key = "group"
-            message = "{} cannot be performed on default groups.".format(action.upper())
+            message = "{} cannot be performed on system groups.".format(action.upper())
             error = {key: [_(message)]}
             raise serializers.ValidationError(error)
 
@@ -312,7 +312,7 @@ class GroupViewSet(
             HTTP/1.1 204 NO CONTENT
         """
         validate_uuid(kwargs.get("uuid"), "group uuid validation")
-        self.protect_default_groups("delete")
+        self.protect_system_groups("delete")
         group = self.get_object()
         response = super().destroy(request=request, args=args, kwargs=kwargs)
         if response.status_code == status.HTTP_204_NO_CONTENT:
@@ -342,7 +342,7 @@ class GroupViewSet(
             }
         """
         validate_uuid(kwargs.get("uuid"), "group uuid validation")
-        self.protect_default_groups("update")
+        self.protect_system_groups("update")
         return super().update(request=request, args=args, kwargs=kwargs)
 
     def add_principals(self, group, principals, account=None, org_id=None):
@@ -490,7 +490,7 @@ class GroupViewSet(
         account = self.request.user.account
         org_id = self.request.user.org_id
         if request.method == "POST":
-            self.protect_default_groups("add principals")
+            self.protect_system_groups("add principals")
             if not request.user.admin:
                 for role in group.roles_with_access():
                     for access in role.access.all():
@@ -537,7 +537,7 @@ class GroupViewSet(
                 return Response(status=resp.get("status_code"), data=resp.get("errors"))
             response = self.get_paginated_response(resp.get("data"))
         else:
-            self.protect_default_groups("remove principals")
+            self.protect_system_groups("remove principals")
             if USERNAMES_KEY not in request.query_params:
                 key = "detail"
                 message = "Query parameter {} is required.".format(USERNAMES_KEY)
