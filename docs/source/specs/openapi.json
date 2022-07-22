@@ -64,12 +64,12 @@
             "in": "query",
             "name": "query_by",
             "required": false,
-            "description": "Parameter for filtering resource by either a user's ID, or a client's account number. The default value is target_account.",
+            "description": "Parameter for filtering resource by either a user's ID, or a client's org. The default value is target_org.",
             "schema": {
               "type": "string",
               "enum": [
                 "user_id",
-                "target_account"
+                "target_org"
               ]
             }
           },
@@ -249,12 +249,12 @@
             "in": "query",
             "name": "query_by",
             "required": false,
-            "description": "Parameter for filtering resource by either a user's ID, or a client's account number. The default value is target_account.",
+            "description": "Parameter for filtering resource by either a user's ID, or a client's org. The default value is target_org.",
             "schema": {
               "type": "string",
               "enum": [
                 "user_id",
-                "target_account"
+                "target_org"
               ]
             }
           },
