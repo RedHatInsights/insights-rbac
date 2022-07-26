@@ -32,7 +32,7 @@ import sys
 import logging
 import pytz
 
-from boto3.session import Session
+from boto3 import client as boto_client
 from corsheaders.defaults import default_headers
 from dateutil.parser import parse as parse_dt
 from app_common_python import LoadedConfig
@@ -225,12 +225,12 @@ if ENVIRONMENT.bool("CLOWDER_ENABLED", default=False):
     if ENVIRONMENT.bool("CW_NULL_WORKAROUND", default=True):
         CW_AWS_ACCESS_KEY_ID = None
         CW_AWS_SECRET_ACCESS_KEY = None
-        CW_AWS_REGION_NAME = None
+        CW_AWS_REGION = None
         CW_LOG_GROUP = None
     else:
         CW_AWS_ACCESS_KEY_ID = LoadedConfig.logging.cloudwatch.accessKeyId
         CW_AWS_SECRET_ACCESS_KEY = LoadedConfig.logging.cloudwatch.secretAccessKey
-        CW_AWS_REGION_NAME = LoadedConfig.logging.cloudwatch.region
+        CW_AWS_REGION = LoadedConfig.logging.cloudwatch.region
         CW_LOG_GROUP = LoadedConfig.logging.cloudwatch.logGroup
 else:
     CW_AWS_ACCESS_KEY_ID = ENVIRONMENT.get_value("CW_AWS_ACCESS_KEY_ID", default=None)
@@ -290,19 +290,22 @@ LOGGING = {
 
 if CW_AWS_ACCESS_KEY_ID:
     NAMESPACE = ENVIRONMENT.get_value("APP_NAMESPACE", default="unknown")
-    BOTO3_SESSION = Session(
+
+    boto3_logs_client = boto_client(
+        "logs",
+        region_name=CW_AWS_REGION,
         aws_access_key_id=CW_AWS_ACCESS_KEY_ID,
         aws_secret_access_key=CW_AWS_SECRET_ACCESS_KEY,
-        region_name=CW_AWS_REGION,
     )
+
     WATCHTOWER_HANDLER = {
         "level": RBAC_LOGGING_LEVEL,
         "class": "watchtower.CloudWatchLogHandler",
-        "boto3_session": BOTO3_SESSION,
-        "log_group": CW_LOG_GROUP,
+        "boto3_client": boto3_logs_client,
+        "log_group_name": CW_LOG_GROUP,
         "stream_name": NAMESPACE,
         "formatter": LOGGING_FORMATTER,
-        "use_queues": False,
+        "use_queues": True,
         "create_log_group": CW_CREATE_LOG_GROUP,
     }
     LOGGING["handlers"]["watchtower"] = WATCHTOWER_HANDLER
@@ -386,6 +389,19 @@ if ENVIRONMENT.bool("CLOWDER_ENABLED", default=False):
     kafka_broker = LoadedConfig.kafka.brokers[0]
     KAFKA_HOST = kafka_broker.hostname
     KAFKA_PORT = kafka_broker.port
+    try:
+        if LoadedConfig.kafka.authtype == "sasl":
+            KAFKA_AUTH = {
+                "bootstrap_servers": f"{KAFKA_HOST}:{KAFKA_PORT}",
+                "sasl_plain_username": LoadedConfig.kafka.sasl.username,
+                "sasl_plain_password": LoadedConfig.kafka.sasl.password,
+                "sasl_mechanism": LoadedConfig.kafka.sasl.saslMechanism.upper(),
+                "security_protocol": LoadedConfig.kafka.sasl.securityProtocol.upper(),
+            }
+        else:
+            KAFKA_AUTH = False
+    except AttributeError:
+        KAFKA_AUTH = False
 else:
     KAFKA_HOST = "localhost"
     KAFKA_PORT = "9092"
