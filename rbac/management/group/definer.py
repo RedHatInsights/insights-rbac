@@ -85,6 +85,7 @@ def set_system_flag_before_update(group, tenant, user):
 
 def clone_default_group_in_public_schema(group, tenant):
     """Clone the default group for a tenant into the public schema."""
+    public_tenant = Tenant.objects.get(tenant_name="public")
     tenant_default_policy = group.policies.get(system=True)
     group.name = "Custom default access"
     group.system = False
@@ -97,7 +98,7 @@ def clone_default_group_in_public_schema(group, tenant):
     tenant_default_policy.tenant = tenant
     if Group.objects.filter(name=group.name, platform_default=group.platform_default, tenant=tenant):
         return
-    public_default_roles = Role.objects.filter(platform_default=True)
+    public_default_roles = Role.objects.filter(platform_default=True, tenant=public_tenant)
 
     group.save()
     tenant_default_policy.group = group
