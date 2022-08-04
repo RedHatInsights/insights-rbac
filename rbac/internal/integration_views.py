@@ -21,6 +21,7 @@ import logging
 
 from management.cache import TenantCache
 from management.group.view import GroupViewSet
+from management.role.view import RoleViewSet
 
 
 logger = logging.getLogger(__name__)
@@ -30,6 +31,12 @@ TENANTS = TenantCache()
 def groups(request, org_id):
     """Format and pass internal groups request to /groups/ API."""
     view = GroupViewSet.as_view({"get": "list"})
+    return view(request)
+
+
+def roles(request, org_id):
+    """Format and pass internal roles request to /roles/ API."""
+    view = RoleViewSet.as_view({"get": "list"})
     return view(request)
 
 

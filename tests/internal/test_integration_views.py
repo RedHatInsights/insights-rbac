@@ -345,3 +345,45 @@ class IntegrationViewsTests(IdentityRequest):
             follow=True,
         )
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={
+            "status_code": 200,
+            "data": [
+                {
+                    "org_id": "100001",
+                    "is_org_admin": False,
+                    "is_internal": False,
+                    "id": 52567473,
+                    "username": "isolated_principal",
+                    "account_number": "1111111",
+                    "is_active": True,
+                }
+            ],
+        },
+    )
+    def test_roles_for_org(self, mock_request):
+        """Test that a valid request to /tenant/<id>>/roles/ | /tenant/<id>>/roles/?username=foo filters properly."""
+        isolated_role = Role.objects.create(name="isolated_role", tenant=self.tenant)
+        isolated_principal = Principal.objects.create(username="isolated_principal", tenant=self.tenant)
+        isolated_group = Group.objects.create(name="isolated_group", tenant=self.tenant)
+        isolated_policy = Policy.objects.create(name="isolated_policy", group=isolated_group, tenant=self.tenant)
+        isolated_policy.roles.add(isolated_role)
+        isolated_group.principals.add(isolated_principal)
+
+        response = self.client.get(
+            f"/_private/api/v1/integrations/tenant/{self.tenant.org_id}/roles/",
+            **self.request.META,
+            follow=True,
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data.get("meta").get("count"), 4)
+
+        response = self.client.get(
+            f"/_private/api/v1/integrations/tenant/{self.tenant.org_id}/roles/?username=isolated_principal",
+            **self.request.META,
+            follow=True,
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data.get("meta").get("count"), 1)

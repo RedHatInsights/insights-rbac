@@ -23,6 +23,7 @@ from internal.openapi import openapi
 from . import integration_views, views
 
 integration_urlpatterns = [
+    path("api/v1/integrations/tenant/<str:org_id>/roles/", integration_views.roles, name="integration-roles"),
     path("api/v1/integrations/tenant/<str:org_id>/groups/", integration_views.groups, name="integration-groups"),
     path(
         "api/v1/integrations/tenant/<str:org_id>/groups/<str:uuid>/roles/",
