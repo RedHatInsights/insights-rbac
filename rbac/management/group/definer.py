@@ -25,7 +25,7 @@ from django.db.models import Q
 from django.db.models.query import QuerySet
 from django.utils.translation import gettext as _
 from management.group.model import Group
-from management.notifications.notification_hanlders import (
+from management.notifications.notification_handlers import (
     group_flag_change_notification_handler,
     group_role_change_notification_handler,
 )

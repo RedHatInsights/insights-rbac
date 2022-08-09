@@ -48,10 +48,12 @@ class NotificationProducer:
             return self.producer
 
         if settings.NOTIFICATIONS_ENABLED:
+            # Default Kafka API version to 0.10.2, oldest fully compatible version.
+            # All future versions should work with this
             if settings.KAFKA_AUTH:
-                self.producer = KafkaProducer(**settings.KAFKA_AUTH)
+                self.producer = KafkaProducer(**settings.KAFKA_AUTH, api_version=(0, 10, 2))
             else:
-                self.producer = KafkaProducer(bootstrap_servers=settings.KAFKA_SERVER)
+                self.producer = KafkaProducer(bootstrap_servers=settings.KAFKA_SERVER, api_version=(0, 10, 2))
         else:
             self.producer = FakeKafkaProducer()
         return self.producer
