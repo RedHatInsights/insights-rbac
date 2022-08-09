@@ -26,6 +26,7 @@ from django.utils import timezone
 from management.notifications.notification_handlers import role_obj_change_notification_handler
 from management.permission.model import Permission
 from management.role.model import Access, ExtRoleRelation, ExtTenant, ResourceDefinition, Role
+from internal.views import destructive_ok
 
 from api.models import Tenant
 
@@ -133,10 +134,13 @@ def seed_roles():
                 file_role_ids = _update_or_create_roles(role_list)
                 current_role_ids.update(file_role_ids)
 
+    # Find roles in DB but not in config
     roles_to_delete = Role.objects.filter(system=True).exclude(id__in=current_role_ids)
     logger.info(f"The following '{roles_to_delete.count()}' roles(s) eligible for removal: {roles_to_delete.values()}")
-    # Currently read-only to ensure we don't have any orphaned roles which should be added to the config
-    # Role.objects.filter(system=True).exclude(id__in=current_role_ids).delete()
+    if destructive_ok():
+        logger.info(f"Removing the following role(s): {roles_to_delete.values()}")
+        # Actually remove roles no longer in config
+        Role.objects.filter(system=True).exclude(id__in=current_role_ids).delete()
 
 
 def seed_permissions():
@@ -192,9 +196,12 @@ def seed_permissions():
                     logger.error(
                         f"Failed to update or create permissions for: " f"{app_name}:{resource} with error: {e}"
                     )
+    # Find perms in DB but not in config
     perms_to_delete = Permission.objects.exclude(id__in=current_permission_ids)
     logger.info(
         f"The following '{perms_to_delete.count()}' permission(s) eligible for removal: {perms_to_delete.values()}"
     )
-    # Currently read-only to ensure we don't have any orphaned permissions which should be added to the config
-    # Permission.objects.exclude(id__in=current_permission_ids).delete()
+    if destructive_ok():
+        logger.info(f"Removing the following role(s): {perms_to_delete.values()}")
+        # Actually remove perms no longer in DB
+        Permission.objects.exclude(id__in=current_permission_ids).delete()
