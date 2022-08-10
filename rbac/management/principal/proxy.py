@@ -70,6 +70,8 @@ class PrincipalProxy:  # pylint: disable=too-few-public-methods
     def _create_params(limit=None, offset=None, options={}):
         """Create query parameters."""
         params = {}
+        if "username_only" in options and options["username_only"] == "true":
+            params["username_only"] = "true"
         if limit:
             params["limit"] = limit
         if offset:
@@ -156,6 +158,13 @@ class PrincipalProxy:  # pylint: disable=too-few-public-methods
     ):
         """Send request to proxy service."""
         metrics_method = method.__name__.upper()
+        if params and params.get("username_only") == "true":
+            principals = Principal.objects.all()
+            if data and "users" in data:
+                principals = principals.filter(username__in=data["users"])
+            data = [dict(username=principal.username) for principal in principals]
+            return dict(data=data, status_code=200)
+
         if settings.BYPASS_BOP_VERIFICATION:
             to_return = []
             if data is None:

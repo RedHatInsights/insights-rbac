@@ -20,6 +20,7 @@ from unittest.mock import patch, ANY
 
 from django.urls import reverse
 from django.conf import settings
+from django.test.utils import override_settings
 from rest_framework import status
 from rest_framework.test import APIClient
 
@@ -91,7 +92,7 @@ class PrincipalViewNonAdminTests(IdentityRequest):
             account=self.customer["account_id"],
             limit=10,
             offset=0,
-            options={"sort_order": "asc", "status": "enabled", "admin_only": "false"},
+            options={"sort_order": "asc", "status": "enabled", "admin_only": "false", "username_only": "false"},
             org_id=self.customer["org_id"],
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -128,7 +129,10 @@ class PrincipalViewsetTests(IdentityRequest):
 
     @patch(
         "management.principal.proxy.PrincipalProxy.request_principals",
-        return_value={"status_code": 200, "data": {"userCount": "1", "users": [{"username": "test_user"}]}},
+        return_value={
+            "status_code": 200,
+            "data": [{"username": "test_user", "account_number": "1234", "org_id": "4321"}],
+        },
     )
     def test_read_principal_list_success(self, mock_request):
         """Test that we can read a list of principals."""
@@ -145,7 +149,7 @@ class PrincipalViewsetTests(IdentityRequest):
             account=self.customer_data["account_id"],
             limit=10,
             offset=0,
-            options={"sort_order": "asc", "status": "enabled", "admin_only": "false"},
+            options={"sort_order": "asc", "status": "enabled", "admin_only": "false", "username_only": "false"},
             org_id=self.customer_data["org_id"],
         )
         # /principals/ endpoint won't return the cross_account_principal, which does not exist in IT.
@@ -157,10 +161,56 @@ class PrincipalViewsetTests(IdentityRequest):
         self.assertEqual(len(response.data.get("data")), 1)
 
         principal = response.data.get("data")[0]
+        self.assertCountEqual(list(principal.keys()), ["username", "account_number", "org_id"])
         self.assertIsNotNone(principal.get("username"))
         self.assertEqual(principal.get("username"), self.principal.username)
 
         cross_account_principal.delete()
+
+    def test_read_principal_list_username_only_true_success(self):
+        """Test that we can read a list of principals with username_only=true."""
+        url = f'{reverse("principals")}?username_only=true'
+        client = APIClient()
+        response = client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        for keyname in ["meta", "links", "data"]:
+            self.assertIn(keyname, response.data)
+        self.assertIsInstance(response.data.get("data"), list)
+        self.assertEqual(int(response.data.get("meta").get("count")), 1)
+        self.assertEqual(len(response.data.get("data")), 1)
+
+        principal = response.data.get("data")[0]
+        self.assertCountEqual(list(principal.keys()), ["username"])
+        self.assertIsNotNone(principal.get("username"))
+        self.assertEqual(principal.get("username"), self.principal.username)
+
+    @override_settings(BYPASS_BOP_VERIFICATION=True)
+    def test_read_principal_list_username_only_false_success(self):
+        """Test that we can read a list of principals with username_only=false."""
+        url = f'{reverse("principals")}?username_only=false'
+        client = APIClient()
+        response = client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        for keyname in ["meta", "links", "data"]:
+            self.assertIn(keyname, response.data)
+        self.assertIsInstance(response.data.get("data"), list)
+        self.assertEqual(int(response.data.get("meta").get("count")), 1)
+        self.assertEqual(len(response.data.get("data")), 1)
+
+        principal = response.data.get("data")[0]
+        self.assertCountEqual(list(principal.keys()), ["username", "first_name", "last_name", "email", "user_id"])
+        self.assertIsNotNone(principal.get("username"))
+        self.assertEqual(principal.get("username"), self.principal.username)
+
+    def test_read_principal_list_username_only_invalid(self):
+        """Test that we get a 400 back with username_only=foo."""
+        url = f'{reverse("principals")}?username_only=foo'
+        client = APIClient()
+        response = client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
     @patch(
         "management.principal.proxy.PrincipalProxy.request_principals",
@@ -185,7 +235,7 @@ class PrincipalViewsetTests(IdentityRequest):
             account=self.customer_data["account_id"],
             limit=10,
             offset=0,
-            options={"sort_order": "asc", "status": "enabled", "admin_only": "false"},
+            options={"sort_order": "asc", "status": "enabled", "admin_only": "false", "username_only": "false"},
             org_id=self.customer_data["org_id"],
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -277,7 +327,7 @@ class PrincipalViewsetTests(IdentityRequest):
             input={"principalStartsWith": "test_us"},
             limit=10,
             offset=30,
-            options={"sort_order": "asc", "status": "enabled"},
+            options={"sort_order": "asc", "status": "enabled", "username_only": "false"},
             org_id=self.customer_data["org_id"],
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -306,7 +356,7 @@ class PrincipalViewsetTests(IdentityRequest):
             input={"principalStartsWith": "test_us", "emailStartsWith": "test"},
             limit=10,
             offset=30,
-            options={"sort_order": "asc", "status": "enabled"},
+            options={"sort_order": "asc", "status": "enabled", "username_only": "false"},
             org_id=self.customer_data["org_id"],
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -463,7 +513,7 @@ class PrincipalViewsetTests(IdentityRequest):
             input={"primaryEmail": "test_user@example.com"},
             limit=10,
             offset=0,
-            options={"sort_order": "asc", "status": "enabled"},
+            options={"sort_order": "asc", "status": "enabled", "username_only": "false"},
             org_id=self.customer_data["org_id"],
         )
 
@@ -491,7 +541,7 @@ class PrincipalViewsetTests(IdentityRequest):
             account=self.customer_data["account_id"],
             limit=10,
             offset=0,
-            options={"sort_order": "asc", "status": "disabled", "admin_only": "false"},
+            options={"sort_order": "asc", "status": "disabled", "admin_only": "false", "username_only": "false"},
             org_id=self.customer_data["org_id"],
         )
 
@@ -517,7 +567,7 @@ class PrincipalViewsetTests(IdentityRequest):
             account=self.customer_data["account_id"],
             limit=10,
             offset=0,
-            options={"sort_order": "asc", "status": "enabled", "admin_only": "true"},
+            options={"sort_order": "asc", "status": "enabled", "admin_only": "true", "username_only": "false"},
             org_id=self.customer_data["org_id"],
         )
 
@@ -573,7 +623,7 @@ class PrincipalViewsetTests(IdentityRequest):
             input={"emailStartsWith": "test_use"},
             limit=10,
             offset=0,
-            options={"sort_order": "asc", "status": "enabled"},
+            options={"sort_order": "asc", "status": "enabled", "username_only": "false"},
             org_id=self.customer_data["org_id"],
         )
 

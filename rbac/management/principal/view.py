@@ -34,7 +34,8 @@ VALID_MATCH_VALUE = ["partial", "exact"]
 STATUS_KEY = "status"
 VALID_STATUS_VALUE = ["enabled", "disabled", "all"]
 ADMIN_ONLY_KEY = "admin_only"
-VALID_ADMIN_ONLY_VALUE = ["true", "false"]
+VALID_BOOLEAN_VALUE = ["true", "false"]
+USERNAME_ONLY_KEY = "username_only"
 
 
 class PrincipalView(APIView):
@@ -143,9 +144,10 @@ class PrincipalView(APIView):
         usernames = query_params.get(USERNAMES_KEY)
         email = query_params.get(EMAIL_KEY)
         match_criteria = validate_and_get_key(query_params, MATCH_CRITERIA_KEY, VALID_MATCH_VALUE, "exact")
+        options["username_only"] = validate_and_get_key(query_params, USERNAME_ONLY_KEY, VALID_BOOLEAN_VALUE, "false")
 
         if not usernames and not email:
-            options["admin_only"] = validate_and_get_key(query_params, ADMIN_ONLY_KEY, VALID_ADMIN_ONLY_VALUE, "false")
+            options["admin_only"] = validate_and_get_key(query_params, ADMIN_ONLY_KEY, VALID_BOOLEAN_VALUE, "false")
             resp = proxy.request_principals(
                 account=user.account, org_id=user.org_id, limit=limit, offset=offset, options=options
             )
