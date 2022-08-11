@@ -3057,6 +3057,17 @@
           }
         }
       },
+      "PrincipalMinimal": {
+        "required": [
+          "username"
+        ],
+        "properties": {
+          "username": {
+            "type": "string",
+            "example": "smithj"
+          }
+        }
+      },
       "PrincipalIn": {
         "required": [
           "username"
@@ -3092,7 +3103,14 @@
               "data": {
                 "type": "array",
                 "items": {
-                  "$ref": "#/components/schemas/Principal"
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/Principal"
+                    },
+                    {
+                      "$ref": "#/components/schemas/PrincipalMinimal"
+                    }
+                  ]
                 }
               }
             }
