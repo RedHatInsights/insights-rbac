@@ -272,7 +272,7 @@ class PrincipalViewsetTests(IdentityRequest):
             org_id=ANY,
             limit=10,
             offset=30,
-            options={"sort_order": "asc"},
+            options={"sort_order": "asc", "status": "enabled", "username_only": "false"},
         )
         # Cross account user won't be returned.
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -299,7 +299,12 @@ class PrincipalViewsetTests(IdentityRequest):
         response = client.get(url, **self.headers)
 
         mock_request.assert_called_once_with(
-            ["test_user75"], account=ANY, org_id=ANY, limit=10, offset=30, options={"sort_order": "asc"}
+            ["test_user75"],
+            account=ANY,
+            org_id=ANY,
+            limit=10,
+            offset=30,
+            options={"sort_order": "asc", "status": "enabled", "username_only": "false"},
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         for keyname in ["meta", "links", "data"]:
@@ -415,7 +420,12 @@ class PrincipalViewsetTests(IdentityRequest):
         response = client.get(url, **self.headers)
 
         mock_request.assert_called_once_with(
-            ["test_user"], account=ANY, org_id=ANY, limit=10, offset=30, options={"sort_order": "desc"}
+            ["test_user"],
+            account=ANY,
+            org_id=ANY,
+            limit=10,
+            offset=30,
+            options={"sort_order": "desc", "status": "enabled", "username_only": "false"},
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         for keyname in ["meta", "links", "data"]:
