@@ -631,6 +631,19 @@
                 "username"
               ]
             }
+          },
+          {
+            "in": "query",
+            "name": "username_only",
+            "required": false,
+            "description": "Parameter for optionally returning only usernames for principals, bypassing a call to IT.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ]
+            }
           }
         ],
         "responses": {
@@ -1188,6 +1201,19 @@
               "type": "string",
               "enum": [
                 "username"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "username_only",
+            "required": false,
+            "description": "Parameter for optionally returning only usernames for principals, bypassing a call to IT.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
               ]
             }
           }
