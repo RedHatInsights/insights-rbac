@@ -163,7 +163,7 @@ class PrincipalView(APIView):
                     org_id=user.org_id,
                     limit=limit,
                     offset=offset,
-                    options={"sort_order": options["sort_order"]},
+                    options=options,
                 )
                 usernames_filter = f"&usernames={usernames}"
                 return resp, usernames_filter
