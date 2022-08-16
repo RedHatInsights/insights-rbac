@@ -100,7 +100,7 @@ class GroupViewsetTests(IdentityRequest):
         self.defPolicy = Policy(name="defPolicy", system=True, tenant=self.public_tenant, group=self.defGroup)
         self.defPolicy.save()
 
-        self.adminGroup = Group(name="groupAdmin", admin_default=True, tenant=self.public_tenant)
+        self.adminGroup = Group(name="groupAdmin", admin_default=True, tenant=self.public_tenant, system=True)
         self.adminGroup.save()
         self.adminGroup.principals.add(self.principal, self.test_principal)
         self.adminGroup.save()
@@ -419,7 +419,9 @@ class GroupViewsetTests(IdentityRequest):
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         response_group_uuids = [group["uuid"] for group in response.data.get("data")]
-        self.assertCountEqual(response_group_uuids, [str(self.defGroup.uuid), str(system_group.uuid)])
+        self.assertCountEqual(
+            response_group_uuids, [str(self.defGroup.uuid), str(system_group.uuid), str(self.adminGroup.uuid)]
+        )
 
     def test_filter_group_list_by_system_false(self):
         """Test that we can filter a list of groups by system flag false."""
@@ -428,7 +430,7 @@ class GroupViewsetTests(IdentityRequest):
         response = client.get(url, **self.headers)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(response.data.get("data")), 5)
+        self.assertEqual(len(response.data.get("data")), 4)
         response_group_uuids = [group["uuid"] for group in response.data.get("data")]
         self.assertCountEqual(
             response_group_uuids,
@@ -437,7 +439,6 @@ class GroupViewsetTests(IdentityRequest):
                 str(self.groupB.uuid),
                 str(self.emptyGroup.uuid),
                 str(self.groupMultiRole.uuid),
-                str(self.adminGroup.uuid),
             ],
         )
 
@@ -627,6 +628,30 @@ class GroupViewsetTests(IdentityRequest):
         client = APIClient()
         response = client.delete(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_delete_custom_default_group(self):
+        """Test that custom platform_default groups can be deleted and the public default group becomes default for the tenant"""
+        client = APIClient()
+        customDefGroup = Group(name="customDefGroup", platform_default=True, system=False, tenant=self.tenant)
+        customDefGroup.save()
+        customDefGroup.principals.add(self.test_principal)
+        customDefGroup.save()
+        customDefPolicy = Policy(name="customDefPolicy", system=True, tenant=self.tenant, group=customDefGroup)
+        customDefPolicy.save()
+
+        url = f"{reverse('group-list')}?platform_default=true"
+        response = client.get(url, **self.headers)
+        self.assertEqual(len(response.data.get("data")), 1)
+        self.assertEqual(response.data.get("data")[0]["uuid"], str(customDefGroup.uuid))
+
+        url = reverse("group-detail", kwargs={"uuid": customDefGroup.uuid})
+        response = client.delete(url, **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+
+        url = f"{reverse('group-list')}?platform_default=true"
+        response = client.get(url, **self.headers)
+        self.assertEqual(len(response.data.get("data")), 1)
+        self.assertEqual(response.data.get("data")[0]["uuid"], str(self.defGroup.uuid))
 
     def test_delete_group_invalid(self):
         """Test that deleting an invalid group returns an error."""

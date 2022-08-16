@@ -19,7 +19,7 @@ from unittest.mock import call, patch
 from api.models import Tenant
 
 from django.conf import settings
-from management.group.definer import seed_group, add_roles
+from management.group.definer import seed_group, add_roles, clone_default_group_in_public_schema
 from management.role.definer import seed_roles
 from tests.identity_request import IdentityRequest
 from management.models import Group, Role
@@ -140,3 +140,16 @@ class GroupDefinerTests(IdentityRequest):
         for role in group.roles():
             self.assertTrue(role.admin_default)
             self.assertEqual(role.tenant, self.public_tenant)
+
+    def test_clone_default_group_in_public_schema(self):
+        """Test that the custom default group contains only public tenant roles by default."""
+        invalid_role = Role.objects.create(
+            platform_default=True, system=True, tenant=self.tenant, name="INVALID SYSTEM ROLE ON TENANT"
+        )
+        group = Group.objects.get(platform_default=True, tenant=self.public_tenant)
+        self.assertEqual(Group.objects.filter(platform_default=True, tenant=self.tenant).count(), 0)
+        clone_default_group_in_public_schema(group, self.tenant)
+
+        self.assertEqual(Group.objects.filter(platform_default=True, tenant=self.tenant).count(), 1)
+        custom_default_group = Group.objects.filter(platform_default=True, tenant=self.tenant).last()
+        self.assertTrue(invalid_role not in list(custom_default_group.roles()))
