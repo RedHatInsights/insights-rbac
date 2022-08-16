@@ -404,7 +404,7 @@ class RoleViewSet(
         """Return access objects for specified role."""
         validate_uuid(uuid, "role uuid validation")
         try:
-            role = Role.objects.get(uuid=uuid, tenant=request.tenant)
+            role = Role.objects.get(uuid=uuid)
         except (Role.DoesNotExist, ValidationError):
             raise Http404()
 
