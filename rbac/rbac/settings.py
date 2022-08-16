@@ -389,6 +389,19 @@ if ENVIRONMENT.bool("CLOWDER_ENABLED", default=False):
     kafka_broker = LoadedConfig.kafka.brokers[0]
     KAFKA_HOST = kafka_broker.hostname
     KAFKA_PORT = kafka_broker.port
+    try:
+        if kafka_broker.authtype == "sasl":
+            KAFKA_AUTH = {
+                "bootstrap_servers": f"{KAFKA_HOST}:{KAFKA_PORT}",
+                "sasl_plain_username": kafka_broker.sasl.username,
+                "sasl_plain_password": kafka_broker.sasl.password,
+                "sasl_mechanism": kafka_broker.sasl.saslMechanism.upper(),
+                "security_protocol": kafka_broker.sasl.securityProtocol.upper(),
+            }
+        else:
+            KAFKA_AUTH = False
+    except AttributeError:
+        KAFKA_AUTH = False
 else:
     KAFKA_HOST = "localhost"
     KAFKA_PORT = "9092"

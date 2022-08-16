@@ -33,7 +33,7 @@ from management.group.serializer import (
     GroupSerializer,
     RoleMinimumSerializer,
 )
-from management.notifications.notification_hanlders import (
+from management.notifications.notification_handlers import (
     group_obj_change_notification_handler,
     group_principal_change_notification_handler,
 )

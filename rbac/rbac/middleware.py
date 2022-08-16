@@ -202,7 +202,7 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
         user = User()
         try:
             _, json_rh_auth = extract_header(request, self.header)
-            user.account = json_rh_auth.get("identity", {})["account_number"]
+            user.account = json_rh_auth.get("identity", {}).get("account_number")
             user.org_id = json_rh_auth.get("identity", {}).get("org_id") or json_rh_auth.get("identity").get(
                 "internal"
             ).get("org_id")
