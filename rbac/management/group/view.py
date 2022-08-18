@@ -39,9 +39,9 @@ from management.notifications.notification_hanlders import (
 )
 from management.permissions import GroupAccessPermission
 from management.principal.model import Principal
-from management.principal.view import USERNAME_ONLY_KEY, VALID_BOOLEAN_VALUE
 from management.principal.proxy import PrincipalProxy
 from management.principal.serializer import PrincipalSerializer
+from management.principal.view import USERNAME_ONLY_KEY, VALID_BOOLEAN_VALUE
 from management.querysets import get_group_queryset, get_role_queryset
 from management.role.view import RoleViewSet
 from management.utils import validate_and_get_key, validate_group_name, validate_uuid
