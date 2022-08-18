@@ -1204,9 +1204,13 @@ class GroupViewsetTests(IdentityRequest):
         principals = response.data.get("data")
 
         if settings.AUTHENTICATE_WITH_ORG_ID:
-            mock_request.assert_called_with([], options={"sort_order": None}, org_id=self.customer_data["org_id"])
+            mock_request.assert_called_with(
+                [], options={"sort_order": None, "username_only": "false"}, org_id=self.customer_data["org_id"]
+            )
         else:
-            mock_request.assert_called_with([], account=self.customer_data["account_id"], options={"sort_order": None})
+            mock_request.assert_called_with(
+                [], account=self.customer_data["account_id"], options={"sort_order": None, "username_only": "false"}
+            )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(principals), 0)
 
@@ -1224,11 +1228,15 @@ class GroupViewsetTests(IdentityRequest):
 
         if settings.AUTHENTICATE_WITH_ORG_ID:
             mock_request.assert_called_with(
-                [self.principal.username], options={"sort_order": None}, org_id=self.customer_data["org_id"]
+                [self.principal.username],
+                options={"sort_order": None, "username_only": "false"},
+                org_id=self.customer_data["org_id"],
             )
         else:
             mock_request.assert_called_with(
-                [self.principal.username], account=self.customer_data["account_id"], options={"sort_order": None}
+                [self.principal.username],
+                account=self.customer_data["account_id"],
+                options={"sort_order": None, "username_only": "false"},
             )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(principals), 1)
@@ -1247,11 +1255,15 @@ class GroupViewsetTests(IdentityRequest):
 
         if settings.AUTHENTICATE_WITH_ORG_ID:
             mock_request.assert_called_with(
-                expected_principals, options={"sort_order": "asc"}, org_id=self.customer_data["org_id"]
+                expected_principals,
+                options={"sort_order": "asc", "username_only": "false"},
+                org_id=self.customer_data["org_id"],
             )
         else:
             mock_request.assert_called_with(
-                expected_principals, account=self.customer_data["account_id"], options={"sort_order": "asc"}
+                expected_principals,
+                account=self.customer_data["account_id"],
+                options={"sort_order": "asc", "username_only": "false"},
             )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(principals), 1)

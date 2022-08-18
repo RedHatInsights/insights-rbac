@@ -41,6 +41,7 @@ from management.permissions import GroupAccessPermission
 from management.principal.model import Principal
 from management.principal.proxy import PrincipalProxy
 from management.principal.serializer import PrincipalSerializer
+from management.principal.view import USERNAME_ONLY_KEY, VALID_BOOLEAN_VALUE
 from management.querysets import get_group_queryset, get_role_queryset
 from management.role.view import RoleViewSet
 from management.utils import validate_and_get_key, validate_group_name, validate_uuid
@@ -525,14 +526,16 @@ class GroupViewSet(
                 sort_order = "des" if sort_field == "-username" else "asc"
             else:
                 sort_order = None
+            options = {
+                "sort_order": sort_order,
+                "username_only": validate_and_get_key(
+                    request.query_params, USERNAME_ONLY_KEY, VALID_BOOLEAN_VALUE, "false"
+                ),
+            }
             if settings.AUTHENTICATE_WITH_ORG_ID:
-                resp = proxy.request_filtered_principals(
-                    username_list, org_id=org_id, options={"sort_order": sort_order}
-                )
+                resp = proxy.request_filtered_principals(username_list, org_id=org_id, options=options)
             else:
-                resp = proxy.request_filtered_principals(
-                    username_list, account=account, options={"sort_order": sort_order}
-                )
+                resp = proxy.request_filtered_principals(username_list, account=account, options=options)
             if isinstance(resp, dict) and "errors" in resp:
                 return Response(status=resp.get("status_code"), data=resp.get("errors"))
             response = self.get_paginated_response(resp.get("data"))
