@@ -11,6 +11,10 @@
   },
   "tags": [
     {
+      "name": "Role",
+      "description": "Operations about roles"
+    },
+    {
       "name": "Group",
       "description": "Operations about groups"
     },
@@ -20,6 +24,185 @@
     }
   ],
   "paths": {
+    "/integrations/tenant/{orgId}/roles/": {
+      "get": {
+        "tags": [
+          "Role"
+        ],
+        "summary": "List the roles for a tenant",
+        "description": "By default, responses are sorted in ascending order by role name",
+        "operationId": "listRole",
+        "parameters": [
+          {
+            "name": "orgId",
+            "in": "path",
+            "description": "Organization ID of the tenant",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "name",
+            "in": "query",
+            "required": false,
+            "description": "Parameter for filtering roles by role `name` using string contains search.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "display_name",
+            "in": "query",
+            "required": false,
+            "description": "Parameter for filtering resource by display_name using string contains search.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "system",
+            "in": "query",
+            "required": false,
+            "description": "Parameter for filtering resource by system flag.",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "name_match",
+            "in": "query",
+            "required": false,
+            "description": "Parameter for specifying the matching criteria for an object's name or display_name.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "partial",
+                "exact"
+              ]
+            }
+          },
+          {
+            "name": "scope",
+            "in": "query",
+            "required": false,
+            "description": "Parameter for filtering resource by scope.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "account",
+                "principal"
+              ]
+            }
+          },
+          {
+            "$ref": "#/components/parameters/QueryLimit"
+          },
+          {
+            "$ref": "#/components/parameters/QueryOffset"
+          },
+          {
+            "in": "query",
+            "name": "order_by",
+            "required": false,
+            "description": "Parameter for ordering roles by value. For inverse ordering, supply '-' before the param value, such as: ?order_by=-name",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "name",
+                "display_name",
+                "modified",
+                "policyCount"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "add_fields",
+            "required": false,
+            "description": "Parameter for add list of fields to display for roles.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "groups_in",
+                "groups_in_count"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "username",
+            "required": false,
+            "description": "Optional parameter for filtering by username",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "application",
+            "required": false,
+            "description": "The application name(s) to filter roles by, from permissions. This is an exact match. You may also use a comma-separated list to match on multiple applications.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "permission",
+            "required": false,
+            "description": "The permission(s) to filter roles by, from permissions. This is an exact match. You may also use a comma-separated list to match on multiple permissions.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "external_tenant",
+            "required": false,
+            "description": "Parameter for filtering roles by external tenant name using string search.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A paginated list of role objects",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RolePagination"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Insufficient permissions to list roles",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error403"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/integrations/tenant/{orgId}/groups/": {
       "get": {
         "tags": [
@@ -199,7 +382,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/GroupRolesPagination"
+                  "$ref": "#/components/schemas/RolePagination"
                 }
               }
             }
@@ -400,7 +583,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/GroupRolesPagination"
+                  "$ref": "#/components/schemas/RolePagination"
                 }
               }
             }
@@ -641,7 +824,7 @@
           }
         ]
       },
-      "GroupRolesPagination": {
+      "RolePagination": {
         "allOf": [
           {
             "$ref": "#/components/schemas/ListPagination"
