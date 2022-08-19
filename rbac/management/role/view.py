@@ -30,7 +30,7 @@ from django.utils.translation import gettext as _
 from django_filters import rest_framework as filters
 from management.filters import CommonFilters
 from management.models import Permission
-from management.notifications.notification_hanlders import role_obj_change_notification_handler
+from management.notifications.notification_handlers import role_obj_change_notification_handler
 from management.permissions import RoleAccessPermission
 from management.querysets import get_role_queryset
 from management.role.serializer import AccessSerializer, RoleDynamicSerializer, RolePatchSerializer
@@ -404,7 +404,7 @@ class RoleViewSet(
         """Return access objects for specified role."""
         validate_uuid(uuid, "role uuid validation")
         try:
-            role = Role.objects.get(uuid=uuid, tenant=request.tenant)
+            role = Role.objects.get(uuid=uuid)
         except (Role.DoesNotExist, ValidationError):
             raise Http404()
 
