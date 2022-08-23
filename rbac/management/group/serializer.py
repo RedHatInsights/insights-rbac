@@ -17,7 +17,7 @@
 
 """Serializer for group management."""
 from management.group.model import Group
-from management.notifications.notification_hanlders import group_obj_change_notification_handler
+from management.notifications.notification_handlers import group_obj_change_notification_handler
 from management.principal.proxy import PrincipalProxy
 from management.principal.serializer import PrincipalInputSerializer, PrincipalSerializer
 from management.role.serializer import RoleMinimumSerializer

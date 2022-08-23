@@ -631,6 +631,19 @@
                 "username"
               ]
             }
+          },
+          {
+            "in": "query",
+            "name": "username_only",
+            "required": false,
+            "description": "Parameter for optionally returning only usernames for principals, bypassing a call to IT.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ]
+            }
           }
         ],
         "responses": {
@@ -1188,6 +1201,19 @@
               "type": "string",
               "enum": [
                 "username"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "username_only",
+            "required": false,
+            "description": "Parameter for optionally returning only usernames for principals, bypassing a call to IT.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
               ]
             }
           }
@@ -3031,6 +3057,17 @@
           }
         }
       },
+      "PrincipalMinimal": {
+        "required": [
+          "username"
+        ],
+        "properties": {
+          "username": {
+            "type": "string",
+            "example": "smithj"
+          }
+        }
+      },
       "PrincipalIn": {
         "required": [
           "username"
@@ -3066,7 +3103,14 @@
               "data": {
                 "type": "array",
                 "items": {
-                  "$ref": "#/components/schemas/Principal"
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/Principal"
+                    },
+                    {
+                      "$ref": "#/components/schemas/PrincipalMinimal"
+                    }
+                  ]
                 }
               }
             }
