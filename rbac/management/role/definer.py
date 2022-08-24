@@ -140,7 +140,7 @@ def seed_roles():
     if destructive_ok():
         logger.info(f"Removing the following role(s): {roles_to_delete.values()}")
         # Actually remove roles no longer in config
-        Role.objects.filter(system=True).exclude(id__in=current_role_ids).delete()
+        roles_to_delete.delete()
 
 
 def seed_permissions():
@@ -204,4 +204,4 @@ def seed_permissions():
     if destructive_ok():
         logger.info(f"Removing the following role(s): {perms_to_delete.values()}")
         # Actually remove perms no longer in DB
-        Permission.objects.exclude(id__in=current_permission_ids).delete()
+        perms_to_delete.delete()
