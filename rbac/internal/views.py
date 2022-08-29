@@ -16,11 +16,10 @@
 #
 
 """View for internal tenant management."""
-import datetime
 import json
 import logging
 
-import pytz
+from core.utils import destructive_ok
 from django.conf import settings
 from django.db import transaction
 from django.db.migrations.recorder import MigrationRecorder
@@ -41,12 +40,6 @@ from api.tasks import cross_account_cleanup, populate_tenant_account_id_in_worke
 
 logger = logging.getLogger(__name__)
 TENANTS = TenantCache()
-
-
-def destructive_ok():
-    """Determine if it's ok to run destructive operations."""
-    now = datetime.datetime.utcnow().replace(tzinfo=pytz.UTC)
-    return now < settings.INTERNAL_DESTRUCTIVE_API_OK_UNTIL
 
 
 def tenant_is_modified(tenant_name=None, org_id=None):
