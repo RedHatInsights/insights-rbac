@@ -202,6 +202,6 @@ def seed_permissions():
         f"The following '{perms_to_delete.count()}' permission(s) eligible for removal: {perms_to_delete.values()}"
     )
     if destructive_ok():
-        logger.info(f"Removing the following role(s): {perms_to_delete.values()}")
+        logger.info(f"Removing the following permissions(s): {perms_to_delete.values()}")
         # Actually remove perms no longer in DB
         perms_to_delete.delete()
