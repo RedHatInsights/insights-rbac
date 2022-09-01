@@ -49,9 +49,9 @@ class NotificationProducer:
 
         if settings.NOTIFICATIONS_ENABLED:
             if settings.KAFKA_AUTH:
-                self.producer = KafkaProducer(**settings.KAFKA_AUTH)
+                self.producer = KafkaProducer(**settings.KAFKA_AUTH, api_version=(1, 0, 2))
             else:
-                self.producer = KafkaProducer(bootstrap_servers=settings.KAFKA_SERVER)
+                self.producer = KafkaProducer(bootstrap_servers=settings.KAFKA_SERVER, api_version=(1, 0, 2))
         else:
             self.producer = FakeKafkaProducer()
         return self.producer
