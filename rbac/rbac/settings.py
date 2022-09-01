@@ -385,6 +385,7 @@ CHANNEL_LAYERS = {
 }
 
 # Kafka settings
+MOCK_KAFKA = ENVIRONMENT.get_value("MOCK_KAFKA", default=False)
 if ENVIRONMENT.bool("CLOWDER_ENABLED", default=False):
     kafka_broker = LoadedConfig.kafka.brokers[0]
     KAFKA_HOST = kafka_broker.hostname
@@ -405,7 +406,9 @@ if ENVIRONMENT.bool("CLOWDER_ENABLED", default=False):
 else:
     KAFKA_HOST = "localhost"
     KAFKA_PORT = "9092"
+    KAFKA_AUTH = False
 KAFKA_SERVER = f"{KAFKA_HOST}:{KAFKA_PORT}"
 
 NOTIFICATIONS_ENABLED = ENVIRONMENT.get_value("NOTIFICATIONS_ENABLED", default=False)
 NOTIFICATIONS_RH_ENABLED = ENVIRONMENT.get_value("NOTIFICATIONS_RH_ENABLED", default=False)
+NOTIFICATIONS_TOPIC = ENVIRONMENT.get_value("NOTIFICATIONS_TOPIC", default='platform.notifications.ingress')
