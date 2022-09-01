@@ -66,7 +66,7 @@ class GroupDefinerTests(IdentityRequest):
         self.assertEqual(group.tenant, self.public_tenant)
         group.roles().get(name="Ansible Automation Access Local Test")
 
-    @patch("management.notifications.producer_util.NotificationProducer.send_kafka_message")
+    @patch("core.kafka.RBACProducer.send_kafka_message")
     def test_default_group_seeding_reassign_roles(self, send_kafka_message):
         """Test that previous assigned roles would be eliminated before assigning new roles."""
         self.modify_default_group()
