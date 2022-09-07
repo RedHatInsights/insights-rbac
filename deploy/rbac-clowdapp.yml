@@ -427,6 +427,8 @@ objects:
             value: ${NOTIFICATIONS_ENABLED}
           - name: GUNICORN_WORKER_MULTIPLIER
             value: ${GUNICORN_WORKER_MULTIPLIER}
+          - name: NOTIFICATIONS_TOPIC
+            value: ${NOTIFICATIONS_TOPIC}
     jobs:
       - name: tenant-org-id-populator
         podSpec:
@@ -2089,3 +2091,5 @@ parameters:
   value: '8892'
 - name: GUNICORN_WORKER_MULTIPLIER
   value: '2'
+- name: NOTIFICATIONS_TOPIC
+  value: 'platform.notifications.ingress'
