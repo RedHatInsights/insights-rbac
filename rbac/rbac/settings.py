@@ -35,7 +35,7 @@ import pytz
 from boto3 import client as boto_client
 from corsheaders.defaults import default_headers
 from dateutil.parser import parse as parse_dt
-from app_common_python import LoadedConfig
+from app_common_python import LoadedConfig, KafkaTopics
 
 from . import ECSCustom
 
@@ -410,3 +410,7 @@ KAFKA_SERVER = f"{KAFKA_HOST}:{KAFKA_PORT}"
 NOTIFICATIONS_ENABLED = ENVIRONMENT.get_value("NOTIFICATIONS_ENABLED", default=False)
 NOTIFICATIONS_RH_ENABLED = ENVIRONMENT.get_value("NOTIFICATIONS_RH_ENABLED", default=False)
 NOTIFICATIONS_TOPIC = ENVIRONMENT.get_value("NOTIFICATIONS_TOPIC", default=None)
+
+clowder_notifications_topic = KafkaTopics.get(NOTIFICATIONS_TOPIC)
+if clowder_notifications_topic:
+    NOTIFICATIONS_TOPIC = clowder_notifications_topic.name
