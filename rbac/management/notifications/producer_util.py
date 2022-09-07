@@ -36,7 +36,7 @@ class FakeKafkaProducer:
         pass
 
 
-notification_topic = "platform.notifications.ingress"
+notification_topic = "env-ephemeral-xsgbrz-platform.notifications.ingress"
 
 
 class NotificationProducer:
