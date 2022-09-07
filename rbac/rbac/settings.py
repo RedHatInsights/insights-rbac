@@ -390,7 +390,7 @@ if ENVIRONMENT.bool("CLOWDER_ENABLED", default=False):
     KAFKA_HOST = kafka_broker.hostname
     KAFKA_PORT = kafka_broker.port
     try:
-        if kafka_broker.authtype == "sasl":
+        if kafka_broker.authtype.value == "sasl":
             KAFKA_AUTH = {
                 "bootstrap_servers": f"{KAFKA_HOST}:{KAFKA_PORT}",
                 "sasl_plain_username": kafka_broker.sasl.username,
