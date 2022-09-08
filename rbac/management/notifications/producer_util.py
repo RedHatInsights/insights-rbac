@@ -36,9 +36,6 @@ class FakeKafkaProducer:
         pass
 
 
-notification_topic = "platform.notifications.ingress"
-
-
 class NotificationProducer:
     """Kafka message producer to emit events to notification service."""
 
@@ -73,14 +70,16 @@ class NotificationProducer:
         message = self.create_message(event_type, payload, account_id=account_id, org_id=org_id)
         json_data = json.dumps(message).encode("utf-8")
 
-        producer.send(notification_topic, value=json_data, headers=[("rh-message-id", str(uuid4()).encode("utf-8"))])
+        producer.send(
+            settings.NOTIFICATIONS_TOPIC, value=json_data, headers=[("rh-message-id", str(uuid4()).encode("utf-8"))]
+        )
 
 
 """
 This consumer could be used for local testing.
 def consume_message():
     from kafka import KafkaConsumer
-    consumer = KafkaConsumer(notification_topic,
+    consumer = KafkaConsumer(settings.NOTIFICATIONS_TOPIC,
             bootstrap_servers=[settings.KAFKA_SERVER],
         )
     for message in consumer:
