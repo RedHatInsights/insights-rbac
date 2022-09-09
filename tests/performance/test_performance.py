@@ -10,10 +10,12 @@
 # optional req: 2 groups per principle, 5 roles per group with 10 permissions each
 
 from http.client import REQUEST_TIMEOUT
+import pdb
 import time
 
 import concurrent
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from faker import Faker
 
 from base64 import b64encode
 from json import dumps as json_dumps
@@ -44,14 +46,18 @@ class OCMPerformanceTest(TestCase):
     def setUpTestData(cls):
         """Set up the test data."""
 
+        fake = Faker()
+
         tenants = []
         ext_tenant = ExtTenant.objects.create(
                 name="ocm")
         # create 2k tenants locally (so 2k different orgs)
         for i in range(N_TENANTS):
+            account = fake.ean8()
             tenants.append(Tenant.objects.create(
-                org_id=f"{i}",
-                tenant_name=f"Tenant {i}"
+                org_id=fake.ean8(),
+                account_id=account,
+                tenant_name=f"acct{account}",
             ))
             tenants[i].ready = True
             tenants[i].save()
@@ -117,15 +123,32 @@ class OCMPerformanceTest(TestCase):
 
         start = timerStart("Tenant groups")
 
-        for t in tenants:
+        def tenant_groups(self, tenant):
+            pdb.set_trace()
             response = self.client.get(
-              f"/_private/api/v1/integrations/tenant/{t.org_id}/groups/?external_tenant=ocm",
+                f"/_private/api/v1/integrations/tenant/{tenant.org_id}/groups/?external_tenant=ocm",
                 HEADERS,
                 follow=True,
             )
 
-            self.assertEqual(response.status_code, status.HTTP_200_OK)
-            self.assertEqual(response.data.get("meta").get("count"), GROUPS_PER_TENANT)
+            return response.status_code
+
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            futures = []
+            for t in tenants:
+                futures.append(executor.submit(tenant_groups, self=self, tenant=t))
+            for future in as_completed(futures):
+                print(future.result())
+
+        # for t in tenants:
+        #     response = self.client.get(
+        #       f"/_private/api/v1/integrations/tenant/{t.org_id}/groups/?external_tenant=ocm",
+        #         HEADERS,
+        #         follow=True,
+        #     )
+
+        #     self.assertEqual(response.status_code, status.HTTP_200_OK)
+        #     self.assertEqual(response.data.get("meta").get("count"), GROUPS_PER_TENANT)
 
         timerStop(start, N_TENANTS)
 
@@ -255,12 +278,27 @@ class OCMPerformanceTest(TestCase):
             # no ocm specific endpoint to get principals per tenant
 
             # make header with tenant specified
+            head  = {"identity": {
+                        "account_number": t.account_id,
+                        "org_id": t.org_id,
+                        "type": "Associate",
+                        "user": {
+                            "username": "user_dev",
+                            "email": "user_dev@foo.com",
+                            "is_org_admin": True,
+                            "is_internal": True,
+                            "user_id": "51736777",
+                        },
+                        "internal": {"cross_access": False},
+                    }
+                }
+
             response = self.client.get(
-                f"/_private/api/v1/principals/?external_tenant=ocm",
-                HEADERS,
+                f"/api/rbac/v1/principals/?external_tenant=ocm",
+                head,
                 follow=True,
             )
-            
+
             principals = Principal.objects.filter(tenant=t)
             for p in principals:
                 response = self.client.get(
