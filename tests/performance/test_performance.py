@@ -31,6 +31,9 @@ from api.serializers import create_tenant_name
 from rbac.middleware import HttpResponseUnauthorizedRequest, IdentityHeaderMiddleware, TENANTS
 from management.models import Access, Group, Permission, Principal, Policy, ResourceDefinition, Role
 
+# for spreadsheeting
+import openpyxl as xl
+
 N = 10 # number of roles per group, number of principals per group
 N_TENANTS = 10
 
@@ -41,10 +44,34 @@ HEADERS = {"User-Type":"associate"}
 
 THREADS = 10
 
+PATH = "ocm_performance.xlsx"
+
 class OCMPerformanceTest(TestCase):
     @classmethod
     def setUpTestData(cls):
         """Set up the test data."""
+
+        # Create spreadsheet
+        cls.wb = xl.Workbook()
+        ws = cls.wb.active
+
+        c1 = ws.cell(row=1, column=1)
+        c1.value = "Test Name"
+
+        c2 = ws.cell(row=1, column=2)
+        c2.value = "Request URL"
+
+        c3 = ws.cell(row=1, column=3)
+        c3.value = "Number of Requests"
+
+        c4 = ws.cell(row=1, column=4)
+        c4.value = "Completion Time (s)"
+
+        c5 = ws.cell(row=1, column=5)
+        c5.value = "Average Time per Request (s)"
+
+        c6 = ws.cell(row=1, column=6)
+        c6.value = "Requests per Second"
 
         fake = Faker()
 
@@ -121,43 +148,53 @@ class OCMPerformanceTest(TestCase):
         tenants = Tenant.objects.exclude(tenant_name="public")
         # 1 request for each tenant (to get tenant's groups)
 
-        start = timerStart("Tenant groups")
+        name = "Tenant Groups"
+        start = timerStart(name)
 
         def tenant_groups(self, tenant):
-            pdb.set_trace()
             response = self.client.get(
                 f"/_private/api/v1/integrations/tenant/{tenant.org_id}/groups/?external_tenant=ocm",
                 HEADERS,
                 follow=True,
             )
 
-            return response.status_code
+            return response
 
-        with ThreadPoolExecutor(max_workers=1) as executor:
-            futures = []
-            for t in tenants:
-                futures.append(executor.submit(tenant_groups, self=self, tenant=t))
-            for future in as_completed(futures):
-                print(future.result())
+        # with ThreadPoolExecutor(max_workers=1) as executor:
+        #     futures = []
+        #     for t in tenants:
+        #         futures.append(executor.submit(tenant_groups, self=self, tenant=t))
+        #     for future in as_completed(futures):
+        #         print(future.result())
 
-        # for t in tenants:
-        #     response = self.client.get(
-        #       f"/_private/api/v1/integrations/tenant/{t.org_id}/groups/?external_tenant=ocm",
-        #         HEADERS,
-        #         follow=True,
-        #     )
+        for t in tenants:
+            response = self.client.get(
+              f"/_private/api/v1/integrations/tenant/{t.org_id}/groups/?external_tenant=ocm",
+                HEADERS,
+                follow=True,
+            )
 
-        #     self.assertEqual(response.status_code, status.HTTP_200_OK)
-        #     self.assertEqual(response.data.get("meta").get("count"), GROUPS_PER_TENANT)
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            self.assertEqual(response.data.get("meta").get("count"), GROUPS_PER_TENANT)
 
-        timerStop(start, N_TENANTS)
+        number_of_requests = N_TENANTS
+        request_time, average = timerStop(start, number_of_requests)
+
+        write_to_excel(
+            self, 
+            name, 
+            "/api/v1/integrations/tenant/org_id/groups/", 
+            number_of_requests, 
+            request_time, 
+            average)
 
     def test_tenant_roles(self):
         """Test tenant roles with /integrations/tenant/{tenant_id}/roles/ endpoint."""
         tenants = Tenant.objects.exclude(tenant_name="public")
         # 1 request for each tenant (to get the tenant's roles)
 
-        start = timerStart("Tenant roles")
+        name = "Tenant Roles"
+        start = timerStart(name)
         
         for t in tenants:
             response = self.client.get(
@@ -169,7 +206,17 @@ class OCMPerformanceTest(TestCase):
             self.assertEqual(response.status_code, status.HTTP_200_OK)
             self.assertEqual(response.data.get("meta").get("count"), N * GROUPS_PER_TENANT)
         
-        timerStop(start, N_TENANTS)
+        number_of_requests = N_TENANTS
+        request_time, average = timerStop(start, number_of_requests)
+
+        write_to_excel(
+            self, 
+            name, 
+            "/api/v1/integrations/tenant/{org_id}/roles/", 
+            number_of_requests, 
+            request_time, 
+            average
+        )
 
     def test_group_roles(self):
         """Test group roles with /integrations/tenant/{tenant_id}/groups/{group_id}/roles/ endpoint."""
@@ -177,7 +224,8 @@ class OCMPerformanceTest(TestCase):
 
         tenants = Tenant.objects.exclude(tenant_name="public")
 
-        start = timerStart("Group Roles")
+        name = "Group Roles"
+        start = timerStart(name)
 
         for t in tenants:
             groups = Group.objects.filter(tenant=t)
@@ -191,8 +239,18 @@ class OCMPerformanceTest(TestCase):
 
                 self.assertEqual(response.status_code, status.HTTP_200_OK)
                 self.assertEqual(response.data.get("meta").get("count"), N)
+        
+        number_of_requests = N_TENANTS * GROUPS_PER_TENANT
+        request_time, average = timerStop(start, number_of_requests)
 
-        timerStop(start, N_TENANTS * GROUPS_PER_TENANT)
+        write_to_excel(
+            self, 
+            name, 
+            "/api/v1/integrations/tenant/{org_id}/groups/{g_uuid}/roles/", 
+            number_of_requests, 
+            request_time, 
+            average
+        )
 
     def test_principals_groups(self):
         """Test tenant principals groups with /integrations/tenant/{tenant_id}/principal/{principal_id}/groups/ endpoint."""
@@ -200,7 +258,8 @@ class OCMPerformanceTest(TestCase):
 
         tenants = Tenant.objects.exclude(tenant_name="public")
 
-        start = timerStart("Principals Groups")
+        name = "Principals Groups"
+        start = timerStart(name)
 
         for t in tenants:
             principals = Principal.objects.filter(tenant=t)
@@ -215,14 +274,25 @@ class OCMPerformanceTest(TestCase):
                 self.assertEqual(response.status_code, status.HTTP_200_OK)
                 self.assertEqual(response.data.get("meta").get("count"), GROUPS_PER_TENANT)
 
-        timerStop(start, N_TENANTS * PRINCIPLES_PER_TENANT)
+        number_of_requests = N_TENANTS * PRINCIPLES_PER_TENANT
+        request_time, average = timerStop(start, N_TENANTS * PRINCIPLES_PER_TENANT)
+
+        write_to_excel(
+            self, 
+            name, 
+            "/api/v1/integrations/tenant/{org_id}/principal/{username}/groups/", 
+            number_of_requests, 
+            request_time, 
+            average
+        )
 
     def test_principals_roles(self):
         """Test tenant principals roles with /integrations/tenant/{tenant_id}/principal/{principal_id}/groups/{group_id}/roles/ endpoint."""
         # 1 request for each tenant (to get the principles)
         tenants = Tenant.objects.exclude(tenant_name="public")
 
-        start = timerStart("Principals Roles")
+        name = "Principals Roles"
+        start = timerStart(name)
 
         for t in tenants:
             principals = Principal.objects.filter(tenant=t)
@@ -240,14 +310,26 @@ class OCMPerformanceTest(TestCase):
                     self.assertEqual(response.status_code, status.HTTP_200_OK)
                     self.assertEqual(response.data.get("meta").get("count"), N)
 
-        timerStop(start, N_TENANTS * PRINCIPLES_PER_TENANT * GROUPS_PER_TENANT)
+        num_of_requests = N_TENANTS * PRINCIPLES_PER_TENANT * GROUPS_PER_TENANT
+
+        request_time, average = timerStop(start, N_TENANTS * PRINCIPLES_PER_TENANT * GROUPS_PER_TENANT)
+
+        write_to_excel(
+            self, 
+            name, 
+            "/api/v1/integrations/tenant/{org_id}/principal/{username}/groups/{g_uuid}/roles/", 
+            num_of_requests, 
+            request_time, 
+            average
+        )
 
     def test_full_sync(self):
         """Test full sync with /integrations/tenant/{tenant_id}/sync/ endpoint."""
         tenants = Tenant.objects.exclude(tenant_name="public")
 
-        num_requests = N_TENANTS * (2 + GROUPS_PER_TENANT + PRINCIPLES_PER_TENANT)
+        num_of_requests = N_TENANTS * (2 + GROUPS_PER_TENANT + PRINCIPLES_PER_TENANT)
 
+        name = "Full Sync"
         start = timerStart("Full Sync")
 
         for t in tenants:
@@ -257,7 +339,6 @@ class OCMPerformanceTest(TestCase):
                 HEADERS,
                 follow=True,
             )
-
             self.assertEqual(response.status_code, status.HTTP_200_OK)
             self.assertEqual(response.data.get("meta").get("count"), GROUPS_PER_TENANT)
 
@@ -299,10 +380,14 @@ class OCMPerformanceTest(TestCase):
                 follow=True,
             )
 
-            principals = Principal.objects.filter(tenant=t)
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            self.assertEqual(response.data.get("meta").get("count"), PRINCIPLES_PER_TENANT)
+
+            principals = response.data.get("data")
             for p in principals:
+                p_username = p.get("username")
                 response = self.client.get(
-                    f"/_private/api/v1/integrations/tenant/{t.org_id}/principal/{p.username}/groups/?external_tenant=ocm",
+                    f"/_private/api/v1/integrations/tenant/{t.org_id}/principal/{p_username}/groups/?external_tenant=ocm",
                     HEADERS,
                     follow=True,
                 )
@@ -310,11 +395,16 @@ class OCMPerformanceTest(TestCase):
                 self.assertEqual(response.status_code, status.HTTP_200_OK)
                 self.assertEqual(response.data.get("meta").get("count"), GROUPS_PER_TENANT)
 
-        timerStop(start, num_requests)
+        request_time, average = timerStop(start, num_of_requests)
+
+        write_to_excel(self, name, "", num_of_requests, request_time, average)
 
     @classmethod
     def tearDownClass(self):
         """Clean up the test."""
+
+        self.wb.save(PATH)
+
         Group.objects.all().delete()
         Role.objects.all().delete()
         Policy.objects.all().delete()
@@ -344,4 +434,26 @@ def timerStop(start, num_requests):
     print(f"Total request time: {request_time} seconds")
     print("Average time: {} seconds".format(average))
     
-    return request_time
+    return request_time, average
+
+def write_to_excel(self, name, url, num_requests, request_time, average):
+    """Write data to excel sheet."""
+    ws = self.wb.active
+
+    row = ws.max_row + 1
+    print(f"Current row: {row}")
+
+    ws.cell(row=row, column=1).value = name
+    
+    ws.cell(row=row, column=2).value = url
+    
+    ws.cell(row=row, column=3).value = num_requests
+
+    ws.cell(row=row, column=4).value = request_time
+
+    ws.cell(row=row, column=5).value = average
+
+    # requests per second should be 1 / average (1 because there is only 1 thread)
+    ws.cell(row=row, column=6).value = 1 / average
+
+    self.wb.save(PATH)
