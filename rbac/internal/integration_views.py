@@ -22,6 +22,10 @@ import logging
 from management.cache import TenantCache
 from management.group.view import GroupViewSet
 from management.role.view import RoleViewSet
+from rest_framework import viewsets, mixins, serializers
+from management.permissions.admin_access import AdminAccessPermission
+
+from api.models import Tenant
 
 
 logger = logging.getLogger(__name__)
@@ -62,3 +66,18 @@ def principals_for_group(request, org_id, uuid):
     """Pass internal /groups/<uuid>/principals/ request to /groups/ API."""
     view = GroupViewSet.as_view({"get": "principals"})
     return view(request, uuid=uuid)
+
+
+class TenantSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Tenant
+        fields = ("id", "org_id", "account_id")
+
+
+class TenantViewSet(viewsets.GenericViewSet, mixins.ListModelMixin):
+    queryset = Tenant.objects.all()
+    permission_classes = (AdminAccessPermission,)
+    serializer_class = TenantSerializer
+
+    def list(self, request, *args, **kwargs):
+        return super().list(request=request, args=args, kwargs=kwargs)
