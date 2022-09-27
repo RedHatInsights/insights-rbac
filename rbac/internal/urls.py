@@ -31,6 +31,11 @@ integration_urlpatterns = [
         name="integration-group-roles",
     ),
     path(
+        "api/v1/integrations/tenant/<str:org_id>/groups/<str:uuid>/principals/",
+        integration_views.principals_for_group,
+        name="integration-group-principals",
+    ),
+    path(
         "api/v1/integrations/tenant/<str:org_id>/principal/<str:principals>/groups/",
         integration_views.groups_for_principal,
         name="integration-princ-groups",

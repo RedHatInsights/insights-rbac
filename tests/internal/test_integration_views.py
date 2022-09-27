@@ -276,6 +276,35 @@ class IntegrationViewsTests(IdentityRequest):
         )
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={
+            "status_code": 200,
+            "data": [
+                {
+                    "org_id": "100001",
+                    "is_org_admin": False,
+                    "is_internal": False,
+                    "id": 52567473,
+                    "username": "user_a",
+                    "account_number": "1111111",
+                    "is_active": True,
+                }
+            ],
+        },
+    )
+    def test_principals_for_group(self, mock_request):
+        """Test that a valid request to /tenant/<id>/groups/<uuid>/principals/ returns principals in group."""
+        group_a_uuid = Group.objects.get(name="Group A").uuid
+        response = self.client.get(
+            f"/_private/api/v1/integrations/tenant/{self.tenant.org_id}/groups/{group_a_uuid}/principals/",
+            **self.request.META,
+            follow=True,
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        # Expecting ["user_admin", "user_a"]
+        self.assertEqual(response.data.get("meta").get("count"), 2)
+
     def test_roles_from_group_filter(self):
         """Test that a valid request to /tenant/<id>/groups/<uuid>/roles/ from an internal properly filters groups."""
         group_a_uuid = Group.objects.get(name="Group A").uuid
