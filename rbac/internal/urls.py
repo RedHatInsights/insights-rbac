@@ -18,9 +18,10 @@
 """Describes the urls and patterns for internal routes."""
 
 from django.urls import path
+from internal.integration import views as integration_views
 from internal.openapi import openapi
 
-from . import integration_views, views
+from . import views
 
 integration_urlpatterns = [
     path(

@@ -1,5 +1,5 @@
 #
-# Copyright 2020 Red Hat, Inc.
+# Copyright 2022 Red Hat, Inc.
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -15,15 +15,16 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 
-"""View for OCM group/role API."""
+"""Views for OCM/integrations API."""
 
 import logging
 
+from internal.integration.serializers import TenantSerializer
 from management.cache import TenantCache
 from management.group.view import GroupViewSet
-from management.role.view import RoleViewSet
-from rest_framework import viewsets, mixins, serializers
 from management.permissions.admin_access import AdminAccessPermission
+from management.role.view import RoleViewSet
+from rest_framework import mixins, viewsets
 
 from api.models import Tenant
 
@@ -68,16 +69,13 @@ def principals_for_group(request, org_id, uuid):
     return view(request, uuid=uuid)
 
 
-class TenantSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Tenant
-        fields = ("id", "org_id", "account_id")
-
-
 class TenantViewSet(viewsets.GenericViewSet, mixins.ListModelMixin):
+    """Tenant view set."""
+
     queryset = Tenant.objects.all()
     permission_classes = (AdminAccessPermission,)
     serializer_class = TenantSerializer
 
     def list(self, request, *args, **kwargs):
+        """Tenant list."""
         return super().list(request=request, args=args, kwargs=kwargs)
