@@ -25,7 +25,7 @@ from . import views
 
 integration_urlpatterns = [
     path(
-        "api/v1/integrations/tenants/",
+        "api/v1/integrations/tenant/",
         integration_views.TenantViewSet.as_view({"get": "list"}),
         name="integration-tenants",
     ),
