@@ -19,7 +19,6 @@
 
 import logging
 
-from django.db.models import Q
 from django_filters import rest_framework as filters
 from internal.integration.serializers import TenantSerializer
 from management.cache import TenantCache
@@ -42,11 +41,7 @@ class TenantFilter(CommonFilters):
     def modified_only_filter(self, queryset, field, modified_only):
         """Filter to return only modified tenants."""
         if modified_only:
-            queryset = (
-                queryset.filter(Q(group__system=False) | Q(role__system=False))
-                .prefetch_related("group_set", "role_set")
-                .distinct()
-            )
+            queryset = queryset.modified_only()
         return queryset
 
     modified_only = filters.BooleanFilter(field_name="modified_only", method="modified_only_filter")
