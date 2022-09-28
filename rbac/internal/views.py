@@ -32,6 +32,7 @@ from management.tasks import (
     run_reconcile_tenant_relations_in_worker,
     run_seeds_in_worker,
     run_sync_schemas_in_worker,
+    run_ocm_performance_in_worker,
 )
 
 from api.models import Tenant
@@ -306,6 +307,16 @@ def invalid_default_admin_groups(request):
         return HttpResponse(status=204)
     return HttpResponse('Invalid method, only "DELETE" and "GET" are allowed.', status=405)
 
+def ocm_performance(request):
+    """View method for running OCM performance tests.
+
+    POST /_private/api/utils/ocm_performance/
+    """
+    if request.method == "POST":
+        logger.info("Running OCM performance tests.")
+        run_ocm_performance_in_worker.delay()
+        return HttpResponse("OCM performance tests are running in a background worker.", status=202)
+    return HttpResponse('Invalid method, only "POST" is allowed.', status=405)
 
 class SentryDiagnosticError(Exception):
     """Raise this to create an event in Sentry."""

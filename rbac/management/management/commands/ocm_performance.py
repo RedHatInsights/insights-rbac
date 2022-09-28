@@ -39,10 +39,10 @@ from management.models import Access, Group, Permission, Principal, Policy, Reso
 # for spreadsheeting
 import openpyxl as xl
 
-# import test class
-from tests.performance.test_performance import OCMPerformanceTest
-from tests.performance.performance_db_setup import OCMPerformanceSetup
-from tests.performance.performance_db_teardown import OCMPerformanceTeardown
+# import test functions
+from tests.performance.test_performance import test_full_sync, test_tenant_groups, test_tenant_roles, test_group_roles, test_principals_roles, test_principals_groups
+
+from tests.performance.performance_db_util import setUp, tearDown, N_TENANTS, GROUPS_PER_TENANT, N, PRINCIPLES_PER_TENANT
 
 N_TENANTS = 2
 GROUPS_PER_TENANT = 1
@@ -68,26 +68,31 @@ HEADERS = {
 
 THREADS = 10
 
-PATH = "ocm_performance.xlsx"
-
 class Command(BaseCommand):
     help = """
-    If you need Arguments, please check other modules in 
-    django/core/management/commands.
+    Run the OCM performance tests. If running locally,
+    run the setup command first to populate the database.
+
+    Usage:
+        python manage.py command ocm_performance setup
     """
 
     def add_arguments(self, parser):
-        parser.add_argument("mode", type=str, help="choice of setup, test, or teardown")
+        parser.add_argument("mode", type=str, nargs='?', default='test', help="Choice of setup, test, or teardown")
 
     def handle(self, **options):
         mode = options["mode"]
-        suite = unittest.TestLoader()
         if mode == "setup":
-            suite = suite.loadTestsFromTestCase(OCMPerformanceSetup)
-        elif mode == "test":
-            suite = suite.loadTestsFromTestCase(OCMPerformanceTest)
+            setUp()
         elif mode == "teardown":
-            suite = suite.loadTestsFromTestCase(OCMPerformanceTeardown)
+            tearDown()
+        elif mode == "test":
+            # run the ocm performance tests
+            test_full_sync()
+            test_tenant_groups()
+            test_tenant_roles()
+            test_group_roles()
+            test_principals_roles()
+            test_principals_groups()
         else:
-            raise ValueError("Invalid mode. Please choose from setup, test, or teardown")
-        unittest.TextTestRunner().run(suite)
+            print("Invalid mode. Please choose from setup, test, or teardown.")
