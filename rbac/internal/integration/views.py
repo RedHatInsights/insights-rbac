@@ -36,42 +36,6 @@ logger = logging.getLogger(__name__)
 TENANTS = TenantCache()
 
 
-def groups(request, org_id):
-    """Format and pass internal groups request to /groups/ API."""
-    view = GroupViewSet.as_view({"get": "list"})
-    return view(request)
-
-
-def roles(request, org_id):
-    """Format and pass internal roles request to /roles/ API."""
-    view = RoleViewSet.as_view({"get": "list"})
-    return view(request)
-
-
-def groups_for_principal(request, org_id, principals):
-    """Format and pass /principal/<username>/groups/ request to /groups/ API."""
-    view = GroupViewSet.as_view({"get": "list"})
-    return view(request, principals=principals)
-
-
-def roles_for_group(request, org_id, uuid):
-    """Pass internal /groups/<uuid>/roles/ request to /groups/ API."""
-    view = GroupViewSet.as_view({"get": "roles"})
-    return view(request, uuid=uuid)
-
-
-def roles_for_group_principal(request, org_id, principals, uuid):
-    """Pass internal /principal/<username>/groups/<uuid>/roles/ request to /groups/ API."""
-    view = GroupViewSet.as_view({"get": "roles"})
-    return view(request, uuid=uuid, principals=principals)
-
-
-def principals_for_group(request, org_id, uuid):
-    """Pass internal /groups/<uuid>/principals/ request to /groups/ API."""
-    view = GroupViewSet.as_view({"get": "principals"})
-    return view(request, uuid=uuid)
-
-
 class TenantFilter(CommonFilters):
     """Filter for tenant."""
 
@@ -100,3 +64,33 @@ class TenantViewSet(viewsets.GenericViewSet, mixins.ListModelMixin):
     def list(self, request, *args, **kwargs):
         """Tenant list."""
         return super().list(request=request, args=args, kwargs=kwargs)
+
+    def groups(self, request, org_id):
+        """Format and pass internal groups request to /groups/ API."""
+        view = GroupViewSet.as_view({"get": "list"})
+        return view(request._request)
+
+    def roles(self, request, org_id):
+        """Format and pass internal roles request to /roles/ API."""
+        view = RoleViewSet.as_view({"get": "list"})
+        return view(request._request)
+
+    def groups_for_principal(self, request, org_id, principals):
+        """Format and pass /principal/<username>/groups/ request to /groups/ API."""
+        view = GroupViewSet.as_view({"get": "list"})
+        return view(request._request, principals=principals)
+
+    def roles_for_group(self, request, org_id, uuid):
+        """Pass internal /groups/<uuid>/roles/ request to /groups/ API."""
+        view = GroupViewSet.as_view({"get": "roles"})
+        return view(request._request, uuid=uuid)
+
+    def roles_for_group_principal(self, request, org_id, principals, uuid):
+        """Pass internal /principal/<username>/groups/<uuid>/roles/ request to /groups/ API."""
+        view = GroupViewSet.as_view({"get": "roles"})
+        return view(request._request, uuid=uuid, principals=principals)
+
+    def principals_for_group(self, request, org_id, uuid):
+        """Pass internal /groups/<uuid>/principals/ request to /groups/ API."""
+        view = GroupViewSet.as_view({"get": "principals"})
+        return view(request._request, uuid=uuid)

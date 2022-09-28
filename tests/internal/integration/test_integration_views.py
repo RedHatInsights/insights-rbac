@@ -427,9 +427,9 @@ class IntegrationViewsTests(IdentityRequest):
         self.assertEqual(response.data.get("meta").get("count"), 1)
 
     def test_tenants(self):
-        """Test that we get tenants back on /tenants/"""
+        """Test that we get tenants back on /tenant/"""
         response = self.client.get(
-            f"/_private/api/v1/integrations/tenants/",
+            f"/_private/api/v1/integrations/tenant/",
             **self.request.META,
             follow=True,
         )
@@ -437,9 +437,9 @@ class IntegrationViewsTests(IdentityRequest):
         self.assertEqual(response.data.get("meta").get("count"), 4)
 
     def test_tenants_modified(self):
-        """Test that we get tenants back on /tenants/"""
+        """Test that we get tenants back on /tenant/"""
         response = self.client.get(
-            f"/_private/api/v1/integrations/tenants/?modified_only=true",
+            f"/_private/api/v1/integrations/tenant/?modified_only=true",
             **self.request.META,
             follow=True,
         )
