@@ -25,6 +25,9 @@ from api.models import Tenant
 class TenantSerializer(serializers.ModelSerializer):
     """Tenant serializer."""
 
+    org_id = serializers.IntegerField(read_only=True)
+    account_id = serializers.IntegerField(read_only=True)
+
     class Meta:
         model = Tenant
         fields = ("id", "org_id", "account_id")

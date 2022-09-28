@@ -19,8 +19,11 @@
 
 import logging
 
+from django.db.models import Q
+from django_filters import rest_framework as filters
 from internal.integration.serializers import TenantSerializer
 from management.cache import TenantCache
+from management.filters import CommonFilters
 from management.group.view import GroupViewSet
 from management.permissions.admin_access import AdminAccessPermission
 from management.role.view import RoleViewSet
@@ -69,12 +72,30 @@ def principals_for_group(request, org_id, uuid):
     return view(request, uuid=uuid)
 
 
+class TenantFilter(CommonFilters):
+    """Filter for tenant."""
+
+    def modified_only_filter(self, queryset, field, modified_only):
+        """Filter to return only modified tenants."""
+        if modified_only:
+            queryset = (
+                queryset.filter(Q(group__system=False) | Q(role__system=False))
+                .prefetch_related("group_set", "role_set")
+                .distinct()
+            )
+        return queryset
+
+    modified_only = filters.BooleanFilter(field_name="modified_only", method="modified_only_filter")
+
+
 class TenantViewSet(viewsets.GenericViewSet, mixins.ListModelMixin):
     """Tenant view set."""
 
     queryset = Tenant.objects.all()
     permission_classes = (AdminAccessPermission,)
     serializer_class = TenantSerializer
+    filter_backends = (filters.DjangoFilterBackend,)
+    filterset_class = TenantFilter
 
     def list(self, request, *args, **kwargs):
         """Tenant list."""
