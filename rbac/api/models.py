@@ -24,7 +24,10 @@ from api.status.model import Status  # noqa: F401
 
 
 class TenantModifiedQuerySet(models.QuerySet):
+    """Queryset for modified tenants."""
+
     def modified_only(self):
+        """Return only modified tenants."""
         return (
             self.filter(Q(group__system=False) | Q(role__system=False))
             .prefetch_related("group_set", "role_set")
