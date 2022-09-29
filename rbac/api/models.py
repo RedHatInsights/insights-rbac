@@ -41,7 +41,7 @@ class Tenant(models.Model):
 class TenantAwareModel(models.Model):
     """Abstract model for inheriting `Tenant`."""
 
-    tenant = models.ForeignKey(Tenant, blank=True, null=True, on_delete=models.CASCADE)
+    tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE)
 
     class Meta:
         abstract = True
