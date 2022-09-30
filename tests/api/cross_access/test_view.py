@@ -91,6 +91,8 @@ class CrossAccountRequestViewTests(IdentityRequest):
             "roles": ["role_1", "role_2"],
         }
 
+        public_tenant = Tenant.objects.get(tenant_name="public")
+
         t = Tenant.objects.create(
             tenant_name=f"acct{self.data4create['target_account']}",
             account_id=self.data4create["target_account"],
@@ -98,10 +100,10 @@ class CrossAccountRequestViewTests(IdentityRequest):
         )
         t.ready = True
         t.save()
-        self.role_1 = Role.objects.create(name="role_1", system=True, tenant=t)
-        self.role_2 = Role.objects.create(name="role_2", system=True, tenant=t)
-        self.role_9 = Role.objects.create(name="role_9", system=True, tenant=t)
-        self.role_8 = Role.objects.create(name="role_8", system=True, tenant=t)
+        self.role_1 = Role.objects.create(name="role_1", system=True, tenant=public_tenant)
+        self.role_2 = Role.objects.create(name="role_2", system=True, tenant=public_tenant)
+        self.role_9 = Role.objects.create(name="role_9", system=True, tenant=public_tenant)
+        self.role_8 = Role.objects.create(name="role_8", system=True, tenant=public_tenant)
 
         self.request_1 = CrossAccountRequest.objects.create(
             target_account=self.account,
