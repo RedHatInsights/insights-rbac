@@ -1,34 +1,19 @@
-from http.client import REQUEST_TIMEOUT
-from multiprocessing.pool import ThreadPool
 import time
-
-import concurrent
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from faker import Faker
 
 from base64 import b64encode
 from json import dumps as json_dumps
-from urllib import request, response
-
-from django.core.management.base import BaseCommand
-import unittest
-
-from django.test import SimpleTestCase, TestCase
+from unittest.mock import Mock
 from management.role.model import ExtRoleRelation, ExtTenant
-from rbac.settings import DATABASES
 
-from rest_framework import status
+from api.models import Tenant
+from api.common import RH_IDENTITY_HEADER
+from management.models import Group, Principal, Policy, Role
 
-from api.models import Tenant, User
-from api.serializers import create_tenant_name
-from rbac.middleware import HttpResponseUnauthorizedRequest, IdentityHeaderMiddleware, TENANTS
-from management.models import Access, Group, Permission, Principal, Policy, ResourceDefinition, Role
+N_TENANTS = 1000
+GROUPS_PER_TENANT = 10
 
-N_TENANTS = 2
-GROUPS_PER_TENANT = 1
-
-N = 1  # number of roles per group, number of principals per group
-PRINCIPLES_PER_TENANT = 1
+N = 10  # number of roles per group, number of principals per group
+PRINCIPALS_PER_TENANT = 10
 
 def setUp():
     """Set up the test data."""
@@ -72,7 +57,7 @@ def setUp():
 
     # for each org, create 10 principals
     for i in range(N_TENANTS):
-        for j in range(PRINCIPLES_PER_TENANT):
+        for j in range(PRINCIPALS_PER_TENANT):
             create_principal(tenants[i], i, j)
 
     def create_group(tenant, i, j):
@@ -135,13 +120,71 @@ def tearDown():
     """Delete the test data."""
     print("Deleting test data...")
 
-    Principal.objects.filter(username=r'^ocm_principal_.+').delete()
-    print(f"Deleted {Group.objects.filter(name=r'^ocm_group_.+').count()} groups")
-    Group.objects.filter(name=r"^ocm_group_0_0").delete()
-    print(f"Deleted {Group.objects.filter(name=r'^ocm_group_.+').count()} groups")
-    Policy.objects.filter(name=r"^ocm_policy_.+").delete()
-    Role.objects.filter(name=r"^ocm_role_.+").delete()
-    ExtRoleRelation.objects.filter(ext_id=r"^ocm_r_r_.+").delete()
-    Tenant.objects.filter(tenant_name=r"^ocm_acct.+").delete()
+    Principal.objects.filter(username__regex=r'^ocm_principal_.+').delete()
+    Group.objects.filter(name__regex=r"^ocm_group_0_0").delete()
+    Policy.objects.filter(name__regex=r"^ocm_policy_.+").delete()
+    Role.objects.filter(name__regex=r"^ocm_role_.+").delete()
+    ExtRoleRelation.objects.filter(ext_id__regex=r"^ocm_r_r_.+").delete()
+    Tenant.objects.filter(tenant_name__regex=r"^ocm_acct.+").delete()
 
     print("Finished deleting test data")
+
+# ------------------------
+# Identity builder helpers
+# ------------------------
+def build_identity():
+    """Build identity."""
+    identity = {"identity": {"account_number": "10001", "org_id": "11111", "user": {
+            "username": "user_dev",
+            "email": "user_dev@foo.com",
+            "is_org_admin": True,
+            "is_internal": True,
+            "user_id": "51736777",
+        }}}
+    identity["identity"]["type"] = "Associate"
+    identity["identity"]["associate"] = identity.get("identity").get("user")
+    identity["identity"]["user"]["is_internal"] = True
+
+    json_identity = json_dumps(identity)
+    mock_header = b64encode(json_identity.encode("utf-8"))
+    request = Mock()
+    request.META = {RH_IDENTITY_HEADER: mock_header}
+    request.scope = {}
+    request_context = {"request": request}
+
+    return request_context["request"]
+
+# ---------------------------
+# A couple of logging helpers
+# ---------------------------
+def timerStart(test_title):
+    """Start timer."""
+    start = time.perf_counter()
+
+    print(f"Starting test for {test_title}...")
+
+    return start
+
+
+def timerStop(start, num_requests):
+    """Stop timer."""
+    request_time = time.perf_counter() - start
+
+    average = request_time / num_requests
+
+    print(f"Total request time: {request_time} seconds")
+    print("Average time: {} seconds".format(average))
+    print("Number of requests: {}".format(num_requests))
+    print("---------------------------\n")
+
+    return request_time, average
+
+def write_to_logger(logger, name, url, num_requests, request_time, average):
+    """Write data to excel sheet."""
+
+    logger.info(f"Test: {name}")
+    logger.info(f"URL: {url}")
+    logger.info(f"Number of requests: {num_requests}")
+    logger.info(f"Total request time: {request_time} seconds")
+    logger.info(f"Average time: {average} seconds")
+    logger.info(f"Requests per second: {1 / average}")

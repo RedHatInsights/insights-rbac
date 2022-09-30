@@ -7,7 +7,12 @@ from django.db.models import Q
 from rest_framework import status
 from rest_framework.test import APIClient
 
+from base64 import b64encode
+from json import dumps as json_dumps
+from unittest.mock import Mock
+
 from api.models import Tenant
+from api.common import RH_IDENTITY_HEADER
 from management.models import Group, Principal
 
 import logging
@@ -32,7 +37,7 @@ def test_tenant_groups():
     name = "Tenant Groups"
     start = timerStart(name)
 
-    num_requests = 0
+    num_requests = tenants.count()
 
     def tenant_groups(tenant):
         response = client.get(
@@ -43,13 +48,14 @@ def test_tenant_groups():
 
         return response
 
-    for t in tenants:
-        response = tenant_groups(t)
-
-        if (response.status_code != status.HTTP_200_OK):
-            Exception("Recieved an error status\n")
-
-        num_requests += 1
+    with ThreadPoolExecutor(max_workers=THREADS) as executor:
+        futures = []
+        for t in tenants:
+            futures.append(executor.submit(tenant_groups, tenant=t))
+        for future in as_completed(futures):
+            response = future.result()
+            if (response.status_code != status.HTTP_200_OK):
+                Exception("Recieved an error status\n")
 
     request_time, average = timerStop(start, num_requests)
 
@@ -69,7 +75,7 @@ def test_tenant_roles():
     name = "Tenant Roles"
     start = timerStart(name)
 
-    num_requests = 0
+    num_requests = tenants.count()
 
     def tenant_roles(t):
         response = client.get(
@@ -80,13 +86,14 @@ def test_tenant_roles():
 
         return response
 
-    for t in tenants:
-        response = tenant_roles(t)
-
-        if (response.status_code != status.HTTP_200_OK):
-            Exception("Recieved an error status\n")
-
-        num_requests += 1
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        futures = []
+        for t in tenants:
+            futures.append(executor.submit(tenant_roles, t=t))
+        for future in as_completed(futures):
+            response = future.result()
+            if (response.status_code != status.HTTP_200_OK):
+                Exception("Recieved an error status\n")
 
     request_time, average = timerStop(start, num_requests)
 
@@ -104,7 +111,7 @@ def test_group_roles():
     # 1 request for each group (to get roles)
     tenants = Tenant.objects.filter(Q(group__system=False) | Q(role__system=False)).prefetch_related('group_set', 'role_set').distinct()
 
-    num_requests = 0
+    num_requests = tenants.count()
 
     name = "Group Roles"
     start = timerStart(name)
@@ -118,16 +125,16 @@ def test_group_roles():
 
         return response
 
-    for t in tenants:
-        groups = Group.objects.filter(tenant=t)
-
-        for g in groups:
-            response = group_roles(t, g)
-
+    with ThreadPoolExecutor(max_workers=THREADS) as executor:
+        futures = []
+        for t in tenants:
+            groups = Group.objects.filter(tenant=t)
+            for g in groups:
+                futures.append(executor.submit(group_roles, t=t, g=g))
+        for future in as_completed(futures):
+            response = future.result()
             if (response.status_code != status.HTTP_200_OK):
                 Exception("Recieved an error status\n")
-            
-            num_requests += 1
 
     request_time, average = timerStop(start, num_requests)
 
@@ -160,15 +167,16 @@ def test_principals_groups():
 
         return response
 
-    for t in tenants:
-        principals = Principal.objects.filter(tenant=t)
-
-        for p in principals:
-            response = principals_groups(t, p)
-
+    with ThreadPoolExecutor(max_workers=THREADS) as executor:
+        futures = []
+        for t in tenants:
+            principals = Principal.objects.filter(tenant=t)
+            for p in principals:
+                futures.append(executor.submit(principals_groups, t=t, p=p))
+        for future in as_completed(futures):
+            response = future.result()
             if (response.status_code != status.HTTP_200_OK):
                 Exception("Recieved an error status\n")
-            
             num_requests += 1
 
     request_time, average = timerStop(start, num_requests)
@@ -192,23 +200,33 @@ def test_principals_roles():
 
     num_requests = 0
 
-    for t in tenants:
-        principals = Principal.objects.filter(tenant=t)
+    def principals_roles(t, p, g):
+        response = client.get(
+            f"/_private/api/v1/integrations/tenant/{t.org_id}/principal/{p.username}/groups/{g.uuid}/roles/?external_tenant=ocm",
+            **identity.META,
+            follow=True,
+        )
 
-        for p in principals:
-            groups = Group.objects.filter(tenant=t)
+        return response
 
-            for g in groups:
-                response = client.get(
-                    f"/_private/api/v1/integrations/tenant/{t.org_id}/principal/{p.username}/groups/{g.uuid}/roles/?external_tenant=ocm",
-                    **identity.META,
-                    follow=True,
-                )
+    with ThreadPoolExecutor(max_workers=THREADS) as executor:
+        futures = []
+        for t in tenants:
+            principals = Principal.objects.filter(tenant=t)
 
-                if (response.status_code != status.HTTP_200_OK):
-                    Exception("Recieved an error status\n")
+            for p in principals:
+                groups = Group.objects.filter(tenant=t)
 
-                num_requests += 1
+                for g in groups:
+                    futures.append(executor.submit(principals_roles, t=t, p=p, g=g))
+
+        for future in as_completed(futures):
+            response = future.result()
+
+            if (response.status_code != status.HTTP_200_OK):
+                Exception("Recieved an error status\n")
+
+            num_requests += 1
 
     request_time, average = timerStop(start, num_requests)
 
@@ -230,10 +248,11 @@ def test_full_sync():
 
     num_requests = 0
 
-    for t in tenants:
-        # tenant groups, get orgs groups
+    def full_sync(t, g):
+        g_uuid = g.get("uuid")
+        # tenant groups rolesk, get orgs groups roles
         response = client.get(
-            f"/_private/api/v1/integrations/tenant/{t.org_id}/groups/?external_tenant=ocm",
+            f"/_private/api/v1/integrations/tenant/{t.org_id}/groups/{g_uuid}/roles/?external_tenant=ocm",
             **identity.META,
             follow=True,
         )
@@ -241,36 +260,42 @@ def test_full_sync():
         if (response.status_code != status.HTTP_200_OK):
             Exception("Recieved an error status\n")
 
-        num_requests += 1
+        # OCM would sync group roles here
 
-        groups = response.data.get("data")
+        response = client.get(
+            f"/_private/api/v1/integrations/tenant/{t.org_id}/groups/{g_uuid}/principals/?external_tenant=ocm&username_only=true",
+            **identity.META,
+            follow=True,
+        )
 
-        for g in groups:
-            g_uuid = g.get("uuid")
-            # tenant groups rolesk, get orgs groups roles
+        if (response.status_code != status.HTTP_200_OK):
+            Exception("Recieved an error status\n")
+
+        # sync account groups
+
+        return response
+
+    with ThreadPoolExecutor(max_workers=THREADS) as executor:
+        futures = []
+        for t in tenants:
+            num_requests += 1
+            # tenant groups, get orgs groups
             response = client.get(
-                f"/_private/api/v1/integrations/tenant/{t.org_id}/groups/{g_uuid}/roles/?external_tenant=ocm",
+                f"/_private/api/v1/integrations/tenant/{t.org_id}/groups/?external_tenant=ocm",
                 **identity.META,
                 follow=True,
             )
-
             if (response.status_code != status.HTTP_200_OK):
                 Exception("Recieved an error status\n")
 
-            # OCM would sync group roles here
+            groups = response.data.get("data")
 
-            response = client.get(
-                f"/_private/api/v1/integrations/tenant/{t.org_id}/groups/{g_uuid}/principals/?external_tenant=ocm&username_only=true",
-                **identity.META,
-                follow=True,
-            )
-
-            if (response.status_code != status.HTTP_200_OK):
-                Exception("Recieved an error status\n")
-
+            for g in groups:
+                futures.append(executor.submit(full_sync, t=t, g=g))
+        
+        for future in as_completed(futures):
             num_requests += 2
-
-            # sync account groups
+        
 
     request_time, average = timerStop(start, num_requests)
 

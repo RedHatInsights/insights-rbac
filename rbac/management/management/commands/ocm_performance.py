@@ -42,31 +42,7 @@ import openpyxl as xl
 # import test functions
 from tests.performance.test_performance import test_full_sync, test_tenant_groups, test_tenant_roles, test_group_roles, test_principals_roles, test_principals_groups
 
-from tests.performance.performance_db_util import setUp, tearDown, N_TENANTS, GROUPS_PER_TENANT, N, PRINCIPLES_PER_TENANT
-
-N_TENANTS = 2
-GROUPS_PER_TENANT = 1
-
-N = 1 # number of roles per group, number of principals per group
-PRINCIPLES_PER_TENANT = 1
-
-HEADERS = {
-            "identity": {
-                "account_number": "10001",
-                "org_id": "11111",
-                "type": "Associate",
-                "user": {
-                    "username": "user_dev",
-                    "email": "user_dev@foo.com",
-                    "is_org_admin": True,
-                    "is_internal": True,
-                    "user_id": "51736777",
-                },
-                "internal": {"cross_access": False},
-            }
-        }
-
-THREADS = 10
+from tests.performance.test_performance_util import setUp, tearDown, N_TENANTS, GROUPS_PER_TENANT, N, PRINCIPALS_PER_TENANT
 
 class Command(BaseCommand):
     help = """
@@ -74,7 +50,7 @@ class Command(BaseCommand):
     run the setup command first to populate the database.
 
     Usage:
-        python manage.py command ocm_performance setup
+        python manage.py command ocm_performance [setup|test|teardown]
     """
 
     def add_arguments(self, parser):
@@ -92,7 +68,7 @@ class Command(BaseCommand):
             test_tenant_groups()
             test_tenant_roles()
             test_group_roles()
-            test_principals_roles()
+            # test_principals_roles()
             test_principals_groups()
         else:
             print("Invalid mode. Please choose from setup, test, or teardown.")
