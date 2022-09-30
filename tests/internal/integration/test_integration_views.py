@@ -20,7 +20,7 @@ from rest_framework import status
 from rest_framework.test import APIClient
 from unittest.mock import patch
 
-from api.models import User
+from api.models import User, Tenant
 from management.models import Group, Policy, Principal, Role
 from tests.identity_request import IdentityRequest
 
@@ -83,6 +83,15 @@ class IntegrationViewsTests(IdentityRequest):
         policy.roles.add(Role.objects.get(name="Role A"))
         group.policies.add(policy)
         group.save
+
+        self.modifiedTenant1 = Tenant.objects.create(tenant_name="Modified Group", org_id=1111)
+        modifiedTenant1Group = Group.objects.create(
+            system=False, name="modifiedTenant1Group", tenant=self.modifiedTenant1
+        )
+        self.modifiedTenant2 = Tenant.objects.create(tenant_name="Modified Role", org_id=1212)
+        modifiedTenant2Role = Role.objects.create(
+            system=False, name="modifiedTenant2Role", tenant=self.modifiedTenant2
+        )
 
     def tearDown(self):
         """Tear down internal viewset tests."""
@@ -416,3 +425,26 @@ class IntegrationViewsTests(IdentityRequest):
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data.get("meta").get("count"), 1)
+
+    def test_tenants(self):
+        """Test that we get tenants back on /tenant/"""
+        response = self.client.get(
+            f"/_private/api/v1/integrations/tenant/",
+            **self.request.META,
+            follow=True,
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data.get("meta").get("count"), 4)
+
+    def test_tenants_modified(self):
+        """Test that we get tenants back on /tenant/"""
+        response = self.client.get(
+            f"/_private/api/v1/integrations/tenant/?modified_only=true",
+            **self.request.META,
+            follow=True,
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data.get("meta").get("count"), 2)
+        expected_org_ids = [t.org_id for t in [self.modifiedTenant1, self.modifiedTenant2]]
+        actual_org_ids = [t["org_id"] for t in response.data.get("data")]
+        self.assertEqual(sorted(expected_org_ids), sorted(actual_org_ids))

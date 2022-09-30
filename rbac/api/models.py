@@ -17,9 +17,22 @@
 """API models for import organization."""
 from django.conf import settings
 from django.db import models
+from django.db.models import Q
 
 from api.cross_access.model import CrossAccountRequest  # noqa: F401
 from api.status.model import Status  # noqa: F401
+
+
+class TenantModifiedQuerySet(models.QuerySet):
+    """Queryset for modified tenants."""
+
+    def modified_only(self):
+        """Return only modified tenants."""
+        return (
+            self.filter(Q(group__system=False) | Q(role__system=False))
+            .prefetch_related("group_set", "role_set")
+            .distinct()
+        )
 
 
 class Tenant(models.Model):
@@ -29,6 +42,7 @@ class Tenant(models.Model):
     tenant_name = models.CharField(max_length=63)
     account_id = models.CharField(max_length=36, default=None, null=True)
     org_id = models.CharField(max_length=36, unique=True, default=None, db_index=True, null=True)
+    objects = TenantModifiedQuerySet.as_manager()
 
     def __str__(self):
         """Get string representation of Tenant."""

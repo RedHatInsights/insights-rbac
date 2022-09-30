@@ -18,31 +18,45 @@
 """Describes the urls and patterns for internal routes."""
 
 from django.urls import path
+from internal.integration import views as integration_views
 from internal.openapi import openapi
 
-from . import integration_views, views
+from . import views
 
 integration_urlpatterns = [
-    path("api/v1/integrations/tenant/<str:org_id>/roles/", integration_views.roles, name="integration-roles"),
-    path("api/v1/integrations/tenant/<str:org_id>/groups/", integration_views.groups, name="integration-groups"),
+    path(
+        "api/v1/integrations/tenant/",
+        integration_views.TenantViewSet.as_view({"get": "list"}),
+        name="integration-tenants",
+    ),
+    path(
+        "api/v1/integrations/tenant/<str:org_id>/roles/",
+        integration_views.TenantViewSet.as_view({"get": "roles"}),
+        name="integration-roles",
+    ),
+    path(
+        "api/v1/integrations/tenant/<str:org_id>/groups/",
+        integration_views.TenantViewSet.as_view({"get": "groups"}),
+        name="integration-groups",
+    ),
     path(
         "api/v1/integrations/tenant/<str:org_id>/groups/<str:uuid>/roles/",
-        integration_views.roles_for_group,
+        integration_views.TenantViewSet.as_view({"get": "roles_for_group"}),
         name="integration-group-roles",
     ),
     path(
         "api/v1/integrations/tenant/<str:org_id>/groups/<str:uuid>/principals/",
-        integration_views.principals_for_group,
+        integration_views.TenantViewSet.as_view({"get": "principals_for_group"}),
         name="integration-group-principals",
     ),
     path(
         "api/v1/integrations/tenant/<str:org_id>/principal/<str:principals>/groups/",
-        integration_views.groups_for_principal,
+        integration_views.TenantViewSet.as_view({"get": "groups_for_principal"}),
         name="integration-princ-groups",
     ),
     path(
         "api/v1/integrations/tenant/<str:org_id>/principal/<str:principals>/groups/<str:uuid>/roles/",
-        integration_views.roles_for_group_principal,
+        integration_views.TenantViewSet.as_view({"get": "roles_for_group_principal"}),
         name="integration-princ-roles",
     ),
     path("api/v1/openapi.json", openapi, name="openapi"),
