@@ -286,9 +286,10 @@ class CrossAccountRequestViewSet(
 
     def format_roles(self, roles):
         """Format role list as expected for cross-account-request."""
+        public_tenant = Tenant.objects.get(tenant_name="public")
         for role_name in roles:
             try:
-                role = Role.objects.get(display_name=role_name)
+                role = Role.objects.get(tenant=public_tenant, display_name=role_name)
                 if not role.system:
                     self.throw_validation_error(
                         "cross-account-request", "Only system roles may be assigned to a cross-account-request."
