@@ -14,6 +14,7 @@ objects:
       iqePlugin: rbac
     database:
       name: rbac
+      dbVolumeSize: medium
     inMemoryDb: true
     kafkaTopics:
     - topicName: ${NOTIFICATIONS_TOPIC}
