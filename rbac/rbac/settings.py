@@ -25,6 +25,7 @@ https://docs.djangoproject.com/en/2.0/topics/settings/
 For the full list of settings and their values, see
 https://docs.djangoproject.com/en/2.0/ref/settings/
 """
+from ast import And
 import os
 
 import datetime
@@ -384,33 +385,34 @@ CHANNEL_LAYERS = {
     "default": {"BACKEND": "channels_redis.core.RedisChannelLayer", "CONFIG": {"hosts": [(REDIS_HOST, REDIS_PORT)]}}
 }
 
-# Kafka settings
-if ENVIRONMENT.bool("CLOWDER_ENABLED", default=False):
-    kafka_broker = LoadedConfig.kafka.brokers[0]
-    KAFKA_HOST = kafka_broker.hostname
-    KAFKA_PORT = kafka_broker.port
-    try:
-        if kafka_broker.authtype.value == "sasl":
-            KAFKA_AUTH = {
-                "bootstrap_servers": f"{KAFKA_HOST}:{KAFKA_PORT}",
-                "sasl_plain_username": kafka_broker.sasl.username,
-                "sasl_plain_password": kafka_broker.sasl.password,
-                "sasl_mechanism": kafka_broker.sasl.saslMechanism.upper(),
-                "security_protocol": kafka_broker.sasl.securityProtocol.upper(),
-            }
-        else:
-            KAFKA_AUTH = False
-    except AttributeError:
-        KAFKA_AUTH = False
-else:
-    KAFKA_HOST = "localhost"
-    KAFKA_PORT = "9092"
-KAFKA_SERVER = f"{KAFKA_HOST}:{KAFKA_PORT}"
-
 NOTIFICATIONS_ENABLED = ENVIRONMENT.get_value("NOTIFICATIONS_ENABLED", default=False)
 NOTIFICATIONS_RH_ENABLED = ENVIRONMENT.get_value("NOTIFICATIONS_RH_ENABLED", default=False)
 NOTIFICATIONS_TOPIC = ENVIRONMENT.get_value("NOTIFICATIONS_TOPIC", default=None)
 
-clowder_notifications_topic = KafkaTopics.get(NOTIFICATIONS_TOPIC)
-if clowder_notifications_topic:
-    NOTIFICATIONS_TOPIC = clowder_notifications_topic.name
+# Kafka settings
+if NOTIFICATIONS_ENABLED:
+    if ENVIRONMENT.bool("CLOWDER_ENABLED", default=False):
+        kafka_broker = LoadedConfig.kafka.brokers[0]
+        KAFKA_HOST = kafka_broker.hostname
+        KAFKA_PORT = kafka_broker.port
+        try:
+            if kafka_broker.authtype.value == "sasl":
+                KAFKA_AUTH = {
+                    "bootstrap_servers": f"{KAFKA_HOST}:{KAFKA_PORT}",
+                    "sasl_plain_username": kafka_broker.sasl.username,
+                    "sasl_plain_password": kafka_broker.sasl.password,
+                    "sasl_mechanism": kafka_broker.sasl.saslMechanism.upper(),
+                    "security_protocol": kafka_broker.sasl.securityProtocol.upper(),
+                }
+            else:
+                KAFKA_AUTH = False
+        except AttributeError:
+            KAFKA_AUTH = False
+    else:
+        KAFKA_HOST = "localhost"
+        KAFKA_PORT = "9092"
+    KAFKA_SERVER = f"{KAFKA_HOST}:{KAFKA_PORT}"
+
+    clowder_notifications_topic = KafkaTopics.get(NOTIFICATIONS_TOPIC)
+    if clowder_notifications_topic:
+        NOTIFICATIONS_TOPIC = clowder_notifications_topic.name
