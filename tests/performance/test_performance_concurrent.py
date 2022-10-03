@@ -86,7 +86,7 @@ def test_tenant_roles():
 
         return response
 
-    with ThreadPoolExecutor(max_workers=1) as executor:
+    with ThreadPoolExecutor(max_workers=THREADS) as executor:
         futures = []
         for t in tenants:
             futures.append(executor.submit(tenant_roles, t=t))
