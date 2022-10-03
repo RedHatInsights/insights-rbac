@@ -40,7 +40,7 @@ from management.models import Access, Group, Permission, Principal, Policy, Reso
 import openpyxl as xl
 
 # import test functions
-from tests.performance.test_performance import test_full_sync, test_tenant_groups, test_tenant_roles, test_group_roles, test_principals_roles, test_principals_groups
+from tests.performance.test_performance_concurrent import test_full_sync, test_tenant_groups, test_tenant_roles, test_group_roles, test_principals_roles, test_principals_groups
 
 from tests.performance.test_performance_util import setUp, tearDown, N_TENANTS, GROUPS_PER_TENANT, N, PRINCIPALS_PER_TENANT
 
@@ -68,7 +68,7 @@ class Command(BaseCommand):
             test_tenant_groups()
             test_tenant_roles()
             test_group_roles()
-            # test_principals_roles()
+            test_principals_roles()
             test_principals_groups()
         else:
             print("Invalid mode. Please choose from setup, test, or teardown.")
