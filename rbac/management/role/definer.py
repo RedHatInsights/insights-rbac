@@ -20,6 +20,7 @@ import json
 import logging
 import os
 
+from core.utils import destructive_ok
 from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
@@ -133,10 +134,13 @@ def seed_roles():
                 file_role_ids = _update_or_create_roles(role_list)
                 current_role_ids.update(file_role_ids)
 
+    # Find roles in DB but not in config
     roles_to_delete = Role.objects.filter(system=True).exclude(id__in=current_role_ids)
     logger.info(f"The following '{roles_to_delete.count()}' roles(s) eligible for removal: {roles_to_delete.values()}")
-    # Currently read-only to ensure we don't have any orphaned roles which should be added to the config
-    # Role.objects.filter(system=True).exclude(id__in=current_role_ids).delete()
+    if destructive_ok():
+        logger.info(f"Removing the following role(s): {roles_to_delete.values()}")
+        # Actually remove roles no longer in config
+        roles_to_delete.delete()
 
 
 def seed_permissions():
@@ -192,9 +196,12 @@ def seed_permissions():
                     logger.error(
                         f"Failed to update or create permissions for: " f"{app_name}:{resource} with error: {e}"
                     )
+    # Find perms in DB but not in config
     perms_to_delete = Permission.objects.exclude(id__in=current_permission_ids)
     logger.info(
         f"The following '{perms_to_delete.count()}' permission(s) eligible for removal: {perms_to_delete.values()}"
     )
-    # Currently read-only to ensure we don't have any orphaned permissions which should be added to the config
-    # Permission.objects.exclude(id__in=current_permission_ids).delete()
+    if destructive_ok():
+        logger.info(f"Removing the following permissions(s): {perms_to_delete.values()}")
+        # Actually remove perms no longer in DB
+        perms_to_delete.delete()
