@@ -384,12 +384,20 @@ CHANNEL_LAYERS = {
     "default": {"BACKEND": "channels_redis.core.RedisChannelLayer", "CONFIG": {"hosts": [(REDIS_HOST, REDIS_PORT)]}}
 }
 
+KAFKA_ENABLED = ENVIRONMENT.get_value("KAFKA_ENABLED", default=False)
+
 NOTIFICATIONS_ENABLED = ENVIRONMENT.get_value("NOTIFICATIONS_ENABLED", default=False)
 NOTIFICATIONS_RH_ENABLED = ENVIRONMENT.get_value("NOTIFICATIONS_RH_ENABLED", default=False)
 NOTIFICATIONS_TOPIC = ENVIRONMENT.get_value("NOTIFICATIONS_TOPIC", default=None)
 
+# if we don't enable KAFKA we can't use the notifications
+if not KAFKA_ENABLED:
+    NOTIFICATIONS_ENABLED = False
+    NOTIFICATIONS_RH_ENABLED = False
+    NOTIFICATIONS_TOPIC = None
+
 # Kafka settings
-if NOTIFICATIONS_ENABLED:
+if KAFKA_ENABLED:
     if ENVIRONMENT.bool("CLOWDER_ENABLED", default=False):
         kafka_broker = LoadedConfig.kafka.brokers[0]
         KAFKA_HOST = kafka_broker.hostname
