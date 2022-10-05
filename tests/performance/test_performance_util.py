@@ -15,6 +15,7 @@ GROUPS_PER_TENANT = 10
 N = 10  # number of roles per group, number of principals per group
 PRINCIPALS_PER_TENANT = 10
 
+
 def setUp():
     """Set up the test data."""
     print("Setting up test data...")
@@ -28,7 +29,7 @@ def setUp():
     def create_tenant(i):
         account = i
 
-        if (Tenant.objects.filter(tenant_name=f"ocm_acct{account}").exists()):
+        if Tenant.objects.filter(tenant_name=f"ocm_acct{account}").exists():
             t = Tenant.objects.get(tenant_name=f"ocm_acct{account}")
         else:
             t = Tenant.objects.create(
@@ -47,7 +48,7 @@ def setUp():
 
     def create_principal(tenant, i, j):
         username = f"ocm_principal_{i}_{j}"
-        if (Principal.objects.filter(username=username).exists()):
+        if Principal.objects.filter(username=username).exists():
             Principal.objects.get(username=username)
         else:
             Principal.objects.create(
@@ -63,7 +64,7 @@ def setUp():
     def create_group(tenant, i, j):
         name = f"ocm_group_{i}_{j}"
         group = None
-        if (Group.objects.filter(name=name).exists()):
+        if Group.objects.filter(name=name).exists():
             group = Group.objects.get(name=name)
         else:
             group = Group.objects.create(
@@ -73,7 +74,7 @@ def setUp():
 
         name = f"ocm_policy_{i}_{j}"
         policy = None
-        if (Policy.objects.filter(name=name).exists()):
+        if Policy.objects.filter(name=name).exists():
             policy = Policy.objects.get(name=name)
         else:
             policy = Policy.objects.create(
@@ -85,7 +86,7 @@ def setUp():
         for k in range(N):
             name = f"ocm_role_{i}_{j}_{k}"
             role = None
-            if (Role.objects.filter(name=name).exists()):
+            if Role.objects.filter(name=name).exists():
                 role = Role.objects.get(name=name)
             else:
                 role = Role.objects.create(
@@ -116,11 +117,12 @@ def setUp():
 
     print("Finished setting up test data")
 
+
 def tearDown():
     """Delete the test data."""
     print("Deleting test data...")
 
-    Principal.objects.filter(username__regex=r'^ocm_principal_.+').delete()
+    Principal.objects.filter(username__regex=r"^ocm_principal_.+").delete()
     Group.objects.filter(name__regex=r"^ocm_group_0_0").delete()
     Policy.objects.filter(name__regex=r"^ocm_policy_.+").delete()
     Role.objects.filter(name__regex=r"^ocm_role_.+").delete()
@@ -129,18 +131,25 @@ def tearDown():
 
     print("Finished deleting test data")
 
+
 # ------------------------
 # Identity builder helpers
 # ------------------------
 def build_identity():
     """Build identity."""
-    identity = {"identity": {"account_number": "10001", "org_id": "11111", "user": {
-            "username": "user_dev",
-            "email": "user_dev@foo.com",
-            "is_org_admin": True,
-            "is_internal": True,
-            "user_id": "51736777",
-        }}}
+    identity = {
+        "identity": {
+            "account_number": "10001",
+            "org_id": "11111",
+            "user": {
+                "username": "user_dev",
+                "email": "user_dev@foo.com",
+                "is_org_admin": True,
+                "is_internal": True,
+                "user_id": "51736777",
+            },
+        }
+    }
     identity["identity"]["type"] = "Associate"
     identity["identity"]["associate"] = identity.get("identity").get("user")
     identity["identity"]["user"]["is_internal"] = True
@@ -153,6 +162,7 @@ def build_identity():
     request_context = {"request": request}
 
     return request_context["request"]
+
 
 # ---------------------------
 # A couple of logging helpers
@@ -178,6 +188,7 @@ def timerStop(start, num_requests):
     print("---------------------------\n")
 
     return request_time, average
+
 
 def write_to_logger(logger, name, url, num_requests, request_time, average):
     """Write data to excel sheet."""

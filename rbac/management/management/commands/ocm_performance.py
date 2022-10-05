@@ -16,7 +16,7 @@ from tests.performance.test_performance_concurrent import (
     test_principals_groups,
     test_principals_roles,
     test_tenant_groups,
-    test_tenant_roles
+    test_tenant_roles,
 )
 from tests.performance.test_performance_util import setUp, tearDown
 
@@ -34,7 +34,7 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser):
         """Parse command arguments."""
-        parser.add_argument("mode", type=str, nargs='?', default='test', help="Choice of setup, test, or teardown")
+        parser.add_argument("mode", type=str, nargs="?", default="test", help="Choice of setup, test, or teardown")
 
     def handle(self, **options):
         """Run the command."""
