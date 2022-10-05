@@ -7,16 +7,11 @@ from django.db.models import Q
 from rest_framework import status
 from rest_framework.test import APIClient
 
-from base64 import b64encode
-from json import dumps as json_dumps
-from unittest.mock import Mock
-
 from api.models import Tenant
 from api.common import RH_IDENTITY_HEADER
 from management.models import Group, Principal
 
 import logging
-import time
 
 from tests.performance.test_performance_util import build_identity, timerStart, timerStop, write_to_logger
 

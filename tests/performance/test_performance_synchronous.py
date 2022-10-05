@@ -1,7 +1,5 @@
 # Baseline tests for OCM performance
 
-from concurrent.futures import ThreadPoolExecutor, as_completed
-
 from django.db.models import Q
 
 from rest_framework import status
@@ -11,7 +9,6 @@ from api.models import Tenant
 from management.models import Group, Principal
 
 import logging
-import time
 
 from tests.performance.test_performance_util import build_identity, timerStart, timerStop, write_to_logger
 
