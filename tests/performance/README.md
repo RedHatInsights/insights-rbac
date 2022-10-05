@@ -1,5 +1,15 @@
 ## OCM Performance Local Test Results
 
+To run the tests locally, use:
+
+```
+python rbac/manage.py ocm_performance [|setup|teardown]
+```
+
+You can change the number of tenants and other db entries created in the test_performance_util file. Also, a synchronous version of the tests is provided for local dev.
+
+## Results
+
 ### Concurrent Test Runs
 ```
 Starting test for Full Sync...
