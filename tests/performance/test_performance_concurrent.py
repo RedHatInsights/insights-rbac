@@ -37,11 +37,11 @@ def test_tenant_groups():
     name = "Tenant Groups"
     start = timerStart(name)
 
-    num_requests = tenants.count()
+    num_requests = 0
 
-    def tenant_groups(tenant):
+    def tenant_groups(t):
         response = client.get(
-            f"/_private/api/v1/integrations/tenant/{tenant.org_id}/groups/?external_tenant=ocm",
+            f"/_private/api/v1/integrations/tenant/{t.org_id}/groups/?external_tenant=ocm",
             **identity.META,
             follow=True,
         )
@@ -51,11 +51,12 @@ def test_tenant_groups():
     with ThreadPoolExecutor(max_workers=THREADS) as executor:
         futures = []
         for t in tenants:
-            futures.append(executor.submit(tenant_groups, tenant=t))
+            futures.append(executor.submit(tenant_groups, t=t))
         for future in as_completed(futures):
             response = future.result()
             if (response.status_code != status.HTTP_200_OK):
                 Exception("Recieved an error status\n")
+            num_requests += 1
 
     request_time, average = timerStop(start, num_requests)
 
@@ -75,7 +76,7 @@ def test_tenant_roles():
     name = "Tenant Roles"
     start = timerStart(name)
 
-    num_requests = tenants.count()
+    num_requests = 0
 
     def tenant_roles(t):
         response = client.get(
@@ -94,6 +95,7 @@ def test_tenant_roles():
             response = future.result()
             if (response.status_code != status.HTTP_200_OK):
                 Exception("Recieved an error status\n")
+            num_requests += 1
 
     request_time, average = timerStop(start, num_requests)
 
@@ -111,7 +113,7 @@ def test_group_roles():
     # 1 request for each group (to get roles)
     tenants = Tenant.objects.filter(Q(group__system=False) | Q(role__system=False)).prefetch_related('group_set', 'role_set').distinct()
 
-    num_requests = tenants.count()
+    num_requests = 0
 
     name = "Group Roles"
     start = timerStart(name)
@@ -135,6 +137,7 @@ def test_group_roles():
             response = future.result()
             if (response.status_code != status.HTTP_200_OK):
                 Exception("Recieved an error status\n")
+            num_requests += 1
 
     request_time, average = timerStop(start, num_requests)
 
@@ -149,7 +152,6 @@ def test_group_roles():
 
 def test_principals_groups():
     """Test tenant principals groups with /integrations/tenant/{tenant_id}/principal/{principal_id}/groups/ endpoint."""
-    # 1 request for each tenant (to get the principles)
 
     tenants = Tenant.objects.filter(Q(group__system=False) | Q(role__system=False)).prefetch_related('group_set', 'role_set').distinct()
 
@@ -240,19 +242,36 @@ def test_principals_roles():
     )
 
 def test_full_sync():
-    """Test full sync with /integrations/tenant/{tenant_id}/sync/ endpoint."""
-    tenants = Tenant.objects.filter(Q(group__system=False) | Q(role__system=False)).prefetch_related('group_set', 'role_set').distinct()
-
+    """Test simulated full sync."""
     name = "Full Sync"
     start = timerStart(name)
 
     num_requests = 0
 
+    def get_tenants():
+        response = client.get(
+            f"/_private/api/v1/integrations/tenant/?external_tenant=ocm&modified_only=true",
+            **identity.META,
+            follow=True,
+        )
+
+        if (response.status_code != status.HTTP_200_OK):
+            Exception("Recieved an error status\n")
+
+        tenants = response.data.get("data")
+
+        return tenants
+
+    tenants = get_tenants() # using the integrations/tenant/ endpoint
+
+    num_requests += 1
+
     def full_sync(t, g):
+        org_id = t.get("org_id")
         g_uuid = g.get("uuid")
         # tenant groups rolesk, get orgs groups roles
         response = client.get(
-            f"/_private/api/v1/integrations/tenant/{t.org_id}/groups/{g_uuid}/roles/?external_tenant=ocm",
+            f"/_private/api/v1/integrations/tenant/{org_id}/groups/{g_uuid}/roles/?external_tenant=ocm",
             **identity.META,
             follow=True,
         )
@@ -263,7 +282,7 @@ def test_full_sync():
         # OCM would sync group roles here
 
         response = client.get(
-            f"/_private/api/v1/integrations/tenant/{t.org_id}/groups/{g_uuid}/principals/?external_tenant=ocm&username_only=true",
+            f"/_private/api/v1/integrations/tenant/{org_id}/groups/{g_uuid}/principals/?external_tenant=ocm&username_only=true",
             **identity.META,
             follow=True,
         )
@@ -278,10 +297,11 @@ def test_full_sync():
     with ThreadPoolExecutor(max_workers=THREADS) as executor:
         futures = []
         for t in tenants:
+            org_id = t.get("org_id")
             num_requests += 1
             # tenant groups, get orgs groups
             response = client.get(
-                f"/_private/api/v1/integrations/tenant/{t.org_id}/groups/?external_tenant=ocm",
+                f"/_private/api/v1/integrations/tenant/{org_id}/groups/?external_tenant=ocm",
                 **identity.META,
                 follow=True,
             )

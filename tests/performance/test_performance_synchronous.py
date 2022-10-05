@@ -222,7 +222,7 @@ def test_principals_roles():
     )
 
 def test_full_sync():
-    """Test full sync with /integrations/tenant/{tenant_id}/sync/ endpoint."""
+    """Test simulated full sync."""
     tenants = Tenant.objects.filter(Q(group__system=False) | Q(role__system=False)).prefetch_related('group_set', 'role_set').distinct()
 
     name = "Full Sync"
