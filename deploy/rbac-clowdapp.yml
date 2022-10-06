@@ -176,6 +176,8 @@ objects:
             value: ${NOTIFICATIONS_RH_ENABLED}
           - name: KAFKA_ENABLED
             value: ${KAFKA_ENABLED}
+          - name: NOTIFICATIONS_TOPIC
+            value: ${NOTIFICATIONS_TOPIC}
 
     - name: scheduler-service
       minReplicas: ${{MIN_SCHEDULER_REPLICAS}}
