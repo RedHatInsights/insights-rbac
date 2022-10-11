@@ -53,6 +53,6 @@ def run_sync_schemas_in_worker(kwargs):
 
 
 @shared_task
-def run_ocm_performance_in_worker(kwargs=None):
+def run_ocm_performance_in_worker():
     """Celery task to run ocm performance tests."""
-    call_command("ocm_performance", **kwargs)
+    call_command("ocm_performance")
