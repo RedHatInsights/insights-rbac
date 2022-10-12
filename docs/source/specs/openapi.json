@@ -638,10 +638,10 @@
             "required": false,
             "description": "Parameter for optionally returning only usernames for principals, bypassing a call to IT.",
             "schema": {
-              "type": "string",
+              "type": "boolean",
               "enum": [
-                "true",
-                "false"
+                true,
+                false
               ]
             }
           }
@@ -1210,10 +1210,10 @@
             "required": false,
             "description": "Parameter for optionally returning only usernames for principals, bypassing a call to IT.",
             "schema": {
-              "type": "string",
+              "type": "boolean",
               "enum": [
-                "true",
-                "false"
+                true,
+                false
               ]
             }
           }
