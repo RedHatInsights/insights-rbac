@@ -16,9 +16,10 @@
 #
 """Test the role definer."""
 from django.conf import settings
-from unittest.mock import call, patch
+from unittest.mock import ANY, call, patch
 from management.role.definer import seed_roles, seed_permissions
 from api.models import Tenant
+from tests.core.test_kafka import copy_call_args
 from tests.identity_request import IdentityRequest
 from management.models import Access, ExtRoleRelation, Permission, ResourceDefinition, Role
 
@@ -31,8 +32,9 @@ class RoleDefinerTests(IdentityRequest):
         super().setUp()
         self.public_tenant = Tenant.objects.get(tenant_name="public")
 
-    @patch("management.notifications.producer_util.NotificationProducer.send_kafka_message")
+    @patch("core.kafka.RBACProducer.send_kafka_message")
     def test_role_create(self, send_kafka_message):
+        kafka_mock = copy_call_args(send_kafka_message)
         """Test that we can run a role seeding update."""
         with self.settings(NOTIFICATIONS_RH_ENABLED=True, NOTIFICATIONS_ENABLED=True):
             self.try_seed_roles()
@@ -47,11 +49,27 @@ class RoleDefinerTests(IdentityRequest):
             self.assertTrue(len(roles))
             self.assertFalse(Role.objects.get(name="RBAC Administrator Local Test").platform_default)
 
-            send_kafka_message.assert_any_call(
-                "rh-new-role-available",
-                {"name": roles.first().name, "username": "Red Hat", "uuid": str(roles.first().uuid)},
-                account_id=self.customer_data["account_id"],
-                org_id=org_id,
+            kafka_mock.assert_any_call(
+                settings.NOTIFICATIONS_TOPIC,
+                {
+                    "bundle": "console",
+                    "application": "rbac",
+                    "event_type": "rh-new-role-available",
+                    "timestamp": ANY,
+                    "account_id": self.customer_data["account_id"],
+                    "events": [
+                        {
+                            "metadata": {},
+                            "payload": {
+                                "name": roles.first().name,
+                                "username": "Red Hat",
+                                "uuid": str(roles.first().uuid),
+                            },
+                        }
+                    ],
+                    "org_id": org_id,
+                },
+                ANY,
             )
 
     def test_role_update(self):
@@ -84,9 +102,10 @@ class RoleDefinerTests(IdentityRequest):
         roles = Role.objects.filter(platform_default=True)
         self.assertTrue(len(roles))
 
-    @patch("management.notifications.producer_util.NotificationProducer.send_kafka_message")
+    @patch("core.kafka.RBACProducer.send_kafka_message")
     def test_role_update_platform_default_role(self, send_kafka_message):
         """Test that role seeding updates send out notificaiton."""
+        kafka_mock = copy_call_args(send_kafka_message)
         self.try_seed_roles()
 
         # Update non platform default role
@@ -117,26 +136,55 @@ class RoleDefinerTests(IdentityRequest):
             non_platform_role_to_update.refresh_from_db()
             self.assertEqual(non_platform_role_to_update.access.first().permission.permission, "rbac:*:*")
             self.assertEqual(platform_role_to_update.access.first().permission.permission, "rbac:principal:read")
-            assert send_kafka_message.call_args_list[0] == call(
-                "rh-non-platform-default-role-updated",
-                {
-                    "name": non_platform_role_to_update.name,
-                    "username": "Red Hat",
-                    "uuid": str(non_platform_role_to_update.uuid),
-                },
-                account_id=self.customer_data["account_id"],
-                org_id=org_id,
-            )
-            assert send_kafka_message.call_args_list[1] == call(
-                "rh-platform-default-role-updated",
-                {
-                    "name": platform_role_to_update.name,
-                    "username": "Red Hat",
-                    "uuid": str(platform_role_to_update.uuid),
-                },
-                account_id=self.customer_data["account_id"],
-                org_id=org_id,
-            )
+
+            notification_messages = [
+                call(
+                    settings.NOTIFICATIONS_TOPIC,
+                    {
+                        "bundle": "console",
+                        "application": "rbac",
+                        "event_type": "rh-non-platform-default-role-updated",
+                        "timestamp": ANY,
+                        "account_id": self.customer_data["account_id"],
+                        "events": [
+                            {
+                                "metadata": {},
+                                "payload": {
+                                    "name": non_platform_role_to_update.name,
+                                    "username": "Red Hat",
+                                    "uuid": str(non_platform_role_to_update.uuid),
+                                },
+                            }
+                        ],
+                        "org_id": org_id,
+                    },
+                    ANY,
+                ),
+                call(
+                    settings.NOTIFICATIONS_TOPIC,
+                    {
+                        "bundle": "console",
+                        "application": "rbac",
+                        "event_type": "rh-platform-default-role-updated",
+                        "timestamp": ANY,
+                        "account_id": self.customer_data["account_id"],
+                        "events": [
+                            {
+                                "metadata": {},
+                                "payload": {
+                                    "name": platform_role_to_update.name,
+                                    "username": "Red Hat",
+                                    "uuid": str(platform_role_to_update.uuid),
+                                },
+                            }
+                        ],
+                        "org_id": org_id,
+                    },
+                    ANY,
+                ),
+            ]
+
+            self.assertEqual(kafka_mock.call_args_list, notification_messages)
 
     def try_seed_roles(self):
         """Try to seed roles"""

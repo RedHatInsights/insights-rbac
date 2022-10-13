@@ -16,14 +16,14 @@
 #
 
 """Notification handlers of object change."""
-from datetime import datetime
 import json
 import logging
 import os
+from datetime import datetime
 from uuid import uuid4
 
-from django.conf import settings
 from core.kafka import RBACProducer
+from django.conf import settings
 from management.utils import account_id_for_tenant
 
 from api.models import Tenant
@@ -48,9 +48,12 @@ def build_notifications_message(event_type, payload, account_id=None, org_id=Non
     message["events"][0]["payload"] = payload
     return message
 
+
 def notify(event_type, payload, account_id=None, org_id=None):
+    """Actually send notifications message."""
     noto_message = build_notifications_message(event_type, payload, account_id, org_id)
     producer.send_kafka_message(noto_topic, noto_message, noto_headers)
+
 
 def notify_all(event_type, payload):
     """Notify all tenants."""
@@ -64,7 +67,6 @@ def notify_all(event_type, payload):
         else:
             org_id = None
         notify(event_type, payload, account_id, org_id)
-
 
 
 def handle_system_role_change_notification(role_obj, operation):

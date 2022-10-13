@@ -15,13 +15,14 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Test the group definer."""
-from unittest.mock import call, patch
+from unittest.mock import ANY, call, patch
 from api.models import Tenant
 
 from django.conf import settings
 from management.group.definer import seed_group, add_roles, clone_default_group_in_public_schema
 from management.role.definer import seed_roles
 from tests.identity_request import IdentityRequest
+from tests.core.test_kafka import copy_call_args
 from management.models import Group, Role
 
 
@@ -69,6 +70,7 @@ class GroupDefinerTests(IdentityRequest):
     @patch("core.kafka.RBACProducer.send_kafka_message")
     def test_default_group_seeding_reassign_roles(self, send_kafka_message):
         """Test that previous assigned roles would be eliminated before assigning new roles."""
+        kafka_mock = copy_call_args(send_kafka_message)
         self.modify_default_group()
         new_platform_role = Role.objects.create(
             name="new_platform_role", platform_default=True, tenant=self.public_tenant
@@ -91,28 +93,57 @@ class GroupDefinerTests(IdentityRequest):
                 org_id = self.customer_data["org_id"]
             else:
                 org_id = None
-            assert send_kafka_message.call_args_list[0] == call(
-                "rh-new-role-added-to-default-access",
-                {
-                    "name": group.name,
-                    "username": "Red Hat",
-                    "uuid": str(group.uuid),
-                    "role": {"name": new_platform_role.name, "uuid": str(new_platform_role.uuid)},
-                },
-                account_id=self.customer_data["account_id"],
-                org_id=org_id,
-            )
-            assert send_kafka_message.call_args_list[1] == call(
-                "rh-role-removed-from-default-access",
-                {
-                    "name": group.name,
-                    "username": "Red Hat",
-                    "uuid": str(group.uuid),
-                    "role": {"name": role_to_remove.name, "uuid": str(role_to_remove.uuid)},
-                },
-                account_id=self.customer_data["account_id"],
-                org_id=org_id,
-            )
+
+            notification_messages = [
+                call(
+                    settings.NOTIFICATIONS_TOPIC,
+                    {
+                        "bundle": "console",
+                        "application": "rbac",
+                        "event_type": "rh-new-role-added-to-default-access",
+                        "timestamp": ANY,
+                        "account_id": self.customer_data["account_id"],
+                        "events": [
+                            {
+                                "metadata": {},
+                                "payload": {
+                                    "username": "Red Hat",
+                                    "name": group.name,
+                                    "uuid": str(group.uuid),
+                                    "role": {"name": new_platform_role.name, "uuid": str(new_platform_role.uuid)},
+                                },
+                            }
+                        ],
+                        "org_id": org_id,
+                    },
+                    ANY,
+                ),
+                call(
+                    settings.NOTIFICATIONS_TOPIC,
+                    {
+                        "bundle": "console",
+                        "application": "rbac",
+                        "event_type": "rh-role-removed-from-default-access",
+                        "timestamp": ANY,
+                        "account_id": self.customer_data["account_id"],
+                        "events": [
+                            {
+                                "metadata": {},
+                                "payload": {
+                                    "username": "Red Hat",
+                                    "name": group.name,
+                                    "uuid": str(group.uuid),
+                                    "role": {"name": role_to_remove.name, "uuid": str(role_to_remove.uuid)},
+                                },
+                            }
+                        ],
+                        "org_id": org_id,
+                    },
+                    ANY,
+                ),
+            ]
+
+            self.assertEqual(kafka_mock.call_args_list, notification_messages)
 
     def modify_default_group(self, system=True):
         """Add a role to the default group and/or change the system flag"""

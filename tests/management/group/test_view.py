@@ -28,6 +28,7 @@ from rest_framework.test import APIClient
 from api.models import Tenant, User
 from management.cache import AccessCache, TenantCache
 from management.models import Group, Principal, Policy, Role, ExtRoleRelation, ExtTenant
+from tests.core.test_kafka import copy_call_args
 from tests.identity_request import IdentityRequest
 
 
@@ -142,7 +143,7 @@ class GroupViewsetTests(IdentityRequest):
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
         return_value={"status_code": 200, "data": []},
     )
-    @patch("management.notifications.producer_util.NotificationProducer.send_kafka_message")
+    @patch("core.kafka.RBACProducer.send_kafka_message")
     def test_create_group_success(self, send_kafka_message, mock_request):
         """Test that we can create a group."""
         with self.settings(NOTIFICATIONS_ENABLED=True):
@@ -171,10 +172,26 @@ class GroupViewsetTests(IdentityRequest):
             self.assertEqual(group_name, response.data.get("name"))
             self.assertEqual(group.tenant, self.tenant)
             send_kafka_message.assert_called_once_with(
-                "group-created",
-                {"name": group_name, "username": self.user_data["username"], "uuid": str(group.uuid)},
-                account_id=self.customer_data["account_id"],
-                org_id=org_id,
+                settings.NOTIFICATIONS_TOPIC,
+                {
+                    "bundle": "console",
+                    "application": "rbac",
+                    "event_type": "group-created",
+                    "timestamp": ANY,
+                    "account_id": self.customer_data["account_id"],
+                    "events": [
+                        {
+                            "metadata": {},
+                            "payload": {
+                                "name": group_name,
+                                "username": self.user_data["username"],
+                                "uuid": str(group.uuid),
+                            },
+                        }
+                    ],
+                    "org_id": org_id,
+                },
+                ANY,
             )
 
     def test_create_default_group(self):
@@ -516,7 +533,7 @@ class GroupViewsetTests(IdentityRequest):
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
         return_value={"status_code": 200, "data": []},
     )
-    @patch("management.notifications.producer_util.NotificationProducer.send_kafka_message")
+    @patch("core.kafka.RBACProducer.send_kafka_message")
     def test_update_group_success(self, send_kafka_message, mock_request):
         """Test that we can update an existing group."""
         with self.settings(NOTIFICATIONS_ENABLED=True):
@@ -535,11 +552,28 @@ class GroupViewsetTests(IdentityRequest):
 
             self.assertIsNotNone(response.data.get("uuid"))
             self.assertEqual(updated_name, response.data.get("name"))
+
             send_kafka_message.assert_called_once_with(
-                "group-updated",
-                {"name": updated_name, "username": self.user_data["username"], "uuid": str(self.group.uuid)},
-                account_id=self.customer_data["account_id"],
-                org_id=org_id,
+                settings.NOTIFICATIONS_TOPIC,
+                {
+                    "bundle": "console",
+                    "application": "rbac",
+                    "event_type": "group-updated",
+                    "timestamp": ANY,
+                    "account_id": self.customer_data["account_id"],
+                    "events": [
+                        {
+                            "metadata": {},
+                            "payload": {
+                                "name": updated_name,
+                                "username": self.user_data["username"],
+                                "uuid": str(self.group.uuid),
+                            },
+                        }
+                    ],
+                    "org_id": org_id,
+                },
+                ANY,
             )
 
     def test_update_default_group(self):
@@ -598,7 +632,7 @@ class GroupViewsetTests(IdentityRequest):
         response = client.put(url, {}, format="json", **self.headers)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
-    @patch("management.notifications.producer_util.NotificationProducer.send_kafka_message")
+    @patch("core.kafka.RBACProducer.send_kafka_message")
     def test_delete_group_success(self, send_kafka_message):
         """Test that we can delete an existing group."""
         with self.settings(NOTIFICATIONS_ENABLED=True):
@@ -615,11 +649,28 @@ class GroupViewsetTests(IdentityRequest):
             # verify the group no longer exists
             response = client.get(url, **self.headers)
             self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
             send_kafka_message.assert_called_once_with(
-                "group-deleted",
-                {"name": self.group.name, "username": self.user_data["username"], "uuid": str(self.group.uuid)},
-                account_id=self.customer_data["account_id"],
-                org_id=org_id,
+                settings.NOTIFICATIONS_TOPIC,
+                {
+                    "bundle": "console",
+                    "application": "rbac",
+                    "event_type": "group-deleted",
+                    "timestamp": ANY,
+                    "account_id": self.customer_data["account_id"],
+                    "events": [
+                        {
+                            "metadata": {},
+                            "payload": {
+                                "name": self.group.name,
+                                "username": self.user_data["username"],
+                                "uuid": str(self.group.uuid),
+                            },
+                        }
+                    ],
+                    "org_id": org_id,
+                },
+                ANY,
             )
 
     def test_delete_default_group(self):
@@ -711,7 +762,7 @@ class GroupViewsetTests(IdentityRequest):
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
         return_value={"status_code": 200, "data": [{"username": "test_add_user"}]},
     )
-    @patch("management.notifications.producer_util.NotificationProducer.send_kafka_message")
+    @patch("core.kafka.RBACProducer.send_kafka_message")
     def test_add_group_principals_success(self, send_kafka_message, mock_request):
         """Test that adding a principal to a group returns successfully."""
         # Create a group and a cross account user.
@@ -741,16 +792,28 @@ class GroupViewsetTests(IdentityRequest):
             self.assertEqual(principal.tenant, self.tenant)
 
             send_kafka_message.assert_called_once_with(
-                "group-updated",
+                settings.NOTIFICATIONS_TOPIC,
                 {
-                    "name": test_group.name,
-                    "username": self.user_data["username"],
-                    "uuid": str(test_group.uuid),
-                    "operation": "added",
-                    "principal": username,
+                    "bundle": "console",
+                    "application": "rbac",
+                    "event_type": "group-updated",
+                    "timestamp": ANY,
+                    "account_id": self.customer_data["account_id"],
+                    "events": [
+                        {
+                            "metadata": {},
+                            "payload": {
+                                "name": test_group.name,
+                                "username": self.user_data["username"],
+                                "uuid": str(test_group.uuid),
+                                "operation": "added",
+                                "principal": username,
+                            },
+                        }
+                    ],
+                    "org_id": org_id,
                 },
-                account_id=self.customer_data["account_id"],
-                org_id=org_id,
+                ANY,
             )
 
     @patch(
@@ -811,7 +874,7 @@ class GroupViewsetTests(IdentityRequest):
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
         return_value={"status_code": 200, "data": [{"username": "test_user"}]},
     )
-    @patch("management.notifications.producer_util.NotificationProducer.send_kafka_message")
+    @patch("core.kafka.RBACProducer.send_kafka_message")
     def test_remove_group_principals_success(self, send_kafka_message, mock_request):
         """Test that removing a principal to a group returns successfully."""
         with self.settings(NOTIFICATIONS_ENABLED=True):
@@ -829,17 +892,30 @@ class GroupViewsetTests(IdentityRequest):
             url = "{}?usernames={}".format(url, "test_user")
             response = client.delete(url, format="json", **self.headers)
             self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+
             send_kafka_message.assert_called_once_with(
-                "group-updated",
+                settings.NOTIFICATIONS_TOPIC,
                 {
-                    "name": self.group.name,
-                    "username": self.user_data["username"],
-                    "uuid": str(self.group.uuid),
-                    "operation": "removed",
-                    "principal": test_user.username,
+                    "bundle": "console",
+                    "application": "rbac",
+                    "event_type": "group-updated",
+                    "timestamp": ANY,
+                    "account_id": self.customer_data["account_id"],
+                    "events": [
+                        {
+                            "metadata": {},
+                            "payload": {
+                                "name": self.group.name,
+                                "username": self.user_data["username"],
+                                "uuid": str(self.group.uuid),
+                                "operation": "removed",
+                                "principal": test_user.username,
+                            },
+                        }
+                    ],
+                    "org_id": org_id,
                 },
-                account_id=self.customer_data["account_id"],
-                org_id=org_id,
+                ANY,
             )
 
     def test_remove_group_principals_invalid(self):
@@ -1309,9 +1385,10 @@ class GroupViewsetTests(IdentityRequest):
         self.assertEqual(system_policy.tenant, self.tenant)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
-    @patch("management.notifications.producer_util.NotificationProducer.send_kafka_message")
+    @patch("core.kafka.RBACProducer.send_kafka_message")
     def test_system_flag_update_on_add(self, send_kafka_message):
         """Test that adding a role to a platform_default group flips the system flag."""
+        kafka_mock = copy_call_args(send_kafka_message)
         with self.settings(NOTIFICATIONS_ENABLED=True):
             url = reverse("group-roles", kwargs={"uuid": self.defGroup.uuid})
             client = APIClient()
@@ -1348,32 +1425,60 @@ class GroupViewsetTests(IdentityRequest):
             self.assertEqual(custom_default_group.tenant, self.tenant)
             self.assertEqual(custom_default_group.roles().count(), 2)
 
-            assert send_kafka_message.call_args_list[0] == call(
-                "platform-default-group-turned-into-custom",
-                {
-                    "name": custom_default_group.name,
-                    "username": self.user_data["username"],
-                    "uuid": str(custom_default_group.uuid),
-                },
-                account_id=self.customer_data["account_id"],
-                org_id=org_id,
-            )
-            assert send_kafka_message.call_args_list[1] == call(
-                "custom-default-access-updated",
-                {
-                    "name": custom_default_group.name,
-                    "username": self.user_data["username"],
-                    "uuid": str(custom_default_group.uuid),
-                    "operation": "added",
-                    "role": {"uuid": str(self.roleB.uuid), "name": self.roleB.name},
-                },
-                account_id=self.customer_data["account_id"],
-                org_id=org_id,
-            )
+            notifications_messages = [
+                call(
+                    settings.NOTIFICATIONS_TOPIC,
+                    {
+                        "bundle": "console",
+                        "application": "rbac",
+                        "event_type": "platform-default-group-turned-into-custom",
+                        "timestamp": ANY,
+                        "account_id": self.customer_data["account_id"],
+                        "events": [
+                            {
+                                "metadata": {},
+                                "payload": {
+                                    "name": custom_default_group.name,
+                                    "username": self.user_data["username"],
+                                    "uuid": str(custom_default_group.uuid),
+                                },
+                            }
+                        ],
+                        "org_id": org_id,
+                    },
+                    ANY,
+                ),
+                call(
+                    settings.NOTIFICATIONS_TOPIC,
+                    {
+                        "bundle": "console",
+                        "application": "rbac",
+                        "event_type": "custom-default-access-updated",
+                        "timestamp": ANY,
+                        "account_id": self.customer_data["account_id"],
+                        "events": [
+                            {
+                                "metadata": {},
+                                "payload": {
+                                    "name": custom_default_group.name,
+                                    "username": self.user_data["username"],
+                                    "uuid": str(custom_default_group.uuid),
+                                    "operation": "added",
+                                    "role": {"uuid": str(self.roleB.uuid), "name": self.roleB.name},
+                                },
+                            }
+                        ],
+                        "org_id": org_id,
+                    },
+                    ANY,
+                ),
+            ]
+            self.assertEqual(kafka_mock.call_args_list, notifications_messages)
 
-    @patch("management.notifications.producer_util.NotificationProducer.send_kafka_message")
+    @patch("core.kafka.RBACProducer.send_kafka_message")
     def test_system_flag_update_on_remove(self, send_kafka_message):
         """Test that removing a role from a platform_default group flips the system flag."""
+        kafka_mock = copy_call_args(send_kafka_message)
         with self.settings(NOTIFICATIONS_ENABLED=True):
             default_role = Role.objects.create(
                 name="default_role",
@@ -1408,28 +1513,55 @@ class GroupViewsetTests(IdentityRequest):
             self.assertEqual(custom_default_group.tenant, self.tenant)
             self.assertEqual(custom_default_group.roles().count(), 0)
 
-            assert send_kafka_message.call_args_list[0] == call(
-                "platform-default-group-turned-into-custom",
-                {
-                    "name": custom_default_group.name,
-                    "username": self.user_data["username"],
-                    "uuid": str(custom_default_group.uuid),
-                },
-                account_id=self.customer_data["account_id"],
-                org_id=org_id,
-            )
-            assert send_kafka_message.call_args_list[1] == call(
-                "custom-default-access-updated",
-                {
-                    "name": custom_default_group.name,
-                    "username": self.user_data["username"],
-                    "uuid": str(custom_default_group.uuid),
-                    "operation": "removed",
-                    "role": {"uuid": str(default_role.uuid), "name": default_role.name},
-                },
-                account_id=self.customer_data["account_id"],
-                org_id=org_id,
-            )
+            notification_messages = [
+                call(
+                    settings.NOTIFICATIONS_TOPIC,
+                    {
+                        "bundle": "console",
+                        "application": "rbac",
+                        "event_type": "platform-default-group-turned-into-custom",
+                        "timestamp": ANY,
+                        "account_id": self.customer_data["account_id"],
+                        "events": [
+                            {
+                                "metadata": {},
+                                "payload": {
+                                    "name": custom_default_group.name,
+                                    "username": self.user_data["username"],
+                                    "uuid": str(custom_default_group.uuid),
+                                },
+                            }
+                        ],
+                        "org_id": org_id,
+                    },
+                    ANY,
+                ),
+                call(
+                    settings.NOTIFICATIONS_TOPIC,
+                    {
+                        "bundle": "console",
+                        "application": "rbac",
+                        "event_type": "custom-default-access-updated",
+                        "timestamp": ANY,
+                        "account_id": self.customer_data["account_id"],
+                        "events": [
+                            {
+                                "metadata": {},
+                                "payload": {
+                                    "name": custom_default_group.name,
+                                    "username": self.user_data["username"],
+                                    "uuid": str(custom_default_group.uuid),
+                                    "operation": "removed",
+                                    "role": {"uuid": str(default_role.uuid), "name": default_role.name},
+                                },
+                            }
+                        ],
+                        "org_id": org_id,
+                    },
+                    ANY,
+                ),
+            ]
+            self.assertEqual(kafka_mock.call_args_list, notification_messages)
 
     def test_add_group_roles_bad_group_guid(self):
         group_url = reverse("group-roles", kwargs={"uuid": "master_exploder"})
@@ -1483,9 +1615,10 @@ class GroupViewsetTests(IdentityRequest):
         self.assertEqual(roles[0].get("description"), self.role.description)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
-    @patch("management.notifications.producer_util.NotificationProducer.send_kafka_message")
+    @patch("core.kafka.RBACProducer.send_kafka_message")
     def test_add_group_multiple_roles_success(self, send_kafka_message):
         """Test that adding multiple roles to a group returns successfully."""
+        kafka_mock = copy_call_args(send_kafka_message)
         with self.settings(NOTIFICATIONS_ENABLED=True):
             groupC = Group.objects.create(name="groupC", tenant=self.tenant)
             url = reverse("group-roles", kwargs={"uuid": groupC.uuid})
@@ -1504,30 +1637,57 @@ class GroupViewsetTests(IdentityRequest):
             self.assertCountEqual([self.role, self.roleB], list(groupC.roles()))
             self.assertEqual(response.status_code, status.HTTP_200_OK)
 
-            assert send_kafka_message.call_args_list[0] == call(
-                "group-updated",
-                {
-                    "name": groupC.name,
-                    "username": self.user_data["username"],
-                    "uuid": str(groupC.uuid),
-                    "operation": "added",
-                    "role": {"uuid": str(self.role.uuid), "name": self.role.name},
-                },
-                account_id=self.customer_data["account_id"],
-                org_id=org_id,
-            )
-            assert send_kafka_message.call_args_list[1] == call(
-                "group-updated",
-                {
-                    "name": groupC.name,
-                    "username": self.user_data["username"],
-                    "uuid": str(groupC.uuid),
-                    "operation": "added",
-                    "role": {"uuid": str(self.roleB.uuid), "name": self.roleB.name},
-                },
-                account_id=self.customer_data["account_id"],
-                org_id=org_id,
-            )
+            notification_messages = [
+                call(
+                    settings.NOTIFICATIONS_TOPIC,
+                    {
+                        "bundle": "console",
+                        "application": "rbac",
+                        "event_type": "group-updated",
+                        "timestamp": ANY,
+                        "account_id": self.customer_data["account_id"],
+                        "events": [
+                            {
+                                "metadata": {},
+                                "payload": {
+                                    "name": groupC.name,
+                                    "username": self.user_data["username"],
+                                    "uuid": str(groupC.uuid),
+                                    "operation": "added",
+                                    "role": {"uuid": str(self.role.uuid), "name": self.role.name},
+                                },
+                            }
+                        ],
+                        "org_id": org_id,
+                    },
+                    ANY,
+                ),
+                call(
+                    settings.NOTIFICATIONS_TOPIC,
+                    {
+                        "bundle": "console",
+                        "application": "rbac",
+                        "event_type": "group-updated",
+                        "timestamp": ANY,
+                        "account_id": self.customer_data["account_id"],
+                        "events": [
+                            {
+                                "metadata": {},
+                                "payload": {
+                                    "name": groupC.name,
+                                    "username": self.user_data["username"],
+                                    "uuid": str(groupC.uuid),
+                                    "operation": "added",
+                                    "role": {"uuid": str(self.roleB.uuid), "name": self.roleB.name},
+                                },
+                            }
+                        ],
+                        "org_id": org_id,
+                    },
+                    ANY,
+                ),
+            ]
+            self.assertEqual(kafka_mock.call_args_list, notification_messages)
 
     def test_add_group_multiple_roles_invalid(self):
         """Test that adding invalid roles to a group fails the request and does not add any."""
@@ -1582,9 +1742,10 @@ class GroupViewsetTests(IdentityRequest):
         response = client.delete(url, format="json", **self.headers)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
-    @patch("management.notifications.producer_util.NotificationProducer.send_kafka_message")
+    @patch("core.kafka.RBACProducer.send_kafka_message")
     def test_remove_group_multiple_roles_success(self, send_kafka_message):
         """Test that removing multiple roles from a group returns successfully."""
+        kafka_mock = copy_call_args(send_kafka_message)
         with self.settings(NOTIFICATIONS_ENABLED=True):
             url = reverse("group-roles", kwargs={"uuid": self.group.uuid})
             client = APIClient()
@@ -1602,30 +1763,58 @@ class GroupViewsetTests(IdentityRequest):
 
             self.assertCountEqual([], list(self.group.roles()))
             self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
-            assert send_kafka_message.call_args_list[0] == call(
-                "group-updated",
-                {
-                    "name": self.group.name,
-                    "username": self.user_data["username"],
-                    "uuid": str(self.group.uuid),
-                    "operation": "removed",
-                    "role": {"uuid": str(self.role.uuid), "name": self.role.name},
-                },
-                account_id=self.customer_data["account_id"],
-                org_id=org_id,
-            )
-            assert send_kafka_message.call_args_list[1] == call(
-                "group-updated",
-                {
-                    "name": self.group.name,
-                    "username": self.user_data["username"],
-                    "uuid": str(self.group.uuid),
-                    "operation": "removed",
-                    "role": {"uuid": str(self.roleB.uuid), "name": self.roleB.name},
-                },
-                account_id=self.customer_data["account_id"],
-                org_id=org_id,
-            )
+
+            notification_messages = [
+                call(
+                    settings.NOTIFICATIONS_TOPIC,
+                    {
+                        "bundle": "console",
+                        "application": "rbac",
+                        "event_type": "group-updated",
+                        "timestamp": ANY,
+                        "account_id": self.customer_data["account_id"],
+                        "events": [
+                            {
+                                "metadata": {},
+                                "payload": {
+                                    "name": self.group.name,
+                                    "username": self.user_data["username"],
+                                    "uuid": str(self.group.uuid),
+                                    "operation": "removed",
+                                    "role": {"uuid": str(self.role.uuid), "name": self.role.name},
+                                },
+                            }
+                        ],
+                        "org_id": org_id,
+                    },
+                    ANY,
+                ),
+                call(
+                    settings.NOTIFICATIONS_TOPIC,
+                    {
+                        "bundle": "console",
+                        "application": "rbac",
+                        "event_type": "group-updated",
+                        "timestamp": ANY,
+                        "account_id": self.customer_data["account_id"],
+                        "events": [
+                            {
+                                "metadata": {},
+                                "payload": {
+                                    "name": self.group.name,
+                                    "username": self.user_data["username"],
+                                    "uuid": str(self.group.uuid),
+                                    "operation": "removed",
+                                    "role": {"uuid": str(self.roleB.uuid), "name": self.roleB.name},
+                                },
+                            }
+                        ],
+                        "org_id": org_id,
+                    },
+                    ANY,
+                ),
+            ]
+            self.assertEqual(kafka_mock.call_args_list, notification_messages)
 
     def test_remove_group_multiple_roles_invalid(self):
         """Test that removing invalid roles from a group fails the request and does not remove any."""
