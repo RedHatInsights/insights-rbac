@@ -35,7 +35,7 @@ class RBACProducer:
     def get_producer(self):
         """Init method to return fake kafka when flag is set to false."""
         if not hasattr(self, "producer"):
-            if settings.DEVELOPMENT or settings.MOCK_KAFKA:
+            if settings.DEVELOPMENT or not settings.KAFKA_ENABLED:
                 self.producer = FakeKafkaProducer()
             else:
                 if settings.KAFKA_AUTH:
