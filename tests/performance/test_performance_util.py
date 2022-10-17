@@ -15,6 +15,7 @@ GROUPS_PER_TENANT = 10
 N = 10  # number of roles per group, number of principals per group
 PRINCIPALS_PER_TENANT = 10
 
+PREFIX = "perf_test"
 
 def setUp():
     """Set up the test data."""
@@ -29,13 +30,13 @@ def setUp():
     def create_tenant(i):
         account = i
 
-        if Tenant.objects.filter(tenant_name=f"ocm_acct{account}").exists():
-            t = Tenant.objects.get(tenant_name=f"ocm_acct{account}")
+        if Tenant.objects.filter(tenant_name=f"{PREFIX}_acct{account}").exists():
+            t = Tenant.objects.get(tenant_name=f"{PREFIX}_acct{account}")
         else:
             t = Tenant.objects.create(
                 org_id=i,
                 account_id=account,
-                tenant_name=f"ocm_acct{account}",
+                tenant_name=f"{PREFIX}_acct{account}",
             )
             t.ready = True
             t.save()
@@ -47,7 +48,7 @@ def setUp():
         tenants.append(create_tenant(i))
 
     def create_principal(tenant, i, j):
-        username = f"ocm_principal_{i}_{j}"
+        username = f"{PREFIX}_principal_{i}_{j}"
         if Principal.objects.filter(username=username).exists():
             Principal.objects.get(username=username)
         else:
@@ -62,7 +63,7 @@ def setUp():
             create_principal(tenants[i], i, j)
 
     def create_group(tenant, i, j):
-        name = f"ocm_group_{i}_{j}"
+        name = f"{PREFIX}_group_{i}_{j}"
         group = None
         if Group.objects.filter(name=name).exists():
             group = Group.objects.get(name=name)
@@ -72,7 +73,7 @@ def setUp():
                 tenant=tenant,
             )
 
-        name = f"ocm_policy_{i}_{j}"
+        name = f"{PREFIX}_policy_{i}_{j}"
         policy = None
         if Policy.objects.filter(name=name).exists():
             policy = Policy.objects.get(name=name)
@@ -84,7 +85,7 @@ def setUp():
 
         # for each group, add "n" number of roles (should be OCM roles, so those with an external tenant)
         for k in range(N):
-            name = f"ocm_role_{i}_{j}_{k}"
+            name = f"{PREFIX}_role_{i}_{j}_{k}"
             role = None
             if Role.objects.filter(name=name).exists():
                 role = Role.objects.get(name=name)
@@ -95,7 +96,7 @@ def setUp():
                 )
 
                 ExtRoleRelation.objects.create(
-                    ext_id=f"ocm_r_r{i}_{j}_{k}",
+                    ext_id=f"{PREFIX}_r_r{i}_{j}_{k}",
                     ext_tenant=ext_tenant,
                     role=role,
                 )
@@ -107,7 +108,7 @@ def setUp():
 
         # for each group, assign "n" number of principals to the group
         for k in range(N):
-            group.principals.add(Principal.objects.get(username=f"ocm_principal_{i}_{k}"))
+            group.principals.add(Principal.objects.get(username=f"{PREFIX}_principal_{i}_{k}"))
 
         group.save()
 
@@ -122,12 +123,12 @@ def tearDown():
     """Delete the test data."""
     print("Deleting test data...")
 
-    Principal.objects.filter(username__regex=r"^ocm_principal_.+").delete()
-    Group.objects.filter(name__regex=r"^ocm_group_0_0").delete()
-    Policy.objects.filter(name__regex=r"^ocm_policy_.+").delete()
-    Role.objects.filter(name__regex=r"^ocm_role_.+").delete()
-    ExtRoleRelation.objects.filter(ext_id__regex=r"^ocm_r_r_.+").delete()
-    Tenant.objects.filter(tenant_name__regex=r"^ocm_acct.+").delete()
+    Principal.objects.filter(username__regex=r"^perf_test_principal_.+").delete()
+    Group.objects.filter(name__regex=r"^perf_test_group_0_0").delete()
+    Policy.objects.filter(name__regex=r"^perf_test_policy_.+").delete()
+    Role.objects.filter(name__regex=r"^perf_test_role_.+").delete()
+    ExtRoleRelation.objects.filter(ext_id__regex=r"^perf_test_r_r_.+").delete()
+    Tenant.objects.filter(tenant_name__regex=r"^perf_test_acct.+").delete()
 
     print("Finished deleting test data")
 
