@@ -17,6 +17,7 @@ PRINCIPALS_PER_TENANT = 10
 
 PREFIX = "perf_test"
 
+
 def setUp():
     """Set up the test data."""
     print("Setting up test data...")
