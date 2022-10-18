@@ -16,17 +16,43 @@
 #
 
 """Notification handlers of object change."""
+import json
 import logging
+import os
+from datetime import datetime
+from uuid import uuid4
 
+from core.kafka import RBACProducer
 from django.conf import settings
-from management.notifications.producer_util import NotificationProducer
 from management.utils import account_id_for_tenant
 
 from api.models import Tenant
 
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
-producer = NotificationProducer()
+noto_producer = RBACProducer()
+noto_topic = settings.NOTIFICATIONS_TOPIC
+noto_headers = [("rh-message-id", str(uuid4()).encode("utf-8"))]
+with open(os.path.join(settings.BASE_DIR, "management", "notifications", "message_template.json")) as template:
+    message_template = json.load(template)
+
+
+def build_notifications_message(event_type, payload, account_id=None, org_id=None):
+    """Create message based on template."""
+    message = message_template
+    if settings.AUTHENTICATE_WITH_ORG_ID:
+        message["org_id"] = org_id
+    message["event_type"] = event_type
+    message["timestamp"] = datetime.now().isoformat()
+    message["account_id"] = account_id
+    message["events"][0]["payload"] = payload
+    return message
+
+
+def notify(event_type, payload, account_id=None, org_id=None):
+    """Actually send notifications message."""
+    noto_message = build_notifications_message(event_type, payload, account_id, org_id)
+    noto_producer.send_kafka_message(noto_topic, noto_message, noto_headers)
 
 
 def notify_all(event_type, payload):
@@ -40,7 +66,7 @@ def notify_all(event_type, payload):
             org_id = tenant.org_id
         else:
             org_id = None
-        producer.send_kafka_message(event_type, payload, account_id=account_id, org_id=org_id)
+        notify(event_type, payload, account_id, org_id)
 
 
 def handle_system_role_change_notification(role_obj, operation):
@@ -89,7 +115,7 @@ def role_obj_change_notification_handler(role_obj, operation, user=None):
     elif operation == "updated":
         event_type = "custom-role-updated"
 
-    producer.send_kafka_message(event_type, payload, account_id=account_id, org_id=org_id)
+    notify(event_type, payload, account_id, org_id)
 
 
 def group_obj_change_notification_handler(user, group_obj, operation):
@@ -113,7 +139,7 @@ def group_obj_change_notification_handler(user, group_obj, operation):
     # Group updated
     else:
         event_type = "group-updated"
-    producer.send_kafka_message(event_type, payload, account_id=account_id, org_id=org_id)
+    notify(event_type, payload, account_id, org_id)
 
 
 def handle_platform_group_role_change_notification(group_obj, role_obj, operation):
@@ -156,7 +182,7 @@ def group_role_change_notification_handler(user, group_obj, role_obj, operation)
     else:
         event_type = "group-updated"
 
-    producer.send_kafka_message(event_type, payload, account_id=account_id, org_id=org_id)
+    notify(event_type, payload, account_id, org_id)
 
 
 def group_principal_change_notification_handler(user, group_obj, principal, operation):
@@ -172,7 +198,7 @@ def group_principal_change_notification_handler(user, group_obj, principal, oper
     payload = payload_builder(user.username, group_obj, operation, ("principal", principal))
 
     event_type = "group-updated"
-    producer.send_kafka_message(event_type, payload, account_id=account_id, org_id=org_id)
+    notify(event_type, payload, account_id, org_id)
 
 
 def group_flag_change_notification_handler(user, group_obj):
@@ -188,7 +214,7 @@ def group_flag_change_notification_handler(user, group_obj):
 
     event_type = "platform-default-group-turned-into-custom"
 
-    producer.send_kafka_message(event_type, payload, account_id=account_id, org_id=org_id)
+    notify(event_type, payload, account_id, org_id)
 
 
 def payload_builder(username, resource_obj, operation=None, extra_info=None):

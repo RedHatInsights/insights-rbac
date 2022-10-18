@@ -35,8 +35,9 @@ from management.models import (
     ExtRoleRelation,
     ExtTenant,
 )
+from tests.core.test_kafka import copy_call_args
 from tests.identity_request import IdentityRequest
-from unittest.mock import call, patch
+from unittest.mock import ANY, call, patch
 
 
 URL = reverse("role-list")
@@ -167,7 +168,7 @@ class RoleViewsetTests(IdentityRequest):
         response = client.post(URL, test_data, format="json", **self.headers)
         return response
 
-    @patch("management.notifications.producer_util.NotificationProducer.send_kafka_message")
+    @patch("core.kafka.RBACProducer.send_kafka_message")
     def test_create_role_success(self, send_kafka_message):
         """Test that we can create a role."""
         with self.settings(NOTIFICATIONS_ENABLED=True):
@@ -209,10 +210,26 @@ class RoleViewsetTests(IdentityRequest):
                 for rd in ResourceDefinition.objects.filter(access=access):
                     self.assertEqual(rd.tenant, self.tenant)
             send_kafka_message.assert_called_once_with(
-                "custom-role-created",
-                {"name": role.name, "username": self.user_data["username"], "uuid": str(role.uuid)},
-                account_id=self.customer_data["account_id"],
-                org_id=org_id,
+                settings.NOTIFICATIONS_TOPIC,
+                {
+                    "bundle": "console",
+                    "application": "rbac",
+                    "event_type": "custom-role-created",
+                    "timestamp": ANY,
+                    "account_id": self.customer_data["account_id"],
+                    "events": [
+                        {
+                            "metadata": {},
+                            "payload": {
+                                "name": role.name,
+                                "username": self.user_data["username"],
+                                "uuid": str(role.uuid),
+                            },
+                        }
+                    ],
+                    "org_id": org_id,
+                },
+                ANY,
             )
 
     def test_create_role_with_display_success(self):
@@ -784,9 +801,10 @@ class RoleViewsetTests(IdentityRequest):
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
-    @patch("management.notifications.producer_util.NotificationProducer.send_kafka_message")
+    @patch("core.kafka.RBACProducer.send_kafka_message")
     def test_update_role_success(self, send_kafka_message):
         """Test that we can update an existing role."""
+        kafka_mock = copy_call_args(send_kafka_message)
         with self.settings(NOTIFICATIONS_ENABLED=True):
             role_name = "roleA"
             response = self.create_role(role_name)
@@ -810,11 +828,30 @@ class RoleViewsetTests(IdentityRequest):
             self.assertIsNotNone(response.data.get("uuid"))
             self.assertEqual(updated_name, response.data.get("name"))
             self.assertEqual("cost-management:*:*", response.data.get("access")[0]["permission"])
-            assert send_kafka_message.call_args_list[1] == call(
-                "custom-role-updated",
-                {"name": updated_name, "username": self.user_data["username"], "uuid": response.data.get("uuid")},
-                account_id=self.customer_data["account_id"],
-                org_id=org_id,
+            self.assertEqual(
+                kafka_mock.call_args_list[1],
+                call(
+                    settings.NOTIFICATIONS_TOPIC,
+                    {
+                        "bundle": "console",
+                        "application": "rbac",
+                        "event_type": "custom-role-updated",
+                        "timestamp": ANY,
+                        "account_id": self.customer_data["account_id"],
+                        "events": [
+                            {
+                                "metadata": {},
+                                "payload": {
+                                    "name": updated_name,
+                                    "username": self.user_data["username"],
+                                    "uuid": response.data.get("uuid"),
+                                },
+                            }
+                        ],
+                        "org_id": org_id,
+                    },
+                    ANY,
+                ),
             )
 
     def test_update_role_invalid(self):
@@ -926,7 +963,7 @@ class RoleViewsetTests(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(response.data.get("errors")[0].get("detail"), f"Permission does not exist: {permission}")
 
-    @patch("management.notifications.producer_util.NotificationProducer.send_kafka_message")
+    @patch("core.kafka.RBACProducer.send_kafka_message")
     def test_delete_role_success(self, send_kafka_message):
         """Test that we can delete an existing role."""
         with self.settings(NOTIFICATIONS_ENABLED=True):
@@ -945,11 +982,30 @@ class RoleViewsetTests(IdentityRequest):
 
             self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
 
-            assert send_kafka_message.call_args_list[1] == call(
-                "custom-role-deleted",
-                {"name": role_name, "username": self.user_data["username"], "uuid": role_uuid},
-                account_id=self.customer_data["account_id"],
-                org_id=org_id,
+            self.assertEqual(
+                send_kafka_message.call_args_list[1],
+                call(
+                    settings.NOTIFICATIONS_TOPIC,
+                    {
+                        "bundle": "console",
+                        "application": "rbac",
+                        "event_type": "custom-role-deleted",
+                        "timestamp": ANY,
+                        "account_id": self.customer_data["account_id"],
+                        "events": [
+                            {
+                                "metadata": {},
+                                "payload": {
+                                    "name": role_name,
+                                    "username": self.user_data["username"],
+                                    "uuid": role_uuid,
+                                },
+                            }
+                        ],
+                        "org_id": org_id,
+                    },
+                    ANY,
+                ),
             )
 
             # verify the role no longer exists

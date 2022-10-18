@@ -16,16 +16,9 @@
 #
 """Producer to send messages to kafka server."""
 import json
-import os
-from datetime import datetime
-from uuid import uuid4
 
 from django.conf import settings
 from kafka import KafkaProducer
-
-
-with open(os.path.join(settings.BASE_DIR, "management", "notifications", "message_template.json")) as template:
-    message_template = json.load(template)
 
 
 class FakeKafkaProducer:
@@ -36,50 +29,35 @@ class FakeKafkaProducer:
         pass
 
 
-class NotificationProducer:
+class RBACProducer:
     """Kafka message producer to emit events to notification service."""
 
     def get_producer(self):
         """Init method to return fake kafka when flag is set to false."""
-        if hasattr(self, "producer"):
-            return self.producer
-
-        if settings.NOTIFICATIONS_ENABLED:
-            if settings.KAFKA_AUTH:
-                self.producer = KafkaProducer(**settings.KAFKA_AUTH, api_version=(1, 0, 2))
+        if not hasattr(self, "producer"):
+            if settings.DEVELOPMENT or not settings.KAFKA_ENABLED:
+                self.producer = FakeKafkaProducer()
             else:
-                self.producer = KafkaProducer(bootstrap_servers=settings.KAFKA_SERVER, api_version=(1, 0, 2))
-        else:
-            self.producer = FakeKafkaProducer()
+                if settings.KAFKA_AUTH:
+                    self.producer = KafkaProducer(**settings.KAFKA_AUTH)
+                else:
+                    self.producer = KafkaProducer(bootstrap_servers=settings.KAFKA_SERVER)
         return self.producer
 
-    def create_message(self, event_type, payload, account_id=None, org_id=None):
-        """Create message based on template."""
-        message = message_template
-        if settings.AUTHENTICATE_WITH_ORG_ID:
-            message["org_id"] = org_id
-        message["event_type"] = event_type
-        message["timestamp"] = datetime.now().isoformat()
-        message["account_id"] = account_id
-        message["events"][0]["payload"] = payload
-        return message
-
-    def send_kafka_message(self, event_type, payload, account_id=None, org_id=None):
+    def send_kafka_message(self, topic, message, headers=None):
         """Send message to kafka server."""
         producer = self.get_producer()
-        message = self.create_message(event_type, payload, account_id=account_id, org_id=org_id)
         json_data = json.dumps(message).encode("utf-8")
-
-        producer.send(
-            settings.NOTIFICATIONS_TOPIC, value=json_data, headers=[("rh-message-id", str(uuid4()).encode("utf-8"))]
-        )
+        if headers and not isinstance(headers, list):
+            headers = [headers]
+        producer.send(topic, value=json_data, headers=headers)
 
 
 """
 This consumer could be used for local testing.
 def consume_message():
     from kafka import KafkaConsumer
-    consumer = KafkaConsumer(settings.NOTIFICATIONS_TOPIC,
+    consumer = KafkaConsumer(notification_topic,
             bootstrap_servers=[settings.KAFKA_SERVER],
         )
     for message in consumer:
