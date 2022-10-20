@@ -385,10 +385,13 @@ CHANNEL_LAYERS = {
 }
 
 KAFKA_ENABLED = ENVIRONMENT.get_value("KAFKA_ENABLED", default=False)
+MOCK_KAFKA = ENVIRONMENT.get_value("MOCK_KAFKA", default=False)
 
 NOTIFICATIONS_ENABLED = ENVIRONMENT.get_value("NOTIFICATIONS_ENABLED", default=False)
 NOTIFICATIONS_RH_ENABLED = ENVIRONMENT.get_value("NOTIFICATIONS_RH_ENABLED", default=False)
 NOTIFICATIONS_TOPIC = ENVIRONMENT.get_value("NOTIFICATIONS_TOPIC", default=None)
+
+EXTERNAL_SYNC_TOPIC = ENVIRONMENT.get_value("EXTERNAL_SYNC_TOPIC", default=None)
 
 # if we don't enable KAFKA we can't use the notifications
 if not KAFKA_ENABLED:
@@ -398,6 +401,7 @@ if not KAFKA_ENABLED:
 
 # Kafka settings
 if KAFKA_ENABLED:
+    KAFKA_AUTH=False
     if ENVIRONMENT.bool("CLOWDER_ENABLED", default=False):
         kafka_broker = LoadedConfig.kafka.brokers[0]
         KAFKA_HOST = kafka_broker.hostname
@@ -411,8 +415,6 @@ if KAFKA_ENABLED:
                     "sasl_mechanism": kafka_broker.sasl.saslMechanism.upper(),
                     "security_protocol": kafka_broker.sasl.securityProtocol.upper(),
                 }
-            else:
-                KAFKA_AUTH = False
         except AttributeError:
             KAFKA_AUTH = False
     else:
@@ -423,3 +425,7 @@ if KAFKA_ENABLED:
     clowder_notifications_topic = KafkaTopics.get(NOTIFICATIONS_TOPIC)
     if clowder_notifications_topic:
         NOTIFICATIONS_TOPIC = clowder_notifications_topic.name
+
+    clowder_sync_topic = KafkaTopics.get(EXTERNAL_SYNC_TOPIC)
+    if clowder_sync_topic:
+        EXTERNAL_SYNC_TOPIC = clowder_sync_topic.name

@@ -30,6 +30,7 @@ from management.rbac_fields import AutoDateTimeField
 from management.role.model import Role
 
 from api.models import TenantAwareModel
+from internal.integration import sync_handlers
 
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
@@ -107,8 +108,116 @@ def policy_to_roles_cache_handler(
                 cache.delete_policy(principal.uuid)
 
 
-if settings.ACCESS_CACHE_ENABLED and settings.ACCESS_CACHE_CONNECT_SIGNALS:
+def policy_changed_sync_handler(sender=None, instance=None, using=None, **kwargs):
+    """Signal handler for Policy change syncs."""
+    logger.info("Handling signal for altered policy %s - informing sync topic", instance)
+    if instance.group:
+        if instance.group.platform_default:
+            sync_handlers.send_sync_message(
+                event_type="platform_default_group_changed",
+                payload={
+                    "group": {
+                        "name": instance.group.name,
+                        "uuid": str(instance.group.uuid)
+                    }
+                }
+            )
+        else:
+            sync_handlers.send_sync_message(
+                event_type="non_default_group_relations_changed",
+                payload={
+                    "group": {
+                        "name": instance.group.name,
+                        "uuid": str(instance.group.uuid)
+                    }
+                }
+            )
 
+
+def policy_to_roles_sync_handler(
+    sender=None, instance=None, action=None, reverse=None, model=None, pk_set=None, using=None, **kwargs  # noqa: C901
+):
+    """Signal handler for Principal cache expiry on Policy/Role m2m change."""
+
+    if action in ("post_add", "pre_remove"):
+        logger.info("Handling signal for %s roles change - informing sync topic", instance)
+        if isinstance(instance, Policy):
+            # One or more roles was added to/removed from the policy
+            if instance.group:
+                if instance.group.platform_default:
+                    sync_handlers.send_sync_message(
+                        event_type="platform_default_group_changed",
+                        payload={
+                            "group": {
+                                "name": instance.group.name,
+                                "uuid": str(instance.group.uuid)
+                            }
+                        }
+                    )
+                else:
+                    sync_handlers.send_sync_message(
+                        event_type="non_default_group_relations_changed",
+                        payload={
+                            "group": {
+                                "name": instance.group.name,
+                                "uuid": str(instance.group.uuid)
+                            }
+                        }
+                    )
+        elif isinstance(instance, Role):
+            # One or more policies was added to/removed from the role
+                sync_handlers.send_sync_message(
+                    event_type="role_modified",
+                    payload={
+                        "role": {
+                            "name": instance.name,
+                            "uuid": str(instance.uuid)
+                        }
+                    }
+                )
+    elif action == "pre_clear":
+        logger.info("Handling signal for %s policy-roles clearing - informing sync topic", instance)
+        if isinstance(instance, Policy):
+            # All roles are being removed from this policy
+            if instance.group:
+                if instance.group.platform_default:
+                    sync_handlers.send_sync_message(
+                        event_type="platform_default_group_changed",
+                        payload={
+                            "group": {
+                                "name": instance.group.name,
+                                "uuid": str(instance.group.uuid)
+                            }
+                        }
+                    )
+                else:
+                    sync_handlers.send_sync_message(
+                        event_type="non_default_group_relations_changed",
+                        payload={
+                            "group": {
+                                "name": instance.group.name,
+                                "uuid": str(instance.group.uuid)
+                            }
+                        }
+                    )
+        elif isinstance(instance, Role):
+            # All policies are being removed from this role
+                sync_handlers.send_sync_message(
+                    event_type="role_modified",
+                    payload={
+                        "role": {
+                            "name": instance.name,
+                            "uuid": str(instance.uuid)
+                        }
+                    }
+                )
+
+if settings.ACCESS_CACHE_ENABLED and settings.ACCESS_CACHE_CONNECT_SIGNALS:
     signals.post_save.connect(policy_changed_cache_handler, sender=Policy)
     signals.pre_delete.connect(policy_changed_cache_handler, sender=Policy)
     signals.m2m_changed.connect(policy_to_roles_cache_handler, sender=Policy.roles.through)
+
+if settings.KAFKA_ENABLED:
+    signals.post_save.connect(policy_changed_sync_handler, sender=Policy)
+    signals.pre_delete.connect(policy_changed_sync_handler, sender=Policy)
+    signals.m2m_changed.connect(policy_to_roles_sync_handler, sender=Policy.roles.through)

@@ -29,6 +29,7 @@ from management.rbac_fields import AutoDateTimeField
 from management.role.model import Role
 
 from api.models import TenantAwareModel
+from internal.integration import sync_handlers
 
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
@@ -114,7 +115,45 @@ def principals_to_groups_cache_handler(
             # All groups are being removed from this principal
             cache.delete_policy(instance.uuid)
 
+def group_deleted_sync_handler(sender=None, instance=None, using=None, **kwargs):
+    """Signal handler to inform external services of Group deletions."""
+    logger.info("Handling signal for deleted group %s - informing sync topic", instance)
+    sync_handlers.send_sync_message(event_type="group_deleted", payload={"group": {"name": instance.name, "uuid": str(instance.uuid)}})
+
+
+def principal_group_change_sync_handler(
+    sender=None, instance=None, action=None, reverse=None, model=None, pk_set=None, using=None, **kwargs
+):
+    """Signal handler to inform external services of Group membership changes."""
+    logger.info("Handling signal for group %s membership change - informing sync topic", instance)
+    if isinstance(instance, Group):
+        sync_handlers.send_sync_message(
+            event_type="group_membership_changed",
+            payload= {
+                "group": {
+                    "name": instance.name,
+                    "uuid": str(instance.uuid)
+                }
+            }
+        )
+    elif isinstance(instance, Principal):
+        groups = sender.group.get_queryset()
+        for group in groups:
+            sync_handlers.send_sync_message(
+               event_type="group_membership_changed",
+                payload= {
+                    "group": {
+                        "name": group.name,
+                        "uuid": str(group.uuid)
+                    }
+                }
+            )
+
 
 if settings.ACCESS_CACHE_ENABLED and settings.ACCESS_CACHE_CONNECT_SIGNALS:
     signals.pre_delete.connect(group_deleted_cache_handler, sender=Group)
     signals.m2m_changed.connect(principals_to_groups_cache_handler, sender=Group.principals.through)
+
+if settings.KAFKA_ENABLED:
+    signals.pre_delete.connect(group_deleted_sync_handler, sender=Group)
+    signals.m2m_changed.connect(principal_group_change_sync_handler, sender=Group.principals.through)

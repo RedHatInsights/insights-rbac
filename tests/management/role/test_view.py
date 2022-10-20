@@ -209,7 +209,7 @@ class RoleViewsetTests(IdentityRequest):
                 self.assertEqual(access.tenant, self.tenant)
                 for rd in ResourceDefinition.objects.filter(access=access):
                     self.assertEqual(rd.tenant, self.tenant)
-            send_kafka_message.assert_called_once_with(
+            send_kafka_message.assert_called_with(
                 settings.NOTIFICATIONS_TOPIC,
                 {
                     "bundle": "console",
@@ -828,30 +828,27 @@ class RoleViewsetTests(IdentityRequest):
             self.assertIsNotNone(response.data.get("uuid"))
             self.assertEqual(updated_name, response.data.get("name"))
             self.assertEqual("cost-management:*:*", response.data.get("access")[0]["permission"])
-            self.assertEqual(
-                kafka_mock.call_args_list[1],
-                call(
-                    settings.NOTIFICATIONS_TOPIC,
-                    {
-                        "bundle": "console",
-                        "application": "rbac",
-                        "event_type": "custom-role-updated",
-                        "timestamp": ANY,
-                        "account_id": self.customer_data["account_id"],
-                        "events": [
-                            {
-                                "metadata": {},
-                                "payload": {
-                                    "name": updated_name,
-                                    "username": self.user_data["username"],
-                                    "uuid": response.data.get("uuid"),
-                                },
-                            }
-                        ],
-                        "org_id": org_id,
-                    },
-                    ANY,
-                ),
+            kafka_mock.assert_called_with(
+                settings.NOTIFICATIONS_TOPIC,
+                {
+                    "bundle": "console",
+                    "application": "rbac",
+                    "event_type": "custom-role-updated",
+                    "timestamp": ANY,
+                    "account_id": self.customer_data["account_id"],
+                    "events": [
+                        {
+                            "metadata": {},
+                            "payload": {
+                                "name": updated_name,
+                                "username": self.user_data["username"],
+                                "uuid": response.data.get("uuid"),
+                            },
+                        }
+                    ],
+                    "org_id": org_id,
+                },
+                ANY,
             )
 
     def test_update_role_invalid(self):
@@ -982,30 +979,27 @@ class RoleViewsetTests(IdentityRequest):
 
             self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
 
-            self.assertEqual(
-                send_kafka_message.call_args_list[1],
-                call(
-                    settings.NOTIFICATIONS_TOPIC,
-                    {
-                        "bundle": "console",
-                        "application": "rbac",
-                        "event_type": "custom-role-deleted",
-                        "timestamp": ANY,
-                        "account_id": self.customer_data["account_id"],
-                        "events": [
-                            {
-                                "metadata": {},
-                                "payload": {
-                                    "name": role_name,
-                                    "username": self.user_data["username"],
-                                    "uuid": role_uuid,
-                                },
-                            }
-                        ],
-                        "org_id": org_id,
-                    },
-                    ANY,
-                ),
+            send_kafka_message.assert_called_with(
+                settings.NOTIFICATIONS_TOPIC,
+                {
+                    "bundle": "console",
+                    "application": "rbac",
+                    "event_type": "custom-role-deleted",
+                    "timestamp": ANY,
+                    "account_id": self.customer_data["account_id"],
+                    "events": [
+                        {
+                            "metadata": {},
+                            "payload": {
+                                "name": role_name,
+                                "username": self.user_data["username"],
+                                "uuid": role_uuid,
+                            },
+                        }
+                    ],
+                    "org_id": org_id,
+                },
+                ANY,
             )
 
             # verify the role no longer exists
