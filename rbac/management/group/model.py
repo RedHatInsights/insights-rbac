@@ -115,10 +115,13 @@ def principals_to_groups_cache_handler(
             # All groups are being removed from this principal
             cache.delete_policy(instance.uuid)
 
+
 def group_deleted_sync_handler(sender=None, instance=None, using=None, **kwargs):
     """Signal handler to inform external services of Group deletions."""
     logger.info("Handling signal for deleted group %s - informing sync topic", instance)
-    sync_handlers.send_sync_message(event_type="group_deleted", payload={"group": {"name": instance.name, "uuid": str(instance.uuid)}})
+    sync_handlers.send_sync_message(
+        event_type="group_deleted", payload={"group": {"name": instance.name, "uuid": str(instance.uuid)}}
+    )
 
 
 def principal_group_change_sync_handler(
@@ -129,24 +132,13 @@ def principal_group_change_sync_handler(
     if isinstance(instance, Group):
         sync_handlers.send_sync_message(
             event_type="group_membership_changed",
-            payload= {
-                "group": {
-                    "name": instance.name,
-                    "uuid": str(instance.uuid)
-                }
-            }
+            payload={"group": {"name": instance.name, "uuid": str(instance.uuid)}},
         )
     elif isinstance(instance, Principal):
         groups = sender.group.get_queryset()
         for group in groups:
             sync_handlers.send_sync_message(
-               event_type="group_membership_changed",
-                payload= {
-                    "group": {
-                        "name": group.name,
-                        "uuid": str(group.uuid)
-                    }
-                }
+                event_type="group_membership_changed", payload={"group": {"name": group.name, "uuid": str(group.uuid)}}
             )
 
 

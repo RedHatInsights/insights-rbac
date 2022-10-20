@@ -115,22 +115,12 @@ def policy_changed_sync_handler(sender=None, instance=None, using=None, **kwargs
         if instance.group.platform_default:
             sync_handlers.send_sync_message(
                 event_type="platform_default_group_changed",
-                payload={
-                    "group": {
-                        "name": instance.group.name,
-                        "uuid": str(instance.group.uuid)
-                    }
-                }
+                payload={"group": {"name": instance.group.name, "uuid": str(instance.group.uuid)}},
             )
         else:
             sync_handlers.send_sync_message(
                 event_type="non_default_group_relations_changed",
-                payload={
-                    "group": {
-                        "name": instance.group.name,
-                        "uuid": str(instance.group.uuid)
-                    }
-                }
+                payload={"group": {"name": instance.group.name, "uuid": str(instance.group.uuid)}},
             )
 
 
@@ -147,34 +137,18 @@ def policy_to_roles_sync_handler(
                 if instance.group.platform_default:
                     sync_handlers.send_sync_message(
                         event_type="platform_default_group_changed",
-                        payload={
-                            "group": {
-                                "name": instance.group.name,
-                                "uuid": str(instance.group.uuid)
-                            }
-                        }
+                        payload={"group": {"name": instance.group.name, "uuid": str(instance.group.uuid)}},
                     )
                 else:
                     sync_handlers.send_sync_message(
                         event_type="non_default_group_relations_changed",
-                        payload={
-                            "group": {
-                                "name": instance.group.name,
-                                "uuid": str(instance.group.uuid)
-                            }
-                        }
+                        payload={"group": {"name": instance.group.name, "uuid": str(instance.group.uuid)}},
                     )
         elif isinstance(instance, Role):
             # One or more policies was added to/removed from the role
-                sync_handlers.send_sync_message(
-                    event_type="role_modified",
-                    payload={
-                        "role": {
-                            "name": instance.name,
-                            "uuid": str(instance.uuid)
-                        }
-                    }
-                )
+            sync_handlers.send_sync_message(
+                event_type="role_modified", payload={"role": {"name": instance.name, "uuid": str(instance.uuid)}}
+            )
     elif action == "pre_clear":
         logger.info("Handling signal for %s policy-roles clearing - informing sync topic", instance)
         if isinstance(instance, Policy):
@@ -183,34 +157,19 @@ def policy_to_roles_sync_handler(
                 if instance.group.platform_default:
                     sync_handlers.send_sync_message(
                         event_type="platform_default_group_changed",
-                        payload={
-                            "group": {
-                                "name": instance.group.name,
-                                "uuid": str(instance.group.uuid)
-                            }
-                        }
+                        payload={"group": {"name": instance.group.name, "uuid": str(instance.group.uuid)}},
                     )
                 else:
                     sync_handlers.send_sync_message(
                         event_type="non_default_group_relations_changed",
-                        payload={
-                            "group": {
-                                "name": instance.group.name,
-                                "uuid": str(instance.group.uuid)
-                            }
-                        }
+                        payload={"group": {"name": instance.group.name, "uuid": str(instance.group.uuid)}},
                     )
         elif isinstance(instance, Role):
             # All policies are being removed from this role
-                sync_handlers.send_sync_message(
-                    event_type="role_modified",
-                    payload={
-                        "role": {
-                            "name": instance.name,
-                            "uuid": str(instance.uuid)
-                        }
-                    }
-                )
+            sync_handlers.send_sync_message(
+                event_type="role_modified", payload={"role": {"name": instance.name, "uuid": str(instance.uuid)}}
+            )
+
 
 if settings.ACCESS_CACHE_ENABLED and settings.ACCESS_CACHE_CONNECT_SIGNALS:
     signals.post_save.connect(policy_changed_cache_handler, sender=Policy)

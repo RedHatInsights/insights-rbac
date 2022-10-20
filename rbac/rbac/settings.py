@@ -401,7 +401,7 @@ if not KAFKA_ENABLED:
 
 # Kafka settings
 if KAFKA_ENABLED:
-    KAFKA_AUTH=False
+    KAFKA_AUTH = False
     if ENVIRONMENT.bool("CLOWDER_ENABLED", default=False):
         kafka_broker = LoadedConfig.kafka.brokers[0]
         KAFKA_HOST = kafka_broker.hostname
