@@ -29,12 +29,18 @@ class Command(BaseCommand):
     run the setup command first to populate the database.
 
     Usage:
-        python manage.py command ocm_performance [setup|test|teardown]
+        python manage.py command ocm_performance [setup|test|teardown|full_sync_only]
     """
 
     def add_arguments(self, parser):
         """Parse command arguments."""
-        parser.add_argument("mode", type=str, nargs="?", default="test", help="Choice of setup, test, or teardown")
+        parser.add_argument(
+            "mode",
+            type=str,
+            nargs="?",
+            default="full_sync_only",
+            help="Choice of setup, test, full_sync_only, or teardown",
+        )
 
     def handle(self, **options):
         """Run the command."""
@@ -51,5 +57,7 @@ class Command(BaseCommand):
             test_group_roles()
             test_principals_roles()
             test_principals_groups()
+        elif mode == "full_sync_only":
+            test_full_sync()
         else:
-            print("Invalid mode. Please choose from setup, test, or teardown.")
+            print("Invalid mode. Please choose from setup, test, full_sync_only, or teardown.")
