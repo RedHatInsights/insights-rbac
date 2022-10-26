@@ -17,7 +17,7 @@ More info is available through platformdocs_.
 Getting Started
 ===============
 
-This is a Python project developed using Python 3.6. Make sure you have at least this version installed.
+This is a Python project developed using Python 3.8. Make sure you have at least this version installed.
 
 Additionally, the development environment installation requires the postgresql-devel package installed for your distribution before running properly.
 
