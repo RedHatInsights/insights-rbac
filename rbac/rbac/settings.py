@@ -138,6 +138,44 @@ BYPASS_BOP_VERIFICATION = ENVIRONMENT.bool("BYPASS_BOP_VERIFICATION", default=Fa
 
 AUTHENTICATION_BACKENDS = ["django.contrib.auth.backends.AllowAllUsersModelBackend"]
 
+USE_OTLP= ENVIRONMENT.bool("OTLP_ENABLED", default=False)
+if USE_OTLP:
+    OTLP_ENDPOINT = ENVIRONMENT.get_value("OTLP_ENDPOINT")
+
+    from opentelemetry import trace
+    from opentelemetry.sdk.resources import SERVICE_NAME, Resource
+    from opentelemetry.sdk.trace import TracerProvider
+    from opentelemetry.sdk.trace.export import (BatchSpanProcessor, ConsoleSpanExporter)
+    from opentelemetry.trace import NonRecordingSpan, SpanContext, TraceFlags
+    from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+
+    # Now instrument packages
+    from opentelemetry.instrumentation.psycopg2 import Psycopg2Instrumentor
+    Psycopg2Instrumentor().instrument(enable_commenter=True, commenter_options={})
+
+    from opentelemetry.instrumentation.django import DjangoInstrumentor
+    DjangoInstrumentor().instrument(is_sql_commentor_enabled=True)
+
+    from opentelemetry.instrumentation.kafka import KafkaInstrumentor
+    KafkaInstrumentor().instrument()
+
+    from opentelemetry.instrumentation.redis import RedisInstrumentor
+    RedisInstrumentor().instrument()
+
+    # And set up the tracing system
+    resource = Resource(attributes={
+        SERVICE_NAME: "rbac"
+    })
+    # Configure the provider with the service name
+    provider = TracerProvider(resource=resource)
+    # We need to provide the /v1/traces part when we use the http-exporter on port 4318
+    # For the grpc endpoint on port 4317, this is not needed.
+    processor = BatchSpanProcessor(OTLPSpanExporter(endpoint=OTLP_ENDPOINT))
+    provider.add_span_processor(processor)
+    trace.set_tracer_provider(provider)
+
+    tracer = trace.get_tracer(__name__)
+
 
 ROOT_URLCONF = "rbac.urls"
 

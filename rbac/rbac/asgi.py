@@ -15,3 +15,8 @@ import rbac.urls  # noqa: E402
 application = ProtocolTypeRouter(
     {"http": AsgiHandler(), "websocket": AuthMiddlewareStack(URLRouter(rbac.urls.websocket_urlpatterns))}
 )
+
+# if env.ENVIRONMENT.OTEL_ENABLED:
+from opentelemetry.instrumentation.asgi import OpenTelemetryMiddleware
+
+application = OpenTelemetryMiddleware(application)
