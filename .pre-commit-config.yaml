@@ -20,3 +20,7 @@ repos:
   - id: trailing-whitespace
   - id: end-of-file-fixer
   - id: debug-statements
+- repo: https://github.com/casey-williams-rh/pipenv-pre-commit
+  rev: v1.1.0
+  hooks:
+  - id: pipenv-generate-requirements
