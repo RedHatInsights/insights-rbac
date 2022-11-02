@@ -169,6 +169,46 @@ class AccessViewTests(IdentityRequest):
         response = client.get(url, **self.headers)
         self.assertEqual({"permission": "default:*:*", "resourceDefinitions": []}, response.data.get("data")[0])
 
+    def test_get_access_to_return_unique_records(self):
+        """Test that we can obtain the expected access without pagination."""
+        role_name = "roleA"
+        response = self.create_role(role_name, headers=self.headers)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        role_uuid = response.data.get("uuid")
+        role = Role.objects.get(uuid=role_uuid)
+        access = Access.objects.create(role=role, permission=self.permission, tenant=self.tenant)
+        policy_name = "policyA"
+        response = self.create_policy(policy_name, self.group.uuid, [role_uuid], headers=self.headers)
+        # Create platform default group, and add roles to it.
+        self.create_platform_default_resource()
+
+        role_name_b = "roleB"
+        response = self.create_role(role_name_b, headers=self.headers)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        role_b_uuid = response.data.get("uuid")
+        Role.objects.get(uuid=role_b_uuid)
+        policy_name = "policyB"
+        response = self.create_policy(policy_name, self.group.uuid, [role_b_uuid], headers=self.headers)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+        # Test that we can retrieve the principal access
+        url = "{}?application={}".format(reverse("access"), "app")
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIsNotNone(response.data.get("data"))
+        self.assertIsInstance(response.data.get("data"), list)
+        self.assertEqual(len(response.data.get("data")), 2)
+        self.assertEqual(response.data.get("meta").get("limit"), 2)
+        self.assertEqual(self.access_data, response.data.get("data")[0])
+
+        self.assertEqual(Access.objects.filter(permission__id=self.permission.id).count(), 3)
+
+        # the platform default permission could also be retrieved
+        url = "{}?application={}".format(reverse("access"), "default")
+        response = client.get(url, **self.headers)
+        self.assertEqual({"permission": "default:*:*", "resourceDefinitions": []}, response.data.get("data")[0])
+
     def test_access_for_cross_account_principal_return_permissions_based_on_assigned_role(self):
         """Test that the expected access for cross account principal return permissions based on assigned role."""
         # setup default group/role
