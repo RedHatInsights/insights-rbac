@@ -367,6 +367,15 @@
             }
           },
           {
+            "name": "role_external_tenant",
+            "in": "query",
+            "required": false,
+            "description": "Parameter for filtering group roles by role `external_tenant` using string search.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "in": "query",
             "name": "username",
             "required": false,
