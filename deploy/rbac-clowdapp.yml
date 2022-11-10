@@ -1321,6 +1321,37 @@ objects:
           }
         ]
       }
+    content-sources.json: |
+      {
+          "roles": [{
+              "name": "Repositories administrator",
+              "description": "Perform any available operation against any repositories resource.",
+              "system": true,
+              "platform_default": false,
+              "admin_default": true,
+              "version": 2,
+              "access": [
+                {
+                  "permission": "content-sources:repositories:read"
+                },
+                {
+                  "permission": "content-sources:repositories:write"
+                }
+              ]
+          }, {
+              "name": "Repositories viewer",
+              "description": "Perform read only operations against repositories resources.",
+              "system": true,
+              "platform_default": true,
+              "version": 2,
+              "access": [
+                {
+                  "permission": "content-sources:repositories:read"
+                }
+              ]
+              }
+        ]
+      }
     cost-management.json: |
       {
           "roles": [{
