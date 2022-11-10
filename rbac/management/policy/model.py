@@ -23,6 +23,7 @@ from django.conf import settings
 from django.db import models
 from django.db.models import signals
 from django.utils import timezone
+from internal.integration import sync_handlers
 from management.cache import AccessCache
 from management.group.model import Group
 from management.principal.model import Principal
@@ -30,8 +31,6 @@ from management.rbac_fields import AutoDateTimeField
 from management.role.model import Role
 
 from api.models import TenantAwareModel
-from internal.integration import sync_handlers
-
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
@@ -138,7 +137,6 @@ def policy_to_roles_sync_handler(
     sender=None, instance=None, action=None, reverse=None, model=None, pk_set=None, using=None, **kwargs  # noqa: C901
 ):
     """Signal handler for Principal cache expiry on Policy/Role m2m change."""
-
     if action in ("post_add", "pre_remove"):
         logger.info("Handling signal for %s roles change - informing sync topic", instance)
         if isinstance(instance, Policy):
