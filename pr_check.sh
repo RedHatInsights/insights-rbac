@@ -9,7 +9,7 @@ export IQE_MARKER_EXPRESSION="rbac_smoke"  # This is the value passed to pytest 
 export IQE_FILTER_EXPRESSION=""  # This is the value passed to pytest -k
 export IQE_CJI_TIMEOUT="30m"  # This is the time to wait for smoke test to complete or fail
 
-export BONFIRE_BRANCH="support_selenium_arg"
+export BONFIRE_BRANCH="sel_tweaks"
 # Install bonfire repo/initialize
 CICD_URL=https://raw.githubusercontent.com/RedHatInsights/bonfire/$BONFIRE_BRANCH/cicd
 curl -s $CICD_URL/bootstrap.sh > .cicd_bootstrap.sh && source .cicd_bootstrap.sh
