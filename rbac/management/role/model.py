@@ -24,13 +24,12 @@ from django.contrib.postgres.fields import JSONField
 from django.db import models
 from django.db.models import signals
 from django.utils import timezone
+from internal.integration import sync_handlers
 from management.cache import AccessCache
 from management.models import Permission, Principal
 from management.rbac_fields import AutoDateTimeField
 
 from api.models import TenantAwareModel
-from internal.integration import sync_handlers
-
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
@@ -155,7 +154,7 @@ if settings.ACCESS_CACHE_ENABLED and settings.ACCESS_CACHE_CONNECT_SIGNALS:
 
 if settings.KAFKA_ENABLED:
     signals.pre_delete.connect(role_related_obj_change_sync_handler, sender=Role)
-    signals.pre_delete.connect(role_related_obj_change_cache_handler, sender=Access)
+    signals.pre_delete.connect(role_related_obj_change_sync_handler, sender=Access)
     signals.pre_delete.connect(role_related_obj_change_sync_handler, sender=ResourceDefinition)
     signals.post_save.connect(role_related_obj_change_sync_handler, sender=Role)
     signals.post_save.connect(role_related_obj_change_sync_handler, sender=Access)

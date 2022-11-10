@@ -23,13 +23,13 @@ from django.conf import settings
 from django.db import models
 from django.db.models import signals
 from django.utils import timezone
+from internal.integration import sync_handlers
 from management.cache import AccessCache
 from management.principal.model import Principal
 from management.rbac_fields import AutoDateTimeField
 from management.role.model import Role
 
 from api.models import TenantAwareModel
-from internal.integration import sync_handlers
 
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
@@ -126,28 +126,22 @@ def principal_group_change_sync_handler(
 ):
     """Signal handler to inform external services of Group membership changes."""
     logger.info("Handling signal for group %s membership change - informing sync topic", instance)
-    if isinstance(instance, Group):
-        sync_handlers.send_sync_message(
-            event_type="group_membership_changed",
-            payload= {
-                "group": {
-                    "name": instance.name,
-                    "uuid": str(instance.uuid)
-                }
-            }
-        )
-    elif isinstance(instance, Principal):
-        groups = sender.group.get_queryset()
-        for group in groups:
+    if action in ["post_add", "pre_remove", "pre_clear"]:
+        if isinstance(instance, Group):
             sync_handlers.send_sync_message(
-               event_type="group_membership_changed",
-                payload= {
-                    "group": {
-                        "name": group.name,
-                        "uuid": str(group.uuid)
-                    }
-                }
+                event_type="group_membership_changed",
+                payload={
+                    "group": {"name": instance.name, "uuid": str(instance.uuid)},
+                    "action": action.split("_")[-1],
+                },
             )
+        elif isinstance(instance, Principal):
+            groups = instance.group.all()
+            for group in groups:
+                sync_handlers.send_sync_message(
+                    event_type="group_membership_changed",
+                    payload={"group": {"name": group.name, "uuid": str(group.uuid)}, "action": action.split("_")[-1]},
+                )
 
 
 if settings.ACCESS_CACHE_ENABLED and settings.ACCESS_CACHE_CONNECT_SIGNALS:
