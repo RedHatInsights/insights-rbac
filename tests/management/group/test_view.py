@@ -1563,7 +1563,6 @@ class GroupViewsetTests(IdentityRequest):
             ]
             kafka_mock.assert_has_calls(notification_messages, any_order=True)
 
-
     def test_add_group_roles_bad_group_guid(self):
         group_url = reverse("group-roles", kwargs={"uuid": "master_exploder"})
         client = APIClient()

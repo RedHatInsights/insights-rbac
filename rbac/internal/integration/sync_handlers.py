@@ -25,7 +25,6 @@ from core.kafka import RBACProducer
 from django.conf import settings
 
 
-
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 sync_producer = RBACProducer()
 sync_topic = settings.EXTERNAL_SYNC_TOPIC

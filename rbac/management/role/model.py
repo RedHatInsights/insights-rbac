@@ -133,15 +133,17 @@ def role_related_obj_change_cache_handler(sender=None, instance=None, using=None
         for principal in Principal.objects.filter(group__policies__roles__pk=instance.role.pk):
             cache.delete_policy(principal.uuid)
 
+
 def role_related_obj_change_sync_handler(sender=None, instance=None, using=None, **kwargs):
     """Signal handler for informing external sync of Role object changes."""
     logger.info(
-        "Handling signal for added/removed/changed role-related object %s - "
-        "informing sync topic",
+        "Handling signal for added/removed/changed role-related object %s - " "informing sync topic",
         instance,
     )
     if instance.role:
-        sync_handlers.send_sync_message(event_type="role_modified", payload={"role": {"name": instance.role.name, "uuid": str(instance.role.uuid)}})
+        sync_handlers.send_sync_message(
+            event_type="role_modified", payload={"role": {"name": instance.role.name, "uuid": str(instance.role.uuid)}}
+        )
 
 
 if settings.ACCESS_CACHE_ENABLED and settings.ACCESS_CACHE_CONNECT_SIGNALS:
