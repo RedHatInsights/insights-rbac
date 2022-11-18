@@ -73,3 +73,5 @@ ENTRYPOINT ["/usr/bin/haberdasher"]
 
 # Set the default CMD to print the usage of the language image.
 CMD $STI_SCRIPTS_PATH/run
+
+COPY patch/otel_middleware.py ${APP_ROOT}/lib64/python3.8/site-packages/opentelemetry/instrumentation/django/middleware/
