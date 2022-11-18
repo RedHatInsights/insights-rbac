@@ -138,7 +138,7 @@ BYPASS_BOP_VERIFICATION = ENVIRONMENT.bool("BYPASS_BOP_VERIFICATION", default=Fa
 
 AUTHENTICATION_BACKENDS = ["django.contrib.auth.backends.AllowAllUsersModelBackend"]
 
-USE_OTLP= ENVIRONMENT.bool("OTLP_ENABLED", default=False)
+USE_OTLP = ENVIRONMENT.bool("OTLP_ENABLED", default=False)
 if USE_OTLP:
     OTLP_ENDPOINT = ENVIRONMENT.get_value("OTLP_ENDPOINT")
 
@@ -146,8 +146,12 @@ if USE_OTLP:
     from opentelemetry.sdk.resources import SERVICE_NAME, Resource
     from opentelemetry.sdk.trace import TracerProvider
     from opentelemetry.sdk.trace.export import (BatchSpanProcessor, ConsoleSpanExporter)
-    from opentelemetry.trace import NonRecordingSpan, SpanContext, TraceFlags
-    from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+
+    OTLP_USE_GRPC = ENVIRONMENT.bool("OTLP_USE_GRPC", default=True)
+    if OTLP_USE_GRPC:
+        from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+    else:
+        from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
 
     # Now instrument packages
     from opentelemetry.instrumentation.psycopg2 import Psycopg2Instrumentor
@@ -159,8 +163,39 @@ if USE_OTLP:
     from opentelemetry.instrumentation.kafka import KafkaInstrumentor
     KafkaInstrumentor().instrument()
 
+    import traceback
+    def filter_stack(sin):
+        """ Filter down to locations in user code """
+        out = []
+        for frame in sin:
+            fname = frame.filename
+            if ("/rbac/" in fname) and not ("settings.py" in fname):
+                i = fname.index('/rbac/')
+                line = frame.name + ' @ ' + fname[i:] + ':' + frame.line
+                out.append(line)
+
+        return out
+
+    def request_hook(span, instance, arg, kwargs):
+        """ When A call to redis is made, record the place where it is called from """
+        if span and span.is_recording():
+            stack = traceback.extract_stack(limit=10)
+            stack = filter_stack(stack)
+            span.set_attribute("callstack", repr(stack))
+
+    def redis_response_hook(span, instance, response):
+        """ Modify the span name to say it is from Redis """
+        if span.is_recording():
+            name = span.name
+            name = "Redis " + name
+            span.update_name(name)
+
     from opentelemetry.instrumentation.redis import RedisInstrumentor
-    RedisInstrumentor().instrument()
+    RedisInstrumentor().instrument(request_hook=request_hook, response_hook=redis_response_hook)
+
+    from opentelemetry.instrumentation.requests import RequestsInstrumentor
+    RequestsInstrumentor().instrument()
+
 
     # And set up the tracing system
     resource = Resource(attributes={

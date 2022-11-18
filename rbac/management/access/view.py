@@ -26,6 +26,7 @@ from management.utils import (
     validate_and_get_key,
     validate_limit_and_offset,
 )
+from opentelemetry import trace
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.settings import api_settings
@@ -103,23 +104,33 @@ class AccessView(APIView):
     def get(self, request):
         """Provide access data for principal."""
         # Parameter extraction
-        sub_key, ordering = self.validate_and_get_param(request.query_params)
 
-        principal = get_principal_from_request(request)
-        if settings.AUTHENTICATE_WITH_ORG_ID:
-            cache = AccessCache(request.tenant.org_id)
-        else:
-            cache = AccessCache(request.tenant.tenant_name)
-        access_policy = cache.get_policy(principal.uuid, sub_key)
-        if access_policy is None:
-            queryset = self.get_queryset(ordering)
-            access_policy = self.serializer_class(queryset, many=True).data
-            cache.save_policy(principal.uuid, sub_key, access_policy)
+        tracer = trace.get_tracer(__name__)
+        with tracer.start_as_current_span("access-get"):
+            span = trace.get_current_span()
+            sub_key, ordering = self.validate_and_get_param(request.query_params)
 
-        page = self.paginate_queryset(access_policy)
-        if page is not None:
-            return self.get_paginated_response(page)
-        return Response({"data": access_policy})
+            principal = get_principal_from_request(request)
+            span.add_event("principal", {"principal": principal})
+            if settings.AUTHENTICATE_WITH_ORG_ID:
+                cache = AccessCache(request.tenant.org_id)
+            else:
+                cache = AccessCache(request.tenant.tenant_name)
+            access_policy = cache.get_policy(principal.uuid, sub_key)
+            span.add_event("access_policy", {"policy": '-none-' if access_policy is None else access_policy})
+            if access_policy is None:
+                # Wrap in a span of its own
+                with tracer.start_as_current_span("access-policy-none"):
+                    queryset = self.get_queryset(ordering)
+                    trace.get_current_span().add_event("Got queryset")
+                    access_policy = self.serializer_class(queryset, many=True).data
+                    cache.save_policy(principal.uuid, sub_key, access_policy)
+
+            page = self.paginate_queryset(access_policy)
+            span.add_event("page", {"page": page})
+            if page is not None:
+                return self.get_paginated_response(page)
+            return Response({"data": access_policy})
 
     @property
     def paginator(self):
