@@ -140,7 +140,7 @@ AUTHENTICATION_BACKENDS = ["django.contrib.auth.backends.AllowAllUsersModelBacke
 
 USE_OTLP = ENVIRONMENT.bool("OTLP_ENABLED", default=False)
 if USE_OTLP:
-    OTLP_ENDPOINT = ENVIRONMENT.get_value("OTLP_ENDPOINT")
+    OTLP_ENDPOINT = ENVIRONMENT.get_value("OTEL_EXPORTER_OTLP_ENDPOINT")
 
     from opentelemetry import trace
     from opentelemetry.sdk.resources import SERVICE_NAME, Resource
