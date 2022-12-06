@@ -16,18 +16,16 @@
 #
 """Test the caching system."""
 import pickle
-
 from unittest import skipIf
-from unittest.mock import call, MagicMock, patch
-from rbac.settings import ACCESS_CACHE_ENABLED
+from unittest.mock import call, patch
 
 from django.conf import settings
-from django.db import connection
 from django.test import TestCase
-
 from management.cache import TenantCache
 from management.models import Access, Group, Permission, Policy, Principal, ResourceDefinition, Role
+
 from api.models import Tenant
+from rbac.settings import ACCESS_CACHE_ENABLED
 
 
 @skipIf(not ACCESS_CACHE_ENABLED, "Caching is disabled.")
