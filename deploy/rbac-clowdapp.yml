@@ -1585,6 +1585,28 @@ objects:
               },
               {
                 "permission": "inventory:*:read"
+              },
+              {
+                "permission": "remediations:*:read"
+              },
+              {
+                "permission": "remediations:*:write"
+           }
+           ]
+          },
+          {
+            "name": "Patch viewer",
+            "description": "Read any Patch resource.",
+            "system": true,
+            "platform_default": true,
+            "admin_default": false,
+            "version": 3,
+            "access": [
+              {
+                "permission": "patch:*:read"
+              },
+              {
+                "permission": "inventory:*:read"
               }
             ]
           }
