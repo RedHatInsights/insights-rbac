@@ -178,7 +178,7 @@ This will rebuild the tox virtual env and then run all tests.
 
 To run unit tests specifically::
 
-    tox -e py36
+    tox -e py38
 
 To lint the code base ::
 
