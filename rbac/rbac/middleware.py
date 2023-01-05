@@ -274,18 +274,15 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
             request.user = user
             request.tenant = self.get_tenant(model=None, hostname=None, request=request)
 
-    def process_response(self, request, response):  # pylint: disable=no-self-use
-        """Process response for identity middleware.
+    @staticmethod
+    def log_request(request, response, is_internal=False):
+        """Log requests for identity middleware.
 
         Args:
             request (object): The request object
             response (object): The response object
+            is_internal (bool): Boolean for if request is internal
         """
-        if any([request.path.startswith(prefix) for prefix in settings.INTERNAL_API_PATH_PREFIXES]):
-            # This request is for a private API endpoint
-            return response
-
-        behalf = "principal"
         query_string = ""
         is_admin = False
         is_system = False
@@ -309,16 +306,6 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
                 is_admin = is_system = False
                 account = None
                 org_id = None
-
-        if is_system:
-            behalf = "system"
-
-        req_sys_counter.labels(
-            behalf=behalf,
-            method=request.method,
-            view=resolve(request.path).url_name,
-            status=response.get("status_code"),
-        ).inc()
 
         # Todo: add some info back to logs
         """
@@ -357,9 +344,38 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
             "username": username,
             "is_admin": is_admin,
             "is_system": is_system,
+            "is_internal": is_internal,
         }
-
         logger.info(log_object)
+
+    def process_response(self, request, response):  # pylint: disable=no-self-use
+        """Process response for identity middleware.
+
+        Args:
+            request (object): The request object
+            response (object): The response object
+        """
+        is_internal = False
+        if any([request.path.startswith(prefix) for prefix in settings.INTERNAL_API_PATH_PREFIXES]):
+            # This request is for a private API endpoint
+            is_internal = True
+            IdentityHeaderMiddleware.log_request(request, response, is_internal)
+            return response
+
+        behalf = "principal"
+        is_system = False
+
+        if is_system:
+            behalf = "system"
+
+        req_sys_counter.labels(
+            behalf=behalf,
+            method=request.method,
+            view=resolve(request.path).url_name,
+            status=response.get("status_code"),
+        ).inc()
+
+        IdentityHeaderMiddleware.log_request(request, response, is_internal)
         return response
 
 
