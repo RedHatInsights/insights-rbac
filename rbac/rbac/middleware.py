@@ -276,7 +276,13 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
 
     @staticmethod
     def log_request(request, response, is_internal=False):
-        """Process responses for internal identity middleware."""
+        """Log requests for identity middleware.
+
+        Args:
+            request (object): The request object
+            response (object): The response object
+            is_internal (bool): Boolean for if request is internal
+        """
         query_string = ""
         is_admin = False
         is_system = False
