@@ -25,7 +25,6 @@ from django.http import HttpResponseForbidden
 from django.shortcuts import get_object_or_404
 from django.urls import resolve
 from django.utils.deprecation import MiddlewareMixin
-from utils import log_request
 
 from api.common import RH_IDENTITY_HEADER
 from api.models import Tenant
@@ -66,6 +65,4 @@ class InternalIdentityHeaderMiddleware(MiddlewareMixin):
 
     def process_response(self, request, response):
         """Process responses for internal identity middleware."""
-        is_internal = True
-        log_request(request, response, is_internal)
         return response

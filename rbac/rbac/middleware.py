@@ -30,7 +30,6 @@ from management.cache import TenantCache
 from management.models import Principal
 from management.utils import APPLICATION_KEY, access_for_principal, validate_psk
 from prometheus_client import Counter
-from utils import log_request
 
 from api.common import (
     RH_IDENTITY_HEADER,
@@ -275,6 +274,74 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
             request.user = user
             request.tenant = self.get_tenant(model=None, hostname=None, request=request)
 
+    @staticmethod
+    def log_request(request, response, is_internal=False):
+        """Process responses for internal identity middleware."""
+        query_string = ""
+        is_admin = False
+        is_system = False
+        account = None
+        org_id = None
+        username = None
+        req_id = getattr(request, "req_id", None)
+        if request.META.get("QUERY_STRING"):
+            query_string = "?{}".format(request.META.get("QUERY_STRING"))
+
+        if hasattr(request, "user") and request.user:
+            username = request.user.username
+            if username:
+                # rbac.api.models.User has these fields
+                is_admin = request.user.admin
+                account = request.user.account
+                org_id = request.user.org_id
+                is_system = request.user.system
+            else:
+                # django.contrib.auth.models.AnonymousUser does not
+                is_admin = is_system = False
+                account = None
+                org_id = None
+
+        # Todo: add some info back to logs
+        """
+        extras = {}
+
+        if "ecs" in settings.LOGGING_HANDLERS:
+            extras = {
+                "http": {
+                    "request": {
+                        "body": {"bytes": sys.getsizeof(request.body)},
+                        "bytes": sys.getsizeof(request),
+                        "method": request.method,
+                    },
+                    "response": {
+                        "body": {"bytes": sys.getsizeof(response.content)},
+                        "bytes": sys.getsizeof(response),
+                        "status_code": response.status_code,
+                    },
+                },
+                "url": {
+                    "original": request.path + query_string,
+                    "path": request.path,
+                    "query": query_string,
+                    "port": request.get_port(),
+                },
+            }
+        """
+
+        log_object = {
+            "method": request.method,
+            "path": request.path + query_string,
+            "status": response.status_code,
+            "request_id": req_id,
+            "account": account,
+            "org_id": org_id,
+            "username": username,
+            "is_admin": is_admin,
+            "is_system": is_system,
+            "is_internal": is_internal,
+        }
+        logger.info(log_object)
+
     def process_response(self, request, response):  # pylint: disable=no-self-use
         """Process response for identity middleware.
 
@@ -286,7 +353,7 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
         if any([request.path.startswith(prefix) for prefix in settings.INTERNAL_API_PATH_PREFIXES]):
             # This request is for a private API endpoint
             is_internal = True
-            log_request(request, response, is_internal)
+            IdentityHeaderMiddleware.log_request(request, response, is_internal)
             return response
 
         behalf = "principal"
@@ -302,7 +369,7 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
             status=response.get("status_code"),
         ).inc()
 
-        log_request(request, response, is_internal)
+        IdentityHeaderMiddleware.log_request(request, response, is_internal)
         return response
 
 
