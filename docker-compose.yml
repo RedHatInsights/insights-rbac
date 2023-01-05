@@ -21,6 +21,7 @@ services:
         - DEVELOPMENT=${DEVELOPMENT-False}
         - DJANGO_DEBUG=${DJANGO_DEBUG-True}
         - AUTHENTICATE_WITH_ORG_ID=True
+        - REDIS_HOST=${REDIS_HOST-rbac_redis}
       privileged: true
       ports:
           - 9080:8000
@@ -36,9 +37,11 @@ services:
       build:
           context: .
           dockerfile: Dockerfile-env
-      working_dir: /rbac
+      working_dir: /rbac/rbac
       entrypoint: ['celery', 'worker', '-A', 'rbac.celery', '--broker=redis://redis:6379/0', '--loglevel=INFO']
       privileged: true
+      volumes:
+        - '.:/rbac/'
       links:
           - redis
       depends_on:
@@ -49,9 +52,11 @@ services:
       build:
           context: .
           dockerfile: Dockerfile-env
-      working_dir: /rbac
+      working_dir: /rbac/rbac
       entrypoint: ['celery', 'beat', '-A', 'rbac.celery', '--broker=redis://redis:6379/0', '--loglevel=INFO']
       privileged: true
+      volumes:
+        - '.:/rbac/'
       links:
           - redis
       depends_on:

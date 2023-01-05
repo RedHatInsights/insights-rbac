@@ -120,7 +120,7 @@ collect-static:
 
 requirements:
 	pipenv lock
-	pipenv lock -r > docs/rtd_requirements.txt
+	pipenv run pip freeze > docs/rtd_requirements.txt
 
 serve:
 	DJANGO_READ_DOT_ENV_FILE=True $(PYTHON) $(PYDIR)/manage.py runserver $(PORT)
