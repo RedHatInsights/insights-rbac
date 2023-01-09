@@ -52,7 +52,6 @@ from rest_framework.response import Response
 
 from api.models import Tenant
 
-
 USERNAMES_KEY = "usernames"
 ROLES_KEY = "roles"
 EXCLUDE_KEY = "exclude"
@@ -355,6 +354,15 @@ class GroupViewSet(
             resp = self.proxy.request_filtered_principals(users, org_id=org_id, limit=len(users))
             if "errors" in resp:
                 return resp
+            if len(resp.get("data", [])) == 0:
+                return {
+                    "status_code": status.HTTP_404_NOT_FOUND,
+                    "errors": [
+                        {"detail": "Users not found.",
+                         "status": "404",
+                         "source": "principals"}
+                    ]
+                }
             for item in resp.get("data", []):
                 username = item["username"]
                 try:
@@ -369,6 +377,15 @@ class GroupViewSet(
             resp = self.proxy.request_filtered_principals(users, account=account, limit=len(users))
             if "errors" in resp:
                 return resp
+            if len(resp.get("data", [])) == 0:
+                return {
+                    "status_code": status.HTTP_404_NOT_FOUND,
+                    "errors": [
+                        {"detail": "Users not found.",
+                         "status": "404",
+                         "source": "principals"}
+                    ]
+                }
             for item in resp.get("data", []):
                 username = item["username"]
                 try:
