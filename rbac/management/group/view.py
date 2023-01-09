@@ -352,50 +352,28 @@ class GroupViewSet(
         users = [principal.get("username") for principal in principals]
         if settings.AUTHENTICATE_WITH_ORG_ID:
             resp = self.proxy.request_filtered_principals(users, org_id=org_id, limit=len(users))
-            if "errors" in resp:
-                return resp
-            if len(resp.get("data", [])) == 0:
-                return {
-                    "status_code": status.HTTP_404_NOT_FOUND,
-                    "errors": [
-                        {"detail": "Users not found.",
-                         "status": "404",
-                         "source": "principals"}
-                    ]
-                }
-            for item in resp.get("data", []):
-                username = item["username"]
-                try:
-                    principal = Principal.objects.get(username__iexact=username, tenant=tenant)
-                except Principal.DoesNotExist:
-                    principal = Principal.objects.create(username=username, tenant=tenant)
-                    logger.info("Created new principal %s for org_id %s.", username, org_id)
-                group.principals.add(principal)
-                group_principal_change_notification_handler(self.request.user, group, username, "added")
-            return group
         else:
             resp = self.proxy.request_filtered_principals(users, account=account, limit=len(users))
-            if "errors" in resp:
-                return resp
-            if len(resp.get("data", [])) == 0:
-                return {
-                    "status_code": status.HTTP_404_NOT_FOUND,
-                    "errors": [
-                        {"detail": "Users not found.",
-                         "status": "404",
-                         "source": "principals"}
-                    ]
-                }
-            for item in resp.get("data", []):
-                username = item["username"]
-                try:
-                    principal = Principal.objects.get(username__iexact=username, tenant=tenant)
-                except Principal.DoesNotExist:
-                    principal = Principal.objects.create(username=username, tenant=tenant)
+        if "errors" in resp:
+            return resp
+        if len(resp.get("data", [])) == 0:
+            return {
+                "status_code": status.HTTP_404_NOT_FOUND,
+                "errors": [{"detail": "Users not found.", "status": "404", "source": "principals"}],
+            }
+        for item in resp.get("data", []):
+            username = item["username"]
+            try:
+                principal = Principal.objects.get(username__iexact=username, tenant=tenant)
+            except Principal.DoesNotExist:
+                principal = Principal.objects.create(username=username, tenant=tenant)
+                if settings.AUTHENTICATE_WITH_ORG_ID:
+                    logger.info("Created new principal %s for org_id %s.", username, org_id)
+                else:
                     logger.info("Created new principal %s for account_id %s.", username, account)
-                group.principals.add(principal)
-                group_principal_change_notification_handler(self.request.user, group, username, "added")
-            return group
+            group.principals.add(principal)
+            group_principal_change_notification_handler(self.request.user, group, username, "added")
+        return group
 
     def remove_principals(self, group, principals, account=None, org_id=None):
         """Process list of principals and remove them from the group."""
