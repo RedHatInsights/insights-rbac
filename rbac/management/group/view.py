@@ -359,7 +359,7 @@ class GroupViewSet(
         if len(resp.get("data", [])) == 0:
             return {
                 "status_code": status.HTTP_404_NOT_FOUND,
-                "errors": [{"detail": "Users not found.", "status": "404", "source": "principals"}],
+                "errors": [{"detail": "User(s) {} not found.".format(users), "status": "404", "source": "principals"}],
             }
         for item in resp.get("data", []):
             username = item["username"]
