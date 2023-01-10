@@ -4,7 +4,7 @@ services:
   rbac-server:
       build:
           context: .
-          dockerfile: Dockerfile-env
+          dockerfile: Dockerfile
       working_dir: /rbac
       entrypoint:
         - /rbac/run_server.sh
@@ -36,7 +36,7 @@ services:
       container_name: rbac_worker
       build:
           context: .
-          dockerfile: Dockerfile-env
+          dockerfile: Dockerfile
       working_dir: /rbac/rbac
       entrypoint: ['celery', 'worker', '-A', 'rbac.celery', '--broker=redis://redis:6379/0', '--loglevel=INFO']
       privileged: true
@@ -51,7 +51,7 @@ services:
       container_name: rbac_scheduler
       build:
           context: .
-          dockerfile: Dockerfile-env
+          dockerfile: Dockerfile
       working_dir: /rbac/rbac
       entrypoint: ['celery', 'beat', '-A', 'rbac.celery', '--broker=redis://redis:6379/0', '--loglevel=INFO']
       privileged: true

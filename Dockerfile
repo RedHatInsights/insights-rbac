@@ -1,24 +1,23 @@
-FROM registry.access.redhat.com/ubi8/python-38
+FROM registry.access.redhat.com/ubi8/ubi-minimal:latest AS base
 
-EXPOSE 8080
+USER root
 
-ENV NODEJS_VERSION=14 \
-    NODEJS_SCL=rh-nodejs14 \
-    NPM_RUN=start \
-    NODEJS_SCL=rh-nodejs14 \
-    NPM_CONFIG_PREFIX=$HOME/.npm-global \
-    PATH=$HOME/.local/bin/:$HOME/node_modules/.bin/:$HOME/.npm-global/bin/:$PATH \
+EXPOSE 8000
+
+ENV PYTHON_VERSION=3.8 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONIOENCODING=UTF-8 \
     LC_ALL=en_US.UTF-8 \
     LANG=en_US.UTF-8 \
     PIP_NO_CACHE_DIR=off \
-    UPGRADE_PIP_TO_LATEST=true \
-    PIP_INDEX_URL="" \
-    PIPENV_PYPI_MIRROR="" \
-    ENABLE_PIPENV=true \
-    APP_CONFIG=/opt/app-root/src/rbac/gunicorn.py \
-    APP_HOME=/opt/app-root/src/rbac \
+    PIPENV_VENV_IN_PROJECT=1 \
+    PIPENV_VERBOSITY=-1 \
+    APP_ROOT=/opt/rbac \
+    APP_CONFIG=/opt/rbac/rbac/gunicorn.py \
+    APP_HOME=/opt/rbac/rbac \
     APP_MODULE=rbac.asgi \
-    APP_NAMESPACE=rbac
+    APP_NAMESPACE=rbac \
+    PLATFORM="el8"
 
 
 ENV SUMMARY="Insights RBAC is a role based access control web server" \
@@ -35,41 +34,76 @@ LABEL summary="$SUMMARY" \
       version="1" \
       maintainer="Red Hat Insights"
 
-USER root
 
-RUN yum module reset nodejs -y
-RUN yum install @nodejs:14 -y
+# Very minimal set of packages
+# glibc-langpack-en is needed to set locale to en_US and disable warning about it
+# gcc to compile some python packages (e.g. ciso8601)
+# shadow-utils to make useradd available
+RUN INSTALL_PKGS="python38 python38-devel glibc-langpack-en libpq-devel gcc shadow-utils" && \
+    microdnf --nodocs -y upgrade && \
+    microdnf -y --setopt=tsflags=nodocs --setopt=install_weak_deps=0 install $INSTALL_PKGS && \
+    rpm -V $INSTALL_PKGS && \
+    microdnf -y clean all --enablerepo='*'
 
-# Copy the S2I scripts from the specific language image to $STI_SCRIPTS_PATH.
-COPY openshift/s2i/bin $STI_SCRIPTS_PATH
+# PIPENV_DEV is set to true in the docker-compose allowing
+# local builds to install the dev dependencies
+ARG PIPENV_DEV=False
+ARG USER_ID=1001
 
-# Copy extra files to the image.
-COPY openshift/root /
+# Create a Python virtual environment for use by any application to avoid
+# potential conflicts with Python packages preinstalled in the main Python
+# installation.
+RUN python3.8 -m venv /pipenv-venv
+ENV PATH="/pipenv-venv/bin:$PATH"
+# Install pipenv into the virtual env
+RUN \
+    pip install --upgrade pip && \
+    pip install pipenv
 
-# Copy application files to the image.
-COPY . ${APP_ROOT}/src
+WORKDIR ${APP_ROOT}
 
-# - Create a Python virtual environment for use by any application to avoid
-#   potential conflicts with Python packages preinstalled in the main Python
-#   installation.
-# - In order to drop the root user, we have to make some directories world
-#   writable as OpenShift default security model is to run the container
-#   under random UID.
-RUN pip install virtualenv && \
-    virtualenv ${APP_ROOT} && \
-    chown -R 1001:0 ${APP_ROOT} && \
-    fix-permissions ${APP_ROOT} -P && \
-    rpm-file-permissions && \
-    $STI_SCRIPTS_PATH/assemble || true
+# install dependencies
+ENV PIP_DEFAULT_TIMEOUT=100
+COPY Pipfile .
+COPY Pipfile.lock .
+RUN pip install --upgrade pip
+RUN pip install pipenv
+RUN pip install pipenv-to-requirements
+RUN pipenv run pipenv_to_requirements -f
+RUN pipenv install -r requirements.txt
 
-RUN curl -L -o /usr/bin/haberdasher \
-https://github.com/RedHatInsights/haberdasher/releases/latest/download/haberdasher_linux_amd64 && \
-chmod 755 /usr/bin/haberdasher
 
-RUN touch /opt/app-root/src/rbac/app.log; chmod 777 /opt/app-root/src/rbac/app.log
-USER 1001
+# Runtime env variables:
+ENV VIRTUAL_ENV=${APP_ROOT}/.venv
+ENV \
+    # Add the rbac virtual env bin to the front of PATH.
+    # This activates the virtual env for all subsequent python calls.
+    PATH="$VIRTUAL_ENV/bin:$PATH" \
+    PROMETHEUS_MULTIPROC_DIR=/tmp
 
-ENTRYPOINT ["/usr/bin/haberdasher"]
+# copy the src files into the workdir
+COPY . .
 
-# Set the default CMD to print the usage of the language image.
-CMD $STI_SCRIPTS_PATH/run
+RUN touch ${APP_HOME}/app.log; chmod 777 ${APP_HOME}/app.log
+
+# test
+RUN chown -R 1001:0 ${APP_ROOT}
+
+# create the rbac user
+RUN \
+    adduser rbac -u ${USER_ID} -g 0 && \
+    chmod ug+rw ${APP_ROOT} ${APP_HOME} ${APP_HOME}/staticfiles /tmp
+USER rbac
+
+
+# create the static files
+RUN \
+    python rbac/manage.py collectstatic --noinput && \
+    # This `app.log` file is created during the `collectstatic` step. We need to
+    # remove it else the random OCP user will not be able to access it. This file
+    # will be recreated by the Pod when the application starts.
+    rm ${APP_HOME}/app.log
+
+EXPOSE 8000
+
+ENTRYPOINT ["./scripts/entrypoint.sh"]
