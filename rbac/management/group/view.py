@@ -37,6 +37,8 @@ from management.notifications.notification_handlers import (
     group_obj_change_notification_handler,
     group_principal_change_notification_handler,
 )
+
+from management.group.model import send_kafka
 from management.permissions import GroupAccessPermission
 from management.principal.model import Principal
 from management.principal.proxy import PrincipalProxy
@@ -258,6 +260,7 @@ class GroupViewSet(
             }
 
         """
+
         return super().list(request=request, args=args, kwargs=kwargs)
 
     def retrieve(self, request, *args, **kwargs):
@@ -294,6 +297,9 @@ class GroupViewSet(
             }
         """
         validate_uuid(kwargs.get("uuid"), "group uuid validation")
+
+        send_kafka()
+
         return super().retrieve(request=request, args=args, kwargs=kwargs)
 
     def destroy(self, request, *args, **kwargs):

@@ -123,6 +123,13 @@ def group_deleted_sync_handler(sender=None, instance=None, using=None, **kwargs)
         event_type="group_deleted", payload={"group": {"name": instance.name, "uuid": str(instance.uuid)}}
     )
 
+def send_kafka():
+    logger.info("send_kafka")
+    sync_handlers.send_sync_message(
+        event_type="group_membership_changed",
+        payload={"group": {"name": "TEST"}, "action": "Test"},
+    )
+    logger.info("send_kafka END")
 
 def principal_group_change_sync_handler(
     sender=None, instance=None, action=None, reverse=None, model=None, pk_set=None, using=None, **kwargs
