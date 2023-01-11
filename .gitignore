@@ -116,6 +116,7 @@ apidoc/*
 !apidoc/.apidocignore
 
 # static files
+rbac/staticfiles/
 scripts/aws_cost_usage/
 scripts/aws_pricing/
 
