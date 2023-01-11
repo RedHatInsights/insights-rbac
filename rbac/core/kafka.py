@@ -19,7 +19,7 @@ import json
 
 from django.conf import settings
 from kafka import KafkaProducer
-
+import logging
 
 class FakeKafkaProducer:
     """Fake kafaka producer to enable local development without kafka server."""
@@ -46,6 +46,7 @@ class RBACProducer:
 
     def send_kafka_message(self, topic, message, headers=None):
         """Send message to kafka server."""
+        logging.getLogger("management.group.view").info("send kafka message %s ", topic)
         producer = self.get_producer()
         json_data = json.dumps(message).encode("utf-8")
         if headers and not isinstance(headers, list):
