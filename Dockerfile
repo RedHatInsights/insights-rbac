@@ -2,8 +2,6 @@ FROM registry.access.redhat.com/ubi8/ubi-minimal:latest AS base
 
 USER root
 
-EXPOSE 8000
-
 ENV PYTHON_VERSION=3.8 \
     PYTHONUNBUFFERED=1 \
     PYTHONIOENCODING=UTF-8 \
@@ -66,11 +64,12 @@ WORKDIR ${APP_ROOT}
 ENV PIP_DEFAULT_TIMEOUT=100
 COPY Pipfile .
 COPY Pipfile.lock .
-RUN pip install --upgrade pip
-RUN pip install pipenv
-RUN pip install pipenv-to-requirements
-RUN pipenv run pipenv_to_requirements -f
-RUN pipenv install -r requirements.txt
+RUN \
+    pip install --upgrade pip && \
+    pip install pipenv && \
+    pip install pipenv-to-requirements && \
+    pipenv run pipenv_to_requirements -f && \
+    pipenv install -r requirements.txt
 
 
 # Runtime env variables:
