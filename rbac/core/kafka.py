@@ -23,6 +23,55 @@ import logging
 
 class FakeKafkaProducer:
     """Fake kafaka producer to enable local development without kafka server."""
+    DEFAULT_CONFIG = {
+        'bootstrap_servers': 'localhost',
+        'client_id': None,
+        'key_serializer': None,
+        'value_serializer': None,
+        'acks': 1,
+        'compression_type': None,
+        'retries': 0,
+        'batch_size': 16384,
+        'linger_ms': 0,
+        'buffer_memory': 33554432,
+        'connections_max_idle_ms': 9 * 60 * 1000,
+        'max_block_ms': 60000,
+        'max_request_size': 1048576,
+        'metadata_max_age_ms': 300000,
+        'retry_backoff_ms': 100,
+        'request_timeout_ms': 30000,
+        'receive_buffer_bytes': None,
+        'send_buffer_bytes': None,
+        'sock_chunk_bytes': 4096,  # undocumented experimental option
+        'sock_chunk_buffer_count': 1000,  # undocumented experimental option
+        'reconnect_backoff_ms': 50,
+        'reconnect_backoff_max_ms': 1000,
+        'max_in_flight_requests_per_connection': 5,
+        'security_protocol': 'PLAINTEXT',
+        'ssl_context': None,
+        'ssl_check_hostname': True,
+        'ssl_cafile': None,
+        'ssl_certfile': None,
+        'ssl_keyfile': None,
+        'ssl_crlfile': None,
+        'ssl_password': None,
+        'ssl_ciphers': None,
+        'api_version': None,
+        'api_version_auto_timeout_ms': 2000,
+        'metric_reporters': [],
+        'metrics_num_samples': 2,
+        'metrics_sample_window_ms': 30000,
+        'sasl_mechanism': None,
+        'sasl_plain_username': None,
+        'sasl_plain_password': None,
+        'sasl_kerberos_service_name': 'kafka',
+        'sasl_kerberos_domain_name': None,
+        'sasl_oauth_token_provider': None
+    }
+
+    def __init__(self, **configs):
+
+        self.config = self.DEFAULT_CONFIG
 
     def send(self, topic, value=None, headers=None):
         """No operation method."""
@@ -34,14 +83,22 @@ class RBACProducer:
 
     def get_producer(self):
         """Init method to return fake kafka when flag is set to false."""
+
+        logging.getLogger("management.group.view").info("Producer selection:")
         if not hasattr(self, "producer"):
             if settings.DEVELOPMENT or settings.MOCK_KAFKA or not settings.KAFKA_ENABLED:
+                logging.getLogger("management.group.view").info("Producer selection FakeKafkaProducer")
                 self.producer = FakeKafkaProducer()
             else:
                 if settings.KAFKA_AUTH:
+                    logging.getLogger("management.group.view").info("Producer selection KAFKA_AUTH true")
+                    logging.getLogger("management.group.view").info("Producer selection KAFKA_AUTH %s", settings.KAFKA_AUTH['bootstrap_servers'])
                     self.producer = KafkaProducer(**settings.KAFKA_AUTH)
                 else:
+                    logging.getLogger("management.group.view").info("Producer selection KAFKA_AUTH false")
                     self.producer = KafkaProducer(bootstrap_servers=settings.KAFKA_SERVER)
+        logging.getLogger("management.group.view").info("Producer selection producer: %s", self.producer.config['bootstrap_servers'])
+        logging.getLogger("management.group.view").info("Producer selection END")
         return self.producer
 
     def send_kafka_message(self, topic, message, headers=None):
