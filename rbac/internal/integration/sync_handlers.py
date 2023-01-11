@@ -47,8 +47,6 @@ def build_sync_message(event_type, payload, account_id=None, org_id=None):
 
 def send_sync_message(event_type, payload, account_id=None, org_id=None):
     """Build and send external service sync message."""
-
     logger.info("Kafka message %s - ", event_type)
-
     sync_message = build_sync_message(event_type, payload, account_id, org_id)
     sync_producer.send_kafka_message(sync_topic, sync_message)

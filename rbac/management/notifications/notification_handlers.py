@@ -51,6 +51,7 @@ def build_notifications_message(event_type, payload, account_id=None, org_id=Non
 
 def notify(event_type, payload, account_id=None, org_id=None):
     """Actually send notifications message."""
+    logger.info("Notif kafka message %s - ", event_type)
     noto_message = build_notifications_message(event_type, payload, account_id, org_id)
     noto_producer.send_kafka_message(noto_topic, noto_message, noto_headers)
 
@@ -92,6 +93,7 @@ def handle_system_role_change_notification(role_obj, operation):
 
 def role_obj_change_notification_handler(role_obj, operation, user=None):
     """Signal handler for sending notification message when Role object changes."""
+    logger.info("Hello from role_obj_change_notification")
     if not settings.NOTIFICATIONS_ENABLED:
         return
 

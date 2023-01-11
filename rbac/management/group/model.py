@@ -130,7 +130,9 @@ def principal_group_change_sync_handler(
     """Signal handler to inform external services of Group membership changes."""
     logger.info("Handling signal for group %s membership change - informing sync topic", instance)
     if action in ["post_add", "pre_remove", "pre_clear"]:
+        logger.info("Sync group %s for %s", instance, action)
         if isinstance(instance, Group):
+            logger.info("Sync group Group %s for %s", instance, action)
             sync_handlers.send_sync_message(
                 event_type="group_membership_changed",
                 payload={
@@ -139,12 +141,15 @@ def principal_group_change_sync_handler(
                 },
             )
         elif isinstance(instance, Principal):
+            logger.info("Sync group Principal %s for %s", instance, action)
             groups = instance.group.all()
             for group in groups:
                 sync_handlers.send_sync_message(
                     event_type="group_membership_changed",
                     payload={"group": {"name": group.name, "uuid": str(group.uuid)}, "action": action.split("_")[-1]},
                 )
+
+        logger.info("Sync group END %s for %s", instance, action)
 
 
 if settings.ACCESS_CACHE_ENABLED and settings.ACCESS_CACHE_CONNECT_SIGNALS:
