@@ -92,7 +92,7 @@ class RBACProducer:
         logging.getLogger("management.group.view").info("Producer selection:")
         fromCache = True
 
-        if not hasattr(self, "producer"):
+        if True:
             fromCache = False
             if settings.DEVELOPMENT or settings.MOCK_KAFKA or not settings.KAFKA_ENABLED:
                 logging.getLogger("management.group.view").info("Producer selection FakeKafkaProducer")
