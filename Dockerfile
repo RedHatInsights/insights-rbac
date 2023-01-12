@@ -65,11 +65,10 @@ ENV PIP_DEFAULT_TIMEOUT=100
 COPY Pipfile .
 COPY Pipfile.lock .
 RUN \
-    pip install --upgrade pip && \
-    pip install pipenv && \
-    pip install pipenv-to-requirements && \
-    pipenv run pipenv_to_requirements -f && \
-    pipenv install -r requirements.txt
+    # install the dependencies into the working dir (i.e. ${APP_ROOT}/.venv)
+    pipenv install --deploy && \
+    # delete the pipenv cache
+    pipenv --clear
 
 
 # Runtime env variables:
