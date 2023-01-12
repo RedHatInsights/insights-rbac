@@ -82,6 +82,10 @@ class FakeKafkaProducer:
 class RBACProducer:
     """Kafka message producer to emit events to notification service."""
 
+    def __init__(self):
+        if hasattr(self, "producer"):
+            del self.producer
+
     def get_producer(self):
         """Init method to return fake kafka when flag is set to false."""
 
