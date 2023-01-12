@@ -244,9 +244,9 @@ objects:
           - name: CLOWDER_ENABLED
             value: ${CLOWDER_ENABLED}
           - name: APP_CONFIG
-            value: /opt/app-root/src/rbac/gunicorn.py
+            value: /opt/rbac/rbac/gunicorn.py
           - name: APP_HOME
-            value: /opt/app-root/src/rbac
+            value: /opt/rbac/rbac
           - name: APP_MODULE
             value: rbac.asgi
           image: quay.io/cloudservices/rbac:${IMAGE_TAG}
@@ -282,9 +282,9 @@ objects:
               cpu: ${CPU_REQUEST}
               memory: ${MEMORY_REQUEST}
           volumeMounts:
-          - mountPath: /opt/app-root/src/rbac/management/role/definitions
+          - mountPath: /opt/rbac/rbac/management/role/definitions
             name: default-role-config
-          - mountPath: /opt/app-root/src/rbac/management/role/permissions
+          - mountPath: /opt/rbac/rbac/management/role/permissions
             name: model-access-permissions
           - mountPath: /etc/rds-certs
             name: rds-client-ca

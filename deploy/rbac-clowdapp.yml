@@ -68,9 +68,9 @@ objects:
           successThreshold: 1
           timeoutSeconds: 10
         volumeMounts:
-        - mountPath: /opt/app-root/src/rbac/management/role/definitions
+        - mountPath: /opt/rbac/rbac/management/role/definitions
           name: default-role-config
-        - mountPath: /opt/app-root/src/rbac/management/role/permissions
+        - mountPath: /opt/rbac/rbac/management/role/permissions
           name: model-access-permissions
         volumes:
         - configMap:
@@ -288,9 +288,9 @@ objects:
             name: ${MODEL_ACCESS_PERMISSIONS}
           name: model-access-permissions
         volumeMounts:
-        - mountPath: /opt/app-root/src/rbac/management/role/definitions
+        - mountPath: /opt/rbac/rbac/management/role/definitions
           name: default-role-config
-        - mountPath: /opt/app-root/src/rbac/management/role/permissions
+        - mountPath: /opt/rbac/rbac/management/role/permissions
           name: model-access-permissions
         resources:
           limits:
@@ -506,9 +506,9 @@ objects:
     name: rbac-env
   data:
     api-path-prefix: /api/rbac
-    app-config: /opt/app-root/src/rbac/gunicorn.py
+    app-config: /opt/rbac/rbac/gunicorn.py
     app-domain: ${APP_DOMAIN}
-    app-home: /opt/app-root/src/rbac
+    app-home: /opt/rbac/rbac
     app-module: rbac.asgi
     app-namespace: rbac-stage
     database-engine: postgresql
@@ -2118,9 +2118,9 @@ parameters:
   name: DB_SECRET_NAME
   value: rbac-db
 - name: APP_CONFIG
-  value: '/opt/app-root/src/rbac/gunicorn.py'
+  value: '/opt/rbac/rbac/gunicorn.py'
 - name: APP_HOME
-  value: '/opt/app-root/src/rbac'
+  value: '/opt/rbac/rbac'
 - name: APP_MODULE
   value: 'rbac.asgi'
 - name: APP_NAMESPACE

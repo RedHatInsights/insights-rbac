@@ -7,7 +7,7 @@ services:
           dockerfile: Dockerfile
       working_dir: /rbac
       entrypoint:
-        - /rbac/run_server.sh
+        - ./scripts/entrypoint.sh
       environment:
         - DATABASE_SERVICE_NAME=POSTGRES_SQL
         - DATABASE_ENGINE=postgresql

@@ -1,8 +1,16 @@
 """Gunicorn configuration file."""
 import multiprocessing
 import os
+from rbac.env import ENVIRONMENT
 
-bind = "unix:/var/run/rbac/gunicorn.sock"
+CLOWDER_PORT = "8000"
+if ENVIRONMENT.bool("CLOWDER_ENABLED", default=False):
+    from app_common_python import LoadedConfig
+
+    CLOWDER_PORT = LoadedConfig.publicPort
+
+bind = f"0.0.0.0:{CLOWDER_PORT}"
+
 cpu_resources = int(os.environ.get("POD_CPU_LIMIT", multiprocessing.cpu_count()))
 workers = cpu_resources * int(os.environ.get("GUNICORN_WORKER_MULTIPLIER", 2))
 threads = 10
