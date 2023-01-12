@@ -19,6 +19,7 @@ import json
 
 from django.conf import settings
 from kafka import KafkaProducer
+
 import logging
 
 class FakeKafkaProducer:
@@ -80,7 +81,7 @@ class FakeKafkaProducer:
 
 class RBACProducer:
     """Kafka message producer to emit events to notification service."""
-    
+
     def get_producer(self):
         """Init method to return fake kafka when flag is set to false."""
 
@@ -117,7 +118,6 @@ class RBACProducer:
         if headers and not isinstance(headers, list):
             headers = [headers]
         producer.send(topic, value=json_data, headers=headers)
-        producer.flush()
 
 
 """
