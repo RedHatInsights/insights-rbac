@@ -80,12 +80,15 @@ class FakeKafkaProducer:
 
 class RBACProducer:
     """Kafka message producer to emit events to notification service."""
-
+    
     def get_producer(self):
         """Init method to return fake kafka when flag is set to false."""
 
         logging.getLogger("management.group.view").info("Producer selection:")
-        if True:
+        fromCache = True
+
+        if not hasattr(self, "producer"):
+            fromCache = False
             if settings.DEVELOPMENT or settings.MOCK_KAFKA or not settings.KAFKA_ENABLED:
                 logging.getLogger("management.group.view").info("Producer selection FakeKafkaProducer")
                 self.producer = FakeKafkaProducer()
@@ -98,7 +101,10 @@ class RBACProducer:
                     logging.getLogger("management.group.view").info("Producer selection KAFKA_AUTH false")
                     self.producer = KafkaProducer(bootstrap_servers=settings.KAFKA_SERVER)
                     logging.getLogger("management.group.view").info("Server %s", settings.KAFKA_SERVER)
-
+        if fromCache:
+            logging.getLogger("management.group.view").info("Producer from cache")
+        else:
+            logging.getLogger("management.group.view").info("Producer NOT from cache")
         logging.getLogger("management.group.view").info("Producer selection producer: %s", self.producer.config['bootstrap_servers'])
         logging.getLogger("management.group.view").info("Producer selection END")
         return self.producer
@@ -111,6 +117,7 @@ class RBACProducer:
         if headers and not isinstance(headers, list):
             headers = [headers]
         producer.send(topic, value=json_data, headers=headers)
+        producer.flush()
 
 
 """
