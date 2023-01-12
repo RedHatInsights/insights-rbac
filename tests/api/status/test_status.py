@@ -17,8 +17,7 @@
 """Test the status API."""
 
 import logging
-from collections import namedtuple
-from unittest.mock import ANY, Mock, PropertyMock, patch
+from unittest.mock import ANY
 
 from django.test import TestCase
 from django.urls import reverse
@@ -55,6 +54,7 @@ class StatusModelTest(TestCase):
         expected = "local-dev"
         result = self.status_info.commit
         self.assertEqual(result, expected)
+
 
 class StatusViewTest(TestCase):
     """Tests the status view."""
