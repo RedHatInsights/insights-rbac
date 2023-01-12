@@ -104,4 +104,9 @@ RUN \
 
 EXPOSE 8000
 
+# GIT_COMMIT is added during build in `build_deploy.sh`
+# Set this at the end to leverage build caching
+ARG GIT_COMMIT=undefined
+ENV GIT_COMMIT=${GIT_COMMIT}
+
 ENTRYPOINT ["./scripts/entrypoint.sh"]
