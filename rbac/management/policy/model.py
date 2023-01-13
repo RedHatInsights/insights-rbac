@@ -176,5 +176,5 @@ if settings.ACCESS_CACHE_ENABLED and settings.ACCESS_CACHE_CONNECT_SIGNALS:
 
 if settings.KAFKA_ENABLED:
     signals.post_save.connect(policy_changed_sync_handler, sender=Policy)
-    signals.pre_delete.connect(policy_changed_sync_handler, sender=Policy)
-    signals.m2m_changed.connect(policy_to_roles_sync_handler, sender=Policy.roles.through)
+    #signals.pre_delete.connect(policy_changed_sync_handler, sender=Policy)
+    #signals.m2m_changed.connect(policy_to_roles_sync_handler, sender=Policy.roles.through)
