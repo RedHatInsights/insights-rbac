@@ -169,13 +169,13 @@ def policy_to_roles_sync_handler(
             )
 
 
-def policy_to_roles_sync_handler(
-    sender=None, instance=None, action=None, reverse=None, model=None, pk_set=None, using=None, **kwargs  # noqa: C901
-):
-    policy_changed_cache_handler(sender, instance, action,reverse, model, pk_set)
-    policy_changed_sync_handler(sender, instance, action, reverse, model, pk_set)
-
 if settings.ACCESS_CACHE_ENABLED and settings.ACCESS_CACHE_CONNECT_SIGNALS:
-    signals.post_save.connect(policy_to_roles_sync_handler, sender=Policy)
+    logger.info("subscribe hooks policy")
+    signals.post_save.connect(policy_changed_cache_handler, sender=Policy)
     signals.pre_delete.connect(policy_changed_cache_handler, sender=Policy)
     signals.m2m_changed.connect(policy_to_roles_cache_handler, sender=Policy.roles.through)
+
+if settings.KAFKA_ENABLED:
+    signals.post_save.connect(policy_changed_sync_handler, sender=Policy)
+    #signals.pre_delete.connect(policy_changed_sync_handler, sender=Policy)
+    #signals.m2m_changed.connect(policy_to_roles_sync_handler, sender=Policy.roles.through)
