@@ -35,7 +35,7 @@ objects:
             inheritEnv: true
             args:
               - sh
-              - /opt/app-root/src/deploy/init-container-setup.sh
+              - /opt/rbac/deploy/init-container-setup.sh
         command:
           - /bin/bash
           - '-c'
