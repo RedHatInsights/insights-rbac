@@ -154,7 +154,7 @@ if settings.ACCESS_CACHE_ENABLED and settings.ACCESS_CACHE_CONNECT_SIGNALS:
     signals.post_save.connect(role_related_obj_change_cache_handler, sender=Access)
     signals.post_save.connect(role_related_obj_change_cache_handler, sender=ResourceDefinition)
 
-if settings.KAFKA_ENABLED:
+if False:
     signals.pre_delete.connect(role_related_obj_change_sync_handler, sender=Role)
     signals.pre_delete.connect(role_related_obj_change_sync_handler, sender=Access)
     signals.pre_delete.connect(role_related_obj_change_sync_handler, sender=ResourceDefinition)
