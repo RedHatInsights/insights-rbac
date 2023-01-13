@@ -21,11 +21,12 @@ import logging
 import os
 from datetime import datetime
 
+from core.kafka import RBACProducer
 from django.conf import settings
 
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
-
+sync_producer = RBACProducer()
 sync_topic = settings.EXTERNAL_SYNC_TOPIC
 
 with open(os.path.join(settings.BASE_DIR, "internal", "integration", "message_template.json")) as template:
@@ -46,5 +47,4 @@ def build_sync_message(event_type, payload, account_id=None, org_id=None):
 
 def send_sync_message(event_type, payload, account_id=None, org_id=None):
     """Build and send external service sync message."""
-    print("no sync")
-
+    print("NO sync")
