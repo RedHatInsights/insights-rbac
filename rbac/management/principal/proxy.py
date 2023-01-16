@@ -292,7 +292,10 @@ class PrincipalProxy:  # pylint: disable=too-few-public-methods
         else:
             account_filter = True
         if not principals:
-            return {"status_code": status.HTTP_200_OK, "data": []}
+            return {
+                "status_code": status.HTTP_400_BAD_REQUEST,
+                "errors": [{"detail": "No principals in request.", "status": "400", "source": "principals"}],
+            }
         filtered_principals_path = "/v1/users"
         params = self._create_params(limit, offset, options)
         payload = {"users": principals, "include_permissions": False}
