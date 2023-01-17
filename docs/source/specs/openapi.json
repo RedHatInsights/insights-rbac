@@ -1122,7 +1122,14 @@
             }
           },
           "400": {
-            "description": "Bad Input"
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBadRequest"
+                }
+              }
+            }
           },
           "401": {
             "description": "Unauthorized"
@@ -2918,6 +2925,37 @@
                 "status": {
                   "type": "string",
                   "example": "403"
+                }
+              }
+            }
+          }
+        }
+      },
+      "ErrorBadRequest": {
+        "description": "Error structure for the \"Bad Request\" responses.",
+        "required": [
+          "errors"
+        ],
+        "properties": {
+          "errors": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "detail": {
+                  "description": "Detail of the error.",
+                  "type": "string",
+                  "example": "Bad Request."
+                },
+                "status": {
+                  "description": "Status of the response",
+                  "type": "string",
+                  "example": "400"
+                },
+                "source": {
+                  "description": "Source of the error.",
+                  "type": "string",
+                  "example": "principals"
                 }
               }
             }
