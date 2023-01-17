@@ -760,6 +760,19 @@ class GroupViewsetTests(IdentityRequest):
 
     @patch(
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={"status_code": 200, "data": []},
+    )
+    def test_add_group_principal_not_exists(self, mock_request):
+        """Test that adding a non-existing principal into existing group causes a 404"""
+        url = reverse("group-principals", kwargs={"uuid": self.group.uuid})
+        client = APIClient()
+        test_data = {"principals": [{"username": "not_existing_username"}]}
+
+        response = client.post(url, test_data, format="json", **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
         return_value={"status_code": 200, "data": [{"username": "test_add_user"}]},
     )
     @patch("core.kafka.RBACProducer.send_kafka_message")
