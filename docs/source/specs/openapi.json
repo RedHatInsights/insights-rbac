@@ -1142,7 +1142,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "$ref": "#/components/schemas/ErrorNotFound"
                 }
               }
             }
@@ -2918,6 +2918,37 @@
                 "status": {
                   "type": "string",
                   "example": "403"
+                }
+              }
+            }
+          }
+        }
+      },
+      "ErrorNotFound": {
+        "description": "Error structure for the \"Not Found\" responses.",
+        "required": [
+          "errors"
+        ],
+        "properties": {
+          "errors": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "detail": {
+                  "description": "Detail of the error.",
+                  "type": "string",
+                  "example": "Not found."
+                },
+                "status": {
+                  "description": "Status of the response",
+                  "type": "string",
+                  "example": "404"
+                },
+                "source": {
+                  "description": "Source of the error.",
+                  "type": "string",
+                  "example": "principals"
                 }
               }
             }
