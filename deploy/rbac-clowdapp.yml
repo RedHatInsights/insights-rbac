@@ -28,14 +28,6 @@ objects:
       minReplicas: ${{MIN_WORKER_REPLICAS}}
       podSpec:
         image: ${IMAGE}:${IMAGE_TAG}
-        initContainers:
-          - env:
-            - name: INIT_CONTAINER
-              value: "True"
-            inheritEnv: true
-            args:
-              - sh
-              - /opt/rbac/deploy/init-container-setup.sh
         command:
           - /bin/bash
           - '-c'
@@ -260,6 +252,12 @@ objects:
           apiPath: rbac
       podSpec:
         image: ${IMAGE}:${IMAGE_TAG}
+        initContainers:
+          - env:
+            inheritEnv: true
+            command:
+              - sh
+              - /opt/rbac/deploy/init-container-setup.sh
         livenessProbe:
           httpGet:
             path: /api/rbac/v1/status/
@@ -405,8 +403,6 @@ objects:
             value: ${ROLE_SEEDING_ENABLED}
           - name: GROUP_SEEDING_ENABLED
             value: ${GROUP_SEEDING_ENABLED}
-          - name: DISABLE_MIGRATE
-            value: ${DISABLE_MIGRATE}
           - name: BYPASS_BOP_VERIFICATION
             value: ${BYPASS_BOP_VERIFICATION}
           - name: ROLE_CREATE_ALLOW_LIST
@@ -2039,9 +2035,6 @@ parameters:
   required: true
 - description: Python boolean value to enable/disable group seeding on app boot
   name: GROUP_SEEDING_ENABLED
-  required: true
-- description: Flag to disable migrations
-  name: DISABLE_MIGRATE
   required: true
 - description: Enable the RBAC access cache
   name: ACCESS_CACHE_ENABLED
