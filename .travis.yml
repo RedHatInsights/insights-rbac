@@ -10,24 +10,29 @@ services:
   - redis-server
 
 addons:
-  postgresql: '10'
+  postgresql: '13'
   apt:
     packages:
-      - postgresql-10
-      - postgresql-client-10
+      - postgresql-13
+      - postgresql-client-13
 
 env:
+  PGPORT=5433
+  PGUSER=travis
   DATABASE_NAME=rbac_test
   DATABASE_HOST=localhost
-  DATABASE_PORT=5432
-  DATABASE_USER=postgres
+  DATABASE_PORT=5433
+  DATABASE_USER=travis
   DATABASE_PASSWORD=''
+
+
 
 install:
   - pip install tox codecov
 
 before_script:
-  - psql -c "create database ${DATABASE_NAME};" -U postgres
+  - psql -V
+  - psql -c "create database ${DATABASE_NAME};" -U travis -p 5433
 
 script:
   - tox
