@@ -411,12 +411,6 @@ objects:
             value: ${RBAC_DESTRUCTIVE_ENABLED_UNTIL}
           - name: CLOWDER_ENABLED
             value: ${CLOWDER_ENABLED}
-          - name: APP_CONFIG
-            value: ${APP_CONFIG}
-          - name: APP_HOME
-            value: ${APP_HOME}
-          - name: APP_MODULE
-            value: ${APP_MODULE}
           - name: APP_NAMESPACE
             value: ${APP_NAMESPACE}
           - name: CW_NULL_WORKAROUND
@@ -2110,12 +2104,6 @@ parameters:
 - description: Name of DB secret
   name: DB_SECRET_NAME
   value: rbac-db
-- name: APP_CONFIG
-  value: '/opt/rbac/rbac/gunicorn.py'
-- name: APP_HOME
-  value: '/opt/rbac/rbac'
-- name: APP_MODULE
-  value: 'rbac.asgi'
 - name: APP_NAMESPACE
   value: 'rbac'
 - name: CW_NULL_WORKAROUND

@@ -2,7 +2,6 @@ PYTHON	= $(shell which python)
 
 TOPDIR  = $(shell pwd)
 PYDIR	= rbac
-APIDOC = apidoc
 
 OC_SOURCE	= registry.access.redhat.com/openshift3/ose
 OC_VERSION	= v3.9
@@ -35,7 +34,6 @@ Please use \`make <target>' where <target> is one of:
 --- Commands using local services ---
   create-test-db-file      create a Postgres DB dump file for RBAC
   collect-static           collect static files to host
-  gen-apidoc               create api documentation
   make-migrations          make migrations for the database
   reinitdb                 drop and recreate the database
   requirements             generate Pipfile.lock and RTD requirements
@@ -109,11 +107,6 @@ create-test-db-file: run-migrations
 	pg_dump -d $(DATABASE_NAME) -h $(POSTGRES_SQL_SERVICE_HOST) -p $(POSTGRES_SQL_SERVICE_PORT) -U $(DATABASE_USER) > test.sql
 	kill -HUP $$(ps -eo pid,command | grep "manage.py runserver" | grep -v grep | awk '{print $$1}')
 
-gen-apidoc:
-	rm -fr $(PYDIR)/staticfiles/
-	rm -fr $(APIDOC)
-	apidoc -i $(PYDIR) -o $(APIDOC)
-	cp docs/source/specs/openapi.json $(APIDOC)/
 
 collect-static:
 	$(PYTHON) $(PYDIR)/manage.py collectstatic --no-input
