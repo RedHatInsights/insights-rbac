@@ -171,7 +171,7 @@ class GroupViewsetTests(IdentityRequest):
             self.assertIsNotNone(response.data.get("name"))
             self.assertEqual(group_name, response.data.get("name"))
             self.assertEqual(group.tenant, self.tenant)
-            send_kafka_message.assert_called_with(
+            send_kafka_message.assert_called_once_with(
                 settings.NOTIFICATIONS_TOPIC,
                 {
                     "bundle": "console",
@@ -553,7 +553,7 @@ class GroupViewsetTests(IdentityRequest):
             self.assertIsNotNone(response.data.get("uuid"))
             self.assertEqual(updated_name, response.data.get("name"))
 
-            send_kafka_message.assert_called_with(
+            send_kafka_message.assert_called_once_with(
                 settings.NOTIFICATIONS_TOPIC,
                 {
                     "bundle": "console",
@@ -650,7 +650,7 @@ class GroupViewsetTests(IdentityRequest):
             response = client.get(url, **self.headers)
             self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
-            send_kafka_message.assert_called_with(
+            send_kafka_message.assert_called_once_with(
                 settings.NOTIFICATIONS_TOPIC,
                 {
                     "bundle": "console",
@@ -804,7 +804,7 @@ class GroupViewsetTests(IdentityRequest):
             self.assertEqual(response.data.get("principals")[0], {"username": username})
             self.assertEqual(principal.tenant, self.tenant)
 
-            send_kafka_message.assert_called_with(
+            send_kafka_message.assert_called_once_with(
                 settings.NOTIFICATIONS_TOPIC,
                 {
                     "bundle": "console",
@@ -906,7 +906,7 @@ class GroupViewsetTests(IdentityRequest):
             response = client.delete(url, format="json", **self.headers)
             self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
 
-            send_kafka_message.assert_called_with(
+            send_kafka_message.assert_called_once_with(
                 settings.NOTIFICATIONS_TOPIC,
                 {
                     "bundle": "console",
@@ -1438,7 +1438,7 @@ class GroupViewsetTests(IdentityRequest):
             self.assertEqual(custom_default_group.tenant, self.tenant)
             self.assertEqual(custom_default_group.roles().count(), 2)
 
-            notification_messages = [
+            notifications_messages = [
                 call(
                     settings.NOTIFICATIONS_TOPIC,
                     {
@@ -1486,7 +1486,7 @@ class GroupViewsetTests(IdentityRequest):
                     ANY,
                 ),
             ]
-            kafka_mock.assert_has_calls(notification_messages, any_order=True)
+            self.assertEqual(kafka_mock.call_args_list, notifications_messages)
 
     @patch("core.kafka.RBACProducer.send_kafka_message")
     def test_system_flag_update_on_remove(self, send_kafka_message):
@@ -1574,7 +1574,7 @@ class GroupViewsetTests(IdentityRequest):
                     ANY,
                 ),
             ]
-            kafka_mock.assert_has_calls(notification_messages, any_order=True)
+            self.assertEqual(kafka_mock.call_args_list, notification_messages)
 
     def test_add_group_roles_bad_group_guid(self):
         group_url = reverse("group-roles", kwargs={"uuid": "master_exploder"})
@@ -1700,7 +1700,7 @@ class GroupViewsetTests(IdentityRequest):
                     ANY,
                 ),
             ]
-            kafka_mock.assert_has_calls(notification_messages, any_order=True)
+            self.assertEqual(kafka_mock.call_args_list, notification_messages)
 
     def test_add_group_multiple_roles_invalid(self):
         """Test that adding invalid roles to a group fails the request and does not add any."""
@@ -1827,7 +1827,7 @@ class GroupViewsetTests(IdentityRequest):
                     ANY,
                 ),
             ]
-            kafka_mock.assert_has_calls(notification_messages, any_order=True)
+            self.assertEqual(kafka_mock.call_args_list, notification_messages)
 
     def test_remove_group_multiple_roles_invalid(self):
         """Test that removing invalid roles from a group fails the request and does not remove any."""

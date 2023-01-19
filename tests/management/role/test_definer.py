@@ -183,7 +183,8 @@ class RoleDefinerTests(IdentityRequest):
                     ANY,
                 ),
             ]
-            kafka_mock.assert_has_calls(notification_messages, any_order=True)
+
+            self.assertEqual(kafka_mock.call_args_list, notification_messages)
 
     def try_seed_roles(self):
         """Try to seed roles"""

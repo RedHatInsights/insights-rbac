@@ -20,9 +20,6 @@ objects:
     - topicName: ${NOTIFICATIONS_TOPIC}
       partitions: 3
       replicas: 3
-    - topicName: ${EXTERNAL_SYNC_TOPIC}
-      partitions: 1
-      replicas: 3
     deployments:
     - name: worker-service
       minReplicas: ${{MIN_WORKER_REPLICAS}}
@@ -181,8 +178,6 @@ objects:
             value: ${KAFKA_ENABLED}
           - name: NOTIFICATIONS_TOPIC
             value: ${NOTIFICATIONS_TOPIC}
-          - name: EXTERNAL_SYNC_TOPIC
-            value: ${EXTERNAL_SYNC_TOPIC}
 
     - name: scheduler-service
       minReplicas: ${{MIN_SCHEDULER_REPLICAS}}
@@ -441,8 +436,6 @@ objects:
             value: ${NOTIFICATIONS_TOPIC}
           - name: KAFKA_ENABLED
             value: ${KAFKA_ENABLED}
-          - name: EXTERNAL_SYNC_TOPIC
-            value: ${EXTERNAL_SYNC_TOPIC}
     jobs:
       - name: tenant-org-id-populator
         podSpec:
@@ -2163,5 +2156,3 @@ parameters:
 - description: Enable kafka
   name: KAFKA_ENABLED
   value: 'False'
-- name: EXTERNAL_SYNC_TOPIC
-  value: 'platform.rbac.sync'

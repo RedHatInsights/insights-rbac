@@ -142,7 +142,8 @@ class GroupDefinerTests(IdentityRequest):
                     ANY,
                 ),
             ]
-            kafka_mock.assert_has_calls(notification_messages, any_order=True)
+
+            self.assertEqual(kafka_mock.call_args_list, notification_messages)
 
     def modify_default_group(self, system=True):
         """Add a role to the default group and/or change the system flag"""
