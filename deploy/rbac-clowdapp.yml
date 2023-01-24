@@ -28,6 +28,12 @@ objects:
       minReplicas: ${{MIN_WORKER_REPLICAS}}
       podSpec:
         image: ${IMAGE}:${IMAGE_TAG}
+        initContainers:
+          - env:
+            inheritEnv: true
+            command:
+              - sh
+              - /opt/rbac/deploy/init-container-setup.sh
         command:
           - /bin/bash
           - '-c'
@@ -252,12 +258,6 @@ objects:
           apiPath: rbac
       podSpec:
         image: ${IMAGE}:${IMAGE_TAG}
-        initContainers:
-          - env:
-            inheritEnv: true
-            command:
-              - sh
-              - /opt/rbac/deploy/init-container-setup.sh
         livenessProbe:
           httpGet:
             path: /api/rbac/v1/status/

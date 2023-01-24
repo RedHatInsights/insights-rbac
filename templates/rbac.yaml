@@ -231,16 +231,6 @@ objects:
             value: ${RBAC_DESTRUCTIVE_ENABLED_UNTIL}
           - name: TESTING_APPLICATION
             value: ${TESTING_APPLICATION}
-          - name: HABERDASHER_EMITTER
-            value: ${HABERDASHER_EMITTER}
-          - name: HABERDASHER_KAFKA_BOOTSTRAP
-            value: ${HABERDASHER_KAFKA_BOOTSTRAP}
-          - name: HABERDASHER_KAFKA_TOPIC
-            value: ${HABERDASHER_KAFKA_TOPIC}
-          - name: HABERDASHER_LABELS
-            value: ${HABERDASHER_LABELS}
-          - name: HABERDASHER_TAGS
-            value: ${HABERDASHER_TAGS}
           - name: CLOWDER_ENABLED
             value: ${CLOWDER_ENABLED}
           - name: APP_CONFIG
@@ -415,21 +405,6 @@ parameters:
 - description: Application name for testing purposes for creating roles
   name: TESTING_APPLICATION
   value: ''
-- description: Emitter for haberdasher logs [stderr|kafka]
-  name: HABERDASHER_EMITTER
-  value: stderr
-- description: Bootstrap server for haberdasher kafka emitter
-  name: HABERDASHER_KAFKA_BOOTSTRAP
-  value: ''
-- description: Kafka topic for haberdasher kafka emitter
-  name: HABERDASHER_KAFKA_TOPIC
-  value: ''
-- description: Haberdasher tags for unstrutured logs
-  name: HABERDASHER_TAGS
-  value: '[]'
-- description: Haberdasher labels for unstructured logs
-  name: HABERDASHER_LABELS
-  value: '{}'
 - description: Determines Clowder deployment
   name: CLOWDER_ENABLED
   value: 'false'
