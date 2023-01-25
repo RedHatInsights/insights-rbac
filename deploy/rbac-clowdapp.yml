@@ -2080,11 +2080,11 @@ parameters:
 - description: Initial amount of memory the worker container will request.
   displayName: Celery worker Memory Resource Request
   name: CELERY_WORKER_MEMORY_REQUEST
-  value: 256Mi
+  value: 512Mi
 - description: Maximum amount of memory the worker container can use.
   displayName: Memory Limit
   name: CELERY_WORKER_MEMORY_LIMIT
-  value: 512Mi
+  value: 1Gi
 - displayName: Django Debug
   name: DJANGO_DEBUG
   value: 'False'
