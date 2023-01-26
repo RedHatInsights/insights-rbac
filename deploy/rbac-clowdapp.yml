@@ -181,6 +181,8 @@ objects:
             value: ${NOTIFICATIONS_TOPIC}
           - name: EXTERNAL_SYNC_TOPIC
             value: ${EXTERNAL_SYNC_TOPIC}
+          - name: SHOULD_MIGRATE
+            value: ${WORKER_SHOULD_MIGRATE}
 
     - name: scheduler-service
       minReplicas: ${{MIN_SCHEDULER_REPLICAS}}
@@ -258,6 +260,12 @@ objects:
           apiPath: rbac
       podSpec:
         image: ${IMAGE}:${IMAGE_TAG}
+        initContainers:
+          - env:
+            inheritEnv: true
+            command:
+              - sh
+              - /opt/rbac/deploy/init-container-setup.sh
         livenessProbe:
           httpGet:
             path: /api/rbac/v1/status/
@@ -433,6 +441,8 @@ objects:
             value: ${KAFKA_ENABLED}
           - name: EXTERNAL_SYNC_TOPIC
             value: ${EXTERNAL_SYNC_TOPIC}
+          - name: SHOULD_MIGRATE
+            value: ${SERVICE_SHOULD_MIGRATE}
     jobs:
       - name: tenant-org-id-populator
         podSpec:
@@ -2080,11 +2090,11 @@ parameters:
 - description: Initial amount of memory the worker container will request.
   displayName: Celery worker Memory Resource Request
   name: CELERY_WORKER_MEMORY_REQUEST
-  value: 512Mi
+  value: 256Mi
 - description: Maximum amount of memory the worker container can use.
   displayName: Memory Limit
   name: CELERY_WORKER_MEMORY_LIMIT
-  value: 1Gi
+  value: 512Mi
 - displayName: Django Debug
   name: DJANGO_DEBUG
   value: 'False'
@@ -2146,3 +2156,7 @@ parameters:
   value: 'False'
 - name: EXTERNAL_SYNC_TOPIC
   value: 'platform.rbac.sync'
+- name: SERVICE_SHOULD_MIGRATE
+  value: 'True'
+- name: WORKER_SHOULD_MIGRATE
+  value: 'False'
