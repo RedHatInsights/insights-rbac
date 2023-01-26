@@ -3,6 +3,8 @@ import os
 
 import django
 
+from .env import ENVIRONMENT
+
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "rbac.settings")
 django.setup()
 
@@ -15,3 +17,9 @@ import rbac.urls  # noqa: E402
 application = ProtocolTypeRouter(
     {"http": AsgiHandler(), "websocket": AuthMiddlewareStack(URLRouter(rbac.urls.websocket_urlpatterns))}
 )
+
+USE_OTLP = ENVIRONMENT.bool("OTLP_ENABLED", default=False)
+if USE_OTLP:
+    from opentelemetry.instrumentation.asgi import OpenTelemetryMiddleware
+
+    application = OpenTelemetryMiddleware(application)
