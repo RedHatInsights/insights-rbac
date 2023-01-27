@@ -20,7 +20,6 @@ import logging
 from uuid import uuid4
 
 from django.conf import settings
-from django.contrib.postgres.fields import JSONField
 from django.db import models
 from django.db.models import signals
 from django.utils import timezone
@@ -89,7 +88,7 @@ class Access(TenantAwareModel):
 class ResourceDefinition(TenantAwareModel):
     """A resource definition."""
 
-    attributeFilter = JSONField(default=dict)
+    attributeFilter = models.JSONField(default=dict)
     access = models.ForeignKey(Access, null=True, on_delete=models.CASCADE, related_name="resourceDefinitions")
 
     @property
