@@ -3,7 +3,7 @@
 export ACCESS_CACHE_CONNECT_SIGNALS=False
 
 echo "Starting init container script."
-MIGRATE=$(echo "$SHOULD_MIGRATE" | tr '[:upper:]' '[:lower:]')
+MIGRATE=$(echo "$MIGRATE_AND_SEED_ON_INIT" | tr '[:upper:]' '[:lower:]')
 
 if [[ "$MIGRATE" = "true" ]]
 then

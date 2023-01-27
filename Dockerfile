@@ -82,11 +82,6 @@ ENV \
 # copy the src files into the workdir
 COPY . .
 
-RUN touch ${APP_HOME}/app.log; chmod 777 ${APP_HOME}/app.log
-
-# test
-RUN chown -R 1001:0 ${APP_ROOT}
-
 # create the rbac user
 RUN \
     adduser rbac -u ${USER_ID} -g 0 && \
