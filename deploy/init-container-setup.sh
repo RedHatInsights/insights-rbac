@@ -12,5 +12,5 @@ then
     echo "Running seeds <-------"
     python /opt/rbac/rbac/manage.py seeds
 else
-    echo "Migrations should not be ran <----"
+    echo "Migrations should not be run <----"
 fi
