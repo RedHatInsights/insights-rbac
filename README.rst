@@ -211,7 +211,7 @@ Default roles can be found in the `RBAC config repo`_.
 For additional information please refer to Contributing_.
 
 .. _readthedocs: http://insights-rbac.readthedocs.io/en/latest/
-.. _platformdocs: https://platform-docs.cloud.paas.psi.redhat.com/backend/rbac.html
+.. _platformdocs: https://consoledot.pages.redhat.com/docs/dev/services/rbac.html
 .. _tutorial: https://www.postgresql.org/docs/10/static/tutorial-start.html
 .. _`Working with Openshift`: https://insights-rbac.readthedocs.io/en/latest/openshift.html
 .. _Contributing: https://insights-rbac.readthedocs.io/en/latest/CONTRIBUTING.html

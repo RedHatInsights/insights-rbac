@@ -85,6 +85,8 @@ objects:
             cpu: ${CELERY_WORKER_CPU_REQUEST}
             memory: ${CELERY_WORKER_MEMORY_REQUEST}
         env:
+          - name: AUTHENTICATE_WITH_ORG_ID
+            value: ${AUTHENTICATE_WITH_ORG_ID}
           - name: DJANGO_LOG_LEVEL
             value: ${DJANGO_LOG_LEVEL}
           - name: DJANGO_DEBUG
@@ -227,6 +229,8 @@ objects:
             cpu: ${CELERY_SCHEDULER_CPU_REQUEST}
             memory: ${CELERY_SCHEDULER_MEMORY_REQUEST}
         env:
+        - name: AUTHENTICATE_WITH_ORG_ID
+          value: ${AUTHENTICATE_WITH_ORG_ID}
         - name: DJANGO_LOG_LEVEL
           value: ${DJANGO_LOG_LEVEL}
         - name: DJANGO_DEBUG
@@ -2142,7 +2146,7 @@ parameters:
   value: 'False'
 - description: Enable RBAC tenancy using Org ID
   name: AUTHENTICATE_WITH_ORG_ID
-  value: 'False'
+  value: 'True'
 - name: TENANT_TRANSLATOR_HOST
   required: true
 - name: TENANT_TRANSLATOR_PORT
