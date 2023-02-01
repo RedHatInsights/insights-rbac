@@ -17,8 +17,7 @@
 """Test the status API."""
 
 import logging
-from collections import namedtuple
-from unittest.mock import ANY, Mock, PropertyMock, patch
+from unittest.mock import ANY
 
 from django.test import TestCase
 from django.urls import reverse
@@ -50,23 +49,9 @@ class StatusModelTest(TestCase):
             t.ready = True
             t.save()
 
-    @patch("os.environ")
-    def test_commit_with_env(self, mock_os):
+    def test_commit_with_env(self):
         """Test the commit method via environment."""
-        expected = "buildnum"
-        mock_os.get.return_value = expected
-        result = self.status_info.commit
-        self.assertEqual(result, expected)
-
-    @patch("subprocess.run")
-    @patch("api.status.model.os.environ")
-    def test_commit_with_subprocess(self, mock_os, mock_subprocess):
-        """Test the commit method via subprocess."""
-        expected = "buildnum"
-        run = Mock()
-        run.stdout = b"buildnum"
-        mock_subprocess.return_value = run
-        mock_os.get.return_value = None
+        expected = "local-dev"
         result = self.status_info.commit
         self.assertEqual(result, expected)
 

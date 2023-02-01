@@ -4,6 +4,10 @@ export APP_NAME="rbac"  # name of app-sre "application" folder this component li
 export COMPONENT_NAME="rbac"  # name of app-sre "resourceTemplate" in deploy.yaml for this component
 export IMAGE="quay.io/cloudservices/rbac"  # the image location on quay
 
+# These are not currently needed but leaving them commented out in case they are needed in the future
+# export COMPONENTS_W_RESOURCES="rbac" # components which should preserve resource settings
+# export EXTRA_DEPLOY_ARGS="--set-parameter rbac/MIN_WORKER_REPLICAS=1"
+
 export IQE_PLUGINS="rbac"  # name of the IQE plugin for this APP
 export IQE_MARKER_EXPRESSION="rbac_smoke"  # This is the value passed to pytest -m
 export IQE_FILTER_EXPRESSION=""  # This is the value passed to pytest -k

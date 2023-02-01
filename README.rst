@@ -152,21 +152,6 @@ Change the 'x-rh-rbac-client-id', 'x-rh-rbac-psk' and 'x-rh-rbac-account' header
 
 You can also send a request _with_ the identity header explicitly in the curl command along with the service-to-service headers to verify that the identity header will take precedence.
 
-API Documentation Generation
-----------------------------
-
-To generate and host the API documentation locally you need to `Install APIDoc`_.
-
-Generate the project API documenttion by running the following command ::
-
-  make gen-apidoc
-
-In order to host the docs locally you need to collect the static files ::
-
-  make collect-static
-
-Now start the server with as described above and point your browser to **http://127.0.0.1:8000/apidoc/index.html**.
-
 Testing and Linting
 -------------------
 
@@ -228,7 +213,6 @@ For additional information please refer to Contributing_.
 .. _readthedocs: http://insights-rbac.readthedocs.io/en/latest/
 .. _platformdocs: https://consoledot.pages.redhat.com/docs/dev/services/rbac.html
 .. _tutorial: https://www.postgresql.org/docs/10/static/tutorial-start.html
-.. _`Install APIDoc`: http://apidocjs.com/#install
 .. _`Working with Openshift`: https://insights-rbac.readthedocs.io/en/latest/openshift.html
 .. _Contributing: https://insights-rbac.readthedocs.io/en/latest/CONTRIBUTING.html
 

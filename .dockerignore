@@ -1,0 +1,19 @@
+# Ignore everything
+**
+
+# ... except for dependencies and source
+!Pipfile
+!Pipfile.lock
+!rbac/
+!docs/source/specs/
+!scripts/
+!deploy/
+
+# keep the test files out of the final image
+**/*test*
+**/__pycache__
+**/*.log
+
+# remove any static files
+rbac/static/**
+!rbac/static/README

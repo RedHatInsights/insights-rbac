@@ -80,6 +80,7 @@ target/
 
 # celery beat schedule file
 celerybeat-schedule
+rbac/celerybeat.pid
 
 # SageMath parsed files
 *.sage.py
@@ -116,6 +117,8 @@ apidoc/*
 
 # static files
 rbac/staticfiles/
+rbac/static/*
+!rbac/static/.gitkeep
 scripts/aws_cost_usage/
 scripts/aws_pricing/
 
@@ -125,3 +128,6 @@ scripts/aws_pricing/
 
 # Generated docs for spec
 docs/source/specs/output-dir/
+
+# dev for ephemeral
+dev/*

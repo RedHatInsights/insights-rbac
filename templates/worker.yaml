@@ -229,9 +229,9 @@ objects:
           - mountPath: /etc/rds-certs
             name: rds-client-ca
             readOnly: true
-          - mountPath: /opt/app-root/src/rbac/management/role/definitions
+          - mountPath: /opt/rbac/rbac/management/role/definitions
             name: default-role-config
-          - mountPath: /opt/app-root/src/rbac/management/role/permissions
+          - mountPath: /opt/rbac/rbac/management/role/permissions
             name: model-access-permissions
         imagePullSecrets:
         - name: quay-cloudservices-pull
