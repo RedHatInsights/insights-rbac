@@ -736,11 +736,11 @@ parameters:
 - description: Absolute path to Gunicorn configuration file (optional).
   displayName: Application Configuration File Path
   name: APP_CONFIG
-  value: /opt/app-root/src/rbac/gunicorn.py
+  value: /opt/rbac/rbac/gunicorn.py
 - description: Absolute path to application install location (optional).
   displayName: Application Home Directory
   name: APP_HOME
-  value: /opt/app-root/src/rbac
+  value: /opt/rbac/rbac
 - description: Python module name of the application (optional).
   displayName: Application Module Name
   name: APP_MODULE

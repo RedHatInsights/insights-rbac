@@ -4,10 +4,10 @@ services:
   rbac-server:
       build:
           context: .
-          dockerfile: Dockerfile-env
+          dockerfile: Dockerfile
       working_dir: /rbac
       entrypoint:
-        - /rbac/run_server.sh
+        - ./scripts/entrypoint.sh
       environment:
         - DATABASE_SERVICE_NAME=POSTGRES_SQL
         - DATABASE_ENGINE=postgresql
@@ -21,6 +21,7 @@ services:
         - DEVELOPMENT=${DEVELOPMENT-False}
         - DJANGO_DEBUG=${DJANGO_DEBUG-True}
         - AUTHENTICATE_WITH_ORG_ID=True
+        - REDIS_HOST=${REDIS_HOST-rbac_redis}
       privileged: true
       ports:
           - 9080:8000
@@ -35,8 +36,8 @@ services:
       container_name: rbac_worker
       build:
           context: .
-          dockerfile: Dockerfile-env
-      working_dir: /rbac
+          dockerfile: Dockerfile
+      working_dir: /opt/rbac/rbac
       entrypoint: ['celery', 'worker', '-A', 'rbac.celery', '--broker=redis://redis:6379/0', '--loglevel=INFO']
       privileged: true
       links:
@@ -48,8 +49,8 @@ services:
       container_name: rbac_scheduler
       build:
           context: .
-          dockerfile: Dockerfile-env
-      working_dir: /rbac
+          dockerfile: Dockerfile
+      working_dir: /opt/rbac/rbac
       entrypoint: ['celery', 'beat', '-A', 'rbac.celery', '--broker=redis://redis:6379/0', '--loglevel=INFO']
       privileged: true
       links:
@@ -64,7 +65,7 @@ services:
       - "6379:6379"
 
   db:
-    image: postgres:10.17
+    image: postgres:14.5
     environment:
     - POSTGRES_DB=postgres
     - POSTGRES_USER=postgres

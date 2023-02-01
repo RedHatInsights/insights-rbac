@@ -61,7 +61,7 @@ h11==0.14.0
 hiredis==2.1.1
 httptools==0.5.0
 hyperlink==21.0.0
-identify==2.5.15
+identify==2.5.17
 idna==3.4
 imagesize==1.4.1
 incremental==22.10.0
@@ -89,7 +89,7 @@ pipenv==2022.12.19
 pipenv-to-requirements==0.9.0
 platformdirs==2.6.2
 pluggy==1.0.0
-pre-commit==3.0.1
+pre-commit==3.0.2
 prometheus-client==0.15.0
 psycopg2==2.9.5
 psycopg2-binary==2.9.5
@@ -122,7 +122,7 @@ Sphinx==4.3.2
 sphinx-rtd-theme==1.2.0rc3
 sphinxcontrib-applehelp==1.0.4
 sphinxcontrib-devhelp==1.0.2
-sphinxcontrib-htmlhelp==2.0.0
+sphinxcontrib-htmlhelp==2.0.1
 sphinxcontrib-jsmath==1.0.1
 sphinxcontrib-qthelp==1.0.3
 sphinxcontrib-serializinghtml==1.1.5

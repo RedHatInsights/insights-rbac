@@ -26,7 +26,6 @@ from rest_framework.response import Response
 
 from rbac.settings import STATIC_ROOT
 
-OPENAPI_FILE_PATH_DEFAULT = "rbac/staticfiles"
 OPENAPI_FILE_NAME = "openapi.json.gz"
 
 

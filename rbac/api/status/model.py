@@ -17,27 +17,20 @@
 
 """Models to capture server status."""
 
-import os
-import subprocess
-
 from api import API_VERSION
+from rbac import settings
 
 
 class Status:
     """A server's status."""
 
     @property
-    def commit(self):  # pylint: disable=R0201
+    def commit(self):
         """Collect the build number for the server.
 
         :returns: A build number
         """
-        commit_info = os.environ.get("OPENSHIFT_BUILD_COMMIT", None)
-        if commit_info is None:
-            commit_info = subprocess.run(["git", "describe", "--always"], stdout=subprocess.PIPE)
-            if commit_info.stdout:
-                commit_info = commit_info.stdout.decode("utf-8").strip()
-        return commit_info
+        return settings.GIT_COMMIT
 
     @property
     def api_version(self):

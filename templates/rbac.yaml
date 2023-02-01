@@ -231,22 +231,12 @@ objects:
             value: ${RBAC_DESTRUCTIVE_ENABLED_UNTIL}
           - name: TESTING_APPLICATION
             value: ${TESTING_APPLICATION}
-          - name: HABERDASHER_EMITTER
-            value: ${HABERDASHER_EMITTER}
-          - name: HABERDASHER_KAFKA_BOOTSTRAP
-            value: ${HABERDASHER_KAFKA_BOOTSTRAP}
-          - name: HABERDASHER_KAFKA_TOPIC
-            value: ${HABERDASHER_KAFKA_TOPIC}
-          - name: HABERDASHER_LABELS
-            value: ${HABERDASHER_LABELS}
-          - name: HABERDASHER_TAGS
-            value: ${HABERDASHER_TAGS}
           - name: CLOWDER_ENABLED
             value: ${CLOWDER_ENABLED}
           - name: APP_CONFIG
-            value: /opt/app-root/src/rbac/gunicorn.py
+            value: /opt/rbac/rbac/gunicorn.py
           - name: APP_HOME
-            value: /opt/app-root/src/rbac
+            value: /opt/rbac/rbac
           - name: APP_MODULE
             value: rbac.asgi
           image: quay.io/cloudservices/rbac:${IMAGE_TAG}
@@ -282,9 +272,9 @@ objects:
               cpu: ${CPU_REQUEST}
               memory: ${MEMORY_REQUEST}
           volumeMounts:
-          - mountPath: /opt/app-root/src/rbac/management/role/definitions
+          - mountPath: /opt/rbac/rbac/management/role/definitions
             name: default-role-config
-          - mountPath: /opt/app-root/src/rbac/management/role/permissions
+          - mountPath: /opt/rbac/rbac/management/role/permissions
             name: model-access-permissions
           - mountPath: /etc/rds-certs
             name: rds-client-ca
@@ -415,21 +405,6 @@ parameters:
 - description: Application name for testing purposes for creating roles
   name: TESTING_APPLICATION
   value: ''
-- description: Emitter for haberdasher logs [stderr|kafka]
-  name: HABERDASHER_EMITTER
-  value: stderr
-- description: Bootstrap server for haberdasher kafka emitter
-  name: HABERDASHER_KAFKA_BOOTSTRAP
-  value: ''
-- description: Kafka topic for haberdasher kafka emitter
-  name: HABERDASHER_KAFKA_TOPIC
-  value: ''
-- description: Haberdasher tags for unstrutured logs
-  name: HABERDASHER_TAGS
-  value: '[]'
-- description: Haberdasher labels for unstructured logs
-  name: HABERDASHER_LABELS
-  value: '{}'
 - description: Determines Clowder deployment
   name: CLOWDER_ENABLED
   value: 'false'

@@ -37,6 +37,6 @@ RUN source scl_source enable rh-python36 ${NODEJS_SCL} && \
     fix-permissions ${APP_ROOT} -P && \
     rpm-file-permissions && \
     $STI_SCRIPTS_PATH/assemble || true
-RUN touch /opt/app-root/src/rbac/app.log; chmod 777 /opt/app-root/src/rbac/app.log
+RUN touch /opt/rbac/rbac/app.log; chmod 777 /opt/rbac/rbac/app.log
 USER 1001
 ENTRYPOINT ["./run"]

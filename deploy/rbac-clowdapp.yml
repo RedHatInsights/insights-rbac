@@ -30,12 +30,10 @@ objects:
         image: ${IMAGE}:${IMAGE_TAG}
         initContainers:
           - env:
-            - name: INIT_CONTAINER
-              value: "True"
             inheritEnv: true
-            args:
+            command:
               - sh
-              - /opt/app-root/src/deploy/init-container-setup.sh
+              - /opt/rbac/deploy/init-container-setup.sh
         command:
           - /bin/bash
           - '-c'
@@ -68,9 +66,9 @@ objects:
           successThreshold: 1
           timeoutSeconds: 10
         volumeMounts:
-        - mountPath: /opt/app-root/src/rbac/management/role/definitions
+        - mountPath: /opt/rbac/rbac/management/role/definitions
           name: default-role-config
-        - mountPath: /opt/app-root/src/rbac/management/role/permissions
+        - mountPath: /opt/rbac/rbac/management/role/permissions
           name: model-access-permissions
         volumes:
         - configMap:
@@ -185,6 +183,8 @@ objects:
             value: ${NOTIFICATIONS_TOPIC}
           - name: EXTERNAL_SYNC_TOPIC
             value: ${EXTERNAL_SYNC_TOPIC}
+          - name: MIGRATE_AND_SEED_ON_INIT
+            value: ${WORKER_MIGRATE_AND_SEED_ON_INIT}
 
     - name: scheduler-service
       minReplicas: ${{MIN_SCHEDULER_REPLICAS}}
@@ -264,6 +264,12 @@ objects:
           apiPath: rbac
       podSpec:
         image: ${IMAGE}:${IMAGE_TAG}
+        initContainers:
+          - env:
+            inheritEnv: true
+            command:
+              - sh
+              - /opt/rbac/deploy/init-container-setup.sh
         livenessProbe:
           httpGet:
             path: /api/rbac/v1/status/
@@ -292,9 +298,9 @@ objects:
             name: ${MODEL_ACCESS_PERMISSIONS}
           name: model-access-permissions
         volumeMounts:
-        - mountPath: /opt/app-root/src/rbac/management/role/definitions
+        - mountPath: /opt/rbac/rbac/management/role/definitions
           name: default-role-config
-        - mountPath: /opt/app-root/src/rbac/management/role/permissions
+        - mountPath: /opt/rbac/rbac/management/role/permissions
           name: model-access-permissions
         resources:
           limits:
@@ -409,8 +415,6 @@ objects:
             value: ${ROLE_SEEDING_ENABLED}
           - name: GROUP_SEEDING_ENABLED
             value: ${GROUP_SEEDING_ENABLED}
-          - name: DISABLE_MIGRATE
-            value: ${DISABLE_MIGRATE}
           - name: BYPASS_BOP_VERIFICATION
             value: ${BYPASS_BOP_VERIFICATION}
           - name: ROLE_CREATE_ALLOW_LIST
@@ -419,12 +423,6 @@ objects:
             value: ${RBAC_DESTRUCTIVE_ENABLED_UNTIL}
           - name: CLOWDER_ENABLED
             value: ${CLOWDER_ENABLED}
-          - name: APP_CONFIG
-            value: ${APP_CONFIG}
-          - name: APP_HOME
-            value: ${APP_HOME}
-          - name: APP_MODULE
-            value: ${APP_MODULE}
           - name: APP_NAMESPACE
             value: ${APP_NAMESPACE}
           - name: CW_NULL_WORKAROUND
@@ -447,6 +445,8 @@ objects:
             value: ${KAFKA_ENABLED}
           - name: EXTERNAL_SYNC_TOPIC
             value: ${EXTERNAL_SYNC_TOPIC}
+          - name: MIGRATE_AND_SEED_ON_INIT
+            value: ${SERVICE_MIGRATE_AND_SEED_ON_INIT}
     jobs:
       - name: tenant-org-id-populator
         podSpec:
@@ -510,9 +510,9 @@ objects:
     name: rbac-env
   data:
     api-path-prefix: /api/rbac
-    app-config: /opt/app-root/src/rbac/gunicorn.py
+    app-config: /opt/rbac/rbac/gunicorn.py
     app-domain: ${APP_DOMAIN}
-    app-home: /opt/app-root/src/rbac
+    app-home: /opt/rbac/rbac
     app-module: rbac.asgi
     app-namespace: rbac-stage
     database-engine: postgresql
@@ -2044,9 +2044,6 @@ parameters:
 - description: Python boolean value to enable/disable group seeding on app boot
   name: GROUP_SEEDING_ENABLED
   required: true
-- description: Flag to disable migrations
-  name: DISABLE_MIGRATE
-  required: true
 - description: Enable the RBAC access cache
   name: ACCESS_CACHE_ENABLED
   value: 'True'
@@ -2121,12 +2118,6 @@ parameters:
 - description: Name of DB secret
   name: DB_SECRET_NAME
   value: rbac-db
-- name: APP_CONFIG
-  value: '/opt/app-root/src/rbac/gunicorn.py'
-- name: APP_HOME
-  value: '/opt/app-root/src/rbac'
-- name: APP_MODULE
-  value: 'rbac.asgi'
 - name: APP_NAMESPACE
   value: 'rbac'
 - name: CW_NULL_WORKAROUND
@@ -2169,3 +2160,7 @@ parameters:
   value: 'False'
 - name: EXTERNAL_SYNC_TOPIC
   value: 'platform.rbac.sync'
+- name: SERVICE_MIGRATE_AND_SEED_ON_INIT
+  value: 'True'
+- name: WORKER_MIGRATE_AND_SEED_ON_INIT
+  value: 'False'
