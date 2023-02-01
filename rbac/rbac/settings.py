@@ -38,6 +38,7 @@ from dateutil.parser import parse as parse_dt
 from app_common_python import LoadedConfig, KafkaTopics
 
 from . import ECSCustom
+from rbac.fips_monkey_patch import monkey_patch_md5
 
 # Database
 # https://docs.djangoproject.com/en/2.0/ref/settings/#databases
@@ -432,3 +433,19 @@ if KAFKA_ENABLED:
     clowder_sync_topic = KafkaTopics.get(EXTERNAL_SYNC_TOPIC)
     if clowder_sync_topic:
         EXTERNAL_SYNC_TOPIC = clowder_sync_topic.name
+
+# fips compliance monkey patch
+modules_to_patch = [
+    "django.contrib.staticfiles.storage",
+    "django.core.cache.backends.filebased",
+    "django.core.cache.utils",
+    "django.db.backends.utils",
+    # 'django.db.backends.sqlite3.base',  -- Only if system has sqlite installed
+    "django.utils.cache",
+]
+try:
+    import hashlib
+
+    hashlib.md5()
+except ValueError:
+    monkey_patch_md5(modules_to_patch)
