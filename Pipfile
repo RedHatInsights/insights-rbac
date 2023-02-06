@@ -31,10 +31,6 @@ app-common-python = "~=0.2.3"
 sentry-sdk = "==0.20.3"
 tox = "==3.23.0"
 psycopg2 = "==2.9.5"
-channels = "*"
-channels-redis = "==3.4.0"
-uvicorn = {extras = ["standard"], version = "*"}
-websockets = "*"
 kafka-python = "*"
 psycopg2-binary = "==2.9.5"
 

@@ -11,7 +11,7 @@ PGSQL_VERSION   = 14.5
 
 PORT=8000
 APP_HOME=$(shell pwd)/$(PYDIR)
-APP_MODULE=rbac.asgi
+APP_MODULE=rbac.wsgi
 APP_CONFIG=$(TOPDIR)/$(PYDIR)/gunicorn.py
 
 
@@ -119,7 +119,7 @@ serve:
 	DJANGO_READ_DOT_ENV_FILE=True $(PYTHON) $(PYDIR)/manage.py runserver $(PORT)
 
 gunicorn-serve:
-	DJANGO_READ_DOT_ENV_FILE=True gunicorn "$(APP_MODULE)" --chdir=$(APP_HOME) --bind=0.0.0.0:8080 --access-logfile=- --config "$(APP_CONFIG)" --preload -k uvicorn.workers.UvicornWorker
+	DJANGO_READ_DOT_ENV_FILE=True gunicorn "$(APP_MODULE)" --chdir=$(APP_HOME) --bind=0.0.0.0:8080 --access-logfile=- --config "$(APP_CONFIG)" --preload
 
 serve-with-oc: oc-forward-ports
 	sleep 3
