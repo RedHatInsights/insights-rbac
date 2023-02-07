@@ -282,7 +282,7 @@ class RoleDynamicSerializer(DynamicFieldsModelSerializer):
         return obtain_applications(obj)
 
     def get_groups_in_count(self, obj):
-        """Get the totoal count of groups where the role is in."""
+        """Get the total count of groups where the role is in."""
         request = self.context.get("request")
         return obtain_groups_in(obj, request).count()
 
