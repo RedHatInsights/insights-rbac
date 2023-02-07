@@ -44,7 +44,7 @@ from .serializer import RoleSerializer
 
 TESTING_APP = os.getenv("TESTING_APPLICATION")
 ADDITIONAL_FIELDS_KEY = "add_fields"
-VALID_FIELD_VALUES = ["groups_in_count", "groups_in"]
+VALID_FIELD_VALUES = ["groups_in_count", "groups_in", "access"]
 LIST_ROLE_FIELDS = [
     "uuid",
     "name",

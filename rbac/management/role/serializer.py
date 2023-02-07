@@ -247,6 +247,7 @@ class RoleDynamicSerializer(DynamicFieldsModelSerializer):
     groups_in = serializers.SerializerMethodField()
     groups_in_count = serializers.SerializerMethodField()
     accessCount = serializers.IntegerField(read_only=True)
+    access = AccessSerializer(many=True)
     applications = serializers.SerializerMethodField()
     system = serializers.BooleanField(read_only=True)
     platform_default = serializers.BooleanField(read_only=True)
@@ -269,6 +270,7 @@ class RoleDynamicSerializer(DynamicFieldsModelSerializer):
             "groups_in",
             "groups_in_count",
             "accessCount",
+            "access",
             "applications",
             "system",
             "platform_default",
