@@ -34,7 +34,7 @@ crc-bonfire==4.12.0
 cryptography==39.0.0
 daphne==3.0.2
 distlib==0.3.6
-Django==3.2.16
+Django==3.2.17
 django-cors-headers==3.13.0
 django-environ==0.9.0
 django-extensions==3.2.1
