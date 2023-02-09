@@ -22,7 +22,7 @@ from management.role.serializer import RoleSerializer
 
 
 class RoleSerializerTest(TestCase):
-    "Test the role serializer"
+    """Test the role serializer"""
 
     def prepare_serializer(self, role_data):
         serializer = RoleSerializer(data=role_data)
@@ -35,7 +35,7 @@ class RoleSerializerTest(TestCase):
         return serializer
 
     def test_create_role_with_none_exist_permission_failed(self):
-        "If the permission does not exist, error will be thrown for creating role."
+        """If the permission does not exist, error will be thrown for creating role."""
         # Prepare dict input
         role_data = {
             "name": "RoleA",
@@ -56,7 +56,7 @@ class RoleSerializerTest(TestCase):
         self.assertRaises(Permission.DoesNotExist, serializer.create, serializer.validated_data)
 
     def test_update_role_with_none_exist_permission_failed(self):
-        "If the permission does not exist, error will be thrown for updating role."
+        """If the permission does not exist, error will be thrown for updating role."""
         # Prepare dict input
         role_data = {
             "name": "RoleA",
