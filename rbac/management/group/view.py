@@ -707,18 +707,14 @@ class GroupViewSet(
         exclude = validate_and_get_key(request.query_params, EXCLUDE_KEY, VALID_EXCLUDE_VALUES, "false")
 
         roles = group.roles_with_access() if exclude == "false" else self.obtain_roles_with_exclusion(request, group)
-
         filtered_roles = self.filtered_roles(roles, request)
-
         annotated_roles = filtered_roles.annotate(policyCount=Count("policies", distinct=True))
-
+        # add default order by name
+        order_field = "name"
         if ORDERING_PARAM in request.query_params:
-            ordered_roles = self.order_queryset(
-                annotated_roles, VALID_ROLE_ORDER_FIELDS, request.query_params.get(ORDERING_PARAM)
-            )
-
-            return [RoleMinimumSerializer(role).data for role in ordered_roles]
-        return [RoleMinimumSerializer(role).data for role in annotated_roles]
+            order_field = request.query_params.get(ORDERING_PARAM)
+        ordered_roles = self.order_queryset(annotated_roles, VALID_ROLE_ORDER_FIELDS, order_field)
+        return [RoleMinimumSerializer(role).data for role in ordered_roles]
 
     def obtain_roles_with_exclusion(self, request, group):
         """Obtain the queryset for roles based on scope."""
