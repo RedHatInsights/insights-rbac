@@ -621,9 +621,9 @@ class RoleViewsetTests(IdentityRequest):
         role_name = "roleA"
         field_1 = "groups_in_count"
         field_2 = "groups_in"
-        new_diaplay_fields = self.display_fields
-        new_diaplay_fields.add(field_1)
-        new_diaplay_fields.add(field_2)
+        new_display_fields = self.display_fields
+        new_display_fields.add(field_1)
+        new_display_fields.add(field_2)
 
         # list a role
         url = "{}?add_fields={},{}".format(URL, field_1, field_2)
@@ -640,7 +640,7 @@ class RoleViewsetTests(IdentityRequest):
 
         for iterRole in response.data.get("data"):
             # fields displayed are same as defined, groupsInCount is added
-            self.assertEqual(new_diaplay_fields, set(iterRole.keys()))
+            self.assertEqual(new_display_fields, set(iterRole.keys()))
             if iterRole.get("name") == role_name:
                 self.assertEqual(iterRole.get("accessCount"), 1)
                 role = iterRole
@@ -696,9 +696,9 @@ class RoleViewsetTests(IdentityRequest):
         """Test that we can read a list of roles and add fields for username."""
         field_1 = "groups_in_count"
         field_2 = "groups_in"
-        new_diaplay_fields = self.display_fields
-        new_diaplay_fields.add(field_1)
-        new_diaplay_fields.add(field_2)
+        new_display_fields = self.display_fields
+        new_display_fields.add(field_1)
+        new_display_fields.add(field_2)
 
         url = "{}?add_fields={},{}&username={}".format(URL, field_1, field_2, self.test_principal.username)
         client = APIClient()
@@ -707,16 +707,16 @@ class RoleViewsetTests(IdentityRequest):
         self.assertEqual(len(response.data.get("data")), 3)
 
         role = response.data.get("data")[0]
-        self.assertEqual(new_diaplay_fields, set(role.keys()))
+        self.assertEqual(new_display_fields, set(role.keys()))
         self.assertEqual(role["groups_in_count"], 1)
 
     def test_list_role_with_additional_fields_principal_success(self):
         """Test that we can read a list of roles and add fields for principal."""
         field_1 = "groups_in_count"
         field_2 = "groups_in"
-        new_diaplay_fields = self.display_fields
-        new_diaplay_fields.add(field_1)
-        new_diaplay_fields.add(field_2)
+        new_display_fields = self.display_fields
+        new_display_fields.add(field_1)
+        new_display_fields.add(field_2)
 
         url = "{}?add_fields={},{}&scope=principal".format(URL, field_1, field_2)
         client = APIClient()
@@ -725,8 +725,36 @@ class RoleViewsetTests(IdentityRequest):
         self.assertEqual(len(response.data.get("data")), 3)
 
         role = response.data.get("data")[0]
-        self.assertEqual(new_diaplay_fields, set(role.keys()))
+        self.assertEqual(new_display_fields, set(role.keys()))
         self.assertEqual(role["groups_in_count"], 1)
+
+    def test_list_role_with_additional_fields_access(self):
+        """Test that we can read a list of roles and add field access."""
+        field = "access"
+        expected_fields = self.display_fields
+        expected_fields.add(field)
+
+        # list a role
+        url = f"{URL}?add_fields={field}"
+        client = APIClient()
+        response = client.get(url, **self.headers)
+
+        # three parts in response: meta, links and data
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        for keyname in ["meta", "links", "data"]:
+            self.assertIn(keyname, response.data)
+
+        self.assertIsInstance(response.data.get("data"), list)
+
+        for iterRole in response.data.get("data"):
+            # fields displayed are same as defined, field "access" is added
+            self.assertEqual(expected_fields, set(iterRole.keys()))
+            # if the role contains permissions, then check structure of access field
+            if iterRole.get("accessCount") > 0:
+                self.assertIsNotNone(iterRole.get("access"))
+                for item in iterRole.get("access"):
+                    for key in ["resourceDefinitions", "permission"]:
+                        self.assertIn(key, item)
 
     def test_list_role_with_invalid_additional_fields(self):
         """Test that invalid additional fields will raise exception."""
