@@ -19,7 +19,7 @@ django-extensions==3.2.1
 django-filter==22.1
 django-prometheus==2.2.0
 django-tenant-schemas==1.9.0
-django==3.2.16
+django==3.2.17
 djangorestframework-csv==2.1.1
 djangorestframework==3.14.0
 ecs-logging==2.0.0
