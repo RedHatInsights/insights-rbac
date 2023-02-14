@@ -1725,7 +1725,8 @@
                 "type": "string",
                 "enum": [
                   "groups_in",
-                  "groups_in_count"
+                  "groups_in_count",
+                  "access"
                 ]
               }
             },
