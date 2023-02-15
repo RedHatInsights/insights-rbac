@@ -620,7 +620,24 @@ class QuerySetTest(TestCase):
         with self.assertRaises(serializers.ValidationError):
             get_policy_queryset(req)
 
-    def test_get_access_queryset_org_admin(self):
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={
+            "status_code": 200,
+            "data": [
+                {
+                    "org_id": "100001",
+                    "is_org_admin": True,
+                    "is_internal": False,
+                    "id": 52567473,
+                    "username": "test_user",
+                    "account_number": "1111111",
+                    "is_active": True,
+                }
+            ],
+        },
+    )
+    def test_get_access_queryset_org_admin(self, mock_request):
         """Test get_access_queryset with an org admin user"""
         user_data = {"username": "test_user", "email": "admin@example.com"}
         customer = {"account_id": "10001"}
@@ -636,7 +653,24 @@ class QuerySetTest(TestCase):
         queryset = get_access_queryset(req)
         self.assertEquals(queryset.count(), 1)
 
-    def test_get_access_queryset_non_org_admin(self):
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={
+            "status_code": 200,
+            "data": [
+                {
+                    "org_id": "100001",
+                    "is_org_admin": False,
+                    "is_internal": False,
+                    "id": 52567473,
+                    "username": "test_user",
+                    "account_number": "1111111",
+                    "is_active": True,
+                }
+            ],
+        },
+    )
+    def test_get_access_queryset_non_org_admin(self, mock_request):
         """Test get_access_queryset with a non 'org admin' user"""
         user_data = {"username": "test_user", "email": "admin@example.com"}
         customer = {"account_id": "10001"}
