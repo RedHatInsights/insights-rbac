@@ -61,7 +61,7 @@ def get_principal_from_request(request):
         username = qs_user
         from_query = True
 
-    return get_principal(username, request, verify_principal=bool(qs_user), from_query=from_query)
+    return get_principal(username, request, verify_principal=True, from_query=from_query)
 
 
 def get_principal(username, request, verify_principal=True, from_query=False):
@@ -99,9 +99,9 @@ def verify_principal_with_proxy(username, request, verify_principal=True):
         if isinstance(resp, dict) and "errors" in resp:
             raise Exception("Dependency error: request to get users from dependent service failed.")
 
-        if resp.get("data") == []:
+        if not resp.get("data"):
             key = "detail"
-            message = "No data found for principal with username {}.".format(username)
+            message = "No data found for principal with username '{}'.".format(username)
             raise serializers.ValidationError({key: _(message)})
 
         return resp
