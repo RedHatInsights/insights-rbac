@@ -169,6 +169,52 @@ class AccessViewTests(IdentityRequest):
         response = client.get(url, **self.headers)
         self.assertEqual({"permission": "default:*:*", "resourceDefinitions": []}, response.data.get("data")[0])
 
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={
+            "status_code": 200,
+            "data": [],
+        },
+    )
+    def test_get_access_non_existing_username_in_query(self, mock_request):
+        """Test that we get 400 for non-existing username in the query."""
+        not_existing_username = "not_existing_username"
+        url = "{}?application={}&username={}".format(reverse("access"), "app", not_existing_username)
+        client = APIClient()
+        response = client.get(url, **self.test_headers)
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIsNotNone(response.data.get("errors"))
+        err_detail_message = f"No data found for principal with username '{not_existing_username}'."
+        self.assertEqual(response.data.get("errors")[0].get("detail"), err_detail_message)
+
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={
+            "status_code": 200,
+            "data": [],
+        },
+    )
+    def test_get_access_non_existing_username_in_headers(self, mock_request):
+        """Test that we get 400 for non-existing username in the x-rh-identity header."""
+        not_existing_username = "not_existing_username"
+
+        user_data = {"username": not_existing_username, "email": "test@gmail.com"}
+        request_context = self._create_request_context(
+            {"account_id": "1111111", "tenant_name": "acct1111111", "org_id": "100001"}, user_data, is_org_admin=True
+        )
+        request = request_context["request"]
+        test_headers = request.META
+
+        url = "{}?application={}".format(reverse("access"), "app")
+        client = APIClient()
+        response = client.get(url, **test_headers)
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIsNotNone(response.data.get("errors"))
+        err_detail_message = f"No data found for principal with username '{not_existing_username}'."
+        self.assertEqual(response.data.get("errors")[0].get("detail"), err_detail_message)
+
     def test_access_for_cross_account_principal_return_permissions_based_on_assigned_role(self):
         """Test that the expected access for cross account principal return permissions based on assigned role."""
         # setup default group/role
