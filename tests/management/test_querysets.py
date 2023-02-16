@@ -290,6 +290,54 @@ class QuerySetTest(TestCase):
         queryset = get_group_queryset(req)
         self.assertEquals(queryset.count(), 0)
 
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={
+            "status_code": 200,
+            "data": [
+                {
+                    "org_id": "100001",
+                    "is_org_admin": True,
+                    "is_internal": False,
+                    "id": 52567473,
+                    "username": "test_user",
+                    "account_number": "1111111",
+                    "is_active": True,
+                }
+            ],
+        },
+    )
+    def test_get_user_group_queryset_exclude_username(self, mock_request):
+        """Test get_group_queryset to get the groups where can be user manually added."""
+        # Create 5 groups and add principal to 1 of tem
+        self._create_groups()
+        principal = Principal.objects.create(username="test_user", tenant=self.tenant)
+        group = Group.objects.first()
+        group.principals.add(principal)
+
+        # Create default group and admin default group and add principal to the default group
+        admin_default_group = Group.objects.create(name="group_admin_default", tenant=self.tenant, admin_default=True)
+        default_group = Group.objects.create(name="group_default", tenant=self.tenant, platform_default=True)
+        default_group.principals.add(principal)
+
+        # Check that 7 groups are created
+        self.assertEquals(Group.objects.count(), 7)
+
+        user = Mock(spec=User, admin=False, account="00001", username="test_user")
+        req = Mock(
+            user=user,
+            method="GET",
+            tenant=self.tenant,
+            query_params={"exclude_username": "test_user"},
+            path=reverse("group-list"),
+        )
+        queryset = get_group_queryset(req)
+
+        # Check that principal can be added into 4 groups
+        # (excluded 2 groups where the principal is already a member
+        # and excluded default groups where cannot be added manually)
+        self.assertEquals(queryset.count(), 4)
+
     def test_get_role_queryset_admin(self):
         """Test get_role_queryset as an admin."""
         self._create_roles()
