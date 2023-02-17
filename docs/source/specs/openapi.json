@@ -3910,6 +3910,12 @@
               "external_tenant": {
                 "type": "string",
                 "example": "ExternalTenant"
+              },
+              "access": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Access"
+                }
               }
             }
           }
