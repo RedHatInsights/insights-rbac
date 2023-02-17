@@ -7,7 +7,7 @@ import django.db.models.deletion
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('management', '0039_auto_20230127_1942'),
+        ("management", "0039_auto_20230127_1942"),
     ]
     operations = [
         migrations.SeparateDatabaseAndState(
@@ -16,10 +16,15 @@ class Migration(migrations.Migration):
             ],
             state_operations=[
                 migrations.AddField(
-                    model_name='access',
-                    name='permission',
-                    field=models.ForeignKey(null=True, on_delete=django.db.models.deletion.CASCADE, related_name='accesses', to='management.permission'),
+                    model_name="access",
+                    name="permission",
+                    field=models.ForeignKey(
+                        null=True,
+                        on_delete=django.db.models.deletion.CASCADE,
+                        related_name="accesses",
+                        to="management.permission",
+                    ),
                 ),
-            ]
+            ],
         )
     ]
