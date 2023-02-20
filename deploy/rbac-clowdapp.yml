@@ -513,7 +513,7 @@ objects:
     app-config: /opt/rbac/rbac/gunicorn.py
     app-domain: ${APP_DOMAIN}
     app-home: /opt/rbac/rbac
-    app-module: rbac.wsgi
+    app-module: rbac.asgi
     app-namespace: rbac-stage
     database-engine: postgresql
     database-name: rbac
