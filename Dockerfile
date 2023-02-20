@@ -13,7 +13,7 @@ ENV PYTHON_VERSION=3.9 \
     APP_ROOT=/opt/rbac \
     APP_CONFIG=/opt/rbac/rbac/gunicorn.py \
     APP_HOME=/opt/rbac/rbac \
-    APP_MODULE=rbac.wsgi \
+    APP_MODULE=rbac.asgi \
     APP_NAMESPACE=rbac \
     PLATFORM="el8"
 
