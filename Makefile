@@ -113,6 +113,7 @@ collect-static:
 
 requirements:
 	pipenv lock
+	pipenv requirements > requirements.txt
 	pipenv run pip freeze > docs/rtd_requirements.txt
 
 serve:
