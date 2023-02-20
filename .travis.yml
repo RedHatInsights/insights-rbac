@@ -7,7 +7,6 @@ cache: pip
 
 services:
   - postgresql
-  - redis-server
 
 addons:
   postgresql: '10'
