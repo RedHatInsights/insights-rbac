@@ -2,7 +2,7 @@
 Insights Role Based Access Control README
 =========================================
 
-|license| |Build Status| |codecov| |Updates| |Python 3| |Docs|
+|license| |Build Status| |codecov| |Docs|
 
 ~~~~~
 About
@@ -221,11 +221,7 @@ For additional information please refer to Contributing_.
 .. |Build Status| image:: https://travis-ci.org/RedHatInsights/insights-rbac.svg?branch=master
    :target: https://travis-ci.org/RedHatInsights/insights-rbac
 .. |codecov| image:: https://codecov.io/gh/RedHatInsights/insights-rbac/branch/master/graph/badge.svg
-   :target: https://codecov.io/gh/RedHatInsights/insights-rbac
-.. |Updates| image:: https://pyup.io/repos/github/RedHatInsights/insights-rbac/shield.svg?t=1524249231720
-   :target: https://pyup.io/repos/github/RedHatInsights/insights-rbac/
-.. |Python 3| image:: https://pyup.io/repos/github/RedHatInsights/insights-rbac/python-3-shield.svg?t=1524249231720
-   :target: https://pyup.io/repos/github/RedHatInsights/insights-rbac/
+   :target: https://codecov.io/gh/RedHatInsights/insights-rbacgit s
 .. |Docs| image:: https://readthedocs.org/projects/insights-rbac/badge/
    :target: https://insights-rbac.readthedocs.io/en/latest/
 .. _`RBAC config repo`: https://github.com/RedHatInsights/rbac-config.git
