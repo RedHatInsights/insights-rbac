@@ -87,7 +87,6 @@ ALLOWED_HOSTS = ["*"]
 # Application definition
 
 INSTALLED_APPS = [
-    "channels",
     # django
     # 'django.contrib.admin',
     "django.contrib.auth",
@@ -158,7 +157,7 @@ TEMPLATES = [
     }
 ]
 
-ASGI_APPLICATION = "rbac.asgi.application"
+WSGI_APPLICATION = "rbac.wsgi.application"
 
 DATABASES = {"default": database.config()}
 
@@ -382,10 +381,6 @@ except ValueError as e:
 
 
 AUTHENTICATE_WITH_ORG_ID = ENVIRONMENT.bool("AUTHENTICATE_WITH_ORG_ID", default=False)
-
-CHANNEL_LAYERS = {
-    "default": {"BACKEND": "channels_redis.core.RedisChannelLayer", "CONFIG": {"hosts": [(REDIS_HOST, REDIS_PORT)]}}
-}
 
 KAFKA_ENABLED = ENVIRONMENT.get_value("KAFKA_ENABLED", default=False)
 MOCK_KAFKA = ENVIRONMENT.get_value("MOCK_KAFKA", default=False)
