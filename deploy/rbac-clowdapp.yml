@@ -46,8 +46,8 @@ objects:
               - /bin/bash
               - '-c'
               - >
-                PYTHONPATH=${PWD}/rbac/ celery inspect
-                ping -A rbac.celery
+                PYTHONPATH=${PWD}/rbac/ celery -A rbac.celery
+                inspect ping
           failureThreshold: 3
           initialDelaySeconds: ${{CELERY_INITIAL_DELAY_SEC}}
           periodSeconds: ${{CELERY_PERIOD_SEC}}
@@ -59,8 +59,8 @@ objects:
               - /bin/bash
               - '-c'
               - >
-                PYTHONPATH=${PWD}/rbac/ celery inspect
-                ping -A rbac.celery
+                PYTHONPATH=${PWD}/rbac/ celery -A rbac.celery
+                inspect ping
           failureThreshold: 3
           periodSeconds: ${{CELERY_PERIOD_SEC}}
           successThreshold: 1
@@ -202,8 +202,8 @@ objects:
               - /bin/bash
               - '-c'
               - >
-                PYTHONPATH=${PWD}/rbac/ celery inspect
-                ping -A rbac.celery
+                PYTHONPATH=${PWD}/rbac/ celery -A rbac.celery
+                inspect ping
           failureThreshold: 3
           initialDelaySeconds: ${{CELERY_INITIAL_DELAY_SEC}}
           periodSeconds: ${{CELERY_PERIOD_SEC}}
@@ -215,8 +215,8 @@ objects:
               - /bin/bash
               - '-c'
               - >
-                PYTHONPATH=${PWD}/rbac/ celery inspect
-                ping -A rbac.celery
+                PYTHONPATH=${PWD}/rbac/ celery -A rbac.celery
+                inspect ping
           failureThreshold: 3
           periodSeconds: ${{CELERY_PERIOD_SEC}}
           successThreshold: 1
