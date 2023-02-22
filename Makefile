@@ -11,7 +11,7 @@ PGSQL_VERSION   = 14.5
 
 PORT=8000
 APP_HOME=$(shell pwd)/$(PYDIR)
-APP_MODULE=rbac.asgi
+APP_MODULE=rbac.wsgi
 APP_CONFIG=$(TOPDIR)/$(PYDIR)/gunicorn.py
 
 
@@ -36,7 +36,7 @@ Please use \`make <target>' where <target> is one of:
   collect-static           collect static files to host
   make-migrations          make migrations for the database
   reinitdb                 drop and recreate the database
-  requirements             generate Pipfile.lock and RTD requirements
+  requirements             generate Pipfile.lock, requirements and RTD requirements
   run-migrations           run migrations against database
   serve                    run the Django server locally
   serve-with-oc            run Django server locally against an Openshift DB
@@ -120,7 +120,7 @@ serve:
 	DJANGO_READ_DOT_ENV_FILE=True $(PYTHON) $(PYDIR)/manage.py runserver $(PORT)
 
 gunicorn-serve:
-	DJANGO_READ_DOT_ENV_FILE=True gunicorn "$(APP_MODULE)" --chdir=$(APP_HOME) --bind=0.0.0.0:8080 --access-logfile=- --config "$(APP_CONFIG)" --preload -k uvicorn.workers.UvicornWorker
+	DJANGO_READ_DOT_ENV_FILE=True gunicorn "$(APP_MODULE)" --chdir=$(APP_HOME) --bind=0.0.0.0:8080 --access-logfile=- --config "$(APP_CONFIG)" --preload
 
 serve-with-oc: oc-forward-ports
 	sleep 3

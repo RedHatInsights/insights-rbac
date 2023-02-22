@@ -770,6 +770,15 @@
             }
           },
           {
+            "name": "exclude_username",
+            "in": "query",
+            "description": "A username for a principal to filter for groups where principal is not a member and can be added manually",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "name": "uuid",
             "in": "query",
             "description": "A list of UUIDs to filter listed groups.",

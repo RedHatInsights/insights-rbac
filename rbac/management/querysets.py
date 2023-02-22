@@ -86,7 +86,8 @@ def has_group_all_access(request):
 
 def get_group_queryset(request, args=None, kwargs=None):
     """Obtain the queryset for groups."""
-    return _filter_admin_default(request, _gather_group_querysets(request, args, kwargs))
+    queryset = _filter_admin_default(request, _gather_group_querysets(request, args, kwargs))
+    return _filter_default_groups(request, queryset)
 
 
 def _gather_group_querysets(request, args, kwargs):
@@ -106,6 +107,13 @@ def _gather_group_querysets(request, args, kwargs):
     ) or Group.platform_default_set().filter(tenant=public_tenant)
 
     username = request.query_params.get("username")
+    exclude_username = request.query_params.get("exclude_username")
+
+    if username and exclude_username:
+        key = "detail"
+        message = "Not possible to use both parameters [username, exclude_username]."
+        raise serializers.ValidationError({key: _(message)})
+
     if not username and kwargs:
         username = kwargs.get("principals")
     if username:
@@ -115,6 +123,11 @@ def _gather_group_querysets(request, args, kwargs):
         return (
             filter_queryset_by_tenant(Group.objects.filter(principals__username__iexact=username), request.tenant)
             | default_group_set
+        )
+
+    if exclude_username:
+        return filter_queryset_by_tenant(
+            Group.objects.exclude(principals__username__iexact=exclude_username), request.tenant
         )
 
     if has_group_all_access(request):
@@ -282,4 +295,12 @@ def _filter_admin_default(request, queryset):
 
         return queryset | admin_default_group_set
 
+    return queryset
+
+
+def _filter_default_groups(request, queryset):
+    """Filter out default access group and admin default group."""
+    exclude_username = request.query_params.get("exclude_username")
+    if exclude_username:
+        return queryset.exclude(platform_default=True).exclude(admin_default=True)
     return queryset
