@@ -36,7 +36,7 @@ Please use \`make <target>' where <target> is one of:
   collect-static           collect static files to host
   make-migrations          make migrations for the database
   reinitdb                 drop and recreate the database
-  requirements             generate Pipfile.lock and RTD requirements
+  requirements             generate Pipfile.lock, requirements and RTD requirements
   run-migrations           run migrations against database
   serve                    run the Django server locally
   serve-with-oc            run Django server locally against an Openshift DB
