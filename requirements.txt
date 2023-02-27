@@ -13,7 +13,7 @@ click-didyoumean==0.3.0 ; python_full_version >= '3.6.2' and python_full_version
 click-plugins==1.1.1
 click-repl==0.2.0
 distlib==0.3.6
-django==4.0.10
+django==4.1.7
 django-cors-headers==3.13.0
 django-environ==0.9.0
 django-extensions==3.2.1
