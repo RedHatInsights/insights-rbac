@@ -19,6 +19,7 @@ env:
   global:
     - PGPORT=5433
     - PGUSER=travis
+    - PGPASSWORD=''
   jobs:
     - DATABASE_NAME=rbac_test
     - DATABASE_HOST=localhost
