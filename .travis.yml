@@ -21,6 +21,9 @@ env:
   DATABASE_PORT=5433
   DATABASE_USER=postgres
   DATABASE_PASSWORD=''
+  global:
+  - PGPORT=5433
+  - PGUSER=travis
 
 install:
   - pip install tox codecov
