@@ -9,11 +9,11 @@ services:
   - postgresql
 
 addons:
-  postgresql: '14'
+  postgresql: '11'
   apt:
     packages:
-      - postgresql-14
-      - postgresql-client-14
+      - postgresql-11
+      - postgresql-client-11
 
 env:
   DATABASE_NAME=rbac_test
