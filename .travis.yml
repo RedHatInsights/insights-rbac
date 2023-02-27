@@ -16,14 +16,15 @@ addons:
       - postgresql-client-11
 
 env:
-  DATABASE_NAME=rbac_test
-  DATABASE_HOST=localhost
-  DATABASE_PORT=5433
-  DATABASE_USER=postgres
-  DATABASE_PASSWORD=''
   global:
-  - PGPORT=5433
-  - PGUSER=travis
+    - PGPORT=5433
+    - PGUSER=travis
+  jobs:
+    - DATABASE_NAME=rbac_test
+    - DATABASE_HOST=localhost
+    - DATABASE_PORT=5433
+    - DATABASE_USER=postgres
+    - DATABASE_PASSWORD=''
 
 install:
   - pip install tox codecov
