@@ -14,9 +14,6 @@ services:
         - DATABASE_NAME=postgres
         - POSTGRES_SQL_SERVICE_HOST=db
         - POSTGRES_SQL_SERVICE_PORT=5432
-        - DATABASE_HOST=db
-        - DATABASE_PORT=5432
-        - API_PATH_PREFIX=/api/rbac
         - DATABASE_USER=postgres
         - DATABASE_PASSWORD=postgres
         - DJANGO_LOG_HANDLERS=console,ecs
@@ -76,7 +73,7 @@ services:
     ports:
       - "15432:5432"
     volumes:
-      - ./pg_data:/var/lib/postgresql/data:z
+      - ./pg_data:/var/lib/postgresql/data
 networks:
   default:
     external:
