@@ -19,13 +19,12 @@ env:
   global:
     - PGPORT=5433
     - PGUSER=travis
-    - PGPASSWORD=postgres
-  jobs:
+    - PGPASSWORD=''
     - DATABASE_NAME=rbac_test
     - DATABASE_HOST=localhost
     - DATABASE_PORT=5433
     - DATABASE_USER=travis
-    - DATABASE_PASSWORD=postgres
+    - DATABASE_PASSWORD=''
 
 install:
   - pip install tox codecov
