@@ -4,7 +4,7 @@ import os
 
 from rbac.env import ENVIRONMENT
 
-CLOWDER_PORT = "8000"
+CLOWDER_PORT = "8080"
 if ENVIRONMENT.bool("CLOWDER_ENABLED", default=False):
     from app_common_python import LoadedConfig
 

@@ -14,6 +14,9 @@ services:
         - DATABASE_NAME=postgres
         - POSTGRES_SQL_SERVICE_HOST=db
         - POSTGRES_SQL_SERVICE_PORT=5432
+        - DATABASE_HOST=db
+        - DATABASE_PORT=5432
+        - API_PATH_PREFIX=/api/rbac
         - DATABASE_USER=postgres
         - DATABASE_PASSWORD=postgres
         - DJANGO_LOG_HANDLERS=console,ecs
@@ -24,7 +27,7 @@ services:
         - REDIS_HOST=${REDIS_HOST-rbac_redis}
       privileged: true
       ports:
-          - 9080:8000
+          - 9080:8080
       volumes:
         - '.:/rbac/'
       links:
@@ -73,7 +76,7 @@ services:
     ports:
       - "15432:5432"
     volumes:
-      - ./pg_data:/var/lib/postgresql/data
+      - ./pg_data:/var/lib/postgresql/data:z
 networks:
   default:
     external:
