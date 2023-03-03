@@ -23,14 +23,14 @@ env:
     - DATABASE_NAME=rbac_test
     - DATABASE_HOST=localhost
     - DATABASE_PORT=5433
-    - DATABASE_USER=travis
+    - DATABASE_USER=postgres
     - DATABASE_PASSWORD=''
 
 install:
   - pip install tox codecov
 
 before_script:
-  - psql -c "create database ${DATABASE_NAME};" -U travis
+  - psql -c "create database ${DATABASE_NAME};" -U postgres
 
 script:
   - tox
