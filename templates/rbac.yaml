@@ -413,4 +413,4 @@ parameters:
   required: true
 - description: Name of DB secret
   name: DB_SECRET_NAME
-  value: rbac-db
+  value: rbac-db-postgres14
