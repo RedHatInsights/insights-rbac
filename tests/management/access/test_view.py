@@ -200,7 +200,7 @@ class AccessViewTests(IdentityRequest):
         self.assertIsInstance(response.data.get("data"), list)
         self.assertEqual(len(response.data.get("data")), 2)
         self.assertEqual(response.data.get("meta").get("limit"), 2)
-        self.assertEqual(self.access_data, response.data.get("data")[0])
+        self.assertEqual(self.access_data, response.data.get("data")[1])
 
         self.assertEqual(Access.objects.filter(permission__id=self.permission.id).count(), 3)
 
