@@ -99,9 +99,9 @@ def verify_principal_with_proxy(username, request, verify_principal=True):
         if isinstance(resp, dict) and "errors" in resp:
             raise Exception("Dependency error: request to get users from dependent service failed.")
 
-        if resp.get("data") == []:
+        if not resp.get("data"):
             key = "detail"
-            message = "No data found for principal with username {}.".format(username)
+            message = "No data found for principal with username '{}'.".format(username)
             raise serializers.ValidationError({key: _(message)})
 
         return resp
@@ -277,7 +277,7 @@ def get_admin_from_proxy(username, request):
 
     if bop_resp.get("data") == []:
         key = "detail"
-        message = "No data found for principal with username {}.".format(username)
+        message = "No data found for principal with username '{}'.".format(username)
         raise serializers.ValidationError({key: _(message)})
 
     index = next(
@@ -286,7 +286,7 @@ def get_admin_from_proxy(username, request):
 
     if index is None:
         key = "detail"
-        message = "No data found for principal with username {}.".format(username)
+        message = "No data found for principal with username '{}'.".format(username)
         raise serializers.ValidationError({key: _(message)})
 
     is_org_admin = bop_resp.get("data")[index]["is_org_admin"]
