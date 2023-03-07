@@ -18,6 +18,7 @@
 """View for principal access."""
 from django.conf import settings
 from management.cache import AccessCache
+from management.models import Access
 from management.querysets import get_access_queryset
 from management.role.serializer import AccessSerializer
 from management.utils import (
@@ -87,9 +88,16 @@ class AccessView(APIView):
     pagination_class = api_settings.DEFAULT_PAGINATION_CLASS
     permission_classes = (AllowAny,)
 
+    def get_access_queryset_unique_by_column(self, *columns):
+        """Define the access query set with DISTINCT ON clause to get unique records."""
+        access_queryset = get_access_queryset(self.request)
+        return access_queryset.distinct(*columns).order_by(*columns)
+
     def get_queryset(self, ordering):
         """Define the query set."""
-        access_queryset = get_access_queryset(self.request)
+        unique_columns = ["permission_id", "resourceDefinitions__attributeFilter"]
+        access_queryset = Access.objects.filter(id__in=self.get_access_queryset_unique_by_column(*unique_columns))
+
         if ordering:
             if ordering[0] == "-":
                 order_sign = "-"
