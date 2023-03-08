@@ -110,7 +110,7 @@ class RbacTenantMiddlewareTest(IdentityRequest):
     def test_get_tenant_with_user(self):
         """Test that the customer tenant is returned."""
         mock_request = self.request
-        middleware = IdentityHeaderMiddleware()
+        middleware = IdentityHeaderMiddleware(get_response=IdentityHeaderMiddleware.get_tenant)
         result = middleware.get_tenant(Tenant, "localhost", mock_request)
         if settings.AUTHENTICATE_WITH_ORG_ID:
             self.assertEqual(result.org_id, mock_request.user.org_id)
@@ -122,7 +122,7 @@ class RbacTenantMiddlewareTest(IdentityRequest):
         request_context = self._create_request_context(self.customer, None, create_customer=False)
         mock_request = request_context["request"]
         mock_request.path = "/api/v1/providers/"
-        middleware = IdentityHeaderMiddleware()
+        middleware = IdentityHeaderMiddleware(get_response=IdentityHeaderMiddleware.process_request)
         result = middleware.process_request(mock_request)
         self.assertIsInstance(result, HttpResponseUnauthorizedRequest)
 
@@ -141,7 +141,7 @@ class RbacTenantMiddlewareTest(IdentityRequest):
         user.org_id = "45321"
         request.user = user
 
-        middleware = IdentityHeaderMiddleware()
+        middleware = IdentityHeaderMiddleware(get_response=IdentityHeaderMiddleware.process_request)
         middleware.process_request(request)
         self.assertEqual(request.tenant.org_id, user.org_id)
 
@@ -164,13 +164,13 @@ class IdentityHeaderMiddlewareTest(IdentityRequest):
     def test_process_status(self):
         """Test that the request gets a user."""
         mock_request = Mock(path="/api/v1/status/")
-        middleware = IdentityHeaderMiddleware()
+        middleware = IdentityHeaderMiddleware(get_response=IdentityHeaderMiddleware.process_request)
         middleware.process_request(mock_request)
         self.assertTrue(hasattr(mock_request, "user"))
 
     def test_process_cross_account_request(self):
         """Test that the process request functions correctly for cross account request."""
-        middleware = IdentityHeaderMiddleware()
+        middleware = IdentityHeaderMiddleware(get_response=IdentityHeaderMiddleware.process_request)
         # User without redhat email will fail.
         request_context = self._create_request_context(
             self.customer, self.user_data, create_customer=False, cross_account=True, is_internal=True
@@ -207,14 +207,14 @@ class IdentityHeaderMiddlewareTest(IdentityRequest):
         """Test that the process response functions correctly."""
         mock_request = Mock(path="/api/v1/status/")
         mock_response = Mock(status_code=200)
-        middleware = IdentityHeaderMiddleware()
+        middleware = IdentityHeaderMiddleware(get_response=IdentityHeaderMiddleware.process_response)
         response = middleware.process_response(mock_request, mock_response)
         self.assertEqual(response, mock_response)
 
     def test_process_not_status(self):
         """Test that the customer, tenant and user are created."""
         mock_request = self.request
-        middleware = IdentityHeaderMiddleware()
+        middleware = IdentityHeaderMiddleware(get_response=IdentityHeaderMiddleware.process_request)
         middleware.process_request(mock_request)
         self.assertTrue(hasattr(mock_request, "user"))
         self.assertEqual(mock_request.user.username, self.user_data["username"])
@@ -232,7 +232,7 @@ class IdentityHeaderMiddlewareTest(IdentityRequest):
         request_context = self._create_request_context(customer, self.user_data, create_customer=False)
         mock_request = request_context["request"]
         mock_request.path = "/api/v1/providers/"
-        middleware = IdentityHeaderMiddleware()
+        middleware = IdentityHeaderMiddleware(get_response=IdentityHeaderMiddleware.process_request)
         middleware.process_request(mock_request)
         self.assertTrue(hasattr(mock_request, "user"))
         if settings.AUTHENTICATE_WITH_ORG_ID:
@@ -248,8 +248,12 @@ class IdentityHeaderMiddlewareTest(IdentityRequest):
         mock_request.user = User()
         mock_request.user.username = self.user_data["username"]
         mock_request.user.account = self.customer_data["account_id"]
-        orig_cust = IdentityHeaderMiddleware().get_tenant(model=None, hostname=None, request=mock_request)
-        dup_cust = IdentityHeaderMiddleware().get_tenant(model=None, hostname=None, request=mock_request)
+        orig_cust = IdentityHeaderMiddleware(get_response=IdentityHeaderMiddleware.get_tenant).get_tenant(
+            model=None, hostname=None, request=mock_request
+        )
+        dup_cust = IdentityHeaderMiddleware(get_response=IdentityHeaderMiddleware.get_tenant).get_tenant(
+            model=None, hostname=None, request=mock_request
+        )
         self.assertEqual(orig_cust, dup_cust)
 
     def test_tenant_process_without_org_id(self):
@@ -268,7 +272,7 @@ class IdentityHeaderMiddlewareTest(IdentityRequest):
         user.org_id = "45321"
         request.user = user
 
-        middleware = IdentityHeaderMiddleware()
+        middleware = IdentityHeaderMiddleware(get_response=IdentityHeaderMiddleware.process_request)
         middleware.process_request(request)
         self.assertEqual(Tenant.objects.filter(tenant_name="test_user").count(), 1)
         self.assertEqual(Tenant.objects.filter(tenant_name="test_user").first().org_id, None)

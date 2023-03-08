@@ -14,7 +14,8 @@
 #    along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Describes the urls and patterns for the management application."""
-from django.conf.urls import include, url
+from django.conf.urls import include
+from django.urls import re_path
 from management.views import AccessView, GroupViewSet, PermissionViewSet, PolicyViewSet, PrincipalView, RoleViewSet
 from rest_framework.routers import DefaultRouter
 
@@ -27,7 +28,7 @@ ROUTER.register(r"permissions", PermissionViewSet)
 
 # pylint: disable=invalid-name
 urlpatterns = [
-    url(r"^principals/$", PrincipalView.as_view(), name="principals"),
-    url(r"^access/$", AccessView.as_view(), name="access"),
-    url(r"^", include(ROUTER.urls)),
+    re_path(r"^principals/$", PrincipalView.as_view(), name="principals"),
+    re_path(r"^access/$", AccessView.as_view(), name="access"),
+    re_path(r"^", include(ROUTER.urls)),
 ]
