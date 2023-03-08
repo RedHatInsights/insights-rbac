@@ -24,7 +24,7 @@ services:
         - REDIS_HOST=${REDIS_HOST-rbac_redis}
       privileged: true
       ports:
-          - 9080:8000
+          - 9080:8080
       volumes:
         - '.:/rbac/'
       links:

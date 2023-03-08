@@ -97,7 +97,7 @@ RUN \
     # will be recreated by the Pod when the application starts.
     rm ${APP_HOME}/app.log
 
-EXPOSE 8000
+EXPOSE 8080
 
 # GIT_COMMIT is added during build in `build_deploy.sh`
 # Set this at the end to leverage build caching
