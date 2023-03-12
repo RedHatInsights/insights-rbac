@@ -20,7 +20,16 @@ from management.views import AccessView, GroupViewSet, PermissionViewSet, Policy
 from rest_framework.routers import DefaultRouter
 
 
-ROUTER = DefaultRouter()
+class OptionalSlashRouter(DefaultRouter):
+    """Custom Router that set optional trailing slash."""
+
+    def __init__(self, *args, **kwargs):
+        """Make all trailing slashes optional in the URLs used by the view sets."""
+        super().__init__(*args, **kwargs)
+        self.trailing_slash = "/?"
+
+
+ROUTER = OptionalSlashRouter()
 ROUTER.register(r"groups", GroupViewSet)
 ROUTER.register(r"roles", RoleViewSet)
 ROUTER.register(r"policies", PolicyViewSet)
@@ -28,7 +37,7 @@ ROUTER.register(r"permissions", PermissionViewSet)
 
 # pylint: disable=invalid-name
 urlpatterns = [
-    re_path(r"^principals/$", PrincipalView.as_view(), name="principals"),
-    re_path(r"^access/$", AccessView.as_view(), name="access"),
+    re_path(r"^principals/?$", PrincipalView.as_view(), name="principals"),
+    re_path(r"^access/?$", AccessView.as_view(), name="access"),
     re_path(r"^", include(ROUTER.urls)),
 ]

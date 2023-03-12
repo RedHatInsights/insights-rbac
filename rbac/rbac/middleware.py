@@ -19,6 +19,7 @@
 import binascii
 import json
 import logging
+import re
 from json.decoder import JSONDecodeError
 
 from django.conf import settings
@@ -221,7 +222,7 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
                 return HttpResponse(json.dumps(payload), content_type="application/json", status=400)
 
             if settings.AUTHENTICATE_WITH_ORG_ID:
-                if not user.admin and not (request.path.endswith("/access/") and request.method == "GET"):
+                if not user.admin and not (re.match(".*/access/?$", request.path) and request.method == "GET"):
                     try:
                         tenant = Tenant.objects.filter(org_id=user.org_id).get()
                     except Tenant.DoesNotExist:
@@ -230,7 +231,7 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
 
                     user.access = IdentityHeaderMiddleware._get_access_for_user(user.username, tenant)
             else:
-                if not user.admin and not (request.path.endswith("/access/") and request.method == "GET"):
+                if not user.admin and not (re.match(".*/access/?$", request.path) and request.method == "GET"):
                     try:
                         tenant_name = create_tenant_name(user.account)
                         tenant = Tenant.objects.filter(tenant_name=tenant_name).get()

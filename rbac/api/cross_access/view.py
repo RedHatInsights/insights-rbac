@@ -16,6 +16,8 @@
 #
 
 """View for cross access request."""
+import re
+
 from django.conf import settings
 from django.db.models import Q
 from django.utils import timezone
@@ -123,7 +125,7 @@ class CrossAccountRequestViewSet(
 
     def get_serializer_class(self):
         """Get serializer based on route."""
-        if self.request.path.endswith("cross-account-requests/") and self.request.method == "GET":
+        if re.match(".*/cross-account-requests/?$", self.request.path) and self.request.method == "GET":
             return CrossAccountRequestSerializer
         return CrossAccountRequestDetailSerializer
 

@@ -17,6 +17,7 @@
 
 """View for group management."""
 import logging
+import re
 
 from django.conf import settings
 from django.db.models.aggregates import Count
@@ -163,7 +164,7 @@ class GroupViewSet(
             return GroupRoleSerializerIn
         if self.request.method in ("POST", "PUT"):
             return GroupInputSerializer
-        if self.request.path.endswith("groups/") and self.request.method == "GET":
+        if re.match(".*/groups/?$", self.request.path) and self.request.method == "GET":
             return GroupInputSerializer
         return GroupSerializer
 

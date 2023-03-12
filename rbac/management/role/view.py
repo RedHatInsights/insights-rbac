@@ -134,9 +134,9 @@ class RoleViewSet(
 
     def get_serializer_class(self):
         """Get serializer class based on route."""
-        if self.request.path.endswith("roles/") and self.request.method == "GET":
+        if self.request.method == "GET" and re.match(".*/roles/?$", self.request.path):
             return RoleDynamicSerializer
-        if self.request.method == "PATCH" and re.match(".*/roles/.*/$", self.request.path):
+        if self.request.method == "PATCH" and re.match(".*/roles/.*/?$", self.request.path):
             return RolePatchSerializer
         return RoleSerializer
 

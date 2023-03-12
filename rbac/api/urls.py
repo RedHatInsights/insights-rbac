@@ -16,16 +16,17 @@
 """Describes the urls and patterns for the API application."""
 from django.conf.urls import include
 from django.urls import re_path
-from rest_framework.routers import DefaultRouter
+from management.urls import OptionalSlashRouter
 
 from api.views import CrossAccountRequestViewSet, openapi, status
 
-ROUTER = DefaultRouter()
+
+ROUTER = OptionalSlashRouter()
 ROUTER.register(r"cross-account-requests", CrossAccountRequestViewSet, basename="cross")
 
 # pylint: disable=invalid-name
 urlpatterns = [
-    re_path(r"^status/$", status, name="server-status"),
+    re_path(r"^status/?$", status, name="server-status"),
     re_path(r"^openapi.json", openapi, name="openapi"),
     re_path(r"^", include(ROUTER.urls)),
 ]
