@@ -343,7 +343,7 @@ class CrossAccountRequestViewTests(IdentityRequest):
     def test_retrieve_request_query_by_account_success(self, mock_request):
         """Test retrieve of cross account request based on account number of identity."""
         client = APIClient()
-        response = client.get(f"{URL_LIST}{self.request_1.request_id}/", **self.headers)
+        response = client.get(f"{URL_LIST}/{self.request_1.request_id}/", **self.headers)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data.get("email"), "test_user@email.com")
@@ -353,14 +353,14 @@ class CrossAccountRequestViewTests(IdentityRequest):
     def test_retrieve_request_query_by_account_fail_if_request_in_another_account(self):
         """Test retrieve cross account request based on account number of identity would fail for non org admin."""
         client = APIClient()
-        response = client.get(f"{URL_LIST}{self.request_3.request_id}/", **self.headers)
+        response = client.get(f"{URL_LIST}/{self.request_3.request_id}/", **self.headers)
 
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
     def test_retrieve_request_query_by_account_fail_if_not_admin(self):
         """Test retrieve cross account request based on account number of identity would fail for non org admin."""
         client = APIClient()
-        response = client.get(f"{URL_LIST}{self.request_1.request_id}/", **self.associate_non_admin_request.META)
+        response = client.get(f"{URL_LIST}/{self.request_1.request_id}/", **self.associate_non_admin_request.META)
 
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
         self.assertEqual(response.data["errors"][0]["detail"].code, "permission_denied")
@@ -369,7 +369,7 @@ class CrossAccountRequestViewTests(IdentityRequest):
         """Test retrieve cross account request based on user id of identity."""
         client = APIClient()
         response = client.get(
-            f"{URL_LIST}{self.request_1.request_id}/?query_by=user_id", **self.associate_non_admin_request.META
+            f"{URL_LIST}/{self.request_1.request_id}/?query_by=user_id", **self.associate_non_admin_request.META
         )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -382,7 +382,7 @@ class CrossAccountRequestViewTests(IdentityRequest):
         """Test retrieve cross account request based on user id of identity would fail for non associate."""
         client = APIClient()
         response = client.get(
-            f"{URL_LIST}{self.request_2.request_id}/?query_by=user_id", **self.associate_non_admin_request.META
+            f"{URL_LIST}/{self.request_2.request_id}/?query_by=user_id", **self.associate_non_admin_request.META
         )
 
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
@@ -390,7 +390,7 @@ class CrossAccountRequestViewTests(IdentityRequest):
     def test_retrieve_request_query_by_user_id_fail_if_not_associate(self):
         """Test retrieve cross account request based on user id of identity would fail for non associate."""
         client = APIClient()
-        response = client.get(f"{URL_LIST}{self.request_1.request_id}/?query_by=user_id", **self.headers)
+        response = client.get(f"{URL_LIST}/{self.request_1.request_id}/?query_by=user_id", **self.headers)
 
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
         self.assertEqual(response.data["errors"][0]["detail"].code, "permission_denied")
@@ -876,7 +876,7 @@ class CrossAccountRequestViewTests(IdentityRequest):
     def test_list_requests_query_by_org_id_success(self, mock_request):
         """Test that cross account request stores org_id."""
         client = APIClient()
-        response = client.get(f"{URL_LIST}{self.request_2.request_id}/", **self.headers)
+        response = client.get(f"{URL_LIST}/{self.request_2.request_id}/", **self.headers)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data.get("email"), "test_user@email.com")
