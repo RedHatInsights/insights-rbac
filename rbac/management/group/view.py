@@ -382,9 +382,19 @@ class GroupViewSet(
 
             for username in principals:
                 try:
-                    principal = Principal.objects.get(username__iexact=username, tenant=tenant)
+                    principal = Principal.objects.get(username__iexact=username, tenant=tenant, group=group)
                 except Principal.DoesNotExist:
                     logger.info("No principal %s found for org id %s.", username, org_id)
+                    return {
+                        "status_code": status.HTTP_404_NOT_FOUND,
+                        "errors": [
+                            {
+                                "detail": f"User '{username}' not found in the group '{group.name}'.",
+                                "status": "404",
+                                "source": "principals",
+                            }
+                        ],
+                    }
                 if principal:
                     group.principals.remove(principal)
                     group_principal_change_notification_handler(self.request.user, group, username, "removed")
@@ -543,10 +553,13 @@ class GroupViewSet(
             username = request.query_params.get(USERNAMES_KEY, "")
             principals = [name.strip() for name in username.split(",")]
             if settings.AUTHENTICATE_WITH_ORG_ID:
-                self.remove_principals(group, principals, org_id=org_id)
+                resp = self.remove_principals(group, principals, org_id=org_id)
             else:
-                self.remove_principals(group, principals, account=account)
+                resp = self.remove_principals(group, principals, account=account)
+            if isinstance(resp, dict) and "errors" in resp:
+                return Response(status=resp.get("status_code"), data={"errors": resp.get("errors")})
             response = Response(status=status.HTTP_204_NO_CONTENT)
+
         return response
 
     @action(detail=True, methods=["get", "post", "delete"])
