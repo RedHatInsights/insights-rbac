@@ -948,6 +948,17 @@ class GroupViewsetTests(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(str(response.data.get("errors")[0].get("detail")), f"{invalid_uuid} is not a valid UUID.")
 
+    def test_remove_group_principals_invalid_username(self):
+        """Test that removing a principal returns an error for invalid username."""
+        invalid_username = "invalid_3098408"
+        url = reverse("group-principals", kwargs={"uuid": self.group.uuid}) + f"?usernames={invalid_username}"
+        client = APIClient()
+        response = client.delete(url, format="json", **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+        err_message = f"User '{invalid_username}' not found in the group '{self.group.name}'."
+        self.assertEqual(str(response.data.get("errors")[0].get("detail")), err_message)
+
     @patch(
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
         return_value={
