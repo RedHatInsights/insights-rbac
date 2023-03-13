@@ -937,13 +937,16 @@ class GroupViewsetTests(IdentityRequest):
         client = APIClient()
         response = client.delete(url, format="json", **self.headers)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(str(response.data.get("errors")[0].get("detail")), "Query parameter usernames is required.")
 
     def test_remove_group_principals_invalid_guid(self):
         """Test that removing a principal returns an error when GUID is invalid."""
-        url = reverse("group-principals", kwargs={"uuid": "invalid"})
+        invalid_uuid = "invalid"
+        url = reverse("group-principals", kwargs={"uuid": invalid_uuid})
         client = APIClient()
         response = client.delete(url, format="json", **self.headers)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(str(response.data.get("errors")[0].get("detail")), f"{invalid_uuid} is not a valid UUID.")
 
     @patch(
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
