@@ -33,6 +33,7 @@ sentry-sdk = "==0.20.3"
 tox = "==3.23.0"
 psycopg2 = "==2.9.5"
 kafka-python = "*"
+confluent-kafka = "==2.0.2"
 psycopg2-binary = "==2.9.5"
 
 [dev-packages]

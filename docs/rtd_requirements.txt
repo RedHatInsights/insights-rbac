@@ -43,6 +43,7 @@ imagesize==1.4.1
 Jinja2==2.11.3
 jmespath==1.0.1
 kafka-python==2.0.2
+confluent-kafka==2.0.2
 kombu==5.3.0b2
 lazy-object-proxy==1.9.0
 MarkupSafe==2.1.2
