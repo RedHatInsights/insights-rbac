@@ -390,7 +390,7 @@ class GroupViewSet(
                         "errors": [
                             {
                                 "detail": f"User '{username}' not found in the group '{group.name}'.",
-                                "status": "404",
+                                "status": status.HTTP_404_NOT_FOUND,
                                 "source": "principals",
                             }
                         ],
