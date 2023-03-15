@@ -920,7 +920,7 @@
         ],
         "responses": {
           "200": {
-            "description": "A Group object",
+            "description": "A group object",
             "content": {
               "application/json": {
                 "schema": {
@@ -1624,8 +1624,8 @@
         "tags": [
           "Role"
         ],
-        "summary": "Create a roles for a tenant",
-        "operationId": "createRoles",
+        "summary": "Create a role for a tenant",
+        "operationId": "createRole",
         "requestBody": {
           "content": {
             "application/json": {
@@ -1840,7 +1840,7 @@
         ],
         "responses": {
           "200": {
-            "description": "A Role object",
+            "description": "A role object",
             "content": {
               "application/json": {
                 "schema": {
@@ -1945,7 +1945,7 @@
         "tags": [
           "Role"
         ],
-        "summary": "Update a Role in the tenant",
+        "summary": "Update a role in the tenant",
         "operationId": "updateRole",
         "parameters": [
           {
@@ -1967,7 +1967,7 @@
               }
             }
           },
-          "description": "Update to a Role",
+          "description": "Update to a role",
           "required": true
         },
         "responses": {
@@ -2013,7 +2013,7 @@
         "tags": [
           "Role"
         ],
-        "summary": "Patch a Role in the tenant",
+        "summary": "Patch a role in the tenant",
         "operationId": "patchRole",
         "parameters": [
           {
@@ -2035,7 +2035,7 @@
               }
             }
           },
-          "description": "Patch to a Role"
+          "description": "Patch to a role"
         },
         "responses": {
           "200": {
@@ -2288,7 +2288,7 @@
         ],
         "responses": {
           "200": {
-            "description": "A Policy object",
+            "description": "A policy object",
             "content": {
               "application/json": {
                 "schema": {
@@ -2353,7 +2353,7 @@
         },
         "responses": {
           "200": {
-            "description": "A Policy object",
+            "description": "A policy object",
             "content": {
               "application/json": {
                 "schema": {
