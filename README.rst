@@ -75,7 +75,7 @@ PostgreSQL is used as the database backend for Insights-rbac. A docker-compose f
 
 Assuming the default .env file values are used, to access the database directly using psql run ::
 
-    psql rbac -U rbacadmin -h localhost -p 15432
+    psql postgres -U postgres -h localhost -p 15432
 
 There is a known limitation with docker-compose and Linux environments with SELinux enabled. You may see the following error during the postgres container deployment::
 
