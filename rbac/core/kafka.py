@@ -73,9 +73,51 @@ class RBACProducer:
 
         return self.producer
 
+    def get_sync_producer(self):
+        with open('filename.txt', 'a') as f:
+            f.write('get_sync_producer\n')
+        """Init method to return fake kafka when flag is set to false."""
+        if not hasattr(self, "sync_producer"):
+            with open('filename.txt', 'a') as f:
+                f.write('sync_producer\n')
+            if settings.DEVELOPMENT or settings.MOCK_KAFKA or not settings.KAFKA_ENABLED:
+                with open('filename.txt', 'a') as f:
+                    f.write('fake\n')
+
+                self.sync_producer = FakeKafkaProducer()
+            else:
+                with open('filename.txt', 'a') as f:
+                    f.write('prod\n')
+
+                if settings.KAFKA_AUTH:
+                    with open('filename.txt', 'a') as f:
+                        f.write('KAFKA_AUTH\n')
+
+                    conf = {
+                        "bootstrap.servers": settings.KAFKA_AUTH["bootstrap_servers"],
+                        "security.protocol": settings.KAFKA_AUTH["security_protocol"],
+                        "sasl.mechanism": settings.KAFKA_AUTH["sasl_mechanism"],
+                        "sasl.username": settings.KAFKA_AUTH["sasl_plain_username"],
+                        "sasl.password": settings.KAFKA_AUTH["sasl_plain_password"],
+                    }
+
+                    self.sync_producer = Producer(conf)
+                else:
+                    with open('filename.txt', 'a') as f:
+                        f.write('NOT AUTH\n')
+
+                    conf = {"bootstrap.servers": settings.KAFKA_SERVER}
+
+                    self.sync_producer = Producer(conf)
+
+        return self.sync_producer
     def send_kafka_message(self, topic, message, headers=None):
         """Send message to kafka server."""
-        producer = self.get_producer()
+        if topic == "platform.rbac.sync":
+            producer = self.get_sync_producer()
+        else:
+            producer = self.get_producer()
+
         json_data = json.dumps(message).encode("utf-8")
         if headers and not isinstance(headers, list):
             headers = [headers]
