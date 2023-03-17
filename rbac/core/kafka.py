@@ -66,6 +66,7 @@ class RBACProducer:
                 else:
                     with open('filename.txt', 'a') as f:
                         f.write('NOT AUTH\n')
+
                     conf = {"bootstrap.servers": settings.KAFKA_SERVER}
 
                     self.producer = Producer(conf)
