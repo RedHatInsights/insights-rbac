@@ -340,11 +340,11 @@ def obtain_groups_in(obj, request):
         qs = (
             assigned_groups
             | (
-                Group.platform_default_set().filter(tenant=request.tenant)
-                or Group.platform_default_set().filter(tenant=public_tenant)
+                Group.platform_default_set().filter(tenant=request.tenant).filter(policies__in=policy_ids)
+                or Group.platform_default_set().filter(tenant=public_tenant).filter(policies__in=policy_ids)
             )
         ).distinct()
-        return filter_queryset_by_tenant(qs, request.tenant)
+        return qs
 
     return filter_queryset_by_tenant(Group.objects.filter(policies__in=policy_ids).distinct(), request.tenant)
 
