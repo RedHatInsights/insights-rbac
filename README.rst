@@ -192,8 +192,8 @@ added to all requests on cloud.redhat.com.
 Contributing
 =============
 
-This repository uses [pre-commit](https://pre-commit.com) to check and enforce code style. It uses
-[Black](https://github.com/psf/black) to reformat the Python code and [Flake8](http://flake8.pycqa.org) to check it
+This repository uses `pre-commit <https://pre-commit.com>`_ to check and enforce code style. It uses
+`Black <https://github.com/psf/black>`_ to reformat the Python code and `Flake8 <http://flake8.pycqa.org>`_ to check it
 afterwards. Other formats and text files are linted as well.
 
 Install pre-commit hooks to your local repository by running:
