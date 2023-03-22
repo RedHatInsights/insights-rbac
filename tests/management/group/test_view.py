@@ -956,7 +956,7 @@ class GroupViewsetTests(IdentityRequest):
         response = client.delete(url, format="json", **self.headers)
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
-        err_message = f"User '{invalid_username}' not found in the group '{self.group.name}'."
+        err_message = f"User(s) {{'{invalid_username}'}} not found in the group '{self.group.name}'."
         self.assertEqual(str(response.data.get("errors")[0].get("detail")), err_message)
 
     @patch(
