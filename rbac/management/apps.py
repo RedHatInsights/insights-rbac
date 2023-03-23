@@ -33,6 +33,8 @@ class ManagementConfig(AppConfig):
     name = "management"
 
     def ready(self):
+        return
+
         """Determine if app is ready on application startup."""
         # Don't run on Django tab completion commands
         if "manage.py" in sys.argv[0] and "runserver" not in sys.argv:
