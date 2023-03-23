@@ -9,8 +9,8 @@ if [[ "$MIGRATE" = "true" ]]
 then
     echo "Running schema migrations <----"
     python /opt/rbac/rbac/manage.py migrate --noinput
-    echo "Running seeds <-------"
-    python /opt/rbac/rbac/manage.py seeds
+##    echo "Running seeds <-------"
+##    python /opt/rbac/rbac/manage.py seeds
 else
     echo "Migrations should not be run <----"
 fi
