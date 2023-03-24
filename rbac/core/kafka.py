@@ -22,7 +22,7 @@ from kafka import KafkaProducer
 
 
 class FakeKafkaProducer:
-    """Fake kafaka producer to enable local development without kafka server."""
+    """Fake kafka producer to enable local development without kafka server."""
 
     def send(self, topic, value=None, headers=None):
         """No operation method."""

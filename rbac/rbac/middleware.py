@@ -46,7 +46,7 @@ from api.serializers import create_tenant_name, extract_header
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 req_sys_counter = Counter(
     "rbac_req_type_total",
-    "Tracks a count of requests to RBAC tracking those made on behalf of the system or a princpal.",
+    "Tracks a count of requests to RBAC tracking those made on behalf of the system or a principal.",
     ["behalf", "method", "view", "status"],
 )
 TENANTS = TenantCache()
@@ -245,7 +245,7 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
                 cross_account = internal.get("cross_access", False)
                 if cross_account:
                     if not (user.internal and user_info.get("email").endswith("@redhat.com")):
-                        logger.error("Cross accout request permission denied. Requester is not internal user.")
+                        logger.error("Cross account request permission denied. Requester is not internal user.")
                         return HttpResponseUnauthorizedRequest()
                     user.username = f"{user.account}-{user.user_id}"
         except (KeyError, TypeError, JSONDecodeError):
