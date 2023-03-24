@@ -1,11 +1,11 @@
 ## Link(s) to Jira
-- 
+-
 
 ## Description of Intent of Change(s)
 The what, why and how.
 
 ## Local Testing
-How can the feature be exercised? 
+How can the feature be exercised?
 How can the bug be exploited and fix confirmed?
 Is any special local setup required?
 
