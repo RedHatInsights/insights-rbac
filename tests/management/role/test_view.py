@@ -666,7 +666,7 @@ class RoleViewsetTests(IdentityRequest):
         new_display_fields.add(field_1)
 
         # list a role
-        url = "{}?add_fields={}".format(URL, field_1)
+        url = "{}?add_fields={},&scope=principal".format(URL, field_1)
         client = APIClient()
         response = client.get(url, **self.headers)
 
