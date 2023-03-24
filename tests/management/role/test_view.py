@@ -150,6 +150,16 @@ class RoleViewsetTests(IdentityRequest):
         self.access3 = Access.objects.create(permission=self.permission2, role=self.sysRole, tenant=self.tenant)
         Permission.objects.create(permission="cost-management:*:*", tenant=self.tenant)
 
+        self.policyb = Policy.objects.create(name="policyB", tenant=self.tenant)
+        self.policyb.roles.add(self.defRole)
+        self.policyb.save()
+        self.groupb = Group(
+            name="groupB", description="A group that is a platform default", tenant=self.tenant, platform_default=True
+        )
+        self.groupb.save()
+        self.groupb.policies.add(self.policyb)
+        self.groupb.save()
+
     def create_role(self, role_name, role_display="", in_access_data=None):
         """Create a role."""
         access_data = [
@@ -648,6 +658,42 @@ class RoleViewsetTests(IdentityRequest):
             self.assertIsNotNone(iterRole.get("groups_in")[0]["name"])
             self.assertIsNotNone(iterRole.get("groups_in")[0]["uuid"])
             self.assertIsNotNone(iterRole.get("groups_in")[0]["description"])
+
+    def test_list_role_with_groups_in_includes_defaults(self):
+        """Test that we can read a list of roles with the groups_in field correctly set."""
+        field_1 = "groups_in"
+        new_display_fields = self.display_fields
+        new_display_fields.add(field_1)
+
+        # list a role
+        url = "{}?add_fields={}".format(URL, field_1)
+        client = APIClient()
+        response = client.get(url, **self.headers)
+
+        # three parts in response: meta, links and data
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        for keyname in ["meta", "links", "data"]:
+            self.assertIn(keyname, response.data)
+        self.assertIsInstance(response.data.get("data"), list)
+
+        for iterRole in response.data.get("data"):
+            self.assertEqual(new_display_fields, set(iterRole.keys()))
+
+            # a role thats in 2 groups, one is platform default
+            if iterRole.get("name") == "default_role":
+                self.assertTrue(len(iterRole.get("groups_in")) == 2)
+
+                self.assertIsNotNone(iterRole.get("groups_in")[0]["name"])
+                self.assertIsNotNone(iterRole.get("groups_in")[0]["uuid"])
+                self.assertIsNotNone(iterRole.get("groups_in")[0]["description"])
+
+                self.assertIsNotNone(iterRole.get("groups_in")[1]["name"])
+                self.assertIsNotNone(iterRole.get("groups_in")[1]["uuid"])
+                self.assertIsNotNone(iterRole.get("groups_in")[1]["description"])
+
+            # a role in no group
+            if iterRole.get("name") == "roleA":
+                self.assertFalse(iterRole.get("groups_in"))
 
     def test_list_role_with_username_forbidden_to_nonadmin(self):
         """Test that non admin can not read a list of roles for username."""
