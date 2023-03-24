@@ -32,7 +32,7 @@ from api.models import CrossAccountRequest, Tenant
 
 USERNAME_KEY = "username"
 APPLICATION_KEY = "application"
-PRICIPAL_PERMISSION_INSTANCE = PrincipalAccessPermission()
+PRINCIPAL_PERMISSION_INSTANCE = PrincipalAccessPermission()
 
 
 def validate_psk(psk, client_id):
@@ -54,7 +54,7 @@ def get_principal_from_request(request):
     qs_user = request.query_params.get(USERNAME_KEY)
     username = current_user
     from_query = False
-    if qs_user and not PRICIPAL_PERMISSION_INSTANCE.has_permission(request=request, view=None):
+    if qs_user and not PRINCIPAL_PERMISSION_INSTANCE.has_permission(request=request, view=None):
         raise PermissionDenied()
 
     if qs_user:
