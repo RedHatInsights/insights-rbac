@@ -85,7 +85,7 @@ def handle_system_role_change_notification(role_obj, operation):
         else:
             event_type = "rh-non-platform-default-role-updated"
     else:
-        raise Exception("Not recorgnized operation for updating Red Hat managed group.")
+        raise Exception("Not recognized operation for updating Red Hat managed group.")
 
     notify_all(event_type, payload)
 
@@ -153,7 +153,7 @@ def handle_platform_group_role_change_notification(group_obj, role_obj, operatio
     elif operation == "removed":
         event_type = "rh-role-removed-from-default-access"
     else:
-        raise Exception("Not recorgnized operation for updating Red Hat managed platform default access group.")
+        raise Exception("Not recognized operation for updating Red Hat managed platform default access group.")
 
     notify_all(event_type, payload)
 
