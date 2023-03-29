@@ -163,11 +163,11 @@ objects:
             value: ${CLOWDER_ENABLED}
           - name: CW_NULL_WORKAROUND
             value: ${CW_NULL_WORKAROUND}
-          - name: SENTRY_DSN
+          - name: GLITCHTIP_DSN
             valueFrom:
               secretKeyRef:
-                key: sentry-dsn
-                name: rbac-secret
+                name: ${GLITCHTIP_SECRET}
+                key: dsn
                 optional: true
           - name: MAX_SEED_THREADS
             value: ${MAX_SEED_THREADS}
@@ -249,11 +249,11 @@ objects:
           value: ${CLOWDER_ENABLED}
         - name: CW_NULL_WORKAROUND
           value: ${CW_NULL_WORKAROUND}
-        - name: SENTRY_DSN
+        - name: GLITCHTIP_DSN
           valueFrom:
             secretKeyRef:
-              key: sentry-dsn
-              name: rbac-secret
+              name: ${GLITCHTIP_SECRET}
+              key: dsn
               optional: true
 
     - name: service
@@ -310,11 +310,11 @@ objects:
             cpu: ${CPU_REQUEST}
             memory: ${MEMORY_REQUEST}
         env:
-          - name: SENTRY_DSN
+          - name: GLITCHTIP_DSN
             valueFrom:
               secretKeyRef:
-                key: sentry-dsn
-                name: rbac-secret
+                name: ${GLITCHTIP_SECRET}
+                key: dsn
                 optional: true
           - name: SERVICE_PSKS
             valueFrom:
@@ -2164,3 +2164,6 @@ parameters:
   value: 'True'
 - name: WORKER_MIGRATE_AND_SEED_ON_INIT
   value: 'False'
+- description: Glitchtip secret name to get DSN
+  name: GLITCHTIP_SECRET
+  value: ''
