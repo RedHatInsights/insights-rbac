@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 
 class StandardResultsSetPagination(LimitOffsetPagination):
-    """Create standard paginiation class with page size."""
+    """Create standard pagination class with page size."""
 
     default_limit = 10
     max_limit = 1000

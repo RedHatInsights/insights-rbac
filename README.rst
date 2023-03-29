@@ -144,13 +144,13 @@ Verify that you cannot access any endpoints requiring auth: ::
 
   curl http://localhost:8000/api/rbac/v1/roles/ -v
 
-Verify that if you pass in the correct headers/values, you _can_ access the endpoint: ::
+Verify that if you pass in the correct headers/values, you *can* access the endpoint: ::
 
   curl http://localhost:8000/api/rbac/v1/roles/ -v -H 'x-rh-rbac-psk: abc123' -H 'x-rh-rbac-account: 10001' -H 'x-rh-rbac-client-id: catalog'
 
 Change the 'x-rh-rbac-client-id', 'x-rh-rbac-psk' and 'x-rh-rbac-account' header values to see that you should get back a 401 (or 400 with an account that doesn't exist).
 
-You can also send a request _with_ the identity header explicitly in the curl command along with the service-to-service headers to verify that the identity header will take precedence.
+You can also send a request *with* the identity header explicitly in the curl command along with the service-to-service headers to verify that the identity header will take precedence.
 
 Testing and Linting
 -------------------
@@ -192,8 +192,8 @@ added to all requests on cloud.redhat.com.
 Contributing
 =============
 
-This repository uses [pre-commit](https://pre-commit.com) to check and enforce code style. It uses
-[Black](https://github.com/psf/black) to reformat the Python code and [Flake8](http://flake8.pycqa.org) to check it
+This repository uses `pre-commit <https://pre-commit.com>`_ to check and enforce code style. It uses
+`Black <https://github.com/psf/black>`_ to reformat the Python code and `Flake8 <http://flake8.pycqa.org>`_ to check it
 afterwards. Other formats and text files are linted as well.
 
 Install pre-commit hooks to your local repository by running:

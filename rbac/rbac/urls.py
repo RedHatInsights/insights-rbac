@@ -21,9 +21,9 @@ The `urlpatterns` list routes URLs to views. For more information please see:
 """
 import os
 
-from django.conf.urls import include, url
+from django.conf.urls import include
 from django.contrib.staticfiles.urls import staticfiles_urlpatterns
-from django.urls import path
+from django.urls import path, re_path
 
 API_PATH_PREFIX = os.getenv("API_PATH_PREFIX", "api/")
 if API_PATH_PREFIX != "":
@@ -35,9 +35,9 @@ if API_PATH_PREFIX != "":
 
 # pylint: disable=invalid-name
 urlpatterns = [
-    url(r"^{}v1/".format(API_PATH_PREFIX), include("api.urls")),
-    url(r"^{}v1/".format(API_PATH_PREFIX), include("management.urls")),
-    url(r"^_private/", include("internal.urls")),
+    re_path(r"^{}v1/".format(API_PATH_PREFIX), include("api.urls")),
+    re_path(r"^{}v1/".format(API_PATH_PREFIX), include("management.urls")),
+    re_path(r"^_private/", include("internal.urls")),
     path("", include("django_prometheus.urls")),
 ]
 

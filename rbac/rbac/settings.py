@@ -141,22 +141,6 @@ AUTHENTICATION_BACKENDS = ["django.contrib.auth.backends.AllowAllUsersModelBacke
 
 ROOT_URLCONF = "rbac.urls"
 
-TEMPLATES = [
-    {
-        "BACKEND": "django.template.backends.django.DjangoTemplates",
-        "DIRS": [os.path.join(BASE_DIR, "templates")],
-        "APP_DIRS": True,
-        "OPTIONS": {
-            "context_processors": [
-                "django.template.context_processors.debug",
-                "django.template.context_processors.request",
-                "django.contrib.auth.context_processors.auth",
-                "django.contrib.messages.context_processors.messages",
-            ]
-        },
-    }
-]
-
 WSGI_APPLICATION = "rbac.wsgi.application"
 
 DATABASES = {"default": database.config()}
@@ -399,22 +383,26 @@ if not KAFKA_ENABLED:
 
 # Kafka settings
 if KAFKA_ENABLED:
-    KAFKA_AUTH = False
+    KAFKA_AUTH = {}
     if ENVIRONMENT.bool("CLOWDER_ENABLED", default=False):
         kafka_broker = LoadedConfig.kafka.brokers[0]
         KAFKA_HOST = kafka_broker.hostname
         KAFKA_PORT = kafka_broker.port
         try:
             if kafka_broker.authtype.value == "sasl":
-                KAFKA_AUTH = {
-                    "bootstrap_servers": f"{KAFKA_HOST}:{KAFKA_PORT}",
-                    "sasl_plain_username": kafka_broker.sasl.username,
-                    "sasl_plain_password": kafka_broker.sasl.password,
-                    "sasl_mechanism": kafka_broker.sasl.saslMechanism.upper(),
-                    "security_protocol": kafka_broker.sasl.securityProtocol.upper(),
-                }
+                KAFKA_AUTH.update(
+                    {
+                        "bootstrap_servers": f"{KAFKA_HOST}:{KAFKA_PORT}",
+                        "sasl_plain_username": kafka_broker.sasl.username,
+                        "sasl_plain_password": kafka_broker.sasl.password,
+                        "sasl_mechanism": kafka_broker.sasl.saslMechanism.upper(),
+                        "security_protocol": kafka_broker.sasl.securityProtocol.upper(),
+                    }
+                )
+            if kafka_broker.cacert:
+                KAFKA_AUTH["ssl_cafile"] = LoadedConfig.kafka_ca()
         except AttributeError:
-            KAFKA_AUTH = False
+            KAFKA_AUTH = {}
     else:
         KAFKA_HOST = "localhost"
         KAFKA_PORT = "9092"

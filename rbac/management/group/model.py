@@ -124,6 +124,14 @@ def group_deleted_sync_handler(sender=None, instance=None, using=None, **kwargs)
     )
 
 
+def group_created_sync_handler(sender=None, instance=None, using=None, **kwargs):
+    """Signal handler to inform external services of Group creations."""
+    if isinstance(kwargs, dict) and "created" in kwargs and kwargs["created"]:
+        sync_handlers.send_sync_message(
+            event_type="group_created", payload={"group": {"name": instance.name, "uuid": str(instance.uuid)}}
+        )
+
+
 def principal_group_change_sync_handler(
     sender=None, instance=None, action=None, reverse=None, model=None, pk_set=None, using=None, **kwargs
 ):
@@ -154,3 +162,4 @@ if settings.ACCESS_CACHE_ENABLED and settings.ACCESS_CACHE_CONNECT_SIGNALS:
 if settings.KAFKA_ENABLED:
     signals.pre_delete.connect(group_deleted_sync_handler, sender=Group)
     signals.m2m_changed.connect(principal_group_change_sync_handler, sender=Group.principals.through)
+    signals.post_save.connect(group_created_sync_handler, sender=Group)

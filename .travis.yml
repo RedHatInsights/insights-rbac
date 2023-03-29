@@ -9,18 +9,32 @@ services:
   - postgresql
 
 addons:
-  postgresql: '10'
+  postgresql: '13'
   apt:
+    update: true
     packages:
-      - postgresql-10
-      - postgresql-client-10
+      - postgresql-13
+      - postgresql-13-postgis-3
 
 env:
-  DATABASE_NAME=rbac_test
-  DATABASE_HOST=localhost
-  DATABASE_PORT=5432
-  DATABASE_USER=postgres
-  DATABASE_PASSWORD=''
+  global:
+    - PGPORT=5433
+    - PGPASSWORD=''
+    - DATABASE_NAME=rbac_test
+    - DATABASE_HOST=localhost
+    - DATABASE_PORT=5433
+    - DATABASE_USER=postgres
+    - DATABASE_PASSWORD=''
+
+before_install:
+  # Use trust instead of peer authentication:
+  - >-
+    sudo sed -i
+    -e '/local.*peer/s/postgres/all/'
+    -e 's/peer\|md5/trust/g'
+    /etc/postgresql/13/main/pg_hba.conf
+  # Restart the PostgreSQL service:
+  - sudo service postgresql@13-main restart
 
 install:
   - pip install tox codecov

@@ -179,7 +179,7 @@ class CrossAccountRequestViewSet(
         return super().update(request=request, args=args, kwargs=kwargs)
 
     def retrieve(self, request, *args, **kwargs):
-        """Retrive cross account requests by request_id."""
+        """Retrieve cross account requests by request_id."""
         result = super().retrieve(request=request, args=args, kwargs=kwargs)
 
         if settings.AUTHENTICATE_WITH_ORG_ID:
