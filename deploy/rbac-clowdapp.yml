@@ -2164,6 +2164,3 @@ parameters:
   value: 'True'
 - name: WORKER_MIGRATE_AND_SEED_ON_INIT
   value: 'False'
-- description: Glitchtip secret name to get DSN
-  name: GLITCHTIP_SECRET
-  value: ''
