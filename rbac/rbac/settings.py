@@ -57,6 +57,7 @@ if DSN:
     import sentry_sdk
     from sentry_sdk.integrations.django import DjangoIntegration
     from sentry_sdk.integrations.redis import RedisIntegration
+
     sentry_sdk.init(dsn=DSN, integrations=[DjangoIntegration(), RedisIntegration()])
     if GLITCHTIP_DSN:
         print("Sentry SDK connected to Glitchtip.")
