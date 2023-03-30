@@ -347,6 +347,7 @@ def obtain_groups_in(obj, request):
         | (
             Group.platform_default_set().filter(tenant=request.tenant).filter(policies__in=policy_ids)
             or Group.platform_default_set().filter(tenant=public_tenant).filter(policies__in=policy_ids)
+            or Group.admin_default_set().filter(tenant=public_tenant).filter(policies__in=policy_ids)
         )
     ).distinct()
 
