@@ -169,6 +169,12 @@ objects:
                 key: sentry-dsn
                 name: rbac-secret
                 optional: true
+          - name: GLITCHTIP_DSN
+            valueFrom:
+              secretKeyRef:
+                name: ${GLITCHTIP_SECRET}
+                key: dsn
+                optional: true
           - name: MAX_SEED_THREADS
             value: ${MAX_SEED_THREADS}
           - name: ACCESS_CACHE_CONNECT_SIGNALS
@@ -255,6 +261,12 @@ objects:
               key: sentry-dsn
               name: rbac-secret
               optional: true
+        - name: GLITCHTIP_DSN
+          valueFrom:
+            secretKeyRef:
+              name: ${GLITCHTIP_SECRET}
+              key: dsn
+              optional: true
 
     - name: service
       minReplicas: ${{MIN_REPLICAS}}
@@ -315,6 +327,12 @@ objects:
               secretKeyRef:
                 key: sentry-dsn
                 name: rbac-secret
+                optional: true
+          - name: GLITCHTIP_DSN
+            valueFrom:
+              secretKeyRef:
+                name: ${GLITCHTIP_SECRET}
+                key: dsn
                 optional: true
           - name: SERVICE_PSKS
             valueFrom:
@@ -2164,3 +2182,5 @@ parameters:
   value: 'True'
 - name: WORKER_MIGRATE_AND_SEED_ON_INIT
   value: 'False'
+- name: GLITCHTIP_SECRET
+  value: 'rbac-secret'
