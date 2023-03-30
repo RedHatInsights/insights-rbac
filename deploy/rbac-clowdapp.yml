@@ -163,12 +163,6 @@ objects:
             value: ${CLOWDER_ENABLED}
           - name: CW_NULL_WORKAROUND
             value: ${CW_NULL_WORKAROUND}
-          - name: SENTRY_DSN
-            valueFrom:
-              secretKeyRef:
-                key: sentry-dsn
-                name: rbac-secret
-                optional: true
           - name: GLITCHTIP_DSN
             valueFrom:
               secretKeyRef:
@@ -255,12 +249,6 @@ objects:
           value: ${CLOWDER_ENABLED}
         - name: CW_NULL_WORKAROUND
           value: ${CW_NULL_WORKAROUND}
-        - name: SENTRY_DSN
-          valueFrom:
-            secretKeyRef:
-              key: sentry-dsn
-              name: rbac-secret
-              optional: true
         - name: GLITCHTIP_DSN
           valueFrom:
             secretKeyRef:
@@ -322,12 +310,6 @@ objects:
             cpu: ${CPU_REQUEST}
             memory: ${MEMORY_REQUEST}
         env:
-          - name: SENTRY_DSN
-            valueFrom:
-              secretKeyRef:
-                key: sentry-dsn
-                name: rbac-secret
-                optional: true
           - name: GLITCHTIP_DSN
             valueFrom:
               secretKeyRef:
