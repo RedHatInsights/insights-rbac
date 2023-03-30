@@ -50,20 +50,16 @@ from .env import ENVIRONMENT
 # Sentry monitoring configuration
 # Note: Sentry is disabled unless it is explicitly turned on by setting DSN
 
-GLITCHTIP_DSN = os.getenv("GLITCHTIP_DSN", "")
 SENTRY_DSN = os.getenv("SENTRY_DSN", "")
-DSN = GLITCHTIP_DSN or SENTRY_DSN
-if DSN:
+if SENTRY_DSN:
     import sentry_sdk
     from sentry_sdk.integrations.django import DjangoIntegration
     from sentry_sdk.integrations.redis import RedisIntegration
 
-    sentry_sdk.init(dsn=DSN, integrations=[DjangoIntegration(), RedisIntegration()])
-    if GLITCHTIP_DSN:
-        print("Sentry SDK connected to Glitchtip.")
+    sentry_sdk.init(dsn=SENTRY_DSN, integrations=[DjangoIntegration(), RedisIntegration()])
     print("Sentry SDK initialization was successful!")
 else:
-    print("GLITCHTIP_DSN was not set, skipping Sentry initialization.")
+    print("SENTRY_DSN was not set, skipping Sentry initialization.")
 
 # Build paths inside the project like this: os.path.join(BASE_DIR, ...)
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
