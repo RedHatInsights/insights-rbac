@@ -51,12 +51,15 @@ from .env import ENVIRONMENT
 # Note: Sentry is disabled unless it is explicitly turned on by setting DSN
 
 GLITCHTIP_DSN = os.getenv("GLITCHTIP_DSN", "")
-if GLITCHTIP_DSN:
+SENTRY_DSN = os.getenv("SENTRY_DSN", "")
+DSN = GLITCHTIP_DSN or SENTRY_DSN
+if DSN:
     import sentry_sdk
     from sentry_sdk.integrations.django import DjangoIntegration
     from sentry_sdk.integrations.redis import RedisIntegration
-
-    sentry_sdk.init(dsn=GLITCHTIP_DSN, integrations=[DjangoIntegration(), RedisIntegration()])
+    sentry_sdk.init(dsn=DSN, integrations=[DjangoIntegration(), RedisIntegration()])
+    if GLITCHTIP_DSN:
+        print("Sentry SDK connected to Glitchtip.")
     print("Sentry SDK initialization was successful!")
 else:
     print("GLITCHTIP_DSN was not set, skipping Sentry initialization.")
