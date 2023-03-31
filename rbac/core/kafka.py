@@ -33,15 +33,12 @@ class RBACProducer:
     """Kafka message producer to emit events to notification service."""
 
     def get_producer(self):
-        """Init method to return fake kafka when flag is set to false."""
+        """Init method to return Kafka producer."""
         if not hasattr(self, "producer"):
-            if settings.DEVELOPMENT or settings.MOCK_KAFKA or not settings.KAFKA_ENABLED:
-                self.producer = FakeKafkaProducer()
+            if settings.KAFKA_AUTH:
+                self.producer = KafkaProducer(**settings.KAFKA_AUTH)
             else:
-                if settings.KAFKA_AUTH:
-                    self.producer = KafkaProducer(**settings.KAFKA_AUTH)
-                else:
-                    self.producer = KafkaProducer(bootstrap_servers=settings.KAFKA_SERVER)
+                self.producer = KafkaProducer(bootstrap_servers=settings.KAFKA_SERVER)
         return self.producer
 
     def send_kafka_message(self, topic, message, headers=None):
