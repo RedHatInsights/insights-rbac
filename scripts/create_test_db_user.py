@@ -6,7 +6,13 @@ import psycopg2
 
 config = "dbname='%s' user='%s' host='%s' port='%s' password='%s'"
 
-name, user, host, port, pw = e["DATABASE_NAME"], e["DATABASE_USER"], e["DATABASE_HOST"], e["DATABASE_PORT"], e["PGPASSWORD"]
+name, user, host, port, pw = (
+    e["DATABASE_NAME"],
+    e["DATABASE_USER"],
+    e["DATABASE_HOST"],
+    e["DATABASE_PORT"],
+    e["PGPASSWORD"],
+)
 
 conn = psycopg2.connect(config % (name, "postgres", host, port, pw))
 conn.set_isolation_level(0)

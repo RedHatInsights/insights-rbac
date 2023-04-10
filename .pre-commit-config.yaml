@@ -12,7 +12,7 @@ repos:
   rev: 22.3.0
   hooks:
   - id: black
-    args: ["--check", "-l", "119", "-t", "py39", "rbac", "tests"]
+    args: ["--check", "-l", "119", "-t", "py39", "rbac", "tests", "--diff"]
     require_serial: true
 - repo: https://github.com/pre-commit/pre-commit-hooks
   rev: v2.3.0

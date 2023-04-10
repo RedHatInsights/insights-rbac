@@ -168,6 +168,30 @@ class RoleViewsetTests(IdentityRequest):
         response = client.post(URL, test_data, format="json", **self.headers)
         return response
 
+    def create_group(self, group_name):
+        """Create a group."""
+        test_data = {"name": group_name, "description": "a group!"}
+        url = reverse("group-list")
+        client = APIClient()
+        response = client.post(url, test_data, format="json", **self.headers)
+        return response
+
+    def create_policy(self, policy_name, group_uuid, role_uuids):
+        """Create a policy to link a group to roles."""
+        test_data = {"name": policy_name, "group": group_uuid, "roles": role_uuids}
+        url = reverse("policy-list")
+        client = APIClient()
+        response = client.post(url, test_data, format="json", **self.headers)
+        return response
+
+    def add_principal_to_group(self, group_uuid, username):
+        """Add principal to existing group."""
+        url = reverse("group-principals", kwargs={"uuid": group_uuid})
+        client = APIClient()
+        test_data = {"principals": [{"username": username}]}
+        response = client.post(url, test_data, format="json", **self.headers)
+        return response
+
     @patch("core.kafka.RBACProducer.send_kafka_message")
     def test_create_role_success(self, send_kafka_message):
         """Test that we can create a role."""
@@ -616,16 +640,79 @@ class RoleViewsetTests(IdentityRequest):
         response = client.get(url, **self.headers)
         self.assertEqual(response.data.get("meta").get("count"), 0)
 
-    def test_list_role_with_additional_fields_success(self):
-        """Test that we can read a list of roles and add fields."""
-        role_name = "roleA"
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={"status_code": 200, "data": [{"username": "test_user"}]},
+    )
+    def test_list_role_with_groups_in_fields_for_principal_scope_success(self, mock_request):
+        """Test that we can read a list of roles and the groups_in fields is set correctly for a principal scoped request."""
+        # create a role
+        role_name = "groupsInRole"
+        created_role = self.create_role("groupsInRole")
+        self.assertEquals(created_role.status_code, status.HTTP_201_CREATED)
+        role_uuid = created_role.data.get("uuid")
+
+        # create a group
+        group_name = "groupsInGroup"
+        created_group = self.create_group(group_name)
+        self.assertEquals(created_group.status_code, status.HTTP_201_CREATED)
+        group_uuid = created_group.data.get("uuid")
+
+        # create a policy to link the 2
+        policy_name = "groupsInPolicy"
+        created_policy = self.create_policy(policy_name, group_uuid, [role_uuid])
+        self.assertEquals(created_policy.status_code, status.HTTP_201_CREATED)
+
+        # add user principal to the created group
+        principal_response = self.add_principal_to_group(group_uuid, self.user_data["username"])
+        self.assertEquals(principal_response.status_code, status.HTTP_200_OK, principal_response)
+
+        # hit /roles?groups_in, group should appear in groups_in
         field_1 = "groups_in_count"
         field_2 = "groups_in"
         new_display_fields = self.display_fields
         new_display_fields.add(field_1)
         new_display_fields.add(field_2)
 
-        # list a role
+        url = "{}?add_fields={},{}&username=".format(URL, field_1, field_2, self.user_data["username"])
+        client = APIClient()
+        response = client.get(url, **self.headers)
+
+        # three parts in response: meta, links and data
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        for keyname in ["meta", "links", "data"]:
+            self.assertIn(keyname, response.data)
+        self.assertIsInstance(response.data.get("data"), list)
+
+        response_data = response.data.get("data")
+
+        for iterRole in response_data:
+            # fields displayed are same as defined, groupsInCount is added
+            self.assertEqual(new_display_fields, set(iterRole.keys()))
+            self.assertIsNotNone(iterRole.get("groups_in")[0]["name"])
+            self.assertIsNotNone(iterRole.get("groups_in")[0]["uuid"])
+            self.assertIsNotNone(iterRole.get("groups_in")[0]["description"])
+
+        # make sure created role exists in result set and has correct values
+        created_role = next((iterRole for iterRole in response_data if iterRole["name"] == role_name), None)
+        self.assertIsNotNone(created_role)
+        self.assertEquals(created_role["groups_in_count"], 1)
+        self.assertEquals(created_role["groups_in"][0]["name"], group_name)
+
+        # make sure a default role exists in result set and has correct values
+        default_role = next((iterRole for iterRole in response_data if iterRole["name"] == self.defRole.name), None)
+        self.assertIsNotNone(default_role)
+        self.assertEquals(default_role["groups_in_count"], 1)
+        self.assertEquals(default_role["groups_in"][0]["name"], self.group.name)
+
+    def test_list_role_with_groups_in_fields_for_admin_scope_success(self):
+        """Test that we can read a list of roles and the groups_in fields is set correctly for a admin scoped request."""
+        field_1 = "groups_in_count"
+        field_2 = "groups_in"
+        new_display_fields = self.display_fields
+        new_display_fields.add(field_1)
+        new_display_fields.add(field_2)
+
         url = "{}?add_fields={},{}".format(URL, field_1, field_2)
         client = APIClient()
         response = client.get(url, **self.headers)
@@ -636,18 +723,26 @@ class RoleViewsetTests(IdentityRequest):
             self.assertIn(keyname, response.data)
         self.assertIsInstance(response.data.get("data"), list)
 
-        role = None
+        response_data = response.data.get("data")
 
-        for iterRole in response.data.get("data"):
+        for iterRole in response_data:
             # fields displayed are same as defined, groupsInCount is added
             self.assertEqual(new_display_fields, set(iterRole.keys()))
-            if iterRole.get("name") == role_name:
-                self.assertEqual(iterRole.get("accessCount"), 1)
-                role = iterRole
-
             self.assertIsNotNone(iterRole.get("groups_in")[0]["name"])
             self.assertIsNotNone(iterRole.get("groups_in")[0]["uuid"])
             self.assertIsNotNone(iterRole.get("groups_in")[0]["description"])
+
+        # make sure a default role exists in result set and has correct values
+        default_role = next((iterRole for iterRole in response_data if iterRole["name"] == self.defRole.name), None)
+        self.assertIsNotNone(default_role)
+        self.assertEquals(default_role["groups_in_count"], 1)
+        self.assertEquals(default_role["groups_in"][0]["name"], self.group.name)
+
+        # make sure an admin role exists in result set and has correct values
+        admin_role = next((iterRole for iterRole in response_data if iterRole["name"] == self.adminRole.name), None)
+        self.assertIsNotNone(admin_role)
+        self.assertEquals(admin_role["groups_in_count"], 1)
+        self.assertEquals(admin_role["groups_in"][0]["name"], self.group.name)
 
     def test_list_role_with_username_forbidden_to_nonadmin(self):
         """Test that non admin can not read a list of roles for username."""
