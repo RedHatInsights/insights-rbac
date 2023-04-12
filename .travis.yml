@@ -37,13 +37,10 @@ before_install:
   - sudo service postgresql@13-main restart
 
 install:
-  - pip install tox codecov
+  - pip install tox
 
 before_script:
   - psql -c "create database ${DATABASE_NAME};" -U postgres
 
 script:
   - tox
-
-after_success:
-  - codecov

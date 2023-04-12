@@ -2,7 +2,7 @@
 Insights Role Based Access Control README
 =========================================
 
-|license| |Build Status| |codecov| |Docs|
+|license| |Build Status| |Docs|
 
 ~~~~~
 About
@@ -220,8 +220,6 @@ For additional information please refer to Contributing_.
    :target: https://github.com/RedHatInsights/insights-rbac/blob/master/LICENSE
 .. |Build Status| image:: https://travis-ci.org/RedHatInsights/insights-rbac.svg?branch=master
    :target: https://travis-ci.org/RedHatInsights/insights-rbac
-.. |codecov| image:: https://codecov.io/gh/RedHatInsights/insights-rbac/branch/master/graph/badge.svg
-   :target: https://codecov.io/gh/RedHatInsights/insights-rbacgit s
 .. |Docs| image:: https://readthedocs.org/projects/insights-rbac/badge/
    :target: https://insights-rbac.readthedocs.io/en/latest/
 .. _`RBAC config repo`: https://github.com/RedHatInsights/rbac-config.git
