@@ -508,6 +508,14 @@ class RoleViewsetTests(IdentityRequest):
         self.assertEqual(response.data.get("meta").get("count"), 1)
         self.assertEqual(response.data.get("data")[0].get("name"), self.defRole.name)
 
+    def test_get_role_by_application_using_ext_tenant(self):
+        """Test that getting roles by application returns roles based on external tenant name."""
+        url = "{}?application={}".format(URL, "foo")
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        self.assertEqual(response.data.get("meta").get("count"), 1)
+        self.assertEqual(response.data.get("data")[0].get("name"), self.defRole.name)
+
     def test_get_role_by_application_multiple(self):
         """Test that getting roles by multiple applications returns roles based on permissions."""
         url = "{}?application={}".format(URL, "app2")
@@ -528,7 +536,7 @@ class RoleViewsetTests(IdentityRequest):
 
     def test_get_role_by_application_does_not_exist(self):
         """Test that getting roles by application returns nothing when there is no match."""
-        url = "{}?application={}".format(URL, "foo")
+        url = "{}?application={}".format(URL, "foobar")
         client = APIClient()
         response = client.get(url, **self.headers)
         self.assertEqual(response.data.get("meta").get("count"), 0)
