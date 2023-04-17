@@ -75,7 +75,9 @@ class RoleFilter(CommonFilters):
         applications = values.split(",")
         query = Q()
         for application in applications:
-            query = query | Q(access__permission__permission__istartswith=f"{application}:")
+            app_permission_filter = Q(access__permission__permission__istartswith=f"{application}:")
+            app_external_tenant_filter = Q(ext_relation__ext_tenant__name__iexact=application)
+            query = query | app_permission_filter | app_external_tenant_filter
         return queryset.distinct().filter(query)
 
     def permission_filter(self, queryset, field, values):
