@@ -21,7 +21,14 @@ docker --config="$DOCKER_CONF" login -u="$QUAY_USER" -p="$QUAY_TOKEN" quay.io
 docker --config="$DOCKER_CONF" login -u="$RH_REGISTRY_USER" -p="$RH_REGISTRY_TOKEN" registry.redhat.io
 docker --config="$DOCKER_CONF" build --build-arg GIT_COMMIT=$GIT_COMMIT --no-cache -t "${IMAGE}:${IMAGE_TAG}" .
 docker --config="$DOCKER_CONF" push "${IMAGE}:${IMAGE_TAG}"
-docker --config="$DOCKER_CONF" tag "${IMAGE}:${IMAGE_TAG}" "${IMAGE}:${SMOKE_TEST_TAG}"
-docker --config="$DOCKER_CONF" push "${IMAGE}:${SMOKE_TEST_TAG}"
-docker --config="$DOCKER_CONF" tag "${IMAGE}:${IMAGE_TAG}" "${IMAGE}:qa"
-docker --config="$DOCKER_CONF" push "${IMAGE}:qa"
+
+
+if [[ $GIT_BRANCH == *"security-compliance"* ]]; then
+    docker --config="$DOCKER_CONF" tag "${IMAGE}:${IMAGE_TAG}" "${IMAGE}:security-compliance"
+    docker --config="$DOCKER_CONF" push "${IMAGE}:security-compliance"
+else
+    docker --config="$DOCKER_CONF" tag "${IMAGE}:${IMAGE_TAG}" "${IMAGE}:${SMOKE_TEST_TAG}"
+    docker --config="$DOCKER_CONF" push "${IMAGE}:${SMOKE_TEST_TAG}"
+    docker --config="$DOCKER_CONF" tag "${IMAGE}:${IMAGE_TAG}" "${IMAGE}:qa"
+    docker --config="$DOCKER_CONF" push "${IMAGE}:qa"
+fi
