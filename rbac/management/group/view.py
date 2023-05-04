@@ -41,7 +41,7 @@ from management.permissions import GroupAccessPermission
 from management.principal.model import Principal
 from management.principal.proxy import PrincipalProxy
 from management.principal.serializer import PrincipalSerializer
-from management.principal.view import USERNAME_ONLY_KEY, VALID_BOOLEAN_VALUE
+from management.principal.view import ADMIN_ONLY_KEY, USERNAME_ONLY_KEY, VALID_BOOLEAN_VALUE
 from management.querysets import get_group_queryset, get_role_queryset
 from management.role.view import RoleViewSet
 from management.utils import validate_and_get_key, validate_group_name, validate_uuid
@@ -533,6 +533,11 @@ class GroupViewSet(
                     request.query_params, USERNAME_ONLY_KEY, VALID_BOOLEAN_VALUE, "false"
                 ),
             }
+
+            admin_only = validate_and_get_key(request.query_params, ADMIN_ONLY_KEY, VALID_BOOLEAN_VALUE, False, False)
+            if admin_only == "true":
+                options[ADMIN_ONLY_KEY] = True
+
             if settings.AUTHENTICATE_WITH_ORG_ID:
                 resp = proxy.request_filtered_principals(username_list, org_id=org_id, options=options)
             else:
