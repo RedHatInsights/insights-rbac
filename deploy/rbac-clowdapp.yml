@@ -26,6 +26,9 @@ objects:
     deployments:
     - name: worker-service
       minReplicas: ${{MIN_WORKER_REPLICAS}}
+      metadata:
+        annotations:
+          ignore-check.kube-linter.io/minimum-three-replicas: "dont need 3 replicas - runs background processes from turnpike/weekly tasks"
       podSpec:
         image: ${IMAGE}:${IMAGE_TAG}
         initContainers:
@@ -188,6 +191,9 @@ objects:
 
     - name: scheduler-service
       minReplicas: ${{MIN_SCHEDULER_REPLICAS}}
+      metadata:
+        annotations:
+          ignore-check.kube-linter.io/minimum-three-replicas: "dont need 3 replicas - keeps the cron scheduled for the weekly tasks"
       podSpec:
         image: ${IMAGE}:${IMAGE_TAG}
         command:
