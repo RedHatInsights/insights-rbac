@@ -416,3 +416,9 @@ if KAFKA_ENABLED:
     clowder_sync_topic = KafkaTopics.get(EXTERNAL_SYNC_TOPIC)
     if clowder_sync_topic:
         EXTERNAL_SYNC_TOPIC = clowder_sync_topic.name
+
+# BOP TLS settings
+if ENVIRONMENT.bool("CLOWDER_ENABLED", default=False) and ENVIRONMENT.bool("USE_CLOWDER_CA_FOR_BOP", default=False):
+    BOP_CLIENT_CERT_PATH = LoadedConfig.tlsCAPath
+else:
+    BOP_CLIENT_CERT_PATH = os.path.join(BASE_DIR, "management", "principal", "certs", "client.pem")

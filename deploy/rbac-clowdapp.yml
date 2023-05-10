@@ -447,6 +447,8 @@ objects:
             value: ${EXTERNAL_SYNC_TOPIC}
           - name: MIGRATE_AND_SEED_ON_INIT
             value: ${SERVICE_MIGRATE_AND_SEED_ON_INIT}
+          - name: USE_CLOWDER_CA_FOR_BOP
+            value: ${USE_CLOWDER_CA_FOR_BOP}
     jobs:
       - name: tenant-org-id-populator
         podSpec:
@@ -2249,3 +2251,5 @@ parameters:
   value: 'False'
 - name: GLITCHTIP_SECRET
   value: 'rbac-secret'
+- name: USE_CLOWDER_CA_FOR_BOP
+  value: 'False'
