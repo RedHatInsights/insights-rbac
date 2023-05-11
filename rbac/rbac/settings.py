@@ -49,17 +49,18 @@ from .env import ENVIRONMENT
 
 # Sentry monitoring configuration
 # Note: Sentry is disabled unless it is explicitly turned on by setting DSN
+# Note: Although we are using sentry-sdk we are connecting to Glitchtip DSN
 
-SENTRY_DSN = os.getenv("SENTRY_DSN", "")
-if SENTRY_DSN:
+GLITCHTIP_DSN = os.getenv("GLITCHTIP_DSN", "")
+if GLITCHTIP_DSN:
     import sentry_sdk
     from sentry_sdk.integrations.django import DjangoIntegration
     from sentry_sdk.integrations.redis import RedisIntegration
 
-    sentry_sdk.init(dsn=SENTRY_DSN, integrations=[DjangoIntegration(), RedisIntegration()])
-    print("Sentry SDK initialization was successful!")
+    sentry_sdk.init(dsn=GLITCHTIP_DSN, integrations=[DjangoIntegration(), RedisIntegration()])
+    print("Sentry SDK initialization using Glitchtip was successful!")
 else:
-    print("SENTRY_DSN was not set, skipping Sentry initialization.")
+    print("GLITCHTIP_DSN was not set, skipping Glitchtip initialization.")
 
 # Build paths inside the project like this: os.path.join(BASE_DIR, ...)
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -415,3 +416,9 @@ if KAFKA_ENABLED:
     clowder_sync_topic = KafkaTopics.get(EXTERNAL_SYNC_TOPIC)
     if clowder_sync_topic:
         EXTERNAL_SYNC_TOPIC = clowder_sync_topic.name
+
+# BOP TLS settings
+if ENVIRONMENT.bool("CLOWDER_ENABLED", default=False) and ENVIRONMENT.bool("USE_CLOWDER_CA_FOR_BOP", default=False):
+    BOP_CLIENT_CERT_PATH = LoadedConfig.tlsCAPath
+else:
+    BOP_CLIENT_CERT_PATH = os.path.join(BASE_DIR, "management", "principal", "certs", "client.pem")

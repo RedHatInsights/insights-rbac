@@ -26,6 +26,9 @@ objects:
     deployments:
     - name: worker-service
       minReplicas: ${{MIN_WORKER_REPLICAS}}
+      metadata:
+        annotations:
+          ignore-check.kube-linter.io/minimum-three-replicas: "dont need 3 replicas - runs background processes from turnpike/weekly tasks"
       podSpec:
         image: ${IMAGE}:${IMAGE_TAG}
         initContainers:
@@ -163,11 +166,11 @@ objects:
             value: ${CLOWDER_ENABLED}
           - name: CW_NULL_WORKAROUND
             value: ${CW_NULL_WORKAROUND}
-          - name: SENTRY_DSN
+          - name: GLITCHTIP_DSN
             valueFrom:
               secretKeyRef:
-                key: sentry-dsn
-                name: rbac-secret
+                name: ${GLITCHTIP_SECRET}
+                key: dsn
                 optional: true
           - name: MAX_SEED_THREADS
             value: ${MAX_SEED_THREADS}
@@ -188,6 +191,9 @@ objects:
 
     - name: scheduler-service
       minReplicas: ${{MIN_SCHEDULER_REPLICAS}}
+      metadata:
+        annotations:
+          ignore-check.kube-linter.io/minimum-three-replicas: "dont need 3 replicas - keeps the cron scheduled for the weekly tasks"
       podSpec:
         image: ${IMAGE}:${IMAGE_TAG}
         command:
@@ -249,11 +255,11 @@ objects:
           value: ${CLOWDER_ENABLED}
         - name: CW_NULL_WORKAROUND
           value: ${CW_NULL_WORKAROUND}
-        - name: SENTRY_DSN
+        - name: GLITCHTIP_DSN
           valueFrom:
             secretKeyRef:
-              key: sentry-dsn
-              name: rbac-secret
+              name: ${GLITCHTIP_SECRET}
+              key: dsn
               optional: true
 
     - name: service
@@ -310,11 +316,11 @@ objects:
             cpu: ${CPU_REQUEST}
             memory: ${MEMORY_REQUEST}
         env:
-          - name: SENTRY_DSN
+          - name: GLITCHTIP_DSN
             valueFrom:
               secretKeyRef:
-                key: sentry-dsn
-                name: rbac-secret
+                name: ${GLITCHTIP_SECRET}
+                key: dsn
                 optional: true
           - name: SERVICE_PSKS
             valueFrom:
@@ -447,6 +453,8 @@ objects:
             value: ${EXTERNAL_SYNC_TOPIC}
           - name: MIGRATE_AND_SEED_ON_INIT
             value: ${SERVICE_MIGRATE_AND_SEED_ON_INIT}
+          - name: USE_CLOWDER_CA_FOR_BOP
+            value: ${USE_CLOWDER_CA_FOR_BOP}
     jobs:
       - name: tenant-org-id-populator
         podSpec:
@@ -1616,6 +1624,79 @@ objects:
           }
         ]
       }
+    provisioning.json: |
+      {
+          "roles": [{
+              "name": "Launch Administrator",
+              "description": "An launch administrator role that grants read and write permissions.",
+              "system": true,
+              "admin_default": true,
+              "version": 1,
+              "access": [{
+                  "permission": "provisioning:*:*"
+              }]
+          }, {
+              "name": "Launch Viewer",
+              "description": "An launch role that grants read permissions on launch reservation and related resources.",
+              "system": true,
+              "version": 1,
+              "access": [{
+                  "permission": "provisioning:source:read"
+              }, {
+                  "permission": "provisioning:pubkey:read"
+              }, {
+                  "permission": "provisioning:reservation:read"
+              }, {
+                  "permission": "provisioning:reservation.aws:read"
+              }, {
+                  "permission": "provisioning:reservation.azure:read"
+              }, {
+                  "permission": "provisioning:reservation.gcp:read"
+              }]
+          }, {
+              "name": "Launch on AWS User",
+              "description": "An AWS launch role that grants write permissions on launch reservation and related resources.",
+              "system": true,
+              "version": 2,
+              "access": [{
+                  "permission": "provisioning:source:*"
+              }, {
+                  "permission": "provisioning:pubkey:*"
+              }, {
+                  "permission": "provisioning:reservation:*"
+              }, {
+                  "permission": "provisioning:reservation.aws:*"
+              }]
+          }, {
+              "name": "Launch on Azure User",
+              "description": "An Azure launch role that grants write permissions on launch reservation and related resources.",
+              "system": true,
+              "version": 2,
+              "access": [{
+                  "permission": "provisioning:source:*"
+              }, {
+                  "permission": "provisioning:pubkey:*"
+              }, {
+                  "permission": "provisioning:reservation:*"
+              }, {
+                  "permission": "provisioning:reservation.azure:*"
+              }]
+          }, {
+              "name": "Launch on Google Cloud User",
+              "description": "An Google Cloud launch role that grants write permissions on launch reservation and related resources.",
+              "system": true,
+              "version": 2,
+              "access": [{
+                  "permission": "provisioning:source:*"
+              }, {
+                  "permission": "provisioning:pubkey:*"
+              }, {
+                  "permission": "provisioning:reservation:*"
+              }, {
+                  "permission": "provisioning:reservation.gcp:*"
+              }]
+          }]
+      }
     rbac.json: |
       {
         "roles": [
@@ -1875,6 +1956,16 @@ objects:
     policies.json: |
       {
           "policies": ["read","write"],
+          "*": ["*"]
+      }
+    provisioning.json: |
+      {
+          "source": ["read"],
+          "pubkey": ["read", "write"],
+          "reservation": ["read", "write"],
+          "reservation.aws": ["read", "write"],
+          "reservation.azure": ["read", "write"],
+          "reservation.gcp": ["read", "write"],
           "*": ["*"]
       }
     remediations.json: |
@@ -2163,4 +2254,8 @@ parameters:
 - name: SERVICE_MIGRATE_AND_SEED_ON_INIT
   value: 'True'
 - name: WORKER_MIGRATE_AND_SEED_ON_INIT
+  value: 'False'
+- name: GLITCHTIP_SECRET
+  value: 'rbac-secret'
+- name: USE_CLOWDER_CA_FOR_BOP
   value: 'False'

@@ -2,7 +2,7 @@
 Insights Role Based Access Control README
 =========================================
 
-|license| |Build Status| |codecov| |Docs|
+|license| |Build Status| |Docs|
 
 ~~~~~
 About
@@ -52,7 +52,7 @@ If deploying with Openshift seems overly complex you can try an alternate local 
 Configuration
 ^^^^^^^^^^^^^
 
-This project is developed using the Django web framework. Many configuration settings can be read in from a `.env` file. An example file `.env.example` is provided in the repository. To use the defaults simply ::
+This project is developed using the Django 4.1.7 web framework. Many configuration settings can be read in from a `.env` file. An example file `.env.example` is provided in the repository. To use the defaults simply ::
 
     cp .env.example .env
 
@@ -75,7 +75,7 @@ PostgreSQL is used as the database backend for Insights-rbac. A docker-compose f
 
 Assuming the default .env file values are used, to access the database directly using psql run ::
 
-    psql rbac -U rbacadmin -h localhost -p 15432
+    psql postgres -U postgres -h localhost -p 15432
 
 There is a known limitation with docker-compose and Linux environments with SELinux enabled. You may see the following error during the postgres container deployment::
 
@@ -220,8 +220,6 @@ For additional information please refer to Contributing_.
    :target: https://github.com/RedHatInsights/insights-rbac/blob/master/LICENSE
 .. |Build Status| image:: https://travis-ci.org/RedHatInsights/insights-rbac.svg?branch=master
    :target: https://travis-ci.org/RedHatInsights/insights-rbac
-.. |codecov| image:: https://codecov.io/gh/RedHatInsights/insights-rbac/branch/master/graph/badge.svg
-   :target: https://codecov.io/gh/RedHatInsights/insights-rbacgit s
 .. |Docs| image:: https://readthedocs.org/projects/insights-rbac/badge/
    :target: https://insights-rbac.readthedocs.io/en/latest/
 .. _`RBAC config repo`: https://github.com/RedHatInsights/rbac-config.git

@@ -17,7 +17,6 @@
 
 """Proxy for principal management."""
 import logging
-import os
 
 import requests
 from django.conf import settings
@@ -40,6 +39,7 @@ API_TOKEN = "apitoken"
 USER_ENV_HEADER = "x-rh-insights-env"
 CLIENT_ID_HEADER = "x-rh-clientid"
 API_TOKEN_HEADER = "x-rh-apitoken"
+CLIENT_CERT_PATH = "client_cert_path"
 
 bop_request_time_tracking = Histogram(
     "rbac_proxy_request_processing_seconds", "Time spent processing requests to BOP from RBAC"
@@ -64,7 +64,7 @@ class PrincipalProxy:  # pylint: disable=too-few-public-methods
         self.user_env = proxy_conn_info.get(USER_ENV)
         self.client_id = proxy_conn_info.get(CLIENT_ID)
         self.api_token = proxy_conn_info.get(API_TOKEN)
-        self.client_cert = os.path.join(settings.BASE_DIR, "management", "principal", "certs", "client.pem")
+        self.client_cert_path = proxy_conn_info.get(CLIENT_CERT_PATH)
 
     @staticmethod
     def _create_params(limit=None, offset=None, options={}):
@@ -140,6 +140,7 @@ class PrincipalProxy:  # pylint: disable=too-few-public-methods
             USER_ENV: ENVIRONMENT.get_value("PRINCIPAL_PROXY_USER_ENV", default="env"),
             CLIENT_ID: ENVIRONMENT.get_value("PRINCIPAL_PROXY_CLIENT_ID", default="client_id"),
             API_TOKEN: ENVIRONMENT.get_value("PRINCIPAL_PROXY_API_TOKEN", default="token"),
+            CLIENT_CERT_PATH: settings.BOP_CLIENT_CERT_PATH,
         }
         return proxy_conn_info
 
@@ -197,7 +198,7 @@ class PrincipalProxy:  # pylint: disable=too-few-public-methods
         try:
             kwargs = {"headers": headers, "params": params, "json": data, "verify": self.ssl_verify}
             if self.source_cert:
-                kwargs["verify"] = self.client_cert
+                kwargs["verify"] = self.client_cert_path
             response = method(url, **kwargs)
         except requests.exceptions.ConnectionError as conn:
             LOGGER.error("Unable to connect for URL %s with error: %s", url, conn)
