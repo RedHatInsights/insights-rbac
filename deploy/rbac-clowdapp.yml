@@ -859,8 +859,9 @@ objects:
         "roles": [
           {
             "name": "Catalog Administrator",
+            "display_name": "Automation Services Catalog administrator",
             "system": true,
-            "version": 8,
+            "version": 9,
             "description": "A catalog administrator roles grants create,read,update, delete and order permissions",
             "access": [
               {
@@ -1176,8 +1177,9 @@ objects:
           },
           {
             "name": "Catalog User",
+            "display_name": "Automation Services Catalog user",
             "system": true,
-            "version": 8,
+            "version": 9,
             "description": "A catalog user roles grants read and order permissions",
             "platform_default": true,
             "access": [
@@ -1325,16 +1327,126 @@ objects:
         "roles": [
           {
             "name": "Compliance administrator",
-            "description": "Perform any available operation against any Compliance resource.",
+            "description": "A Compliance role that grants full access to any Compliance resource.",
             "system": true,
-            "platform_default": true,
-            "version": 8,
+            "admin_default": true,
+            "version": 11,
             "access": [
               {
                 "permission": "compliance:*:*"
               },
               {
                 "permission": "inventory:*:read"
+              },
+              {
+                "permission": "remediations:remediation:read"
+              },
+              {
+                "permission": "remediations:remediation:write"
+              }
+            ]
+          },
+          {
+            "name": "Compliance viewer",
+            "description": "A Compliance role that grants read access to any Compliance resource.",
+            "system": true,
+            "platform_default": true,
+            "version": 4,
+            "access": [
+              {
+                "permission": "compliance:policy:read"
+              },
+              {
+                "permission": "compliance:report:read"
+              },
+              {
+                "permission": "compliance:system:read"
+              },
+              {
+                "permission": "inventory:*:read"
+              },
+              {
+                "permission": "remediations:remediation:read"
+              }
+            ]
+          }
+        ]
+      }
+    config-manager.json: |
+      {
+        "roles": [
+          {
+            "name": "RHC Administrator",
+            "display_name": "RHC administrator",
+            "description": "Perform any operations on RHC manager",
+            "system": true,
+            "admin_default": true,
+            "platform_default": false,
+            "version": 5,
+            "access": [
+              {
+                "permission": "config-manager:activation_keys:*"
+              },
+              {
+                "permission": "config-manager:state:read"
+              },
+              {
+                "permission": "config-manager:state:write"
+              },
+              {
+                "permission": "config-manager:state-changes:read"
+              },
+              {
+                "permission": "inventory:*:read"
+              },
+              {
+                "permission": "playbook-dispatcher:run:read",
+                "resourceDefinitions": [
+                  {
+                    "attributeFilter": {
+                      "key": "service",
+                      "operation": "equal",
+                      "value": "config_manager"
+                    }
+                  }
+                ]
+              },
+              {
+                "permission": "subscriptions:organization:read"
+              }
+            ]
+          },
+          {
+            "name": "RHC Viewer",
+            "display_name": "RHC viewer",
+            "description": "Can view the current configurations on RHC manager",
+            "system": true,
+            "platform_default": true,
+            "version": 5,
+            "access": [
+              {
+                "permission": "config-manager:activation_keys:read"
+              },
+              {
+                "permission": "config-manager:state:read"
+              },
+              {
+                "permission": "config-manager:state-changes:read"
+              },
+              {
+                "permission": "inventory:*:read"
+              },
+              {
+                "permission": "playbook-dispatcher:run:read",
+                "resourceDefinitions": [
+                  {
+                    "attributeFilter": {
+                      "key": "service",
+                      "operation": "equal",
+                      "value": "config_manager"
+                    }
+                  }
+                ]
               }
             ]
           }
@@ -1342,7 +1454,8 @@ objects:
       }
     content-sources.json: |
       {
-          "roles": [{
+          "roles": [
+            {
               "name": "Repositories administrator",
               "description": "Perform any available operation against any repositories resource.",
               "system": true,
@@ -1357,7 +1470,8 @@ objects:
                   "permission": "content-sources:repositories:write"
                 }
               ]
-          }, {
+            },
+            {
               "name": "Repositories viewer",
               "description": "Perform read only operations against repositories resources.",
               "system": true,
@@ -1368,46 +1482,53 @@ objects:
                   "permission": "content-sources:repositories:read"
                 }
               ]
-              }
-        ]
-      }
+            }
+          ]
+        }
     cost-management.json: |
       {
           "roles": [{
               "name": "Cost Administrator",
               "description": "A cost management administrator role that grants read and write permissions.",
               "system": true,
-              "version": 2,
+              "admin_default": true,
+              "version": 3,
               "access": [{
                   "permission": "cost-management:*:*"
               }]
           }, {
               "name": "Cost Price List Administrator",
-              "description": "A cost management role that grants read and write permissions on price list rates.",
+              "description": "A cost management role that grants read and write permissions on cost models.",
               "system": true,
-              "version": 2,
+              "version": 3,
               "access": [{
-                  "permission": "cost-management:rate:*"
+                  "permission": "cost-management:cost_model:*"
               }]
           }, {
               "name": "Cost Price List Viewer",
-              "description": "A cost management role that grants read permissions on price list rates.",
+              "description": "A cost management role that grants read permissions on cost models.",
               "system": true,
-              "version": 2,
+              "version": 3,
               "access": [{
-                  "permission": "cost-management:rate:read"
+                  "permission": "cost-management:cost_model:read"
               }]
           }, {
               "name": "Cost Cloud Viewer",
               "description": "A cost management role that grants read permissions on cost reports related to cloud sources.",
               "system": true,
-              "version": 4,
+              "version": 6,
               "access": [{
                   "permission": "cost-management:aws.account:*"
               }, {
                   "permission": "cost-management:aws.organizational_unit:*"
               }, {
                   "permission": "cost-management:azure.subscription_guid:*"
+              }, {
+                  "permission": "cost-management:gcp.account:*"
+              }, {
+                  "permission": "cost-management:gcp.project:*"
+              }, {
+                  "permission": "cost-management:oci.payer_tenant_id:*"
               }]
           }, {
               "name": "Cost OpenShift Viewer",
@@ -1426,11 +1547,50 @@ objects:
             "name": "Drift analysis administrator",
             "description": "Perform any available operation against any Drift Analysis resource.",
             "system": true,
-            "platform_default": true,
-            "version": 8,
+            "admin_default": true,
+            "version": 11,
             "access": [
               {
-                "permission": "drift:*:*"
+                "permission": "drift:comparisons:read"
+              },
+              {
+                "permission": "drift:baselines:read"
+              },
+              {
+                "permission": "drift:baselines:write"
+              },
+              {
+                "permission": "drift:historical-system-profiles:read"
+              },
+              {
+                "permission": "drift:notifications:read"
+              },
+              {
+                "permission": "drift:notifications:write"
+              },
+              {
+                "permission": "inventory:*:read"
+              }
+            ]
+          },
+          {
+            "name": "Drift viewer",
+            "description": "Perform read only operation against Drift Analysis resources.",
+            "system": true,
+            "platform_default": true,
+            "version": 3,
+            "access": [
+              {
+                "permission": "drift:comparisons:read"
+              },
+              {
+                "permission": "drift:baselines:read"
+              },
+              {
+                "permission": "drift:historical-system-profiles:read"
+              },
+              {
+                "permission": "drift:notifications:read"
               },
               {
                 "permission": "inventory:*:read"
@@ -1444,34 +1604,17 @@ objects:
         "roles": [
           {
             "name": "Insights administrator",
-            "display_name": "Advisor administrator",
-            "description": "Perform any available operation against any advisor resource.",
+            "display_name": "RHEL Advisor administrator",
+            "description": "Perform any available operation against any RHEL Advisor resource.",
             "system": true,
             "platform_default": true,
-            "version": 9,
+            "version": 10,
             "access": [
               {
                 "permission": "advisor:*:*"
               },
               {
                 "permission": "inventory:*:read"
-              }
-            ]
-          }
-        ]
-      }
-    integrations.json: |
-      {
-        "roles": [
-          {
-            "name": "Integrations administrator",
-            "description": "Perform any available operation against any Integrations resource.",
-            "system": true,
-            "platform_default": false,
-            "version": 2,
-            "access": [
-              {
-                "permission": "integrations:*:*"
               }
             ]
           }
@@ -1484,11 +1627,106 @@ objects:
             "name": "Inventory administrator",
             "description": "Perform any available operation against any Inventory resource.",
             "system": true,
-            "platform_default": true,
-            "version": 2,
+            "platform_default": false,
+            "admin_default": false,
+            "version": 3,
             "access": [
               {
                 "permission": "inventory:*:*"
+              }
+            ]
+          },
+          {
+            "name": "Inventory Hosts Administrator",
+            "description": "Be able to read and edit Inventory Hosts data.",
+            "system": true,
+            "platform_default": true,
+            "admin_default": true,
+            "version": 3,
+            "access": [
+              {
+                "permission": "inventory:hosts:write"
+              },
+              {
+                "permission": "inventory:hosts:read"
+              }
+            ]
+          },
+          {
+            "name": "Inventory Hosts Viewer",
+            "description": "Be able to read Inventory Hosts data.",
+            "system": true,
+            "platform_default": false,
+            "admin_default": false,
+            "version": 3,
+            "access": [
+              {
+                "permission": "inventory:hosts:read"
+              }
+            ]
+          },
+          {
+            "name": "Inventory Groups Administrator",
+            "description": "Be able to read and edit Inventory Groups data.",
+            "system": true,
+            "platform_default": false,
+            "admin_default": true,
+            "version": 3,
+            "access": [
+              {
+                "permission": "inventory:groups:write"
+              },
+              {
+                "permission": "inventory:groups:read"
+              }
+            ]
+          },
+          {
+            "name": "Inventory Groups Viewer",
+            "description": "Be able to read Inventory Groups data.",
+            "system": true,
+            "platform_default": false,
+            "admin_default": false,
+            "version": 3,
+            "access": [
+              {
+                "permission": "inventory:groups:read"
+              }
+            ]
+          }
+        ]
+      }
+    malware-detection.json: |
+      {
+        "roles": [
+          {
+            "name": "Malware detection administrator",
+            "display_name": "Malware detection administrator",
+            "description": "Perform any available operation against any malware-detection resource.",
+            "system": true,
+            "admin_default": true,
+            "version": 2,
+            "access": [
+              {
+                "permission": "malware-detection:*:*"
+              },
+              {
+                "permission": "inventory:*:read"
+              }
+            ]
+          },
+          {
+            "name": "Malware detection viewer",
+            "display_name": "Malware detection viewer",
+            "description": "Read any malware-detection resource.",
+            "system": true,
+            "version": 1,
+            "access": [
+              {
+                "permission": "malware-detection:*:read"
+              },
+              {
+                "permission": "inventory:*:read"
               }
             ]
           }
@@ -1518,8 +1756,9 @@ objects:
             "name": "Notifications administrator",
             "description": "Perform any available operation against Notifications and Integrations applications.",
             "system": true,
-            "platform_default": true,
-            "version": 3,
+            "platform_default": false,
+            "admin_default": true,
+            "version": 4,
             "access": [
               {
                 "permission": "notifications:*:*"
@@ -1533,8 +1772,8 @@ objects:
             "name": "Notifications viewer",
             "description": "Read only access to notifications and integrations applications.",
             "system": true,
-            "platform_default": true,
-            "version": 1,
+            "platform_default": false,
+            "version": 2,
             "access": [
               {
                 "permission": "notifications:notifications:read"
@@ -1544,39 +1783,99 @@ objects:
               }
             ]
           }
-
+  
         ]
       }
-    malware-detection.json: |
+    ocm.json: |
       {
         "roles": [
           {
-            "name": "Malware detection administrator",
-            "display_name": "Malware detection administrator",
-            "description": "Perform any available operation against any malware-detection resource.",
+            "name": "OCM Cluster Editor",
+            "display_name": "OCM Cluster Editor",
+            "description": "Grants permission to edit clusters",
             "system": true,
-            "version": 1,
-            "access": [
-              {
-                "permission": "malware-detection:*:*"
-              },
-              {
-                "permission": "inventory:*:read"
-              }
-            ]
+            "platform_default": false,
+            "version": 2,
+            "external": {
+              "id": "ClusterEditor",
+              "tenant": "ocm"
+            }
           },
           {
-            "name": "Malware detection viewer",
-            "display_name": "Malware detection viewer",
-            "description": "Read any malware-detection resource.",
+            "name": "OCM Idp Editor",
+            "display_name": "OCM Idp Editor",
+            "description": "Grants permission to edit idps",
             "system": true,
+            "platform_default": false,
+            "version": 1,
+            "external": {
+              "id": "IdpEditor",
+              "tenant": "ocm"
+            }
+          },
+          {
+            "name": "OCM Machine Pool Editor",
+            "display_name": "OCM Machine Pool Editor",
+            "description": "Grants permission to edit machine pools",
+            "system": true,
+            "platform_default": false,
+            "version": 1,
+            "external": {
+              "id": "MachinePoolEditor",
+              "tenant": "ocm"
+            }
+          },
+          {
+            "name": "OCM Cluster Provisioner",
+            "display_name": "OCM Cluster Provisioner",
+            "description": "Grants permission to provision clusters",
+            "system": true,
+            "platform_default": true,
+            "version": 3,
+            "external": {
+              "id": "ClusterProvisioner",
+              "tenant": "ocm"
+            }
+          },
+          {
+            "name": "OCM Cluster Viewer",
+            "display_name": "OCM Cluster Viewer",
+            "description": "Grants permission to view clusters",
+            "system": true,
+            "platform_default": true,
+            "version": 3,
+            "external": {
+              "id": "ClusterViewer",
+              "tenant": "ocm"
+            }
+          },
+          {
+            "name": "OCM Organization Admin",
+            "display_name": "OCM Organization Admin",
+            "description": "Grants administrative permissions associated organization's clusters",
+            "system": true,
+            "platform_default": false,
+            "version": 2,
+            "external": {
+              "id": "OrganizationAdmin",
+              "tenant": "ocm"
+            }
+          }
+        ]
+      }
+    ocp-advisor.json: |
+      {
+        "roles": [
+          {
+            "name": "OCP Advisor administrator",
+            "display_name": "OCP Advisor administrator",
+            "description": "Perform any available operation against any OCP Advisor resource.",
+            "system": true,
+            "platform_default": true,
             "version": 1,
             "access": [
               {
-                "permission": "malware-detection:*:read"
-              },
-              {
-                "permission": "inventory:*:read"
+                "permission": "ocp-advisor:*:*"
               }
             ]
           }
@@ -1589,8 +1888,9 @@ objects:
             "name": "Patch administrator",
             "description": "Perform any available operation against any Patch resource.",
             "system": true,
-            "platform_default": true,
-            "version": 5,
+            "platform_default": false,
+            "admin_default": true,
+            "version": 8,
             "access": [
               {
                 "permission": "patch:*:*"
@@ -1603,8 +1903,8 @@ objects:
               },
               {
                 "permission": "remediations:*:write"
-           }
-           ]
+              }
+            ]
           },
           {
             "name": "Patch viewer",
@@ -1616,6 +1916,44 @@ objects:
             "access": [
               {
                 "permission": "patch:*:read"
+              },
+              {
+                "permission": "inventory:*:read"
+              }
+            ]
+          }
+        ]
+      }
+    policies.json: |
+      {
+        "roles": [
+          {
+            "name": "Policies administrator",
+            "description": "Perform any available operation against any Policies resource.",
+            "system": true,
+            "admin_default": true,
+            "version": 7,
+            "access": [
+              {
+                "permission": "policies:policies:read"
+              },
+              {
+                "permission": "policies:policies:write"
+              },
+              {
+                "permission": "inventory:*:read"
+              }
+            ]
+          },
+          {
+            "name": "Policies viewer",
+            "description": "Perform read only operation against any Policies resource.",
+            "system": true,
+            "platform_default": true,
+            "version": 1,
+            "access": [
+              {
+                "permission": "policies:policies:read"
               },
               {
                 "permission": "inventory:*:read"
@@ -1728,62 +2066,6 @@ objects:
           }
         ]
       }
-    ros.json: |
-      {
-        "roles": [
-          {
-            "name": "Resource Optimization administrator",
-            "description": "Perform any available operation against any Resource Optimization resource.",
-            "system": true,
-            "platform_default": true,
-            "version": 1,
-            "access": [
-              {
-                "permission": "ros:*:*"
-              },
-              {
-                "permission": "inventory:*:read"
-              }
-            ]
-          },
-          {
-            "name": "Resource Optimization user",
-            "description": "A Resource Optimization user role that grants read only permission.",
-            "system": true,
-            "platform_default": true,
-            "version": 1,
-            "access": [
-              {
-                "permission": "ros:*:read"
-              },
-              {
-                "permission": "inventory:*:read"
-              }
-            ]
-          }
-        ]
-      }
-
-    policies.json: |
-      {
-        "roles": [
-          {
-            "name": "Policies administrator",
-            "description": "Perform any available operation against any Policies resource.",
-            "system": true,
-            "platform_default": true,
-            "version": 5,
-            "access": [
-              {
-                "permission": "policies:*:*"
-              },
-              {
-                "permission": "inventory:*:read"
-              }
-            ]
-          }
-        ]
-      }
     remediations.json: |
       {
         "roles": [
@@ -1792,13 +2074,25 @@ objects:
             "description": "Perform any available operation against any Remediations resource",
             "system": true,
             "platform_default": false,
-            "version": 4,
+            "version": 7,
             "access": [
               {
                 "permission": "remediations:*:*"
               },
               {
                 "permission": "inventory:*:read"
+              },
+              {
+                "permission": "playbook-dispatcher:run:read",
+                "resourceDefinitions": [
+                  {
+                    "attributeFilter": {
+                      "key": "service",
+                      "operation": "equal",
+                      "value": "remediations"
+                    }
+                  }
+                ]
               }
             ]
           },
@@ -1807,17 +2101,65 @@ objects:
             "description": "Perform create, view, update, delete operations against any Remediations resource.",
             "system": true,
             "platform_default": true,
-            "version": 4,
+            "version": 5,
             "access": [
               {
                 "permission": "remediations:remediation:read"
               },
               {
                 "permission": "remediations:remediation:write"
+              },
+              {
+                "permission": "playbook-dispatcher:run:read",
+                "resourceDefinitions": [
+                  {
+                    "attributeFilter": {
+                      "key": "service",
+                      "operation": "equal",
+                      "value": "remediations"
+                    }
+                  }
+                ]
               }
             ]
           }
         ]
+      }
+    ros.json: |
+      {
+          "roles": [
+            {
+              "name": "Resource Optimization administrator",
+              "description": "Perform any available operation against any Resource Optimization resource.",
+              "system": true,
+              "platform_default": false,
+              "admin_default": true,
+              "version": 2,
+              "access": [
+                {
+                  "permission": "ros:*:*"
+                },
+                {
+                  "permission": "inventory:*:read"
+                }
+              ]
+            },
+            {
+              "name": "Resource Optimization user",
+              "description": "A Resource Optimization user role that grants read only permission.",
+              "system": true,
+              "platform_default": true,
+              "version": 1,
+              "access": [
+                {
+                  "permission": "ros:*:read"
+                },
+                {
+                  "permission": "inventory:*:read"
+                }
+              ]
+            }
+          ]
       }
     sources.json: |
       {
@@ -1826,8 +2168,9 @@ objects:
             "name": "Sources administrator",
             "description": "Perform any available operation against any Source",
             "system": true,
-            "platform_default": true,
-            "version": 3,
+            "platform_default": false,
+            "admin_default": true,
+            "version": 4,
             "access": [
               {
                 "permission": "sources:*:*"
@@ -1841,16 +2184,75 @@ objects:
         "roles": [
           {
             "name": "Subscription Watch administrator",
-            "description": "Perform any available operation against any Subscription Watch resource.",
+            "display_name": "Subscriptions administrator",
+            "description": "Perform any available operation against any Subscriptions resource.",
             "system": true,
-            "platform_default": true,
-            "version": 4,
+            "admin_default": true,
+            "platform_default": false,
+            "version": 6,
             "access": [
               {
                 "permission": "subscriptions:*:*"
               },
               {
                 "permission": "inventory:*:read"
+              }
+            ]
+          },
+          {
+            "name": "Subscriptions user",
+            "description": "View any Subscriptions resource.",
+            "system": true,
+            "platform_default": true,
+            "version": 3,
+            "access": [
+              {
+                "permission": "subscriptions:reports:read"
+              },
+              {
+                "permission": "subscriptions:manifests:read"
+              },
+              {
+                "permission": "subscriptions:organization:read"
+              },
+              {
+                "permission": "subscriptions:products:read"
+              },
+              {
+                "permission": "inventory:*:read"
+              }
+            ]
+          }
+        ]
+      }
+    tasks.json: |
+      {
+        "roles": [
+          {
+            "name": "Tasks administrator",
+            "description": "Perform any available operation against any Tasks resource.",
+            "system": true,
+            "platform_default": false,
+            "admin_default": true,
+            "version": 2,
+            "access": [
+              {
+                "permission": "tasks:*:*"
+              },
+              {
+                "permission": "inventory:*:read"
+              },
+              {
+                "permission": "playbook-dispatcher:run:read",
+                "resourceDefinitions": [
+                  {
+                    "attributeFilter": {
+                      "key": "service",
+                      "operation": "equal",
+                      "value": "tasks"
+                    }
+                  }
+                ]
               }
             ]
           }
@@ -1863,14 +2265,46 @@ objects:
             "name": "Vulnerability administrator",
             "description": "Perform any available operation against any Vulnerability resource.",
             "system": true,
-            "platform_default": true,
-            "version": 8,
+            "platform_default": false,
+            "admin_default": true,
+            "version": 10,
             "access": [
               {
                 "permission": "vulnerability:*:*"
               },
               {
                 "permission": "inventory:*:read"
+              },
+              {
+                "permission": "remediations:*:read"
+              },
+              {
+                "permission": "remediations:*:write"
+              }
+            ]
+          },
+          {
+            "name": "Vulnerability viewer",
+            "description": "Read any Vulnerability resource.",
+            "system": true,
+            "platform_default": true,
+            "admin_default": false,
+            "version": 3,
+            "access": [
+              {
+                "permission": "vulnerability:vulnerability_results:read"
+              },
+              {
+                "permission": "vulnerability:system.opt_out:read"
+              },
+              {
+                "permission": "vulnerability:report_and_export:read"
+              },
+              {
+                "permission": "inventory:*:read"
+              },
+              {
+                "permission": "vulnerability:advanced_report:read"
               }
             ]
           }
@@ -1883,117 +2317,777 @@ objects:
   data:
     advisor.json: |
       {
-          "*": ["*"],
-          "disable-recommendations": ["write"],
-          "weekly-email": ["read"],
-          "recommendation-results": ["read"],
-          "exports": ["read"]
+          "*": [
+              {
+                  "verb": "*"
+              }
+          ],
+          "disable-recommendations": [
+              {
+                  "verb": "write"
+              }
+          ],
+          "weekly-email": [
+              {
+                  "verb": "read"
+              }
+          ],
+          "recommendation-results": [
+              {
+                  "verb": "read"
+              }
+          ],
+          "exports": [
+              {
+                  "verb": "read"
+              }
+          ]
       }
     approval.json: |
       {
-          "actions": ["create", "read"],
-          "requests": ["create", "read"],
-          "templates": ["read"],
-          "workflows": ["create", "read", "update", "delete", "link", "unlink"]
+          "actions": [
+              {
+                  "verb": "create"
+              },
+              {
+                  "verb": "read"
+              }
+          ],
+          "requests": [
+              {
+                  "verb": "create"
+              },
+              {
+                  "verb": "read"
+              }
+          ],
+          "templates": [
+              {
+                  "verb": "read"
+              }
+          ],
+          "workflows": [
+              {
+                  "verb": "create"
+              },
+              {
+                  "verb": "read"
+              },
+              {
+                  "verb": "update"
+              },
+              {
+                  "verb": "delete"
+              },
+              {
+                  "verb": "link"
+              },
+              {
+                  "verb": "unlink"
+              }
+          ]
       }
     automation-analytics.json: |
       {
-          "*": ["read", "write", "*"]
+          "*": [
+              {
+                  "verb": "read"
+              },
+              {
+                  "verb": "write"
+              },
+              {
+                  "verb": "*"
+              }
+          ]
       }
     catalog.json: |
       {
-          "approval_requests": ["read", "write"],
-          "orders": ["read", "write", "order"],
-          "order_items": ["read", "write", "order"],
-          "order_processes": ["create", "read", "link", "unlink", "update", "delete"],
-          "portfolios": ["create", "read", "update", "delete", "order"],
-          "portfolio_items": ["create", "read", "update", "delete", "order"],
-          "progress_messages": ["read", "write"],
-          "tenants": ["read", "update"]
+          "approval_requests": [
+              {
+                  "verb": "read"
+              },
+              {
+                  "verb": "write"
+              }
+          ],
+          "orders": [
+              {
+                  "verb": "read"
+              },
+              {
+                  "verb": "write"
+              },
+              {
+                  "verb": "order"
+              }
+          ],
+          "order_items": [
+              {
+                  "verb": "read"
+              },
+              {
+                  "verb": "write"
+              },
+              {
+                  "verb": "order"
+              }
+          ],
+          "order_processes": [
+              {
+                  "verb": "create"
+              },
+              {
+                  "verb": "read"
+              },
+              {
+                  "verb": "link"
+              },
+              {
+                  "verb": "unlink"
+              },
+              {
+                  "verb": "update"
+              },
+              {
+                  "verb": "delete"
+              }
+          ],
+          "portfolios": [
+              {
+                  "verb": "create"
+              },
+              {
+                  "verb": "read"
+              },
+              {
+                  "verb": "update"
+              },
+              {
+                  "verb": "delete"
+              },
+              {
+                  "verb": "order"
+              }
+          ],
+          "portfolio_items": [
+              {
+                  "verb": "create"
+              },
+              {
+                  "verb": "read"
+              },
+              {
+                  "verb": "update"
+              },
+              {
+                  "verb": "delete"
+              },
+              {
+                  "verb": "order"
+              }
+          ],
+          "progress_messages": [
+              {
+                  "verb": "read"
+              },
+              {
+                  "verb": "write"
+              }
+          ],
+          "tenants": [
+              {
+                  "verb": "read"
+              },
+              {
+                  "verb": "update"
+              }
+          ]
       }
     compliance.json: |
       {
-          "*": ["*"]
+          "*": [
+              {
+                  "verb": "*"
+              }
+          ],
+          "system": [
+            {
+              "verb": "read"
+            }
+          ],
+          "report": [
+            {
+              "verb": "read"
+            },
+            {
+              "verb": "delete"
+            }
+          ],
+          "policy": [
+            {
+              "verb": "read"
+            },
+            {
+              "verb": "create"
+            },
+            {
+              "verb": "update"
+            },
+            {
+              "verb": "delete"
+            },
+            {
+              "verb": "write"
+            }
+          ]
+      }
+    config-manager.json: |
+      {
+          "activation_keys": [
+              {
+                  "verb": "read"
+              },
+              {
+                  "verb": "write"
+              },
+              {
+                  "verb": "*"
+              }
+          ],
+          "state": [
+              {
+                  "verb": "read"
+              },
+              {
+                  "verb": "write"
+              }
+          ],
+          "state-changes": [
+              {
+                  "verb": "read"
+              }
+          ]
+      }
+    content-sources.json: |
+      {
+          "repositories": [
+              {
+                  "verb": "read"
+              },
+              {
+                  "verb": "write"
+              }
+          ],
+          "*": [
+              {
+                  "verb": "*"
+              }
+          ]
       }
     cost-management.json: |
       {
-          "aws.account": ["*"],
-          "azure.subscription_guid": ["*"],
-          "openshift.cluster": ["*"],
-          "rate": ["read", "*"],
-          "*": ["*"],
-          "aws.organizational_unit": ["*"]
+          "aws.account": [
+              {
+                  "verb": "*"
+              },
+              {
+                  "verb": "read"
+              }
+          ],
+          "aws.organizational_unit": [
+              {
+                  "verb": "*"
+              },
+              {
+                  "verb": "read"
+              }
+          ],
+          "azure.subscription_guid": [
+              {
+                  "verb": "*"
+              },
+              {
+                  "verb": "read"
+              }
+          ],
+          "gcp.account": [
+              {
+                  "verb": "*"
+              },
+              {
+                  "verb": "read"
+              }
+          ],
+          "gcp.project": [
+              {
+                  "verb": "*"
+              },
+              {
+                  "verb": "read"
+              }
+          ],
+          "oci.payer_tenant_id": [
+              {
+                  "verb": "*"
+              },
+              {
+                  "verb": "read"
+              }
+          ],
+          "openshift.cluster": [
+              {
+                  "verb": "*"
+              },
+              {
+                  "verb": "read"
+              }
+          ],
+          "openshift.node": [
+              {
+                  "verb": "*"
+              },
+              {
+                  "verb": "read"
+              }
+          ],
+          "openshift.project": [
+              {
+                  "verb": "*"
+              },
+              {
+                  "verb": "read"
+              }
+          ],
+          "cost_model": [
+              {
+                  "verb": "*"
+              },
+              {
+                  "verb": "read"
+              },
+              {
+                  "verb": "write"
+              }
+          ],
+          "*": [
+              {
+                  "verb": "*"
+              }
+          ]
       }
     drift.json: |
       {
-          "*": ["*"],
-          "comparisons": ["read"],
-          "baselines": ["read", "write"]
+        "*": [
+          {
+            "verb": "*"
+          }
+        ],
+        "comparisons": [
+          {
+            "verb": "read"
+          }
+        ],
+        "baselines": [
+          {
+            "verb": "read"
+          },
+          {
+            "verb": "write"
+          }
+        ],
+        "historical-system-profiles": [
+          {
+            "verb": "read"
+          }
+        ],
+        "notifications": [
+          {
+            "verb": "read"
+          },
+          {
+            "verb": "write"
+          }
+        ]
       }
     integrations.json: |
       {
-          "*": ["*"],
-          "endpoints": ["read","write"]
+          "endpoints": [
+              {
+                  "verb": "read"
+              },
+              {
+                  "verb": "write"
+              }
+          ],
+          "*": [
+              {
+                  "verb": "*"
+              }
+          ]
       }
     inventory.json: |
       {
-          "*": ["read", "*"],
-          "hosts": ["read", "write", "*"]
+          "*": [
+              {
+                  "verb": "read"
+              },
+              {
+                  "verb": "*"
+              }
+          ],
+          "hosts": [
+              {
+                  "verb": "read"
+              },
+              {
+                  "verb": "write"
+              },
+              {
+                  "verb": "*"
+              }
+          ],
+          "groups": [
+              {
+                  "verb": "read"
+              },
+              {
+                  "verb": "write"
+              },
+              {
+                  "verb": "*"
+              }
+          ]
+      }
+    malware-detection.json: |
+      {
+          "*": [
+              {
+                  "verb": "*"
+              },
+              {
+                  "verb": "read"
+              }
+          ]
       }
     migration-analytics.json: |
       {
-          "*": ["*"]
+          "*": [
+              {
+                  "verb": "*"
+              }
+          ]
       }
     notifications.json: |
       {
-          "*": ["*"],
-          "notifications": ["read","write"]
+          "notifications": [
+              {
+                  "verb": "read"
+              },
+              {
+                  "verb": "write"
+              }
+          ],
+          "events" : [
+              {
+                  "verb": "read"
+              }
+          ],
+          "*": [
+              {
+                  "verb": "*"
+              }
+          ]
+      }
+    ocp-advisor.json: |
+      {
+        "*": [
+          {
+            "verb": "*"
+          }
+        ],
+        "toggle-recommendations": [
+          {
+            "verb": "write"
+          }
+        ],
+        "recommendation-results": [
+          {
+            "verb": "read"
+          }
+        ],
+        "exports": [
+          {
+            "verb": "read"
+          }
+        ]
       }
     patch.json: |
       {
-          "*": ["*"]
+          "*": [
+              {
+                  "verb": "*"
+              },
+              {
+                  "verb": "read"
+              },
+              {
+                  "verb": "write"
+              }
+          ],
+          "system": [
+              {
+                  "verb": "write"
+              }
+          ],
+          "template": [
+              {
+                  "verb": "write"
+              }
+          ]
+      }
+    playbook-dispatcher.json: |
+      {
+          "run": [
+              {
+                  "verb": "read"
+              },
+              {
+                  "verb": "write"
+              }
+          ]
       }
     policies.json: |
       {
-          "policies": ["read","write"],
-          "*": ["*"]
+          "policies": [
+              {
+                  "verb": "read"
+              },
+              {
+                  "verb": "write"
+              }
+          ],
+          "*": [
+              {
+                  "verb": "*"
+              }
+          ]
       }
     provisioning.json: |
       {
-          "source": ["read"],
-          "pubkey": ["read", "write"],
-          "reservation": ["read", "write"],
-          "reservation.aws": ["read", "write"],
-          "reservation.azure": ["read", "write"],
-          "reservation.gcp": ["read", "write"],
-          "*": ["*"]
+          "source": [
+              {
+                  "verb": "*"
+              },
+              {
+                  "verb": "read"
+              }
+          ],
+          "pubkey": [
+              {
+                  "verb": "*"
+              },
+              {
+                  "verb": "read"
+              },
+              {
+                  "verb": "write",
+                  "requires": [
+                      "read"
+                  ]
+              }
+          ],
+          "reservation": [
+              {
+                  "verb": "*"
+              },
+              {
+                  "verb": "read"
+              },
+              {
+                  "verb": "write",
+                  "requires": [
+                      "read"
+                  ]
+              }
+          ],
+          "reservation.aws": [
+              {
+                  "verb": "*"
+              },
+              {
+                  "verb": "read"
+              },
+              {
+                  "verb": "write",
+                  "requires": [
+                      "read"
+                  ]
+              }
+          ],
+          "reservation.azure": [
+              {
+                  "verb": "*"
+              },
+              {
+                  "verb": "read"
+              },
+              {
+                  "verb": "write",
+                  "requires": [
+                      "read"
+                  ]
+              }
+          ],
+          "reservation.gcp": [
+              {
+                  "verb": "*"
+              },
+              {
+                  "verb": "read"
+              },
+              {
+                  "verb": "write",
+                  "requires": [
+                      "read"
+                  ]
+              }
+          ],
+          "*": [
+              {
+                  "verb": "*"
+              }
+          ]
       }
     remediations.json: |
       {
-          "remediation": ["read", "write", "execute"],
-          "*": ["*"]
+          "remediation": [
+              {
+                  "verb": "read"
+              },
+              {
+                  "verb": "write"
+              },
+              {
+                  "verb": "execute"
+              }
+          ],
+          "*": [
+              {
+                  "verb": "*"
+              }
+          ]
       }
     ros.json: |
       {
-          "*": ["read", "*"]
+          "*": [
+              {
+                  "verb": "*"
+              },
+              {
+                  "verb": "read"
+              }
+          ]
       }
     sources.json: |
       {
-          "*": ["*"]
+          "*": [
+              {
+                  "verb": "*"
+              }
+          ]
       }
     subscriptions.json: |
       {
-          "*": ["*"]
+          "reports": [
+              {
+                  "verb": "read"
+              }
+          ],
+          "manifests": [
+              {
+                  "verb": "read"
+              },
+              {
+                  "verb": "write"
+              }
+          ],
+          "organization": [
+              {
+                  "verb": "read"
+              },
+              {
+                  "verb": "write"
+              }
+          ],
+          "products": [
+              {
+                  "verb": "read"
+              },
+              {
+                  "verb": "write"
+              }
+          ],
+          "*": [
+              {
+                  "verb": "*"
+              }
+          ]
+      }
+    tasks.json: |
+      {
+          "*": [
+              {
+                  "verb": "*"
+              }
+          ]
       }
     vulnerability.json: |
       {
-          "*": ["read", "write", "*"],
-          "vulnerability_results": ["read"],
-          "cve.business_risk_and_status": ["write"],
-          "system.cve.status": ["write"],
-          "advanced_report": ["read"],
-          "report_and_export": ["read"],
-          "system.opt_out": ["write", "read"]
+          "*": [
+              {
+                  "verb": "read"
+              },
+              {
+                  "verb": "write"
+              },
+              {
+                  "verb": "*"
+              }
+          ],
+          "vulnerability_results": [
+              {
+                  "verb": "read"
+              }
+          ],
+          "cve.business_risk_and_status": [
+              {
+                  "verb": "write"
+              }
+          ],
+          "system.cve.status": [
+              {
+                  "verb": "write"
+              }
+          ],
+          "advanced_report": [
+              {
+                  "verb": "read"
+              }
+          ],
+          "report_and_export": [
+              {
+                  "verb": "read"
+              }
+          ],
+          "system.opt_out": [
+              {
+                  "verb": "write"
+              },
+              {
+                  "verb": "read"
+              }
+          ]
       }
   kind: ConfigMap
   metadata:
