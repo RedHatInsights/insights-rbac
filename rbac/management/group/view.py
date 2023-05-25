@@ -403,6 +403,7 @@ class GroupViewSet(
             }
 
         group.principals.filter(username__in=valid_usernames).delete()
+        logger.info(f"Principals {valid_usernames} removed from group {group.name} for org id {org_id}.")
         for username in principals:
             group_principal_change_notification_handler(self.request.user, group, username, "removed")
         return group
