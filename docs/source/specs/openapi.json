@@ -3095,6 +3095,16 @@
           },
           "is_org_admin": {
             "type": "boolean"
+          },
+          "external_source_id": {
+            "oneOf": [
+              {
+                "type": "string"
+              }, {
+                "type": "integer"
+              }
+            ],
+            "example": "1"
           }
         }
       },
