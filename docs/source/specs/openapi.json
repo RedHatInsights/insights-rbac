@@ -3097,7 +3097,13 @@
             "type": "boolean"
           },
           "external_source_id": {
-            "type": "string",
+            "oneOf": [
+              {
+                "type": "string"
+              }, {
+                "type": "integer"
+              }
+            ],
             "example": "1"
           }
         }
