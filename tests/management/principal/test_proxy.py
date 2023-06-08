@@ -65,6 +65,7 @@ def mocked_requests_get_200_json(*args, **kwargs):  # pylint: disable=unused-arg
         "last_name": "user1",
         "is_active": "true",
         "is_org_admin": "true",
+        "id": "3",
     }
     json_response = [user]
     return MockResponse(json_response, status.HTTP_200_OK)
@@ -79,6 +80,7 @@ def mocked_requests_get_200_json_count(*args, **kwargs):  # pylint: disable=unus
         "last_name": "user1",
         "is_active": "true",
         "is_org_admin": "true",
+        "id": "1",
     }
     user2 = {
         "username": "test_user2",
@@ -87,6 +89,7 @@ def mocked_requests_get_200_json_count(*args, **kwargs):  # pylint: disable=unus
         "last_name": "user2",
         "is_active": "true",
         "is_org_admin": "false",
+        "id": "2",
     }
     json_response = {"userCount": 2, "users": [user1, user2]}
     return MockResponse(json_response, status.HTTP_200_OK)
@@ -168,6 +171,7 @@ class PrincipalProxyTest(TestCase):
             "last_name": "user1",
             "is_active": "true",
             "is_org_admin": "true",
+            "external_source_id": "3",
         }
         expected = {"data": [user], "status_code": 200}
         self.assertEqual(expected, result)
@@ -185,6 +189,7 @@ class PrincipalProxyTest(TestCase):
             "last_name": "user1",
             "is_active": "true",
             "is_org_admin": "true",
+            "external_source_id": "1",
         }
         user2 = {
             "username": "test_user2",
@@ -193,6 +198,7 @@ class PrincipalProxyTest(TestCase):
             "last_name": "user2",
             "is_active": "true",
             "is_org_admin": "false",
+            "external_source_id": "2",
         }
         expected = {"data": {"userCount": 2, "users": [user1, user2]}, "status_code": 200}
         self.assertEqual(expected, result)

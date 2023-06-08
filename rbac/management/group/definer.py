@@ -163,7 +163,7 @@ def remove_roles(group, roles_or_role_ids, tenant, user=None):
         for role in roles:
             if policy.roles.filter(pk=role.pk).exists():
                 policy.roles.remove(role)
-
+                logger.info(f"Removing role {role} from group {group.name} for tenant {tenant.org_id}.")
                 # Send notifications
                 group_role_change_notification_handler(user, group, role, "removed")
 
