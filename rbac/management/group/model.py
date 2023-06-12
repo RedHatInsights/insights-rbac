@@ -140,8 +140,8 @@ def principal_group_change_sync_handler(
 
     if action in ["pre_remove", "post_remove"] and isinstance(instance, Group):
         if instance.tenant is not None:
-            org_id = instance.tenant.org_id if hasattr(instance.tenant, 'org_id') else None
-            account_id = instance.tenant.account_id if hasattr(instance.tenant, 'account_id') else None
+            org_id = instance.tenant.org_id if hasattr(instance.tenant, "org_id") else None
+            account_id = instance.tenant.account_id if hasattr(instance.tenant, "account_id") else None
             logger.info("Action %s for group: %s, OrgId: %s, AcctId: %s", action, instance.name, org_id, account_id)
 
     if action in ["post_add", "pre_remove", "pre_clear"]:
