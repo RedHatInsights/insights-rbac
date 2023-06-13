@@ -379,7 +379,8 @@ class GroupViewSet(
     def remove_principals(self, group, principals, account=None, org_id=None):
         """Process list of principals and remove them from the group."""
         req_id = getattr(self.request, "req_id", None)
-        logger.info(f"[Request_id:{req_id}] remove_principals for group {group.name} for org id {org_id} started...")
+        log_prefix = f"[Request_id:{req_id}]"
+        logger.info(f"{log_prefix} remove_principals({principals}),Group:{group.name},OrgId:{org_id},Acct:{account}")
 
         if settings.AUTHENTICATE_WITH_ORG_ID:
             tenant = Tenant.objects.get(org_id=org_id)
