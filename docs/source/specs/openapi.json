@@ -1187,6 +1187,20 @@
             }
           },
           {
+            "name": "admin_only",
+            "in": "query",
+            "description": "Get only admin users within an account.",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ],
+              "default": "false"
+            }
+          },
+          {
             "name": "principal_username",
             "in": "query",
             "required": false,

@@ -887,6 +887,32 @@ class GroupViewsetTests(IdentityRequest):
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
         return_value={"status_code": 200, "data": [{"username": "test_user"}]},
     )
+    def test_get_group_principals_nonempty_admin_only(self, mock_request):
+        """Test that getting principals from a nonempty group returns successfully."""
+
+        client = APIClient()
+        url = reverse("group-principals", kwargs={"uuid": self.group.uuid}) + f"?admin_only=true"
+
+        response = client.get(url, **self.headers)
+
+        call_args, kwargs = mock_request.call_args_list[0]
+        username_arg = call_args[0]
+        print(response.data.get("data"))
+        print(response.data.get("meta"))
+
+        mock_request.assert_called_with(
+            ANY, org_id=ANY, options={"sort_order": None, "username_only": "false", "admin_only": True}
+        )
+
+        self.assertTrue(self.principal.username in username_arg)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data.get("data")), 1)
+        self.assertEqual(response.data.get("data")[0].get("username"), "test_user")
+
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={"status_code": 200, "data": [{"username": "test_user"}]},
+    )
     @patch("core.kafka.RBACProducer.send_kafka_message")
     def test_remove_group_principals_success(self, send_kafka_message, mock_request):
         """Test that removing a principal to a group returns successfully."""
