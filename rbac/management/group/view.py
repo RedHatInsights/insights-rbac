@@ -19,6 +19,7 @@
 import logging
 
 from django.conf import settings
+from django.db import transaction
 from django.db.models.aggregates import Count
 from django.utils.translation import gettext as _
 from django_filters import rest_framework as filters
@@ -377,14 +378,16 @@ class GroupViewSet(
 
     def remove_principals(self, group, principals, account=None, org_id=None):
         """Process list of principals and remove them from the group."""
+        req_id = getattr(self.request, "req_id", None)
+        logger.info(f"[Request_id:{req_id}] remove_principals for group {group.name} for org id {org_id} started...")
+
         if settings.AUTHENTICATE_WITH_ORG_ID:
             tenant = Tenant.objects.get(org_id=org_id)
         else:
             tenant = Tenant.objects.get(tenant_name=f"acct{account}")
 
-        valid_usernames = Principal.objects.filter(group=group, tenant=tenant, username__in=principals).values_list(
-            "username", flat=True
-        )
+        valid_principals = Principal.objects.filter(group=group, tenant=tenant, username__in=principals)
+        valid_usernames = valid_principals.values_list("username", flat=True)
         usernames_diff = set(principals) - set(valid_usernames)
         if usernames_diff:
             if settings.AUTHENTICATE_WITH_ORG_ID:
@@ -402,8 +405,11 @@ class GroupViewSet(
                 ],
             }
 
-        group.principals.filter(username__in=valid_usernames).delete()
-        logger.info(f"Principals {valid_usernames} removed from group {group.name} for org id {org_id}.")
+        with transaction.atomic():
+            for principal in valid_principals:
+                group.principals.remove(principal)
+
+        logger.info(f"[Request_id:{req_id}] {valid_usernames} removed from group {group.name} for org id {org_id}.")
         for username in principals:
             group_principal_change_notification_handler(self.request.user, group, username, "removed")
         return group
