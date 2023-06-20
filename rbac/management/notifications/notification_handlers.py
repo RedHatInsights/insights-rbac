@@ -229,6 +229,6 @@ def payload_builder(username, resource_obj, operation=None, extra_info=None):
         elif extra_info[0] == "principal":
             payload["principal"] = extra_info[1]
         else:
-            raise Exception(f"Unknow extra_info {extra_info[0]}, valid ones are role/principal")
+            raise Exception(f"Unknown extra_info {extra_info[0]}, valid ones are role/principal")
 
     return payload

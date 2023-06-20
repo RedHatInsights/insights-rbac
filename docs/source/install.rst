@@ -4,7 +4,7 @@ Installation
 Insights RBAC provides a web server for its API interaction.
 
 
-This guide will focus on deploying Insighs RBAC into an existing `OpenShift <https://www.okd.io/>`_ cluster.
+This guide will focus on deploying Insights RBAC into an existing `OpenShift <https://www.okd.io/>`_ cluster.
 
 Deploying the RBAC API
 ----------------------
@@ -33,4 +33,4 @@ Before these steps can complete, the postgresql-devel package for your distribut
 * Create a Docker bridge network named ``rbac-network``: ``docker network create rbac-network``
 * Start RBAC server and database: ``make docker-up``
 
-This command will run database migraitons and start the API server.  Once complete the API server will be running on port 8000 on your localhost.
+This command will run database migrations and start the API server.  Once complete the API server will be running on port 8000 on your localhost.
