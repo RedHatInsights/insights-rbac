@@ -2,5 +2,5 @@
   "name": "RBAC",
   "version": "1.0.0",
   "description": "This document is intended for developers who want to use the RBAC API to write applications that interact with the RBAC server.",
-  "title": "Role Based Access Controle API Documentation"
+  "title": "Role Based Access Control API Documentation"
 }

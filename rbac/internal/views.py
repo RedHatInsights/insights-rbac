@@ -47,7 +47,7 @@ def tenant_is_modified(tenant_name=None, org_id=None):
     """Determine whether or not the tenant is modified."""
     # we need to check if the schema exists because if we don't, and it doesn't exist,
     # the search_path on the query will fall back to using the public schema, in
-    # which case there will be custom groups/roles, and we won't be able to propertly
+    # which case there will be custom groups/roles, and we won't be able to properly
     # prune the tenant which has been created without a valid schema
     tenant = get_object_or_404(Tenant, org_id=org_id)
 

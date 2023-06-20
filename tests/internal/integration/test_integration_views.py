@@ -241,8 +241,8 @@ class IntegrationViewsTests(IdentityRequest):
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
         return_value={"status_code": 200, "data": []},
     )
-    def test_groups_for_principal_nonexistant_user(self, mock_request):
-        """Test that an error is return for nonexistant ."""
+    def test_groups_for_principal_nonexistent_user(self, mock_request):
+        """Test that an error is return for nonexistent ."""
         response = self.client.get(
             f"/_private/api/v1/integrations/tenant/{self.tenant.org_id}/groups/?username=user_x",
             **self.request.META,

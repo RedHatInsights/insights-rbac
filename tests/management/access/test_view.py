@@ -700,7 +700,7 @@ class AccessViewTests(IdentityRequest):
         self.assertEqual(response.data["meta"]["count"], 1)
         self.assertEqual(
             response.data["data"], []
-        )  # after pagination, it is empty becase totoal is one, and offset is one
+        )  # after pagination, it is empty because total is one, and offset is one
         ###################################################################
 
         #### access_policy are cached properly when application is empty ####

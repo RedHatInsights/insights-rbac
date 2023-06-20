@@ -23,7 +23,7 @@ Operation defines the application logic action, for example::
 - write
 - order
 
-Note that in any of the above stanzas, ``*`` is taked to mean "all".
+Note that in any of the above stanzas, ``*`` is taken to mean "all".
 
 
 Resource Definitions
@@ -32,7 +32,7 @@ Resource Definitions are a somewhat trickier aspect of our implementation of RBA
 
 In general, ALL roles should be created with a resourceDefinitions stanza of ``[]``. This is taken to mean "no additional filtering" and will generally result in the expected behavior.
 
-In specific cases where the application logic has been written to handle them, however, resource access can be limited by specifing an attribute filter in the resourceDefinitions stanza as below.
+In specific cases where the application logic has been written to handle them, however, resource access can be limited by specifying an attribute filter in the resourceDefinitions stanza as below.
 
 Specifying a single resource with an attribute filter::
 
