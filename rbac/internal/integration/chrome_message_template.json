@@ -1,0 +1,17 @@
+{
+    "specversion": "1.0.2",
+    "type": "data.invalidation",
+    "source": "/rbac/v1/status/",
+    "id": "",
+    "time": "",
+    "datacontenttype": "application/json",
+    "data":{
+        "broadcast": false,
+        "organizations": [],
+        "payload": {
+            "entityType": "rbac.group",
+            "entityId": "",
+            "eventType": ""
+        }
+    }
+}

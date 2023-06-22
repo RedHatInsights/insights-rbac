@@ -23,6 +23,7 @@ from django.conf import settings
 from django.db import models
 from django.db.models import signals
 from django.utils import timezone
+from internal.integration import chrome_handlers
 from internal.integration import sync_handlers
 from management.cache import AccessCache
 from management.principal.model import Principal
@@ -116,6 +117,24 @@ def principals_to_groups_cache_handler(
             cache.delete_policy(instance.uuid)
 
 
+def group_deleted_chrome_handler(sender=None, instance=None, using=None, **kwargs):
+    """Signal handler to inform external services of Group deletions."""
+    logger.info("Handling signal for deleted group %s - informing chrome topic", instance)
+    if hasattr(instance, "tenant") and hasattr(instance.tenant, "org_id"):
+        chrome_handlers.send_chrome_message(event_type="delete", uuid=instance.uuid, org_id=instance.tenant.org_id)
+
+
+def group_create_and_update_chrome_handler(sender=None, instance=None, using=None, **kwargs):
+    """Signal handler to inform external services of Group creations and updates."""
+    is_org_id = hasattr(instance, "tenant") and hasattr(instance.tenant, "org_id")
+    if isinstance(kwargs, dict) and "created" in kwargs and is_org_id:
+        event_type = "update"
+        if kwargs["created"]:
+            event_type = "create"
+        logger.info("Handling signal for %s group %s - informing chrome topic", event_type, instance)
+        chrome_handlers.send_chrome_message(event_type=event_type, uuid=instance.uuid, org_id=instance.tenant.org_id)
+
+
 def group_deleted_sync_handler(sender=None, instance=None, using=None, **kwargs):
     """Signal handler to inform external services of Group deletions."""
     logger.info("Handling signal for deleted group %s - informing sync topic", instance)
@@ -170,3 +189,5 @@ if settings.KAFKA_ENABLED:
     signals.pre_delete.connect(group_deleted_sync_handler, sender=Group)
     signals.m2m_changed.connect(principal_group_change_sync_handler, sender=Group.principals.through)
     signals.post_save.connect(group_created_sync_handler, sender=Group)
+    signals.pre_delete.connect(group_deleted_chrome_handler, sender=Group)
+    signals.post_save.connect(group_create_and_update_chrome_handler, sender=Group)
