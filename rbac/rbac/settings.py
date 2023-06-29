@@ -36,6 +36,8 @@ from boto3 import client as boto_client
 from corsheaders.defaults import default_headers
 from dateutil.parser import parse as parse_dt
 from app_common_python import LoadedConfig, KafkaTopics
+from celery.schedules import crontab
+
 
 from . import ECSCustom
 
@@ -101,6 +103,7 @@ INSTALLED_APPS = [
     "corsheaders",
     "django_prometheus",
     "django_extensions",
+    'health_check', 
     # local apps
     "api",
     "management",
@@ -116,6 +119,15 @@ SHARED_APPS = (
     "django.contrib.messages",
     "rest_framework",
     "django_extensions",
+    #health check
+    'health_check', 
+    'health_check.db',
+    'health_check.cache',
+    'health_check.storage',
+    'health_check.contrib.migrations',
+    'health_check.contrib.celery', 
+    'health_check.contrib.celery_ping',
+    'health_check.contrib.redis',
 )
 
 MIDDLEWARE = [
@@ -422,3 +434,11 @@ if ENVIRONMENT.bool("CLOWDER_ENABLED", default=False) and ENVIRONMENT.bool("USE_
     BOP_CLIENT_CERT_PATH = LoadedConfig.tlsCAPath
 else:
     BOP_CLIENT_CERT_PATH = os.path.join(BASE_DIR, "management", "principal", "certs", "client.pem")
+
+
+#CELERY BEAT SCHEDULE HEALTH CHECK
+""" CELERY_BEAT_SCHEDULE = { # scheduler configuration 
+        'task': 'management.tasks.run_server_pings_in_worker', # name of task with path
+        'schedule': 10, # crontab() runs the tasks every minute
+        'args': {}
+} """

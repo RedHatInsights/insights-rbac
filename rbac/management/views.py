@@ -24,3 +24,4 @@ from management.role.view import RoleViewSet
 from management.policy.view import PolicyViewSet
 from management.access.view import AccessView
 from management.permission.view import PermissionViewSet
+from management.health.view import MyHealthCheckBackend

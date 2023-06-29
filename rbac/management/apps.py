@@ -21,6 +21,8 @@ import sys
 from django.apps import AppConfig
 from django.db.utils import OperationalError, ProgrammingError
 from management.seeds import group_seeding, permission_seeding, role_seeding
+from health_check.plugins import plugin_dir
+from management.health.view import MyHealthCheckBackend
 
 from rbac.settings import GROUP_SEEDING_ENABLED, PERMISSION_SEEDING_ENABLED, ROLE_SEEDING_ENABLED
 
@@ -51,3 +53,5 @@ class ManagementConfig(AppConfig):
                 return
             else:
                 logger.error("Error: %s.", op_error)
+        #HEALTH CHECK 
+        plugin_dir.register(MyHealthCheckBackend)
