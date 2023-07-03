@@ -31,6 +31,7 @@ import datetime
 import sys
 import logging
 import pytz
+import redis
 
 from boto3 import client as boto_client
 from corsheaders.defaults import default_headers
@@ -309,13 +310,13 @@ APPEND_SLASH = False
 if ENVIRONMENT.bool("CLOWDER_ENABLED", default=False):
     REDIS_HOST = LoadedConfig.inMemoryDb.hostname
     REDIS_PORT = LoadedConfig.inMemoryDb.port
+    REDIS_PASSWORD = LoadedConfig.inMemoryDb.password
 else:
     REDIS_HOST = ENVIRONMENT.get_value("REDIS_HOST", default="localhost")
     REDIS_PORT = ENVIRONMENT.get_value("REDIS_PORT", default="6379")
+    REDIS_PASSWORD = ENVIRONMENT.get_value("REDIS_PASSWORD", default=None)
 
-DEFAULT_REDIS_URL = f"redis://{REDIS_HOST}:{REDIS_PORT}/0"
-
-CELERY_BROKER_URL = ENVIRONMENT.get_value("CELERY_BROKER_URL", default=DEFAULT_REDIS_URL)
+REDIS_SSL = REDIS_PASSWORD is not None
 
 ACCESS_CACHE_DB = 1
 ACCESS_CACHE_LIFETIME = 10 * 60
@@ -333,6 +334,15 @@ REDIS_CACHE_CONNECTION_PARAMS = dict(
     socket_connect_timeout=REDIS_SOCKET_CONNECT_TIMEOUT,
     socket_timeout=REDIS_SOCKET_TIMEOUT,
 )
+
+if REDIS_SSL:
+    REDIS_CACHE_CONNECTION_PARAMS["connection_class"] = redis.SSLConnection
+    REDIS_CACHE_CONNECTION_PARAMS["password"] = REDIS_PASSWORD
+    DEFAULT_REDIS_URL = f"rediss://:{REDIS_PASSWORD}@{REDIS_HOST}:{REDIS_PORT}/0?ssl_cert_reqs=required"
+else:
+    DEFAULT_REDIS_URL = f"redis://{REDIS_HOST}:{REDIS_PORT}/0"
+
+CELERY_BROKER_URL = ENVIRONMENT.get_value("CELERY_BROKER_URL", default=DEFAULT_REDIS_URL)
 
 ROLE_CREATE_ALLOW_LIST = ENVIRONMENT.get_value("ROLE_CREATE_ALLOW_LIST", default="").split(",")
 

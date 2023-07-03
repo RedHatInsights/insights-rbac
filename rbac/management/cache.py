@@ -24,7 +24,7 @@ class BasicCache:
     def connection(self):
         """Get Redis connection from the pool."""
         if not self._connection:
-            self._connection = Redis(connection_pool=_connection_pool)
+            self._connection = Redis(connection_pool=_connection_pool, ssl=settings.REDIS_SSL)
             try:
                 self._connection.ping()
             except exceptions.RedisError:
