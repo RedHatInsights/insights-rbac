@@ -1,0 +1,20 @@
+{
+    "roles": [
+      {
+        "name": "Inventory Hosts Administrator",
+        "description": "Be able to read and edit Inventory Hosts data.",
+        "system": true,
+        "platform_default": true,
+        "admin_default": true,
+        "version": 3,
+        "access": [
+          {
+            "permission": "inventory:hosts:write"
+          },
+          {
+            "permission": "inventory:hosts:read"
+          }
+        ]
+      }
+    ]
+  }
