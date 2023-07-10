@@ -19,6 +19,7 @@
 import json
 import logging
 
+import requests
 from core.utils import destructive_ok
 from django.conf import settings
 from django.db import transaction
@@ -27,6 +28,8 @@ from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from management.cache import TenantCache
 from management.models import Group, Role
+from management.principal.proxy import API_TOKEN_HEADER, CLIENT_ID_HEADER, USER_ENV_HEADER
+from management.principal.proxy import PrincipalProxy
 from management.tasks import (
     run_migrations_in_worker,
     run_ocm_performance_in_worker,
@@ -34,10 +37,12 @@ from management.tasks import (
     run_seeds_in_worker,
     run_sync_schemas_in_worker,
 )
+from rest_framework import status
+from rest_framework.response import Response
 
+from api.common.pagination import StandardResultsSetPagination
 from api.models import Tenant
 from api.tasks import cross_account_cleanup, populate_tenant_account_id_in_worker
-
 
 logger = logging.getLogger(__name__)
 TENANTS = TenantCache()
@@ -233,6 +238,88 @@ def sync_schemas(request):
         return HttpResponse(msg, status=202)
 
     return HttpResponse('Invalid method, only "POST" is allowed.', status=405)
+
+
+def get_org_admin(request, org_or_account):
+    """Get the org admin for an account.
+
+    GET /_private/api/utils/get_org_admin/{org_or_account}/?type=account_id,org_id
+    """
+    PROXY = PrincipalProxy()
+    path = request.path
+    # query_params = request.query_params
+    default_limit = StandardResultsSetPagination.default_limit
+    try:
+        # limit = int(query_params.get("limit", default_limit))
+        # offset = int(query_params.get("offset", 0))
+        limit = int(default_limit)
+        offset = int(0)
+    except ValueError:
+        error = {
+            "detail": "Values for limit and offset must be positive numbers.",
+            "source": "principals",
+            "status": str(status.HTTP_400_BAD_REQUEST),
+        }
+        errors = {"errors": [error]}
+        return Response(status=status.HTTP_400_BAD_REQUEST, data=errors)
+
+    previous_offset = 0
+    if offset - limit > 0:
+        previous_offset = offset - limit
+    if request.method == "GET":
+        option_key = "type"
+        valid_values = ["account_id", "org_id"]
+        api_type_param = request.GET.get(option_key)
+        if api_type_param:
+            if api_type_param == "account_id":
+                path = f"/v3/accounts/{org_or_account}/users?admin_only=true"
+            elif api_type_param == "org_id":
+                path = f"/v2/accounts/{org_or_account}/users?admin_only=true"
+            else:
+                return HttpResponse(f'Valid options for "{option_key}": {valid_values}.', status=400)
+
+            url = "{}://{}:{}{}{}".format(PROXY.protocol, PROXY.host, PROXY.port, PROXY.path, path)
+            try:
+                headers = {USER_ENV_HEADER: PROXY.user_env,
+                           CLIENT_ID_HEADER: PROXY.client_id,
+                           API_TOKEN_HEADER: PROXY.api_token}
+                params = PROXY._create_params(limit=limit, offset=offset)
+                kwargs = {"headers": headers, "params": params, "verify": PROXY.ssl_verify}
+                if PROXY.source_cert:
+                    kwargs["verify"] = PROXY.client_cert_path
+                response = requests.get(url, **kwargs)
+                resp = {"status_code": response.status_code}
+                data = response.json()
+                resp["data"] = {"userCount": data.get("userCount"), "users": data.get("users")}
+            except requests.exceptions.ConnectionError as conn:
+                print("Unable to connect for URL %s with error: %s", url, conn)
+                # resp = {"status_code": status.HTTP_500_INTERNAL_SERVER_ERROR, "errors": [unexpected_error]}
+                # bop_request_status_count.labels(method=metrics_method, status=resp.get("status_code")).inc()
+                # return resp
+            response_data = {}
+        if response.status_code == status.HTTP_200_OK:
+            data = resp.get("data", [])
+            if isinstance(data, dict):
+                count = data.get("userCount")
+                data = data.get("users")
+            elif isinstance(data, list):
+                count = len(data)
+            else:
+                count = None
+            response_data["meta"] = {"count": count}
+            response_data["links"] = {
+                "first": f"{path}?limit={limit}&offset=0",
+                "next": f"{path}?limit={limit}&offset={offset + limit}",
+                "previous": f"{path}?limit={limit}&offset={previous_offset}",
+                "last": None,
+            }
+            response_data["data"] = data
+            return HttpResponse(json.dumps(response_data), status=resp.get("status_code"))
+        else:
+            return HttpResponse(f'Must supply the "{option_key}" query parameter; Valid values: {valid_values}.',
+                                status=400)
+
+    return HttpResponse('Invalid method, only "GET" is allowed.', status=405)
 
 
 def run_seeds(request):
