@@ -1,8 +1,8 @@
 {
     "roles": [
       {
-        "name": "Inventory Hosts Administrator",
-        "description": "Be able to read and edit Inventory Hosts data.",
+        "name": "Inventory Hosts Administrator Local Test",
+        "description": "Be able to read and edit Inventory Hosts data. Just for local testing.",
         "system": true,
         "platform_default": true,
         "admin_default": true,
