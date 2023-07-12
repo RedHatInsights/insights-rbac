@@ -66,6 +66,14 @@ class RoleViewsetTests(IdentityRequest):
             "admin_default": True,
         }
 
+        platform_admin_def_role_config = {
+            "name": "platform_admin_defualt_role",
+            "display_name": "platform_admin_default_display",
+            "system": True,
+            "platform_default": True,
+            "admin_default": True,
+        }
+
         self.display_fields = {
             "applications",
             "description",
@@ -102,8 +110,18 @@ class RoleViewsetTests(IdentityRequest):
         self.test_group.policies.add(self.test_policy)
         self.test_group.save()
 
+        self.test_policy_two = Policy.objects.create(name="policyB", tenant=self.test_tenant)
+        self.test_group_two = Group(name="groupB", description="groupB description", tenant=self.test_tenant)
+        self.test_group_two.save()
+        self.test_group_two.principals.add(self.test_principal)
+        self.test_group_two.policies.add(self.test_policy_two)
+        self.test_group_two.save()
+
         self.test_adminRole = Role(**admin_def_role_config, tenant=self.test_tenant)
         self.test_adminRole.save()
+
+        self.test_platformAdminRole = Role(**platform_admin_def_role_config, tenant = self.test_tenant)
+        self.test_platformAdminRole.save()
 
         self.test_sysRole = Role(**sys_role_config, tenant=self.test_tenant)
         self.test_sysRole.save()
@@ -112,8 +130,11 @@ class RoleViewsetTests(IdentityRequest):
         self.test_defRole.save()
         self.test_defRole.save()
 
-        self.test_policy.roles.add(self.test_defRole, self.test_sysRole, self.test_adminRole)
+        self.test_policy.roles.add(self.test_defRole, self.test_sysRole, self.test_adminRole, self.test_platformAdminRole)
         self.test_policy.save()
+
+        self.test_policy_two.roles.add(self.test_platformAdminRole)
+        self.test_policy_two.save()
 
         self.principal = Principal(username=self.user_data["username"], tenant=self.tenant)
         self.principal.save()
@@ -124,8 +145,18 @@ class RoleViewsetTests(IdentityRequest):
         self.group.policies.add(self.policy)
         self.group.save()
 
+        self.policyTwo = Policy.objects.create(name="policyB", tenant=self.tenant)
+        self.groupTwo = Group(name="groupB", description="groupB description", tenant=self.tenant)
+        self.groupTwo.save()
+        self.groupTwo.principals.add(self.principal)
+        self.groupTwo.policies.add(self.policyTwo)
+        self.groupTwo.save()
+
         self.adminRole = Role(**admin_def_role_config, tenant=self.tenant)
         self.adminRole.save()
+
+        self.platformAdminRole = Role(**platform_admin_def_role_config, tenant=self.tenant)
+        self.platformAdminRole.save()
 
         self.sysRole = Role(**sys_role_config, tenant=self.tenant)
         self.sysRole.save()
@@ -137,8 +168,11 @@ class RoleViewsetTests(IdentityRequest):
         self.ext_tenant = ExtTenant.objects.create(name="foo")
         self.ext_role_relation = ExtRoleRelation.objects.create(role=self.defRole, ext_tenant=self.ext_tenant)
 
-        self.policy.roles.add(self.defRole, self.sysRole, self.adminRole)
+        self.policy.roles.add(self.defRole, self.sysRole, self.adminRole, self.platformAdminRole)
         self.policy.save()
+
+        self.policyTwo.roles.add(self.platformAdminRole)
+        self.policyTwo.save()
 
         self.permission = Permission.objects.create(permission="app:*:*", tenant=self.tenant)
         self.permission2 = Permission.objects.create(permission="app2:*:*", tenant=self.tenant)
@@ -486,7 +520,7 @@ class RoleViewsetTests(IdentityRequest):
         for keyname in ["meta", "links", "data"]:
             self.assertIn(keyname, response.data)
         self.assertIsInstance(response.data.get("data"), list)
-        self.assertEqual(len(response.data.get("data")), 4)
+        self.assertEqual(len(response.data.get("data")), 5)
 
         role = None
 
@@ -579,14 +613,14 @@ class RoleViewsetTests(IdentityRequest):
         url = "{}?name={}".format(URL, "role")
         client = APIClient()
         response = client.get(url, **self.headers)
-        self.assertEqual(response.data.get("meta").get("count"), 3)
+        self.assertEqual(response.data.get("meta").get("count"), 4)
 
     def test_get_role_by_partial_name_explicit(self):
         """Test that getting roles by name returns partial match when specified."""
         url = "{}?name={}&name_match={}".format(URL, "role", "partial")
         client = APIClient()
         response = client.get(url, **self.headers)
-        self.assertEqual(response.data.get("meta").get("count"), 3)
+        self.assertEqual(response.data.get("meta").get("count"), 4)
 
     def test_get_role_by_name_invalid_criteria(self):
         """Test that getting roles by name fails with invalid name_match."""
@@ -616,14 +650,14 @@ class RoleViewsetTests(IdentityRequest):
         url = "{}?display_name={}".format(URL, "display")
         client = APIClient()
         response = client.get(url, **self.headers)
-        self.assertEqual(response.data.get("meta").get("count"), 3)
+        self.assertEqual(response.data.get("meta").get("count"), 4)
 
     def test_get_role_by_partial_display_name_explicit(self):
         """Test that getting roles by display_name returns partial match when specified."""
         url = "{}?display_name={}&name_match={}".format(URL, "display", "partial")
         client = APIClient()
         response = client.get(url, **self.headers)
-        self.assertEqual(response.data.get("meta").get("count"), 3)
+        self.assertEqual(response.data.get("meta").get("count"), 4)
 
     def test_get_role_by_display_name_invalid_criteria(self):
         """Test that getting roles by display_name fails with invalid name_match."""
@@ -807,7 +841,7 @@ class RoleViewsetTests(IdentityRequest):
         client = APIClient()
         response = client.get(url, **self.test_headers)
 
-        self.assertEqual(len(response.data.get("data")), 3)
+        self.assertEqual(len(response.data.get("data")), 4)
 
         role = response.data.get("data")[0]
         self.assertEqual(new_display_fields, set(role.keys()))
@@ -825,7 +859,7 @@ class RoleViewsetTests(IdentityRequest):
         client = APIClient()
         response = client.get(url, **self.headers)
 
-        self.assertEqual(len(response.data.get("data")), 3)
+        self.assertEqual(len(response.data.get("data")), 4)
 
         role = response.data.get("data")[0]
         self.assertEqual(new_display_fields, set(role.keys()))
@@ -1188,13 +1222,13 @@ class RoleViewsetTests(IdentityRequest):
         client = APIClient()
         response = client.get(URL, **self.headers)
 
-        self.assertEqual(len(response.data.get("data")), 3)
+        self.assertEqual(len(response.data.get("data")), 4)
 
         url = f"{URL}?system=true"
         client = APIClient()
         response = client.get(url, **self.headers)
 
-        self.assertEqual(len(response.data.get("data")), 2)
+        self.assertEqual(len(response.data.get("data")), 3)
         role = response.data.get("data")[0]
         self.assertEqual(role.get("system"), True)
 
@@ -1211,7 +1245,7 @@ class RoleViewsetTests(IdentityRequest):
         client = APIClient()
         response = client.get(URL, **self.headers)
 
-        self.assertEqual(len(response.data.get("data")), 3)
+        self.assertEqual(len(response.data.get("data")), 4)
 
         url = f"{URL}?external_tenant=foo"
         client = APIClient()
@@ -1220,3 +1254,18 @@ class RoleViewsetTests(IdentityRequest):
         self.assertEqual(len(response.data.get("data")), 1)
         role = response.data.get("data")[0]
         self.assertEqual(role.get("external_tenant"), "foo")
+
+    def test_list_role_admin_platform_default_groups(self):
+        """Test roles with both admin and platform default groups."""
+        client = APIClient()
+        response = client.get(URL, **self.headers)
+
+        self.assertEqual(len(response.data.get("data")), 4)
+
+        url = f"{URL}?display_name=platform_admin_default_display&add_fields=groups_in_count%2Cgroups_in"
+        client = APIClient()
+        response = client.get(url, **self.headers)
+
+        self.assertEqual(len(response.data.get("data")), 1)
+        role = response.data.get("data")[0]
+        self.assertEqual(role.get("groups_in_count"), 2)
