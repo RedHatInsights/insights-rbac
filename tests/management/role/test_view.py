@@ -120,7 +120,7 @@ class RoleViewsetTests(IdentityRequest):
         self.test_adminRole = Role(**admin_def_role_config, tenant=self.test_tenant)
         self.test_adminRole.save()
 
-        self.test_platformAdminRole = Role(**platform_admin_def_role_config, tenant = self.test_tenant)
+        self.test_platformAdminRole = Role(**platform_admin_def_role_config, tenant=self.test_tenant)
         self.test_platformAdminRole.save()
 
         self.test_sysRole = Role(**sys_role_config, tenant=self.test_tenant)
@@ -130,7 +130,9 @@ class RoleViewsetTests(IdentityRequest):
         self.test_defRole.save()
         self.test_defRole.save()
 
-        self.test_policy.roles.add(self.test_defRole, self.test_sysRole, self.test_adminRole, self.test_platformAdminRole)
+        self.test_policy.roles.add(
+            self.test_defRole, self.test_sysRole, self.test_adminRole, self.test_platformAdminRole
+        )
         self.test_policy.save()
 
         self.test_policy_two.roles.add(self.test_platformAdminRole)
