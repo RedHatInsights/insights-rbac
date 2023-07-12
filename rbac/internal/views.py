@@ -280,9 +280,11 @@ def get_org_admin(request, org_or_account):
 
             url = "{}://{}:{}{}{}".format(PROXY.protocol, PROXY.host, PROXY.port, PROXY.path, path)
             try:
-                headers = {USER_ENV_HEADER: PROXY.user_env,
-                           CLIENT_ID_HEADER: PROXY.client_id,
-                           API_TOKEN_HEADER: PROXY.api_token}
+                headers = {
+                    USER_ENV_HEADER: PROXY.user_env,
+                    CLIENT_ID_HEADER: PROXY.client_id,
+                    API_TOKEN_HEADER: PROXY.api_token,
+                }
                 params = PROXY._create_params(limit=limit, offset=offset)
                 kwargs = {"headers": headers, "params": params, "verify": PROXY.ssl_verify}
                 if PROXY.source_cert:
@@ -316,8 +318,9 @@ def get_org_admin(request, org_or_account):
             response_data["data"] = data
             return HttpResponse(json.dumps(response_data), status=resp.get("status_code"))
         else:
-            return HttpResponse(f'Must supply the "{option_key}" query parameter; Valid values: {valid_values}.',
-                                status=400)
+            return HttpResponse(
+                f'Must supply the "{option_key}" query parameter; Valid values: {valid_values}.', status=400
+            )
 
     return HttpResponse('Invalid method, only "GET" is allowed.', status=405)
 
