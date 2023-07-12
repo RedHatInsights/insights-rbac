@@ -84,6 +84,9 @@ html:
 lint:
 	tox -elint
 
+format:
+	black -t py39 -l 119 rbac tests
+
 reinitdb:
 	make start-db
 	make reset-db
