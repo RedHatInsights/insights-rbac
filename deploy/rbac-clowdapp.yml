@@ -3353,7 +3353,7 @@ parameters:
 - name: EXTERNAL_SYNC_TOPIC
   value: 'platform.rbac.sync'
 - name: EXTERNAL_CHROME_TOPIC
-  value: 'platform.chrome.sync'
+  value: 'platform.chrome'
 - name: SERVICE_MIGRATE_AND_SEED_ON_INIT
   value: 'True'
 - name: WORKER_MIGRATE_AND_SEED_ON_INIT
