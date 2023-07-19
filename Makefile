@@ -30,6 +30,7 @@ Please use \`make <target>' where <target> is one of:
   help                     show this message
   html                     create html documentation for the project
   lint                     run linting against the project
+  format                   format linting errors found by lint task
 
 --- Commands using local services ---
   create-test-db-file      create a Postgres DB dump file for RBAC
@@ -83,6 +84,9 @@ html:
 
 lint:
 	tox -elint
+
+format:
+	black -t py39 -l 119 rbac tests
 
 reinitdb:
 	make start-db

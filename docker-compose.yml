@@ -89,5 +89,5 @@ services:
       - ./pg_data:/var/lib/postgresql/data:z
 networks:
   default:
-    external:
-      name: rbac-network
+    name: rbac-network
+    external: true
