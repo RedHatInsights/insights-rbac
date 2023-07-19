@@ -274,8 +274,8 @@ def get_org_admin(request, org_or_account):
                 path = f"/v2/accounts/{org_or_account}/users?admin_only=true"
             else:
                 return HttpResponse(
-                    f'{api_type_param} not supported. Valid options for "{option_key}": {valid_values}.',
-                    status=400)
+                    f'{api_type_param} not supported. Valid options for "{option_key}": {valid_values}.', status=400
+                )
 
             url = "{}://{}:{}{}{}".format(PROXY.protocol, PROXY.host, PROXY.port, PROXY.path, path)
             try:
@@ -294,11 +294,11 @@ def get_org_admin(request, org_or_account):
                 resp["data"] = {"userCount": data.get("userCount"), "users": data.get("users")}
             except requests.exceptions.ConnectionError as conn:
                 bop_request_status_count.labels(method="GET", status=500).inc()
-                return HttpResponse(f'Unable to connect for URL {url} with error: {conn}', status=500)
+                return HttpResponse(f"Unable to connect for URL {url} with error: {conn}", status=500)
         else:
             return HttpResponse(
                 f'Invalid request, must supply the "{option_key}" query parameter; Valid values: {valid_values}.',
-                status=400
+                status=400,
             )
         if response.status_code == status.HTTP_200_OK:
             response_data = {}
