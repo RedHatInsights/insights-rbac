@@ -30,6 +30,7 @@ from management.cache import TenantCache
 from management.models import Group, Role
 from management.principal.proxy import API_TOKEN_HEADER, CLIENT_ID_HEADER, USER_ENV_HEADER
 from management.principal.proxy import PrincipalProxy
+from management.principal.proxy import bop_request_status_count, bop_request_time_tracking
 from management.tasks import (
     run_migrations_in_worker,
     run_ocm_performance_in_worker,
@@ -240,24 +241,21 @@ def sync_schemas(request):
     return HttpResponse('Invalid method, only "POST" is allowed.', status=405)
 
 
+@bop_request_time_tracking.time()
 def get_org_admin(request, org_or_account):
     """Get the org admin for an account.
 
     GET /_private/api/utils/get_org_admin/{org_or_account}/?type=account_id,org_id
     """
     PROXY = PrincipalProxy()
-    path = request.path
-    # query_params = request.query_params
     default_limit = StandardResultsSetPagination.default_limit
     try:
-        # limit = int(query_params.get("limit", default_limit))
-        # offset = int(query_params.get("offset", 0))
-        limit = int(default_limit)
-        offset = int(0)
+        limit = int(request.GET.get("limit", default_limit))
+        offset = int(request.GET.get("offset", 0))
     except ValueError:
         error = {
             "detail": "Values for limit and offset must be positive numbers.",
-            "source": "principals",
+            "source": "get_org_admin",
             "status": str(status.HTTP_400_BAD_REQUEST),
         }
         errors = {"errors": [error]}
@@ -276,7 +274,9 @@ def get_org_admin(request, org_or_account):
             elif api_type_param == "org_id":
                 path = f"/v2/accounts/{org_or_account}/users?admin_only=true"
             else:
-                return HttpResponse(f'Valid options for "{option_key}": {valid_values}.', status=400)
+                return HttpResponse(
+                    f'{api_type_param} not supported. Valid options for "{option_key}": {valid_values}.',
+                    status=400)
 
             url = "{}://{}:{}{}{}".format(PROXY.protocol, PROXY.host, PROXY.port, PROXY.path, path)
             try:
@@ -294,12 +294,15 @@ def get_org_admin(request, org_or_account):
                 data = response.json()
                 resp["data"] = {"userCount": data.get("userCount"), "users": data.get("users")}
             except requests.exceptions.ConnectionError as conn:
-                print("Unable to connect for URL %s with error: %s", url, conn)
-                # resp = {"status_code": status.HTTP_500_INTERNAL_SERVER_ERROR, "errors": [unexpected_error]}
-                # bop_request_status_count.labels(method=metrics_method, status=resp.get("status_code")).inc()
-                # return resp
-            response_data = {}
+                bop_request_status_count.labels(method="GET", status=500).inc()
+                return HttpResponse(f'Unable to connect for URL {url} with error: {conn}', status=500)
+        else:
+            return HttpResponse(
+                f'Invalid request, must supply the "{option_key}" query parameter; Valid values: {valid_values}.',
+                status=400
+            )
         if response.status_code == status.HTTP_200_OK:
+            response_data = {}
             data = resp.get("data", [])
             if isinstance(data, dict):
                 count = data.get("userCount")
@@ -316,11 +319,12 @@ def get_org_admin(request, org_or_account):
                 "last": None,
             }
             response_data["data"] = data
+            bop_request_status_count.labels(method=request.method, status=200).inc()
             return HttpResponse(json.dumps(response_data), status=resp.get("status_code"))
         else:
-            return HttpResponse(
-                f'Must supply the "{option_key}" query parameter; Valid values: {valid_values}.', status=400
-            )
+            bop_request_status_count.labels(method=request.method, status=response.status_code).inc()
+            response_data = response.json()
+            return HttpResponse(json.dumps(response_data), status=response.status_code)
 
     return HttpResponse('Invalid method, only "GET" is allowed.', status=405)
 
