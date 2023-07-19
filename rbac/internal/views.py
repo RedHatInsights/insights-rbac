@@ -39,7 +39,6 @@ from management.tasks import (
     run_sync_schemas_in_worker,
 )
 from rest_framework import status
-from rest_framework.response import Response
 
 from api.common.pagination import StandardResultsSetPagination
 from api.models import Tenant
@@ -259,7 +258,7 @@ def get_org_admin(request, org_or_account):
             "status": str(status.HTTP_400_BAD_REQUEST),
         }
         errors = {"errors": [error]}
-        return Response(status=status.HTTP_400_BAD_REQUEST, data=errors)
+        return HttpResponse(errors, status=status.HTTP_400_BAD_REQUEST)
 
     previous_offset = 0
     if offset - limit > 0:
