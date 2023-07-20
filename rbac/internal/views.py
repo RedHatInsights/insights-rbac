@@ -248,6 +248,7 @@ def get_org_admin(request, org_or_account):
     """
     PROXY = PrincipalProxy()
     default_limit = StandardResultsSetPagination.default_limit
+    request_path = request.path
     try:
         limit = int(request.GET.get("limit", default_limit))
         offset = int(request.GET.get("offset", 0))
@@ -312,11 +313,14 @@ def get_org_admin(request, org_or_account):
                 count = None
             response_data["meta"] = {"count": count}
             response_data["links"] = {
-                "first": f"{path}?limit={limit}&offset=0",
-                "next": f"{path}?limit={limit}&offset={offset + limit}",
-                "previous": f"{path}?limit={limit}&offset={previous_offset}",
-                "last": None,
+                "first": f"{request_path}?type={api_type_param}&limit={limit}&offset=0",
+                "next": f"{request_path}?type={api_type_param}&limit={limit}&offset={offset + limit}",
+                "previous": f"{request_path}?type={api_type_param}&limit={limit}&offset={previous_offset}",
+                "last": f"{request_path}?type={api_type_param}&limit={limit}&offset=0",
             }
+            if count and count > limit:
+                response_data["links"]["last"] = \
+                    f"{request_path}?type={api_type_param}&limit={limit}&offset={count - limit}"
             response_data["data"] = data
             bop_request_status_count.labels(method=request.method, status=200).inc()
             return HttpResponse(json.dumps(response_data), status=resp.get("status_code"))
