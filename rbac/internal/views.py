@@ -270,9 +270,9 @@ def get_org_admin(request, org_or_account):
         api_type_param = request.GET.get(option_key)
         if api_type_param:
             if api_type_param == "account_id":
-                path = f"/v3/accounts/{org_or_account}/users?admin_only=true"
-            elif api_type_param == "org_id":
                 path = f"/v2/accounts/{org_or_account}/users?admin_only=true"
+            elif api_type_param == "org_id":
+                path = f"/v3/accounts/{org_or_account}/users?admin_only=true"
             else:
                 return HttpResponse(
                     f'{api_type_param} not supported. Valid options for "{option_key}": {valid_values}.', status=400
@@ -319,8 +319,9 @@ def get_org_admin(request, org_or_account):
                 "last": f"{request_path}?type={api_type_param}&limit={limit}&offset=0",
             }
             if count and count > limit:
-                response_data["links"]["last"] = \
-                    f"{request_path}?type={api_type_param}&limit={limit}&offset={count - limit}"
+                response_data["links"][
+                    "last"
+                ] = f"{request_path}?type={api_type_param}&limit={limit}&offset={count - limit}"
             response_data["data"] = data
             bop_request_status_count.labels(method=request.method, status=200).inc()
             return HttpResponse(json.dumps(response_data), status=resp.get("status_code"))
