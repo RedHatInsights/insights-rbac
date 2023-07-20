@@ -275,7 +275,7 @@ def get_org_admin(request, org_or_account):
                 path = f"/v3/accounts/{org_or_account}/users?admin_only=true"
             else:
                 return HttpResponse(
-                    f'{api_type_param} not supported. Valid options for "{option_key}": {valid_values}.', status=400
+                    f'Valid options for "{option_key}": {valid_values}.', status=400
                 )
 
             url = "{}://{}:{}{}{}".format(PROXY.protocol, PROXY.host, PROXY.port, PROXY.path, path)
