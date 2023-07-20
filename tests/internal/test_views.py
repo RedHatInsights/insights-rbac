@@ -316,7 +316,7 @@ class InternalViewsetTests(IdentityRequest):
         response = self.client.get(f"/_private/api/utils/get_org_admin/123456/?type=foobar", **self.request.META)
         option_key = "type"
         valid_values = ["account_id", "org_id"]
-        expected_message = f'foobar not supported. Valid options for "{option_key}": {valid_values}.'
+        expected_message = f'Valid options for "{option_key}": {valid_values}.'
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(response.content.decode(), expected_message)
 
