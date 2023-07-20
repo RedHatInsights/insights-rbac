@@ -318,7 +318,7 @@ def get_org_admin(request, org_or_account):
                 "previous": f"{request_path}?type={api_type_param}&limit={limit}&offset={previous_offset}",
                 "last": f"{request_path}?type={api_type_param}&limit={limit}&offset=0",
             }
-            if count and count > limit:
+            if count and int(count) > limit:
                 response_data["links"][
                     "last"
                 ] = f"{request_path}?type={api_type_param}&limit={limit}&offset={count - limit}"
