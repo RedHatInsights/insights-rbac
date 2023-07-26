@@ -268,37 +268,36 @@ def get_org_admin(request, org_or_account):
         option_key = "type"
         valid_values = ["account_id", "org_id"]
         api_type_param = request.GET.get(option_key)
-        if api_type_param:
-            if api_type_param == "account_id":
-                path = f"/v2/accounts/{org_or_account}/users?admin_only=true"
-            elif api_type_param == "org_id":
-                path = f"/v3/accounts/{org_or_account}/users?admin_only=true"
-            else:
-                return HttpResponse(f'Valid options for "{option_key}": {valid_values}.', status=400)
-
-            url = "{}://{}:{}{}{}".format(PROXY.protocol, PROXY.host, PROXY.port, PROXY.path, path)
-            try:
-                headers = {
-                    USER_ENV_HEADER: PROXY.user_env,
-                    CLIENT_ID_HEADER: PROXY.client_id,
-                    API_TOKEN_HEADER: PROXY.api_token,
-                }
-                params = PROXY._create_params(limit=limit, offset=offset)
-                kwargs = {"headers": headers, "params": params, "verify": PROXY.ssl_verify}
-                if PROXY.source_cert:
-                    kwargs["verify"] = PROXY.client_cert_path
-                response = requests.get(url, **kwargs)
-                resp = {"status_code": response.status_code}
-                data = response.json()
-                resp["data"] = {"userCount": data.get("userCount"), "users": data.get("users")}
-            except requests.exceptions.ConnectionError as conn:
-                bop_request_status_count.labels(method="GET", status=500).inc()
-                return HttpResponse(f"Unable to connect for URL {url} with error: {conn}", status=500)
-        else:
+        if not api_type_param:
             return HttpResponse(
                 f'Invalid request, must supply the "{option_key}" query parameter; Valid values: {valid_values}.',
                 status=400,
             )
+        if api_type_param == "account_id":
+            path = f"/v2/accounts/{org_or_account}/users?admin_only=true"
+        elif api_type_param == "org_id":
+            path = f"/v3/accounts/{org_or_account}/users?admin_only=true"
+        else:
+            return HttpResponse(f'Valid options for "{option_key}": {valid_values}.', status=400)
+
+        url = "{}://{}:{}{}{}".format(PROXY.protocol, PROXY.host, PROXY.port, PROXY.path, path)
+        try:
+            headers = {
+                USER_ENV_HEADER: PROXY.user_env,
+                CLIENT_ID_HEADER: PROXY.client_id,
+                API_TOKEN_HEADER: PROXY.api_token,
+            }
+            params = PROXY._create_params(limit=limit, offset=offset)
+            kwargs = {"headers": headers, "params": params, "verify": PROXY.ssl_verify}
+            if PROXY.source_cert:
+                kwargs["verify"] = PROXY.client_cert_path
+            response = requests.get(url, **kwargs)
+            resp = {"status_code": response.status_code}
+            data = response.json()
+            resp["data"] = {"userCount": data.get("userCount"), "users": data.get("users")}
+        except requests.exceptions.ConnectionError as conn:
+            bop_request_status_count.labels(method="GET", status=500).inc()
+            return HttpResponse(f"Unable to connect for URL {url} with error: {conn}", status=500)
         if response.status_code == status.HTTP_200_OK:
             response_data = {}
             data = resp.get("data", [])
