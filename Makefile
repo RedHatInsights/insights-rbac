@@ -263,11 +263,12 @@ oc-up-db: oc-up oc-create-db
 
 docker-grype:
 	@docker-compose build >/dev/null 2>&1
+
 	@echo ""
 	@docker run --rm \
 		--volume /var/run/docker.sock:/var/run/docker.sock \
 		--name Grype anchore/grype:latest \
-		insights-rbac-rbac-server --only-fixed
+		$$(docker images --format '{{.Repository}}' |grep rbac-server) --only-fixed
 
 docker-up:
 	@docker network ls --format '{{.Name}}' |grep -q  rbac-network > /dev/null 2>&1 && echo "" || docker network create rbac-network
