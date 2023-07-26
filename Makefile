@@ -52,6 +52,7 @@ Please use \`make <target>' where <target> is one of:
   docker-shell              run django and db containers with shell access to server (for pdb)
   docker-logs               connect to console logs for all services
   docker-test-all           run unittests
+  docker-grype				Run security checks on the project image(s)
 
 --- Commands using an OpenShift Cluster ---
   oc-clean                 stop openshift cluster & remove local config data
@@ -259,6 +260,14 @@ oc-up:
 oc-up-all: oc-up oc-create-rbac
 
 oc-up-db: oc-up oc-create-db
+
+docker-grype:
+	@docker-compose build >/dev/null 2>&1
+	@echo ""
+	@docker run --rm \
+		--volume /var/run/docker.sock:/var/run/docker.sock \
+		--name Grype anchore/grype:latest \
+		insights-rbac-rbac-server --only-fixed
 
 docker-up:
 	@docker network ls --format '{{.Name}}' |grep -q  rbac-network > /dev/null 2>&1 && echo "" || docker network create rbac-network
