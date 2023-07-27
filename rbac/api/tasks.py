@@ -22,7 +22,6 @@ from celery import shared_task
 from api.cross_access.util import check_cross_request_expiry
 from api.utils import populate_tenant_account_id
 
-
 @shared_task
 def cross_account_cleanup():
     """Celery task to mark expired cross-account requests."""
@@ -33,3 +32,4 @@ def cross_account_cleanup():
 def populate_tenant_account_id_in_worker():
     """Celery task to populate Tenant#account_id."""
     populate_tenant_account_id()
+

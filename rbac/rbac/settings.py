@@ -103,7 +103,11 @@ INSTALLED_APPS = [
     "corsheaders",
     "django_prometheus",
     "django_extensions",
-    'health_check', 
+    #health check
+    'health_check',
+    'health_check.contrib.celery', 
+    'health_check.contrib.celery_ping',
+    'health_check.contrib.redis', 
     # local apps
     "api",
     "management",
@@ -121,10 +125,6 @@ SHARED_APPS = (
     "django_extensions",
     #health check
     'health_check', 
-    'health_check.db',
-    'health_check.cache',
-    'health_check.storage',
-    'health_check.contrib.migrations',
     'health_check.contrib.celery', 
     'health_check.contrib.celery_ping',
     'health_check.contrib.redis',
@@ -328,6 +328,7 @@ else:
 DEFAULT_REDIS_URL = f"redis://{REDIS_HOST}:{REDIS_PORT}/0"
 
 CELERY_BROKER_URL = ENVIRONMENT.get_value("CELERY_BROKER_URL", default=DEFAULT_REDIS_URL)
+CELERY_RESULT_BACKEND = CELERY_BROKER_URL
 
 ACCESS_CACHE_DB = 1
 ACCESS_CACHE_LIFETIME = 10 * 60
@@ -436,9 +437,3 @@ else:
     BOP_CLIENT_CERT_PATH = os.path.join(BASE_DIR, "management", "principal", "certs", "client.pem")
 
 
-#CELERY BEAT SCHEDULE HEALTH CHECK
-""" CELERY_BEAT_SCHEDULE = { # scheduler configuration 
-        'task': 'management.tasks.run_server_pings_in_worker', # name of task with path
-        'schedule': 10, # crontab() runs the tasks every minute
-        'args': {}
-} """

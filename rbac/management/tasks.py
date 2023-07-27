@@ -20,7 +20,7 @@ from __future__ import absolute_import, unicode_literals
 from celery import shared_task
 from django.core.management import call_command
 from management.principal.cleaner import clean_tenants_principals
-from rbac.celery import app
+from management.health.healthcheck import check_health, delay
 
 
 @shared_task
@@ -59,6 +59,7 @@ def run_ocm_performance_in_worker():
     call_command("ocm_performance")
 
 @shared_task
-def run_celery_beat_scheduler_in_worker():
-    """Celery task to run ping for health check"""
-    call_command("health")
+def run_healthcheck_in_worker():
+    """ Celery task to check health of workers"""
+    check_health()
+    delay()
