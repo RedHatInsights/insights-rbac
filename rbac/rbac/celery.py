@@ -46,7 +46,7 @@ app.conf.beat_schedule = {
     },  # noqa: E231, E501
     "schedule-health-check": {
         "task": "management.tasks.run_healthcheck_in_worker",
-        "schedule": 15, 
+        "schedule": 15,
         "args": [],
     },
 }

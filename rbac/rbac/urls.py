@@ -20,13 +20,11 @@ The `urlpatterns` list routes URLs to views. For more information please see:
     https://docs.djangoproject.com/en/2.0/topics/http/urls/
 """
 import os
-import health_check.urls
-import health_check
+
 from django.conf.urls import include
 from django.contrib.staticfiles.urls import staticfiles_urlpatterns
-from django.urls import re_path, path
+from django.urls import path, re_path
 
-#from health_check.views import MainView as HealthViewSet
 
 API_PATH_PREFIX = os.getenv("API_PATH_PREFIX", "api/")
 if API_PATH_PREFIX != "":
@@ -42,8 +40,7 @@ urlpatterns = [
     re_path(r"^{}v1/".format(API_PATH_PREFIX), include("management.urls")),
     re_path(r"^_private/", include("internal.urls")),
     re_path(r"", include("django_prometheus.urls")),
-    path(r"{}ht/".format(API_PATH_PREFIX), include('health_check.urls')),
-    #re_path(r"^{}ht/".format(API_PATH_PREFIX), HealthViewSet.as_view(), name="ht"),
+    path(r"{}ht/".format(API_PATH_PREFIX), include("health_check.urls")),
 ]
 
 urlpatterns += staticfiles_urlpatterns()

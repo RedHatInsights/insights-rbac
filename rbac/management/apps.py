@@ -17,13 +17,11 @@
 """Management application configuration module."""
 import logging
 import sys
-import warnings 
 
 from django.apps import AppConfig
 from django.db.utils import OperationalError, ProgrammingError
 from management.seeds import group_seeding, permission_seeding, role_seeding
-from django.conf import settings
-from celery import current_app
+
 from rbac.settings import GROUP_SEEDING_ENABLED, PERMISSION_SEEDING_ENABLED, ROLE_SEEDING_ENABLED
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name

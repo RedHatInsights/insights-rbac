@@ -103,11 +103,11 @@ INSTALLED_APPS = [
     "corsheaders",
     "django_prometheus",
     "django_extensions",
-    #health check
-    'health_check',
-    'health_check.contrib.celery', 
-    'health_check.contrib.celery_ping',
-    'health_check.contrib.redis', 
+    # health check
+    "health_check",
+    "health_check.contrib.celery",
+    "health_check.contrib.celery_ping",
+    "health_check.contrib.redis",
     # local apps
     "api",
     "management",
@@ -123,11 +123,11 @@ SHARED_APPS = (
     "django.contrib.messages",
     "rest_framework",
     "django_extensions",
-    #health check
-    'health_check', 
-    'health_check.contrib.celery', 
-    'health_check.contrib.celery_ping',
-    'health_check.contrib.redis',
+    # health check
+    "health_check",
+    "health_check.contrib.celery",
+    "health_check.contrib.celery_ping",
+    "health_check.contrib.redis",
 )
 
 MIDDLEWARE = [
@@ -435,5 +435,3 @@ if ENVIRONMENT.bool("CLOWDER_ENABLED", default=False) and ENVIRONMENT.bool("USE_
     BOP_CLIENT_CERT_PATH = LoadedConfig.tlsCAPath
 else:
     BOP_CLIENT_CERT_PATH = os.path.join(BASE_DIR, "management", "principal", "certs", "client.pem")
-
-
