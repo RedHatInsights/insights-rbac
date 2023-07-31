@@ -31,6 +31,7 @@ import datetime
 import sys
 import logging
 import pytz
+import redis
 
 from boto3 import client as boto_client
 from corsheaders.defaults import default_headers
@@ -321,14 +322,15 @@ APPEND_SLASH = False
 if ENVIRONMENT.bool("CLOWDER_ENABLED", default=False):
     REDIS_HOST = LoadedConfig.inMemoryDb.hostname
     REDIS_PORT = LoadedConfig.inMemoryDb.port
+    REDIS_PASSWORD = LoadedConfig.inMemoryDb.password
 else:
     REDIS_HOST = ENVIRONMENT.get_value("REDIS_HOST", default="localhost")
     REDIS_PORT = ENVIRONMENT.get_value("REDIS_PORT", default="6379")
+    REDIS_PASSWORD = ENVIRONMENT.get_value("REDIS_PASSWORD", default=None)
 
-DEFAULT_REDIS_URL = f"redis://{REDIS_HOST}:{REDIS_PORT}/0"
 
-CELERY_BROKER_URL = ENVIRONMENT.get_value("CELERY_BROKER_URL", default=DEFAULT_REDIS_URL)
-CELERY_RESULT_BACKEND = CELERY_BROKER_URL
+REDIS_SSL = REDIS_PASSWORD is not None
+
 
 ACCESS_CACHE_DB = 1
 ACCESS_CACHE_LIFETIME = 10 * 60
@@ -346,6 +348,15 @@ REDIS_CACHE_CONNECTION_PARAMS = dict(
     socket_connect_timeout=REDIS_SOCKET_CONNECT_TIMEOUT,
     socket_timeout=REDIS_SOCKET_TIMEOUT,
 )
+
+if REDIS_SSL:
+    REDIS_CACHE_CONNECTION_PARAMS["connection_class"] = redis.SSLConnection
+    REDIS_CACHE_CONNECTION_PARAMS["password"] = REDIS_PASSWORD
+    DEFAULT_REDIS_URL = f"rediss://:{REDIS_PASSWORD}@{REDIS_HOST}:{REDIS_PORT}/0?ssl_cert_reqs=required"
+else:
+    DEFAULT_REDIS_URL = f"redis://{REDIS_HOST}:{REDIS_PORT}/0"
+
+CELERY_BROKER_URL = ENVIRONMENT.get_value("CELERY_BROKER_URL", default=DEFAULT_REDIS_URL)
 
 ROLE_CREATE_ALLOW_LIST = ENVIRONMENT.get_value("ROLE_CREATE_ALLOW_LIST", default="").split(",")
 
@@ -388,6 +399,7 @@ NOTIFICATIONS_RH_ENABLED = ENVIRONMENT.get_value("NOTIFICATIONS_RH_ENABLED", def
 NOTIFICATIONS_TOPIC = ENVIRONMENT.get_value("NOTIFICATIONS_TOPIC", default=None)
 
 EXTERNAL_SYNC_TOPIC = ENVIRONMENT.get_value("EXTERNAL_SYNC_TOPIC", default=None)
+EXTERNAL_CHROME_TOPIC = ENVIRONMENT.get_value("EXTERNAL_CHROME_TOPIC", default=None)
 
 # if we don't enable KAFKA we can't use the notifications
 if not KAFKA_ENABLED:
@@ -429,6 +441,10 @@ if KAFKA_ENABLED:
     clowder_sync_topic = KafkaTopics.get(EXTERNAL_SYNC_TOPIC)
     if clowder_sync_topic:
         EXTERNAL_SYNC_TOPIC = clowder_sync_topic.name
+
+    clowder_chrome_topic = KafkaTopics.get(EXTERNAL_CHROME_TOPIC)
+    if clowder_chrome_topic:
+        EXTERNAL_CHROME_TOPIC = clowder_chrome_topic.name
 
 # BOP TLS settings
 if ENVIRONMENT.bool("CLOWDER_ENABLED", default=False) and ENVIRONMENT.bool("USE_CLOWDER_CA_FOR_BOP", default=False):

@@ -23,6 +23,9 @@ objects:
     - topicName: ${EXTERNAL_SYNC_TOPIC}
       partitions: 1
       replicas: 3
+    - topicName: ${EXTERNAL_CHROME_TOPIC}
+      partitions: 1
+      replicas: 3
     deployments:
     - name: worker-service
       minReplicas: ${{MIN_WORKER_REPLICAS}}
@@ -206,6 +209,8 @@ objects:
             value: ${NOTIFICATIONS_TOPIC}
           - name: EXTERNAL_SYNC_TOPIC
             value: ${EXTERNAL_SYNC_TOPIC}
+          - name: EXTERNAL_CHROME_TOPIC
+            value: ${EXTERNAL_CHROME_TOPIC}
           - name: MIGRATE_AND_SEED_ON_INIT
             value: ${WORKER_MIGRATE_AND_SEED_ON_INIT}
 
@@ -471,6 +476,8 @@ objects:
             value: ${KAFKA_ENABLED}
           - name: EXTERNAL_SYNC_TOPIC
             value: ${EXTERNAL_SYNC_TOPIC}
+          - name: EXTERNAL_CHROME_TOPIC
+            value: ${EXTERNAL_CHROME_TOPIC}
           - name: MIGRATE_AND_SEED_ON_INIT
             value: ${SERVICE_MIGRATE_AND_SEED_ON_INIT}
           - name: USE_CLOWDER_CA_FOR_BOP
@@ -3365,6 +3372,8 @@ parameters:
   value: 'False'
 - name: EXTERNAL_SYNC_TOPIC
   value: 'platform.rbac.sync'
+- name: EXTERNAL_CHROME_TOPIC
+  value: 'platform.chrome'
 - name: SERVICE_MIGRATE_AND_SEED_ON_INIT
   value: 'True'
 - name: WORKER_MIGRATE_AND_SEED_ON_INIT

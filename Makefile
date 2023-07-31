@@ -30,6 +30,7 @@ Please use \`make <target>' where <target> is one of:
   help                     show this message
   html                     create html documentation for the project
   lint                     run linting against the project
+  format                   format linting errors found by lint task
 
 --- Commands using local services ---
   create-test-db-file      create a Postgres DB dump file for RBAC
@@ -83,6 +84,9 @@ html:
 
 lint:
 	tox -elint
+
+format:
+	black -t py39 -l 119 rbac tests
 
 reinitdb:
 	make start-db
@@ -257,6 +261,7 @@ oc-up-all: oc-up oc-create-rbac
 oc-up-db: oc-up oc-create-db
 
 docker-up:
+	@docker network ls --format '{{.Name}}' |grep -q  rbac-network > /dev/null 2>&1 && echo "" || docker network create rbac-network
 	docker-compose up --build -d
 
 docker-logs:
@@ -269,6 +274,7 @@ docker-test-all:
 	docker-compose -f rbac-test.yml up --build
 
 docker-down:
-	docker-compose down
+	@docker ps --format '{{.Names}}' |grep -q  rbac >/dev/null 2>&1 && docker-compose down || echo ""
+	@docker network ls --format '{{.Name}}' |grep -q  rbac-network > /dev/null 2>&1 && \docker network rm rbac-network > /dev/null 2>&1 || echo ""
 
 .PHONY: docs
