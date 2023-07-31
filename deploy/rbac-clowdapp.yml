@@ -87,6 +87,26 @@ objects:
           requests:
             cpu: ${CELERY_WORKER_CPU_REQUEST}
             memory: ${CELERY_WORKER_MEMORY_REQUEST}
+        livenessProbe:
+          httpGet:
+            path: /api/rbac/ht/
+            port: 8000
+            scheme: HTTP
+          initialDelaySeconds: 60
+          periodSeconds: 10
+          successThreshold: 1
+          failureThreshold: 3
+          timeoutSeconds: 3
+        readinessProbe:
+          httpGet:
+            path: /api/rbac/ht/
+            port: 8000
+            scheme: HTTP
+          initialDelaySeconds: 60
+          periodSeconds: 10
+          successThreshold: 1
+          failureThreshold: 3
+          timeoutSeconds: 3
         env:
           - name: AUTHENTICATE_WITH_ORG_ID
             value: ${AUTHENTICATE_WITH_ORG_ID}
