@@ -84,6 +84,8 @@ class PrincipalProxy:  # pylint: disable=too-few-public-methods
                 params["sortOrder"] = options["sort_order"]
         if "status" in options:
             params["status"] = options["status"]
+        else:
+            params["status"] = "enabled"
         if "admin_only" in options:
             params["admin_only"] = options["admin_only"]
         if "query_by" in options:

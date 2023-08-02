@@ -562,6 +562,32 @@ class PrincipalViewsetTests(IdentityRequest):
             "data": {"userCount": "1", "users": [{"username": "test_user", "is_org_admin": "true"}]},
         },
     )
+    def test_principal_default_status_enabled(self, mock_request):
+        """Tests when not passing in status the user active status will be enabled"""
+        url = f'{reverse("principals")}'
+        client = APIClient()
+        proxy = PrincipalProxy()
+        response = client.get(url, **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        for keyname in ["meta", "links", "data"]:
+            self.assertIn(keyname, response.data)
+        self.assertIsInstance(response.data.get("data"), list)
+        self.assertEqual(response.data.get("meta").get("count"), "1")
+        mock_request.assert_called_once_with(
+            account=self.customer_data["account_id"],
+            limit=10,
+            offset=0,
+            options={"sort_order": "asc", "admin_only": "false", "status": "enabled", "username_only": "false"},
+            org_id=self.customer_data["org_id"],
+        )
+
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_principals",
+        return_value={
+            "status_code": 200,
+            "data": {"userCount": "1", "users": [{"username": "test_user", "is_org_admin": "true"}]},
+        },
+    )
     def test_read_list_of_admins(self, mock_request):
         """Test that we can return only org admins within an account"""
         url = f'{reverse("principals")}?admin_only=true'
