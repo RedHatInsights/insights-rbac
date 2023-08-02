@@ -450,6 +450,8 @@ objects:
             value: ${NOTIFICATIONS_ENABLED}
           - name: GUNICORN_WORKER_MULTIPLIER
             value: ${GUNICORN_WORKER_MULTIPLIER}
+          - name: GUNICORN_THREAD_LIMIT
+            value: ${GUNICORN_THREAD_LIMIT}
           - name: NOTIFICATIONS_TOPIC
             value: ${NOTIFICATIONS_TOPIC}
           - name: KAFKA_ENABLED
@@ -3345,6 +3347,8 @@ parameters:
   value: '8892'
 - name: GUNICORN_WORKER_MULTIPLIER
   value: '2'
+- name: GUNICORN_THREAD_LIMIT
+  value: '10'
 - name: NOTIFICATIONS_TOPIC
   value: 'platform.notifications.ingress'
 - description: Enable kafka
