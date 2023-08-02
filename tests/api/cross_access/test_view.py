@@ -69,7 +69,7 @@ class CrossAccountRequestViewTests(IdentityRequest):
 
         """
             Create cross account requests 1 to 6: request_1 to request_6
-            self.associate_admin_request has user_id 1111111, and account nubmer xxxxxx
+            self.associate_admin_request has user_id 1111111, and account number xxxxxx
             It would be approver for request_1, request_2, request_5;
             It would be requestor for request_3, request_6
             | target_account | user_id | start_date | end_date  |  status  | roles |

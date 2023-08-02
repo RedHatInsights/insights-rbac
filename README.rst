@@ -200,7 +200,7 @@ Install pre-commit hooks to your local repository by running:
 
   $ pre-commit install
 
-After that, all your commited files will be linted. If the checks don’t succeed, the commit will be rejected. Please
+After that, all your committed files will be linted. If the checks don’t succeed, the commit will be rejected. Please
 make sure all checks pass before submitting a pull request. Thanks!
 
 Repositories of the roles to be seeded

@@ -19,6 +19,7 @@
 import json
 import logging
 
+import requests
 from core.utils import destructive_ok
 from django.conf import settings
 from django.db import transaction
@@ -27,6 +28,9 @@ from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from management.cache import TenantCache
 from management.models import Group, Role
+from management.principal.proxy import API_TOKEN_HEADER, CLIENT_ID_HEADER, USER_ENV_HEADER
+from management.principal.proxy import PrincipalProxy
+from management.principal.proxy import bop_request_status_count, bop_request_time_tracking
 from management.tasks import (
     run_migrations_in_worker,
     run_ocm_performance_in_worker,
@@ -34,10 +38,11 @@ from management.tasks import (
     run_seeds_in_worker,
     run_sync_schemas_in_worker,
 )
+from rest_framework import status
 
+from api.common.pagination import StandardResultsSetPagination
 from api.models import Tenant
 from api.tasks import cross_account_cleanup, populate_tenant_account_id_in_worker
-
 
 logger = logging.getLogger(__name__)
 TENANTS = TenantCache()
@@ -47,7 +52,7 @@ def tenant_is_modified(tenant_name=None, org_id=None):
     """Determine whether or not the tenant is modified."""
     # we need to check if the schema exists because if we don't, and it doesn't exist,
     # the search_path on the query will fall back to using the public schema, in
-    # which case there will be custom groups/roles, and we won't be able to propertly
+    # which case there will be custom groups/roles, and we won't be able to properly
     # prune the tenant which has been created without a valid schema
     tenant = get_object_or_404(Tenant, org_id=org_id)
 
@@ -233,6 +238,96 @@ def sync_schemas(request):
         return HttpResponse(msg, status=202)
 
     return HttpResponse('Invalid method, only "POST" is allowed.', status=405)
+
+
+@bop_request_time_tracking.time()
+def get_org_admin(request, org_or_account):
+    """Get the org admin for an account.
+
+    GET /_private/api/utils/get_org_admin/{org_or_account}/?type=account_id,org_id
+    """
+    PROXY = PrincipalProxy()
+    default_limit = StandardResultsSetPagination.default_limit
+    request_path = request.path
+    try:
+        limit = int(request.GET.get("limit", default_limit))
+        offset = int(request.GET.get("offset", 0))
+    except ValueError:
+        error = {
+            "detail": "Values for limit and offset must be positive numbers.",
+            "source": "get_org_admin",
+            "status": str(status.HTTP_400_BAD_REQUEST),
+        }
+        errors = {"errors": [error]}
+        return HttpResponse(errors, status=status.HTTP_400_BAD_REQUEST)
+
+    previous_offset = 0
+    if offset - limit > 0:
+        previous_offset = offset - limit
+    if request.method == "GET":
+        option_key = "type"
+        valid_values = ["account_id", "org_id"]
+        api_type_param = request.GET.get(option_key)
+        if not api_type_param:
+            return HttpResponse(
+                f'Invalid request, must supply the "{option_key}" query parameter; Valid values: {valid_values}.',
+                status=400,
+            )
+        if api_type_param == "account_id":
+            path = f"/v2/accounts/{org_or_account}/users?admin_only=true"
+        elif api_type_param == "org_id":
+            path = f"/v3/accounts/{org_or_account}/users?admin_only=true"
+        else:
+            return HttpResponse(f'Valid options for "{option_key}": {valid_values}.', status=400)
+
+        url = "{}://{}:{}{}{}".format(PROXY.protocol, PROXY.host, PROXY.port, PROXY.path, path)
+        try:
+            headers = {
+                USER_ENV_HEADER: PROXY.user_env,
+                CLIENT_ID_HEADER: PROXY.client_id,
+                API_TOKEN_HEADER: PROXY.api_token,
+            }
+            params = PROXY._create_params(limit=limit, offset=offset)
+            kwargs = {"headers": headers, "params": params, "verify": PROXY.ssl_verify}
+            if PROXY.source_cert:
+                kwargs["verify"] = PROXY.client_cert_path
+            response = requests.get(url, **kwargs)
+            resp = {"status_code": response.status_code}
+            data = response.json()
+            resp["data"] = {"userCount": data.get("userCount"), "users": data.get("users")}
+        except requests.exceptions.ConnectionError as conn:
+            bop_request_status_count.labels(method="GET", status=500).inc()
+            return HttpResponse(f"Unable to connect for URL {url} with error: {conn}", status=500)
+        if response.status_code == status.HTTP_200_OK:
+            response_data = {}
+            data = resp.get("data", [])
+            if isinstance(data, dict):
+                count = data.get("userCount")
+                data = data.get("users")
+            elif isinstance(data, list):
+                count = len(data)
+            else:
+                count = None
+            response_data["meta"] = {"count": count}
+            response_data["links"] = {
+                "first": f"{request_path}?type={api_type_param}&limit={limit}&offset=0",
+                "next": f"{request_path}?type={api_type_param}&limit={limit}&offset={offset + limit}",
+                "previous": f"{request_path}?type={api_type_param}&limit={limit}&offset={previous_offset}",
+                "last": f"{request_path}?type={api_type_param}&limit={limit}&offset=0",
+            }
+            if count and int(count) > limit:
+                response_data["links"][
+                    "last"
+                ] = f"{request_path}?type={api_type_param}&limit={limit}&offset={count - limit}"
+            response_data["data"] = data
+            bop_request_status_count.labels(method=request.method, status=200).inc()
+            return HttpResponse(json.dumps(response_data), status=resp.get("status_code"))
+        else:
+            bop_request_status_count.labels(method=request.method, status=response.status_code).inc()
+            response_data = response.json()
+            return HttpResponse(json.dumps(response_data), status=response.status_code)
+
+    return HttpResponse('Invalid method, only "GET" is allowed.', status=405)
 
 
 def run_seeds(request):

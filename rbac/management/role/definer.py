@@ -140,7 +140,8 @@ def seed_roles():
     if destructive_ok():
         logger.info(f"Removing the following role(s): {roles_to_delete.values()}")
         # Actually remove roles no longer in config
-        roles_to_delete.delete()
+        with transaction.atomic():
+            roles_to_delete.delete()
 
 
 def seed_permissions():
@@ -204,4 +205,5 @@ def seed_permissions():
     if destructive_ok():
         logger.info(f"Removing the following permissions(s): {perms_to_delete.values()}")
         # Actually remove perms no longer in DB
-        perms_to_delete.delete()
+        with transaction.atomic():
+            perms_to_delete.delete()

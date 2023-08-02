@@ -21,7 +21,7 @@ from django.test import TestCase
 from api.common.exception_handler import _generate_errors_from_dict
 
 
-class ExceptionHanlderTest(TestCase):
+class ExceptionHandlerTest(TestCase):
     """Tests against the exception handler functions."""
 
     def test_generate_errors_from_dict(self):

@@ -32,7 +32,6 @@ from api.models import Tenant
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 noto_producer = RBACProducer()
 noto_topic = settings.NOTIFICATIONS_TOPIC
-noto_headers = [("rh-message-id", str(uuid4()).encode("utf-8"))]
 with open(os.path.join(settings.BASE_DIR, "management", "notifications", "message_template.json")) as template:
     message_template = json.load(template)
 
@@ -52,6 +51,7 @@ def build_notifications_message(event_type, payload, account_id=None, org_id=Non
 def notify(event_type, payload, account_id=None, org_id=None):
     """Actually send notifications message."""
     noto_message = build_notifications_message(event_type, payload, account_id, org_id)
+    noto_headers = [("rh-message-id", str(uuid4()).encode("utf-8"))]
     noto_producer.send_kafka_message(noto_topic, noto_message, noto_headers)
 
 
@@ -229,6 +229,6 @@ def payload_builder(username, resource_obj, operation=None, extra_info=None):
         elif extra_info[0] == "principal":
             payload["principal"] = extra_info[1]
         else:
-            raise Exception(f"Unknow extra_info {extra_info[0]}, valid ones are role/principal")
+            raise Exception(f"Unknown extra_info {extra_info[0]}, valid ones are role/principal")
 
     return payload

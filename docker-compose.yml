@@ -2,6 +2,7 @@ version: '3'
 
 services:
   rbac-server:
+      container_name: rbac_server
       build:
           context: .
           dockerfile: Dockerfile
@@ -25,6 +26,16 @@ services:
         - DJANGO_DEBUG=${DJANGO_DEBUG-True}
         - AUTHENTICATE_WITH_ORG_ID=True
         - REDIS_HOST=${REDIS_HOST-rbac_redis}
+        - PRINCIPAL_PROXY_SERVICE_PROTOCOL=${PRINCIPAL_PROXY_SERVICE_PROTOCOL-https}
+        - PRINCIPAL_PROXY_SERVICE_PORT=${PRINCIPAL_PROXY_SERVICE_PORT-443}
+        - PRINCIPAL_PROXY_SERVICE_HOST=${PRINCIPAL_PROXY_SERVICE_HOST}
+        - PRINCIPAL_PROXY_USER_ENV=${PRINCIPAL_PROXY_USER_ENV-stage}
+        - PRINCIPAL_PROXY_CLIENT_ID=${PRINCIPAL_PROXY_CLIENT_ID-insights-rbac}
+        - PRINCIPAL_PROXY_API_TOKEN=${PRINCIPAL_PROXY_API_TOKEN}
+        - BYPASS_BOP_VERIFICATION=${BYPASS_BOP_VERIFICATION-True}
+        - PRINCIPAL_PROXY_SERVICE_PATH=${PRINCIPAL_PROXY_SERVICE_PATH}
+        - PRINCIPAL_PROXY_SERVICE_SOURCE_CERT=${PRINCIPAL_PROXY_SERVICE_SOURCE_CERT-False}
+        - PRINCIPAL_PROXY_SERVICE_SSL_VERIFY=${PRINCIPAL_PROXY_SERVICE_SSL_VERIFY-False}
       privileged: true
       ports:
           - 9080:8080
@@ -68,6 +79,7 @@ services:
       - "6379:6379"
 
   db:
+    container_name: rbac_db
     image: postgres:14.5
     environment:
     - POSTGRES_DB=postgres
@@ -79,5 +91,5 @@ services:
       - ./pg_data:/var/lib/postgresql/data:z
 networks:
   default:
-    external:
-      name: rbac-network
+    name: rbac-network
+    external: true

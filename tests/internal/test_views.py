@@ -22,6 +22,7 @@ from django.conf import settings
 from django.db.migrations.recorder import MigrationRecorder
 from django.test import TestCase, override_settings
 from datetime import datetime, timedelta
+from unittest.mock import MagicMock
 from unittest.mock import patch
 import pytz
 import json
@@ -298,3 +299,78 @@ class InternalViewsetTests(IdentityRequest):
         self.assertEqual(Group.objects.count(), 2)
         self.assertEqual(Group.objects.filter(id=valid_admin_default_group.id).exists(), True)
         self.assertEqual(Group.objects.filter(id=invalid_admin_default_group.id).exists(), False)
+
+    def test_get_org_admin_type_not_set(self):
+        """Test that we get a bad request for not using type query param."""
+        response = self.client.get(f"/_private/api/utils/get_org_admin/123456/", **self.request.META)
+        option_key = "type"
+        valid_values = ["account_id", "org_id"]
+        expected_message = (
+            f'Invalid request, must supply the "{option_key}" query parameter; Valid values: {valid_values}.'
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.content.decode(), expected_message)
+
+    def test_get_org_admin_bad_type(self):
+        """Test that we get a bad request for not using type query param."""
+        response = self.client.get(f"/_private/api/utils/get_org_admin/123456/?type=foobar", **self.request.META)
+        option_key = "type"
+        valid_values = ["account_id", "org_id"]
+        expected_message = f'Valid options for "{option_key}": {valid_values}.'
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.content.decode(), expected_message)
+
+    def test_get_org_admin_post(self):
+        """Test that we get a bad request for not using GET method."""
+        response = self.client.post(f"/_private/api/utils/get_org_admin/123456/", **self.request.META)
+        expected_message = 'Invalid method, only "GET" is allowed.'
+        self.assertEqual(response.status_code, status.HTTP_405_METHOD_NOT_ALLOWED)
+        self.assertEqual(response.content.decode(), expected_message)
+
+    def test_get_org_admin_bad_connection(self):
+        """Test getting the org admin and failing to connect to BOP."""
+        response = self.client.get(f"/_private/api/utils/get_org_admin/123456/?type=account_id", **self.request.META)
+        expected_message = f"Unable to connect for URL"
+        self.assertEqual(response.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
+        self.assertIn(expected_message, response.content.decode())
+
+    @patch("internal.views.requests")
+    def test_get_org_admin_account(self, mock_proxy):
+        """Test getting the org admin back with mock proxy using account id."""
+        mockresponse = MagicMock()
+        mockresponse.status_code = 200
+        mockresponse.json.return_value = {"userCount": "1", "users": [{"username": "test_user"}]}
+        users = [{"username": "test_user"}]
+        mock_proxy.get.return_value = mockresponse
+        response = self.client.get(f"/_private/api/utils/get_org_admin/123456/?type=account_id", **self.request.META)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        string_data = response.content.decode()
+        dictionary_data = eval(string_data.replace("null", "None"))
+        self.assertEqual(users, dictionary_data.get("data"))
+
+    @patch("internal.views.requests")
+    def test_get_org_admin_org_id(self, mock_proxy):
+        """Test getting the org admin back with mock proxy using org id."""
+        mockresponse = MagicMock()
+        mockresponse.status_code = 200
+        mockresponse.json.return_value = {"userCount": "1", "users": [{"username": "test_user"}]}
+        users = [{"username": "test_user"}]
+        mock_proxy.get.return_value = mockresponse
+        response = self.client.get(f"/_private/api/utils/get_org_admin/123456/?type=org_id", **self.request.META)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        string_data = response.content.decode()
+        dictionary_data = eval(string_data.replace("null", "None"))
+        self.assertEqual(users, dictionary_data.get("data"))
+
+    @patch("internal.views.requests")
+    def test_get_org_admin_bad_proxy_response(self, mock_proxy):
+        """Test getting the org admin with bad proxy response."""
+        mockresponse = MagicMock()
+        mockresponse.status_code = 500
+        mockresponse.json.return_value = {"error": "some error"}
+        mock_proxy.get.return_value = mockresponse
+        response = self.client.get(f"/_private/api/utils/get_org_admin/123456/?type=org_id", **self.request.META)
+        self.assertEqual(response.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
+        string_data = response.content.decode()
+        dictionary_data = eval(string_data.replace("null", "None"))
+        self.assertEqual(dictionary_data, mockresponse.json.return_value)

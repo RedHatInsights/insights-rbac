@@ -94,7 +94,7 @@ Add `172.30.1.1` to the list of proxies to bypass. This can be found at Docker -
 Troubleshooting
 ---------------
 
-OpenShift uses Docker to run containers. When running a cluster locally for developement, deployment can be strained by low resource allowances in Docker. For development it is recommended that Docker have at least 4 GB of memory available for use.
+OpenShift uses Docker to run containers. When running a cluster locally for development, deployment can be strained by low resource allowances in Docker. For development it is recommended that Docker have at least 4 GB of memory available for use.
 
 Also, if Openshift services misbehave or do not deploy properly, it can be useful to spin the cluster down, restart the Docker service and retry.
 
