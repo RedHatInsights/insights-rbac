@@ -16,11 +16,15 @@ handle_errors() {
 }
 
 if [[ -z "${QUAY_USER}" ]]; then
-  log-err "Need to set QUAY_USER"
+  log-err "QUAY_USER is not set in your environment"
+  log-err "exiting..."
+  exit 1
 fi
 
 if [[ -z "${EPHEMERAL_USER}" ]]; then
-  log-err "Need to set EPHEMERAL_USER"
+  log-err "EPHEMERAL_USER is not set in your environment"
+  log-err "exiting..."
+  exit 1
 fi
 
 TEMPLATE_FILE="${EPHEMERAL_DIR}"/config_template.yaml
