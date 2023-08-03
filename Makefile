@@ -54,11 +54,11 @@ Please use \`make <target>' where <target> is one of:
   docker-grype				Run security checks on the project image(s)
 
 --- Commands using an Ephemeral Cluster ---
-  ephemeral-build		build and deploy a docker image based on local repo
-  ephemeral-deploy		deploy RBAC app to ephemeral cluster
-  ephemeral-pods		list all RBAC specific pods
-  ephemeral-reserve	<HOURS="12h">		reserve a namespace from the ephemeral cluster (HOURS: default is 24h)
-  ephemeral-release		release the currentlt reserved namespace
+  ephemeral-build			build and deploy a docker image based on local repo
+  ephemeral-deploy			deploy RBAC app to ephemeral cluster
+  ephemeral-pods			list all RBAC specific pods
+  ephemeral-reserve			reserve a namespace from the ephemeral cluster (Example to override HOURS, HOURS="12h")
+  ephemeral-release			release the currentlt reserved namespace
 
 --- Commands using an OpenShift Cluster ---
   oc-clean                 stop openshift cluster & remove local config data
