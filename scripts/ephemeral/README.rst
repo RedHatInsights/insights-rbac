@@ -32,7 +32,7 @@ Running makefile tasks
 
     $ make ephemeral-build
 
-3. After the build step make sure you quay repo is set to public before proceeding.
+3. After the build step has completed make sure your quay repo is public accessible before proceeding.
     Repo will be: https://quay.io/repository/<user_name>/insights-rbac
 
 4. Deploy app::
