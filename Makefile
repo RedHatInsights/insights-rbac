@@ -58,7 +58,7 @@ Please use \`make <target>' where <target> is one of:
   ephemeral-deploy          deploy RBAC app to ephemeral cluster
   ephemeral-pods            list all RBAC specific pods
   ephemeral-reserve         reserve a namespace from the ephemeral cluster (Example to override HOURS, HOURS="12h")
-  ephemeral-release         release the currentlt reserved namespace
+  ephemeral-release         release the currently reserved namespace
 
 --- Commands using an OpenShift Cluster ---
   oc-clean                 stop openshift cluster & remove local config data

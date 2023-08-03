@@ -45,7 +45,7 @@ Running makefile tasks
     or
     $ oc get pods (this will show all pods in your namespace
 
-6. Release the Namespace (this will happen automatically at teh end of the reserve time)::
+6. Release the Namespace (this will happen automatically at the end of the reserve time)::
 
     $ make ephemeral-release
 
