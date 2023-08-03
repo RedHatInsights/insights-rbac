@@ -131,3 +131,4 @@ docs/source/specs/output-dir/
 
 # dev for ephemeral
 dev/*
+/scripts/ephemeral/config.yaml
