@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-EPHEMERAL_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
+EPHEMERAL_DIR=$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)
 CMD=${1:-help}
 
 export DEBUG=${DEBUG:-false}
@@ -27,6 +27,7 @@ if [[ -z "${EPHEMERAL_USER}" ]]; then
   exit 1
 fi
 
+REPO=$(echo "${EPHEMERAL_DIR}"| rev | cut -d/ -f3- | rev)
 TEMPLATE_FILE="${EPHEMERAL_DIR}"/config_template.yaml
 CONFIG_FILE="${EPHEMERAL_DIR}"/config.yaml
 APP_NAME=rbac
@@ -64,8 +65,10 @@ update-config-file() {
   log-info "Updated: ${CONFIG_FILE}"
   log-info "\tIMAGE: ${QUAY_REPO}"
   log-info "\tIMAGE_TAG: ${IMAGE_TAG}"
+  log-info "\tREPO: ${REPO}"
 
   sed \
+      -e s#%REPO%#"${REPO}"# \
      -e s#%IMAGE%#"quay.io/${QUAY_USER}/insights-rbac"# \
      -e s#%IMAGE_TAG%#"${_tag}"# "${TEMPLATE_FILE}" > "${CONFIG_FILE}"
 }

@@ -13,7 +13,7 @@ apps:
   components:
   - name: rbac
     host: local
-    repo: ~/github/insights-rbac
+    repo: %REPO%
     path: /deploy/rbac-clowdapp.yml
     parameters:
       IMAGE_TAG: %IMAGE_TAG%
