@@ -42,8 +42,6 @@ usage() {
   log-info "\t build <tag>            build image (default tag: 'latest')"
   log-info "\t deploy                 deploy app"
   log-info "\t help                   show usage"
-  log-info "\t list                   list ephemeral namespace"
-  log-info "\t login                  login into ephemeral cluster"
   log-info "\t pods                   list all pods in your namespace"
   log-info "\t release                release currently reserved namespace(default), or specify the namespace to release"
   log-info "\t reserve <hours>        reserve an ephemeral namespace for specified time (example: 24h)"
