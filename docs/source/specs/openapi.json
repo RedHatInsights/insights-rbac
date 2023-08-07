@@ -40,6 +40,10 @@
       "description": "Operations about status"
     },
     {
+      "name": "Health",
+      "description": "Operations about worker health check"
+    },
+    {
       "name": "CrossAccountRequest",
       "description": "Operations about cross account requests"
     }
@@ -519,6 +523,37 @@
           },
           "500": {
             "description": "Unexpected Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ht/": {
+      "get": {
+        "tags": [
+          "Health"
+        ],
+        "summary": "Obtain health of workers",
+        "operationId": "check_health",
+        "responses": {
+          "200": {
+            "description": "An object describing the status ",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Health"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Workers or Redis is not working",
             "content": {
               "application/json": {
                 "schema": {
@@ -2801,6 +2836,9 @@
   "servers": [
     {
       "url": "/api/rbac/v1"
+    },
+    {
+      "url": "/api/rbac/"
     }
   ],
   "components": {
@@ -4121,6 +4159,18 @@
           "commit": {
             "type": "string",
             "example": "178d2ea"
+          }
+        }
+      },
+      "Health": {
+        "properties": {
+          "application": {
+            "type": "string",
+            "example": "rbac"
+          },
+          "description": {
+            "type": "string",
+            "example": "Describe the health of the celery workers and redis broker."
           }
         }
       },

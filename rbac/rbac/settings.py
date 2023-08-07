@@ -38,6 +38,7 @@ from corsheaders.defaults import default_headers
 from dateutil.parser import parse as parse_dt
 from app_common_python import LoadedConfig, KafkaTopics
 
+
 from . import ECSCustom
 
 # Database
@@ -102,6 +103,11 @@ INSTALLED_APPS = [
     "corsheaders",
     "django_prometheus",
     "django_extensions",
+    # health-check
+    "health_check",
+    "health_check.contrib.celery",
+    "health_check.contrib.celery_ping",
+    "health_check.contrib.redis",
     # local apps
     "api",
     "management",
@@ -117,6 +123,11 @@ SHARED_APPS = (
     "django.contrib.messages",
     "rest_framework",
     "django_extensions",
+    # health-check
+    "health_check",
+    "health_check.contrib.celery",
+    "health_check.contrib.celery_ping",
+    "health_check.contrib.redis",
 )
 
 MIDDLEWARE = [
@@ -189,6 +200,7 @@ STATIC_ROOT = os.path.join(BASE_DIR, "static")
 STATIC_URL = "{}/static/".format(API_PATH_PREFIX.rstrip("/"))
 
 STATICFILES_DIRS = [os.path.join(BASE_DIR, "..", "docs/source/specs")]
+
 
 STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
 
@@ -316,7 +328,9 @@ else:
     REDIS_PORT = ENVIRONMENT.get_value("REDIS_PORT", default="6379")
     REDIS_PASSWORD = ENVIRONMENT.get_value("REDIS_PASSWORD", default=None)
 
+
 REDIS_SSL = REDIS_PASSWORD is not None
+
 
 ACCESS_CACHE_DB = 1
 ACCESS_CACHE_LIFETIME = 10 * 60
@@ -343,6 +357,7 @@ else:
     DEFAULT_REDIS_URL = f"redis://{REDIS_HOST}:{REDIS_PORT}/0"
 
 CELERY_BROKER_URL = ENVIRONMENT.get_value("CELERY_BROKER_URL", default=DEFAULT_REDIS_URL)
+CELERY_RESULT_BACKEND = CELERY_BROKER_URL
 
 ROLE_CREATE_ALLOW_LIST = ENVIRONMENT.get_value("ROLE_CREATE_ALLOW_LIST", default="").split(",")
 
@@ -437,3 +452,20 @@ if ENVIRONMENT.bool("CLOWDER_ENABLED", default=False) and ENVIRONMENT.bool("USE_
     BOP_CLIENT_CERT_PATH = LoadedConfig.tlsCAPath
 else:
     BOP_CLIENT_CERT_PATH = os.path.join(BASE_DIR, "management", "principal", "certs", "client.pem")
+
+# Django Health Check Templates
+TEMPLATES = [
+    {
+        "BACKEND": "django.template.backends.django.DjangoTemplates",
+        "DIRS": [os.path.join(BASE_DIR, "templates")],
+        "APP_DIRS": True,
+        "OPTIONS": {
+            "context_processors": [
+                "django.template.context_processors.debug",
+                "django.template.context_processors.request",
+                "django.contrib.auth.context_processors.auth",
+                "django.contrib.messages.context_processors.messages",
+            ]
+        },
+    }
+]
