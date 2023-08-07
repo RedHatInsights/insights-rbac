@@ -31,9 +31,8 @@ REPO=$(echo "${EPHEMERAL_DIR}"| rev | cut -d/ -f3- | rev)
 TEMPLATE_FILE="${EPHEMERAL_DIR}"/config_template.yaml
 CONFIG_FILE="${EPHEMERAL_DIR}"/config.yaml
 APP_NAME=rbac
+RBAC_FWD_PORT=9080
 
-IMAGE_TAG=${2:-'latest'}
-QUAY_REPO="quay.io/${QUAY_USER}/insights-rbac:${IMAGE_TAG}"
 
 usage() {
   log-info "Usage: $(basename "$0") <command> [command_arg]"
@@ -42,11 +41,10 @@ usage() {
   log-info "\t build <tag>            build image (default tag: 'latest')"
   log-info "\t deploy                 deploy app"
   log-info "\t help                   show usage"
-  log-info "\t list                   list ephemeral namespace"
-  log-info "\t login                  login into ephemeral cluster"
   log-info "\t pods                   list all pods in your namespace"
+  log-info "\t pf-rbac <port>         port forward RBAC service to local host (default local port: 9080)"
   log-info "\t release                release currently reserved namespace(default), or specify the namespace to release"
-  log-info "\t reserve <hours>        reserve an ephemeral namespace for specified time (example: 24h)"
+  log-info "\t reserve <hours>        reserve an ephemeral namespace for specified time (default hours: 24h)"
 }
 
 help() {
@@ -55,6 +53,13 @@ help() {
 
 get-namespace() {
   export NAMESPACE=$(bonfire namespace list |grep "${EPHEMERAL_USER}" |awk '{print $1}')
+
+  if [[ -z "${NAMESPACE}" ]]; then
+    log-err "You have no current Name space"
+    log-err "exiting..."
+  exit 1
+  fi
+
   oc project "${NAMESPACE}"
   log-info "NAMESPACE=${NAMESPACE}"
 }
@@ -63,8 +68,8 @@ update-config-file() {
   local _tag=${1:-'latest'}
 
   log-info "Updated: ${CONFIG_FILE}"
-  log-info "\tIMAGE: ${QUAY_REPO}"
-  log-info "\tIMAGE_TAG: ${IMAGE_TAG}"
+  log-info "\tIMAGE: quay.io/${QUAY_USER}/insights-rbac"
+  log-info "\tIMAGE_TAG: ${_tag}"
   log-info "\tREPO: ${REPO}"
 
   sed \
@@ -87,6 +92,7 @@ release() {
   log-info "releasing..."
   log-info "bonfire namespace release ${NAMESPACE}"
   bonfire namespace release "${NAMESPACE}"
+  unset NAMESPACE
 }
 
 pods() {
@@ -124,6 +130,20 @@ deploy() {
   --namespace "${NAMESPACE}" | oc apply -f - -n "${NAMESPACE}"
 }
 
+port-forward() {
+  local _service_name=${1}
+  local _local_port=${2}
+  local _service_port=${3}
+
+  log-info "oc port-forward service/${_service_name} ${_local_port}:${_service_port}"
+    oc port-forward service/"${_service_name}" "${_local_port}":"${_service_port}"
+}
+
+port-forward-rbac() {
+  local _port=${1:-RBAC_FWD_PORT}
+  port-forward rbac "${_port}" 8080
+}
+
 #
 # execute
 #
@@ -132,6 +152,7 @@ case ${CMD} in
  "build") build "${2:-latest}";;
  "deploy") deploy;;
  "pods") pods;;
+ "pf-rbac") port-forward-rbac "${2:-9080}";;
  "release") release;;
  "reserve") reserve "${2:-24h}";;
  "help") usage;;
