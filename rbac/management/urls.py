@@ -19,6 +19,7 @@ from django.urls import re_path
 from management.views import AccessView, GroupViewSet, PermissionViewSet, PolicyViewSet, PrincipalView, RoleViewSet
 from rest_framework.routers import DefaultRouter
 
+
 ROUTER = DefaultRouter()
 ROUTER.register(r"groups", GroupViewSet)
 ROUTER.register(r"roles", RoleViewSet)

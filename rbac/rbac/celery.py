@@ -44,11 +44,6 @@ app.conf.beat_schedule = {
         "schedule": crontab(minute=0, hour=0),
         "args": [],
     },  # noqa: E231, E501
-    "schedule-health-check": {
-        "task": "management.tasks.run_healthcheck_in_worker",
-        "schedule": 15,
-        "args": [],
-    },
 }
 
 # Load task modules from all registered Django app configs.

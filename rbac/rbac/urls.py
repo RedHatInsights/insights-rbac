@@ -25,7 +25,6 @@ from django.conf.urls import include
 from django.contrib.staticfiles.urls import staticfiles_urlpatterns
 from django.urls import path, re_path
 
-
 API_PATH_PREFIX = os.getenv("API_PATH_PREFIX", "api/")
 if API_PATH_PREFIX != "":
     if API_PATH_PREFIX.startswith("/"):
@@ -39,8 +38,7 @@ urlpatterns = [
     re_path(r"^{}v1/".format(API_PATH_PREFIX), include("api.urls")),
     re_path(r"^{}v1/".format(API_PATH_PREFIX), include("management.urls")),
     re_path(r"^_private/", include("internal.urls")),
-    re_path(r"", include("django_prometheus.urls")),
-    path(r"{}ht/".format(API_PATH_PREFIX), include("health_check.urls")),
+    path("", include("django_prometheus.urls")),
 ]
 
 urlpatterns += staticfiles_urlpatterns()
