@@ -19,7 +19,6 @@ from __future__ import absolute_import, unicode_literals
 
 from celery import shared_task
 from django.core.management import call_command
-from management.health.healthcheck import check_health, delay
 from management.principal.cleaner import clean_tenants_principals
 
 
@@ -57,10 +56,3 @@ def run_sync_schemas_in_worker(kwargs):
 def run_ocm_performance_in_worker():
     """Celery task to run ocm performance tests."""
     call_command("ocm_performance")
-
-
-@shared_task
-def run_healthcheck_in_worker():
-    """Celery task to check health of workers."""
-    check_health()
-    delay()
