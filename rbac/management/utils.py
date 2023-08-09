@@ -192,6 +192,61 @@ def filter_queryset_by_tenant(queryset, tenant):
     return queryset.filter(tenant=tenant)
 
 
+def deduplicate_access_queryset(queryset):
+    """
+    Takes a queryset on the Access model, and returns a list of the minimal
+    permissions described in the original queryset.  These deduplications are
+    performed:
+
+    1: two exactly matching permissions are combined - e.g. 'app:*:read' and
+       'app:*:read' - including joining together their resourceDefinitions.
+    2: '*' implies all other verbs.  Therefore 'app:*:read' will be ignored
+       in favour of 'app:*:*'.  Ignored permissions have their
+       resourceDefinitions thrown away, because they are superseded.
+    """
+    # Since the ordering does not matter, we record these in a dict by the
+    # permission, for ease of access.
+    deduplicated_access = dict()
+
+    def matching_perms(this_access, sought_access):
+        """
+        Filter for finding all access objects that match the app and
+        resource given
+        """
+        return this_access.permission.app == sought_access.permission.app and this_access.permission.resource_type == sought_access.permission.resource_type
+
+    for access in queryset:
+        if not access.permission:
+            # Cannot emit an access permission if it doesn't have one
+            continue
+        if access.permission.permission not in deduplicated_access:
+            if access.verb == '*':
+                # Rule 2 (reverse): does this permission supersede any access
+                # objects we have already?
+                matching_access_objs = list(filter(
+                    lambda a: matching_perms(a, access)
+                    deduplicate_access.values(),
+                ))
+                # have to listify it because we're going to possibly edit the
+                # dict, and doing that while a filter is running is... sketchy
+                for superseded in matching_access_objs:
+                    del(deduplicate_access[superseded.permission.permission])
+            else:
+                # Rule 2 (forward): is this included in a '*' permission on
+                # the same app and resource?
+                if f"{access.permission.app}:{access.permission.resource_type}:*" in deduplicate_access:
+                    # we can throw this one away then, it's superseded.
+        else:
+            # Combine this access object's resource definitions into that
+            # already stored.  Note that at this stage we DO NOT attempt to
+            # merge attributeFilter structures.
+            deduplicated_access[access.permission.permission].resourceDefinitions.extend(
+                access.resourceDefinitions
+            )
+    # Return access object list in order by permission for testing consistency
+    return (deduplicated_access[perm] for perm in sorted(deduplicated_access.keys()))
+
+
 def validate_and_get_key(params, query_key, valid_values, default_value=None, required=True):
     """Validate the key."""
     value = params.get(query_key, default_value)
