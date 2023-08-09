@@ -57,6 +57,7 @@ Please use \`make <target>' where <target> is one of:
   ephemeral-build           build and deploy a docker image based on local repo
   ephemeral-deploy          deploy RBAC app to ephemeral cluster
   ephemeral-pods            list all RBAC specific pods
+  ephemeral-pf-rbac         port forward RBAC server to localhost (local default port: 9080)
   ephemeral-reserve         reserve a namespace from the ephemeral cluster (Example to override HOURS, HOURS="12h")
   ephemeral-release         release the currently reserved namespace
 
@@ -301,6 +302,10 @@ ephemeral-deploy:
 
 ephemeral-pods:
 	./scripts/ephemeral/ephemeral.sh pods
+
+RBAC_LOCAL_PORT = "9080"
+ephemeral-pf-rbac:
+	./scripts/ephemeral/ephemeral.sh pf-rbac ${RBAC_LOCAL_PORT}
 
 HOURS = "24h"
 ephemeral-reserve:
