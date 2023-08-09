@@ -23,10 +23,10 @@ from management.querysets import get_access_queryset
 from management.role.serializer import AccessSerializer
 from management.utils import (
     APPLICATION_KEY,
+    deduplicate_access_queryset,
     get_principal_from_request,
     validate_and_get_key,
     validate_limit_and_offset,
-    deduplicate_access_queryset,
 )
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response

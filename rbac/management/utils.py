@@ -194,6 +194,8 @@ def filter_queryset_by_tenant(queryset, tenant):
 
 def deduplicate_access_queryset(queryset):
     """
+    Deduplicate the access queryset.
+
     Takes a queryset on the Access model, and returns a list of the minimal
     permissions described in the original queryset.  These deduplications are
     performed:
@@ -209,11 +211,10 @@ def deduplicate_access_queryset(queryset):
     deduplicated_access = dict()
 
     def matching_perms(this_access, sought_access):
-        """
-        Filter for finding all access objects that match the app and
-        resource given
-        """
-        return this_access.permission.app == sought_access.permission.app and this_access.permission.resource_type == sought_access.permission.resource_type
+        """Find all access objects that match the app and resource given."""
+        tap = this_access.permission
+        sap = sought_access.permission
+        return tap.app == sap.app and tap.resource_type == sap.resource_type
 
     for access in queryset:
         if not access.permission:
@@ -224,18 +225,19 @@ def deduplicate_access_queryset(queryset):
                 # Rule 2 (reverse): does this permission supersede any access
                 # objects we have already?
                 matching_access_objs = list(filter(
-                    lambda a: matching_perms(a, access)
-                    deduplicate_access.values(),
+                    lambda a: matching_perms(a, access),
+                    deduplicated_access.values()
                 ))
                 # have to listify it because we're going to possibly edit the
                 # dict, and doing that while a filter is running is... sketchy
                 for superseded in matching_access_objs:
-                    del(deduplicate_access[superseded.permission.permission])
+                    del deduplicated_access[superseded.permission.permission]
             else:
                 # Rule 2 (forward): is this included in a '*' permission on
                 # the same app and resource?
-                if f"{access.permission.app}:{access.permission.resource_type}:*" in deduplicate_access:
+                if f"{access.permission.app}:{access.permission.resource_type}:*" in deduplicated_access:
                     # we can throw this one away then, it's superseded.
+                    continue
         else:
             # Combine this access object's resource definitions into that
             # already stored.  Note that at this stage we DO NOT attempt to
