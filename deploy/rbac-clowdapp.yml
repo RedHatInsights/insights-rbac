@@ -47,26 +47,25 @@ objects:
             PYTHONPATH=${PWD}/rbac/ celery -A
             rbac.celery worker -l $DJANGO_LOG_LEVEL
         livenessProbe:
-          exec:
-            command:
-              - /bin/bash
-              - '-c'
-              - >
-                PYTHONPATH=${PWD}/rbac/ celery -A rbac.celery
-                inspect ping
-          failureThreshold: 3
-          initialDelaySeconds: ${{CELERY_INITIAL_DELAY_SEC}}
-          periodSeconds: ${{CELERY_PERIOD_SEC}}
+          httpGet:
+            path: /api/rbac/ht/
+            port: 8080
+            scheme: HTTP
+          initialDelaySeconds: 60
+          periodSeconds: 10
           successThreshold: 1
-          timeoutSeconds: 10
+          failureThreshold: 3
+          timeoutSeconds: 3
         readinessProbe:
-          exec:
-            command:
-              - /bin/bash
-              - '-c'
-              - >
-                PYTHONPATH=${PWD}/rbac/ celery -A rbac.celery
-                inspect ping
+          httpGet:
+            path: /api/rbac/v1/ht/
+            port: 8080
+            scheme: HTTP
+          initialDelaySeconds: 60
+          periodSeconds: 10
+          successThreshold: 1
+          failureThreshold: 3
+          timeoutSeconds: 3
           failureThreshold: 3
           periodSeconds: ${{CELERY_PERIOD_SEC}}
           successThreshold: 1
@@ -193,6 +192,7 @@ objects:
             value: ${EXTERNAL_CHROME_TOPIC}
           - name: MIGRATE_AND_SEED_ON_INIT
             value: ${WORKER_MIGRATE_AND_SEED_ON_INIT}
+    
 
     - name: scheduler-service
       minReplicas: ${{MIN_SCHEDULER_REPLICAS}}
