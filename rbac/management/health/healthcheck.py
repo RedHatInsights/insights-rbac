@@ -18,15 +18,22 @@
 from time import sleep
 
 import health_check
+from rest_framework import permissions
+from rest_framework.decorators import permission_classes
+from rest_framework.renderers import JSONRenderer
+from rest_framework.response import Response
+
+from django.urls import resolve
 
 rbacHealthCheck = health_check.contrib.celery_ping.backends.CeleryPingHealthCheck()
 
-
+@permission_classes((permissions.AllowAny,))
 def delay():
     """Delay 10 seconds for async."""
     sleep(10)
 
 
+@permission_classes((permissions.AllowAny,))
 def check_health():
     """Check the health of the workers and brokers."""
     # If the celery workers or redis connection are unavailable, then return a 500 error.
