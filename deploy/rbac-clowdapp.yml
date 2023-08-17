@@ -49,7 +49,7 @@ objects:
           - '-c'
           - >
             PYTHONPATH=${PWD}/rbac/ celery -A
-            rbac.celery worker -l $DJANGO_LOG_LEVEL
+            rbac worker -l $DJANGO_LOG_LEVEL
         livenessProbe:
           exec: 
             command: 
