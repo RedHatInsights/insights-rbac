@@ -17,12 +17,14 @@
 
 """View for principal access."""
 from django.conf import settings
+from django.core.exceptions import ObjectDoesNotExist
 from management.cache import AccessCache
-from management.models import Access
+from management.models import Access, Permission
 from management.querysets import get_access_queryset
 from management.role.serializer import AccessSerializer
 from management.utils import (
     APPLICATION_KEY,
+    access_for_principal,
     get_principal_from_request,
     validate_and_get_key,
     validate_limit_and_offset,
@@ -114,6 +116,38 @@ class AccessView(APIView):
         sub_key, ordering = self.validate_and_get_param(request.query_params)
 
         principal = get_principal_from_request(request)
+
+        ### PDP SPIKE ### # noqa: E266
+        query_params = request.query_params
+        pdp = query_params.get("pdp")
+        if pdp == "true":
+            application = query_params.get("application")
+            resource_type = query_params.get("resource_type")
+            verb = query_params.get("verb")
+
+            try:
+                permission = Permission.objects.get(application=application, resource_type=resource_type, verb=verb)
+            except ObjectDoesNotExist:
+                return Response({"error": "permission does not exist"})
+
+            # not the most performant because we query Access again since
+            # access_for_principal returns a set vs queryset
+            access = access_for_principal(principal, request.tenant)
+            pks = [a.id for a in access]
+            access_for_request = Access.objects.filter(id__in=pks, permission=permission)
+
+            return Response(
+                {
+                    "has_access": access_for_request.exists(),
+                    "permission": permission.permission,
+                    "application": application,
+                    "resource_type": resource_type,
+                    "verb": verb,
+                }
+            )
+        ### PDP SPIKE ### # noqa: E266
+
+        # would need to fix policy caching for PDP endpoint
         if settings.AUTHENTICATE_WITH_ORG_ID:
             cache = AccessCache(request.tenant.org_id)
         else:
