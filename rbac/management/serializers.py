@@ -21,3 +21,4 @@ from management.principal.serializer import PrincipalSerializer
 from management.group.serializer import GroupSerializer
 from management.role.serializer import RoleSerializer
 from management.policy.serializer import PolicySerializer
+from management.auditLogs.serializer import AuditLogSerializer
