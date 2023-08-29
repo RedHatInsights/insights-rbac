@@ -30,6 +30,7 @@ from django.utils.translation import gettext as _
 from django_filters import rest_framework as filters
 from management.filters import CommonFilters
 from management.models import Permission
+from management.models import Workspace
 from management.notifications.notification_handlers import role_obj_change_notification_handler
 from management.permissions import RoleAccessPermission
 from management.querysets import get_role_queryset
@@ -208,8 +209,23 @@ class RoleViewSet(
                 ]
             }
         """
+
+        response = super().create(request=request, args=args, kwargs=kwargs)
+        # Establish workspace permissions during request (this should help with performance)
+        for access in request.data['access']:
+            permissions = Permission.objects.filter(permission=access['permission'])
+            for perm in permissions:
+                app_name = perm.application
+
+                try:
+                    workspace = Workspace.objects.get(name=app_name)
+                except Workspace.DoesNotExist:
+                    continue
+                perm.workspace_id = workspace.id
+                perm.save()
         self.validate_role(request)
-        return super().create(request=request, args=args, kwargs=kwargs)
+
+        return response
 
     def list(self, request, *args, **kwargs):
         """Obtain the list of roles for the tenant.

@@ -19,7 +19,7 @@
 from django.conf import settings
 from django.core.exceptions import ObjectDoesNotExist
 from management.cache import AccessCache
-from management.models import Access, Permission
+from management.models import Access, Permission, Workspace
 from management.querysets import get_access_queryset
 from management.role.serializer import AccessSerializer
 from management.utils import (
@@ -135,6 +135,25 @@ class AccessView(APIView):
             access = access_for_principal(principal, request.tenant)
             pks = [a.id for a in access]
             access_for_request = Access.objects.filter(id__in=pks, permission=permission)
+
+            found = False
+            # is this workspace permission ?
+            workspace_permission = permission.workspace or Workspace.objects.filter(name=application).first()
+            if workspace_permission and access_for_request.exists() == False: # workspace permission is not defined at requested workspace
+                ancestor_workspaces = workspace_permission.get_ancestors()
+                # Anybody in workspace ancestors has access ?
+                for workspace in ancestor_workspaces:
+                    if found:
+                        break
+                    workspace = Workspace.objects.get(id=workspace.id)
+                    # Does workspace permissions which according to our request ?
+                    permissions = workspace.permissions.filter(resource_type=resource_type, verb=verb)
+                    # we are looking for service access(resource_type,verb) permission(we can skip workspace(application) part, we are inside organization)
+                    for permission in permissions:
+                        access_for_request = Access.objects.filter(id__in=pks, permission=permission)
+                        if access_for_request.exists():
+                            found = True
+                            break
 
             return Response(
                 {

@@ -105,11 +105,21 @@ reset-db:
 	docker-compose exec -u postgres db dropdb postgres
 	docker-compose exec -u postgres db createdb -Eutf8 -Ttemplate0 -Opostgres postgres
 
+
+shell:
+	DJANGO_READ_DOT_ENV_FILE=True $(PYTHON) $(PYDIR)/manage.py shell
+
+urls:
+	DJANGO_READ_DOT_ENV_FILE=True $(PYTHON) $(PYDIR)/manage.py show_urls
+
 make-migrations:
 	DJANGO_READ_DOT_ENV_FILE=True $(PYTHON) $(PYDIR)/manage.py makemigrations api management
 
 run-migrations:
 	DJANGO_READ_DOT_ENV_FILE=True $(PYTHON) $(PYDIR)/manage.py migrate
+
+undo-mig:
+	DJANGO_READ_DOT_ENV_FILE=True $(PYTHON) $(PYDIR)/manage.py migrate management 0040_access_permission
 
 create-test-db-file: run-migrations
 	sleep 1
