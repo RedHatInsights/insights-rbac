@@ -17,6 +17,7 @@
 
 """Model for permission management."""
 from django.db import models
+from management.workspace.model import Workspace
 
 from api.models import TenantAwareModel
 
@@ -30,6 +31,7 @@ class Permission(TenantAwareModel):
     permission = models.TextField(null=False, unique=True)
     description = models.TextField(default="")
     permissions = models.ManyToManyField("self", symmetrical=False, related_name="requiring_permissions")
+    workspace = models.ForeignKey(Workspace, related_name='permissions', on_delete=models.CASCADE, null=True)
 
     def save(self, *args, **kwargs):
         """Populate the application, resource_type and verb field before saving."""
