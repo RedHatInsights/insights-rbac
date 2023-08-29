@@ -1,0 +1,104 @@
+
+
+### workspaces
+GET http://localhost:8080/api/rbac/v1/workspaces/
+
+
+### create root workspace ibm
+POST http://localhost:8080/api/rbac/v1/workspaces/
+
+{"name":"ibm"}
+
+### workspaces add child
+POST http://localhost:8080/api/rbac/v1/workspaces/c74616bb-07f7-42ab-9a4a-1dd39ca216ae/children/
+
+
+{"name":"ibm_sub"}
+
+
+### workspaces add child
+POST http://localhost:8080/api/rbac/v1/workspaces/6652c242-9a52-40e4-825c-e940d0f831a0/children/
+
+{"name":"ibm_sub_sub"}
+
+
+### workspaces add child
+POST http://localhost:8080/api/rbac/v1/workspaces/c7dab865-fb9f-4fb6-8f17-281d201cc6c9/children/
+
+{"name":"ibm_sub_sub_sub"}
+
+
+### workspaces delete
+DELETE http://localhost:8080/api/rbac/v1/workspaces/f0b1fca1-8b4c-43b1-96e8-f1b4c9fcee20/
+
+
+### Access to Services can be, by default, not available to any Workspace once contracted with an Organization
+### Create Service Access Permission = Define role with <service_access_permission>
+POST http://localhost:8080/api/rbac/v1/roles/
+
+{
+  "name": "Openshift Cluster",
+  "display_name": "Openshift Cluster",
+  "description": "Openshift Cluster",
+  "access": [
+    {
+      "permission": "no_workspace:openshift:cluster",
+      "resourceDefinitions": []
+    }
+  ]
+}
+
+### Let's assign service permission to root workspace
+### Access to Services is explicitly assigned to one or more Workspaces
+### This needs to create premissions:
+### <workspace>:<same_service_access>
+### <other_workspace>:<same_service_access>
+### Create Role with permissions (this needs validation if workspace exist)
+POST http://localhost:8080/api/rbac/v1/roles/
+
+{
+  "name": "Openshift Access for IBM and Bulletproof",
+  "display_name": "Openshift Access for IBM and Bulletproof",
+  "description": "Openshift Access for IBM and Bulletproof",
+  "access": [
+    {
+      "permission": "ibm:openshift:cluster",
+      "resourceDefinitions": []
+    }
+  ]
+}
+
+
+### DELETE role
+DELETE http://localhost:8080/api/rbac/v1/roles/663a54e8-77c2-4ab5-bd62-8ac25d5c1f8a/
+
+
+
+
+### Can Workspace X access Service Y? (should inherit from parent Workspaces)
+### application == workspace (Workspace X)
+### resource_type = service or bundle aka  (openshift, ... ) - Service Y
+### verb = asset type (cluster,.. ) - Service Y
+### Service Access (openshift, cluster) is granted at one Workspace(ibm)
+GET http://localhost:8080/api/rbac/v1/access/?application=ibm&resource_type=openshift&verb=cluster&pdp=true
+
+
+### Can Workspace X(ibm_sub_sub_sub) access Service Y? (should inherit from parent Workspaces)
+### application == workspace (Workspace X)
+### resource_type = service or bundle aka  (openshift, ... ) - Service Y
+### verb = asset type (cluster,.. ) - Service Y
+### Service Access (openshift, cluster) is granted at one Workspace(ibm)
+GET http://localhost:8080/api/rbac/v1/access/?application=ibm_sub_sub_sub&resource_type=openshift&verb=cluster&pdp=true
+
+
+### List Groups
+GET http://localhost:8080/api/rbac/v1/groups/
+
+
+### List Roles
+GET http://localhost:8080/api/rbac/v1/roles/?limit=1000
+
+### Add role to groups
+POST http://localhost:8080/api/rbac/v1/groups/53b384a3-4d30-40cd-907e-e71c50e62715/roles/
+
+{"roles":["bba4cbb5-3f8c-466d-9fdd-5c0b04b19bf0"]}
