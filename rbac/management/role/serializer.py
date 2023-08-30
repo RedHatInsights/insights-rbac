@@ -342,14 +342,14 @@ def obtain_groups_in(obj, request):
         assigned_groups = filter_queryset_by_tenant(Group.objects.filter(policies__in=policy_ids), request.tenant)
 
     public_tenant = Tenant.objects.get(tenant_name="public")
-    qs = (
-        assigned_groups
-        | (
-            Group.platform_default_set().filter(tenant=request.tenant).filter(policies__in=policy_ids)
-            or Group.platform_default_set().filter(tenant=public_tenant).filter(policies__in=policy_ids)
-            or Group.admin_default_set().filter(tenant=public_tenant).filter(policies__in=policy_ids)
-        )
-    ).distinct()
+    platform_default_groups = Group.platform_default_set().filter(tenant=request.tenant).filter(
+        policies__in=policy_ids
+    ) or Group.platform_default_set().filter(tenant=public_tenant).filter(policies__in=policy_ids)
+    admin_default_groups = Group.admin_default_set().filter(tenant=request.tenant).filter(
+        policies__in=policy_ids
+    ) or Group.admin_default_set().filter(tenant=public_tenant).filter(policies__in=policy_ids)
+
+    qs = (assigned_groups | platform_default_groups | admin_default_groups).distinct()
 
     return qs
 
