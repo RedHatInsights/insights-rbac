@@ -1,30 +1,87 @@
 apiVersion: v1
 data:
-  general.json: |-
+  rbac-grafana-stage-final.json: |-
     {
+      "__elements": {},
+      "__requires": [
+        {
+          "type": "panel",
+          "id": "gauge",
+          "name": "Gauge",
+          "version": ""
+        },
+        {
+          "type": "grafana",
+          "id": "grafana",
+          "name": "Grafana",
+          "version": "9.3.8"
+        },
+        {
+          "type": "panel",
+          "id": "graph",
+          "name": "Graph (old)",
+          "version": ""
+        },
+        {
+          "type": "panel",
+          "id": "heatmap",
+          "name": "Heatmap",
+          "version": ""
+        },
+        {
+          "type": "datasource",
+          "id": "prometheus",
+          "name": "Prometheus",
+          "version": "1.0.0"
+        },
+        {
+          "type": "panel",
+          "id": "text",
+          "name": "Text",
+          "version": ""
+        },
+        {
+          "type": "panel",
+          "id": "timeseries",
+          "name": "Time series",
+          "version": ""
+        }
+      ],
       "annotations": {
         "list": [
           {
             "builtIn": 1,
-            "datasource": "-- Grafana --",
+            "datasource": {
+              "type": "datasource",
+              "uid": "grafana"
+            },
             "enable": true,
             "hide": true,
             "iconColor": "rgba(0, 211, 255, 1)",
             "name": "Annotations & Alerts",
+            "target": {
+              "limit": 100,
+              "matchAny": false,
+              "tags": [],
+              "type": "dashboard"
+            },
             "type": "dashboard"
           }
         ]
       },
       "editable": true,
-      "gnetId": null,
+      "fiscalYearStartMonth": 0,
       "graphTooltip": 0,
-      "id": 215,
-      "iteration": 1634056147298,
+      "id": null,
       "links": [],
+      "liveNow": false,
       "panels": [
         {
           "collapsed": true,
-          "datasource": null,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "PD776AFABBE26000A"
+          },
           "gridPos": {
             "h": 1,
             "w": 24,
@@ -38,7 +95,9 @@ data:
               "bars": false,
               "dashLength": 10,
               "dashes": false,
-              "datasource": "$datasource",
+              "datasource": {
+                "uid": "$datasource"
+              },
               "fieldConfig": {
                 "defaults": {
                   "custom": {},
@@ -52,7 +111,7 @@ data:
                 "h": 9,
                 "w": 12,
                 "x": 0,
-                "y": 1
+                "y": 41
               },
               "hiddenSeries": false,
               "id": 11,
@@ -85,6 +144,9 @@ data:
               "steppedLine": false,
               "targets": [
                 {
+                  "datasource": {
+                    "uid": "$datasource"
+                  },
                   "expr": "rate(container_cpu_usage_seconds_total{namespace=\"$Namespace\",pod=~\".*rbac.*\"}[5m])",
                   "interval": "",
                   "legendFormat": "{{pod}}",
@@ -92,9 +154,7 @@ data:
                 }
               ],
               "thresholds": [],
-              "timeFrom": null,
               "timeRegions": [],
-              "timeShift": null,
               "title": "CPU",
               "tooltip": {
                 "shared": true,
@@ -103,33 +163,24 @@ data:
               },
               "type": "graph",
               "xaxis": {
-                "buckets": null,
                 "mode": "time",
-                "name": null,
                 "show": true,
                 "values": []
               },
               "yaxes": [
                 {
                   "format": "s",
-                  "label": null,
                   "logBase": 1,
-                  "max": null,
-                  "min": null,
                   "show": true
                 },
                 {
                   "format": "short",
-                  "label": null,
                   "logBase": 1,
-                  "max": null,
-                  "min": null,
                   "show": true
                 }
               ],
               "yaxis": {
-                "align": false,
-                "alignLevel": null
+                "align": false
               }
             },
             {
@@ -137,7 +188,9 @@ data:
               "bars": false,
               "dashLength": 10,
               "dashes": false,
-              "datasource": "$datasource",
+              "datasource": {
+                "uid": "$datasource"
+              },
               "description": "CPU consumption plotted against configured CPU limit of service",
               "fieldConfig": {
                 "defaults": {
@@ -152,7 +205,7 @@ data:
                 "h": 9,
                 "w": 12,
                 "x": 12,
-                "y": 1
+                "y": 41
               },
               "hiddenSeries": false,
               "id": 15,
@@ -183,6 +236,9 @@ data:
               "steppedLine": false,
               "targets": [
                 {
+                  "datasource": {
+                    "uid": "$datasource"
+                  },
                   "expr": "sum(rate(container_cpu_usage_seconds_total{namespace=\"$Namespace\",pod=~\".*rbac.*\"}[5m])) / sum(kube_pod_container_resource_limits{resource=\"cpu\",namespace=\"$Namespace\",pod=~\".*rbac.*\"})",
                   "interval": "15s",
                   "legendFormat": "",
@@ -190,9 +246,7 @@ data:
                 }
               ],
               "thresholds": [],
-              "timeFrom": null,
               "timeRegions": [],
-              "timeShift": null,
               "title": "Percentage of CPU limit consumed",
               "tooltip": {
                 "shared": true,
@@ -201,34 +255,25 @@ data:
               },
               "type": "graph",
               "xaxis": {
-                "buckets": null,
                 "mode": "time",
-                "name": null,
                 "show": true,
                 "values": []
               },
               "yaxes": [
                 {
-                  "decimals": null,
                   "format": "percentunit",
-                  "label": null,
                   "logBase": 1,
-                  "max": null,
                   "min": "0",
                   "show": true
                 },
                 {
                   "format": "short",
-                  "label": null,
                   "logBase": 1,
-                  "max": null,
-                  "min": null,
                   "show": false
                 }
               ],
               "yaxis": {
-                "align": false,
-                "alignLevel": null
+                "align": false
               }
             },
             {
@@ -236,7 +281,9 @@ data:
               "bars": false,
               "dashLength": 10,
               "dashes": false,
-              "datasource": "$datasource",
+              "datasource": {
+                "uid": "$datasource"
+              },
               "fieldConfig": {
                 "defaults": {
                   "custom": {},
@@ -250,7 +297,7 @@ data:
                 "h": 9,
                 "w": 12,
                 "x": 0,
-                "y": 10
+                "y": 50
               },
               "hiddenSeries": false,
               "id": 9,
@@ -283,6 +330,9 @@ data:
               "steppedLine": false,
               "targets": [
                 {
+                  "datasource": {
+                    "uid": "$datasource"
+                  },
                   "expr": "container_memory_usage_bytes{namespace=\"$Namespace\",pod=~\".*rbac.*\"}",
                   "interval": "15s",
                   "legendFormat": "{{pod}}",
@@ -290,9 +340,7 @@ data:
                 }
               ],
               "thresholds": [],
-              "timeFrom": null,
               "timeRegions": [],
-              "timeShift": null,
               "title": "Memory",
               "tooltip": {
                 "shared": true,
@@ -301,33 +349,24 @@ data:
               },
               "type": "graph",
               "xaxis": {
-                "buckets": null,
                 "mode": "time",
-                "name": null,
                 "show": true,
                 "values": []
               },
               "yaxes": [
                 {
                   "format": "bytes",
-                  "label": null,
                   "logBase": 1,
-                  "max": null,
-                  "min": null,
                   "show": true
                 },
                 {
                   "format": "short",
-                  "label": null,
                   "logBase": 1,
-                  "max": null,
-                  "min": null,
                   "show": true
                 }
               ],
               "yaxis": {
-                "align": false,
-                "alignLevel": null
+                "align": false
               }
             },
             {
@@ -335,7 +374,9 @@ data:
               "bars": false,
               "dashLength": 10,
               "dashes": false,
-              "datasource": "$datasource",
+              "datasource": {
+                "uid": "$datasource"
+              },
               "description": "",
               "fieldConfig": {
                 "defaults": {
@@ -350,7 +391,7 @@ data:
                 "h": 9,
                 "w": 12,
                 "x": 12,
-                "y": 10
+                "y": 50
               },
               "hiddenSeries": false,
               "id": 19,
@@ -381,6 +422,9 @@ data:
               "steppedLine": false,
               "targets": [
                 {
+                  "datasource": {
+                    "uid": "$datasource"
+                  },
                   "expr": "sum(container_memory_usage_bytes{namespace=\"$Namespace\",pod=~\".*rbac.*\",container!~\"sti-build|deployment|lifecycle\",name=\"\"}) / sum(kube_pod_container_resource_limits{resource=\"memory\",namespace=\"$Namespace\",pod=~\".*rbac.*\",container!~\"sti-build|deployment|lifecycle\",name=\"\"})",
                   "interval": "15s",
                   "legendFormat": "",
@@ -388,9 +432,7 @@ data:
                 }
               ],
               "thresholds": [],
-              "timeFrom": null,
               "timeRegions": [],
-              "timeShift": null,
               "title": "Percentage of memory limit consumed",
               "tooltip": {
                 "shared": true,
@@ -399,9 +441,7 @@ data:
               },
               "type": "graph",
               "xaxis": {
-                "buckets": null,
                 "mode": "time",
-                "name": null,
                 "show": true,
                 "values": []
               },
@@ -409,24 +449,18 @@ data:
                 {
                   "decimals": 1,
                   "format": "percentunit",
-                  "label": null,
                   "logBase": 1,
                   "max": "1",
-                  "min": null,
                   "show": true
                 },
                 {
                   "format": "short",
-                  "label": null,
                   "logBase": 1,
-                  "max": null,
-                  "min": null,
                   "show": false
                 }
               ],
               "yaxis": {
-                "align": false,
-                "alignLevel": null
+                "align": false
               }
             },
             {
@@ -434,7 +468,9 @@ data:
               "bars": false,
               "dashLength": 10,
               "dashes": false,
-              "datasource": "$datasource",
+              "datasource": {
+                "uid": "$datasource"
+              },
               "description": "Plots the number of container restarts in 5 minute chunks",
               "fieldConfig": {
                 "defaults": {
@@ -449,7 +485,7 @@ data:
                 "h": 9,
                 "w": 12,
                 "x": 0,
-                "y": 19
+                "y": 59
               },
               "hiddenSeries": false,
               "id": 17,
@@ -480,6 +516,9 @@ data:
               "steppedLine": false,
               "targets": [
                 {
+                  "datasource": {
+                    "uid": "$datasource"
+                  },
                   "expr": "sum(increase(kube_pod_container_status_restarts_total{namespace=\"$Namespace\",pod=~\".*rbac.*\"}[5m]))",
                   "interval": "15s",
                   "legendFormat": "",
@@ -487,9 +526,7 @@ data:
                 }
               ],
               "thresholds": [],
-              "timeFrom": null,
               "timeRegions": [],
-              "timeShift": null,
               "title": "Container Restarts",
               "tooltip": {
                 "shared": true,
@@ -498,9 +535,7 @@ data:
               },
               "type": "graph",
               "xaxis": {
-                "buckets": null,
                 "mode": "time",
-                "name": null,
                 "show": true,
                 "values": []
               },
@@ -508,25 +543,28 @@ data:
                 {
                   "decimals": 0,
                   "format": "short",
-                  "label": null,
                   "logBase": 1,
-                  "max": null,
                   "min": "0",
                   "show": true
                 },
                 {
                   "format": "short",
-                  "label": null,
                   "logBase": 1,
-                  "max": null,
-                  "min": null,
                   "show": true
                 }
               ],
               "yaxis": {
-                "align": false,
-                "alignLevel": null
+                "align": false
               }
+            }
+          ],
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "PD776AFABBE26000A"
+              },
+              "refId": "A"
             }
           ],
           "title": "Operational Data (CPU/Mem)",
@@ -534,7 +572,10 @@ data:
         },
         {
           "collapsed": true,
-          "datasource": null,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "PD776AFABBE26000A"
+          },
           "gridPos": {
             "h": 1,
             "w": 24,
@@ -544,19 +585,20 @@ data:
           "id": 23,
           "panels": [
             {
-              "datasource": "$datasource",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "$datasource"
+              },
               "description": "",
               "fieldConfig": {
                 "defaults": {
-                  "custom": {},
                   "mappings": [],
                   "noValue": "0",
                   "thresholds": {
                     "mode": "percentage",
                     "steps": [
                       {
-                        "color": "green",
-                        "value": null
+                        "color": "green"
                       }
                     ]
                   },
@@ -568,7 +610,7 @@ data:
                 "h": 5,
                 "w": 4,
                 "x": 0,
-                "y": 29
+                "y": 2
               },
               "id": 4,
               "interval": "",
@@ -584,9 +626,13 @@ data:
                 "showThresholdLabels": false,
                 "showThresholdMarkers": true
               },
-              "pluginVersion": "7.2.1",
+              "pluginVersion": "9.3.8",
               "targets": [
                 {
+                  "datasource": {
+                    "uid": "$datasource"
+                  },
+                  "editorMode": "code",
                   "expr": "sum(rate(django_http_responses_total_by_status_total{job=\"rbac-service\", status=~\"2..\"}[$__rate_interval]))",
                   "instant": false,
                   "interval": "",
@@ -594,25 +640,23 @@ data:
                   "refId": "A"
                 }
               ],
-              "timeFrom": null,
-              "timeShift": null,
               "title": "2XX Response Rate",
               "type": "gauge"
             },
             {
-              "datasource": "$datasource",
+              "datasource": {
+                "uid": "$datasource"
+              },
               "description": "",
               "fieldConfig": {
                 "defaults": {
-                  "custom": {},
                   "mappings": [],
                   "noValue": "0",
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
                       {
-                        "color": "green",
-                        "value": null
+                        "color": "green"
                       },
                       {
                         "color": "red",
@@ -628,10 +672,11 @@ data:
                 "h": 5,
                 "w": 4,
                 "x": 4,
-                "y": 29
+                "y": 2
               },
               "id": 6,
               "options": {
+                "orientation": "auto",
                 "reduceOptions": {
                   "calcs": [
                     "lastNotNull"
@@ -642,9 +687,12 @@ data:
                 "showThresholdLabels": false,
                 "showThresholdMarkers": true
               },
-              "pluginVersion": "7.2.1",
+              "pluginVersion": "9.3.8",
               "targets": [
                 {
+                  "datasource": {
+                    "uid": "$datasource"
+                  },
                   "expr": "sum(rate(django_http_responses_total_by_status_total{job=\"rbac-service\", status=~\"4..\"}[$__rate_interval]))",
                   "instant": false,
                   "interval": "",
@@ -652,24 +700,22 @@ data:
                   "refId": "A"
                 }
               ],
-              "timeFrom": null,
-              "timeShift": null,
               "title": "4XX Response Rate",
               "type": "gauge"
             },
             {
-              "datasource": "$datasource",
+              "datasource": {
+                "uid": "$datasource"
+              },
               "description": "",
               "fieldConfig": {
                 "defaults": {
-                  "custom": {},
                   "mappings": [],
                   "thresholds": {
                     "mode": "percentage",
                     "steps": [
                       {
-                        "color": "green",
-                        "value": null
+                        "color": "green"
                       },
                       {
                         "color": "red",
@@ -685,10 +731,11 @@ data:
                 "h": 5,
                 "w": 4,
                 "x": 8,
-                "y": 29
+                "y": 2
               },
               "id": 5,
               "options": {
+                "orientation": "auto",
                 "reduceOptions": {
                   "calcs": [
                     "lastNotNull"
@@ -699,9 +746,12 @@ data:
                 "showThresholdLabels": false,
                 "showThresholdMarkers": true
               },
-              "pluginVersion": "7.2.1",
+              "pluginVersion": "9.3.8",
               "targets": [
                 {
+                  "datasource": {
+                    "uid": "$datasource"
+                  },
                   "expr": "sum(rate(django_http_responses_total_by_status_total{job=\"rbac-service\", status=~\"5..\"}[$__rate_interval]))",
                   "instant": false,
                   "interval": "",
@@ -709,23 +759,21 @@ data:
                   "refId": "A"
                 }
               ],
-              "timeFrom": null,
-              "timeShift": null,
               "title": "5XX Response Rate",
               "type": "gauge"
             },
             {
-              "datasource": "$datasource",
+              "datasource": {
+                "uid": "$datasource"
+              },
               "fieldConfig": {
                 "defaults": {
-                  "custom": {},
                   "mappings": [],
                   "thresholds": {
                     "mode": "percentage",
                     "steps": [
                       {
-                        "color": "green",
-                        "value": null
+                        "color": "green"
                       }
                     ]
                   },
@@ -737,11 +785,12 @@ data:
                 "h": 5,
                 "w": 4,
                 "x": 12,
-                "y": 29
+                "y": 2
               },
               "id": 14,
               "interval": "",
               "options": {
+                "orientation": "auto",
                 "reduceOptions": {
                   "calcs": [
                     "mean"
@@ -752,32 +801,33 @@ data:
                 "showThresholdLabels": false,
                 "showThresholdMarkers": true
               },
-              "pluginVersion": "7.2.1",
+              "pluginVersion": "9.3.8",
               "targets": [
                 {
+                  "datasource": {
+                    "uid": "$datasource"
+                  },
                   "expr": "sum(rate(rbac_req_type_total{behalf=\"principal\"}[$__rate_interval]))",
                   "interval": "",
                   "legendFormat": "",
                   "refId": "A"
                 }
               ],
-              "timeFrom": null,
-              "timeShift": null,
               "title": "Principal Behalf",
               "type": "gauge"
             },
             {
-              "datasource": "$datasource",
+              "datasource": {
+                "uid": "$datasource"
+              },
               "fieldConfig": {
                 "defaults": {
-                  "custom": {},
                   "mappings": [],
                   "thresholds": {
                     "mode": "percentage",
                     "steps": [
                       {
-                        "color": "green",
-                        "value": null
+                        "color": "green"
                       }
                     ]
                   },
@@ -789,10 +839,11 @@ data:
                 "h": 5,
                 "w": 4,
                 "x": 16,
-                "y": 29
+                "y": 2
               },
               "id": 25,
               "options": {
+                "orientation": "auto",
                 "reduceOptions": {
                   "calcs": [
                     "mean"
@@ -803,9 +854,12 @@ data:
                 "showThresholdLabels": false,
                 "showThresholdMarkers": true
               },
-              "pluginVersion": "7.2.1",
+              "pluginVersion": "9.3.8",
               "targets": [
                 {
+                  "datasource": {
+                    "uid": "$datasource"
+                  },
                   "expr": "sum(rate(rbac_req_type_total{behalf=\"system\"}[$__rate_interval]))",
                   "instant": false,
                   "interval": "",
@@ -813,8 +867,6 @@ data:
                   "refId": "A"
                 }
               ],
-              "timeFrom": null,
-              "timeShift": null,
               "title": "System/Service Behalf",
               "type": "gauge"
             },
@@ -823,12 +875,8 @@ data:
               "bars": true,
               "dashLength": 10,
               "dashes": false,
-              "datasource": "$datasource",
-              "fieldConfig": {
-                "defaults": {
-                  "custom": {}
-                },
-                "overrides": []
+              "datasource": {
+                "uid": "$datasource"
               },
               "fill": 1,
               "fillGradient": 0,
@@ -836,7 +884,7 @@ data:
                 "h": 9,
                 "w": 12,
                 "x": 0,
-                "y": 34
+                "y": 7
               },
               "hiddenSeries": false,
               "id": 8,
@@ -861,7 +909,7 @@ data:
                 "alertThreshold": true
               },
               "percentage": false,
-              "pluginVersion": "7.2.1",
+              "pluginVersion": "9.3.8",
               "pointradius": 2,
               "points": false,
               "renderer": "flot",
@@ -871,6 +919,9 @@ data:
               "steppedLine": false,
               "targets": [
                 {
+                  "datasource": {
+                    "uid": "$datasource"
+                  },
                   "expr": "sum(rate(django_http_responses_total_by_status_view_method_total{job=\"rbac-service\"}[$__rate_interval])) by (method, status, view)",
                   "interval": "",
                   "legendFormat": "{{method}}: {{view}} -- {{status}}",
@@ -878,9 +929,7 @@ data:
                 }
               ],
               "thresholds": [],
-              "timeFrom": null,
               "timeRegions": [],
-              "timeShift": null,
               "title": "Request Status/method/view",
               "tooltip": {
                 "shared": true,
@@ -889,9 +938,7 @@ data:
               },
               "type": "graph",
               "xaxis": {
-                "buckets": null,
                 "mode": "time",
-                "name": null,
                 "show": true,
                 "values": []
               },
@@ -900,29 +947,20 @@ data:
                   "format": "short",
                   "label": "",
                   "logBase": 1,
-                  "max": null,
-                  "min": null,
                   "show": true
                 },
                 {
                   "format": "short",
-                  "label": null,
                   "logBase": 1,
-                  "max": null,
-                  "min": null,
                   "show": true
                 }
               ],
               "yaxis": {
-                "align": false,
-                "alignLevel": null
+                "align": false
               }
             },
             {
-              "cards": {
-                "cardPadding": null,
-                "cardRound": null
-              },
+              "cards": {},
               "color": {
                 "cardColor": "#b4ff00",
                 "colorScale": "sqrt",
@@ -931,23 +969,20 @@ data:
                 "mode": "spectrum"
               },
               "dataFormat": "tsbuckets",
-              "datasource": "$datasource",
+              "datasource": {
+                "uid": "$datasource"
+              },
               "fieldConfig": {
                 "defaults": {
-                  "custom": {},
-                  "mappings": [],
-                  "thresholds": {
-                    "mode": "absolute",
-                    "steps": [
-                      {
-                        "color": "green",
-                        "value": null
-                      },
-                      {
-                        "color": "red",
-                        "value": 80
-                      }
-                    ]
+                  "custom": {
+                    "hideFrom": {
+                      "legend": false,
+                      "tooltip": false,
+                      "viz": false
+                    },
+                    "scaleDistribution": {
+                      "type": "linear"
+                    }
                   }
                 },
                 "overrides": []
@@ -956,7 +991,7 @@ data:
                 "h": 9,
                 "w": 12,
                 "x": 12,
-                "y": 34
+                "y": 7
               },
               "heatmap": {},
               "hideZeroBuckets": false,
@@ -967,10 +1002,50 @@ data:
                 "show": false
               },
               "maxDataPoints": 25,
-              "pluginVersion": "7.2.1",
+              "options": {
+                "calculate": false,
+                "calculation": {},
+                "cellGap": 2,
+                "cellValues": {},
+                "color": {
+                  "exponent": 0.5,
+                  "fill": "#b4ff00",
+                  "mode": "scheme",
+                  "reverse": false,
+                  "scale": "exponential",
+                  "scheme": "RdYlGn",
+                  "steps": 128
+                },
+                "exemplars": {
+                  "color": "rgba(255,0,255,0.7)"
+                },
+                "filterValues": {
+                  "le": 1e-9
+                },
+                "legend": {
+                  "show": false
+                },
+                "rowsFrame": {
+                  "layout": "auto"
+                },
+                "showValue": "never",
+                "tooltip": {
+                  "show": true,
+                  "yHistogram": false
+                },
+                "yAxis": {
+                  "axisPlacement": "left",
+                  "reverse": false,
+                  "unit": "s"
+                }
+              },
+              "pluginVersion": "9.3.8",
               "reverseYBuckets": false,
               "targets": [
                 {
+                  "datasource": {
+                    "uid": "$datasource"
+                  },
                   "expr": "sum(increase(django_http_requests_latency_seconds_by_view_method_bucket{job=\"rbac-service\", view=~\"$Endpoint\"}[$__interval])) by (le)",
                   "format": "heatmap",
                   "interval": "",
@@ -978,8 +1053,6 @@ data:
                   "refId": "A"
                 }
               ],
-              "timeFrom": null,
-              "timeShift": null,
               "title": "Endpoint Latency ($Endpoint)",
               "tooltip": {
                 "show": true,
@@ -989,32 +1062,20 @@ data:
               "xAxis": {
                 "show": true
               },
-              "xBucketNumber": null,
-              "xBucketSize": null,
               "yAxis": {
-                "decimals": null,
                 "format": "s",
                 "logBase": 1,
-                "max": null,
-                "min": null,
-                "show": true,
-                "splitFactor": null
+                "show": true
               },
-              "yBucketBound": "auto",
-              "yBucketNumber": null,
-              "yBucketSize": null
+              "yBucketBound": "auto"
             },
             {
               "aliasColors": {},
               "bars": true,
               "dashLength": 10,
               "dashes": false,
-              "datasource": "$datasource",
-              "fieldConfig": {
-                "defaults": {
-                  "custom": {}
-                },
-                "overrides": []
+              "datasource": {
+                "uid": "$datasource"
               },
               "fill": 1,
               "fillGradient": 0,
@@ -1022,7 +1083,7 @@ data:
                 "h": 8,
                 "w": 12,
                 "x": 0,
-                "y": 43
+                "y": 16
               },
               "hiddenSeries": false,
               "id": 16,
@@ -1044,7 +1105,7 @@ data:
                 "alertThreshold": true
               },
               "percentage": false,
-              "pluginVersion": "7.2.1",
+              "pluginVersion": "9.3.8",
               "pointradius": 2,
               "points": false,
               "renderer": "flot",
@@ -1054,6 +1115,9 @@ data:
               "steppedLine": false,
               "targets": [
                 {
+                  "datasource": {
+                    "uid": "$datasource"
+                  },
                   "expr": "sum(rate(bop_request_status_total{}[$__rate_interval])) by (method, status)",
                   "interval": "",
                   "legendFormat": "{{method}}: {{status}}",
@@ -1061,9 +1125,7 @@ data:
                 }
               ],
               "thresholds": [],
-              "timeFrom": null,
               "timeRegions": [],
-              "timeShift": null,
               "title": "BOP Request/Status",
               "tooltip": {
                 "shared": true,
@@ -1072,40 +1134,28 @@ data:
               },
               "type": "graph",
               "xaxis": {
-                "buckets": null,
                 "mode": "time",
-                "name": null,
                 "show": true,
                 "values": []
               },
               "yaxes": [
                 {
                   "format": "short",
-                  "label": null,
                   "logBase": 1,
-                  "max": null,
-                  "min": null,
                   "show": true
                 },
                 {
                   "format": "short",
-                  "label": null,
                   "logBase": 1,
-                  "max": null,
-                  "min": null,
                   "show": false
                 }
               ],
               "yaxis": {
-                "align": false,
-                "alignLevel": null
+                "align": false
               }
             },
             {
-              "cards": {
-                "cardPadding": null,
-                "cardRound": null
-              },
+              "cards": {},
               "color": {
                 "cardColor": "#b4ff00",
                 "colorScale": "sqrt",
@@ -1114,10 +1164,21 @@ data:
                 "mode": "spectrum"
               },
               "dataFormat": "tsbuckets",
-              "datasource": "$datasource",
+              "datasource": {
+                "uid": "$datasource"
+              },
               "fieldConfig": {
                 "defaults": {
-                  "custom": {}
+                  "custom": {
+                    "hideFrom": {
+                      "legend": false,
+                      "tooltip": false,
+                      "viz": false
+                    },
+                    "scaleDistribution": {
+                      "type": "linear"
+                    }
+                  }
                 },
                 "overrides": []
               },
@@ -1125,7 +1186,7 @@ data:
                 "h": 8,
                 "w": 12,
                 "x": 12,
-                "y": 43
+                "y": 16
               },
               "heatmap": {},
               "hideZeroBuckets": false,
@@ -1135,10 +1196,50 @@ data:
                 "show": false
               },
               "maxDataPoints": 25,
-              "pluginVersion": "7.2.1",
+              "options": {
+                "calculate": false,
+                "calculation": {},
+                "cellGap": 2,
+                "cellValues": {},
+                "color": {
+                  "exponent": 0.5,
+                  "fill": "#b4ff00",
+                  "mode": "scheme",
+                  "reverse": false,
+                  "scale": "exponential",
+                  "scheme": "RdYlGn",
+                  "steps": 128
+                },
+                "exemplars": {
+                  "color": "rgba(255,0,255,0.7)"
+                },
+                "filterValues": {
+                  "le": 1e-9
+                },
+                "legend": {
+                  "show": false
+                },
+                "rowsFrame": {
+                  "layout": "auto"
+                },
+                "showValue": "never",
+                "tooltip": {
+                  "show": true,
+                  "yHistogram": false
+                },
+                "yAxis": {
+                  "axisPlacement": "left",
+                  "reverse": false,
+                  "unit": "s"
+                }
+              },
+              "pluginVersion": "9.3.8",
               "reverseYBuckets": false,
               "targets": [
                 {
+                  "datasource": {
+                    "uid": "$datasource"
+                  },
                   "expr": "sum(increase(rbac_proxy_request_processing_seconds_bucket{}[$__interval])) by (le)",
                   "format": "heatmap",
                   "interval": "",
@@ -1146,8 +1247,6 @@ data:
                   "refId": "A"
                 }
               ],
-              "timeFrom": null,
-              "timeShift": null,
               "title": "RBAC to BOP Latency",
               "tooltip": {
                 "show": true,
@@ -1157,20 +1256,21 @@ data:
               "xAxis": {
                 "show": true
               },
-              "xBucketNumber": null,
-              "xBucketSize": null,
               "yAxis": {
-                "decimals": null,
                 "format": "s",
                 "logBase": 1,
-                "max": null,
-                "min": null,
-                "show": true,
-                "splitFactor": null
+                "show": true
               },
-              "yBucketBound": "auto",
-              "yBucketNumber": null,
-              "yBucketSize": null
+              "yBucketBound": "auto"
+            }
+          ],
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "PD776AFABBE26000A"
+              },
+              "refId": "A"
             }
           ],
           "title": "RBAC Internal",
@@ -1178,7 +1278,10 @@ data:
         },
         {
           "collapsed": true,
-          "datasource": null,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "PD776AFABBE26000A"
+          },
           "gridPos": {
             "h": 1,
             "w": 24,
@@ -1192,7 +1295,9 @@ data:
               "bars": false,
               "dashLength": 10,
               "dashes": false,
-              "datasource": "$datasource",
+              "datasource": {
+                "uid": "$datasource"
+              },
               "fieldConfig": {
                 "defaults": {
                   "custom": {},
@@ -1206,7 +1311,7 @@ data:
                 "h": 9,
                 "w": 12,
                 "x": 0,
-                "y": 30
+                "y": 70
               },
               "hiddenSeries": false,
               "id": 3,
@@ -1237,6 +1342,9 @@ data:
               "steppedLine": false,
               "targets": [
                 {
+                  "datasource": {
+                    "uid": "$datasource"
+                  },
                   "expr": "sum(rate(api_3scale_gateway_api_time_count{exported_service=\"rbac\"}[5m]))",
                   "interval": "15s",
                   "legendFormat": "",
@@ -1244,9 +1352,7 @@ data:
                 }
               ],
               "thresholds": [],
-              "timeFrom": null,
               "timeRegions": [],
-              "timeShift": null,
               "title": "Request Rate",
               "tooltip": {
                 "shared": true,
@@ -1255,33 +1361,24 @@ data:
               },
               "type": "graph",
               "xaxis": {
-                "buckets": null,
                 "mode": "time",
-                "name": null,
                 "show": true,
                 "values": []
               },
               "yaxes": [
                 {
                   "format": "short",
-                  "label": null,
                   "logBase": 1,
-                  "max": null,
-                  "min": null,
                   "show": true
                 },
                 {
                   "format": "short",
-                  "label": null,
                   "logBase": 1,
-                  "max": null,
-                  "min": null,
                   "show": true
                 }
               ],
               "yaxis": {
-                "align": false,
-                "alignLevel": null
+                "align": false
               }
             },
             {
@@ -1289,7 +1386,9 @@ data:
               "bars": false,
               "dashLength": 10,
               "dashes": false,
-              "datasource": "$datasource",
+              "datasource": {
+                "uid": "$datasource"
+              },
               "description": "Proportion of 5xx status codes returned from this service.",
               "fieldConfig": {
                 "defaults": {
@@ -1304,7 +1403,7 @@ data:
                 "h": 9,
                 "w": 12,
                 "x": 12,
-                "y": 30
+                "y": 70
               },
               "hiddenSeries": false,
               "id": 13,
@@ -1337,6 +1436,9 @@ data:
               "steppedLine": false,
               "targets": [
                 {
+                  "datasource": {
+                    "uid": "$datasource"
+                  },
                   "expr": "sum(rate(api_3scale_gateway_api_status{exported_service=\"rbac\",status=\"5xx\"}[5m])) / sum(rate(api_3scale_gateway_api_time_count{exported_service=\"rbac\"}[5m]))",
                   "interval": "15s",
                   "legendFormat": "",
@@ -1344,9 +1446,7 @@ data:
                 }
               ],
               "thresholds": [],
-              "timeFrom": null,
               "timeRegions": [],
-              "timeShift": null,
               "title": "Error Rate",
               "tooltip": {
                 "shared": true,
@@ -1355,50 +1455,40 @@ data:
               },
               "type": "graph",
               "xaxis": {
-                "buckets": null,
                 "mode": "time",
-                "name": null,
                 "show": true,
                 "values": []
               },
               "yaxes": [
                 {
                   "format": "percent",
-                  "label": null,
                   "logBase": 1,
-                  "max": null,
                   "min": "0",
                   "show": true
                 },
                 {
                   "format": "short",
-                  "label": null,
                   "logBase": 1,
-                  "max": null,
-                  "min": null,
                   "show": true
                 }
               ],
               "yaxis": {
-                "align": false,
-                "alignLevel": null
+                "align": false
               }
             },
             {
-              "cards": {
-                "cardPadding": null,
-                "cardRound": null
-              },
+              "cards": {},
               "color": {
                 "cardColor": "#c15c17",
                 "colorScale": "linear",
                 "colorScheme": "interpolateOranges",
                 "exponent": 0.9,
-                "min": null,
                 "mode": "opacity"
               },
               "dataFormat": "tsbuckets",
-              "datasource": "$datasource",
+              "datasource": {
+                "uid": "$datasource"
+              },
               "fieldConfig": {
                 "defaults": {
                   "custom": {}
@@ -1409,7 +1499,7 @@ data:
                 "h": 9,
                 "w": 12,
                 "x": 0,
-                "y": 39
+                "y": 79
               },
               "heatmap": {},
               "hideZeroBuckets": false,
@@ -1423,6 +1513,9 @@ data:
               "reverseYBuckets": false,
               "targets": [
                 {
+                  "datasource": {
+                    "uid": "$datasource"
+                  },
                   "expr": "sum(increase(api_3scale_gateway_api_time_bucket{exported_service=\"rbac\"}[$__interval])) by (le)",
                   "format": "heatmap",
                   "interval": "15s",
@@ -1439,28 +1532,703 @@ data:
               "xAxis": {
                 "show": true
               },
-              "xBucketNumber": null,
-              "xBucketSize": null,
               "yAxis": {
-                "decimals": null,
                 "format": "dtdurations",
                 "logBase": 1,
-                "max": null,
-                "min": null,
-                "show": true,
-                "splitFactor": null
+                "show": true
               },
-              "yBucketBound": "auto",
-              "yBucketNumber": null,
-              "yBucketSize": null
+              "yBucketBound": "auto"
+            }
+          ],
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "PD776AFABBE26000A"
+              },
+              "refId": "A"
             }
           ],
           "title": "RBAC from Gateway",
           "type": "row"
+        },
+        {
+          "collapsed": true,
+          "gridPos": {
+            "h": 1,
+            "w": 24,
+            "x": 0,
+            "y": 3
+          },
+          "id": 29,
+          "panels": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "$datasource"
+              },
+              "gridPos": {
+                "h": 7,
+                "w": 3,
+                "x": 0,
+                "y": 4
+              },
+              "id": 39,
+              "options": {
+                "code": {
+                  "language": "plaintext",
+                  "showLineNumbers": false,
+                  "showMiniMap": false
+                },
+                "content": "\n\nThe percentage of time the RBAC has been up (as proportion of the 5xx requests out of the total number of requests) during last 28 days > 99 %",
+                "mode": "markdown"
+              },
+              "pluginVersion": "9.3.8",
+              "title": "RBAC Availability SLO",
+              "type": "text"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "$datasource"
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "color": {
+                    "mode": "thresholds"
+                  },
+                  "mappings": [],
+                  "max": 1,
+                  "min": 0,
+                  "thresholds": {
+                    "mode": "absolute",
+                    "steps": [
+                      {
+                        "color": "red",
+                        "value": null
+                      },
+                      {
+                        "color": "green",
+                        "value": 0.99
+                      }
+                    ]
+                  },
+                  "unit": "percentunit"
+                },
+                "overrides": []
+              },
+              "gridPos": {
+                "h": 7,
+                "w": 4,
+                "x": 3,
+                "y": 4
+              },
+              "id": 31,
+              "options": {
+                "orientation": "auto",
+                "reduceOptions": {
+                  "calcs": [
+                    "lastNotNull"
+                  ],
+                  "fields": "",
+                  "values": false
+                },
+                "showThresholdLabels": false,
+                "showThresholdMarkers": true
+              },
+              "pluginVersion": "9.3.8",
+              "targets": [
+                {
+                  "datasource": {
+                    "type": "prometheus",
+                    "uid": "$datasource"
+                  },
+                  "editorMode": "code",
+                  "expr": "avg_over_time(service:sli:status_5xx:pctl5rate5m{environment=\"prod\", exported_service=\"rbac\"}[28d])",
+                  "hide": false,
+                  "legendFormat": "__auto",
+                  "range": true,
+                  "refId": "B"
+                }
+              ],
+              "title": "Error Rate Uptime [28d]",
+              "type": "gauge"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "$datasource"
+              },
+              "description": "",
+              "fieldConfig": {
+                "defaults": {
+                  "color": {
+                    "mode": "palette-classic"
+                  },
+                  "custom": {
+                    "axisCenteredZero": false,
+                    "axisColorMode": "text",
+                    "axisLabel": "",
+                    "axisPlacement": "auto",
+                    "barAlignment": 0,
+                    "drawStyle": "line",
+                    "fillOpacity": 10,
+                    "gradientMode": "none",
+                    "hideFrom": {
+                      "legend": false,
+                      "tooltip": false,
+                      "viz": false
+                    },
+                    "lineInterpolation": "linear",
+                    "lineWidth": 1,
+                    "pointSize": 5,
+                    "scaleDistribution": {
+                      "type": "linear"
+                    },
+                    "showPoints": "never",
+                    "spanNulls": false,
+                    "stacking": {
+                      "group": "A",
+                      "mode": "none"
+                    },
+                    "thresholdsStyle": {
+                      "mode": "line"
+                    }
+                  },
+                  "links": [],
+                  "mappings": [],
+                  "min": 0.96,
+                  "thresholds": {
+                    "mode": "absolute",
+                    "steps": [
+                      {
+                        "color": "transparent",
+                        "value": null
+                      },
+                      {
+                        "color": "red",
+                        "value": 0.99
+                      }
+                    ]
+                  },
+                  "unit": "percentunit"
+                },
+                "overrides": []
+              },
+              "gridPos": {
+                "h": 7,
+                "w": 13,
+                "x": 7,
+                "y": 4
+              },
+              "id": 33,
+              "options": {
+                "legend": {
+                  "calcs": [],
+                  "displayMode": "list",
+                  "placement": "bottom",
+                  "showLegend": true
+                },
+                "tooltip": {
+                  "mode": "multi",
+                  "sort": "none"
+                }
+              },
+              "pluginVersion": "9.3.8",
+              "targets": [
+                {
+                  "datasource": {
+                    "type": "prometheus",
+                    "uid": "$datasource"
+                  },
+                  "editorMode": "code",
+                  "exemplar": false,
+                  "expr": "avg_over_time(service:sli:status_5xx:pctl5rate5m{environment=\"prod\", exported_service=\"rbac\"}[5m])",
+                  "format": "heatmap",
+                  "hide": false,
+                  "instant": false,
+                  "interval": "",
+                  "legendFormat": "Error Rate Uptime",
+                  "range": true,
+                  "refId": "A"
+                }
+              ],
+              "title": "Error Rate Uptime",
+              "type": "timeseries"
+            },
+            {
+              "aliasColors": {
+                "1000 - 1500ms": "dark-yellow",
+                "1500 - 2000ms": "light-yellow",
+                "2000 - 2500ms": "light-orange",
+                "2500 - 3000ms": "dark-orange",
+                "3000 - 3500ms": "light-red",
+                "3500 - 4000ms": "semi-dark-red",
+                "500 - 1000ms": "light-green",
+                "> 4000ms": "dark-red"
+              },
+              "bars": false,
+              "dashLength": 10,
+              "dashes": false,
+              "datasource": {
+                "type": "prometheus",
+                "uid": "$datasource"
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "links": []
+                },
+                "overrides": []
+              },
+              "fill": 1,
+              "fillGradient": 6,
+              "gridPos": {
+                "h": 10,
+                "w": 20,
+                "x": 0,
+                "y": 11
+              },
+              "hiddenSeries": false,
+              "id": 42,
+              "legend": {
+                "avg": false,
+                "current": false,
+                "max": false,
+                "min": false,
+                "show": true,
+                "total": false,
+                "values": false
+              },
+              "lines": true,
+              "linewidth": 1,
+              "nullPointMode": "null",
+              "options": {
+                "alertThreshold": true
+              },
+              "percentage": true,
+              "pluginVersion": "9.3.8",
+              "pointradius": 2,
+              "points": false,
+              "renderer": "flot",
+              "seriesOverrides": [],
+              "spaceLength": 10,
+              "stack": true,
+              "steppedLine": false,
+              "targets": [
+                {
+                  "datasource": {
+                    "uid": "$datasource"
+                  },
+                  "editorMode": "code",
+                  "expr": "sum(rate(django_http_responses_total_by_status_total{job=\"rbac-service\", status=~\"2..\"}[5m])) > 0",
+                  "legendFormat": "2xx",
+                  "range": true,
+                  "refId": "A"
+                },
+                {
+                  "datasource": {
+                    "uid": "$datasource"
+                  },
+                  "editorMode": "code",
+                  "expr": "sum(rate(django_http_responses_total_by_status_total{job=\"rbac-service\", status=~\"3..\"}[5m])) > 0",
+                  "hide": false,
+                  "legendFormat": "3xx",
+                  "range": true,
+                  "refId": "B"
+                },
+                {
+                  "datasource": {
+                    "uid": "$datasource"
+                  },
+                  "editorMode": "code",
+                  "expr": "sum(rate(django_http_responses_total_by_status_total{job=\"rbac-service\", status=~\"4..\"}[5m])) > 0",
+                  "hide": false,
+                  "legendFormat": "4xx",
+                  "range": true,
+                  "refId": "C"
+                },
+                {
+                  "datasource": {
+                    "uid": "$datasource"
+                  },
+                  "editorMode": "code",
+                  "expr": "sum(rate(django_http_responses_total_by_status_total{job=\"rbac-service\", status=~\"5..\"}[5m])) > 0",
+                  "hide": false,
+                  "legendFormat": "5xx",
+                  "range": true,
+                  "refId": "D"
+                }
+              ],
+              "thresholds": [],
+              "timeRegions": [],
+              "title": "Status Code Proportions",
+              "tooltip": {
+                "shared": true,
+                "sort": 0,
+                "value_type": "individual"
+              },
+              "type": "graph",
+              "xaxis": {
+                "mode": "time",
+                "show": true,
+                "values": []
+              },
+              "yaxes": [
+                {
+                  "$$hashKey": "object:177",
+                  "format": "short",
+                  "logBase": 1,
+                  "max": "100",
+                  "min": "99",
+                  "show": true
+                },
+                {
+                  "$$hashKey": "object:178",
+                  "format": "short",
+                  "logBase": 1,
+                  "show": false
+                }
+              ],
+              "yaxis": {
+                "align": false
+              }
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "$datasource"
+              },
+              "gridPos": {
+                "h": 7,
+                "w": 3,
+                "x": 0,
+                "y": 21
+              },
+              "id": 38,
+              "options": {
+                "code": {
+                  "language": "plaintext",
+                  "showLineNumbers": false,
+                  "showMiniMap": false
+                },
+                "content": "The proportion of the service request durations under 500 ms during 28 days > 99 %",
+                "mode": "markdown"
+              },
+              "pluginVersion": "9.3.8",
+              "title": "RBAC Latency SLO",
+              "type": "text"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "$datasource"
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "color": {
+                    "mode": "thresholds"
+                  },
+                  "mappings": [],
+                  "max": 1,
+                  "min": 0,
+                  "thresholds": {
+                    "mode": "absolute",
+                    "steps": [
+                      {
+                        "color": "red",
+                        "value": null
+                      },
+                      {
+                        "color": "green",
+                        "value": 0.99
+                      }
+                    ]
+                  },
+                  "unit": "percentunit"
+                },
+                "overrides": []
+              },
+              "gridPos": {
+                "h": 7,
+                "w": 4,
+                "x": 3,
+                "y": 21
+              },
+              "id": 40,
+              "options": {
+                "orientation": "auto",
+                "reduceOptions": {
+                  "calcs": [
+                    "lastNotNull"
+                  ],
+                  "fields": "",
+                  "values": false
+                },
+                "showThresholdLabels": false,
+                "showThresholdMarkers": true
+              },
+              "pluginVersion": "9.3.8",
+              "targets": [
+                {
+                  "datasource": {
+                    "type": "prometheus",
+                    "uid": "$datasource"
+                  },
+                  "editorMode": "code",
+                  "expr": "sum(rate(django_http_requests_latency_including_middlewares_seconds_bucket{le=\"0.5\", namespace=\"rbac-prod\"}[28d])) / sum(rate(django_http_requests_latency_including_middlewares_seconds_count{namespace=\"rbac-prod\"}[28d]))",
+                  "hide": false,
+                  "legendFormat": "__auto",
+                  "range": true,
+                  "refId": "B"
+                }
+              ],
+              "title": "Latency Uptime [28d]",
+              "type": "gauge"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "$datasource"
+              },
+              "description": "Alert: Request with duration under 500ms > 95%",
+              "fieldConfig": {
+                "defaults": {
+                  "color": {
+                    "mode": "palette-classic"
+                  },
+                  "custom": {
+                    "axisCenteredZero": false,
+                    "axisColorMode": "text",
+                    "axisLabel": "",
+                    "axisPlacement": "auto",
+                    "barAlignment": 0,
+                    "drawStyle": "line",
+                    "fillOpacity": 10,
+                    "gradientMode": "none",
+                    "hideFrom": {
+                      "legend": false,
+                      "tooltip": false,
+                      "viz": false
+                    },
+                    "lineInterpolation": "linear",
+                    "lineWidth": 1,
+                    "pointSize": 5,
+                    "scaleDistribution": {
+                      "type": "linear"
+                    },
+                    "showPoints": "never",
+                    "spanNulls": false,
+                    "stacking": {
+                      "group": "A",
+                      "mode": "none"
+                    },
+                    "thresholdsStyle": {
+                      "mode": "line"
+                    }
+                  },
+                  "links": [],
+                  "mappings": [],
+                  "min": 0.9,
+                  "thresholds": {
+                    "mode": "absolute",
+                    "steps": [
+                      {
+                        "color": "transparent",
+                        "value": null
+                      },
+                      {
+                        "color": "red",
+                        "value": 0.99
+                      }
+                    ]
+                  },
+                  "unit": "percentunit"
+                },
+                "overrides": []
+              },
+              "gridPos": {
+                "h": 7,
+                "w": 13,
+                "x": 7,
+                "y": 21
+              },
+              "id": 41,
+              "options": {
+                "legend": {
+                  "calcs": [],
+                  "displayMode": "list",
+                  "placement": "bottom",
+                  "showLegend": true
+                },
+                "tooltip": {
+                  "mode": "multi",
+                  "sort": "none"
+                }
+              },
+              "pluginVersion": "9.3.8",
+              "targets": [
+                {
+                  "datasource": {
+                    "type": "prometheus",
+                    "uid": "$datasource"
+                  },
+                  "editorMode": "code",
+                  "exemplar": false,
+                  "expr": "sum(rate(django_http_requests_latency_including_middlewares_seconds_bucket{le=\"0.5\", namespace=\"rbac-prod\"}[5m])) / sum(rate(django_http_requests_latency_including_middlewares_seconds_count{namespace=\"rbac-prod\"}[5m]))",
+                  "format": "heatmap",
+                  "hide": false,
+                  "instant": false,
+                  "interval": "",
+                  "legendFormat": "requests < 500 ms",
+                  "range": true,
+                  "refId": "A"
+                }
+              ],
+              "title": "Latency Uptime",
+              "type": "timeseries"
+            },
+            {
+              "aliasColors": {
+                "1000 - 1500ms": "dark-yellow",
+                "1500 - 2000ms": "light-yellow",
+                "2000 - 2500ms": "light-orange",
+                "2500 - 3000ms": "dark-orange",
+                "3000 - 3500ms": "light-red",
+                "3500 - 4000ms": "semi-dark-red",
+                "500 - 1000ms": "light-green",
+                "> 4000ms": "dark-red"
+              },
+              "bars": false,
+              "dashLength": 10,
+              "dashes": false,
+              "datasource": {
+                "type": "prometheus",
+                "uid": "$datasource"
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "links": []
+                },
+                "overrides": []
+              },
+              "fill": 1,
+              "fillGradient": 6,
+              "gridPos": {
+                "h": 10,
+                "w": 20,
+                "x": 0,
+                "y": 28
+              },
+              "hiddenSeries": false,
+              "id": 43,
+              "legend": {
+                "avg": false,
+                "current": false,
+                "max": false,
+                "min": false,
+                "show": true,
+                "total": false,
+                "values": false
+              },
+              "lines": true,
+              "linewidth": 1,
+              "nullPointMode": "null",
+              "options": {
+                "alertThreshold": true
+              },
+              "percentage": true,
+              "pluginVersion": "9.3.8",
+              "pointradius": 2,
+              "points": false,
+              "renderer": "flot",
+              "seriesOverrides": [],
+              "spaceLength": 10,
+              "stack": true,
+              "steppedLine": false,
+              "targets": [
+                {
+                  "datasource": {
+                    "uid": "$datasource"
+                  },
+                  "editorMode": "code",
+                  "expr": "sum(rate(django_http_requests_latency_including_middlewares_seconds_bucket{le=\"0.5\", namespace=\"rbac-prod\"}[5m])) > 0",
+                  "legendFormat": "< 500 ms",
+                  "range": true,
+                  "refId": "A"
+                },
+                {
+                  "datasource": {
+                    "uid": "$datasource"
+                  },
+                  "editorMode": "code",
+                  "expr": "sum(rate(django_http_requests_latency_including_middlewares_seconds_bucket{le=\"1.0\", namespace=\"rbac-prod\"}[5m])) - sum(rate(django_http_requests_latency_including_middlewares_seconds_bucket{le=\"0.5\", namespace=\"rbac-prod\"}[5m])) > 0",
+                  "legendFormat": "500 - 1000 ms",
+                  "range": true,
+                  "refId": "B"
+                },
+                {
+                  "datasource": {
+                    "uid": "$datasource"
+                  },
+                  "editorMode": "code",
+                  "expr": "sum(rate(django_http_requests_latency_including_middlewares_seconds_bucket{le=\"2.5\", namespace=\"rbac-prod\"}[5m])) - sum(rate(django_http_requests_latency_including_middlewares_seconds_bucket{le=\"1.0\", namespace=\"rbac-prod\"}[5m])) > 0",
+                  "legendFormat": "1000 - 2500 ms",
+                  "range": true,
+                  "refId": "E"
+                },
+                {
+                  "datasource": {
+                    "uid": "$datasource"
+                  },
+                  "editorMode": "code",
+                  "expr": "sum(rate(django_http_requests_latency_including_middlewares_seconds_bucket{le=\"+Inf\", namespace=\"rbac-prod\"}[5m])) - sum(rate(django_http_requests_latency_including_middlewares_seconds_bucket{le=\"2.5\", namespace=\"rbac-prod\"}[5m])) > 0",
+                  "hide": false,
+                  "legendFormat": "> 2500 ms",
+                  "range": true,
+                  "refId": "C"
+                }
+              ],
+              "thresholds": [],
+              "timeRegions": [],
+              "title": "Latency Distribution",
+              "tooltip": {
+                "shared": true,
+                "sort": 0,
+                "value_type": "individual"
+              },
+              "type": "graph",
+              "xaxis": {
+                "mode": "time",
+                "show": true,
+                "values": []
+              },
+              "yaxes": [
+                {
+                  "$$hashKey": "object:177",
+                  "format": "short",
+                  "logBase": 1,
+                  "max": "100",
+                  "min": "99",
+                  "show": true
+                },
+                {
+                  "$$hashKey": "object:178",
+                  "format": "short",
+                  "logBase": 1,
+                  "show": false
+                }
+              ],
+              "yaxis": {
+                "align": false
+              }
+            }
+          ],
+          "title": "RBAC SLOs",
+          "type": "row"
         }
       ],
       "refresh": false,
-      "schemaVersion": 26,
+      "schemaVersion": 37,
       "style": "dark",
       "tags": [],
       "templating": {
@@ -1485,154 +2253,51 @@ data:
             "type": "datasource"
           },
           {
-            "allValue": null,
-            "current": {
-              "selected": true,
-              "text": [
-                "All"
-              ],
-              "value": [
-                "$__all"
-              ]
+            "current": {},
+            "datasource": {
+              "type": "prometheus",
+              "uid": "$datasource"
             },
-            "datasource": "$datasource",
             "definition": "django_http_requests_latency_seconds_by_view_method_bucket{job=\"rbac-service\"}",
             "hide": 0,
             "includeAll": true,
-            "label": null,
             "multi": true,
             "name": "Endpoint",
-            "options": [
-              {
-                "selected": true,
-                "text": "All",
-                "value": "$__all"
-              },
-              {
-                "selected": false,
-                "text": "access",
-                "value": "access"
-              },
-              {
-                "selected": false,
-                "text": "cross-detail",
-                "value": "cross-detail"
-              },
-              {
-                "selected": false,
-                "text": "cross-list",
-                "value": "cross-list"
-              },
-              {
-                "selected": false,
-                "text": "group-detail",
-                "value": "group-detail"
-              },
-              {
-                "selected": false,
-                "text": "group-list",
-                "value": "group-list"
-              },
-              {
-                "selected": false,
-                "text": "group-principals",
-                "value": "group-principals"
-              },
-              {
-                "selected": false,
-                "text": "group-roles",
-                "value": "group-roles"
-              },
-              {
-                "selected": false,
-                "text": "permission-list",
-                "value": "permission-list"
-              },
-              {
-                "selected": false,
-                "text": "permission-options",
-                "value": "permission-options"
-              },
-              {
-                "selected": false,
-                "text": "policy-detail",
-                "value": "policy-detail"
-              },
-              {
-                "selected": false,
-                "text": "policy-list",
-                "value": "policy-list"
-              },
-              {
-                "selected": false,
-                "text": "principals",
-                "value": "principals"
-              },
-              {
-                "selected": false,
-                "text": "prometheus-django-metrics",
-                "value": "prometheus-django-metrics"
-              },
-              {
-                "selected": false,
-                "text": "role-access",
-                "value": "role-access"
-              },
-              {
-                "selected": false,
-                "text": "role-detail",
-                "value": "role-detail"
-              },
-              {
-                "selected": false,
-                "text": "role-list",
-                "value": "role-list"
-              },
-              {
-                "selected": false,
-                "text": "server-status",
-                "value": "server-status"
-              }
-            ],
-            "query": "django_http_requests_latency_seconds_by_view_method_bucket{job=\"rbac-service\"}",
-            "refresh": 0,
+            "options": [],
+            "query": {
+              "query": "django_http_requests_latency_seconds_by_view_method_bucket{job=\"rbac-service\"}",
+              "refId": "crcp01ue1-prometheus-Endpoint-Variable-Query"
+            },
+            "refresh": 1,
             "regex": "/.*view=\"([^\"]*).*/",
             "skipUrlSync": false,
             "sort": 1,
             "tagValuesQuery": "",
-            "tags": [],
             "tagsQuery": "",
             "type": "query",
             "useTags": false
           },
           {
-            "allValue": null,
-            "current": {
-              "selected": false,
-              "text": "rbac-stage",
-              "value": "rbac-stage"
+            "current": {},
+            "datasource": {
+              "type": "prometheus",
+              "uid": "$datasource"
             },
-            "datasource": "$datasource",
             "definition": "kube_pod_container_status_restarts_total{}",
             "hide": 0,
             "includeAll": false,
-            "label": null,
             "multi": false,
             "name": "Namespace",
-            "options": [
-              {
-                "selected": true,
-                "text": "rbac-stage",
-                "value": "rbac-stage"
-              }
-            ],
-            "query": "kube_pod_container_status_restarts_total{}",
-            "refresh": 0,
+            "options": [],
+            "query": {
+              "query": "kube_pod_container_status_restarts_total{}",
+              "refId": "crcp01ue1-prometheus-Namespace-Variable-Query"
+            },
+            "refresh": 1,
             "regex": "/.*namespace=\"(rbac[^\"]*).*/",
             "skipUrlSync": false,
             "sort": 0,
             "tagValuesQuery": "",
-            "tags": [],
             "tagsQuery": "",
             "type": "query",
             "useTags": false
@@ -1671,7 +2336,8 @@ data:
       "timezone": "",
       "title": "Operations - Rbac w/CPU",
       "uid": "TjP_nMWMk",
-      "version": 2
+      "version": 3,
+      "weekStart": ""
     }
 kind: ConfigMap
 metadata:
