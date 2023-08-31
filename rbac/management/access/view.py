@@ -19,7 +19,7 @@
 from django.conf import settings
 from django.core.exceptions import ObjectDoesNotExist
 from management.cache import AccessCache
-from management.models import Access, Permission, Workspace
+from management.models import Access, Permission, Workspace, ResourceDefinition
 from management.querysets import get_access_queryset
 from management.role.serializer import AccessSerializer
 from management.utils import (
@@ -38,6 +38,42 @@ ORDER_FIELD = "order_by"
 VALID_ORDER_VALUES = ["application", "resource_type", "verb", "-application", "-resource_type", "-verb"]
 
 
+
+def get_individual_asset_access(individual_asset_key, individual_asset_value, access_for_request):
+    """Get Access from Resource definitions if individual asset access is specified.
+    If key & value are specified, return whether or not access exists.
+    If only key is specified, return values for that key.
+    """
+    access_objects = [access_object.id for access_object in access_for_request]
+    RDs = ResourceDefinition.objects.filter(access_id__in=access_objects)
+    individual_asset_values = []
+    individual_asset_found = False
+    response_chosen = None
+    response_list = {
+        "individual_asset_values": individual_asset_values,
+    }
+    response_access = {
+        "has_access": individual_asset_found,
+        "individual_asset_key": individual_asset_key,
+        "individual_asset_value": individual_asset_value,
+    }
+    for RD in RDs:
+        attributeFilter = RD.attributeFilter
+        if attributeFilter:
+            if attributeFilter["key"] == individual_asset_key:
+                if individual_asset_value:
+                    # if a value was passed in check for access
+                    # scorecard line 11 (continued more finegrained)
+                    response_chosen = response_access
+                    if attributeFilter["value"]== individual_asset_value:
+                        response_access["has_access"] = True
+                        break
+                else:
+                    # if a value wasn't passed in - check for asset values for the type
+                    # scorecard line 23 minus a verb
+                    response_chosen = response_list
+                    individual_asset_values.append(attributeFilter["value"])
+    return Response(response_chosen)
 class AccessView(APIView):
     """Obtain principal access list."""
 
@@ -124,6 +160,8 @@ class AccessView(APIView):
             application = query_params.get("application")
             resource_type = query_params.get("resource_type")
             verb = query_params.get("verb")
+            individual_asset_key = query_params.get("individual_asset_key")
+            individual_asset_value = query_params.get("individual_asset_value")
 
             try:
                 permission = Permission.objects.get(application=application, resource_type=resource_type, verb=verb)
@@ -135,7 +173,9 @@ class AccessView(APIView):
             access = access_for_principal(principal, request.tenant)
             pks = [a.id for a in access]
             access_for_request = Access.objects.filter(id__in=pks, permission=permission)
-
+            if access_for_request.exists():
+                if individual_asset_key:
+                    return(get_individual_asset_access(individual_asset_key, individual_asset_value, access_for_request))
             found = False
             # is this workspace permission ?
             workspace_permission = permission.workspace or Workspace.objects.filter(name=application).first()
@@ -153,15 +193,18 @@ class AccessView(APIView):
                         access_for_request = Access.objects.filter(id__in=pks, permission=permission)
                         if access_for_request.exists():
                             found = True
+                            if individual_asset_key:
+                                return(get_individual_asset_access(individual_asset_key, individual_asset_value, access_for_request))
                             break
 
             return Response(
                 {
                     "has_access": access_for_request.exists(),
                     "permission": permission.permission,
-                    "application": application,
-                    "resource_type": resource_type,
-                    "verb": verb,
+                    "workspace": application,
+                    "service": resource_type,
+                    "asset_type": verb,
+                    "verb": "",
                 }
             )
         ### PDP SPIKE ### # noqa: E266
