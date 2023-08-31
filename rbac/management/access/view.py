@@ -47,16 +47,15 @@ def get_individual_asset_access(individual_asset_key, individual_asset_value, ac
     access_objects = [access_object.id for access_object in access_for_request]
     RDs = ResourceDefinition.objects.filter(access_id__in=access_objects)
     individual_asset_values = []
-    individual_asset_found = False
-    response_chosen = None
-    response_list = {
+    response = {
         "individual_asset_values": individual_asset_values,
     }
-    response_access = {
-        "has_access": individual_asset_found,
-        "individual_asset_key": individual_asset_key,
-        "individual_asset_value": individual_asset_value,
-    }
+    if individual_asset_value is not None:
+        response = {
+            "has_access": False,
+            "individual_asset_key": individual_asset_key,
+            "individual_asset_value": individual_asset_value,
+        }
     for RD in RDs:
         attributeFilter = RD.attributeFilter
         if attributeFilter:
@@ -64,16 +63,14 @@ def get_individual_asset_access(individual_asset_key, individual_asset_value, ac
                 if individual_asset_value:
                     # if a value was passed in check for access
                     # scorecard line 11 (continued more finegrained)
-                    response_chosen = response_access
                     if attributeFilter["value"]== individual_asset_value:
-                        response_access["has_access"] = True
+                        response["has_access"] = True
                         break
                 else:
                     # if a value wasn't passed in - check for asset values for the type
                     # scorecard line 23 minus a verb
-                    response_chosen = response_list
                     individual_asset_values.append(attributeFilter["value"])
-    return Response(response_chosen)
+    return Response(response)
 class AccessView(APIView):
     """Obtain principal access list."""
 
