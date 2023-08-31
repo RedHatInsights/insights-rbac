@@ -17,14 +17,15 @@
 """Celery tasks."""
 from __future__ import absolute_import, unicode_literals
 
+
 from celery import shared_task
 from django.core.management import call_command
-from management.health.healthcheck import check_health, delay
 from management.principal.cleaner import clean_tenants_principals
 
 from rest_framework import permissions
 from rest_framework.decorators import permission_classes
 
+from management.health.healthcheck import redis_health
 
 @shared_task
 def principal_cleanup():
@@ -63,8 +64,5 @@ def run_ocm_performance_in_worker():
 
 
 @shared_task
-@permission_classes((permissions.AllowAny,))
-def run_healthcheck_in_worker():
-    """Celery task to check health of workers."""
-    check_health()
-    delay()
+def run_redis_cache_health():
+    redis_health()

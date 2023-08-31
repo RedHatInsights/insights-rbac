@@ -14,30 +14,19 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
-"""Celery Health Check."""
-from time import sleep
+"""Redis Health Check."""
 
-import health_check
-from rest_framework import permissions
-from rest_framework.decorators import permission_classes
-from rest_framework.renderers import JSONRenderer
-from rest_framework.response import Response
+import time
+import logging 
 
-from django.urls import resolve
+from management.cache import BasicCache
 
-rbacHealthCheck = health_check.contrib.celery_ping.backends.CeleryPingHealthCheck()
+logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
-@permission_classes((permissions.AllowAny,))
-def delay():
-    """Delay 10 seconds for async."""
-    sleep(10)
+def redis_health():
+    time.sleep(10)
 
-
-@permission_classes((permissions.AllowAny,))
-def check_health():
-    """Check the health of the workers and brokers."""
-    # If the celery workers or redis connection are unavailable, then return a 500 error.
-    # Otherwise, return a 200 status."""
-
-    check_status = rbacHealthCheck.check_status()
-    return check_status
+    redis_cache = BasicCache()
+    redis_cache.redis_health_check(redis_cache)
+    
+    

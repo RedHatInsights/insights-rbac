@@ -39,7 +39,6 @@ urlpatterns = [
     re_path(r"^{}v1/".format(API_PATH_PREFIX), include("management.urls")),
     re_path(r"^_private/", include("internal.urls")),
     re_path(r"", include("django_prometheus.urls")),
-    re_path(r"{}v1/ht/".format(API_PATH_PREFIX), include("health_check.urls")),
 ]
 
 urlpatterns += staticfiles_urlpatterns()

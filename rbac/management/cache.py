@@ -8,10 +8,27 @@ import pickle
 from django.conf import settings
 from redis import BlockingConnectionPool, exceptions
 from redis.client import Redis
+from celery import shared_task
+from prometheus_client import Counter
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 _connection_pool = BlockingConnectionPool(**settings.REDIS_CACHE_CONNECTION_PARAMS)  # should match gunicorn.threads
 
+redis_enable_cache_get_total = Counter(
+    "redis_enable_cache_get_total", 
+    "Total amount of use_caching is true",
+    ["enable_caching"]
+)
+redis_disable_cache_get_total = Counter(
+    "redis_disable_cache_get_total",
+    "Total amount of times cache has been disabled",
+    ["disable_caching"]
+)
+redis_cache_get_total = Counter(
+    "redis_cache_get_total",
+    "Total get requests on cache",
+    ["response"]
+)
 
 class BasicCache:
     """Basic cache class to be inherited."""
@@ -19,6 +36,7 @@ class BasicCache:
     def __init__(self):
         """Init the class."""
         self._connection = None
+        self.use_caching = False
 
     @property
     def connection(self):
@@ -31,6 +49,39 @@ class BasicCache:
                 self._connection = None
                 raise
         return self._connection
+    
+    def enable_caching(self):
+        self.use_caching = True
+        logger.info(f"Cache Enabled")
+        # add metric call here to notify we are caching
+        redis_enable_cache_get_total.labels().inc()
+        return self.use_caching
+
+    def disable_caching(self):
+        self.use_caching = False
+        logger.info("Cache Disabled")
+        # add metric call here to notify we are NOT caching
+        redis_disable_cache_get_total.labels().inc()
+        return self.use_caching
+
+
+    @shared_task
+    def redis_health_check(self):
+        self._connection = Redis(connection_pool=_connection_pool, ssl=settings.REDIS_SSL)
+        try:
+            response = self._connection.ping()
+            redis_cache_get_total.labels(response=Redis).inc()
+            if response:
+                logger.info(f"Redis cache is reachable.")
+                self.enable_caching(BasicCache)
+                return True
+            else:
+                logger.info(f"Redis cache is not reachable.")
+                self.disable_caching(BasicCache)
+                return False
+        except Exception as e:
+            logger.exception("Error:", e)
+
 
     @contextlib.contextmanager
     def delete_handler(self, err_msg):
@@ -47,9 +98,17 @@ class BasicCache:
     def get_cached(self, key, error_message):
         """Get cached object from redis, throw error if there is any."""
         try:
-            return self.get_from_redis(key)
+            if self.redis_health_check(BasicCache) == True:
+                if self.use_caching:
+                    return self.get_from_redis(key)
+            else:               
+                # Retrieve data directly
+                logger.info("Not Retrieving Data from Redis cache")
+                pass
+
         except exceptions.RedisError:
             logger.exception(error_message)
+
         return None
 
     def delete_cached(self, key, obj_name):

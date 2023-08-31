@@ -22,6 +22,7 @@ import os
 from celery import Celery
 from celery.schedules import crontab
 
+
 # set the default Django settings module for the 'celery' program.
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "rbac.settings")
 
@@ -44,9 +45,9 @@ app.conf.beat_schedule = {
         "schedule": crontab(minute=0, hour=0),
         "args": [],
     },  # noqa: E231, E501
-    "schedule-health-check": {
-        "task": "management.tasks.run_healthcheck_in_worker",
-        "schedule": 15,
+    "schedule-redis-check": {
+        "task": "management.tasks.run_redis_cache_health",
+        "schedule": 30,
         "args": [],
     },
 }
