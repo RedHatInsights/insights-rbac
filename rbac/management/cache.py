@@ -16,18 +16,15 @@ _connection_pool = BlockingConnectionPool(**settings.REDIS_CACHE_CONNECTION_PARA
 
 redis_enable_cache_get_total = Counter(
     "redis_enable_cache_get_total", 
-    "Total amount of use_caching is true",
-    ["enable_caching"]
+    "Total amount of use_caching is true"
 )
 redis_disable_cache_get_total = Counter(
     "redis_disable_cache_get_total",
-    "Total amount of times cache has been disabled",
-    ["disable_caching"]
+    "Total amount of times cache has been disabled"
 )
 redis_cache_get_total = Counter(
     "redis_cache_get_total",
-    "Total get requests on cache",
-    ["response"]
+    "Total get requests on cache"
 )
 
 class BasicCache:
@@ -54,30 +51,29 @@ class BasicCache:
         self.use_caching = True
         logger.info(f"Cache Enabled")
         # add metric call here to notify we are caching
-        redis_enable_cache_get_total.labels().inc()
+        redis_enable_cache_get_total.inc()
         return self.use_caching
 
     def disable_caching(self):
         self.use_caching = False
         logger.info("Cache Disabled")
         # add metric call here to notify we are NOT caching
-        redis_disable_cache_get_total.labels().inc()
+        redis_disable_cache_get_total.inc()
         return self.use_caching
 
 
-    @shared_task
     def redis_health_check(self):
         self._connection = Redis(connection_pool=_connection_pool, ssl=settings.REDIS_SSL)
         try:
             response = self._connection.ping()
-            redis_cache_get_total.labels(response=Redis).inc()
+            #redis_cache_get_total.inc()
             if response:
                 logger.info(f"Redis cache is reachable.")
-                self.enable_caching(BasicCache)
+                self.enable_caching()
                 return True
             else:
                 logger.info(f"Redis cache is not reachable.")
-                self.disable_caching(BasicCache)
+                self.disable_caching()
                 return False
         except Exception as e:
             logger.exception("Error:", e)
@@ -98,12 +94,13 @@ class BasicCache:
     def get_cached(self, key, error_message):
         """Get cached object from redis, throw error if there is any."""
         try:
-            if self.redis_health_check(BasicCache) == True:
+            if self.redis_health_check() == True:
                 if self.use_caching:
                     return self.get_from_redis(key)
             else:               
                 # Retrieve data directly
                 logger.info("Not Retrieving Data from Redis cache")
+                self.disable_caching()
                 pass
 
         except exceptions.RedisError:
