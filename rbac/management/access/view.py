@@ -154,16 +154,33 @@ class AccessView(APIView):
         query_params = request.query_params
         pdp = query_params.get("pdp")
         if pdp == "true":
+            workspace = query_params.get("workspace")
             application = query_params.get("application")
             resource_type = query_params.get("resource_type")
             verb = query_params.get("verb")
             individual_asset_key = query_params.get("individual_asset_key")
             individual_asset_value = query_params.get("individual_asset_value")
-
+            if workspace:
+                workspace_obj = Workspace.objects.filter(name=workspace).first()
+                if not workspace_obj:
+                    return Response({"error": "workspace does not exist"})
+                ancestor_workspaces = workspace_obj.get_ancestors()
+                ancestor_names = [ancestor.name for ancestor in ancestor_workspaces]
+                ancestor_names.append(workspace)
             try:
-                permission = Permission.objects.get(application=application, resource_type=resource_type, verb=verb)
+                permission = Permission.objects.get(workspace__name__in=ancestor_names, application=application, resource_type=resource_type, verb=verb)
             except ObjectDoesNotExist:
-                return Response({"error": "permission does not exist"})
+                # return Response({"error": "permission does not exist"})
+                return Response(
+                    {
+                        "has_access": False,
+                        "permission": "Permission does not exist in this workspace.",
+                        "workspace": workspace,
+                        "service": application,
+                        "asset_type": resource_type,
+                        "verb": verb,
+                    }
+                )
 
             # not the most performant because we query Access again since
             # access_for_principal returns a set vs queryset
@@ -173,35 +190,36 @@ class AccessView(APIView):
             if access_for_request.exists():
                 if individual_asset_key:
                     return(get_individual_asset_access(individual_asset_key, individual_asset_value, access_for_request))
-            found = False
-            # is this workspace permission ?
-            workspace_permission = permission.workspace or Workspace.objects.filter(name=application).first()
-            if workspace_permission and access_for_request.exists() == False: # workspace permission is not defined at requested workspace
-                ancestor_workspaces = workspace_permission.get_ancestors()
-                # Anybody in workspace ancestors has access ?
-                for workspace in ancestor_workspaces:
-                    if found:
-                        break
-                    workspace = Workspace.objects.get(id=workspace.id)
-                    # Does workspace permissions which according to our request ?
-                    permissions = workspace.permissions.filter(resource_type=resource_type, verb=verb)
-                    # we are looking for service access(resource_type,verb) permission(we can skip workspace(application) part, we are inside organization)
-                    for permission in permissions:
-                        access_for_request = Access.objects.filter(id__in=pks, permission=permission)
-                        if access_for_request.exists():
-                            found = True
-                            if individual_asset_key:
-                                return(get_individual_asset_access(individual_asset_key, individual_asset_value, access_for_request))
-                            break
+            # found = False
+            # # is this workspace permission ?
+            # workspace_permission = permission.workspace or Workspace.objects.filter(name=workspace).first()
+            # if workspace_permission and access_for_request.exists() == False: # workspace permission is not defined at requested workspace
+            #     print("are we in this??")
+            #     ancestor_workspaces = workspace_permission.get_ancestors()
+            #     # Anybody in workspace ancestors has access ?
+            #     for workspace in ancestor_workspaces:
+            #         if found:
+            #             break
+            #         workspace = Workspace.objects.get(id=workspace.id)
+            #         # Does workspace permissions which according to our request ?
+            #         permissions = workspace.permissions.filter(resource_type=resource_type, verb=verb)
+            #         # we are looking for service access(resource_type,verb) permission(we can skip workspace(application) part, we are inside organization)
+            #         for permission in permissions:
+            #             access_for_request = Access.objects.filter(id__in=pks, permission=permission)
+            #             if access_for_request.exists():
+            #                 found = True
+            #                 if individual_asset_key:
+            #                     return(get_individual_asset_access(individual_asset_key, individual_asset_value, access_for_request))
+            #                 break
 
             return Response(
                 {
                     "has_access": access_for_request.exists(),
                     "permission": permission.permission,
-                    "workspace": application,
-                    "service": resource_type,
-                    "asset_type": verb,
-                    "verb": "",
+                    "workspace": workspace,
+                    "service": application,
+                    "asset_type": resource_type,
+                    "verb": verb,
                 }
             )
         ### PDP SPIKE ### # noqa: E266
