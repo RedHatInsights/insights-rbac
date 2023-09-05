@@ -193,7 +193,7 @@ def filter_queryset_by_tenant(queryset, tenant):
 
 
 def validate_and_get_key(params, query_key, valid_values, default_value=None, required=True):
-    """Validate the key."""
+    """Validate and return the key."""
     value = params.get(query_key, default_value)
     if not value:
         if required:
@@ -209,6 +209,17 @@ def validate_and_get_key(params, query_key, valid_values, default_value=None, re
         )
         raise serializers.ValidationError({key: _(message)})
     return value.lower()
+
+
+def validate_key(params, query_key, valid_values, default_value=None, required=True):
+    """Validate a key and do not return the value."""
+    value = params.get(query_key, default_value)
+    if value.lower() not in valid_values:
+        key = "detail"
+        message = "{} query parameter value '{}' is invalid. {} are valid inputs.".format(
+            query_key, value, valid_values
+        )
+        raise serializers.ValidationError({key: _(message)})
 
 
 def validate_uuid(uuid, key="UUID Validation"):
