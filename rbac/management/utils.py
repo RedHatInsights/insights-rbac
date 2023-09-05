@@ -92,9 +92,9 @@ def verify_principal_with_proxy(username, request, verify_principal=True):
     proxy = PrincipalProxy()
     if verify_principal:
         if settings.AUTHENTICATE_WITH_ORG_ID:
-            resp = proxy.request_filtered_principals([username], org_id=org_id, options = request.query_params)
+            resp = proxy.request_filtered_principals([username], org_id=org_id, options=request.query_params)
         else:
-            resp = proxy.request_filtered_principals([username], account, options = request.query_params)
+            resp = proxy.request_filtered_principals([username], account, options=request.query_params)
 
         if isinstance(resp, dict) and "errors" in resp:
             raise Exception("Dependency error: request to get users from dependent service failed.")
