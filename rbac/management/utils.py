@@ -89,12 +89,13 @@ def verify_principal_with_proxy(username, request, verify_principal=True):
     """Verify username through the BOP."""
     account = request.user.account
     org_id = request.user.org_id
+    query_options={"status": request.query_params.get("status")}
     proxy = PrincipalProxy()
     if verify_principal:
         if settings.AUTHENTICATE_WITH_ORG_ID:
-            resp = proxy.request_filtered_principals([username], org_id=org_id)
+            resp = proxy.request_filtered_principals([username], org_id=org_id, options = query_options)
         else:
-            resp = proxy.request_filtered_principals([username], account)
+            resp = proxy.request_filtered_principals([username], account, options = query_options)
 
         if isinstance(resp, dict) and "errors" in resp:
             raise Exception("Dependency error: request to get users from dependent service failed.")
