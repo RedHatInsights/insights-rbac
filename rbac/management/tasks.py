@@ -20,12 +20,9 @@ from __future__ import absolute_import, unicode_literals
 
 from celery import shared_task
 from django.core.management import call_command
+from management.health.healthcheck import redis_health
 from management.principal.cleaner import clean_tenants_principals
 
-from rest_framework import permissions
-from rest_framework.decorators import permission_classes
-
-from management.health.healthcheck import redis_health
 
 @shared_task
 def principal_cleanup():
@@ -65,4 +62,5 @@ def run_ocm_performance_in_worker():
 
 @shared_task
 def run_redis_cache_health():
+    """Celery task to check health of redis cache."""
     redis_health()

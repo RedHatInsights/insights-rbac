@@ -14,19 +14,19 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
-"""Redis Health Check."""
+"""Celery Task for Redis Health Check."""
 
+import logging
 import time
-import logging 
 
 from management.cache import BasicCache
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
+
 def redis_health():
+    """Check health of redis cache."""
     time.sleep(10)
 
     redis_cache = BasicCache()
     redis_cache.redis_health_check(redis_cache)
-    
-    
