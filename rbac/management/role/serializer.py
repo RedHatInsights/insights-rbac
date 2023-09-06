@@ -23,8 +23,6 @@ from management.serializer_override_mixin import SerializerCreateOverrideMixin
 from management.utils import filter_queryset_by_tenant, get_principal_from_request
 from rest_framework import serializers
 
-from management.auditLogs.serializer import AuditLogSerializer
-from management.auditLogs.model import AuditLogModel
 
 from api.models import Tenant
 from .model import Access, Permission, ResourceDefinition, Role
@@ -143,9 +141,7 @@ class RoleSerializer(serializers.ModelSerializer):
 
         role_obj_change_notification_handler(role, "created", self.context["request"].user)
 
-        log_description = "created " + role.name
-        
-
+    
         return role
 
     def update(self, instance, validated_data):

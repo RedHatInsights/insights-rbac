@@ -42,6 +42,8 @@ from rest_framework.filters import OrderingFilter
 from .model import Role
 from .serializer import RoleSerializer
 
+from management.auditLogs.model import AuditLogModel
+
 TESTING_APP = os.getenv("TESTING_APPLICATION")
 ADDITIONAL_FIELDS_KEY = "add_fields"
 VALID_FIELD_VALUES = ["groups_in_count", "groups_in", "access"]
@@ -209,6 +211,8 @@ class RoleViewSet(
             }
         """
         self.validate_role(request)
+
+        AuditLogModel.objects.create_role(request.data)
         return super().create(request=request, args=args, kwargs=kwargs)
 
     def list(self, request, *args, **kwargs):
