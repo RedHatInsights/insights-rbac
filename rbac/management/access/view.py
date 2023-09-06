@@ -189,28 +189,7 @@ class AccessView(APIView):
             access_for_request = Access.objects.filter(id__in=pks, permission=permission)
             if access_for_request.exists():
                 if individual_asset_key:
-                    return(get_individual_asset_access(individual_asset_key, individual_asset_value, access_for_request))
-            # found = False
-            # # is this workspace permission ?
-            # workspace_permission = permission.workspace or Workspace.objects.filter(name=workspace).first()
-            # if workspace_permission and access_for_request.exists() == False: # workspace permission is not defined at requested workspace
-            #     print("are we in this??")
-            #     ancestor_workspaces = workspace_permission.get_ancestors()
-            #     # Anybody in workspace ancestors has access ?
-            #     for workspace in ancestor_workspaces:
-            #         if found:
-            #             break
-            #         workspace = Workspace.objects.get(id=workspace.id)
-            #         # Does workspace permissions which according to our request ?
-            #         permissions = workspace.permissions.filter(resource_type=resource_type, verb=verb)
-            #         # we are looking for service access(resource_type,verb) permission(we can skip workspace(application) part, we are inside organization)
-            #         for permission in permissions:
-            #             access_for_request = Access.objects.filter(id__in=pks, permission=permission)
-            #             if access_for_request.exists():
-            #                 found = True
-            #                 if individual_asset_key:
-            #                     return(get_individual_asset_access(individual_asset_key, individual_asset_value, access_for_request))
-            #                 break
+                    return get_individual_asset_access(individual_asset_key, individual_asset_value, access_for_request)
 
             return Response(
                 {
