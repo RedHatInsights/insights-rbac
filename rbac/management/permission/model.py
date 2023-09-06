@@ -49,14 +49,6 @@ class Permission(TenantAwareModel):
             target_workspace = Workspace.objects.get(uuid=workspace_target_uuid)
 
             self.workspace = target_workspace
-            self.application = target_workspace.name
-
-            # Update the permission string
-            if self.permission:
-                parts = self.permission.split(":")
-                if len(parts) >= 3:  # Make sure the permission string is in the expected format
-                    parts[0] = target_workspace.name  # Replace the workspace name in the permission string
-                    self.permission = ":".join(parts)
 
             # Save the changes
             self.save()
