@@ -78,39 +78,54 @@ class WorkspaceViewSet( mixins.CreateModelMixin,
         #         in target workspace [DONE]
         # - source split and target merge[TODO]: there are multiple resource definitions of permission at source workspace and
         #                                  and same permission exists already at target workspace
-        permission_str = request.data['access'][0]['permission']
-        resource_definitions =  request.data['access'][0]['resourceDefinitions']
 
-        attribute_filter_value = resource_definitions[0]['attributeFilter']
+        access_ids = None
+        permission = None
 
-        resource_definition_ids = ResourceDefinition.objects.filter(
-            attributeFilter=attribute_filter_value
-        ).values_list('access_id', flat=True)
+        if 'access' in request.data and isinstance(request.data['access'], list) and len(request.data['access']) > 0:
+            if 'permission' in request.data['access'][0]:
+                permission_str = request.data['access'][0]['permission']
 
-        access_ids = Access.objects.filter(
-            id__in=resource_definition_ids
-        ).values_list('id', flat=True)
+                if 'resourceDefinitions' in request.data['access'][0]:
+                    resource_definitions =  request.data['access'][0]['resourceDefinitions']
+                    if len(resource_definitions) > 0:
+                        attribute_filter_value = resource_definitions[0]['attributeFilter']
+                        if attribute_filter_value:
+                            resource_definition_ids = ResourceDefinition.objects.filter(
+                                attributeFilter=attribute_filter_value
+                            ).values_list('access_id', flat=True)
 
+                            if resource_definition_ids and len(resource_definition_ids) > 0:
+                                access_ids = Access.objects.filter(
+                                    id__in=resource_definition_ids
+                                ).values_list('id', flat=True)
 
-        if not access_ids:
-            permission = Permission.objects.filter(
-                            permission=permission_str
-                        ).distinct()
-        else:
-            permission = Permission.objects.filter(
-                            permission=permission_str,
-                            accesses__id__in=list(access_ids)
-                        ).distinct()
-        if permission.count() > 1:
-            return Response({"error": "Multiple permissions match the query. Please refine your criteria."},
-                            status=status.HTTP_404_NOT_FOUND)
+                source_workspace = Workspace.objects.get(uuid=uuid)
 
-        if permission.count() == 0:
-            return Response({"error": "HTTP_404_NOT_FOUND"},
-                            status=status.HTTP_404_NOT_FOUND)
+                if not access_ids:
+                    permission = Permission.objects.filter(workspace=source_workspace,
+                                    permission=permission_str
+                                ).distinct()
+                else:
+                    permission = Permission.objects.filter(
+                                    workspace=source_workspace,
+                                    permission=permission_str,
+                                    accesses__id__in=list(access_ids)
+                                ).distinct()
+
+                if permission and permission.count() > 1:
+                    return Response({"error": "Multiple permissions match the query. Please refine your criteria."},
+                                    status=status.HTTP_404_NOT_FOUND)
+
+                if permission.count() == 0:
+                    return Response({"error": "HTTP_404_NOT_FOUND"},
+                                    status=status.HTTP_404_NOT_FOUND)
 
         permission = permission.first()
 
+        if not permission:
+            return Response({"error": "Permission not found in source workspace"},
+                            status=status.HTTP_404_NOT_FOUND)
 
         if not access_ids:
             # standalone permission
