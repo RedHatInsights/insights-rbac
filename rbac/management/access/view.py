@@ -163,7 +163,12 @@ class AccessView(APIView):
 
     @staticmethod
     def list_workspaces(tenant, application, resource_type=None):
-        permissions = Permission.objects.filter(application=application, workspace__tenant__id=tenant.id).values_list('workspace__name', flat=True).distinct()
+        if resource_type:
+            permissions = Permission.objects.filter(application=application,resource_type=resource_type, workspace__tenant__id=tenant.id)
+        else:
+            permissions = Permission.objects.filter(application=application, workspace__tenant__id=tenant.id)
+
+        permissions = permissions.values_list('workspace__name', flat=True).distinct()
 
         return Response(permissions)
 
