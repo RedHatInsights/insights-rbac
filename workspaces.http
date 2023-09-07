@@ -151,23 +151,8 @@ POST http://localhost:8080/api/rbac/v1/roles/
   "description": "Openshift openshiftA Access for IBM",
   "access": [
     {
-      "permission": "ibm:openshift:cluster",
-      "resourceDefinitions": [
-         {
-             "attributeFilter": {
-                 "key": "id",
-                 "operation": "equal",
-                 "value": "39c8cecd-e595-46fb-8908-13365d59d5e8"
-             }
-         },
-         {
-             "attributeFilter": {
-                 "key": "id",
-                 "operation": "equal",
-                 "value": "XXXXXXXXXXX"
-             }
-         }
-      ]
+      "permission": "openshift:cluster:read",
+      "resourceDefinitions": []
     }
   ]
 }
