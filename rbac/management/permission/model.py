@@ -29,11 +29,13 @@ class Permission(TenantAwareModel):
     application = models.TextField(null=False)
     resource_type = models.TextField(null=False)
     verb = models.TextField(null=False)
-    permission = models.TextField(null=False, unique=True)
+    permission = models.TextField(null=False, unique=False)
     description = models.TextField(default="")
     permissions = models.ManyToManyField("self", symmetrical=False, related_name="requiring_permissions")
     workspace = models.ForeignKey(Workspace, related_name='permissions', on_delete=models.CASCADE, null=True)
 
+    class Meta:
+        unique_together = (('permission', 'workspace'),)
 
     def save(self, *args, **kwargs):
         """Populate the application, resource_type and verb field before saving."""
