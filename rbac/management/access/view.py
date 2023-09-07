@@ -217,8 +217,7 @@ class AccessView(APIView):
             if list_assets:
                 access_for_request = Access.objects.filter(id__in=pks, permission__in=permissions)
                 return(get_assets(access_for_request))
-            else:
-                access_for_request = Access.objects.filter(id__in=pks, permission=permission)
+            access_for_request = Access.objects.filter(id__in=pks, permission=permission)
             if access_for_request.exists():
                 if individual_asset_key:
                     return(get_individual_asset_access(individual_asset_key, individual_asset_value, access_for_request))

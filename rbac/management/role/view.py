@@ -215,10 +215,8 @@ class RoleViewSet(
         for access in request.data['access']:
             permissions = Permission.objects.filter(permission=access['permission'])
             for perm in permissions:
-                app_name = perm.application
-
                 try:
-                    workspace = Workspace.objects.get(name=app_name)
+                    workspace = Workspace.objects.get(uuid=access['workspace_uuid'])
                 except Workspace.DoesNotExist:
                     continue
                 perm.workspace_id = workspace.id

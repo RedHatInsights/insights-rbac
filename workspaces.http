@@ -57,12 +57,12 @@ POST http://localhost:8080/api/rbac/v1/roles/
 POST http://localhost:8080/api/rbac/v1/roles/
 
 {
-  "name": "Openshift Access for IBM and Bulletproof",
-  "display_name": "Openshift Access for IBM and Bulletproof",
-  "description": "Openshift Access for IBM and Bulletproof",
+  "name": "Openshift Access for Finance Root",
+  "display_name": "Openshift Access for Finance Root",
+  "description": "Openshift Access for Finance Root",
   "access": [
     {
-      "permission": "ibm:openshift:cluster",
+      "permission": "Finance_workspace:openshift:cluster",
       "resourceDefinitions": []
     }
   ]
@@ -73,8 +73,21 @@ POST http://localhost:8080/api/rbac/v1/roles/
 DELETE http://localhost:8080/api/rbac/v1/roles/663a54e8-77c2-4ab5-bd62-8ac25d5c1f8a/
 
 
+### List Groups
+GET http://localhost:8080/api/rbac/v1/groups/
 
 
+### List Roles
+GET http://localhost:8080/api/rbac/v1/roles/?limit=1000
+
+
+### Add role to groups
+POST http://localhost:8080/api/rbac/v1/groups/53b384a3-4d30-40cd-907e-e71c50e62715/roles/
+
+{"roles":["bba4cbb5-3f8c-466d-9fdd-5c0b04b19bf0"]}
+
+
+### Line 16
 ### Can Workspace X access Service Y? (should inherit from parent Workspaces)
 ### application == workspace (Workspace X)
 ### resource_type = service or bundle aka  (openshift, ... ) - Service Y
@@ -83,6 +96,7 @@ DELETE http://localhost:8080/api/rbac/v1/roles/663a54e8-77c2-4ab5-bd62-8ac25d5c1
 GET http://localhost:8080/api/rbac/v1/access/?application=ibm&resource_type=openshift&verb=cluster&pdp=true
 
 
+### Line 16
 ### Can Workspace X(ibm_sub_sub_sub) access Service Y? (should inherit from parent Workspaces)
 ### application == workspace (Workspace X)
 ### resource_type = service or bundle aka  (openshift, ... ) - Service Y
@@ -90,15 +104,118 @@ GET http://localhost:8080/api/rbac/v1/access/?application=ibm&resource_type=open
 ### Service Access (openshift, cluster) is granted at one Workspace(ibm)
 GET http://localhost:8080/api/rbac/v1/access/?application=ibm_sub_sub_sub&resource_type=openshift&verb=cluster&pdp=true
 
+### Finance Workspaces
+POST http://localhost:8080/api/rbac/v1/workspaces/
 
-### List Groups
-GET http://localhost:8080/api/rbac/v1/groups/
+{"name":"Finance_workspace"}
+
+### Finance Workspaces - sub workspace
+POST http://localhost:8080/api/rbac/v1/workspaces/1e81498b-70c7-4441-ac5a-07c72f04261d/children/
+
+{"name":"Finance_team1"}
 
 
-### List Roles
-GET http://localhost:8080/api/rbac/v1/roles/?limit=1000
+### Finance Workspaces - sub sub workspace
+POST http://localhost:8080/api/rbac/v1/workspaces/08bf2567-9833-47bb-8f2c-63fde44dcd66/children/
 
-### Add role to groups
-POST http://localhost:8080/api/rbac/v1/groups/53b384a3-4d30-40cd-907e-e71c50e62715/roles/
+{"name":"Finance_team2"}
 
-{"roles":["bba4cbb5-3f8c-466d-9fdd-5c0b04b19bf0"]}
+
+### Finance Workspaces - sub workspace
+POST http://localhost:8080/api/rbac/v1/workspaces/08bf2567-9833-47bb-8f2c-63fde44dcd66/children/
+
+{"name":"Finance_subteam1"}
+
+
+### PDP - individual access - asset access
+GET http://localhost:8080/api/rbac/v1/access/?application=ibm_sub&resource_type=openshift&verb=cluster&individual_asset_key=host&pdp=true
+x-rh-identity: eyJpZGVudGl0eSI6eyJhY2NvdW50X251bWJlciI6IjYwODk3MTkiLCJ1c2VyIjp7ImlzX2FjdGl2ZSI6IHRydWUsImxvY2FsZSI6ImVuX1VTIiwiaXNfb3JnX2FkbWluIjogdHJ1ZSwidXNlcm5hbWUiOiJUZXN0IiwiZW1haWwiOiAidGVzdEB0ZXN0LmNvbSIsImZpcnN0X25hbWUiOiJUZXN0IiwidXNlcl9pZCI6IjU1NTU1NTU1IiwibGFzdF9uYW1lIjoiVXNlciIsImlzX2ludGVybmFsIjp0cnVlfSwgImludGVybmFsIjogeyJvcmdfaWQiOiAiMDAwMDAxIn19fQo=
+
+### PDP - individual access - asset access
+GET http://localhost:8080/api/rbac/v1/access/?application=ibm_sub&resource_type=openshift&verb=cluster&individual_asset_key=host&individual_asset_value=foobar&pdp=true&limit=3
+x-rh-identity: eyJpZGVudGl0eSI6eyJhY2NvdW50X251bWJlciI6IjYwODk3MTkiLCJ1c2VyIjp7ImlzX2FjdGl2ZSI6IHRydWUsImxvY2FsZSI6ImVuX1VTIiwiaXNfb3JnX2FkbWluIjogdHJ1ZSwidXNlcm5hbWUiOiJUZXN0IiwiZW1haWwiOiAidGVzdEB0ZXN0LmNvbSIsImZpcnN0X25hbWUiOiJUZXN0IiwidXNlcl9pZCI6IjU1NTU1NTU1IiwibGFzdF9uYW1lIjoiVXNlciIsImlzX2ludGVybmFsIjp0cnVlfSwgImludGVybmFsIjogeyJvcmdfaWQiOiAiMDAwMDAxIn19fQo=
+
+### ADD this Asset in this Workspace - add individual access
+### Let's assign service permission to root workspace
+### Access to Services is explicitly assigned to one or more Workspaces
+### This needs to create premissions:
+### <workspace>:<same_service_access>
+### <other_workspace>:<same_service_access>
+### Create Role with permissions (this needs validation if workspace exist)
+### Problem - permissions most like doesn't need to be unique - if they will contain more resources definitions ?
+POST http://localhost:8080/api/rbac/v1/roles/
+
+{
+  "name": "Openshift openshiftA Access for IBM",
+  "display_name": "Openshift openshiftA Access for IBM",
+  "description": "Openshift openshiftA Access for IBM",
+  "access": [
+    {
+      "permission": "ibm:openshift:cluster",
+      "resourceDefinitions": [
+         {
+             "attributeFilter": {
+                 "key": "id",
+                 "operation": "equal",
+                 "value": "39c8cecd-e595-46fb-8908-13365d59d5e8"
+             }
+         },
+         {
+             "attributeFilter": {
+                 "key": "id",
+                 "operation": "equal",
+                 "value": "XXXXXXXXXXX"
+             }
+         }
+      ]
+    }
+  ]
+}
+
+
+### Move those Asset from Workspace X to Workspace Y - Line 13
+### Let's move service permission from root workspace to sub workspace
+### http://localhost:8080/api/rbac/v1/workspace/<source_workspace>/move/<target_workspace>
+POST http://localhost:8080/api/rbac/v1/workspaces/1e81498b-70c7-4441-ac5a-07c72f04261d/move/702ee36a-cf45-40be-a9d9-7595d2ad6b30/
+
+{
+  "access": [
+    {
+      "permission": "Finance_workspace:openshift:cluster",
+      "resourceDefinitions": [
+          {
+               "attributeFilter": {
+                   "key": "id",
+                   "operation": "equal",
+                   "value": "XXXXXXXXXXX"
+             }
+         }]
+    }
+  ]
+}
+
+
+### Move those Asset from Workspace X to Workspace Y - Line 13
+### Let's move service permission from root workspace to sub workspace
+### http://localhost:8080/api/rbac/v1/workspace/<source_workspace>/move/<target_workspace>
+POST http://localhost:8080/api/rbac/v1/workspaces/702ee36a-cf45-40be-a9d9-7595d2ad6b30/move/1e81498b-70c7-4441-ac5a-07c72f04261d/
+
+{
+  "access": [
+    {
+      "permission": "Finance_team1:openshift:cluster",
+      "resourceDefinitions": [
+          {
+               "attributeFilter": {
+                   "key": "id",
+                   "operation": "equal",
+                   "value": "XXXXXXXXXXX"
+             }
+         }]
+    }
+  ]
+}
+
+### workspaces
+GET http://localhost:8080/api/rbac/v1/permissions/
+x-rh-identity: eyJlbnRpdGxlbWVudHMiOnsiYW5zaWJsZSI6eyJpc19lbnRpdGxlZCI6dHJ1ZX0sImNvc3RfbWFuYWdlbWVudCI6eyJpc19lbnRpdGxlZCI6dHJ1ZX0sImh5YnJpZCI6eyJpc19lbnRpdGxlZCI6dHJ1ZX0sImluc2lnaHRzIjp7ImlzX2VudGl0bGVkIjp0cnVlfSwibWlncmF0aW9ucyI6eyJpc19lbnRpdGxlZCI6dHJ1ZX0sIm9wZW5zaGlmdCI6eyJpc19lbnRpdGxlZCI6dHJ1ZX0sInNtYXJ0X21hbmFnZW1lbnQiOnsiaXNfZW50aXRsZWQiOnRydWV9fSwiaWRlbnRpdHkiOnsidHlwZSI6IlVzZXIiLCJhdXRoX3R5cGUiOiJiYXNpYy1hdXRoIiwib3JnX2lkIjoiMTM0MzE3MTIiLCJhY2NvdW50X251bWJlciI6IjYzODc4OTYiLCJ1c2VyIjp7InVzZXJuYW1lIjoicmhuLWVuZ2luZWVyaW5nLXJibGFuY28iLCJlbWFpbCI6InJibGFuY29AcmVkaGF0LmNvbSIsImZpcnN0X25hbWUiOiJSb21hbiIsImxhc3RfbmFtZSI6IlRlc3RpbmciLCJpc19hY3RpdmUiOnRydWUsImlzX29yZ19hZG1pbiI6dHJ1ZSwiaXNfaW50ZXJuYWwiOmZhbHNlLCJsb2NhbGUiOiJlbi1VUyIsInVzZXJfaWQiOiI1MzUyNzU3MiJ9LCJpbnRlcm5hbCI6eyJvcmdfaWQiOiIxMzQzMTcxMiIsImF1dGhfdGltZSI6MTY1MjExODUzMH19fQ==

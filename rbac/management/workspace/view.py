@@ -5,9 +5,13 @@ from rest_framework.response import Response
 from management.workspace.serializer import WorkspaceSerializer
 from rest_framework.decorators import action
 
+from django.db.models import Q
+
 from treebeard.exceptions import PathOverflow
 
 from .model import Workspace
+from management.permission.model import Permission
+from management.role.model import Access, ResourceDefinition
 
 class WorkspaceViewSet( mixins.CreateModelMixin,
     mixins.DestroyModelMixin,
@@ -21,6 +25,19 @@ class WorkspaceViewSet( mixins.CreateModelMixin,
     lookup_field = "uuid"
     serializer_class = WorkspaceSerializer
 
+    def _get_subtree(self, node):
+        """
+        """
+        children = node.get_children()
+        permissions = Permission.objects.filter(workspace_id=node.id)
+        subtree = {
+            "name": str(node.name),
+            "uuid": str(node.uuid),
+            "children": [self._get_subtree(child) for child in children],
+            "permissions":  [permission.permission for permission in permissions]
+        }
+        return subtree
+
     def create(self, request, *args, **kwargs):
         """Create a roles.
         """
@@ -29,7 +46,14 @@ class WorkspaceViewSet( mixins.CreateModelMixin,
     def list(self, request, *args, **kwargs):
         """Obtain the list of roles for the tenant.
         """
-        return super().list(request=request, args=args, kwargs=kwargs)
+        response = super().list(request=request, args=args, kwargs=kwargs)
+
+        root_nodes = Workspace.get_root_nodes()
+        tree_structure = [self._get_subtree(node) for node in root_nodes]
+
+        response.data['tree'] = tree_structure
+
+        return response
 
     def retrieve(self, request, *args, **kwargs):
         """Get a role.
@@ -42,6 +66,60 @@ class WorkspaceViewSet( mixins.CreateModelMixin,
 
         return super().destroy(request=request, args=args, kwargs=kwargs)
 
+
+    @action(detail=True, methods=["post"], url_path='move/(?P<target_uuid>[^/.]+)')
+    def move(self, request, uuid=None, target_uuid=None):
+        # Who has permission to do this ?
+
+        # Find permission and change workspace relation
+        # change workspace relation - permission could have multiple resource definitions
+        # it could be operations:
+        # - move: source permission has the only one resource definitions and there is no same permission
+        #         in target workspace [DONE]
+        # - source split and target merge[TODO]: there are multiple resource definitions of permission at source workspace and
+        #                                  and same permission exists already at target workspace
+        permission_str = request.data['access'][0]['permission']
+        resource_definitions =  request.data['access'][0]['resourceDefinitions']
+
+        attribute_filter_value = resource_definitions[0]['attributeFilter']
+
+        resource_definition_ids = ResourceDefinition.objects.filter(
+            attributeFilter=attribute_filter_value
+        ).values_list('access_id', flat=True)
+
+        access_ids = Access.objects.filter(
+            id__in=resource_definition_ids
+        ).values_list('id', flat=True)
+
+
+        if not access_ids:
+            permission = Permission.objects.filter(
+                            permission=permission_str
+                        ).distinct()
+        else:
+            permission = Permission.objects.filter(
+                            permission=permission_str,
+                            accesses__id__in=list(access_ids)
+                        ).distinct()
+        if permission.count() > 1:
+            return Response({"error": "Multiple permissions match the query. Please refine your criteria."},
+                            status=status.HTTP_404_NOT_FOUND)
+
+        if permission.count() == 0:
+            return Response({"error": "HTTP_404_NOT_FOUND"},
+                            status=status.HTTP_404_NOT_FOUND)
+
+        permission = permission.first()
+
+
+        if not access_ids:
+            # standalone permission
+            permission.change_workspace_to(target_uuid)
+        else:
+            # we need to split resource definitions
+            permission.change_workspace_to(target_uuid)
+
+        return Response(permission.permission, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=["get", "post", "delete"], url_path='children')
     def children(self, request, uuid=None):
