@@ -161,6 +161,17 @@ class AccessView(APIView):
             return access_queryset.order_by(f"{order_sign}permission__{field}")
         return access_queryset
 
+    @staticmethod
+    def list_workspaces(tenant, application, resource_type=None):
+        if resource_type:
+            permissions = Permission.objects.filter(application=application,resource_type=resource_type, workspace__tenant__id=tenant.id)
+        else:
+            permissions = Permission.objects.filter(application=application, workspace__tenant__id=tenant.id)
+
+        permissions = permissions.values_list('workspace__name', flat=True).distinct()
+
+        return Response(permissions)
+
     def get(self, request):
         """Provide access data for principal."""
         # Parameter extraction
@@ -176,9 +187,14 @@ class AccessView(APIView):
         query_params = request.query_params
         pdp = query_params.get("pdp")
         if pdp == "true":
-            workspace = query_params.get("workspace")
             application = query_params.get("service")
             resource_type = query_params.get("resource_type")
+
+            list_workspaces = query_params.get("list_workspaces")
+            if list_workspaces:
+                return self.list_workspaces(request.tenant, application, resource_type)
+
+            workspace = query_params.get("workspace")
             verb = query_params.get("action")
             list_assets = query_params.get("list_assets")
             individual_asset_key = query_params.get("asset_key")
