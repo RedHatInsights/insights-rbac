@@ -1,0 +1,10 @@
+{
+    "rulebook": [
+      {
+        "verb": "read"
+      },
+      {
+        "verb": "write"
+      }
+    ]
+  }

@@ -1,0 +1,10 @@
+{
+    "host": [
+      {
+        "verb": "read"
+      },
+      {
+        "verb": "write"
+      }
+    ]
+  }
