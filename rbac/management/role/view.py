@@ -44,6 +44,7 @@ from .serializer import RoleSerializer
 
 from management.auditLogs.model import AuditLogModel
 
+
 TESTING_APP = os.getenv("TESTING_APPLICATION")
 ADDITIONAL_FIELDS_KEY = "add_fields"
 VALID_FIELD_VALUES = ["groups_in_count", "groups_in", "access"]
@@ -211,10 +212,14 @@ class RoleViewSet(
             }
         """
         self.validate_role(request)
+ 
+        create_role = super().create(request=request, args=args, kwargs=kwargs)
+        if status.is_success(create_role.status_code):
+            auditlog = AuditLogModel()
+            auditlog.create_data(request, AuditLogModel.ROLE, AuditLogModel.CREATE)
+            return create_role
 
-        AuditLogModel.objects.create_role(request.data)
-        return super().create(request=request, args=args, kwargs=kwargs)
-
+    
     def list(self, request, *args, **kwargs):
         """Obtain the list of roles for the tenant.
 
@@ -327,8 +332,15 @@ class RoleViewSet(
         with transaction.atomic():
             self.delete_policies_if_no_role_attached(role)
             response = super().destroy(request=request, args=args, kwargs=kwargs)
+
+            auditlog = AuditLogModel()
+            auditlog.delete_data(request, AuditLogModel.ROLE, AuditLogModel.DELETE, args=args, kwargs=kwargs)
+
         if response.status_code == status.HTTP_204_NO_CONTENT:
             role_obj_change_notification_handler(role, "deleted", request.user)
+
+            
+
         return response
 
     def partial_update(self, request, *args, **kwargs):

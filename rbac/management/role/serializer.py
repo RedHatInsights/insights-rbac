@@ -27,6 +27,8 @@ from rest_framework import serializers
 from api.models import Tenant
 from .model import Access, Permission, ResourceDefinition, Role
 
+from management.auditLogs.model import AuditLogModel
+
 ALLOWED_OPERATIONS = ["in", "equal"]
 FILTER_FIELDS = set(["key", "value", "operation"])
 
@@ -141,7 +143,7 @@ class RoleSerializer(serializers.ModelSerializer):
 
         role_obj_change_notification_handler(role, "created", self.context["request"].user)
 
-    
+
         return role
 
     def update(self, instance, validated_data):
