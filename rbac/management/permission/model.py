@@ -17,6 +17,8 @@
 
 """Model for permission management."""
 from django.db import models
+from management.workspace.model import Workspace
+from django.core.exceptions import ObjectDoesNotExist
 
 from api.models import TenantAwareModel
 
@@ -27,9 +29,13 @@ class Permission(TenantAwareModel):
     application = models.TextField(null=False)
     resource_type = models.TextField(null=False)
     verb = models.TextField(null=False)
-    permission = models.TextField(null=False, unique=True)
+    permission = models.TextField(null=False, unique=False)
     description = models.TextField(default="")
     permissions = models.ManyToManyField("self", symmetrical=False, related_name="requiring_permissions")
+    workspace = models.ForeignKey(Workspace, related_name='permissions', on_delete=models.CASCADE, null=True)
+
+    class Meta:
+        unique_together = (('permission', 'workspace'),)
 
     def save(self, *args, **kwargs):
         """Populate the application, resource_type and verb field before saving."""
@@ -38,3 +44,16 @@ class Permission(TenantAwareModel):
         self.resource_type = context[1]
         self.verb = context[2]
         super(Permission, self).save(*args, **kwargs)
+
+    def change_workspace_to(self, workspace_target_uuid):
+        try:
+            # Assuming you have a Workspace model with a uuid field and a name field
+            target_workspace = Workspace.objects.get(uuid=workspace_target_uuid)
+
+            self.workspace = target_workspace
+
+            # Save the changes
+            self.save()
+        except ObjectDoesNotExist:
+            print(f"No workspace found with uuid {workspace_target_uuid}")
+        return self
