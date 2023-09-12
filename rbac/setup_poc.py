@@ -2,7 +2,6 @@
 # setup workspaces and workspace heirarchy
 # for running with docker-compose
 import os
-import time
 import sys
 import django
 print("setting up django")
@@ -12,9 +11,10 @@ os.environ["DJANGO_SETTINGS_MODULE"] = "rbac.settings"
 django.setup()
 
 import requests
-from api.models import Tenant
-from management.models import Access, Permission, Workspace, Role, Principal
+from management.models import Access, Permission, Workspace, Role, Principal, Group
+from os import environ as e
 
+import psycopg2
 
 # to show the structure
 workspaces = {
@@ -54,17 +54,13 @@ def create_workspaces(parent_uuid, name, children):
     for child in children:
         json_response = response.json()
         par_uuid = json_response.get("uuid")
-        print("response:")
-        print(json_response)
         for dictobject in child.items():
             create_workspaces(par_uuid, dictobject[0], dictobject[1])
 
 
 def set_workspace_permissions(workspace_permissions):
     for workspace, perms in workspace_permissions.items():
-        print("\n\nworkspace: ")
         worksp_obj = Workspace.objects.filter(name=workspace).first()
-        print(worksp_obj)
         # look up the permissions and set the workspace id
         for permission in perms:
             perm_obj = Permission.objects.filter(permission=permission).first()
@@ -80,13 +76,7 @@ def create_groups(workspace_groups):
         response = requests.post(group_url, json={"name": group, "description": "test group"}, headers={"Content-Type": "application/json"})
         json_response = response.json()
         group_uuid = json_response.get("uuid")
-        group_principal_url = group_url + f"{group_uuid}/principals/"
-        print("\n\n\njson response: ")
-        print(json_response)
-        print(group_principal_url)
-        prince_response = requests.post(group_principal_url, json={"principals": [{'username': 'user_dev'}]}, headers={"Content-Type": "application/json"})
-        print("\n\n\nprince_response: ")
-        print(prince_response)
+
         for role in roles:
             role_obj = Role.objects.filter(name=role).first()
             role_obj.tenant_id = 2
@@ -107,23 +97,38 @@ def create_principal():
     prince = Principal(username="user_dev", cross_account=False, tenant_id=2)
     prince.save()
     prince = Principal.objects.filter(username="user_dev").first()
-    print(f"tenant now exists: {prince.username}")
+    print(f"Principal now exists: {prince.username}")
+
+def tie_principal_to_groups(workspace_groups):
+    config = "dbname='%s' user='%s' host='%s' port='%s' password='%s'"
+
+    name, user, host, port = (
+        e["DATABASE_NAME"],
+        e["DATABASE_USER"],
+        e["DATABASE_HOST"],
+        e["DATABASE_PORT"]
+    )
+
+    for group, _ in workspace_groups.items():
+        group_obj = Group.objects.filter(name=group).first()
+        group_id = group_obj.id
+        print(f"\n Group id {group_id}: ")
+        conn = psycopg2.connect(config % (name, "postgres", host, port, "postgres"))
+        conn.set_isolation_level(0)
+        cur = conn.cursor()
+        mySql_insert_query = """INSERT INTO management_group_principals (group_id, principal_id)
+                                VALUES (%s, %s)"""
+
+        record = (group_id, 1)
+        cur.execute(mySql_insert_query, record)
+        conn.commit()
+        print("Record inserted successfully into management_principal_group table")
 
 create_principal()
-time.sleep(3)
 create_workspaces(None, 'Support', workspaces['Support'])
-time.sleep(2)
 set_workspace_permissions(workspace_perms)
-time.sleep(3)
 create_groups(workspace_groups)
-time.sleep(2)
 create_access(access_perms)
+tie_principal_to_groups(workspace_groups)
 
-
-# create roles from permissions
-
-# create groups
-
-# add roles to groups
-
-# print list of curl commands to check the
+print("Support workspace structure is set up & ready to use pdp endpoints")
