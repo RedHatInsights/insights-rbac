@@ -112,6 +112,8 @@ def tie_principal_to_groups(workspace_groups):
     for group, _ in workspace_groups.items():
         group_obj = Group.objects.filter(name=group).first()
         group_id = group_obj.id
+        principal_obj = Principal.objects.filter(username="user_dev").first()
+        principal_id = principal_obj.id
         print(f"\n Group id {group_id}: ")
         conn = psycopg2.connect(config % (name, "postgres", host, port, "postgres"))
         conn.set_isolation_level(0)
@@ -119,7 +121,7 @@ def tie_principal_to_groups(workspace_groups):
         mySql_insert_query = """INSERT INTO management_group_principals (group_id, principal_id)
                                 VALUES (%s, %s)"""
 
-        record = (group_id, 1)
+        record = (group_id, principal_id)
         cur.execute(mySql_insert_query, record)
         conn.commit()
         print("Record inserted successfully into management_principal_group table")
