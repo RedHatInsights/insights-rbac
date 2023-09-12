@@ -1,0 +1,36 @@
+{
+  "roles": [
+    {
+      "name": "Openshift ARB",
+      "system": true,
+      "version": 1,
+      "description": "Testing openshift access locally for ARB",
+      "access": [
+        {
+          "permission": "openshift:cluster:read",
+          "resourceDefinitions": [
+            {
+              "attributeFilter": {
+                "value": "cluster_host1",
+                "key": "host",
+                "operation": "equal"
+              }
+            }
+          ]
+        },
+        {
+          "permission": "openshift:cluster:write",
+          "resourceDefinitions": [
+            {
+              "attributeFilter": {
+                "value": "cluster_host1",
+                "key": "host",
+                "operation": "equal"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,44 @@
+{
+  "roles": [
+    {
+      "name": "RHEL ARB read role",
+      "system": true,
+      "version": 1,
+      "description": "Testing rhel read access locally for ARB",
+      "access": [
+        {
+          "permission": "rhel:host:read",
+          "resourceDefinitions": [
+            {
+              "attributeFilter": {
+                "value": "rhel_host",
+                "key": "host",
+                "operation": "equal"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "RHEL ARB write role",
+      "system": true,
+      "version": 1,
+      "description": "Testing rhel write access locally for ARB",
+      "access": [
+        {
+          "permission": "rhel:host:write",
+          "resourceDefinitions": [
+            {
+              "attributeFilter": {
+                "value": "rhel_host",
+                "key": "host",
+                "operation": "equal"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

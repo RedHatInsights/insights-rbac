@@ -1,0 +1,24 @@
+{
+  "roles": [
+    {
+      "name": "Satellite ARB read role",
+      "system": true,
+      "version": 1,
+      "description": "Testing satellite read access locally for ARB",
+      "access": [
+        {
+          "permission": "satellite:host:read",
+          "resourceDefinitions": [
+            {
+              "attributeFilter": {
+                "value": "satellite_host",
+                "key": "host",
+                "operation": "equal"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
