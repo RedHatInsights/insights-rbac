@@ -133,4 +133,7 @@ create_groups(workspace_groups)
 create_access(access_perms)
 tie_principal_to_groups(workspace_groups)
 
-print("Support workspace structure is set up & ready to use pdp endpoints")
+print("Support workspace structure is set up & ready to use pdp endpoints: ")
+usage = \
+    "\n\nCheck the pdp demo by running the following:\n\n\tCheck if Support Workspace has Openshift cluster read permission:\n\tcurl 'http://127.0.0.1:9080/api/rbac/v1/access/?pdp=true&action=read&workspace=Support&service=openshift&resource_type=cluster'\n\n\tCheck if Support_team1 Workspace inherited Openshift cluster read permission:\n\tcurl 'http://127.0.0.1:9080/api/rbac/v1/access/?pdp=true&action=read&workspace=Support_team1&service=openshift&resource_type=cluster"
+print(usage)
