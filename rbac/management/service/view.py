@@ -51,7 +51,7 @@ class ServiceAccessViewSet( mixins.CreateModelMixin,
 
     permission_classes = (AllowAny,)
     queryset = ServiceAccess.objects.all()
-    lookup_field = "uuid"
+    lookup_field = "id"
     serializer_class = ServiceAccessSerializer
 
     def create(self, request, *args, **kwargs):
@@ -132,3 +132,25 @@ class ServiceAccessViewSet( mixins.CreateModelMixin,
         response = super().list(request=request, args=args, kwargs=kwargs)
 
         return response
+
+    def update(self, request, *args, **kwargs):
+        """Cancel access to a service for the tenant.
+        """
+        # http://127.0.0.1:9080/api/rbac/v1/service_accesses/acct10001/?cancel=True&service=99f88439-2e63-4090-891a-435e5d8a5568
+        tenant_name = kwargs.get("id")
+        service = request.query_params.get("service")
+        cancel = request.query_params.get("cancel")
+        service_obj = Service.objects.filter(uuid=service).first()
+        tenant_obj = Tenant.objects.filter(tenant_name=tenant_name).first()
+        access = ServiceAccess.objects.filter(tenant_id=tenant_obj.id, service_id=service_obj.id).first()
+        if cancel:
+            access.access = False
+            access.end_date = date.today()
+            access.save()
+        return Response(
+                    {
+                        "service": service,
+                        "tenant": tenant_name,
+                        "access": access.access,
+                    }
+                )

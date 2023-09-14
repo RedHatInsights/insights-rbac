@@ -40,3 +40,6 @@ class ServiceAccess(models.Model):
     start_date = models.DateTimeField(default=timezone.now)
     end_date = models.DateTimeField(null=False, blank=False, default=None)
     access = models.BooleanField(default=False)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["service", "tenant"], name="unique service access per tenant")]

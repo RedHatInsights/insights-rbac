@@ -7,10 +7,11 @@ class ServiceSerializer(serializers.Serializer):
     """Serializer for the Service model."""
 
     name = serializers.CharField(required=True, max_length=150)
+    uuid = serializers.UUIDField(read_only=True)
 
     class Meta:
         """Metadata for the serializer."""
-
+        model = Service
         fields = ("name","uuid",)
 
     def create(self, validated_data):
@@ -46,3 +47,9 @@ class ServiceAccessSerializer(serializers.ModelSerializer):
         access = ServiceAccess(start_date=start_date, end_date=end_date, service_id=service.id, tenant_id=tenant.id, access=has_access)
         access.save()
         return access
+
+    def update(self, instance, validated_data):
+        print("\n\ninside serializer update: ")
+        print(instance)
+        print(validated_data)
+        return {}
