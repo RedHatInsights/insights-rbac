@@ -1,0 +1,24 @@
+{
+  "roles": [
+    {
+      "name": "Premium SLA ARB read role",
+      "system": true,
+      "version": 1,
+      "description": "Testing prem sla read access locally for ARB",
+      "access": [
+        {
+          "permission": "premium_sla:host:read",
+          "resourceDefinitions": [
+            {
+              "attributeFilter": {
+                "value": "sla_host",
+                "key": "host",
+                "operation": "equal"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

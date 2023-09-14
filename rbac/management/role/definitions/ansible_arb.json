@@ -1,0 +1,44 @@
+{
+  "roles": [
+    {
+      "name": "Ansible ARB read role",
+      "system": true,
+      "version": 1,
+      "description": "Testing ansible read access locally for ARB",
+      "access": [
+        {
+          "permission": "ansible:rulebook:read",
+          "resourceDefinitions": [
+            {
+              "attributeFilter": {
+                "value": "env1",
+                "key": "env",
+                "operation": "equal"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Ansible ARB write role",
+      "system": true,
+      "version": 1,
+      "description": "Testing ansible write access locally for ARB",
+      "access": [
+        {
+          "permission": "ansible:rulebook:write",
+          "resourceDefinitions": [
+            {
+              "attributeFilter": {
+                "value": "env1",
+                "key": "env",
+                "operation": "equal"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
