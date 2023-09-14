@@ -644,6 +644,19 @@
                 false
               ]
             }
+          },
+          {
+            "in": "query",
+            "name": "type",
+            "required": false,
+            "description": "Parameter for selecting the type of principal to be returned.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "service-account",
+                "user"
+              ]
+            }
           }
         ],
         "responses": {
@@ -1237,6 +1250,19 @@
               "enum": [
                 true,
                 false
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "principal_type",
+            "required": false,
+            "description": "Parameter for selecting the type of principal to be returned.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "service-account",
+                "user"
               ]
             }
           }
