@@ -2,6 +2,7 @@
 from django.db import models
 from api.models import User
 
+
 class AuditLogModel(models.Model):
     """An audit log."""
   
@@ -36,25 +37,28 @@ class AuditLogModel(models.Model):
     action = models.CharField(max_length=32, choices=ACTION_CHOICES)
 
     def create_data(self, request, resource, action):
-        print('request data', request.data)
-        print('request user', request.user)
-
         self.requester = request.user.username
         self.description = "Created " + request.data["name"]
         self.resource = resource
         self.action = action
         super(AuditLogModel, self).save()
 
-    def delete_data(self, request, resource, action, *args, **kwargs):
-        print('request data', request.data )
-        print('request uuid', request.uuid)
-        print('request user', request.user.username)
-        print("kwargs", kwargs)
+    def delete_data(self, request, role, resource, action, *args, **kwargs):
 
-        
-        self.requester = request.user.username
-        self.description = "Deleted" + request.uuid
+        get_uuid = kwargs["kwargs"]["uuid"]
+        if get_uuid == str(role.uuid):
+            get_role_name = role.name
+        else:
+            raise ValueError
+        self.requester = request._user.username
+        self.description = "Deleted " + get_role_name
         self.resource = resource
         self.action = action 
         super(AuditLogModel, self).save()
   
+    def edit_data(self, request, resource, action):
+        self.requester = request.user.username
+        self.description = "Edited " + request.data["name"]
+        self.resource = resource
+        self.action = action 
+        super(AuditLogModel, self).save()

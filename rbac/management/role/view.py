@@ -332,9 +332,8 @@ class RoleViewSet(
         with transaction.atomic():
             self.delete_policies_if_no_role_attached(role)
             response = super().destroy(request=request, args=args, kwargs=kwargs)
-
             auditlog = AuditLogModel()
-            auditlog.delete_data(request, AuditLogModel.ROLE, AuditLogModel.DELETE, args=args, kwargs=kwargs)
+            auditlog.delete_data(request, role, AuditLogModel.ROLE, AuditLogModel.DELETE, args=args, kwargs=kwargs)
 
         if response.status_code == status.HTTP_204_NO_CONTENT:
             role_obj_change_notification_handler(role, "deleted", request.user)
@@ -353,7 +352,13 @@ class RoleViewSet(
                 message = f"Field '{field}' is not supported. Please use one or more of: {VALID_PATCH_FIELDS}."
                 error = {key: [_(message)]}
                 raise serializers.ValidationError(error)
-        return super().update(request=request, args=args, kwargs=kwargs)
+        patch_role = super().update(request=request, args=args, kwargs=kwargs)
+        if status.is_success(patch_role.status_code):
+            auditlog = AuditLogModel()
+            auditlog.edit_data(request, AuditLogModel.ROLE, AuditLogModel.EDIT)
+            return patch_role
+
+        #return super().update(request=request, args=args, kwargs=kwargs)
 
     def update(self, request, *args, **kwargs):
         """Update a role.
@@ -415,7 +420,12 @@ class RoleViewSet(
         """
         validate_uuid(kwargs.get("uuid"), "role uuid validation")
         self.validate_role(request)
-        return super().update(request=request, args=args, kwargs=kwargs)
+        patch_role = super().update(request=request, args=args, kwargs=kwargs)
+        if status.is_success(patch_role.status_code):
+            auditlog = AuditLogModel()
+            auditlog.edit_data(request, AuditLogModel.ROLE, AuditLogModel.EDIT)
+            return patch_role
+        #return super().update(request=request, args=args, kwargs=kwargs)
 
     @action(detail=True, methods=["get"])
     def access(self, request, uuid=None):
