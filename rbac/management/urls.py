@@ -16,7 +16,7 @@
 """Describes the urls and patterns for the management application."""
 from django.conf.urls import include
 from django.urls import re_path
-from management.views import WorkspaceViewSet, AccessView, GroupViewSet, PermissionViewSet, PolicyViewSet, PrincipalView, RoleViewSet
+from management.views import WorkspaceViewSet, AccessView, GroupViewSet, PermissionViewSet, PolicyViewSet, PrincipalView, RoleViewSet, ServiceViewSet, ServiceAccessViewSet
 from rest_framework.routers import DefaultRouter
 
 
@@ -27,6 +27,8 @@ ROUTER.register(r"roles", RoleViewSet)
 ROUTER.register(r"policies", PolicyViewSet)
 ROUTER.register(r"permissions", PermissionViewSet)
 ROUTER.register(r"workspaces", WorkspaceViewSet)
+ROUTER.register(r"services", ServiceViewSet)
+ROUTER.register(r"service_accesses", ServiceAccessViewSet)
 
 # pylint: disable=invalid-name
 urlpatterns = [

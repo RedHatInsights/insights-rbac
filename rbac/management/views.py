@@ -25,3 +25,4 @@ from management.policy.view import PolicyViewSet
 from management.access.view import AccessView
 from management.permission.view import PermissionViewSet
 from management.workspace.view import WorkspaceViewSet
+from management.service.view import ServiceViewSet, ServiceAccessViewSet
