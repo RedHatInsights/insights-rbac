@@ -4,6 +4,7 @@ IMAGE="quay.io/cloudservices/rbac"
 IMAGE_TAG=$(git rev-parse --short=7 HEAD)
 GIT_COMMIT=$(git rev-parse --short HEAD)
 SMOKE_TEST_TAG="latest"
+SECURITY_COMPLIANCE_TAG="sc-$(date +%Y%m%d)"
 
 if [[ -z "$QUAY_USER" || -z "$QUAY_TOKEN" ]]; then
     echo "QUAY_USER and QUAY_TOKEN must be set"
