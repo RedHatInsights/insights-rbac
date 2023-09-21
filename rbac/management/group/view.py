@@ -53,6 +53,8 @@ from rest_framework.response import Response
 
 from api.models import Tenant
 
+from management.auditLogs.model import AuditLogModel
+
 USERNAMES_KEY = "usernames"
 ROLES_KEY = "roles"
 EXCLUDE_KEY = "exclude"
@@ -211,7 +213,13 @@ class GroupViewSet(
             }
         """
         validate_group_name(request.data.get("name"))
-        return super().create(request=request, args=args, kwargs=kwargs)
+        create_group = super().create(request=request, args=args, kwargs=kwargs)
+        if status.is_success(create_group.status_code):
+            auditlog = AuditLogModel()
+            auditlog.create_data(request, AuditLogModel.GROUP, AuditLogModel.CREATE)
+            return create_group
+
+        #return super().create(request=request, args=args, kwargs=kwargs)
 
     def list(self, request, *args, **kwargs):
         """Obtain the list of groups for the tenant.
@@ -316,6 +324,10 @@ class GroupViewSet(
         self.protect_system_groups("delete")
         group = self.get_object()
         response = super().destroy(request=request, args=args, kwargs=kwargs)
+
+        auditlog = AuditLogModel()
+        auditlog.delete_data(request, group, AuditLogModel.GROUP, AuditLogModel.DELETE, args=args, kwargs=kwargs)
+
         if response.status_code == status.HTTP_204_NO_CONTENT:
             group_obj_change_notification_handler(request.user, group, "deleted")
         return response
@@ -344,7 +356,13 @@ class GroupViewSet(
         """
         validate_uuid(kwargs.get("uuid"), "group uuid validation")
         self.protect_system_groups("update")
-        return super().update(request=request, args=args, kwargs=kwargs)
+        edit_group = super().update(request=request, args=args, kwargs=kwargs)
+        
+        if status.is_success(edit_group.status_code):
+            auditlog = AuditLogModel()
+            auditlog.edit_data(request, AuditLogModel.GROUP, AuditLogModel.EDIT)
+            return edit_group
+       # return super().update(request=request, args=args, kwargs=kwargs)
 
     def add_principals(self, group, principals, account=None, org_id=None):
         """Process list of principals and add them to the group."""

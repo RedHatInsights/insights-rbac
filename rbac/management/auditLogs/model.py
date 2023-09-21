@@ -11,10 +11,10 @@ class AuditLogModel(models.Model):
     USER = "user"
     PERMISSION = "permission"
     RESOURCE_CHOICES = (
-        (GROUP, "group"),
-        (ROLE, "role"),
-        (USER, "user"),
-        (PERMISSION, "permission"),
+        (GROUP, "Group"),
+        (ROLE, "Role"),
+        (USER, "User"),
+        (PERMISSION, "Permission"),
     )
 
     DELETE = "delete"
@@ -23,11 +23,11 @@ class AuditLogModel(models.Model):
     CREATE = "create"
     REMOVE = "remove"
     ACTION_CHOICES = (
-        (DELETE, "delete"),
-        (ADD, "add"),
-        (EDIT, "edit"),
-        (CREATE, "create"),
-        (REMOVE, "remove"),
+        (DELETE, "Delete"),
+        (ADD, "Add"),
+        (EDIT, "Edit"),
+        (CREATE, "Create"),
+        (REMOVE, "Remove"),
     )
 
     date = models.DateField(auto_now_add=True)
@@ -43,15 +43,14 @@ class AuditLogModel(models.Model):
         self.action = action
         super(AuditLogModel, self).save()
 
-    def delete_data(self, request, role, resource, action, *args, **kwargs):
-
+    def delete_data(self, request, object, resource, action, *args, **kwargs):
         get_uuid = kwargs["kwargs"]["uuid"]
-        if get_uuid == str(role.uuid):
-            get_role_name = role.name
+        if get_uuid == str(object.uuid):
+            get_object_name = object.name
         else:
             raise ValueError
         self.requester = request._user.username
-        self.description = "Deleted " + get_role_name
+        self.description = "Deleted " + get_object_name
         self.resource = resource
         self.action = action 
         super(AuditLogModel, self).save()
@@ -62,3 +61,4 @@ class AuditLogModel(models.Model):
         self.resource = resource
         self.action = action 
         super(AuditLogModel, self).save()
+

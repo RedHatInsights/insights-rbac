@@ -420,11 +420,11 @@ class RoleViewSet(
         """
         validate_uuid(kwargs.get("uuid"), "role uuid validation")
         self.validate_role(request)
-        patch_role = super().update(request=request, args=args, kwargs=kwargs)
-        if status.is_success(patch_role.status_code):
+        edit_role = super().update(request=request, args=args, kwargs=kwargs)
+        if status.is_success(edit_role.status_code):
             auditlog = AuditLogModel()
             auditlog.edit_data(request, AuditLogModel.ROLE, AuditLogModel.EDIT)
-            return patch_role
+            return edit_role
         #return super().update(request=request, args=args, kwargs=kwargs)
 
     @action(detail=True, methods=["get"])
