@@ -25,8 +25,10 @@ from management.utils import (
     APPLICATION_KEY,
     get_principal_from_request,
     validate_and_get_key,
+    validate_key,
     validate_limit_and_offset,
 )
+from rest_framework import status
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.settings import api_settings
@@ -34,6 +36,8 @@ from rest_framework.views import APIView
 
 ORDER_FIELD = "order_by"
 VALID_ORDER_VALUES = ["application", "resource_type", "verb", "-application", "-resource_type", "-verb"]
+STATUS_KEY = "status"
+VALID_STATUS_VALUE = ["enabled", "disabled", "all"]
 
 
 class AccessView(APIView):
@@ -110,8 +114,12 @@ class AccessView(APIView):
 
     def get(self, request):
         """Provide access data for principal."""
-        # Parameter extraction
-        sub_key, ordering = self.validate_and_get_param(request.query_params)
+        # Parameter extraction and validation
+        try:
+            sub_key, ordering = self.validate_and_get_param(request.query_params)
+            validate_key(request.query_params, STATUS_KEY, VALID_STATUS_VALUE, "enabled")
+        except ValueError as e:
+            return Response(status=status.HTTP_400_BAD_REQUEST, data=e)
 
         principal = get_principal_from_request(request)
         if settings.AUTHENTICATE_WITH_ORG_ID:

@@ -92,9 +92,9 @@ def verify_principal_with_proxy(username, request, verify_principal=True):
     proxy = PrincipalProxy()
     if verify_principal:
         if settings.AUTHENTICATE_WITH_ORG_ID:
-            resp = proxy.request_filtered_principals([username], org_id=org_id)
+            resp = proxy.request_filtered_principals([username], org_id=org_id, options=request.query_params)
         else:
-            resp = proxy.request_filtered_principals([username], account)
+            resp = proxy.request_filtered_principals([username], account, options=request.query_params)
 
         if isinstance(resp, dict) and "errors" in resp:
             raise Exception("Dependency error: request to get users from dependent service failed.")
@@ -193,7 +193,7 @@ def filter_queryset_by_tenant(queryset, tenant):
 
 
 def validate_and_get_key(params, query_key, valid_values, default_value=None, required=True):
-    """Validate the key."""
+    """Validate and return the key."""
     value = params.get(query_key, default_value)
     if not value:
         if required:
@@ -209,6 +209,17 @@ def validate_and_get_key(params, query_key, valid_values, default_value=None, re
         )
         raise serializers.ValidationError({key: _(message)})
     return value.lower()
+
+
+def validate_key(params, query_key, valid_values, default_value=None, required=True):
+    """Validate a key and do not return the value."""
+    value = params.get(query_key, default_value)
+    if value.lower() not in valid_values:
+        key = "detail"
+        message = "{} query parameter value '{}' is invalid. {} are valid inputs.".format(
+            query_key, value, valid_values
+        )
+        raise serializers.ValidationError({key: _(message)})
 
 
 def validate_uuid(uuid, key="UUID Validation"):
