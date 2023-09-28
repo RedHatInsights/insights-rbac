@@ -23,6 +23,7 @@ from django.db import transaction
 from django.db.models.aggregates import Count
 from django.utils.translation import gettext as _
 from django_filters import rest_framework as filters
+from management.auditLogs.model import AuditLogModel
 from management.filters import CommonFilters
 from management.group.definer import add_roles, remove_roles, set_system_flag_before_update
 from management.group.model import Group
@@ -53,7 +54,6 @@ from rest_framework.response import Response
 
 from api.models import Tenant
 
-from management.auditLogs.model import AuditLogModel
 
 USERNAMES_KEY = "usernames"
 ROLES_KEY = "roles"
@@ -219,7 +219,7 @@ class GroupViewSet(
             auditlog.create_data(request, AuditLogModel.GROUP, AuditLogModel.CREATE)
             return create_group
 
-        #return super().create(request=request, args=args, kwargs=kwargs)
+        # return super().create(request=request, args=args, kwargs=kwargs)
 
     def list(self, request, *args, **kwargs):
         """Obtain the list of groups for the tenant.
@@ -357,12 +357,13 @@ class GroupViewSet(
         validate_uuid(kwargs.get("uuid"), "group uuid validation")
         self.protect_system_groups("update")
         edit_group = super().update(request=request, args=args, kwargs=kwargs)
-        
+
         if status.is_success(edit_group.status_code):
             auditlog = AuditLogModel()
             auditlog.edit_data(request, AuditLogModel.GROUP, AuditLogModel.EDIT)
             return edit_group
-       # return super().update(request=request, args=args, kwargs=kwargs)
+
+    # return super().update(request=request, args=args, kwargs=kwargs)
 
     def add_principals(self, group, principals, account=None, org_id=None):
         """Process list of principals and add them to the group."""

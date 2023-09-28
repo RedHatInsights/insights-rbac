@@ -28,6 +28,7 @@ from django.db.models.aggregates import Count
 from django.http import Http404
 from django.utils.translation import gettext as _
 from django_filters import rest_framework as filters
+from management.auditLogs.model import AuditLogModel
 from management.filters import CommonFilters
 from management.models import Permission
 from management.notifications.notification_handlers import role_obj_change_notification_handler
@@ -41,8 +42,6 @@ from rest_framework.filters import OrderingFilter
 
 from .model import Role
 from .serializer import RoleSerializer
-
-from management.auditLogs.model import AuditLogModel
 
 
 TESTING_APP = os.getenv("TESTING_APPLICATION")
@@ -212,14 +211,12 @@ class RoleViewSet(
             }
         """
         self.validate_role(request)
- 
         create_role = super().create(request=request, args=args, kwargs=kwargs)
         if status.is_success(create_role.status_code):
             auditlog = AuditLogModel()
             auditlog.create_data(request, AuditLogModel.ROLE, AuditLogModel.CREATE)
             return create_role
 
-    
     def list(self, request, *args, **kwargs):
         """Obtain the list of roles for the tenant.
 
@@ -334,12 +331,8 @@ class RoleViewSet(
             response = super().destroy(request=request, args=args, kwargs=kwargs)
             auditlog = AuditLogModel()
             auditlog.delete_data(request, role, AuditLogModel.ROLE, AuditLogModel.DELETE, args=args, kwargs=kwargs)
-
         if response.status_code == status.HTTP_204_NO_CONTENT:
             role_obj_change_notification_handler(role, "deleted", request.user)
-
-            
-
         return response
 
     def partial_update(self, request, *args, **kwargs):
@@ -354,11 +347,11 @@ class RoleViewSet(
                 raise serializers.ValidationError(error)
         patch_role = super().update(request=request, args=args, kwargs=kwargs)
         if status.is_success(patch_role.status_code):
-            auditlog = AuditLogModel()
-            auditlog.edit_data(request, AuditLogModel.ROLE, AuditLogModel.EDIT)
+            if payload != {}:
+                auditlog = AuditLogModel()
+                auditlog.edit_data(request, AuditLogModel.ROLE, AuditLogModel.EDIT)
+                return patch_role
             return patch_role
-
-        #return super().update(request=request, args=args, kwargs=kwargs)
 
     def update(self, request, *args, **kwargs):
         """Update a role.
@@ -425,7 +418,6 @@ class RoleViewSet(
             auditlog = AuditLogModel()
             auditlog.edit_data(request, AuditLogModel.ROLE, AuditLogModel.EDIT)
             return edit_role
-        #return super().update(request=request, args=args, kwargs=kwargs)
 
     @action(detail=True, methods=["get"])
     def access(self, request, uuid=None):
