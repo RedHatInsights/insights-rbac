@@ -664,3 +664,69 @@ class PrincipalViewsetTests(IdentityRequest):
         )
 
         self.assertEqual(resp[0]["username"], "test_user")
+
+    def test_read_principal_invalid_type_query_params(self):
+        """Test that when an invalid "principal type" query parameter is specified, a bad request response is returned"""
+        url = reverse("principals")
+        client = APIClient()
+
+        invalidQueryParams = ["hello", "world", "service-accounts", "users"]
+        for invalidQueryParam in invalidQueryParams:
+            response = client.get(url, {"type": invalidQueryParam}, **self.headers)
+
+            self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_principals",
+        return_value={
+            "status_code": 200,
+            "data": [{"username": "test_user", "account_number": "1234", "org_id": "4321"}],
+        },
+    )
+    def test_read_principal_users(self, mock_request):
+        """Test that when the "user" query parameter is specified, the real users are returned."""
+        # Create a cross_account user in rbac.
+        cross_account_principal = Principal.objects.create(
+            username="cross_account_user", cross_account=True, tenant=self.tenant
+        )
+
+        url = reverse("principals")
+        client = APIClient()
+        response = client.get(url, **self.headers)
+
+        mock_request.assert_called_once_with(
+            account=self.customer_data["account_id"],
+            limit=10,
+            offset=0,
+            options={"sort_order": "asc", "status": "enabled", "admin_only": "false", "username_only": "false"},
+            org_id=self.customer_data["org_id"],
+        )
+        # /principals/ endpoint won't return the cross_account_principal, which does not exist in IT.
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        for keyname in ["meta", "links", "data"]:
+            self.assertIn(keyname, response.data)
+        self.assertIsInstance(response.data.get("data"), list)
+        self.assertEqual(int(response.data.get("meta").get("count")), 1)
+        self.assertEqual(len(response.data.get("data")), 1)
+
+        principal = response.data.get("data")[0]
+        self.assertCountEqual(list(principal.keys()), ["username", "account_number", "org_id"])
+        self.assertIsNotNone(principal.get("username"))
+        self.assertEqual(principal.get("username"), self.principal.username)
+
+        cross_account_principal.delete()
+
+    def test_read_principal_service_accounts(self):
+        """Test that when the "service-account" query parameter is specified, the stubbed response is returned."""
+        url = reverse("principals")
+        client = APIClient()
+        response = client.get(url, {"type": "service-account"}, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        for keyname in ["meta", "links", "data"]:
+            self.assertIn(keyname, response.data)
+        self.assertIsInstance(response.data.get("data"), list)
+        self.assertEqual(int(response.data.get("meta").get("count")), 0)
+        self.assertEqual(len(response.data.get("data")), 0)
+
+        self.assertEqual([], response.data.get("data"))
