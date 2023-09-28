@@ -347,11 +347,12 @@ class RoleViewSet(
                 raise serializers.ValidationError(error)
         patch_role = super().update(request=request, args=args, kwargs=kwargs)
         if status.is_success(patch_role.status_code):
-            if payload != {}:
+            if payload == {}:
+                return patch_role
+            else:
                 auditlog = AuditLogModel()
                 auditlog.edit_data(request, AuditLogModel.ROLE, AuditLogModel.EDIT)
                 return patch_role
-            return patch_role
 
     def update(self, request, *args, **kwargs):
         """Update a role.
