@@ -59,12 +59,14 @@ USERNAMES_KEY = "usernames"
 ROLES_KEY = "roles"
 EXCLUDE_KEY = "exclude"
 ORDERING_PARAM = "order_by"
+PRINCIPAL_TYPE_KEY = "principal_type"
 VALID_ROLE_ORDER_FIELDS = list(RoleViewSet.ordering_fields)
 ROLE_DISCRIMINATOR_KEY = "role_discriminator"
 VALID_EXCLUDE_VALUES = ["true", "false"]
 VALID_GROUP_ROLE_FILTERS = ["role_name", "role_description", "role_display_name", "role_system"]
 VALID_GROUP_PRINCIPAL_FILTERS = ["principal_username"]
 VALID_PRINCIPAL_ORDER_FIELDS = ["username"]
+VALID_PRINCIPAL_TYPE_VALUE = ["service-account", "user"]
 VALID_ROLE_ROLE_DISCRIMINATOR = ["all", "any"]
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
@@ -447,6 +449,8 @@ class GroupViewSet(
         @apiHeader {String} token User authorization token
 
         @apiParam (Path) {String} id Group unique identifier
+        @apiParam (Query) {String} principal_type Parameter for selecting the type of principal to be returned (either
+                                                  "service-account" or "user").
 
         @apiSuccess {String} uuid Group unique identifier
         @apiSuccess {String} name Group name
@@ -559,6 +563,16 @@ class GroupViewSet(
                     request.query_params, USERNAME_ONLY_KEY, VALID_BOOLEAN_VALUE, "false"
                 ),
             }
+
+            # Attempt validating and obtaining the "principal type" query
+            # parameter. For now, having "service-account" as the "principal
+            # type" returns a stub.
+            principalType = validate_and_get_key(
+                request.query_params, PRINCIPAL_TYPE_KEY, VALID_PRINCIPAL_TYPE_VALUE, required=False
+            )
+
+            if principalType == "service-account":
+                return self.user_service_accounts_response()
 
             admin_only = validate_and_get_key(request.query_params, ADMIN_ONLY_KEY, VALID_BOOLEAN_VALUE, False, False)
             if admin_only == "true":
@@ -764,3 +778,26 @@ class GroupViewSet(
         # Exclude the roles in the group
         roles_for_group = group.roles().values("uuid")
         return roles.exclude(uuid__in=roles_for_group)
+
+    def user_service_accounts_response(self):
+        """Return a stubbed user or service account response.
+
+        Returns a dictionary with a mocked empty array response, in order to use
+        the structure as the returning values when a "user" or "service-account"
+        principal types are specified as query parameters. For more information
+        check https://issues.redhat.com/browse/RHCLOUD-28261.
+        """
+        return Response(
+            data={
+                "meta": {"count": 0, "limit": 0, "offset": 0},
+                "links": {
+                    "first": "",
+                    "next": "",
+                    "previous": "",
+                    "last": "",
+                },
+                "data": [],
+                "status": status.HTTP_200_OK,
+            },
+            status=status.HTTP_200_OK,
+        )

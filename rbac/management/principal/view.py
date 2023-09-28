@@ -36,6 +36,8 @@ VALID_STATUS_VALUE = ["enabled", "disabled", "all"]
 ADMIN_ONLY_KEY = "admin_only"
 VALID_BOOLEAN_VALUE = ["true", "false"]
 USERNAME_ONLY_KEY = "username_only"
+PRINCIPAL_TYPE_KEY = "type"
+VALID_PRINCIPAL_TYPE_VALUE = ["service-account", "user"]
 
 
 class PrincipalView(APIView):
@@ -52,6 +54,8 @@ class PrincipalView(APIView):
 
     @apiParam (Query) {Number} offset Parameter for selecting the start of data (default is 0).
     @apiParam (Query) {Number} limit Parameter for selecting the amount of data (default is 10).
+    @apiParam (Query) {String} type Parameter for selecting the type of principal to be returned
+                                    (either "service-account" or "user").
 
     @apiSuccess {Object} meta The metadata for pagination.
     @apiSuccess {Object} links  The object containing links of results.
@@ -111,7 +115,16 @@ class PrincipalView(APIView):
         if offset - limit > 0:
             previous_offset = offset - limit
 
-        resp, usernames_filter = self.users_from_proxy(user, query_params, options, limit, offset)
+        # Attempt validating and obtaining the "prinicpal type" query
+        # parameter. For now, specifying the query parameter results
+        # in returning the mocked response.
+        principalType = validate_and_get_key(
+            query_params, PRINCIPAL_TYPE_KEY, VALID_PRINCIPAL_TYPE_VALUE, required=False
+        )
+        if principalType == "service-account":
+            resp = self.user_service_accounts_response()
+        else:
+            resp, usernames_filter = self.users_from_proxy(user, query_params, options, limit, offset)
 
         status_code = resp.get("status_code")
         response_data = {}
@@ -178,3 +191,19 @@ class PrincipalView(APIView):
             account=user.account, org_id=user.org_id, input=proxyInput, limit=limit, offset=offset, options=options
         )
         return resp, ""
+
+    def user_service_accounts_response(self):
+        """Return a stubbed user or service account response.
+
+        Returns a dictionary with a mocked empty array response, in order to use
+        the structure as the returning values when a "user" or "service-account"
+        principal types are specified as query parameters. For more information
+        check https://issues.redhat.com/browse/RHCLOUD-28261.
+        """
+        return {
+            "status_code": status.HTTP_200_OK,
+            "data": {
+                "users": [],
+                "userCount": 0,
+            },
+        }
