@@ -1928,6 +1928,46 @@ class GroupViewsetTests(IdentityRequest):
         response = client.get(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={"status_code": 200, "data": []},
+    )
+    def test_get_group_service_account_principals_stub(self, mock_request):
+        """Test that getting the service account stubs works successfully."""
+        client = APIClient()
+        url = reverse("group-principals", kwargs={"uuid": self.group.uuid})
+        response = client.get(url, {"principal_type": "service-account"}, **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data.get("meta").get("count"), 0)
+        self.assertEqual(response.data.get("data"), [])
+
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={"status_code": 200, "data": []},
+    )
+    def test_get_group_user_principals_nonempty(self, mock_request):
+        """Test that getting the "user" type principals from a nonempty group returns successfully."""
+        mock_request.return_value["data"] = [
+            {"username": self.principal.username},
+            {"username": self.principalB.username},
+        ]
+
+        client = APIClient()
+        url = reverse("group-principals", kwargs={"uuid": self.group.uuid})
+
+        response = client.get(url, {"principal_type": "user"}, **self.headers)
+
+        call_args, kwargs = mock_request.call_args_list[0]
+        username_arg = call_args[0]
+
+        for username in [self.principal.username, self.principalB.username]:
+            self.assertTrue(username in username_arg)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data.get("meta").get("count"), 2)
+        self.assertEqual(response.data.get("data")[0].get("username"), self.principal.username)
+        self.assertEqual(response.data.get("data")[1].get("username"), self.principalB.username)
+
 
 class GroupViewNonAdminTests(IdentityRequest):
     """Test the group view for nonadmin user."""
