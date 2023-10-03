@@ -3754,11 +3754,8 @@
             "oneOf": [
               {
                 "type": "string",
-                "example": "123456"
-              },
-              {
-                "type": "null",
-                "example": null
+                "example": "123456",
+                "nullable": true
               },
               {
                 "type": "array",
@@ -3767,14 +3764,11 @@
                     {
                       "type": "string",
                       "example": "value1"
-                    },
-                    {
-                      "type": "null",
-                      "example": null
                     }
                   ]
                 },
-                "example": ["value1", null, "value2"]
+                "example": ["value1", "value2"],
+                "nullable": true
               }
             ]
           }
