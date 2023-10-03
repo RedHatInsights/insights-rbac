@@ -71,7 +71,7 @@ def catch_integrity_error(func):
 
 def is_no_auth(request):
     """Check condition for needing to authenticate the user."""
-    no_auth_list = ["status", "metrics", "openapi.json"]
+    no_auth_list = ["status", "metrics", "openapi.json", "health"]
     no_auth = any(no_auth_path in request.path for no_auth_path in no_auth_list)
     return no_auth
 
