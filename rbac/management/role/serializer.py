@@ -20,7 +20,7 @@ from django.utils.translation import gettext as _
 from management.group.model import Group
 from management.notifications.notification_handlers import role_obj_change_notification_handler
 from management.serializer_override_mixin import SerializerCreateOverrideMixin
-from management.utils import filter_queryset_by_tenant, get_principal_from_request
+from management.utils import filter_queryset_by_tenant, get_principal
 from rest_framework import serializers
 
 from api.models import Tenant
@@ -335,7 +335,7 @@ def obtain_groups_in(obj, request):
     assigned_groups = []
 
     if scope_param == "principal" or username_param:
-        principal = get_principal_from_request(request)
+        principal = get_principal(username_param or request.user.username, request)
         assigned_groups = Group.objects.filter(policies__in=policy_ids, principals__in=[principal])
         assigned_groups = filter_queryset_by_tenant(assigned_groups, request.tenant)
     else:
