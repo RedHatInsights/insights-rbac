@@ -85,7 +85,8 @@ COPY . .
 # create the rbac user
 RUN \
     adduser rbac -u ${USER_ID} -g 0 && \
-    chmod ug+rw ${APP_ROOT} ${APP_HOME} ${APP_HOME}/static /tmp
+    chmod ug+rw ${APP_ROOT} ${APP_HOME} ${APP_HOME}/static && \
+    chmod ug+rwx /tmp
 USER rbac
 
 

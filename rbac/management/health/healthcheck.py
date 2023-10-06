@@ -29,4 +29,4 @@ def redis_health():
     time.sleep(10)
 
     redis_cache = BasicCache()
-    redis_cache.redis_health_check(redis_cache)
+    redis_cache.redis_health_check()
