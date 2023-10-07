@@ -20,7 +20,7 @@ from django.utils.translation import gettext as _
 from management.group.model import Group
 from management.notifications.notification_handlers import role_obj_change_notification_handler
 from management.serializer_override_mixin import SerializerCreateOverrideMixin
-from management.utils import filter_queryset_by_tenant, get_principal
+from management.utils import filter_queryset_by_tenant, get_admin_from_proxy, get_principal
 from rest_framework import serializers
 
 from api.models import Tenant
@@ -342,16 +342,26 @@ def obtain_groups_in(obj, request):
         assigned_groups = filter_queryset_by_tenant(Group.objects.filter(policies__in=policy_ids), request.tenant)
 
     public_tenant = Tenant.objects.get(tenant_name="public")
+
     platform_default_groups = Group.platform_default_set().filter(tenant=request.tenant).filter(
         policies__in=policy_ids
     ) or Group.platform_default_set().filter(tenant=public_tenant).filter(policies__in=policy_ids)
-    admin_default_groups = Group.admin_default_set().filter(tenant=request.tenant).filter(
-        policies__in=policy_ids
-    ) or Group.admin_default_set().filter(tenant=public_tenant).filter(policies__in=policy_ids)
 
-    qs = (assigned_groups | platform_default_groups | admin_default_groups).distinct()
+    if username_param:
+        is_org_admin = get_admin_from_proxy(username_param, request)
+    else:
+        is_org_admin = request.user.admin
 
-    return qs
+    qs = assigned_groups | platform_default_groups
+
+    if is_org_admin:
+        admin_default_groups = Group.admin_default_set().filter(tenant=request.tenant).filter(
+            policies__in=policy_ids
+        ) or Group.admin_default_set().filter(tenant=public_tenant).filter(policies__in=policy_ids)
+
+        qs = qs | admin_default_groups
+
+    return qs.distinct()
 
 
 def create_access_for_role(role, access_list, tenant):
