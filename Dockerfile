@@ -86,7 +86,7 @@ COPY . .
 RUN \
     adduser rbac -u ${USER_ID} -g 0 && \
     chmod ug+rw ${APP_ROOT} ${APP_HOME} ${APP_HOME}/static && \
-    chmod ug+rwx /tmp
+    chmod -R 777 /tmp
 USER rbac
 
 
