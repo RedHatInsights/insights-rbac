@@ -44,14 +44,14 @@ class BasicCache:
     def enable_caching(self):
         """Enable caching and incremements prometheus metric that redis caching is enabled."""
         self.use_caching = True
-        logger.info("Cache Enabled")
+        logger.info("Redis Cache Enabled")
         redis_enable_cache_get_total.inc()
         return self.use_caching
 
     def disable_caching(self):
-        """Disable caching and incrememnt prometheus metric that redis caching is disabled."""
+        """Disable caching and increment prometheus metric that redis caching is disabled."""
         self.use_caching = False
-        logger.info("Cache Disabled")
+        logger.info("redis Cache Disabled")
         redis_disable_cache_get_total.inc()
         return self.use_caching
 
