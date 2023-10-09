@@ -3751,8 +3751,26 @@
             ]
           },
           "value": {
-            "type": "string",
-            "example": "123456"
+            "oneOf": [
+              {
+                "type": "string",
+                "example": "123456",
+                "nullable": true
+              },
+              {
+                "type": "array",
+                "items": {
+                  "oneOf": [
+                    {
+                      "type": "string",
+                      "example": "value1"
+                    }
+                  ]
+                },
+                "example": ["value1", "value2"],
+                "nullable": true
+              }
+            ]
           }
         }
       },
