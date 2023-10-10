@@ -59,7 +59,7 @@ def clean_tenant_principals(tenant):
             principal.delete()
             logger.info("Username %s not found for tenant %s, principal removed.", principal.username, tenant_id)
         else:
-            logger.warn(
+            logger.warning(
                 "Unknown status %d when checking username %s" " for tenant %s, no change needed.",
                 status_code,
                 principal.username,
