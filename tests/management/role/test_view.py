@@ -693,23 +693,23 @@ class RoleViewsetTests(IdentityRequest):
         # create a role
         role_name = "groupsInRole"
         created_role = self.create_role("groupsInRole")
-        self.assertEquals(created_role.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(created_role.status_code, status.HTTP_201_CREATED)
         role_uuid = created_role.data.get("uuid")
 
         # create a group
         group_name = "groupsInGroup"
         created_group = self.create_group(group_name)
-        self.assertEquals(created_group.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(created_group.status_code, status.HTTP_201_CREATED)
         group_uuid = created_group.data.get("uuid")
 
         # create a policy to link the 2
         policy_name = "groupsInPolicy"
         created_policy = self.create_policy(policy_name, group_uuid, [role_uuid])
-        self.assertEquals(created_policy.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(created_policy.status_code, status.HTTP_201_CREATED)
 
         # add user principal to the created group
         principal_response = self.add_principal_to_group(group_uuid, self.user_data["username"])
-        self.assertEquals(principal_response.status_code, status.HTTP_200_OK, principal_response)
+        self.assertEqual(principal_response.status_code, status.HTTP_200_OK, principal_response)
 
         # hit /roles?groups_in, group should appear in groups_in
         field_1 = "groups_in_count"
@@ -740,14 +740,14 @@ class RoleViewsetTests(IdentityRequest):
         # make sure created role exists in result set and has correct values
         created_role = next((iterRole for iterRole in response_data if iterRole["name"] == role_name), None)
         self.assertIsNotNone(created_role)
-        self.assertEquals(created_role["groups_in_count"], 1)
-        self.assertEquals(created_role["groups_in"][0]["name"], group_name)
+        self.assertEqual(created_role["groups_in_count"], 1)
+        self.assertEqual(created_role["groups_in"][0]["name"], group_name)
 
         # make sure a default role exists in result set and has correct values
         default_role = next((iterRole for iterRole in response_data if iterRole["name"] == self.defRole.name), None)
         self.assertIsNotNone(default_role)
-        self.assertEquals(default_role["groups_in_count"], 1)
-        self.assertEquals(default_role["groups_in"][0]["name"], self.group.name)
+        self.assertEqual(default_role["groups_in_count"], 1)
+        self.assertEqual(default_role["groups_in"][0]["name"], self.group.name)
 
     def test_list_role_with_groups_in_fields_for_admin_scope_success(self):
         """Test that we can read a list of roles and the groups_in fields is set correctly for a admin scoped request."""
@@ -779,14 +779,14 @@ class RoleViewsetTests(IdentityRequest):
         # make sure a default role exists in result set and has correct values
         default_role = next((iterRole for iterRole in response_data if iterRole["name"] == self.defRole.name), None)
         self.assertIsNotNone(default_role)
-        self.assertEquals(default_role["groups_in_count"], 1)
-        self.assertEquals(default_role["groups_in"][0]["name"], self.group.name)
+        self.assertEqual(default_role["groups_in_count"], 1)
+        self.assertEqual(default_role["groups_in"][0]["name"], self.group.name)
 
         # make sure an admin role exists in result set and has correct values
         admin_role = next((iterRole for iterRole in response_data if iterRole["name"] == self.adminRole.name), None)
         self.assertIsNotNone(admin_role)
-        self.assertEquals(admin_role["groups_in_count"], 1)
-        self.assertEquals(admin_role["groups_in"][0]["name"], self.group.name)
+        self.assertEqual(admin_role["groups_in_count"], 1)
+        self.assertEqual(admin_role["groups_in"][0]["name"], self.group.name)
 
     def test_list_role_with_username_forbidden_to_nonadmin(self):
         """Test that non admin can not read a list of roles for username."""
