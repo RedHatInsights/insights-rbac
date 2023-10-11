@@ -52,15 +52,15 @@ class AuditLogModel(models.Model):
     resource = models.CharField(max_length=32, choices=RESOURCE_CHOICES)
     action = models.CharField(max_length=32, choices=ACTION_CHOICES)
 
-    def create_data(self, request, resource, action):
+    def create_data(self, request, resource):
         """Audit Log when group or user is created."""
         self.requester = request.user.username
         self.description = "Created " + request.data["name"]
         self.resource = resource
-        self.action = action
+        self.action = AuditLogModel.CREATE
         super(AuditLogModel, self).save()
 
-    def delete_data(self, request, object, resource, action, *args, **kwargs):
+    def delete_data(self, request, object, resource, *args, **kwargs):
         """Audit log when a group or user is deleted."""
         get_uuid = kwargs["kwargs"]["uuid"]
         if get_uuid == str(object.uuid):
@@ -70,13 +70,34 @@ class AuditLogModel(models.Model):
         self.requester = request._user.username
         self.description = "Deleted " + get_object_name
         self.resource = resource
-        self.action = action
+        self.action = AuditLogModel.DELETE
         super(AuditLogModel, self).save()
 
-    def edit_data(self, request, resource, action):
+    def edit_data(self, request, resource):
         """Audit log when a group or user is edited."""
         self.requester = request.user.username
         self.description = "Edited " + request.data["name"]
         self.resource = resource
-        self.action = action
+        self.action = AuditLogModel.EDIT
         super(AuditLogModel, self).save()
+
+    def add_data(self, request, group, item, who, resource):
+        """Audit log when a role or user/principal is added to a group."""
+      
+        self.requester = request.user.username
+
+        group_name = group.name
+        role_name = item.display_name
+        user_name = item.display_name
+        if who == "role":
+            self.description = "Added role " + role_name + " to group " + group_name
+            self.resource = AuditLogModel.ROLE
+        elif who == "user":
+            self.description = "Added user" + user_name + " to group " + group_name
+            self.resource = AuditLogModel.USER
+        else: 
+            ValueError("Not role, user, or permission that is being added")
+
+        super(AuditLogModel, self).save()
+
+        

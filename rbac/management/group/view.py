@@ -218,7 +218,7 @@ class GroupViewSet(
         create_group = super().create(request=request, args=args, kwargs=kwargs)
         if status.is_success(create_group.status_code):
             auditlog = AuditLogModel()
-            auditlog.create_data(request, AuditLogModel.GROUP, AuditLogModel.CREATE)
+            auditlog.create_data(request, AuditLogModel.GROUP)
             return create_group
 
         # return super().create(request=request, args=args, kwargs=kwargs)
@@ -362,7 +362,7 @@ class GroupViewSet(
 
         if status.is_success(edit_group.status_code):
             auditlog = AuditLogModel()
-            auditlog.edit_data(request, AuditLogModel.GROUP, AuditLogModel.EDIT)
+            auditlog.edit_data(request, AuditLogModel.GROUP)
             return edit_group
 
     # return super().update(request=request, args=args, kwargs=kwargs)
@@ -689,14 +689,22 @@ class GroupViewSet(
         roles = []
         validate_uuid(uuid, "group uuid validation")
         group = self.get_object()
-        if request.method == "POST":
+        # a role is being added here: place audit logs here. 
+        if request.method == "POST": 
             self.protect_default_admin_group_roles(group)
             serializer = GroupRoleSerializerIn(data=request.data)
             if serializer.is_valid(raise_exception=True):
                 roles = request.data.pop(ROLES_KEY, [])
             group = set_system_flag_before_update(group, request.tenant, request.user)
-            add_roles(group, roles, request.tenant, user=request.user)
+            al_roles = add_roles(group, roles, request.tenant, user=request.user)
             response_data = GroupRoleSerializerIn(group)
+           
+            #Audit Log for when role/roles added to a group
+            auditLog = AuditLogModel()
+            who = "role"
+            for role in al_roles:
+                auditLog.add_data(request, group, role, who)
+
         elif request.method == "GET":
             serialized_roles = self.obtain_roles(request, group)
             page = self.paginate_queryset(serialized_roles)

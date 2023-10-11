@@ -36,7 +36,7 @@ class AuditLogSerializer(serializers.ModelSerializer):
         ("create", AuditLogModel.CREATE),
         ("remove", AuditLogModel.REMOVE),
     )
-
+    date = serializers.DateField(required=True)
     requester = serializers.CharField(required=True, max_length=255)
     description = serializers.CharField(required=True, max_length=255)
     resource = serializers.ChoiceField(choices=RESOURCE_CHOICES)
@@ -44,4 +44,4 @@ class AuditLogSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = AuditLogModel
-        fields = ("requester", "description", "resource", "action")
+        fields = ("date", "requester", "description", "resource", "action")

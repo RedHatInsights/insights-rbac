@@ -116,7 +116,6 @@ def add_roles(group, roles_or_role_ids, tenant, user=None):
         roles = roles_or_role_ids
     group_name = group.name
     role_names = list(roles.values_list("name", flat=True))
-
     group, created = Group.objects.get_or_create(name=group_name, tenant=tenant)
     system_policy_name = "System Policy for Group {}".format(group.uuid)
     system_policy, system_policy_created = Policy.objects.update_or_create(
@@ -132,6 +131,7 @@ def add_roles(group, roles_or_role_ids, tenant, user=None):
     roles = Role.objects.filter(
         Q(tenant=tenant) | Q(tenant=Tenant.objects.get(tenant_name="public")), name__in=role_names
     )
+    role_list = []
     for role in roles:
         accesses = role.access.all()
         for access in accesses:
@@ -145,7 +145,8 @@ def add_roles(group, roles_or_role_ids, tenant, user=None):
 
             # Send notifications
             group_role_change_notification_handler(user, group, role, "added")
-
+        role_list.append(role)
+    return role_list
 
 def remove_roles(group, roles_or_role_ids, tenant, user=None):
     """Process list of roles and remove them from the group."""
