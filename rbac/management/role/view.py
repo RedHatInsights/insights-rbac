@@ -214,7 +214,7 @@ class RoleViewSet(
         create_role = super().create(request=request, args=args, kwargs=kwargs)
         if status.is_success(create_role.status_code):
             auditlog = AuditLogModel()
-            auditlog.create_data(request, AuditLogModel.ROLE, AuditLogModel.CREATE)
+            auditlog.create_data(request, AuditLogModel.ROLE)
             return create_role
 
     def list(self, request, *args, **kwargs):
@@ -330,7 +330,7 @@ class RoleViewSet(
             self.delete_policies_if_no_role_attached(role)
             response = super().destroy(request=request, args=args, kwargs=kwargs)
             auditlog = AuditLogModel()
-            auditlog.delete_data(request, role, AuditLogModel.ROLE, AuditLogModel.DELETE, args=args, kwargs=kwargs)
+            auditlog.delete_data(request, role, AuditLogModel.ROLE, args=args, kwargs=kwargs)
         if response.status_code == status.HTTP_204_NO_CONTENT:
             role_obj_change_notification_handler(role, "deleted", request.user)
         return response
@@ -351,7 +351,7 @@ class RoleViewSet(
                 return patch_role
             else:
                 auditlog = AuditLogModel()
-                auditlog.edit_data(request, AuditLogModel.ROLE, AuditLogModel.EDIT)
+                auditlog.edit_data(request, AuditLogModel.ROLE)
                 return patch_role
 
     def update(self, request, *args, **kwargs):
@@ -417,7 +417,7 @@ class RoleViewSet(
         edit_role = super().update(request=request, args=args, kwargs=kwargs)
         if status.is_success(edit_role.status_code):
             auditlog = AuditLogModel()
-            auditlog.edit_data(request, AuditLogModel.ROLE, AuditLogModel.EDIT)
+            auditlog.edit_data(request, AuditLogModel.ROLE)
             return edit_role
 
     @action(detail=True, methods=["get"])

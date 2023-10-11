@@ -216,7 +216,7 @@ class GroupViewSet(
         create_group = super().create(request=request, args=args, kwargs=kwargs)
         if status.is_success(create_group.status_code):
             auditlog = AuditLogModel()
-            auditlog.create_data(request, AuditLogModel.GROUP, AuditLogModel.CREATE)
+            auditlog.create_data(request, AuditLogModel.GROUP)
             return create_group
 
         # return super().create(request=request, args=args, kwargs=kwargs)
@@ -326,7 +326,7 @@ class GroupViewSet(
         response = super().destroy(request=request, args=args, kwargs=kwargs)
 
         auditlog = AuditLogModel()
-        auditlog.delete_data(request, group, AuditLogModel.GROUP, AuditLogModel.DELETE, args=args, kwargs=kwargs)
+        auditlog.delete_data(request, group, AuditLogModel.GROUP, args=args, kwargs=kwargs)
 
         if response.status_code == status.HTTP_204_NO_CONTENT:
             group_obj_change_notification_handler(request.user, group, "deleted")
@@ -360,10 +360,8 @@ class GroupViewSet(
 
         if status.is_success(edit_group.status_code):
             auditlog = AuditLogModel()
-            auditlog.edit_data(request, AuditLogModel.GROUP, AuditLogModel.EDIT)
+            auditlog.edit_data(request, AuditLogModel.GROUP)
             return edit_group
-
-    # return super().update(request=request, args=args, kwargs=kwargs)
 
     def add_principals(self, group, principals, account=None, org_id=None):
         """Process list of principals and add them to the group."""
