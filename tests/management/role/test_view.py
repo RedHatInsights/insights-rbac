@@ -1057,6 +1057,23 @@ class RoleViewsetTests(IdentityRequest):
                 },
                 ANY,
             )
+        # test that the edited role is correctly added within audit logs
+        al_url = "/api/v1/auditlogs/"
+        al_client = APIClient()
+        al_response = al_client.get(al_url, **self.headers)
+        retrieve_data = al_response.data.get("data")
+        al_list = retrieve_data
+        al_dict = al_list[1]
+
+        al_dict_requester = al_dict["requester"]
+        al_dict_description = al_dict["description"]
+        al_dict_resource = al_dict["resource"]
+        al_dict_action = al_dict["action"]
+
+        self.assertEqual(self.user_data["username"], al_dict_requester)
+        self.assertIsNotNone(al_dict_description)
+        self.assertEqual(al_dict_resource, "role")
+        self.assertEqual(al_dict_action, "edit")
 
     def test_update_role_invalid(self):
         """Test that updating an invalid role returns an error."""
@@ -1213,23 +1230,23 @@ class RoleViewsetTests(IdentityRequest):
             response = client.get(url, **self.headers)
             self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
-            # test that the patched role is correctly added within audit logs
-            al_url = "/api/v1/auditlogs/"
-            al_client = APIClient()
-            al_response = al_client.get(al_url, **self.headers)
-            retrieve_data = al_response.data.get("data")
-            al_list = retrieve_data
-            al_dict = al_list[1]
+        # test that the patched role is correctly added within audit logs
+        al_url = "/api/v1/auditlogs/"
+        al_client = APIClient()
+        al_response = al_client.get(al_url, **self.headers)
+        retrieve_data = al_response.data.get("data")
+        al_list = retrieve_data
+        al_dict = al_list[1]
 
-            al_dict_requester = al_dict["requester"]
-            al_dict_description = al_dict["description"]
-            al_dict_resource = al_dict["resource"]
-            al_dict_action = al_dict["action"]
+        al_dict_requester = al_dict["requester"]
+        al_dict_description = al_dict["description"]
+        al_dict_resource = al_dict["resource"]
+        al_dict_action = al_dict["action"]
 
-            self.assertEqual(self.user_data["username"], al_dict_requester)
-            self.assertIsNotNone(al_dict_description)
-            self.assertEqual(al_dict_resource, "role")
-            self.assertEqual(al_dict_action, "delete")
+        self.assertEqual(self.user_data["username"], al_dict_requester)
+        self.assertIsNotNone(al_dict_description)
+        self.assertEqual(al_dict_resource, "role")
+        self.assertEqual(al_dict_action, "delete")
 
     def test_delete_system_role(self):
         """Test that system roles are protected from deletion"""
