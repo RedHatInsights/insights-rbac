@@ -162,6 +162,24 @@ class GroupViewsetTests(IdentityRequest):
             uuid = response.data.get("uuid")
             self.assertEqual(response.status_code, status.HTTP_201_CREATED)
 
+            # test that created group is added correctly within audit logs
+            al_url = "/api/v1/auditlogs/"
+            al_client = APIClient()
+            al_response = al_client.get(al_url, **self.headers)
+            retrieve_data = al_response.data.get("data")
+            al_list = retrieve_data
+            al_dict = al_list[0]
+
+            al_dict_requester = al_dict["requester"]
+            al_dict_description = al_dict["description"]
+            al_dict_resource = al_dict["resource"]
+            al_dict_action = al_dict["action"]
+
+            self.assertEqual(self.user_data["username"], al_dict_requester)
+            self.assertIsNotNone(al_dict_description)
+            self.assertEqual(al_dict_resource, "group")
+            self.assertEqual(al_dict_action, "create")
+
             # test that we can retrieve the group
             url = reverse("group-detail", kwargs={"uuid": response.data.get("uuid")})
             response = client.get(url, **self.headers)
@@ -575,6 +593,23 @@ class GroupViewsetTests(IdentityRequest):
                 },
                 ANY,
             )
+        # test that updated group is added correctly within audit logs
+        al_url = "/api/v1/auditlogs/"
+        al_client = APIClient()
+        al_response = al_client.get(al_url, **self.headers)
+        retrieve_data = al_response.data.get("data")
+        al_list = retrieve_data
+        al_dict = al_list[0]
+
+        al_dict_requester = al_dict["requester"]
+        al_dict_description = al_dict["description"]
+        al_dict_resource = al_dict["resource"]
+        al_dict_action = al_dict["action"]
+
+        self.assertEqual(self.user_data["username"], al_dict_requester)
+        self.assertIsNotNone(al_dict_description)
+        self.assertEqual(al_dict_resource, "group")
+        self.assertEqual(al_dict_action, "edit")
 
     def test_update_default_group(self):
         """Test that platform_default groups are protected from updates"""
@@ -672,6 +707,23 @@ class GroupViewsetTests(IdentityRequest):
                 },
                 ANY,
             )
+        # test that deleted group log is added correctly within audit logs
+        al_url = "/api/v1/auditlogs/"
+        al_client = APIClient()
+        al_response = al_client.get(al_url, **self.headers)
+        retrieve_data = al_response.data.get("data")
+        al_list = retrieve_data
+        al_dict = al_list[0]
+
+        al_dict_requester = al_dict["requester"]
+        al_dict_description = al_dict["description"]
+        al_dict_resource = al_dict["resource"]
+        al_dict_action = al_dict["action"]
+
+        self.assertEqual(self.user_data["username"], al_dict_requester)
+        self.assertIsNotNone(al_dict_description)
+        self.assertEqual(al_dict_resource, "group")
+        self.assertEqual(al_dict_action, "delete")
 
     def test_delete_default_group(self):
         """Test that platform_default groups are protected from deletion"""

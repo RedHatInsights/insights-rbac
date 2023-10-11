@@ -34,7 +34,6 @@ from management.models import (
     ResourceDefinition,
     ExtRoleRelation,
     ExtTenant,
-    AuditLogModel,
 )
 from tests.core.test_kafka import copy_call_args
 from tests.identity_request import IdentityRequest
