@@ -19,7 +19,7 @@
 from uuid import uuid4
 
 from django.conf import settings
-from django.urls import reverse
+from django.urls import reverse, resolve
 from rest_framework import status
 from rest_framework.test import APIClient
 
@@ -34,6 +34,7 @@ from management.models import (
     ResourceDefinition,
     ExtRoleRelation,
     ExtTenant,
+    AuditLogModel,
 )
 from tests.core.test_kafka import copy_call_args
 from tests.identity_request import IdentityRequest
@@ -245,6 +246,24 @@ class RoleViewsetTests(IdentityRequest):
             response = self.create_role(role_name, in_access_data=access_data)
             self.assertEqual(response.status_code, status.HTTP_201_CREATED)
 
+            # test whether newly created role is added correctly within audit log database
+            al_url = "/api/v1/auditlogs/"
+            al_client = APIClient()
+            al_response = al_client.get(al_url, **self.headers)
+            retrieve_data = al_response.data.get("data")
+            al_list = retrieve_data
+            al_dict = al_list[0]
+
+            al_dict_requester = al_dict["requester"]
+            al_dict_description = al_dict["description"]
+            al_dict_resource = al_dict["resource"]
+            al_dict_action = al_dict["action"]
+
+            self.assertEqual(self.user_data["username"], al_dict_requester)
+            self.assertIsNotNone(al_dict_description)
+            self.assertEqual(al_dict_resource, "role")
+            self.assertEqual(al_dict_action, "create")
+
             # test that we can retrieve the role
             url = reverse("role-detail", kwargs={"uuid": response.data.get("uuid")})
             client = APIClient()
@@ -305,6 +324,8 @@ class RoleViewsetTests(IdentityRequest):
         ]
         response = self.create_role(role_name, role_display=role_display, in_access_data=access_data)
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+        # test that we can retrieve related audit log to created role
 
         # test that we can retrieve the role
         url = reverse("role-detail", kwargs={"uuid": response.data.get("uuid")})
@@ -935,6 +956,25 @@ class RoleViewsetTests(IdentityRequest):
         self.assertEqual(updated_name, response.data.get("display_name"))
         self.assertEqual(updated_description, response.data.get("description"))
 
+        # test that the patched role is correctly added within audit logs
+
+        al_url = "/api/v1/auditlogs/"
+        al_client = APIClient()
+        al_response = al_client.get(al_url, **self.headers)
+        retrieve_data = al_response.data.get("data")
+        al_list = retrieve_data
+        al_dict = al_list[1]
+
+        al_dict_requester = al_dict["requester"]
+        al_dict_description = al_dict["description"]
+        al_dict_resource = al_dict["resource"]
+        al_dict_action = al_dict["action"]
+
+        self.assertEqual(self.user_data["username"], al_dict_requester)
+        self.assertIsNotNone(al_dict_description)
+        self.assertEqual(al_dict_resource, "role")
+        self.assertEqual(al_dict_action, "edit")
+
     def test_patch_role_failure(self):
         """Test that we return a 400 with invalid fields in the patch."""
         role_name = "role"
@@ -1172,6 +1212,24 @@ class RoleViewsetTests(IdentityRequest):
             # verify the role no longer exists
             response = client.get(url, **self.headers)
             self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+            # test that the patched role is correctly added within audit logs
+            al_url = "/api/v1/auditlogs/"
+            al_client = APIClient()
+            al_response = al_client.get(al_url, **self.headers)
+            retrieve_data = al_response.data.get("data")
+            al_list = retrieve_data
+            al_dict = al_list[1]
+
+            al_dict_requester = al_dict["requester"]
+            al_dict_description = al_dict["description"]
+            al_dict_resource = al_dict["resource"]
+            al_dict_action = al_dict["action"]
+
+            self.assertEqual(self.user_data["username"], al_dict_requester)
+            self.assertIsNotNone(al_dict_description)
+            self.assertEqual(al_dict_resource, "role")
+            self.assertEqual(al_dict_action, "delete")
 
     def test_delete_system_role(self):
         """Test that system roles are protected from deletion"""
