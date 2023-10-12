@@ -24,6 +24,7 @@ from rest_framework import status
 from rest_framework.test import APIClient
 
 from api.models import User, Tenant
+from management.cache import TenantCache
 from management.models import (
     Group,
     Permission,
@@ -185,6 +186,22 @@ class RoleViewsetTests(IdentityRequest):
 
         self.access3 = Access.objects.create(permission=self.permission2, role=self.sysRole, tenant=self.tenant)
         Permission.objects.create(permission="cost-management:*:*", tenant=self.tenant)
+
+    def tearDown(self):
+        """Tear down role viewset tests."""
+        Group.objects.all().delete()
+        Principal.objects.all().delete()
+        Role.objects.all().delete()
+        Policy.objects.all().delete()
+        Permission.objects.all().delete()
+        Access.objects.all().delete()
+        ExtTenant.objects.all().delete()
+        ExtRoleRelation.objects.all().delete()
+
+        # we need to delete old test_tenant's that may exist in cache
+        test_tenant_org_id = "100001"
+        cached_tenants = TenantCache()
+        cached_tenants.delete_tenant(test_tenant_org_id)
 
     def create_role(self, role_name, role_display="", in_access_data=None):
         """Create a role."""
