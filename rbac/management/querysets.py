@@ -156,7 +156,7 @@ def get_role_queryset(request):
         tenant__in=[request.tenant, public_tenant]
     )
 
-    if scope != (ACCOUNT_SCOPE or ORG_ID_SCOPE):
+    if scope == PRINCIPAL_SCOPE:
         queryset = get_object_principal_queryset(
             request,
             scope,
