@@ -37,7 +37,7 @@ from management.models import (
 )
 from tests.core.test_kafka import copy_call_args
 from tests.identity_request import IdentityRequest
-from unittest.mock import ANY, call, patch
+from unittest.mock import ANY, patch
 
 
 URL = reverse("role-list")

@@ -26,7 +26,7 @@ from rest_framework import status
 from rest_framework.test import APIClient
 
 from api.models import Tenant, User
-from management.cache import AccessCache, TenantCache
+from management.cache import TenantCache
 from management.models import Group, Principal, Policy, Role, ExtRoleRelation, ExtTenant
 from tests.core.test_kafka import copy_call_args
 from tests.identity_request import IdentityRequest

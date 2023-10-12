@@ -8,7 +8,6 @@ from rest_framework import status
 from rest_framework.test import APIClient
 
 from api.models import Tenant
-from api.common import RH_IDENTITY_HEADER
 from management.models import Group, Principal
 
 import logging
