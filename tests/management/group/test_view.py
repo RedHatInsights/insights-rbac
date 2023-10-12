@@ -128,10 +128,6 @@ class GroupViewsetTests(IdentityRequest):
         self.policyMultiRole.roles.add(self.roleB)
         self.groupMultiRole.policies.add(self.policyMultiRole)
 
-    @classmethod
-    def setUpClass(cls):
-        super().setUpClass()
-
     def tearDown(self):
         """Tear down group viewset tests."""
         Group.objects.all().delete()
