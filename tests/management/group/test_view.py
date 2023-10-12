@@ -129,7 +129,7 @@ class GroupViewsetTests(IdentityRequest):
         self.groupMultiRole.policies.add(self.policyMultiRole)
 
     @classmethod
-    def setUpClass(self):
+    def setUpClass(cls):
         super().setUpClass()
 
     def tearDown(self):
