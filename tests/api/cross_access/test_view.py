@@ -834,7 +834,7 @@ class CrossAccountRequestViewTests(IdentityRequest):
         self.assertTrue(response.data["data"][0].get("request_id") < response.data["data"][1].get("request_id"))
 
         # Sorting the dates
-        ## request_1 is created a little bit ealier than request_6, therefore, the
+        ## request_1 is created a little bit earlier than request_6, therefore, the
         ## first should be not_anemic_request_1
         response = client.get(
             f"{URL_LIST}?query_by=user_id&order_by=-created", **self.associate_non_admin_request.META

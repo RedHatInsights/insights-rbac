@@ -26,7 +26,7 @@ BAD_PADDING_HEADER = "eyJpZGVudGl0eSI6eyJhY2NvdW50X251bWJlciI6IjYwODk3MTkiLCJ0eX
 
 
 class SerializersTest(TestCase):
-    """Tests against the serializera functions."""
+    """Tests against the serializer functions."""
 
     def test_handle_bad_padding(self):
         """Test the handling of bad padding."""

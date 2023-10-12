@@ -54,7 +54,7 @@ def test_tenant_groups():
         for future in as_completed(futures):
             response = future.result()
             if response.status_code != status.HTTP_200_OK:
-                Exception("Recieved an error status\n")
+                Exception("Received an error status\n")
             num_requests += 1
 
     request_time, average = timerStop(start, num_requests)
@@ -92,7 +92,7 @@ def test_tenant_roles():
         for future in as_completed(futures):
             response = future.result()
             if response.status_code != status.HTTP_200_OK:
-                Exception("Recieved an error status\n")
+                Exception("Received an error status\n")
             num_requests += 1
 
     request_time, average = timerStop(start, num_requests)
@@ -132,7 +132,7 @@ def test_group_roles():
         for future in as_completed(futures):
             response = future.result()
             if response.status_code != status.HTTP_200_OK:
-                Exception("Recieved an error status\n")
+                Exception("Received an error status\n")
             num_requests += 1
 
     request_time, average = timerStop(start, num_requests)
@@ -179,7 +179,7 @@ def test_principals_groups():
         for future in as_completed(futures):
             response = future.result()
             if response.status_code != status.HTTP_200_OK:
-                Exception("Recieved an error status\n")
+                Exception("Received an error status\n")
             num_requests += 1
 
     request_time, average = timerStop(start, num_requests)
@@ -232,7 +232,7 @@ def test_principals_roles():
             response = future.result()
 
             if response.status_code != status.HTTP_200_OK:
-                Exception("Recieved an error status\n")
+                Exception("Received an error status\n")
 
             num_requests += 1
 
@@ -263,7 +263,7 @@ def test_full_sync():
         )
 
         if response.status_code != status.HTTP_200_OK:
-            Exception("Recieved an error status\n")
+            Exception("Received an error status\n")
 
         tenants = response.data.get("data")
 
@@ -276,7 +276,7 @@ def test_full_sync():
     def full_sync(t, g):
         org_id = t.get("org_id")
         g_uuid = g.get("uuid")
-        # tenant groups rolesk, get orgs groups roles
+        # tenant groups roles, get orgs groups roles
         response = client.get(
             f"/_private/api/v1/integrations/tenant/{org_id}/groups/{g_uuid}/roles/?external_tenant=ocm",
             **identity.META,
@@ -284,7 +284,7 @@ def test_full_sync():
         )
 
         if response.status_code != status.HTTP_200_OK:
-            Exception("Recieved an error status\n")
+            Exception("Received an error status\n")
 
         # OCM would sync group roles here
 
@@ -295,7 +295,7 @@ def test_full_sync():
         )
 
         if response.status_code != status.HTTP_200_OK:
-            Exception("Recieved an error status\n")
+            Exception("Received an error status\n")
 
         # sync account groups
 
@@ -313,7 +313,7 @@ def test_full_sync():
                 follow=True,
             )
             if response.status_code != status.HTTP_200_OK:
-                Exception("Recieved an error status\n")
+                Exception("Received an error status\n")
 
             groups = response.data.get("data")
 

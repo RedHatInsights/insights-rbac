@@ -62,7 +62,7 @@ class GroupViewsetTests(IdentityRequest):
         self.test_principal.save()
         self.test_principalB = Principal(username="mock_user", tenant=self.test_tenant)
         self.test_principalB.save()
-        self.test_principalC = Principal(username="user_not_attaced_to_group_explicitly", tenant=self.test_tenant)
+        self.test_principalC = Principal(username="user_not_attached_to_group_explicitly", tenant=self.test_tenant)
         self.test_principalC.save()
         user_data = {"username": "test_user", "email": "test@gmail.com"}
         test_request_context = self._create_request_context(
@@ -78,7 +78,7 @@ class GroupViewsetTests(IdentityRequest):
         self.principal.save()
         self.principalB = Principal(username="mock_user", tenant=self.tenant)
         self.principalB.save()
-        self.principalC = Principal(username="user_not_attaced_to_group_explicitly", tenant=self.tenant)
+        self.principalC = Principal(username="user_not_attached_to_group_explicitly", tenant=self.tenant)
         self.principalC.save()
         self.group = Group(name="groupA", tenant=self.tenant)
         self.group.save()
@@ -1027,7 +1027,7 @@ class GroupViewsetTests(IdentityRequest):
                     "is_org_admin": False,
                     "is_internal": False,
                     "id": 52567473,
-                    "username": "user_not_attaced_to_group_explicitly",
+                    "username": "user_not_attached_to_group_explicitly",
                     "account_number": "1111111",
                     "is_active": True,
                 }
@@ -1053,7 +1053,7 @@ class GroupViewsetTests(IdentityRequest):
                     "is_org_admin": True,
                     "is_internal": False,
                     "id": 52567473,
-                    "username": "user_not_attaced_to_group_explicitly",
+                    "username": "user_not_attached_to_group_explicitly",
                     "account_number": "1111111",
                     "is_active": True,
                 }
@@ -1090,7 +1090,7 @@ class GroupViewsetTests(IdentityRequest):
         },
     )
     def test_get_group_by_username_with_capitalization(self, mock_request):
-        """Test that getting groups for a user name with capitalization returns successfully."""
+        """Test that getting groups for a username with capitalization returns successfully."""
         url = reverse("group-list")
         username = "".join(random.choice([k.upper(), k]) for k in self.test_principal.username)
         url = "{}?username={}".format(url, username)
@@ -1922,7 +1922,7 @@ class GroupViewsetTests(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
 
     def test_admin_RonR(self):
-        """Test that a admin user can group RBAC resources"""
+        """Test that an admin user can group RBAC resources"""
         url = "{}?application={}".format(reverse("group-list"), "rbac")
         client = APIClient()
         response = client.get(url, **self.headers)
