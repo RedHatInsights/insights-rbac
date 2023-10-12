@@ -19,8 +19,6 @@ from base64 import b64encode
 from json import dumps as json_dumps
 from unittest.mock import Mock
 
-from django.db import connection
-from django.conf import settings
 from django.test import TestCase
 from faker import Faker
 

@@ -17,7 +17,6 @@
 """Test the status API."""
 
 import logging
-from unittest.mock import ANY
 
 from django.test import TestCase
 from django.urls import reverse

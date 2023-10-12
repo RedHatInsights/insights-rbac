@@ -15,7 +15,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Test the principal proxy."""
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
 from django.test import TestCase
 from rest_framework import status

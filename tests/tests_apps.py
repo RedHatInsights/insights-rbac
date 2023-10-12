@@ -19,10 +19,7 @@ import logging
 from unittest.mock import patch
 
 from django.apps import apps
-from django.db.utils import OperationalError
 from django.test import TestCase
-
-from management.apps import ManagementConfig
 
 
 class AppsModelTest(TestCase):

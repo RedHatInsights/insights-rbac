@@ -15,9 +15,6 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Test the group model."""
-from django.test import TestCase
-from unittest.mock import Mock
-
 from management.models import Group, Role, Policy
 from tests.identity_request import IdentityRequest
 

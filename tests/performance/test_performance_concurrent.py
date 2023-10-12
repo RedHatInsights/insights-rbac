@@ -8,7 +8,6 @@ from rest_framework import status
 from rest_framework.test import APIClient
 
 from api.models import Tenant
-from api.common import RH_IDENTITY_HEADER
 from management.models import Group, Principal
 
 import logging
@@ -55,7 +54,7 @@ def test_tenant_groups():
         for future in as_completed(futures):
             response = future.result()
             if response.status_code != status.HTTP_200_OK:
-                Exception("Recieved an error status\n")
+                Exception("Received an error status\n")
             num_requests += 1
 
     request_time, average = timerStop(start, num_requests)
@@ -93,7 +92,7 @@ def test_tenant_roles():
         for future in as_completed(futures):
             response = future.result()
             if response.status_code != status.HTTP_200_OK:
-                Exception("Recieved an error status\n")
+                Exception("Received an error status\n")
             num_requests += 1
 
     request_time, average = timerStop(start, num_requests)
@@ -133,7 +132,7 @@ def test_group_roles():
         for future in as_completed(futures):
             response = future.result()
             if response.status_code != status.HTTP_200_OK:
-                Exception("Recieved an error status\n")
+                Exception("Received an error status\n")
             num_requests += 1
 
     request_time, average = timerStop(start, num_requests)
@@ -180,7 +179,7 @@ def test_principals_groups():
         for future in as_completed(futures):
             response = future.result()
             if response.status_code != status.HTTP_200_OK:
-                Exception("Recieved an error status\n")
+                Exception("Received an error status\n")
             num_requests += 1
 
     request_time, average = timerStop(start, num_requests)
@@ -196,7 +195,10 @@ def test_principals_groups():
 
 
 def test_principals_roles():
-    """Test tenant principals roles with /integrations/tenant/{tenant_id}/principal/{principal_id}/groups/{group_id}/roles/ endpoint."""
+    """
+    Test tenant principals roles with
+    /integrations/tenant/{tenant_id}/principal/{principal_id}/groups/{group_id}/roles/ endpoint.
+    """
     # 1 request for each tenant (to get the principles)
     tenants = (
         Tenant.objects.filter(Q(group__system=False) | Q(role__system=False))
@@ -233,7 +235,7 @@ def test_principals_roles():
             response = future.result()
 
             if response.status_code != status.HTTP_200_OK:
-                Exception("Recieved an error status\n")
+                Exception("Received an error status\n")
 
             num_requests += 1
 
@@ -264,7 +266,7 @@ def test_full_sync():
         )
 
         if response.status_code != status.HTTP_200_OK:
-            Exception("Recieved an error status\n")
+            Exception("Received an error status\n")
 
         tenants = response.data.get("data")
 
@@ -277,7 +279,7 @@ def test_full_sync():
     def full_sync(t, g):
         org_id = t.get("org_id")
         g_uuid = g.get("uuid")
-        # tenant groups rolesk, get orgs groups roles
+        # tenant groups roles, get orgs groups roles
         response = client.get(
             f"/_private/api/v1/integrations/tenant/{org_id}/groups/{g_uuid}/roles/?external_tenant=ocm",
             **identity.META,
@@ -285,7 +287,7 @@ def test_full_sync():
         )
 
         if response.status_code != status.HTTP_200_OK:
-            Exception("Recieved an error status\n")
+            Exception("Received an error status\n")
 
         # OCM would sync group roles here
 
@@ -296,7 +298,7 @@ def test_full_sync():
         )
 
         if response.status_code != status.HTTP_200_OK:
-            Exception("Recieved an error status\n")
+            Exception("Received an error status\n")
 
         # sync account groups
 
@@ -314,14 +316,14 @@ def test_full_sync():
                 follow=True,
             )
             if response.status_code != status.HTTP_200_OK:
-                Exception("Recieved an error status\n")
+                Exception("Received an error status\n")
 
             groups = response.data.get("data")
 
             for g in groups:
                 futures.append(executor.submit(full_sync, t=t, g=g))
 
-        for future in as_completed(futures):
+        for _ in as_completed(futures):
             num_requests += 2
 
     request_time, average = timerStop(start, num_requests)

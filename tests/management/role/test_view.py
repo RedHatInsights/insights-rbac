@@ -37,7 +37,7 @@ from management.models import (
 )
 from tests.core.test_kafka import copy_call_args
 from tests.identity_request import IdentityRequest
-from unittest.mock import ANY, call, patch
+from unittest.mock import ANY, patch
 
 
 URL = reverse("role-list")
@@ -511,7 +511,6 @@ class RoleViewsetTests(IdentityRequest):
         role_display = "Display name for roleA"
         response = self.create_role(role_name, role_display=role_display)
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        role_uuid = response.data.get("uuid")
 
         # list a role
         client = APIClient()
@@ -689,7 +688,10 @@ class RoleViewsetTests(IdentityRequest):
         return_value={"status_code": 200, "data": [{"username": "test_user"}]},
     )
     def test_list_role_with_groups_in_fields_for_principal_scope_success(self, mock_request):
-        """Test that we can read a list of roles and the groups_in fields is set correctly for a principal scoped request."""
+        """
+        Test that we can read a list of roles and the groups_in fields is set correctly
+        for a principal scoped request.
+        """
         # create a role
         role_name = "groupsInRole"
         created_role = self.create_role("groupsInRole")
@@ -750,7 +752,10 @@ class RoleViewsetTests(IdentityRequest):
         self.assertEquals(default_role["groups_in"][0]["name"], self.group.name)
 
     def test_list_role_with_groups_in_fields_for_admin_scope_success(self):
-        """Test that we can read a list of roles and the groups_in fields is set correctly for a admin scoped request."""
+        """
+        Test that we can read a list of roles and the groups_in fields is set correctly
+        for an admin scoped request.
+        """
         field_1 = "groups_in_count"
         field_2 = "groups_in"
         new_display_fields = self.display_fields

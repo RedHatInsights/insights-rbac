@@ -18,8 +18,6 @@
 from unittest.mock import Mock, patch
 
 from django.core.exceptions import PermissionDenied
-from django.db import connection
-from django.db.models.aggregates import Count
 from django.test import TestCase
 from django.urls import reverse
 from management.group.model import Group

@@ -26,7 +26,7 @@ from management.models import Role, Principal
 from rest_framework import status
 from rest_framework.test import APIClient
 
-from datetime import datetime, timedelta
+from datetime import timedelta
 from unittest.mock import patch
 from tests.identity_request import IdentityRequest
 
@@ -822,7 +822,7 @@ class CrossAccountRequestViewTests(IdentityRequest):
             self.assertTrue(princ.tenant.tenant_name, tenant_name)
 
     def test_cross_account_request_ordering_filter(self):
-        "Test ordering filter for request id, created/start/end date."
+        """Test ordering filter for request id, created/start/end date."""
         client = APIClient()
         # Sort by Request ID
         response = client.get(
@@ -834,7 +834,7 @@ class CrossAccountRequestViewTests(IdentityRequest):
         self.assertTrue(response.data["data"][0].get("request_id") < response.data["data"][1].get("request_id"))
 
         # Sorting the dates
-        ## request_1 is created a little bit ealier than request_6, therefore, the
+        ## request_1 is created a little bit earlier than request_6, therefore, the
         ## first should be not_anemic_request_1
         response = client.get(
             f"{URL_LIST}?query_by=user_id&order_by=-created", **self.associate_non_admin_request.META

@@ -20,10 +20,8 @@ import os
 from unittest.mock import Mock
 from django.conf import settings
 
-from django.db import connection
 from django.test import TestCase
 from django.urls import reverse
-from api.common import RH_IDENTITY_HEADER
 
 from rest_framework import status
 from rest_framework.test import APIClient
@@ -31,7 +29,7 @@ from rest_framework.test import APIClient
 from api.models import Tenant, User
 from api.serializers import create_tenant_name
 from tests.identity_request import IdentityRequest
-from rbac.middleware import HttpResponseUnauthorizedRequest, IdentityHeaderMiddleware, TENANTS
+from rbac.middleware import HttpResponseUnauthorizedRequest, IdentityHeaderMiddleware
 from management.models import Access, Group, Permission, Principal, Policy, ResourceDefinition, Role
 
 
