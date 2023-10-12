@@ -248,7 +248,7 @@ class GroupViewsetTests(IdentityRequest):
 
     def test_group_filter_by_any_role_name_in_a_list_success(self):
         """Test default behaviour that filter groups by any role name in a list success."""
-        url = "{}?role_names={},{}".format(reverse("group-list"), "Rolea", "RoleB")
+        url = "{}?role_names={},{}".format(reverse("group-list"), "RoleA", "RoleB")
         client = APIClient()
         response = client.get(url, **self.headers)
 
@@ -259,7 +259,7 @@ class GroupViewsetTests(IdentityRequest):
 
     def test_group_filter_by_all_role_name_in_a_list_success(self):
         """Test that filter groups by all role names in a list success."""
-        url = "{}?role_names={},{}&role_discriminator=all".format(reverse("group-list"), "Rolea", "roleB")
+        url = "{}?role_names={},{}&role_discriminator=all".format(reverse("group-list"), "RoleA", "roleB")
         client = APIClient()
         response = client.get(url, **self.headers)
 
