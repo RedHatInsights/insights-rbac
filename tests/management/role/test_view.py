@@ -511,7 +511,6 @@ class RoleViewsetTests(IdentityRequest):
         role_display = "Display name for roleA"
         response = self.create_role(role_name, role_display=role_display)
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        role_uuid = response.data.get("uuid")
 
         # list a role
         client = APIClient()

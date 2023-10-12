@@ -1173,7 +1173,6 @@ class GroupViewsetTests(IdentityRequest):
         url = f"{reverse('group-roles', kwargs={'uuid': self.group.uuid})}?order_by=-themis"
         client = APIClient()
         response = client.get(url, **self.headers)
-        roles = response.data.get("data")
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 

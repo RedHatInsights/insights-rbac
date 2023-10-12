@@ -323,7 +323,7 @@ def test_full_sync():
             for g in groups:
                 futures.append(executor.submit(full_sync, t=t, g=g))
 
-        for future in as_completed(futures):
+        for _ in as_completed(futures):
             num_requests += 2
 
     request_time, average = timerStop(start, num_requests)

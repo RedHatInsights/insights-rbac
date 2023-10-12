@@ -516,7 +516,6 @@ class PermissionViewsetTestsNonAdmin(IdentityRequest):
         # Add principal to that admin group
         principal = Principal.objects.create(username=self.user_data["username"], tenant=self.tenant)
         group.principals.add(principal)
-        group.principals
         response = CLIENT.get(LIST_URL, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
