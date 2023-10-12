@@ -188,7 +188,10 @@ def test_principals_groups():
 
 
 def test_principals_roles():
-    """Test tenant principals roles with /integrations/tenant/{tenant_id}/principal/{principal_id}/groups/{group_id}/roles/ endpoint."""
+    """
+    Test tenant principals roles with
+    /integrations/tenant/{tenant_id}/principal/{principal_id}/groups/{group_id}/roles/ endpoint.
+    """
     # 1 request for each tenant (to get the principles)
     tenants = (
         Tenant.objects.filter(Q(group__system=False) | Q(role__system=False))

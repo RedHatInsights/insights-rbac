@@ -822,7 +822,7 @@ class CrossAccountRequestViewTests(IdentityRequest):
             self.assertTrue(princ.tenant.tenant_name, tenant_name)
 
     def test_cross_account_request_ordering_filter(self):
-        "Test ordering filter for request id, created/start/end date."
+        """Test ordering filter for request id, created/start/end date."""
         client = APIClient()
         # Sort by Request ID
         response = client.get(

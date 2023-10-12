@@ -681,7 +681,10 @@ class GroupViewsetTests(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
     def test_delete_custom_default_group(self):
-        """Test that custom platform_default groups can be deleted and the public default group becomes default for the tenant"""
+        """
+        Test that custom platform_default groups can be deleted and the public default group
+        becomes default for the tenant
+        """
         client = APIClient()
         customDefGroup = Group(name="customDefGroup", platform_default=True, system=False, tenant=self.tenant)
         customDefGroup.save()
@@ -1068,7 +1071,8 @@ class GroupViewsetTests(IdentityRequest):
         url = "{}?username={}".format(url, self.test_principalC.username)
         client = APIClient()
 
-        # User who is not added to a group explicitly will not return platform default group if he is cross account principal.
+        # User who is not added to a group explicitly will not return platform default group
+        # if he is cross account principal.
         response = client.get(url, **self.test_headers)
         self.assertEqual(response.data.get("meta").get("count"), 1)
 
