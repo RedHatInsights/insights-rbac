@@ -34,12 +34,14 @@ def error_obj(key, message):
 
 
 def add_padding(encoded_header):
-    """Calculate and add padding to header.
+    """
+    Calculate and add padding to a Base64 encoded header string.
 
     Args:
-        header(str): The header to decode
+        encoded_header (str): The Base64 encoded header without padding.
+
     Returns:
-        Encoded(str): Base64 header with padding
+        str: The Base64 encoded header with padding added to make its length a multiple of 4.
     """
     return encoded_header + "=" * (-len(encoded_header) % 4)
 
