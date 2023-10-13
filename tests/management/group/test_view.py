@@ -900,7 +900,9 @@ class GroupViewsetTests(IdentityRequest):
         print(response.data.get("meta"))
 
         mock_request.assert_called_with(
-            ANY, org_id=ANY, options={"sort_order": None, "username_only": "false", "admin_only": True}
+            ANY,
+            org_id=ANY,
+            options={"sort_order": None, "username_only": "false", "admin_only": True, "principal_type": None},
         )
 
         self.assertTrue(self.principal.username in username_arg)
@@ -962,7 +964,10 @@ class GroupViewsetTests(IdentityRequest):
         client = APIClient()
         response = client.delete(url, format="json", **self.headers)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertEqual(str(response.data.get("errors")[0].get("detail")), "Query parameter usernames is required.")
+        self.assertEqual(
+            str(response.data.get("errors")[0].get("detail")),
+            "Query parameter service-accounts or usernames is required.",
+        )
 
     def test_remove_group_principals_invalid_guid(self):
         """Test that removing a principal returns an error when GUID is invalid."""
@@ -1333,11 +1338,15 @@ class GroupViewsetTests(IdentityRequest):
 
         if settings.AUTHENTICATE_WITH_ORG_ID:
             mock_request.assert_called_with(
-                [], options={"sort_order": None, "username_only": "false"}, org_id=self.customer_data["org_id"]
+                [],
+                options={"sort_order": None, "username_only": "false", "principal_type": None},
+                org_id=self.customer_data["org_id"],
             )
         else:
             mock_request.assert_called_with(
-                [], account=self.customer_data["account_id"], options={"sort_order": None, "username_only": "false"}
+                [],
+                account=self.customer_data["account_id"],
+                options={"sort_order": None, "username_only": "false", "principal_type": None},
             )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(principals), 0)
@@ -1357,7 +1366,7 @@ class GroupViewsetTests(IdentityRequest):
         if settings.AUTHENTICATE_WITH_ORG_ID:
             mock_request.assert_called_with(
                 [self.principal.username],
-                options={"sort_order": None, "username_only": "false"},
+                options={"sort_order": None, "username_only": "false", "principal_type": None},
                 org_id=self.customer_data["org_id"],
             )
         else:
@@ -1384,14 +1393,14 @@ class GroupViewsetTests(IdentityRequest):
         if settings.AUTHENTICATE_WITH_ORG_ID:
             mock_request.assert_called_with(
                 expected_principals,
-                options={"sort_order": "asc", "username_only": "false"},
+                options={"sort_order": "asc", "username_only": "false", "principal_type": None},
                 org_id=self.customer_data["org_id"],
             )
         else:
             mock_request.assert_called_with(
                 expected_principals,
                 account=self.customer_data["account_id"],
-                options={"sort_order": "asc", "username_only": "false"},
+                options={"sort_order": "asc", "username_only": "false", "principal_type": None},
             )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(principals), 1)
@@ -1926,19 +1935,6 @@ class GroupViewsetTests(IdentityRequest):
         client = APIClient()
         response = client.get(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-
-    @patch(
-        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
-        return_value={"status_code": 200, "data": []},
-    )
-    def test_get_group_service_account_principals_stub(self, mock_request):
-        """Test that getting the service account stubs works successfully."""
-        client = APIClient()
-        url = reverse("group-principals", kwargs={"uuid": self.group.uuid})
-        response = client.get(url, {"principal_type": "service-account"}, **self.headers)
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data.get("meta").get("count"), 0)
-        self.assertEqual(response.data.get("data"), [])
 
     @patch(
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
