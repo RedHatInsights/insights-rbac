@@ -55,7 +55,6 @@ def extract_header(request, header):
         Decoded(dict): Identity dictionary
     """
     rh_auth_header = request.META[header]
-    decoded_rh_auth = None
     try:
         decoded_rh_auth = b64decode(rh_auth_header)
     except binascii.Error as err:
