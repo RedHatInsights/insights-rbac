@@ -1,5 +1,5 @@
 from copy import deepcopy
-from unittest.mock import Mock, patch, DEFAULT
+from unittest.mock import Mock, DEFAULT
 
 
 def copy_call_args(mock):

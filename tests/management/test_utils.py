@@ -106,7 +106,7 @@ class UtilsTests(IdentityRequest):
         self.assertCountEqual(access, [self.accessA, self.default_access, self.default_admin_access])
 
     def test_access_for_non_org_admin(self):
-        """Test that an non-(org admin) doesn't have access to admin_default groups"""
+        """Test that a non-(org admin) doesn't have access to admin_default groups"""
         kwargs = {"application": "app", "is_org_admin": False}
         access = access_for_principal(self.principal, self.tenant, **kwargs)
         self.assertCountEqual(access, [self.accessA, self.default_access])

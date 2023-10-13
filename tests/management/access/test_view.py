@@ -15,14 +15,9 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Test the access view."""
-import json
-import random
-from decimal import Decimal
-from uuid import uuid4
 from unittest.mock import patch
 
-from api.models import CrossAccountRequest, Tenant
-from collections import OrderedDict
+from api.models import CrossAccountRequest
 from django.urls import reverse
 from django.utils import timezone
 from rest_framework import status
@@ -30,7 +25,7 @@ from rest_framework.test import APIClient
 
 from api.models import Tenant, User
 from datetime import timedelta
-from management.cache import AccessCache, TenantCache
+from management.cache import TenantCache
 from management.models import Group, Permission, Principal, Policy, Role, Access
 from tests.identity_request import IdentityRequest
 

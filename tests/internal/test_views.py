@@ -17,10 +17,8 @@
 """Test the internal viewset."""
 from rest_framework import status
 from rest_framework.test import APIClient
-from unittest.mock import patch
 from django.conf import settings
-from django.db.migrations.recorder import MigrationRecorder
-from django.test import TestCase, override_settings
+from django.test import override_settings
 from datetime import datetime, timedelta
 from unittest.mock import MagicMock
 from unittest.mock import patch

@@ -24,6 +24,7 @@ from rest_framework import status
 from rest_framework.test import APIClient
 
 from api.models import User, Tenant
+from management.cache import TenantCache
 from management.models import (
     Group,
     Permission,
@@ -37,7 +38,7 @@ from management.models import (
 )
 from tests.core.test_kafka import copy_call_args
 from tests.identity_request import IdentityRequest
-from unittest.mock import ANY, call, patch
+from unittest.mock import ANY, patch
 
 
 URL = reverse("role-list")
@@ -185,6 +186,22 @@ class RoleViewsetTests(IdentityRequest):
 
         self.access3 = Access.objects.create(permission=self.permission2, role=self.sysRole, tenant=self.tenant)
         Permission.objects.create(permission="cost-management:*:*", tenant=self.tenant)
+
+    def tearDown(self):
+        """Tear down role viewset tests."""
+        Group.objects.all().delete()
+        Principal.objects.all().delete()
+        Role.objects.all().delete()
+        Policy.objects.all().delete()
+        Permission.objects.all().delete()
+        Access.objects.all().delete()
+        ExtTenant.objects.all().delete()
+        ExtRoleRelation.objects.all().delete()
+
+        # we need to delete old test_tenant's that may exist in cache
+        test_tenant_org_id = "100001"
+        cached_tenants = TenantCache()
+        cached_tenants.delete_tenant(test_tenant_org_id)
 
     def create_role(self, role_name, role_display="", in_access_data=None):
         """Create a role."""
@@ -511,7 +528,6 @@ class RoleViewsetTests(IdentityRequest):
         role_display = "Display name for roleA"
         response = self.create_role(role_name, role_display=role_display)
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        role_uuid = response.data.get("uuid")
 
         # list a role
         client = APIClient()
@@ -689,27 +705,30 @@ class RoleViewsetTests(IdentityRequest):
         return_value={"status_code": 200, "data": [{"username": "test_user"}]},
     )
     def test_list_role_with_groups_in_fields_for_principal_scope_success(self, mock_request):
-        """Test that we can read a list of roles and the groups_in fields is set correctly for a principal scoped request."""
+        """
+        Test that we can read a list of roles and the groups_in fields is set correctly
+        for a principal scoped request.
+        """
         # create a role
         role_name = "groupsInRole"
         created_role = self.create_role("groupsInRole")
-        self.assertEquals(created_role.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(created_role.status_code, status.HTTP_201_CREATED)
         role_uuid = created_role.data.get("uuid")
 
         # create a group
         group_name = "groupsInGroup"
         created_group = self.create_group(group_name)
-        self.assertEquals(created_group.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(created_group.status_code, status.HTTP_201_CREATED)
         group_uuid = created_group.data.get("uuid")
 
         # create a policy to link the 2
         policy_name = "groupsInPolicy"
         created_policy = self.create_policy(policy_name, group_uuid, [role_uuid])
-        self.assertEquals(created_policy.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(created_policy.status_code, status.HTTP_201_CREATED)
 
         # add user principal to the created group
         principal_response = self.add_principal_to_group(group_uuid, self.user_data["username"])
-        self.assertEquals(principal_response.status_code, status.HTTP_200_OK, principal_response)
+        self.assertEqual(principal_response.status_code, status.HTTP_200_OK, principal_response)
 
         # hit /roles?groups_in, group should appear in groups_in
         field_1 = "groups_in_count"
@@ -740,17 +759,20 @@ class RoleViewsetTests(IdentityRequest):
         # make sure created role exists in result set and has correct values
         created_role = next((iterRole for iterRole in response_data if iterRole["name"] == role_name), None)
         self.assertIsNotNone(created_role)
-        self.assertEquals(created_role["groups_in_count"], 1)
-        self.assertEquals(created_role["groups_in"][0]["name"], group_name)
+        self.assertEqual(created_role["groups_in_count"], 1)
+        self.assertEqual(created_role["groups_in"][0]["name"], group_name)
 
         # make sure a default role exists in result set and has correct values
         default_role = next((iterRole for iterRole in response_data if iterRole["name"] == self.defRole.name), None)
         self.assertIsNotNone(default_role)
-        self.assertEquals(default_role["groups_in_count"], 1)
-        self.assertEquals(default_role["groups_in"][0]["name"], self.group.name)
+        self.assertEqual(default_role["groups_in_count"], 1)
+        self.assertEqual(default_role["groups_in"][0]["name"], self.group.name)
 
     def test_list_role_with_groups_in_fields_for_admin_scope_success(self):
-        """Test that we can read a list of roles and the groups_in fields is set correctly for a admin scoped request."""
+        """
+        Test that we can read a list of roles and the groups_in fields is set correctly
+        for an admin scoped request.
+        """
         field_1 = "groups_in_count"
         field_2 = "groups_in"
         new_display_fields = self.display_fields
@@ -779,14 +801,14 @@ class RoleViewsetTests(IdentityRequest):
         # make sure a default role exists in result set and has correct values
         default_role = next((iterRole for iterRole in response_data if iterRole["name"] == self.defRole.name), None)
         self.assertIsNotNone(default_role)
-        self.assertEquals(default_role["groups_in_count"], 1)
-        self.assertEquals(default_role["groups_in"][0]["name"], self.group.name)
+        self.assertEqual(default_role["groups_in_count"], 1)
+        self.assertEqual(default_role["groups_in"][0]["name"], self.group.name)
 
         # make sure an admin role exists in result set and has correct values
         admin_role = next((iterRole for iterRole in response_data if iterRole["name"] == self.adminRole.name), None)
         self.assertIsNotNone(admin_role)
-        self.assertEquals(admin_role["groups_in_count"], 1)
-        self.assertEquals(admin_role["groups_in"][0]["name"], self.group.name)
+        self.assertEqual(admin_role["groups_in_count"], 1)
+        self.assertEqual(admin_role["groups_in"][0]["name"], self.group.name)
 
     def test_list_role_with_username_forbidden_to_nonadmin(self):
         """Test that non admin can not read a list of roles for username."""
