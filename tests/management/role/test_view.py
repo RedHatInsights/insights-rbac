@@ -23,7 +23,7 @@ from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APIClient
 
-from api.models import User, Tenant
+from api.models import Tenant
 from management.cache import TenantCache
 from management.models import (
     Group,
@@ -50,11 +50,6 @@ class RoleViewsetTests(IdentityRequest):
     def setUp(self):
         """Set up the role viewset tests."""
         super().setUp()
-        request = self.request_context["request"]
-        user = User()
-        user.username = self.user_data["username"]
-        user.account = self.customer_data["account_id"]
-        request.user = user
 
         sys_role_config = {"name": "system_role", "display_name": "system_display", "system": True}
 
