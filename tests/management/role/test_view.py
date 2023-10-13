@@ -68,7 +68,7 @@ class RoleViewsetTests(IdentityRequest):
         }
 
         platform_admin_def_role_config = {
-            "name": "platform_admin_defualt_role",
+            "name": "platform_admin_default_role",
             "display_name": "platform_admin_default_display",
             "system": True,
             "platform_default": True,
