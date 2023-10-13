@@ -10,8 +10,6 @@ from prometheus_client import Counter
 from redis import BlockingConnectionPool, exceptions
 from redis.client import Redis
 
-from rbac.settings import ACCESS_CACHE_ENABLED
-
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 _connection_pool = BlockingConnectionPool(**settings.REDIS_CACHE_CONNECTION_PARAMS)  # should match gunicorn.threads
 
@@ -27,7 +25,7 @@ class BasicCache:
     def __init__(self):
         """Init the class."""
         self._connection = None
-        self.use_caching = ACCESS_CACHE_ENABLED
+        self.use_caching = True
 
     @property
     def connection(self):
@@ -51,7 +49,7 @@ class BasicCache:
     def disable_caching(self):
         """Disable caching and increment prometheus metric that redis caching is disabled."""
         self.use_caching = False
-        logger.info("redis Cache Disabled")
+        logger.info("Redis Cache Disabled")
         redis_disable_cache_get_total.inc()
         return self.use_caching
 
