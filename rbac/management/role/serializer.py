@@ -332,8 +332,6 @@ def obtain_groups_in(obj, request):
     username_param = request.query_params.get("username")
     policy_ids = list(obj.policies.values_list("id", flat=True))
 
-    assigned_groups = []
-
     if scope_param == "principal" or username_param:
         principal = get_principal(username_param or request.user.username, request)
         assigned_groups = Group.objects.filter(policies__in=policy_ids, principals__in=[principal])
