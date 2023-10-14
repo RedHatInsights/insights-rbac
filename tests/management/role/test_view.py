@@ -831,23 +831,7 @@ class RoleViewsetTests(IdentityRequest):
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
-    @patch(
-        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
-        return_value={
-            "status_code": 200,
-            "data": [
-                {
-                    "org_id": "100001",
-                    "is_org_admin": True,
-                    "is_internal": False,
-                    "id": 52567473,
-                    "username": "test_user",
-                    "account_number": "1111111",
-                    "is_active": True,
-                }
-            ],
-        },
-    )
+    @patch("management.principal.proxy.PrincipalProxy.request_filtered_principals")
     def test_list_role_with_additional_fields_username_success(self, mock_request):
         """Test that we can read a list of roles and add fields for username."""
         field_1 = "groups_in_count"
@@ -856,9 +840,24 @@ class RoleViewsetTests(IdentityRequest):
         new_display_fields.add(field_1)
         new_display_fields.add(field_2)
 
-        url = "{}?add_fields={},{}&username={}".format(URL, field_1, field_2, self.test_principal.username)
+        mock_request.return_value = {
+            "status_code": 200,
+            "data": [
+                {
+                    "org_id": "100001",
+                    "is_org_admin": True,
+                    "is_internal": False,
+                    "id": 52567473,
+                    "username": self.principal.username,
+                    "account_number": "1111111",
+                    "is_active": True,
+                }
+            ],
+        }
+
+        url = "{}?add_fields={},{}&username={}".format(URL, field_1, field_2, self.principal.username)
         client = APIClient()
-        response = client.get(url, **self.test_headers)
+        response = client.get(url, **self.headers)
 
         self.assertEqual(len(response.data.get("data")), 4)
 
