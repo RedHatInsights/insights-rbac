@@ -27,7 +27,7 @@ from api.models import Tenant
 from .model import Access, Permission, ResourceDefinition, Role
 
 ALLOWED_OPERATIONS = ["in", "equal"]
-FILTER_FIELDS = set(["key", "value", "operation"])
+FILTER_FIELDS = {"key", "value", "operation"}
 
 
 class ResourceDefinitionSerializer(SerializerCreateOverrideMixin, serializers.ModelSerializer):
