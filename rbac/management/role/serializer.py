@@ -20,7 +20,7 @@ from django.utils.translation import gettext as _
 from management.group.model import Group
 from management.notifications.notification_handlers import role_obj_change_notification_handler
 from management.serializer_override_mixin import SerializerCreateOverrideMixin
-from management.utils import filter_queryset_by_tenant, get_admin_from_proxy, get_principal
+from management.utils import filter_queryset_by_tenant, get_principal
 from rest_framework import serializers
 
 from api.models import Tenant
@@ -346,7 +346,7 @@ def obtain_groups_in(obj, request):
     ) or Group.platform_default_set().filter(tenant=public_tenant).filter(policies__in=policy_ids)
 
     if username_param:
-        is_org_admin = get_admin_from_proxy(username_param, request)
+        is_org_admin = request.user_from_query.admin
     else:
         is_org_admin = request.user.admin
 
