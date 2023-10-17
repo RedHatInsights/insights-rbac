@@ -73,7 +73,6 @@ def custom_exception_handler(exc, context):
         error_response = {"errors": errors}
         response.data = error_response
     elif isinstance(exc, IntegrityError):
-        data = context.get("request").data
         source_view = context.get("view")
         response = Response(
             {

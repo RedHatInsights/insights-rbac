@@ -57,7 +57,6 @@ def extract_header(request, header):
         Decoded(dict): Identity dictionary
     """
     rh_auth_header = request.META[header]
-    decoded_rh_auth = None
     try:
         decoded_rh_auth = b64decode(rh_auth_header)
     except binascii.Error as err:
@@ -67,7 +66,7 @@ def extract_header(request, header):
         rh_auth_header = add_padding(rh_auth_header)
         decoded_rh_auth = b64decode(rh_auth_header)
     json_rh_auth = json_loads(decoded_rh_auth)
-    return (rh_auth_header, json_rh_auth)
+    return rh_auth_header, json_rh_auth
 
 
 def create_tenant_name(account):
