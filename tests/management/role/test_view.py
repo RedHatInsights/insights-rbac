@@ -647,15 +647,27 @@ class RoleViewsetTests(IdentityRequest):
         response = client.get(url, **self.headers)
         self.assertEqual(response.data.get("meta").get("count"), 0)
 
-    @patch(
-        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
-        return_value={"status_code": 200, "data": [{"username": "test_user"}]},
-    )
+    @patch("management.principal.proxy.PrincipalProxy.request_filtered_principals")
     def test_list_role_with_groups_in_fields_for_principal_scope_success(self, mock_request):
         """
         Test that we can read a list of roles and the groups_in fields is set correctly
         for a principal scoped request.
         """
+        mock_request.return_value = {
+            "status_code": 200,
+            "data": [
+                {
+                    "org_id": "100001",
+                    "is_org_admin": True,
+                    "is_internal": False,
+                    "id": 52567473,
+                    "username": self.principal.username,
+                    "account_number": "1111111",
+                    "is_active": True,
+                }
+            ],
+        }
+
         # create a role
         role_name = "groupsInRole"
         created_role = self.create_role("groupsInRole")
@@ -674,7 +686,7 @@ class RoleViewsetTests(IdentityRequest):
         self.assertEqual(created_policy.status_code, status.HTTP_201_CREATED)
 
         # add user principal to the created group
-        principal_response = self.add_principal_to_group(group_uuid, self.user_data["username"])
+        principal_response = self.add_principal_to_group(group_uuid, self.principal.username)
         self.assertEqual(principal_response.status_code, status.HTTP_200_OK, principal_response)
 
         # hit /roles?groups_in, group should appear in groups_in
@@ -684,7 +696,7 @@ class RoleViewsetTests(IdentityRequest):
         new_display_fields.add(field_1)
         new_display_fields.add(field_2)
 
-        url = "{}?add_fields={},{}&username=".format(URL, field_1, field_2, self.user_data["username"])
+        url = "{}?add_fields={},{}&username={}".format(URL, field_1, field_2, self.principal.username)
         client = APIClient()
         response = client.get(url, **self.headers)
 
