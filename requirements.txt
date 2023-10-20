@@ -2,10 +2,10 @@
 amqp==5.1.1; python_version >= '3.6'
 app-common-python==0.2.5
 asgiref==3.7.2; python_version >= '3.7'
-billiard==3.6.4.0
+billiard==4.1.0; python_version >= '3.7'
 boto3==1.24.24; python_version >= '3.7'
 botocore==1.27.96; python_version >= '3.7'
-celery==5.2.2; python_version >= '3.7'
+celery==5.3.0b2; python_version >= '3.7'
 certifi==2023.7.22; python_version >= '3.6'
 charset-normalizer==3.3.0; python_full_version >= '3.7.0'
 click==8.1.7; python_version >= '3.7'
