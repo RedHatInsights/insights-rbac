@@ -6,7 +6,7 @@ name = "pypi"
 [packages]
 django-environ = "==0.10.0"
 djangorestframework = "==3.14.0"
-gunicorn = "==20.1.0"
+gunicorn = "==21.2.0"
 whitenoise = "==6.4.0"
 Django = "==4.1.10"
 django-filter = "==22.1"
