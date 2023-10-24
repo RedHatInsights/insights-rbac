@@ -1,8 +1,8 @@
 # Deploy ephemeral db
-source $CICD_ROOT/deploy_ephemeral_db.sh
+# source $CICD_ROOT/deploy_ephemeral_db.sh
 
 # Map env vars set by `deploy_ephemeral_db.sh` if vars the app uses are different
-export PGPASSWORD=$DATABASE_ADMIN_PASSWORD
+# export PGPASSWORD=$DATABASE_ADMIN_PASSWORD
 
 echo "Running rbac unit tests in virtual env..."
 
