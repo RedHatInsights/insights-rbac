@@ -4,9 +4,11 @@ source $CICD_ROOT/deploy_ephemeral_db.sh
 # Map env vars set by `deploy_ephemeral_db.sh` if vars the app uses are different
 export PGPASSWORD=$DATABASE_ADMIN_PASSWORD
 
+dnf install libpq-devel 
+
 python3 -m venv app-venv
 source app-venv/bin/activate
-pip install --upgrade pip setuptools wheel pipenv tox libpq-devel psycopg2-binary
+pip install --upgrade pip setuptools wheel pipenv tox psycopg2-binary
 tox -r
 result=$?
 source .bonfire_venv/bin/activate
