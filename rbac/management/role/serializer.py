@@ -332,8 +332,6 @@ def obtain_groups_in(obj, request):
     username_param = request.query_params.get("username")
     policy_ids = list(obj.policies.values_list("id", flat=True))
 
-    assigned_groups = []
-
     if scope_param == "principal" or username_param:
         principal = get_principal(username_param or request.user.username, request)
         assigned_groups = Group.objects.filter(policies__in=policy_ids, principals__in=[principal])
@@ -342,16 +340,26 @@ def obtain_groups_in(obj, request):
         assigned_groups = filter_queryset_by_tenant(Group.objects.filter(policies__in=policy_ids), request.tenant)
 
     public_tenant = Tenant.objects.get(tenant_name="public")
+
     platform_default_groups = Group.platform_default_set().filter(tenant=request.tenant).filter(
         policies__in=policy_ids
     ) or Group.platform_default_set().filter(tenant=public_tenant).filter(policies__in=policy_ids)
-    admin_default_groups = Group.admin_default_set().filter(tenant=request.tenant).filter(
-        policies__in=policy_ids
-    ) or Group.admin_default_set().filter(tenant=public_tenant).filter(policies__in=policy_ids)
 
-    qs = (assigned_groups | platform_default_groups | admin_default_groups).distinct()
+    if username_param:
+        is_org_admin = request.user_from_query.admin
+    else:
+        is_org_admin = request.user.admin
 
-    return qs
+    qs = assigned_groups | platform_default_groups
+
+    if is_org_admin:
+        admin_default_groups = Group.admin_default_set().filter(tenant=request.tenant).filter(
+            policies__in=policy_ids
+        ) or Group.admin_default_set().filter(tenant=public_tenant).filter(policies__in=policy_ids)
+
+        qs = qs | admin_default_groups
+
+    return qs.distinct()
 
 
 def create_access_for_role(role, access_list, tenant):
