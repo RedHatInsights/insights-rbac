@@ -12,7 +12,7 @@ pipenv shell
 tox -r
 result=$?
 
-echo "RBAC tests finished running..."
+echo "RBAC tests finished running..." 
 
 source .bonfire_venv/bin/activate
 
