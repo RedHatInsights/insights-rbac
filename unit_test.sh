@@ -6,6 +6,8 @@
 
 echo "Running rbac unit tests in virtual env..."
 
+export PIPENV_IGNORE_VIRTUALENVS=1
+
 pip3 install pipenv
 pipenv install --dev
 pipenv shell
