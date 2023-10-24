@@ -5,8 +5,6 @@ source $CICD_ROOT/deploy_ephemeral_db.sh
 export PGPASSWORD=$DATABASE_ADMIN_PASSWORD
 
 
-microdnf install libpq-devel 
-
 python3 -m venv app-venv
 source app-venv/bin/activate
 pip install --upgrade pip setuptools wheel pipenv tox psycopg2-binary
