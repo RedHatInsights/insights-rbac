@@ -6,7 +6,7 @@ export PGPASSWORD=$DATABASE_ADMIN_PASSWORD
 
 python3 -m venv app-venv
 source app-venv/bin/activate
-pip install --upgrade pip setuptools wheel pipenv tox psycopg2-binary
+pip install --upgrade pip setuptools wheel pipenv tox libpq-devel psycopg2-binary
 tox -r
 result=$?
 source .bonfire_venv/bin/activate
