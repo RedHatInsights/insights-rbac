@@ -2664,7 +2664,7 @@ data:
       "timezone": "",
       "title": "Operations - Rbac w/CPU",
       "uid": "TjP_nMWMk",
-      "version": 1,
+      "version": 4,
       "weekStart": ""
     }
 kind: ConfigMap
