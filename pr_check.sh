@@ -1,6 +1,8 @@
 #!/bin/bash
 export CICD_REPO_BRANCH="cji-no-result"
 export CICD_REPO_ORG="mjholder"
+export BONFIRE_REPO_BRANCH="${CICD_REPO_BRANCH}"
+export BONFIRE_REPO_ORG="${CICD_REPO_ORG}"
 export APP_NAME="rbac"  # name of app-sre "application" folder this component lives in
 export COMPONENT_NAME="rbac"  # name of app-sre "resourceTemplate" in deploy.yaml for this component
 export IMAGE="quay.io/cloudservices/rbac"  # the image location on quay
