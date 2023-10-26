@@ -54,7 +54,7 @@ While you can specify resources individually you can also specify a multiple res
             "attributeFilter": {
                 "key": "uuid",
                 "operation": "in",
-                "value": "39c8cecd-e595-46fb-8908-13365d59d5e8,9928e33b-e28f-4e82-b996-12e222f08098"
+                "value": ["39c8cecd-e595-46fb-8908-13365d59d5e8", "9928e33b-e28f-4e82-b996-12e222f08098"]
             }
         }
     ]
