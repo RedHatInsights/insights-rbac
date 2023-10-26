@@ -4,8 +4,13 @@ source $CICD_ROOT/deploy_ephemeral_db.sh
 # Map env vars set by `deploy_ephemeral_db.sh` if vars the app uses are different
 export PGPASSWORD=$DATABASE_ADMIN_PASSWORD
 
-python3 -m venv app-venv
+curl https://pyenv.run | bash
+pyenv install 3.9
+pip install python3.9-venv
+python3.9 -m venv app-venv
 source app-venv/bin/activate
+python --version
+pip freeze
 pip install --upgrade pip setuptools wheel pipenv tox psycopg2-binary
 tox -r
 result=$?
