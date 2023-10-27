@@ -15,6 +15,9 @@ bonfire process \
 
 bonfire namespace wait-on-resources $NAMESPACE 
 
+docker ps 
+
+docker exec -t rbac-service sh 
 
 
 python3 --version 
