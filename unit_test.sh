@@ -1,3 +1,22 @@
+source ${CICD_ROOT}/_common_deploy_logic.sh
+
+NAMESPACE=$(bonfire namespace reserve)
+
+set -x
+bonfire process \
+    $APP_NAME \
+    --source=appsre \
+    --ref-env ${REF_ENV} \
+    --set-template-ref ${COMPONENT_NAME}=${GIT_COMMIT} \
+    --set-image-tag $IMAGE=$IMAGE_TAG \
+    --namespace $NAMESPACE \
+    $COMPONENTS_ARG \
+    $COMPONENTS_RESOURCES_ARG | oc_wrapper apply -f - -n $NAMESPACE
+
+bonfire namespace wait-on-resources $NAMESPACE 
+
+
+
 python3 --version 
 python3.9 -m venv app-venv
 source app-venv/bin/activate
