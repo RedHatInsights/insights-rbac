@@ -15,16 +15,6 @@ bonfire process \
 
 bonfire namespace wait-on-resources $NAMESPACE 
 
-local _service_name=${1}
-local _local_port=${2}
-local _service_port=${3}
-
-log-info "oc port-forward service/${_service_name} ${_local_port}:${_service_port}"
-  oc port-forward service/"${_service_name}" "${_local_port}":"${_service_port}"
-
-local _port=${1:-RBAC_FWD_PORT}
-port-forward rbac "${_port}" 8080
-
 log-info "oc get pods -l app=${APP_NAME}"
 oc get pods -l app="${APP_NAME}"
 
