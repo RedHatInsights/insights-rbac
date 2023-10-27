@@ -1,14 +1,3 @@
-#create my own new ephemeral database
-#and then we can try to connect to it 
-# and try to run the unit tets
-
-source $CICD_ROOT/deploy_ephemeral_db.sh
-
-export PGPASSWORD=$DATABASE_ADMIN_PASSWORD
-
-sudo -n yum install python3.9 
-sudo -n yum install libpq-devel 
-
 python3 --version 
 python3.9 -m venv app-venv
 source app-venv/bin/activate
