@@ -6,9 +6,8 @@ source $CICD_ROOT/deploy_ephemeral_db.sh
 
 export PGPASSWORD=$DATABASE_ADMIN_PASSWORD
 
-source .bonfire_venv/bin/activate
-sudo yum install python3.9 
-sudo yum install libpq-devel 
+sudo -n yum install python3.9 
+sudo -n yum install libpq-devel 
 
 python3 --version 
 python3.9 -m venv app-venv
