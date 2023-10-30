@@ -44,9 +44,7 @@ class InternalViewsetTests(IdentityRequest):
         super().setUp()
         self.client = APIClient()
         self.customer = self.customer_data
-        self.internal_request_context = self._create_request_context(
-            self.customer, self.user_data, create_customer=False, is_internal=True, create_tenant=False
-        )
+        self.internal_request_context = self._create_request_context(self.customer, self.user_data, is_internal=True)
 
         self.request = self.internal_request_context["request"]
         user = User()

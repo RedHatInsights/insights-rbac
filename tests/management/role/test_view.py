@@ -968,7 +968,7 @@ class RoleViewsetTests(IdentityRequest):
         """Test that non admin can not read a list of roles for username."""
         # Setup non admin request
         non_admin_request_context = self._create_request_context(
-            self.customer_data, self.user_data, create_customer=False, is_org_admin=False
+            self.customer_data, self.user_data, is_org_admin=False
         )
         non_admin_request = non_admin_request_context["request"]
 

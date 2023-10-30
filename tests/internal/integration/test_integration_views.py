@@ -36,9 +36,7 @@ class IntegrationViewsTests(IdentityRequest):
         super().setUp()
         self.client = APIClient()
         self.customer = self.customer_data
-        self.internal_request_context = self._create_request_context(
-            self.customer, self.user_data, create_customer=False, is_internal=True, create_tenant=False
-        )
+        self.internal_request_context = self._create_request_context(self.customer, self.user_data, is_internal=True)
 
         self.request = self.internal_request_context["request"]
         user = User()
@@ -129,9 +127,7 @@ class IntegrationViewsTests(IdentityRequest):
 
     def test_groups_invalid_account(self):
         """Test that a /tenant/<id>/groups/?username= request from an external account fails."""
-        external_request_context = self._create_request_context(
-            self.customer, self.user_data, create_customer=False, is_internal=False, create_tenant=False
-        )
+        external_request_context = self._create_request_context(self.customer, self.user_data, is_internal=False)
         request = external_request_context["request"]
         response = self.client.get(
             f"/_private/api/v1/integrations/tenant/{self.tenant.org_id}/groups/?username=user_a",
@@ -198,9 +194,7 @@ class IntegrationViewsTests(IdentityRequest):
 
     def test_groups_for_principal_invalid_account(self):
         """Test that a /tenant/<id>/principal/<username>groups/ request from an external account fails."""
-        external_request_context = self._create_request_context(
-            self.customer, self.user_data, create_customer=False, is_internal=False, create_tenant=False
-        )
+        external_request_context = self._create_request_context(self.customer, self.user_data, is_internal=False)
         request = external_request_context["request"]
         response = self.client.get(
             f"/_private/api/v1/integrations/tenant/{self.tenant.org_id}/principal/user_a/groups/",
@@ -274,9 +268,7 @@ class IntegrationViewsTests(IdentityRequest):
     def test_roles_from_group_invalid_account(self):
         """Test that a /tenant/<id>/groups/<uuid>/roles/ request from an external account fails."""
         group_all_uuid = Group.objects.get(name="Group All").uuid
-        external_request_context = self._create_request_context(
-            self.customer, self.user_data, create_customer=False, is_internal=False, create_tenant=False
-        )
+        external_request_context = self._create_request_context(self.customer, self.user_data, is_internal=False)
         request = external_request_context["request"]
         response = self.client.get(
             f"/_private/api/v1/integrations/tenant/{self.tenant.org_id}/groups/{group_all_uuid}/roles/",
@@ -341,9 +333,7 @@ class IntegrationViewsTests(IdentityRequest):
     def test_roles_for_group_principal_invalid_account(self):
         """Test that a valid request to /tenant/<id>/principal/user_admin/groups/<uuid>/roles/ from an external account fails."""
         group_all_uuid = Group.objects.get(name="Group All").uuid
-        external_request_context = self._create_request_context(
-            self.customer, self.user_data, create_customer=False, is_internal=False, create_tenant=False
-        )
+        external_request_context = self._create_request_context(self.customer, self.user_data, is_internal=False)
         request = external_request_context["request"]
         response = self.client.get(
             f"/_private/api/v1/integrations/tenant/{self.tenant.org_id}/principal/user_admin/groups/{group_all_uuid}/roles/",
