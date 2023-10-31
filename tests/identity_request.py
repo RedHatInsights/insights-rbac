@@ -71,30 +71,10 @@ class IdentityRequest(TestCase):
         return user_data
 
     @classmethod
-    def _create_customer(cls, account, create_tenant=False, org_id=None):
-        """Create a customer.
-
-        Args:
-            account (str): The account identifier
-
-        Returns:
-            (Customer) The created customer
-
-        """
-        tenant_name = create_tenant_name(account)
-        tenant = None
-        if create_tenant:
-            tenant = Tenant(tenant_name=tenant_name, account_id=account, org_id=org_id)
-            tenant.save()
-        return tenant
-
-    @classmethod
     def _create_request_context(
         cls,
         customer_data,
         user_data,
-        create_customer=True,
-        create_tenant=False,
         is_org_admin=True,
         is_internal=False,
         cross_account=False,
@@ -103,8 +83,6 @@ class IdentityRequest(TestCase):
         customer = customer_data
         account = customer.get("account_id")
         org_id = customer.get("org_id", None)
-        if create_customer:
-            cls.customer = cls._create_customer(account, create_tenant=create_tenant, org_id=org_id)
 
         identity = cls._build_identity(user_data, account, org_id, is_org_admin, is_internal)
         if cross_account:

@@ -96,7 +96,7 @@ class RbacTenantMiddlewareTest(IdentityRequest):
         self.customer = self._create_customer_data()
         self.tenant_name = create_tenant_name(self.customer["account_id"])
         self.org_id = self.customer["org_id"]
-        self.request_context = self._create_request_context(self.customer, self.user_data, create_customer=False)
+        self.request_context = self._create_request_context(self.customer, self.user_data)
         self.request = self.request_context["request"]
         self.request.path = "/api/v1/providers/"
         user = User()
@@ -117,7 +117,7 @@ class RbacTenantMiddlewareTest(IdentityRequest):
 
     def test_get_tenant_with_no_user(self):
         """Test that a 401 is returned."""
-        request_context = self._create_request_context(self.customer, None, create_customer=False)
+        request_context = self._create_request_context(self.customer, None)
         mock_request = request_context["request"]
         mock_request.path = "/api/v1/providers/"
         middleware = IdentityHeaderMiddleware(get_response=IdentityHeaderMiddleware.process_request)
@@ -129,7 +129,7 @@ class RbacTenantMiddlewareTest(IdentityRequest):
         user_data = self._create_user_data()
         customer = self._create_customer_data()
         customer["org_id"] = "45321"
-        request_context = self._create_request_context(customer, user_data, create_customer=True)
+        request_context = self._create_request_context(customer, user_data)
         request = request_context["request"]
         request.path = "/api/v1/providers/"
         request.META["QUERY_STRING"] = ""
@@ -154,7 +154,7 @@ class IdentityHeaderMiddlewareTest(IdentityRequest):
         self.customer = self._create_customer_data()
         self.tenant_name = create_tenant_name(self.customer["account_id"])
         self.org_id = self.customer["org_id"]
-        self.request_context = self._create_request_context(self.customer, self.user_data, create_customer=False)
+        self.request_context = self._create_request_context(self.customer, self.user_data)
         self.request = self.request_context["request"]
         self.request.path = "/api/v1/providers/"
         self.request.META["QUERY_STRING"] = ""
@@ -171,7 +171,7 @@ class IdentityHeaderMiddlewareTest(IdentityRequest):
         middleware = IdentityHeaderMiddleware(get_response=IdentityHeaderMiddleware.process_request)
         # User without redhat email will fail.
         request_context = self._create_request_context(
-            self.customer, self.user_data, create_customer=False, cross_account=True, is_internal=True
+            self.customer, self.user_data, cross_account=True, is_internal=True
         )
         mock_request = request_context["request"]
         mock_request.path = "/api/v1/providers/"
@@ -181,9 +181,7 @@ class IdentityHeaderMiddlewareTest(IdentityRequest):
 
         # User with is_internal equal to False will fail.
         self.user_data["email"] = "test@redhat.com"
-        request_context = self._create_request_context(
-            self.customer, self.user_data, create_customer=False, cross_account=True
-        )
+        request_context = self._create_request_context(self.customer, self.user_data, cross_account=True)
         mock_request = request_context["request"]
         mock_request.path = "/api/v1/providers/"
 
@@ -193,7 +191,7 @@ class IdentityHeaderMiddlewareTest(IdentityRequest):
         # Success pass if user is internal and with redhat email
         self.user_data["email"] = "test@redhat.com"
         request_context = self._create_request_context(
-            self.customer, self.user_data, create_customer=False, cross_account=True, is_internal=True
+            self.customer, self.user_data, cross_account=True, is_internal=True
         )
         mock_request = request_context["request"]
         mock_request.path = "/api/v1/providers/"
@@ -227,7 +225,7 @@ class IdentityHeaderMiddlewareTest(IdentityRequest):
         customer = self._create_customer_data()
         account_id = customer["account_id"]
         del customer["account_id"]
-        request_context = self._create_request_context(customer, self.user_data, create_customer=False)
+        request_context = self._create_request_context(customer, self.user_data)
         mock_request = request_context["request"]
         mock_request.path = "/api/v1/providers/"
         middleware = IdentityHeaderMiddleware(get_response=IdentityHeaderMiddleware.process_request)
@@ -260,7 +258,7 @@ class IdentityHeaderMiddlewareTest(IdentityRequest):
 
         user_data = self._create_user_data()
         customer = self._create_customer_data()
-        request_context = self._create_request_context(customer, user_data, create_customer=False)
+        request_context = self._create_request_context(customer, user_data)
         request = request_context["request"]
         request.path = "/api/v1/providers/"
         request.META["QUERY_STRING"] = ""
@@ -356,9 +354,7 @@ class InternalIdentityHeaderMiddleware(IdentityRequest):
         super().setUp()
         self.user_data = self._create_user_data()
         self.customer = self._create_customer_data()
-        self.internal_request_context = self._create_request_context(
-            self.customer, self.user_data, create_customer=False, is_internal=True
-        )
+        self.internal_request_context = self._create_request_context(self.customer, self.user_data, is_internal=True)
 
     def test_internal_user_can_access_private_api(self):
         request = self.internal_request_context["request"]

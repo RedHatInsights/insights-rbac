@@ -47,7 +47,7 @@ class CrossAccountRequestViewTests(IdentityRequest):
         self.account = self.customer_data["account_id"]
         self.org_id = self.customer_data["org_id"]
         self.associate_non_admin_request_context = self._create_request_context(
-            self.customer_data, self.user_data, create_customer=False, is_org_admin=False, is_internal=True
+            self.customer_data, self.user_data, is_org_admin=False, is_internal=True
         )
         self.associate_non_admin_request = self.associate_non_admin_request_context["request"]
 
@@ -57,13 +57,13 @@ class CrossAccountRequestViewTests(IdentityRequest):
         self.not_anemic_customer_data["account_id"] = self.not_anemic_account
         self.not_anemic_customer_data["tenant_name"] = f"acct{self.not_anemic_account}"
         self.associate_not_anemic_request_context = self._create_request_context(
-            self.not_anemic_customer_data, self.user_data, create_customer=False, is_org_admin=False, is_internal=True
+            self.not_anemic_customer_data, self.user_data, is_org_admin=False, is_internal=True
         )
         self.associate_not_anemic_request = self.associate_not_anemic_request_context["request"]
         self.not_anemic_headers = self.associate_not_anemic_request_context["request"].META
 
         self.associate_admin_request_context = self._create_request_context(
-            self.customer_data, self.user_data, create_customer=False, is_org_admin=True, is_internal=True
+            self.customer_data, self.user_data, is_org_admin=True, is_internal=True
         )
         self.associate_admin_request = self.associate_admin_request_context["request"]
 
