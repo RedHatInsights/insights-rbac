@@ -27,7 +27,7 @@ from django.db.migrations.recorder import MigrationRecorder
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from management.cache import TenantCache
-from management.models import Group, Role
+from management.models import Group, Role, Permission
 from management.principal.proxy import API_TOKEN_HEADER, CLIENT_ID_HEADER, USER_ENV_HEADER
 from management.principal.proxy import PrincipalProxy
 from management.principal.proxy import bop_request_status_count, bop_request_time_tracking
@@ -401,6 +401,46 @@ def invalid_default_admin_groups(request):
         invalid_default_admin_groups.delete()
         return HttpResponse(status=204)
     return HttpResponse('Invalid method, only "DELETE" and "GET" are allowed.', status=405)
+
+def role_removal(request, role_uuid):
+    """View method for internal role removal requests.
+
+    DELETE /_private/api/roles/<role_uuid>/
+    """
+    logger.info(f"Role removal: {request.method} {request.user.username}")
+    if request.method == "DELETE":
+        if not destructive_ok():
+            return HttpResponse("Destructive operations disallowed.", status=400)
+
+        role_obj = get_object_or_404(Role, uuid=role_uuid)
+        with transaction.atomic():
+            try:
+                logger.warning(f"Deleting role {role_uuid}. Requested by {request.user.username}")
+                role_obj.delete()
+                return HttpResponse(status=204)
+            except Exception:
+                return HttpResponse("Role cannot be deleted.", status=400)
+    return HttpResponse('Invalid method, only "DELETE" is allowed.', status=405)
+
+def permission_removal(request, permission_uuid):
+    """View method for internal permission removal requests.
+
+    DELETE /_private/api/permission/<permission_uuid>/
+    """
+    logger.info(f"Permission removal: {request.method} {request.user.username}")
+    if request.method == "DELETE":
+        if not destructive_ok():
+            return HttpResponse("Destructive operations disallowed.", status=400)
+
+        permission_obj = get_object_or_404(Permission, uuid=permission_uuid)
+        with transaction.atomic():
+            try:
+                logger.warning(f"Deleting permission {permission_uuid}. Requested by {request.user.username}")
+                permission_obj.delete()
+                return HttpResponse(status=204)
+            except Exception:
+                return HttpResponse("Permission cannot be deleted.", status=400)
+    return HttpResponse('Invalid method, only "DELETE" is allowed.', status=405)
 
 
 def ocm_performance(request):
