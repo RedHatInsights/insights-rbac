@@ -71,7 +71,6 @@ RUN \
     pipenv --clear
 
 
-
 # Runtime env variables:
 ENV VIRTUAL_ENV=${APP_ROOT}/.venv
 ENV \

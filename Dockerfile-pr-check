@@ -1,32 +1,38 @@
-FROM quay.io/centos/centos:stream8
-
+FROM registry.access.redhat.com/ubi8/python-39:latest
+WORKDIR $APP_ROOT
 USER root
-RUN INSTALL_PKGS="python39 python39-devel glibc-langpack-en libpq-devel gcc shadow-utils" && \
-    microdnf --nodocs -y upgrade && \
-    microdnf -y --setopt=tsflags=nodocs --setopt=install_weak_deps=0 install $INSTALL_PKGS && \
-    rpm -V $INSTALL_PKGS && \
-    microdnf -y clean all --enablerepo='*'
-
-RUN python3.9 -m venv /pipenv-venv
-ENV PATH="/pipenv-venv/bin:$PATH"
-# Install pipenv into the virtual env
-RUN \
-    pip install --upgrade pip && \
-    pip install pipenv && \
-    pip install --no-cache-dir -r requirements.txt
-    pip install tox
-
-WORKDIR ${APP_ROOT}
-
-# install dependencies
-ENV PIP_DEFAULT_TIMEOUT=100
-COPY Pipfile .
+COPY Pipfile . 
 COPY Pipfile.lock .
-RUN \
-    # install the dependencies into the working dir (i.e. ${APP_ROOT}/.venv)
-    pipenv install --deploy && \
-    # delete the pipenv cache
-    pipenv --clear
+COPY tox.ini .
+COPY requirements.txt .
 
-tox -r
-result=$?
+#install postgresql 
+RUN yum install "postgresql-15"
+
+ENV PGPORT=15432 \
+    PGPASSWORD=''\
+    DATABASE_NAME=rbac_test \
+    DATABASE_PORT=433\
+    DATABASE_USER=postgres \
+    DATABASE_PASSWORD=''
+RUN sudo sed -i \
+    -e '/local.*peer/s/postgres/all/' && \
+    -e 's/peer\|md5/trust/g' /etc/postgresql/13/main/pg_hba.conf
+
+RUN sudo service postgresql@15-main restart 
+
+RUN psql -c "create database ${DATABASE_NAME};" -U postgres
+
+# install related pip dependencies 
+ENV PIP_DEFAULT_TIMEOUT=100
+RUN pip install --upgrade pip
+RUN pip install pipenv
+RUN pip install tox 
+RUN pipenv install --deploy && \
+    pipenv --clear 
+
+#copy the src files
+COPY . .
+RUN pwd
+RUN ls -la 
+RUN ls -la /opt/app-root/rbac/

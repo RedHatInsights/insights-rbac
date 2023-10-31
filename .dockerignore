@@ -4,13 +4,16 @@
 # ... except for dependencies and source
 !Pipfile
 !Pipfile.lock
+!tox.ini
 !rbac/
 !docs/source/specs/
 !scripts/
 !deploy/
+!tests/
+!requirements.txt
 
 # keep the test files out of the final image
-**/*test*
+#**/*test*
 **/__pycache__
 **/*.log
 
