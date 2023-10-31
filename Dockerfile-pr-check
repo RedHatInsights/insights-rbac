@@ -1,0 +1,32 @@
+FROM quay.io/centos/centos:stream8
+
+USER root
+RUN INSTALL_PKGS="python39 python39-devel glibc-langpack-en libpq-devel gcc shadow-utils" && \
+    microdnf --nodocs -y upgrade && \
+    microdnf -y --setopt=tsflags=nodocs --setopt=install_weak_deps=0 install $INSTALL_PKGS && \
+    rpm -V $INSTALL_PKGS && \
+    microdnf -y clean all --enablerepo='*'
+
+RUN python3.9 -m venv /pipenv-venv
+ENV PATH="/pipenv-venv/bin:$PATH"
+# Install pipenv into the virtual env
+RUN \
+    pip install --upgrade pip && \
+    pip install pipenv && \
+    pip install --no-cache-dir -r requirements.txt
+    pip install tox
+
+WORKDIR ${APP_ROOT}
+
+# install dependencies
+ENV PIP_DEFAULT_TIMEOUT=100
+COPY Pipfile .
+COPY Pipfile.lock .
+RUN \
+    # install the dependencies into the working dir (i.e. ${APP_ROOT}/.venv)
+    pipenv install --deploy && \
+    # delete the pipenv cache
+    pipenv --clear
+
+tox -r
+result=$?
