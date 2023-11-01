@@ -26,7 +26,7 @@ set -ex
 # fi
 
 # Start up db container defined in docker-compose file in order to try to connect to postgresql 
-docker-compose -f ./rbac-test.yml up pull db 
+docker-compose -f ./rbac-test.yml pull db 
 docker-compose up -d db
 
 # Build PR_CHECK Image
