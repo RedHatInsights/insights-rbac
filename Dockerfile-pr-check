@@ -6,22 +6,6 @@ COPY Pipfile.lock .
 COPY tox.ini .
 COPY requirements.txt .
 
-#install postgresql 
-RUN yum install "postgresql-15"
-
-ENV PGPORT=15432 \
-    PGPASSWORD=''\
-    DATABASE_NAME=rbac_test \
-    DATABASE_PORT=433\
-    DATABASE_USER=postgres \
-    DATABASE_PASSWORD=''
-RUN sudo sed -i \
-    -e '/local.*peer/s/postgres/all/' && \
-    -e 's/peer\|md5/trust/g' /etc/postgresql/13/main/pg_hba.conf
-
-RUN sudo service postgresql@15-main restart 
-
-RUN psql -c "create database ${DATABASE_NAME};" -U postgres
 
 # install related pip dependencies 
 ENV PIP_DEFAULT_TIMEOUT=100

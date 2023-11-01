@@ -25,12 +25,14 @@ set -ex
 #     exit 1
 # fi
 
+# Start and use particular service defined in docker-compose file 
+docker-compose start db 
+
 # Build PR_CHECK Image
 docker build -f './Dockerfile-pr-check' --label $CONTAINER_NAME --tag $IMAGE_TAG .
 
 # Build PR_Check Container
 docker create --name $CONTAINER_NAME $IMAGE_TAG tox
-
 
 # Run PR_CHECK Container (attached with standard output)
 # and reports if the Containerized PR_Check fails
