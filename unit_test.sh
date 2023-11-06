@@ -26,7 +26,7 @@ set -ex
 # fi
 
 # Start up db container defined in docker-compose file in order to try to connect to postgresql 
-podman-compose -f ./rbac-test.yml run db --detach
+docker-compose -f ./rbac-test.yml run db --detach
 
 # Build PR_CHECK Image
 docker build -f './Dockerfile-pr-check' --label $CONTAINER_NAME --tag $IMAGE_TAG .
