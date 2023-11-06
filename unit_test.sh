@@ -27,6 +27,7 @@ set -ex
 
 # Start up db container defined in docker-compose file in order to try to connect to postgresql 
 #docker compose -f ./rbac-test.yml run --detach
+docker network create rbac-network
 make start-db
 make run-migrations
 
