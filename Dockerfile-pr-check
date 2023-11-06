@@ -5,7 +5,7 @@ COPY Pipfile .
 COPY Pipfile.lock .
 COPY tox.ini .
 COPY requirements.txt .
-
+COPY Makefile .
 
 # install related pip dependencies 
 ENV PIP_DEFAULT_TIMEOUT=100

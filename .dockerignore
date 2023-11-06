@@ -11,6 +11,7 @@
 !deploy/
 !tests/
 !requirements.txt
+!Makefile
 
 # keep the test files out of the final image
 #**/*test*
