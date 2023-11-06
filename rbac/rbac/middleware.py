@@ -30,6 +30,7 @@ from management.cache import TenantCache
 from management.models import Principal
 from management.utils import APPLICATION_KEY, access_for_principal, validate_psk
 from prometheus_client import Counter
+from rest_framework import status
 
 from api.common import (
     RH_IDENTITY_HEADER,
@@ -206,12 +207,49 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
             user.org_id = json_rh_auth.get("identity", {}).get("org_id") or json_rh_auth.get("identity").get(
                 "internal"
             ).get("org_id")
+
             user_info = json_rh_auth.get("identity", {}).get("user")
-            user.username = user_info["username"]
-            user.admin = user_info.get("is_org_admin")
-            user.internal = user_info.get("is_internal")
-            user.user_id = user_info.get("user_id")
-            user.system = False
+            if user_info:
+                user.username = user_info["username"]
+                user.admin = user_info.get("is_org_admin")
+                user.internal = user_info.get("is_internal")
+                user.user_id = user_info.get("user_id")
+                user.system = False
+
+            # RBAC might be contacted by service accounts too. In that case we make some assumptions:
+            #
+            # - The service account is never an organization administrator.
+            # - The service account is never internal.
+            # - The service account is never a system principal.
+            service_account = json_rh_auth.get("identity", {}).get("service_account")
+            if service_account:
+                user.username = service_account.get("username")
+                user.admin = False
+                user.client_id = service_account.get("client_id")
+                user.internal = False
+                user.is_service_account = True
+                user.user_id = None
+                user.system = False
+
+            # If we did not get the user information or service account information from the "x-rh-identity" header,
+            # then the request is directly unauthorized.
+            if not user_info and not service_account:
+                logger.debug("x-rh-identity does not contain user_info or service_account keys: %s", json_rh_auth)
+                return HttpResponseUnauthorizedRequest()
+
+            # The service accounts must provide their client IDs for us to keep processing the request.
+            if user.is_service_account and (not user.client_id or user.client_id.isspace()):
+                return HttpResponse(
+                    json.dumps(
+                        {
+                            "code": status.HTTP_400_BAD_REQUEST,
+                            "message": "The client ID must be provided for the service account in the x-rh-identity"
+                            "header.",
+                        },
+                    ),
+                    content_type="application/json",
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
 
             if not user.org_id:
                 payload = {

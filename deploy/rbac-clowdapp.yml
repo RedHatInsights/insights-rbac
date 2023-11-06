@@ -464,6 +464,24 @@ objects:
             value: ${SERVICE_MIGRATE_AND_SEED_ON_INIT}
           - name: USE_CLOWDER_CA_FOR_BOP
             value: ${USE_CLOWDER_CA_FOR_BOP}
+          - name: IT_BYPASS_IT_CALLS
+            value: ${IT_BYPASS_IT_CALLS}
+          - name: IT_BYPASS_PERMISSIONS_MODIFY_SERVICE_ACCOUNTS
+            value: ${IT_BYPASS_PERMISSIONS_MODIFY_SERVICE_ACCOUNTS}
+          - name: IT_BYPASS_TOKEN_VALIDATION
+            value: ${IT_BYPASS_TOKEN_VALIDATION}
+          - name: IT_SERVICE_BASE_PATH
+            value: ${IT_SERVICE_BASE_PATH}
+          - name: IT_SERVICE_HOST
+            value: ${IT_SERVICE_HOST}
+          - name: IT_SERVICE_PORT
+            value: ${IT_SERVICE_PORT}
+          - name: IT_SERVICE_PROTOCOL_SCHEME
+            value: ${IT_SERVICE_PROTOCOL_SCHEME}
+          - name: IT_SERVICE_TIMEOUT_SECONDS
+            value: ${IT_SERVICE_TIMEOUT_SECONDS}
+          - name: IT_TOKEN_JKWS_CACHE_LIFETIME
+            value: ${IT_TOKEN_JKWS_CACHE_LIFETIME}
     jobs:
       - name: tenant-org-id-populator
         podSpec:
@@ -3407,3 +3425,30 @@ parameters:
   value: 'rbac-secret'
 - name: USE_CLOWDER_CA_FOR_BOP
   value: 'False'
+- name: IT_BYPASS_IT_CALLS
+  description: Bypass calling IT for fetching real service accounts and to use mocked responses instead?
+  value: 'False'
+- name: IT_BYPASS_PERMISSIONS_MODIFY_SERVICE_ACCOUNTS
+  description: Bypass the permissions check for when a user wants to add or remove a service account from a group?
+  value: 'False'
+- name: IT_BYPASS_TOKEN_VALIDATION
+  description: Bypass validating the token that the user must provide in the Authorization header for making IT calls?
+  value: 'False'
+- name: IT_SERVICE_BASE_PATH
+  description: Path of the IT service's API
+  value: '/auth/realms/redhat-external/apis'
+- name: IT_SERVICE_HOST
+  description: Host of the IT service
+  required: true
+- name: IT_SERVICE_PORT
+  description: Port of the IT service
+  value: '443'
+- name: IT_SERVICE_PROTOCOL_SCHEME
+  description: Protocol scheme of the IT service
+  value: 'https'
+- name: IT_SERVICE_TIMEOUT_SECONDS
+  description: Number of seconds to wait for a response from IT before timing out and failing the request
+  value: '10'
+- name: IT_TOKEN_JKWS_CACHE_LIFETIME
+  description: Amount of time for which the Redis cache will store the JWKS certificates from IT. They recommend having it set to 8 hours.
+  value: '28800'

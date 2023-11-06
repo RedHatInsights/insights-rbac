@@ -62,7 +62,7 @@ class TenantAwareModel(models.Model):
 
 
 class User:
-    """A request User."""
+    """A request User. Might also represent a service account."""
 
     username = None
     account = None
@@ -71,3 +71,6 @@ class User:
     system = False
     is_active = True
     org_id = None
+    # Service account properties.
+    client_id: str = None
+    is_service_account: bool = False

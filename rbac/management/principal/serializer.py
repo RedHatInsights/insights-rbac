@@ -16,6 +16,9 @@
 #
 
 """Serializer for principal management."""
+from collections import OrderedDict
+
+from django.core.exceptions import ValidationError
 from management.serializer_override_mixin import SerializerCreateOverrideMixin
 from rest_framework import serializers
 
@@ -36,8 +39,30 @@ class PrincipalInputSerializer(serializers.Serializer):
     """Serializer for the Principal model."""
 
     username = serializers.CharField(required=True, max_length=150)
+    clientID = serializers.UUIDField(required=False, source="service_account_id")
+    type = serializers.CharField(required=False)
+
+    def validate(self, data: OrderedDict):
+        """
+        Assert that the correct fields are specified.
+
+        Assert that when the specified type is 'service-account', the corresponding 'clientID' field
+        has been specified.
+        """
+        # If the "type" has not been specified, we assume it is a user principal.
+        if ("type" not in data) or (data["type"] == "user"):
+            return data
+        elif data["type"] == "service-account":
+            if "service_account_id" not in data:
+                raise ValidationError(code="missing", message="the clientID field is required for service accounts")
+
+            return data
+        else:
+            raise ValidationError(
+                code="invalid", message="The principal type must be either 'user' or 'service-account'"
+            )
 
     class Meta:
         """Metadata for the serializer."""
 
-        fields = ("username",)
+        fields = ("username", "clientID", "type")

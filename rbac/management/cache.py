@@ -207,3 +207,33 @@ class AccessCache(BasicCache):
         if not settings.ACCESS_CACHE_ENABLED:
             return
         super().save((uuid, sub_key), policy, "policy")
+
+
+class JWKSCache(BasicCache):
+    """Redis-based caching for the storage of JKWS certificates."""
+
+    JWKS_CACHE_KEY = "rbac::jwks:response"
+
+    def key_for(self):
+        """Redis key for the JWKS certificate response."""
+        return "rbac::jwks::response"
+
+    def set_cache(self, pipe, key, item):
+        """Set cache to redis."""
+        pipe.hset(key=key, value=json.dumps(item), name="hi")
+        pipe.expire(name=key, time=settings.IT_TOKEN_JKWS_CACHE_LIFETIME)
+        pipe.execute()
+
+    def get_from_redis(self, args):
+        """Get object from redis based on args."""
+        obj = self.connection.hget(*(self.JWKS_CACHE_KEY, args[1]))
+        if obj:
+            return json.loads(obj)
+
+    def get_jwks_response(self):
+        """Get the JWKS certificates' response from Redis."""
+        return super().get_cached(self.JWKS_CACHE_KEY, "Unable to fetch the JWKS response from Redis")
+
+    def set_jwks_response(self, response):
+        """Save the JWKS certificates' response in Redis."""
+        super().save(self.JWKS_CACHE_KEY, response, "JWKS response")
