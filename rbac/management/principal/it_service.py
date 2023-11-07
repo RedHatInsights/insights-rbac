@@ -95,8 +95,11 @@ class ITService:
                 # Extract the body contents.
                 body_contents = response.json()
 
-                # Recalculate the offset to decide whether to get more service accounts or not.
+                # Recalculate the offset to decide whether to get more service accounts or not. If the offset is zero,
+                # it means that there were no service accounts in IT for the tenant.
                 offset = offset + len(body_contents)
+                if offset == 0:
+                    break
 
                 # Merge the previously received service accounts with the new ones.
                 received_service_accounts = received_service_accounts + body_contents
