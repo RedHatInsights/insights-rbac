@@ -761,8 +761,12 @@ class GroupViewSet(
                         },
                     )
 
-                # Get the principal username option parameter and the limit and offset parameters too.
-                options[PRINCIPAL_USERNAME_KEY] = request.query_params.get(PRINCIPAL_USERNAME_KEY)
+                # Get the principal username option parameter and the limit and offset parameters too. Sometimes the UI
+                # sends "false" as the "principal username" query parameter. In that case we assume no filtering was
+                # intended to be done.
+                principal_username = request.query_params.get(PRINCIPAL_USERNAME_KEY)
+                if principal_username and principal_username != "false":
+                    options[PRINCIPAL_USERNAME_KEY] = principal_username
                 options["limit"] = int(request.query_params.get("limit", StandardResultsSetPagination.default_limit))
                 options["offset"] = int(request.query_params.get("offset", 0))
 
