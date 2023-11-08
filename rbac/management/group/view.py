@@ -763,8 +763,8 @@ class GroupViewSet(
 
                 # Get the principal username option parameter and the limit and offset parameters too.
                 options[PRINCIPAL_USERNAME_KEY] = request.query_params.get(PRINCIPAL_USERNAME_KEY)
-                options["limit"] = request.query_params.get("limit", StandardResultsSetPagination.default_limit)
-                options["offset"] = request.query_params.get("offset", 0)
+                options["limit"] = int(request.query_params.get("limit", StandardResultsSetPagination.default_limit))
+                options["offset"] = int(request.query_params.get("offset", 0))
 
                 # Fetch the group's service accounts.
                 it_service = ITService()
