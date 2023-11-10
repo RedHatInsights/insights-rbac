@@ -539,8 +539,14 @@ class GroupViewSet(
                 resp = self.add_principals(group, principals, account=account)
             if isinstance(resp, dict) and "errors" in resp:
                 return Response(status=resp["status_code"], data=resp["errors"])
+            
+
             output = GroupSerializer(resp)
             response = Response(status=status.HTTP_200_OK, data=output.data)
+
+            print("output", output)
+            print("response", response)
+
         elif request.method == "GET":
             principals_from_params = self.filtered_principals(group, request)
             page = self.paginate_queryset(principals_from_params)
