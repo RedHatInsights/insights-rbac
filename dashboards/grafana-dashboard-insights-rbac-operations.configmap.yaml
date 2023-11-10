@@ -1,6 +1,6 @@
 apiVersion: v1
 data:
-  rbac-grafana-prod-new.json: |-
+  new-rbac-grafana.json: |-
     {
       "__elements": {},
       "__requires": [
@@ -224,7 +224,8 @@ data:
         },
         {
           "datasource": {
-              "uid": "$datasource"
+            "type": "prometheus",
+            "uid": "$datasource"
           },
           "fieldConfig": {
             "defaults": {
@@ -271,10 +272,10 @@ data:
           "targets": [
             {
               "datasource": {
-                 "uid": "$datasource"
+                "uid": "$datasource"
               },
               "editorMode": "code",
-              "expr": "sum(redis_enable_cache_get_total{job=\"rbac-service\"})",
+              "expr": "sum(increase(redis_enable_cache_get_total{job=\"rbac-service\"}[$__range]))",
               "legendFormat": "__auto",
               "range": true,
               "refId": "A"
@@ -285,7 +286,8 @@ data:
         },
         {
           "datasource": {
-              "uid": "$datasource"
+            "type": "prometheus",
+            "uid": "${DS_CRCS02UE1-PROMETHEUS}"
           },
           "fieldConfig": {
             "defaults": {
@@ -333,10 +335,10 @@ data:
             {
               "datasource": {
                 "type": "prometheus",
-                "uid": "${DS_CRCP01UE1-PROMETHEUS}"
+                "uid": "${DS_CRCS02UE1-PROMETHEUS}"
               },
               "editorMode": "code",
-              "expr": "sum(redis_disable_cache_get_total{job=\"rbac-service\"})",
+              "expr": "sum(increase(redis_disable_cache_get_total{job=\"rbac-service\"}[$__range]))",
               "legendFormat": "__auto",
               "range": true,
               "refId": "A"
@@ -378,7 +380,7 @@ data:
                 "h": 9,
                 "w": 12,
                 "x": 0,
-                "y": 33
+                "y": 41
               },
               "hiddenSeries": false,
               "id": 11,
@@ -471,7 +473,7 @@ data:
                 "h": 9,
                 "w": 12,
                 "x": 12,
-                "y": 33
+                "y": 41
               },
               "hiddenSeries": false,
               "id": 15,
@@ -562,7 +564,7 @@ data:
                 "h": 9,
                 "w": 12,
                 "x": 0,
-                "y": 42
+                "y": 50
               },
               "hiddenSeries": false,
               "id": 9,
@@ -655,7 +657,7 @@ data:
                 "h": 9,
                 "w": 12,
                 "x": 12,
-                "y": 42
+                "y": 50
               },
               "hiddenSeries": false,
               "id": 19,
@@ -748,7 +750,7 @@ data:
                 "h": 9,
                 "w": 12,
                 "x": 0,
-                "y": 51
+                "y": 59
               },
               "hiddenSeries": false,
               "id": 17,
@@ -861,8 +863,7 @@ data:
                     "mode": "percentage",
                     "steps": [
                       {
-                        "color": "green",
-                        "value": null
+                        "color": "green"
                       }
                     ]
                   },
@@ -874,7 +875,7 @@ data:
                 "h": 5,
                 "w": 4,
                 "x": 0,
-                "y": 34
+                "y": 42
               },
               "id": 4,
               "interval": "",
@@ -920,8 +921,7 @@ data:
                     "mode": "absolute",
                     "steps": [
                       {
-                        "color": "green",
-                        "value": null
+                        "color": "green"
                       },
                       {
                         "color": "red",
@@ -937,7 +937,7 @@ data:
                 "h": 5,
                 "w": 4,
                 "x": 4,
-                "y": 34
+                "y": 42
               },
               "id": 6,
               "options": {
@@ -980,8 +980,7 @@ data:
                     "mode": "percentage",
                     "steps": [
                       {
-                        "color": "green",
-                        "value": null
+                        "color": "green"
                       },
                       {
                         "color": "red",
@@ -997,7 +996,7 @@ data:
                 "h": 5,
                 "w": 4,
                 "x": 8,
-                "y": 34
+                "y": 42
               },
               "id": 5,
               "options": {
@@ -1039,8 +1038,7 @@ data:
                     "mode": "percentage",
                     "steps": [
                       {
-                        "color": "green",
-                        "value": null
+                        "color": "green"
                       }
                     ]
                   },
@@ -1052,7 +1050,7 @@ data:
                 "h": 5,
                 "w": 4,
                 "x": 12,
-                "y": 34
+                "y": 42
               },
               "id": 14,
               "interval": "",
@@ -1094,8 +1092,7 @@ data:
                     "mode": "percentage",
                     "steps": [
                       {
-                        "color": "green",
-                        "value": null
+                        "color": "green"
                       }
                     ]
                   },
@@ -1107,7 +1104,7 @@ data:
                 "h": 5,
                 "w": 4,
                 "x": 16,
-                "y": 34
+                "y": 42
               },
               "id": 25,
               "options": {
@@ -1152,7 +1149,7 @@ data:
                 "h": 9,
                 "w": 12,
                 "x": 0,
-                "y": 39
+                "y": 47
               },
               "hiddenSeries": false,
               "id": 8,
@@ -1259,7 +1256,7 @@ data:
                 "h": 9,
                 "w": 12,
                 "x": 12,
-                "y": 39
+                "y": 47
               },
               "heatmap": {},
               "hideZeroBuckets": false,
@@ -1351,7 +1348,7 @@ data:
                 "h": 8,
                 "w": 12,
                 "x": 0,
-                "y": 48
+                "y": 56
               },
               "hiddenSeries": false,
               "id": 16,
@@ -1454,7 +1451,7 @@ data:
                 "h": 8,
                 "w": 12,
                 "x": 12,
-                "y": 48
+                "y": 56
               },
               "heatmap": {},
               "hideZeroBuckets": false,
@@ -1578,7 +1575,7 @@ data:
                 "h": 9,
                 "w": 12,
                 "x": 0,
-                "y": 35
+                "y": 43
               },
               "hiddenSeries": false,
               "id": 3,
@@ -1669,7 +1666,7 @@ data:
                 "h": 9,
                 "w": 12,
                 "x": 12,
-                "y": 35
+                "y": 43
               },
               "hiddenSeries": false,
               "id": 13,
@@ -1774,7 +1771,7 @@ data:
                 "h": 9,
                 "w": 12,
                 "x": 0,
-                "y": 44
+                "y": 52
               },
               "heatmap": {},
               "hideZeroBuckets": false,
@@ -1884,7 +1881,7 @@ data:
                 "h": 7,
                 "w": 3,
                 "x": 0,
-                "y": 36
+                "y": 44
               },
               "id": 39,
               "options": {
@@ -1917,8 +1914,7 @@ data:
                     "mode": "absolute",
                     "steps": [
                       {
-                        "color": "red",
-                        "value": null
+                        "color": "red"
                       },
                       {
                         "color": "green",
@@ -1934,7 +1930,7 @@ data:
                 "h": 7,
                 "w": 4,
                 "x": 3,
-                "y": 36
+                "y": 44
               },
               "id": 31,
               "options": {
@@ -2015,8 +2011,7 @@ data:
                     "mode": "absolute",
                     "steps": [
                       {
-                        "color": "transparent",
-                        "value": null
+                        "color": "transparent"
                       },
                       {
                         "color": "red",
@@ -2032,7 +2027,7 @@ data:
                 "h": 7,
                 "w": 13,
                 "x": 7,
-                "y": 36
+                "y": 44
               },
               "id": 33,
               "options": {
@@ -2099,7 +2094,7 @@ data:
                 "h": 10,
                 "w": 20,
                 "x": 0,
-                "y": 43
+                "y": 51
               },
               "hiddenSeries": false,
               "id": 42,
@@ -2215,7 +2210,7 @@ data:
                 "h": 7,
                 "w": 3,
                 "x": 0,
-                "y": 53
+                "y": 61
               },
               "id": 38,
               "options": {
@@ -2264,7 +2259,7 @@ data:
                 "h": 7,
                 "w": 4,
                 "x": 3,
-                "y": 53
+                "y": 61
               },
               "id": 40,
               "options": {
@@ -2361,7 +2356,7 @@ data:
                 "h": 7,
                 "w": 13,
                 "x": 7,
-                "y": 53
+                "y": 61
               },
               "id": 41,
               "options": {
@@ -2428,7 +2423,7 @@ data:
                 "h": 10,
                 "w": 20,
                 "x": 0,
-                "y": 60
+                "y": 68
               },
               "hiddenSeries": false,
               "id": 43,
@@ -2546,9 +2541,9 @@ data:
         "list": [
           {
             "current": {
-              "selected": true,
-              "text": "crcp01ue1-prometheus",
-              "value": "crcp01ue1-prometheus"
+              "selected": false,
+              "text": "crcs02ue1-prometheus",
+              "value": "crcs02ue1-prometheus"
             },
             "hide": 0,
             "includeAll": false,
@@ -2647,7 +2642,7 @@ data:
       "timezone": "",
       "title": "Operations - Rbac w/CPU",
       "uid": "TjP_nMWMk",
-      "version": 4,
+      "version": 5,
       "weekStart": ""
     }
 kind: ConfigMap
