@@ -37,7 +37,7 @@ from management.utils import (
 )
 from rest_framework import permissions, serializers
 
-from api.models import Tenant
+from api.models import Tenant, User
 from rbac.env import ENVIRONMENT
 
 
@@ -156,7 +156,7 @@ def get_role_queryset(request):
         tenant__in=[request.tenant, public_tenant]
     )
 
-    if scope != (ACCOUNT_SCOPE or ORG_ID_SCOPE):
+    if scope == PRINCIPAL_SCOPE:
         queryset = get_object_principal_queryset(
             request,
             scope,
@@ -180,6 +180,10 @@ def get_role_queryset(request):
                 is_org_admin = request.user.admin
             else:
                 is_org_admin = get_admin_from_proxy(username, request)
+
+            request.user_from_query = User()
+            request.user_from_query.username = username
+            request.user_from_query.admin = is_org_admin
 
             queryset = get_object_principal_queryset(
                 request,

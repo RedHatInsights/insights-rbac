@@ -44,6 +44,11 @@ app.conf.beat_schedule = {
         "schedule": crontab(minute=0, hour=0),
         "args": [],
     },  # noqa: E231, E501
+    "schedule-redis-check": {
+        "task": "management.tasks.run_redis_cache_health",
+        "schedule": 30,
+        "args": [],
+    },
 }
 
 # Load task modules from all registered Django app configs.

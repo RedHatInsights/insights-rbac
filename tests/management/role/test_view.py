@@ -23,7 +23,7 @@ from django.urls import reverse, resolve
 from rest_framework import status
 from rest_framework.test import APIClient
 
-from api.models import User, Tenant
+from management.cache import TenantCache
 from management.models import (
     Group,
     Permission,
@@ -37,7 +37,7 @@ from management.models import (
 )
 from tests.core.test_kafka import copy_call_args
 from tests.identity_request import IdentityRequest
-from unittest.mock import ANY, call, patch
+from unittest.mock import ANY, patch
 
 
 URL = reverse("role-list")
@@ -49,11 +49,6 @@ class RoleViewsetTests(IdentityRequest):
     def setUp(self):
         """Set up the role viewset tests."""
         super().setUp()
-        request = self.request_context["request"]
-        user = User()
-        user.username = self.user_data["username"]
-        user.account = self.customer_data["account_id"]
-        request.user = user
 
         sys_role_config = {"name": "system_role", "display_name": "system_display", "system": True}
 
@@ -67,7 +62,7 @@ class RoleViewsetTests(IdentityRequest):
         }
 
         platform_admin_def_role_config = {
-            "name": "platform_admin_defualt_role",
+            "name": "platform_admin_default_role",
             "display_name": "platform_admin_default_display",
             "system": True,
             "platform_default": True,
@@ -90,53 +85,6 @@ class RoleViewsetTests(IdentityRequest):
             "external_role_id",
             "external_tenant",
         }
-
-        self.test_tenant = Tenant(tenant_name="acct1111111", account_id="1111111", org_id="100001", ready=True)
-        self.test_tenant.save()
-        self.test_principal = Principal(username="test_user", tenant=self.test_tenant)
-        self.test_principal.save()
-
-        user_data = {"username": "test_user", "email": "test@gmail.com"}
-        request_context = self._create_request_context(
-            {"account_id": "1111111", "tenant_name": "acct1111111", "org_id": "100001"}, user_data, is_org_admin=True
-        )
-        request = request_context["request"]
-        self.test_headers = request.META
-
-        self.test_policy = Policy.objects.create(name="policyA", tenant=self.test_tenant)
-        self.test_group = Group(name="groupA", description="groupA description", tenant=self.test_tenant)
-        self.test_group.save()
-        self.test_group.principals.add(self.test_principal)
-        self.test_group.policies.add(self.test_policy)
-        self.test_group.save()
-
-        self.test_policy_two = Policy.objects.create(name="policyB", tenant=self.test_tenant)
-        self.test_group_two = Group(name="groupB", description="groupB description", tenant=self.test_tenant)
-        self.test_group_two.save()
-        self.test_group_two.principals.add(self.test_principal)
-        self.test_group_two.policies.add(self.test_policy_two)
-        self.test_group_two.save()
-
-        self.test_adminRole = Role(**admin_def_role_config, tenant=self.test_tenant)
-        self.test_adminRole.save()
-
-        self.test_platformAdminRole = Role(**platform_admin_def_role_config, tenant=self.test_tenant)
-        self.test_platformAdminRole.save()
-
-        self.test_sysRole = Role(**sys_role_config, tenant=self.test_tenant)
-        self.test_sysRole.save()
-
-        self.test_defRole = Role(**def_role_config, tenant=self.test_tenant)
-        self.test_defRole.save()
-        self.test_defRole.save()
-
-        self.test_policy.roles.add(
-            self.test_defRole, self.test_sysRole, self.test_adminRole, self.test_platformAdminRole
-        )
-        self.test_policy.save()
-
-        self.test_policy_two.roles.add(self.test_platformAdminRole)
-        self.test_policy_two.save()
 
         self.principal = Principal(username=self.user_data["username"], tenant=self.tenant)
         self.principal.save()
@@ -185,6 +133,22 @@ class RoleViewsetTests(IdentityRequest):
 
         self.access3 = Access.objects.create(permission=self.permission2, role=self.sysRole, tenant=self.tenant)
         Permission.objects.create(permission="cost-management:*:*", tenant=self.tenant)
+
+    def tearDown(self):
+        """Tear down role viewset tests."""
+        Group.objects.all().delete()
+        Principal.objects.all().delete()
+        Role.objects.all().delete()
+        Policy.objects.all().delete()
+        Permission.objects.all().delete()
+        Access.objects.all().delete()
+        ExtTenant.objects.all().delete()
+        ExtRoleRelation.objects.all().delete()
+
+        # we need to delete old test_tenant's that may exist in cache
+        test_tenant_org_id = "100001"
+        cached_tenants = TenantCache()
+        cached_tenants.delete_tenant(test_tenant_org_id)
 
     def create_role(self, role_name, role_display="", in_access_data=None):
         """Create a role."""
@@ -531,7 +495,6 @@ class RoleViewsetTests(IdentityRequest):
         role_display = "Display name for roleA"
         response = self.create_role(role_name, role_display=role_display)
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        role_uuid = response.data.get("uuid")
 
         # list a role
         client = APIClient()
@@ -704,32 +667,242 @@ class RoleViewsetTests(IdentityRequest):
         response = client.get(url, **self.headers)
         self.assertEqual(response.data.get("meta").get("count"), 0)
 
-    @patch(
-        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
-        return_value={"status_code": 200, "data": [{"username": "test_user"}]},
-    )
+    @patch("management.principal.proxy.PrincipalProxy.request_filtered_principals")
+    def test_list_role_with_groups_in_fields_with_username_param_for_non_org_admin(self, mock_request):
+        """
+        Test that we can read a list of roles and the groups_in fields is set correctly
+        for a request with 'username' param for non org admin principal.
+        """
+        # Set existing groups as system groups
+        default_access_group_name = "Default access"
+        self.group.name = default_access_group_name
+        self.group.system = self.group.platform_default = True
+        self.group.save()
+
+        default_admin_access_group_name = "Default admin access"
+        self.groupTwo.name = default_admin_access_group_name
+        self.groupTwo.system = self.groupTwo.admin_default = True
+        self.groupTwo.save()
+
+        # create a custom role
+        custom_role_name = "NewRoleForJohn"
+        custom_role = self.create_role(custom_role_name)
+        self.assertEqual(custom_role.status_code, status.HTTP_201_CREATED)
+        custom_role_uuid = custom_role.data.get("uuid")
+
+        # create a custom group
+        custom_group_name = "NewGroupForJohn"
+        custom_group = self.create_group(custom_group_name)
+        self.assertEqual(custom_group.status_code, status.HTTP_201_CREATED)
+        custom_group_uuid = custom_group.data.get("uuid")
+
+        # create a policy to link the role and group
+        custom_policy_name = "NewPolicyForJohn"
+        custom_policy = self.create_policy(custom_policy_name, custom_group_uuid, [custom_role_uuid])
+        self.assertEqual(custom_policy.status_code, status.HTTP_201_CREATED)
+
+        # create a principal
+        john = Principal(username="john", tenant=self.tenant)
+
+        # Mock return value for request_filtered_principals() -> user is NOT org admin
+        mock_request.return_value = {
+            "status_code": 200,
+            "data": [
+                {
+                    "org_id": "100001",
+                    "is_org_admin": False,
+                    "is_internal": False,
+                    "id": 52567473,
+                    "username": john.username,
+                    "account_number": "1111111",
+                    "is_active": True,
+                }
+            ],
+        }
+
+        # add principal to the created group
+        principal_response = self.add_principal_to_group(custom_group_uuid, john.username)
+        self.assertEqual(principal_response.status_code, status.HTTP_200_OK, principal_response)
+
+        # add groups_in and groups_in_count fields into display fields
+        groups_in_count = "groups_in_count"
+        groups_in = "groups_in"
+        new_display_fields = self.display_fields
+        new_display_fields.add(groups_in_count)
+        new_display_fields.add(groups_in)
+
+        url = f"{URL}?add_fields={groups_in_count},{groups_in}&username={john.username}"
+        client = APIClient()
+        response = client.get(url, **self.headers)
+
+        # three parts in response: meta, links and data
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        for keyname in ["meta", "links", "data"]:
+            self.assertIn(keyname, response.data)
+        self.assertIsInstance(response.data.get("data"), list)
+
+        response_data = response.data.get("data")
+
+        for iterRole in response_data:
+            # fields displayed are same as defined incl. groups_in and groups_in_count
+            self.assertEqual(new_display_fields, set(iterRole.keys()))
+            self.assertIsNotNone(iterRole.get(groups_in)[0]["name"])
+            self.assertIsNotNone(iterRole.get(groups_in)[0]["uuid"])
+            self.assertIsNotNone(iterRole.get(groups_in)[0]["description"])
+
+        # make sure created role exists in result set and has correct values
+        created_role = next((iterRole for iterRole in response_data if iterRole["name"] == custom_role_name), None)
+        self.assertIsNotNone(created_role)
+        self.assertEqual(created_role[groups_in_count], 1)
+        self.assertEqual(created_role[groups_in][0]["name"], custom_group_name)
+
+        # make sure all roles are from:
+        #       * custom group 'NewGroupForJohn' or
+        #       * 'Default access' group
+        groups = [default_access_group_name, custom_group_name]
+        for role in response_data:
+            for group in role[groups_in]:
+                self.assertIn(group["name"], groups)
+
+    @patch("management.principal.proxy.PrincipalProxy.request_filtered_principals")
+    def test_list_role_with_groups_in_fields_with_username_param_for_org_admin(self, mock_request):
+        """
+        Test that we can read a list of roles and the groups_in fields is set correctly
+        for a request with 'username' param for org admin principal.
+        """
+        # Set existing groups as system groups
+        default_access_group_name = "Default access"
+        self.group.name = default_access_group_name
+        self.group.system = self.group.platform_default = True
+        self.group.save()
+
+        default_admin_access_group_name = "Default admin access"
+        self.groupTwo.name = default_admin_access_group_name
+        self.groupTwo.system = self.groupTwo.admin_default = True
+        self.groupTwo.save()
+
+        # create a custom role
+        custom_role_name = "NewRoleForMary"
+        custom_role = self.create_role(custom_role_name)
+        self.assertEqual(custom_role.status_code, status.HTTP_201_CREATED)
+        custom_role_uuid = custom_role.data.get("uuid")
+
+        # create a custom group
+        custom_group_name = "NewGroupForMary"
+        custom_group = self.create_group(custom_group_name)
+        self.assertEqual(custom_group.status_code, status.HTTP_201_CREATED)
+        custom_group_uuid = custom_group.data.get("uuid")
+
+        # create a policy to link the role and group
+        custom_policy_name = "NewPolicyForMary"
+        custom_policy = self.create_policy(custom_policy_name, custom_group_uuid, [custom_role_uuid])
+        self.assertEqual(custom_policy.status_code, status.HTTP_201_CREATED)
+
+        # create a principal
+        mary = Principal(username="mary", tenant=self.tenant)
+
+        # Mock return value for request_filtered_principals() -> user is NOT org admin
+        mock_request.return_value = {
+            "status_code": 200,
+            "data": [
+                {
+                    "org_id": "100001",
+                    "is_org_admin": True,
+                    "is_internal": False,
+                    "id": 52567473,
+                    "username": mary.username,
+                    "account_number": "1111111",
+                    "is_active": True,
+                }
+            ],
+        }
+
+        # add principal to the created group
+        principal_response = self.add_principal_to_group(custom_group_uuid, mary.username)
+        self.assertEqual(principal_response.status_code, status.HTTP_200_OK, principal_response)
+
+        # add groups_in and groups_in_count fields into display fields
+        groups_in_count = "groups_in_count"
+        groups_in = "groups_in"
+        new_display_fields = self.display_fields
+        new_display_fields.add(groups_in_count)
+        new_display_fields.add(groups_in)
+
+        url = f"{URL}?add_fields={groups_in_count},{groups_in}&username={mary.username}"
+        client = APIClient()
+        response = client.get(url, **self.headers)
+
+        # three parts in response: meta, links and data
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        for keyname in ["meta", "links", "data"]:
+            self.assertIn(keyname, response.data)
+        self.assertIsInstance(response.data.get("data"), list)
+
+        response_data = response.data.get("data")
+
+        for iterRole in response_data:
+            # fields displayed are same as defined incl. groups_in and groups_in_count
+            self.assertEqual(new_display_fields, set(iterRole.keys()))
+            self.assertIsNotNone(iterRole.get(groups_in)[0]["name"])
+            self.assertIsNotNone(iterRole.get(groups_in)[0]["uuid"])
+            self.assertIsNotNone(iterRole.get(groups_in)[0]["description"])
+
+        # make sure created role exists in result set and has correct values
+        created_role = next((iterRole for iterRole in response_data if iterRole["name"] == custom_role_name), None)
+        self.assertIsNotNone(created_role)
+        self.assertEqual(created_role[groups_in_count], 1)
+        self.assertEqual(created_role[groups_in][0]["name"], custom_group_name)
+
+        # make sure all roles are from:
+        #       * custom group 'NewGroupForJohn' or
+        #       * 'Default access' group
+        #       * 'Default admin access' group
+        groups = [default_access_group_name, default_admin_access_group_name, custom_group_name]
+        for role in response_data:
+            for group in role[groups_in]:
+                self.assertIn(group["name"], groups)
+
+    @patch("management.principal.proxy.PrincipalProxy.request_filtered_principals")
     def test_list_role_with_groups_in_fields_for_principal_scope_success(self, mock_request):
-        """Test that we can read a list of roles and the groups_in fields is set correctly for a principal scoped request."""
+        """
+        Test that we can read a list of roles and the groups_in fields is set correctly
+        for a principal scoped request.
+        """
+        mock_request.return_value = {
+            "status_code": 200,
+            "data": [
+                {
+                    "org_id": "100001",
+                    "is_org_admin": True,
+                    "is_internal": False,
+                    "id": 52567473,
+                    "username": self.principal.username,
+                    "account_number": "1111111",
+                    "is_active": True,
+                }
+            ],
+        }
+
         # create a role
         role_name = "groupsInRole"
         created_role = self.create_role("groupsInRole")
-        self.assertEquals(created_role.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(created_role.status_code, status.HTTP_201_CREATED)
         role_uuid = created_role.data.get("uuid")
 
         # create a group
         group_name = "groupsInGroup"
         created_group = self.create_group(group_name)
-        self.assertEquals(created_group.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(created_group.status_code, status.HTTP_201_CREATED)
         group_uuid = created_group.data.get("uuid")
 
         # create a policy to link the 2
         policy_name = "groupsInPolicy"
         created_policy = self.create_policy(policy_name, group_uuid, [role_uuid])
-        self.assertEquals(created_policy.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(created_policy.status_code, status.HTTP_201_CREATED)
 
         # add user principal to the created group
-        principal_response = self.add_principal_to_group(group_uuid, self.user_data["username"])
-        self.assertEquals(principal_response.status_code, status.HTTP_200_OK, principal_response)
+        principal_response = self.add_principal_to_group(group_uuid, self.principal.username)
+        self.assertEqual(principal_response.status_code, status.HTTP_200_OK, principal_response)
 
         # hit /roles?groups_in, group should appear in groups_in
         field_1 = "groups_in_count"
@@ -738,7 +911,7 @@ class RoleViewsetTests(IdentityRequest):
         new_display_fields.add(field_1)
         new_display_fields.add(field_2)
 
-        url = "{}?add_fields={},{}&username=".format(URL, field_1, field_2, self.user_data["username"])
+        url = "{}?add_fields={},{}&username={}".format(URL, field_1, field_2, self.principal.username)
         client = APIClient()
         response = client.get(url, **self.headers)
 
@@ -760,17 +933,20 @@ class RoleViewsetTests(IdentityRequest):
         # make sure created role exists in result set and has correct values
         created_role = next((iterRole for iterRole in response_data if iterRole["name"] == role_name), None)
         self.assertIsNotNone(created_role)
-        self.assertEquals(created_role["groups_in_count"], 1)
-        self.assertEquals(created_role["groups_in"][0]["name"], group_name)
+        self.assertEqual(created_role["groups_in_count"], 1)
+        self.assertEqual(created_role["groups_in"][0]["name"], group_name)
 
         # make sure a default role exists in result set and has correct values
         default_role = next((iterRole for iterRole in response_data if iterRole["name"] == self.defRole.name), None)
         self.assertIsNotNone(default_role)
-        self.assertEquals(default_role["groups_in_count"], 1)
-        self.assertEquals(default_role["groups_in"][0]["name"], self.group.name)
+        self.assertEqual(default_role["groups_in_count"], 1)
+        self.assertEqual(default_role["groups_in"][0]["name"], self.group.name)
 
     def test_list_role_with_groups_in_fields_for_admin_scope_success(self):
-        """Test that we can read a list of roles and the groups_in fields is set correctly for a admin scoped request."""
+        """
+        Test that we can read a list of roles and the groups_in fields is set correctly
+        for an admin scoped request.
+        """
         field_1 = "groups_in_count"
         field_2 = "groups_in"
         new_display_fields = self.display_fields
@@ -799,20 +975,20 @@ class RoleViewsetTests(IdentityRequest):
         # make sure a default role exists in result set and has correct values
         default_role = next((iterRole for iterRole in response_data if iterRole["name"] == self.defRole.name), None)
         self.assertIsNotNone(default_role)
-        self.assertEquals(default_role["groups_in_count"], 1)
-        self.assertEquals(default_role["groups_in"][0]["name"], self.group.name)
+        self.assertEqual(default_role["groups_in_count"], 1)
+        self.assertEqual(default_role["groups_in"][0]["name"], self.group.name)
 
         # make sure an admin role exists in result set and has correct values
         admin_role = next((iterRole for iterRole in response_data if iterRole["name"] == self.adminRole.name), None)
         self.assertIsNotNone(admin_role)
-        self.assertEquals(admin_role["groups_in_count"], 1)
-        self.assertEquals(admin_role["groups_in"][0]["name"], self.group.name)
+        self.assertEqual(admin_role["groups_in_count"], 1)
+        self.assertEqual(admin_role["groups_in"][0]["name"], self.group.name)
 
     def test_list_role_with_username_forbidden_to_nonadmin(self):
         """Test that non admin can not read a list of roles for username."""
         # Setup non admin request
         non_admin_request_context = self._create_request_context(
-            self.customer_data, self.user_data, create_customer=False, is_org_admin=False
+            self.customer_data, self.user_data, is_org_admin=False
         )
         non_admin_request = non_admin_request_context["request"]
 
@@ -834,23 +1010,7 @@ class RoleViewsetTests(IdentityRequest):
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
-    @patch(
-        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
-        return_value={
-            "status_code": 200,
-            "data": [
-                {
-                    "org_id": "100001",
-                    "is_org_admin": True,
-                    "is_internal": False,
-                    "id": 52567473,
-                    "username": "test_user",
-                    "account_number": "1111111",
-                    "is_active": True,
-                }
-            ],
-        },
-    )
+    @patch("management.principal.proxy.PrincipalProxy.request_filtered_principals")
     def test_list_role_with_additional_fields_username_success(self, mock_request):
         """Test that we can read a list of roles and add fields for username."""
         field_1 = "groups_in_count"
@@ -859,9 +1019,24 @@ class RoleViewsetTests(IdentityRequest):
         new_display_fields.add(field_1)
         new_display_fields.add(field_2)
 
-        url = "{}?add_fields={},{}&username={}".format(URL, field_1, field_2, self.test_principal.username)
+        mock_request.return_value = {
+            "status_code": 200,
+            "data": [
+                {
+                    "org_id": "100001",
+                    "is_org_admin": True,
+                    "is_internal": False,
+                    "id": 52567473,
+                    "username": self.principal.username,
+                    "account_number": "1111111",
+                    "is_active": True,
+                }
+            ],
+        }
+
+        url = "{}?add_fields={},{}&username={}".format(URL, field_1, field_2, self.principal.username)
         client = APIClient()
-        response = client.get(url, **self.test_headers)
+        response = client.get(url, **self.headers)
 
         self.assertEqual(len(response.data.get("data")), 4)
 

@@ -17,10 +17,8 @@
 """Test the internal viewset."""
 from rest_framework import status
 from rest_framework.test import APIClient
-from unittest.mock import patch
 from django.conf import settings
-from django.db.migrations.recorder import MigrationRecorder
-from django.test import TestCase, override_settings
+from django.test import override_settings
 from datetime import datetime, timedelta
 from unittest.mock import MagicMock
 from unittest.mock import patch
@@ -46,9 +44,7 @@ class InternalViewsetTests(IdentityRequest):
         super().setUp()
         self.client = APIClient()
         self.customer = self.customer_data
-        self.internal_request_context = self._create_request_context(
-            self.customer, self.user_data, create_customer=False, is_internal=True, create_tenant=False
-        )
+        self.internal_request_context = self._create_request_context(self.customer, self.user_data, is_internal=True)
 
         self.request = self.internal_request_context["request"]
         user = User()

@@ -24,7 +24,6 @@ from api.models import Tenant
 from rest_framework.serializers import ValidationError
 
 from datetime import timedelta
-from unittest.mock import Mock
 
 
 class CrossAccountRequestModelTests(TestCase):

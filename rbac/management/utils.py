@@ -286,7 +286,7 @@ def get_admin_from_proxy(username, request):
     """Return org_admin status of a username from the proxy."""
     bop_resp = verify_principal_with_proxy(username, request, verify_principal=True)
 
-    if bop_resp.get("data") == []:
+    if not bop_resp.get("data"):
         key = "detail"
         message = "No data found for principal with username '{}'.".format(username)
         raise serializers.ValidationError({key: _(message)})

@@ -14,26 +14,12 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
+"""RBAC project module."""
 
-"""Model for principal management."""
-from uuid import uuid4
+from __future__ import absolute_import, unicode_literals
 
-from django.db import models
+# This will make sure the app is always imported when
+# Django starts so that shared_task will use this app.
+from rbac.celery import app as celery_app
 
-from api.models import TenantAwareModel
-
-
-class Principal(TenantAwareModel):
-    """A principal."""
-
-    uuid = models.UUIDField(default=uuid4, editable=False, unique=True, null=False)
-    username = models.CharField(max_length=150)
-    cross_account = models.BooleanField(default=False)
-    type = models.TextField(null=False, default="user")
-    service_account_id = models.TextField()
-
-    class Meta:
-        ordering = ["username"]
-        constraints = [
-            models.UniqueConstraint(fields=["username", "tenant"], name="unique principal username per tenant")
-        ]
+__all__ = ("celery_app",)
