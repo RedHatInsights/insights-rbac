@@ -148,6 +148,7 @@ def add_roles(group, roles_or_role_ids, tenant, user=None):
         role_list.append(role)
     return role_list
 
+
 def remove_roles(group, roles_or_role_ids, tenant, user=None):
     """Process list of roles and remove them from the group."""
     if not isinstance(roles_or_role_ids, QuerySet):

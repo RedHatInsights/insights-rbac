@@ -1992,7 +1992,6 @@ class GroupViewsetTests(IdentityRequest):
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
         return_value={"status_code": 200, "data": []},
     )
-
     def test_get_group_user_principals_nonempty(self, mock_request):
         """Test that getting the "user" type principals from a nonempty group returns successfully."""
         mock_request.return_value["data"] = [

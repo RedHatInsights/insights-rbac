@@ -83,7 +83,7 @@ class AuditLogModel(models.Model):
 
     def add_data(self, request, group, item, who, resource):
         """Audit log when a role or user/principal is added to a group."""
-      
+
         self.requester = request.user.username
 
         group_name = group.name
@@ -95,9 +95,7 @@ class AuditLogModel(models.Model):
         elif who == "user":
             self.description = "Added user" + user_name + " to group " + group_name
             self.resource = AuditLogModel.USER
-        else: 
+        else:
             ValueError("Not role, user, or permission that is being added")
 
         super(AuditLogModel, self).save()
-
-        

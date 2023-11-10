@@ -702,7 +702,6 @@ class GroupViewSet(
             if isinstance(resp, dict) and "errors" in resp:
                 return Response(status=resp["status_code"], data=resp["errors"])
 
-
             # Serialize the group...
             output = GroupSerializer(resp)
 
@@ -993,8 +992,8 @@ class GroupViewSet(
         roles = []
         validate_uuid(uuid, "group uuid validation")
         group = self.get_object()
-        # a role is being added here: place audit logs here. 
-        if request.method == "POST": 
+        # a role is being added here: place audit logs here.
+        if request.method == "POST":
             self.protect_default_admin_group_roles(group)
             serializer = GroupRoleSerializerIn(data=request.data)
             if serializer.is_valid(raise_exception=True):
@@ -1002,8 +1001,8 @@ class GroupViewSet(
             group = set_system_flag_before_update(group, request.tenant, request.user)
             al_roles = add_roles(group, roles, request.tenant, user=request.user)
             response_data = GroupRoleSerializerIn(group)
-           
-            #Audit Log for when role/roles added to a group
+
+            # Audit Log for when role/roles added to a group
             auditLog = AuditLogModel()
             who = "role"
             for role in al_roles:

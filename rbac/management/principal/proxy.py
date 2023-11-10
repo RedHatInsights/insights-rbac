@@ -180,7 +180,7 @@ class PrincipalProxy:  # pylint: disable=too-few-public-methods
                             last_name="bar",
                             email="baz",
                             user_id="51736777",
-                            type=principal.type
+                            type=principal.type,
                         )
                     )
             elif "users" in data:
