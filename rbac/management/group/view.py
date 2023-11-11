@@ -377,8 +377,6 @@ class GroupViewSet(
             auditlog.edit_data(request, AuditLogModel.GROUP)
             return edit_group
 
-    # return super().update(request=request, args=args, kwargs=kwargs)
-
     def add_principals(self, group, principals, account=None, org_id=None):
         """Process list of principals and add them to the group."""
         tenant = self.request.tenant
@@ -407,6 +405,13 @@ class GroupViewSet(
                     logger.info("Created new principal %s for account_id %s.", username, account)
             group.principals.add(principal)
             group_principal_change_notification_handler(self.request.user, group, username, "added")
+
+            # Audit Log for when principal/principals added to a group
+            auditLog = AuditLogModel()
+            who = "user"
+            for user in users:
+                print("user", user)
+                auditLog.add_data(self.request, group, user, who)
         return group
 
     def add_service_accounts(
@@ -689,7 +694,6 @@ class GroupViewSet(
                             ]
                         },
                     )
-
             # Process user principals and add them to the group.
             if len(principals) > 0:
                 if settings.AUTHENTICATE_WITH_ORG_ID:
@@ -707,9 +711,6 @@ class GroupViewSet(
 
             # ... and return it.
             response = Response(status=status.HTTP_200_OK, data=output.data)
-
-            print("output", output)
-            print("response", response)
 
         elif request.method == "GET":
             # Get the "order_by" query parameter.
