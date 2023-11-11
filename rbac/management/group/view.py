@@ -412,7 +412,7 @@ class GroupViewSet(
             for user in users:
                 print("user", user)
                 auditLog.add_data(self.request, group, user, who)
-                
+
         return group
 
     def add_service_accounts(

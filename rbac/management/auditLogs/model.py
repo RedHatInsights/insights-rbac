@@ -86,7 +86,7 @@ class AuditLogModel(models.Model):
 
         self.requester = request.user.username
         group_name = group.name
-        
+
         if who == "role":
             role_name = item.display_name
             self.description = "Added role " + role_name + " to group " + group_name
