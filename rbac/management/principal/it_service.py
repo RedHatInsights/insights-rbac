@@ -224,8 +224,13 @@ class ITService:
         group_service_account_principals = group.principals.filter(type=TYPE_SERVICE_ACCOUNT)
 
         # Apply the specified query pamareters for the collection. Begin with the sort order.
-        order_by = options.get("sort_order")
-        if order_by:
+        sort_order = options.get("sort_order")
+        if sort_order:
+            if sort_order == "asc":
+                order_by = "username"
+            else:
+                order_by = "-username"
+
             group_service_account_principals = group_service_account_principals.order_by(order_by)
 
         # Check if we should filter the service accounts by the username that the user specified.
