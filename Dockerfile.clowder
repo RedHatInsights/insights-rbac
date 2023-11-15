@@ -21,7 +21,7 @@ LABEL summary="$SUMMARY" \
     name="insights-rbac" \
     version="1" \
     maintainer="Red Hat Insights"
-
+    
 USER 0
 COPY Pipfile Pipfile
 COPY Pipfile.lock Pipfile.lock
