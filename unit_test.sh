@@ -54,7 +54,7 @@ echo "Running tests...here we go"
 docker build -f './Dockerfile-pr-check' --label $CONTAINER_NAME --tag $IMAGE_TAG .
 
 # Build PR_Check Container
-docker run -it --rm --name $CONTAINER_NAME \
+docker run -i --rm --name $CONTAINER_NAME \
     -e DATABASE_NAME=$DATABASE_NAME \
     -e DATABASE_HOST=$DATABASE_HOST \
     -e DATABASE_PORT=$DATABASE_PORT \
