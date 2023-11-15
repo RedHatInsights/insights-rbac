@@ -48,9 +48,13 @@ echo "Killing DB Container..."
 docker kill $DB_CONTAINER
 echo "Removing DB Container..."
 docker rm -f $DB_CONTAINER
-echo "Killing pr check container" 
+
+
+docker ps -a
+
+echo "Killing pr check container..." 
 docker kill $CONTAINER_NAME
-echo "Removing pr check container" 
+echo "Removing pr check container..." 
 docker rm -f $CONTAINER_NAME
 
 if [[ $OUT_CODE != 0 ]]; then

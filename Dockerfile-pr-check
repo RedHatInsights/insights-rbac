@@ -17,6 +17,3 @@ RUN pipenv install --deploy && \
 
 #copy the src files
 COPY . .
-RUN pwd
-RUN ls -la
-RUN ls -la /opt/app-root/rbac/
