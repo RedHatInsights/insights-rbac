@@ -27,10 +27,6 @@ export DATABASE_NAME=rbac
 
 echo "Running tests...here we go"
 
-
-# Build PR_CHECK Image
-#docker build -f './Dockerfile-pr-check' --label $CONTAINER_NAME --tag $IMAGE_TAG .
-
 # Build PR_Check Container
 docker run -i --rm --name $CONTAINER_NAME \
     -e DATABASE_NAME=$DATABASE_NAME \
@@ -42,6 +38,8 @@ docker run -i --rm --name $CONTAINER_NAME \
     $IMAGE_TAG tox
 
 OUT_CODE=$?
+
+docker ps -a
 
 echo "Killing DB Container..."
 docker kill $DB_CONTAINER
