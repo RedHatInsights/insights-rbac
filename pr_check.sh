@@ -26,6 +26,7 @@ source $CICD_ROOT/build.sh
 source $APP_ROOT/unit_test.sh
 
 # Deploy rbac to an ephemeral namespace for testing
+export IMAGE="quay.io/cloudservices/rbac"
 source $CICD_ROOT/deploy_ephemeral_env.sh
 
 # Run smoke tests with ClowdJobInvocation
