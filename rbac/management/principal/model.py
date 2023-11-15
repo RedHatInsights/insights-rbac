@@ -29,6 +29,8 @@ class Principal(TenantAwareModel):
     uuid = models.UUIDField(default=uuid4, editable=False, unique=True, null=False)
     username = models.CharField(max_length=150)
     cross_account = models.BooleanField(default=False)
+    type = models.TextField(null=False, default="user")
+    service_account_id = models.TextField()
 
     class Meta:
         ordering = ["username"]

@@ -1327,7 +1327,14 @@
             "name": "usernames",
             "in": "query",
             "description": "A comma separated list of usernames for principals to remove from the group",
-            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "service-accounts",
+            "in": "query",
+            "description": "A comma separated list of usernames for service accounts to remove from the group",
             "schema": {
               "type": "string"
             }

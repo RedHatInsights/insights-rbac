@@ -332,8 +332,7 @@ data:
           "targets": [
             {
               "datasource": {
-                "type": "prometheus",
-                "uid": "${DS_CRCP01UE1-PROMETHEUS}"
+                "uid": "$datasource"
               },
               "editorMode": "code",
               "expr": "sum(redis_disable_cache_get_total{job=\"rbac-service\"})",
