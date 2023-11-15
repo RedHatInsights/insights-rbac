@@ -60,6 +60,7 @@ docker create --name $CONTAINER_NAME \
     -e DATABASE_PORT=$DATABASE_PORT \
     -e DATABASE_USERNAME=$DATABASE_USERNAME \
     -e DATABASE_PASSWORD=$DATABASE_PASSWORD \
+    --net=host \
     $IMAGE_TAG tox
 
 # Run PR_CHECK Container (attached with standard output)
