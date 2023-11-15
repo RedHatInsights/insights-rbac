@@ -4,7 +4,6 @@ set -ex
 export CONTAINER_NAME="rbac-pr-check"
 export IMAGE_TAG="rbac:pr-check"
 
-# Start up db container defined in docker-compose file in order to try to connect to postgresql
 # spin up the db for integration tests
 DB_CONTAINER="rbac-$(uuidgen)"
 echo "Spinning up container: ${DB_CONTAINER}"
@@ -30,7 +29,7 @@ echo "Running tests...here we go"
 
 
 # Build PR_CHECK Image
-docker build -f './Dockerfile-pr-check' --label $CONTAINER_NAME --tag $IMAGE_TAG .
+#docker build -f './Dockerfile-pr-check' --label $CONTAINER_NAME --tag $IMAGE_TAG .
 
 # Build PR_Check Container
 docker run -i --rm --name $CONTAINER_NAME \
@@ -49,13 +48,6 @@ docker kill $DB_CONTAINER
 echo "Removing DB Container..."
 docker rm -f $DB_CONTAINER
 
-
-docker ps -a
-
-echo "Killing pr check container..." 
-docker kill $CONTAINER_NAME
-echo "Removing pr check container..." 
-docker rm -f $CONTAINER_NAME
 
 if [[ $OUT_CODE != 0 ]]; then
     exit 1
