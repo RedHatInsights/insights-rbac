@@ -43,11 +43,12 @@ docker run -i --rm --name $CONTAINER_NAME \
     $IMAGE_TAG tox
 
 $OUT_CODE=$?
-
+OUT_CODE=1
 echo "Killing DB Container..."
 docker kill $DB_CONTAINER
 echo "Removing DB Container..."
 docker rm -f $DB_CONTAINER
+
 
 if [[ $OUT_CODE != 0 ]]; then
     exit 1
