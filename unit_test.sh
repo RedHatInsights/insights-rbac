@@ -27,6 +27,9 @@ export DATABASE_NAME=rbac
 
 echo "Running tests...here we go"
 
+# Build PR_CHECK Image
+docker build -f './Dockerfile-pr-check' --label $CONTAINER_NAME --tag $IMAGE_TAG .
+
 # Build PR_Check Container
 docker run -i --rm --name $CONTAINER_NAME \
     -e DATABASE_NAME=$DATABASE_NAME \
