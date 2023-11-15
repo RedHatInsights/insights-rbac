@@ -16,7 +16,7 @@ if ! (pre-commit run -a); then
     exit 1
 fi
 
-# Start up db container defined in docker-compose file in order to try to connect to postgresql 
+# Start up db container defined in docker-compose file in order to try to connect to postgresql
 # spin up the db for integration tests
 DB_CONTAINER="rbac-$(uuidgen)"
 echo "Spinning up container: ${DB_CONTAINER}"
@@ -73,4 +73,3 @@ cat << EOF > $WORKSPACE/artifacts/junit-dummy.xml
     <testcase classname="dummy" name="dummytest"/>
 </testsuite>
 EOF
- 

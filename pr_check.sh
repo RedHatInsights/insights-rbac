@@ -22,7 +22,7 @@ curl -s $CICD_URL/bootstrap.sh > .cicd_bootstrap.sh && source .cicd_bootstrap.sh
 # Build the image and push to quay
 source $CICD_ROOT/build.sh
 
-#Run the new image for the unit_tests and run the unit tests 
+#Run the new image for the unit_tests and run the unit tests
 source $APP_ROOT/unit_test.sh
 
 # Deploy rbac to an ephemeral namespace for testing
