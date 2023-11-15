@@ -433,9 +433,8 @@ class GroupViewSet(
             try:
                 principal = Principal.objects.get(username__iexact=specified_sa["username"], tenant=tenant)
             except Principal.DoesNotExist:
-                username_from_it = it_service_accounts_by_client_ids.get(specified_sa["clientID"]).get("username")
                 principal = Principal.objects.create(
-                    username=username_from_it,
+                    username=f"service-account-{specified_sa['clientID']}",
                     service_account_id=specified_sa["clientID"],
                     type=TYPE_SERVICE_ACCOUNT,
                     tenant=tenant,
