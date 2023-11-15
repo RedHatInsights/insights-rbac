@@ -25,6 +25,7 @@ from rest_framework import serializers
 
 from api.models import Tenant
 from .model import Access, Permission, ResourceDefinition, Role
+from ..querysets import PRINCIPAL_SCOPE
 
 ALLOWED_OPERATIONS = ["in", "equal"]
 FILTER_FIELDS = {"key", "value", "operation"}
@@ -332,7 +333,7 @@ def obtain_groups_in(obj, request):
     username_param = request.query_params.get("username")
     policy_ids = list(obj.policies.values_list("id", flat=True))
 
-    if scope_param == "principal" or username_param:
+    if scope_param == PRINCIPAL_SCOPE or username_param:
         principal = get_principal(username_param or request.user.username, request)
         assigned_groups = Group.objects.filter(policies__in=policy_ids, principals__in=[principal])
         assigned_groups = filter_queryset_by_tenant(assigned_groups, request.tenant)
@@ -345,7 +346,7 @@ def obtain_groups_in(obj, request):
         policies__in=policy_ids
     ) or Group.platform_default_set().filter(tenant=public_tenant).filter(policies__in=policy_ids)
 
-    if username_param:
+    if username_param and scope_param != PRINCIPAL_SCOPE:
         is_org_admin = request.user_from_query.admin
     else:
         is_org_admin = request.user.admin
