@@ -202,9 +202,9 @@ def deduplicate_access_queryset(queryset):
 
     1: two exactly matching permissions are combined - e.g. 'app:*:read' and
        'app:*:read' - including joining together their resourceDefinitions.
-    2: '*' implies all other verbs.  Therefore 'app:*:read' will be ignored
-       in favour of 'app:*:*'.  Ignored permissions have their
-       resourceDefinitions thrown away, because they are superseded.
+
+    Others may be added later, such as combining permissions that wholly
+    include others.  For now let's stick with what's simple.
     """
     # Since the ordering does not matter, we record these in a dict by the
     # permission, for ease of access.
@@ -220,25 +220,7 @@ def deduplicate_access_queryset(queryset):
         if not access.permission:
             # Cannot emit an access permission if it doesn't have one
             continue
-        if access.permission.permission not in deduplicated_access:
-            if access.verb == '*':
-                # Rule 2 (reverse): does this permission supersede any access
-                # objects we have already?
-                matching_access_objs = list(filter(
-                    lambda a: matching_perms(a, access),
-                    deduplicated_access.values()
-                ))
-                # have to listify it because we're going to possibly edit the
-                # dict, and doing that while a filter is running is... sketchy
-                for superseded in matching_access_objs:
-                    del deduplicated_access[superseded.permission.permission]
-            else:
-                # Rule 2 (forward): is this included in a '*' permission on
-                # the same app and resource?
-                if f"{access.permission.app}:{access.permission.resource_type}:*" in deduplicated_access:
-                    # we can throw this one away then, it's superseded.
-                    continue
-        else:
+        if access.permission.permission in deduplicated_access:
             # Combine this access object's resource definitions into that
             # already stored.  Note that at this stage we DO NOT attempt to
             # merge attributeFilter structures.
