@@ -17,7 +17,6 @@
 """Class to manage interactions with the IT service accounts service."""
 import logging
 import time
-import uuid
 
 import requests
 from django.conf import settings
@@ -329,17 +328,15 @@ class ITService:
         """Mock an IT service call which returns service accounts. Useful for development or testing."""
         mocked_service_accounts: list[dict] = []
         for sap in service_account_principals:
-            generated_uuid = uuid.uuid4()
-
             # Transform the service account to the structure our logic works with and then append it to the list of
             # mocked service accounts we will be returning.
             mocked_service_accounts.append(
                 self._transform_incoming_payload(
                     {
-                        "id": generated_uuid,
+                        "id": sap.service_account_id,
                         "clientId": sap.service_account_id,
-                        "name": f"{generated_uuid}-name",
-                        "description": f"{generated_uuid}-description",
+                        "name": f"{sap.service_account_id}-name",
+                        "description": f"{sap.service_account_id}-description",
                         "createdBy": sap.username,
                         "createdAt": round(time.time()),
                     }
