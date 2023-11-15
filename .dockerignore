@@ -14,7 +14,7 @@
 !Makefile
 
 # keep the test files out of the final image
-#**/*test*
+**/*test*
 **/__pycache__
 **/*.log
 
