@@ -22,12 +22,12 @@ curl -s $CICD_URL/bootstrap.sh > .cicd_bootstrap.sh && source .cicd_bootstrap.sh
 # Build the image and push to quay
 source $CICD_ROOT/build.sh
 
-#Run the new image for the unit_tests and run the unit tests
-source $APP_ROOT/unit_test.sh
-
 # Deploy rbac to an ephemeral namespace for testing
-export IMAGE="quay.io/cloudservices/rbac"
+#export IMAGE="quay.io/cloudservices/rbac"
 source $CICD_ROOT/deploy_ephemeral_env.sh
 
 # Run smoke tests with ClowdJobInvocation
 source $CICD_ROOT/cji_smoke_test.sh
+
+#Run the new image for the unit_tests and run the unit tests
+source $APP_ROOT/unit_test.sh
