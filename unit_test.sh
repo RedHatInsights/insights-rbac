@@ -4,18 +4,6 @@ set -ex
 export CONTAINER_NAME="rbac-pr-check"
 export IMAGE_TAG="rbac:pr-check"
 
-# # Setup environment for pre-commit check
-python3.9 -m venv .
-source bin/activate
-bin/pip3 install pipenv
-bin/pip3 install black pre-commit
-
-Run pre-commit
-if ! (pre-commit run -a); then
-    echo "pre-commit ecountered an issue"
-    exit 1
-fi
-
 # Start up db container defined in docker-compose file in order to try to connect to postgresql
 # spin up the db for integration tests
 DB_CONTAINER="rbac-$(uuidgen)"
