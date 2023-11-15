@@ -4,14 +4,10 @@
 # ... except for dependencies and source
 !Pipfile
 !Pipfile.lock
-!tox.ini
 !rbac/
 !docs/source/specs/
 !scripts/
 !deploy/
-!tests/
-!requirements.txt
-!Makefile
 
 # keep the test files out of the final image
 #**/*test*
