@@ -33,8 +33,8 @@ echo "Spinning up container: ${DB_CONTAINER}"
 docker run -d \
     --name $DB_CONTAINER \
     -p 5432 \
-    -e POSTGRESQL_USER=postgres \
-    -e POSTGRESQL_PASSWORD=postgres \
+    -e POSTGRESQL_USER=root \
+    -e POSTGRESQL_PASSWORD=root \
     -e POSTGRESQL_DATABASE=rbac \
     quay.io/cloudservices/postgresql-rds:14-1
 
@@ -43,8 +43,8 @@ echo "DB Listening on Port: ${PORT}"
 
 export DATABASE_HOST=localhost
 export DATABASE_PORT=$PORT
-export DATABASE_USER=postgres
-export DATABASE_PASSWORD=postgres
+export DATABASE_USER=root
+export DATABASE_PASSWORD=root
 export DATABASE_NAME=rbac
 
 echo "Running tests...here we go"
@@ -54,7 +54,7 @@ echo "Running tests...here we go"
 docker build -f './Dockerfile-pr-check' --label $CONTAINER_NAME --tag $IMAGE_TAG .
 
 # Build PR_Check Container
-docker create --name $CONTAINER_NAME \
+docker run -it --rm --name $CONTAINER_NAME \
     -e DATABASE_NAME=$DATABASE_NAME \
     -e DATABASE_HOST=$DATABASE_HOST \
     -e DATABASE_PORT=$DATABASE_PORT \
@@ -63,22 +63,17 @@ docker create --name $CONTAINER_NAME \
     --net=host \
     $IMAGE_TAG tox
 
-# Run PR_CHECK Container (attached with standard output)
-# and reports if the Containerized PR_Check fails
-if ! (docker start -a $CONTAINER_NAME); then
-    echo "Test failure observed; aborting"
-    exit 1
-fi
+$OUT_CODE=$?
 
 echo "Killing DB Container..."
 docker kill $DB_CONTAINER
 echo "Removing DB Container..."
 docker rm -f $DB_CONTAINER
 
-
 if [[ $OUT_CODE != 0 ]]; then
     exit 1
 fi
+
 # Pass Jenkins dummy artifacts as it needs
 # an xml output to consider the job a success.
 mkdir -p $WORKSPACE/artifacts
