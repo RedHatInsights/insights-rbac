@@ -39,8 +39,6 @@ docker run -i --rm --name $CONTAINER_NAME \
 
 OUT_CODE=$?
 
-docker ps -a
-
 echo "Killing DB Container..."
 docker kill $DB_CONTAINER
 echo "Removing DB Container..."

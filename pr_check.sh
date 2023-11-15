@@ -23,7 +23,6 @@ curl -s $CICD_URL/bootstrap.sh > .cicd_bootstrap.sh && source .cicd_bootstrap.sh
 source $CICD_ROOT/build.sh
 
 # Deploy rbac to an ephemeral namespace for testing
-#export IMAGE="quay.io/cloudservices/rbac"
 source $CICD_ROOT/deploy_ephemeral_env.sh
 
 # Run smoke tests with ClowdJobInvocation
