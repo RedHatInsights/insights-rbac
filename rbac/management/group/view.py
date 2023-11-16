@@ -574,14 +574,6 @@ class GroupViewSet(
         account = self.request.user.account
         org_id = self.request.user.org_id
         if request.method == "POST":
-            self.protect_system_groups("add principals")
-            if not request.user.admin:
-                for role in group.roles_with_access():
-                    for access in role.access.all():
-                        if access.permission_application() == "rbac":
-                            key = "add_principals"
-                            message = "Non-admin users may not add principals to Groups with RBAC permissions."
-                            raise serializers.ValidationError({key: _(message)})
             serializer = GroupPrincipalInputSerializer(data=request.data)
 
             # Serialize the payload and validate that it is correct.
@@ -597,6 +589,18 @@ class GroupViewSet(
                     service_accounts.append(specified_principal)
                 else:
                     principals.append(specified_principal)
+
+            # Principals are not allowed to be added to default system groups. Check the ADR about service accounts
+            # for more details.
+            if len(principals) > 0:
+                self.protect_system_groups("add principals")
+                if not request.user.admin:
+                    for role in group.roles_with_access():
+                        for access in role.access.all():
+                            if access.permission_application() == "rbac":
+                                key = "add_principals"
+                                message = "Non-admin users may not add principals to Groups with RBAC permissions."
+                                raise serializers.ValidationError({key: _(message)})
 
             # Process the service accounts and add them to the group.
             if len(service_accounts) > 0:
