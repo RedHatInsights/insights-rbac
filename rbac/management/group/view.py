@@ -71,6 +71,7 @@ PRINCIPAL_TYPE_KEY = "principal_type"
 PRINCIPAL_USERNAME_KEY = "principal_username"
 VALID_ROLE_ORDER_FIELDS = list(RoleViewSet.ordering_fields)
 ROLE_DISCRIMINATOR_KEY = "role_discriminator"
+SERVICE_ACCOUNT_USERNAME_FORMAT = "service-account-{clientID}"
 TYPE_SERVICE_ACCOUNT = "service-account"
 VALID_EXCLUDE_VALUES = ["true", "false"]
 VALID_GROUP_ROLE_FILTERS = ["role_name", "role_description", "role_display_name", "role_system"]
@@ -416,7 +417,7 @@ class GroupViewSet(
             invalid_service_accounts: set = set()
             for specified_sa in service_acounts:
                 if specified_sa["clientID"] not in it_sa_client_ids:
-                    invalid_service_accounts.add(specified_sa["username"])
+                    invalid_service_accounts.add(specified_sa["clientID"])
 
             # If we have any invalid service accounts, notify the user.
             if len(invalid_service_accounts) > 0:
@@ -430,23 +431,32 @@ class GroupViewSet(
         for specified_sa in service_acounts:
             self.user_has_permission_act_on_service_account(user=user, service_account=specified_sa)
 
+            client_id = specified_sa["clientID"]
             try:
-                principal = Principal.objects.get(username__iexact=specified_sa["username"], tenant=tenant)
+                principal = Principal.objects.get(
+                    username__iexact=SERVICE_ACCOUNT_USERNAME_FORMAT.format(clientID=client_id),
+                    tenant=tenant,
+                )
             except Principal.DoesNotExist:
                 principal = Principal.objects.create(
-                    username=f"service-account-{specified_sa['clientID']}",
-                    service_account_id=specified_sa["clientID"],
+                    username=SERVICE_ACCOUNT_USERNAME_FORMAT.format(clientID=client_id),
+                    service_account_id=client_id,
                     type=TYPE_SERVICE_ACCOUNT,
                     tenant=tenant,
                 )
 
                 if settings.AUTHENTICATE_WITH_ORG_ID:
-                    logger.info("Created new service account %s for org_id %s.", specified_sa["username"], org_id)
+                    logger.info("Created new service account %s for org_id %s.", client_id, org_id)
                 else:
-                    logger.info("Created new principal %s for account_id %s.", specified_sa["username"], account_name)
+                    logger.info("Created new principal %s for account_id %s.", client_id, account_name)
 
             group.principals.add(principal)
-            group_principal_change_notification_handler(self.request.user, group, specified_sa["username"], "added")
+            group_principal_change_notification_handler(
+                self.request.user,
+                group,
+                SERVICE_ACCOUNT_USERNAME_FORMAT.format(clientID=client_id),
+                "added",
+            )
 
         return group
 
