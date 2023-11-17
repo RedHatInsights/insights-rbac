@@ -8,6 +8,8 @@ objects:
   kind: ClowdApp
   metadata:
     name: rbac
+    annotations:
+      bonfire.dependencies: "model-access-permissions-yml-stage,rbac-config-yml-stage"
   spec:
     envName: ${ENV_NAME}
     testing:
