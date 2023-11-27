@@ -43,8 +43,14 @@ it_request_all_service_accounts_time_tracking = Histogram(
 
 it_request_status_count = Counter(
     "it_request_status_total",
-    "Number of requests from IT to BOP and resulting status",
+    "Number of requests from RBAC to IT's SSO and resulting status",
     ["method", "status"],
+)
+
+it_request_error = Counter(
+    "it_request_error",
+    "Number of requests from RBAC to IT's SSO that failed and the reason why they failed",
+    ["error"],
 )
 
 
@@ -81,6 +87,10 @@ class ITService:
                     timeout=self.it_request_timeout,
                 )
 
+                # Save the metrics for the successful call. Successful does not mean that we received an OK response,
+                # but that we were able to reach IT's SSO instead and get a response from them.
+                it_request_status_count.labels(method=requests.get.__name__.upper(), status=response.status_code)
+
                 if not status.is_success(response.status_code):
                     LOGGER.error(
                         "Unexpected status code '%s' received from IT when fetching service accounts. "
@@ -110,7 +120,7 @@ class ITService:
             )
 
             # Increment the error count.
-            it_request_status_count.labels(method=requests.get.__name__.upper(), status=response.status_code).inc()
+            it_request_error.labels(error="connection-error").inc()
 
             # Raise the exception again to return a proper response to the client
             raise exception
@@ -122,7 +132,7 @@ class ITService:
             )
 
             # Increment the error count.
-            it_request_status_count.labels(method=requests.get.__name__.upper(), error="timeout").inc()
+            it_request_error.labels(error="timeout").inc()
 
         # Transform the incoming payload into our model's service accounts.
         service_accounts: list[dict] = []
