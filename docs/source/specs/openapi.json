@@ -2848,9 +2848,36 @@
   },
   "servers": [
     {
-      "url": "/api/rbac/v1"
+      "url": "https://console.redhat.com/{basePath}",
+      "description": "Production Server",
+      "variables": {
+        "basePath": {
+          "default": "api/rbac/v1"
+        }
+      }
+    },
+    {
+      "url": "https://console.stage.redhat.com/{basePath}",
+      "description": "Staging Server",
+      "variables": {
+        "basePath": {
+          "default": "api/rbac/v1"
+        }
+      }
+    },
+    {
+      "url": "http://localhost:{port}/{basePath}",
+      "description": "Development Server",
+      "variables": {
+        "port": {
+          "default": "8000"
+        },
+        "basePath": {
+          "default": "api/rbac/v1"
+        }
+      }
     }
-  ],
+  ],  
   "components": {
     "parameters": {
       "QueryOffset": {
