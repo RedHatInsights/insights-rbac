@@ -38,7 +38,7 @@ class PrincipalSerializer(SerializerCreateOverrideMixin, serializers.ModelSerial
 class PrincipalInputSerializer(serializers.Serializer):
     """Serializer for the Principal model."""
 
-    username = serializers.CharField(required=True, max_length=150)
+    username = serializers.CharField(required=False, max_length=150)
     clientID = serializers.UUIDField(required=False, source="service_account_id")
     type = serializers.CharField(required=False)
 
@@ -51,6 +51,9 @@ class PrincipalInputSerializer(serializers.Serializer):
         """
         # If the "type" has not been specified, we assume it is a user principal.
         if ("type" not in data) or (data["type"] == "user"):
+            if "username" not in data:
+                raise ValidationError(code="missing", message="the username is required for user principals")
+
             return data
         elif data["type"] == "service-account":
             if "service_account_id" not in data:

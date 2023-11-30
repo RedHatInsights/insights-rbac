@@ -675,7 +675,7 @@ class QuerySetTest(TestCase):
 
         self._setup_group_for_org_admin_tests()
 
-        user = Mock(spec=User, account="00001", username="test_user", admin=True)
+        user = Mock(spec=User, account="00001", username="test_user", admin=True, is_service_account=False)
         req = Mock(user=user, method="GET", tenant=self.tenant, query_params={APPLICATION_KEY: "app"})
         req.META = encoded_req.META
 
@@ -691,7 +691,7 @@ class QuerySetTest(TestCase):
 
         self._setup_group_for_org_admin_tests()
 
-        user = Mock(spec=User, account="00001", username="test_user", admin=False)
+        user = Mock(spec=User, account="00001", username="test_user", admin=False, is_service_account=False)
         req = Mock(user=user, method="GET", tenant=self.tenant, query_params={APPLICATION_KEY: "app"})
         req.META = encoded_req.META
 
@@ -727,7 +727,9 @@ class QuerySetTest(TestCase):
         permission = Permission.objects.create(permission="rbac:*:*", tenant=self.tenant)
         rbac_admin_role = Role.objects.create(name="RBAC admin role", tenant=self.tenant)
         access = Access.objects.create(permission=permission, role=rbac_admin_role, tenant=self.tenant)
-        user = Mock(spec=User, account="00001", username="test_user", admin=False, access=access)
+        user = Mock(
+            spec=User, account="00001", username="test_user", admin=False, access=access, is_service_account=False
+        )
         req = Mock(user=user, method="GET", tenant=self.tenant, query_params={APPLICATION_KEY: "app"})
         req.META = encoded_req.META
 

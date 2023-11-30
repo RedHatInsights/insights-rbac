@@ -8,6 +8,8 @@ objects:
   kind: ClowdApp
   metadata:
     name: rbac
+    annotations:
+      bonfire.dependencies: ${BONFIRE_DEPENDENCIES}
   spec:
     envName: ${ENV_NAME}
     testing:
@@ -3450,5 +3452,8 @@ parameters:
   description: Number of seconds to wait for a response from IT before timing out and failing the request
   value: '10'
 - name: IT_TOKEN_JKWS_CACHE_LIFETIME
-  description: Amount of time for which the Redis cache will store the JWKS certificates from IT. They recommend having it set to 8 hours.
   value: '28800'
+- name: BONFIRE_DEPENDENCIES
+  description: A comma separated list of non ClowdApp dependencies for bonfire to deploy
+  value: "model-access-permissions-yml-stage,rbac-config-yml-stage"
+
