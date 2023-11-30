@@ -17,3 +17,6 @@ RUN pipenv install --deploy && \
 
 #copy the src files
 COPY . .
+
+#Add command to run tox 
+CMD ["tox"]
