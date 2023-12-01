@@ -95,8 +95,8 @@ RUN \
     # This `app.log` file is created during the `collectstatic` step. We need to
     # remove it else the random OCP user will not be able to access it. This file
     # will be recreated by the Pod when the application starts.
-    rm ${APP_HOME}/app.log
-
+    rm ${APP_HOME}/app.log && \
+    rm /tmp/counter*
 EXPOSE 8080
 
 # GIT_COMMIT is added during build in `build_deploy.sh`

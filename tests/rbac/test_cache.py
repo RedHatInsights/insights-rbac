@@ -21,6 +21,7 @@ from unittest.mock import call, patch
 
 from django.conf import settings
 from django.test import TestCase
+from management.cache import BasicCache
 from management.cache import TenantCache
 from management.models import Access, Group, Permission, Policy, Principal, ResourceDefinition, Role
 
@@ -259,7 +260,8 @@ class TenantCacheTest(TestCase):
         super().tearDownClass()
 
     @patch("management.cache.TenantCache.connection")
-    def test_tenant_cache_functions_success(self, redis_connection):
+    @patch("management.cache.BasicCache.redis_health_check")
+    def test_tenant_cache_functions_success(self, redis_health_check, redis_connection):
         tenant_name = self.tenant.tenant_name
         tenant_org_id = self.tenant.org_id
         if settings.AUTHENTICATE_WITH_ORG_ID:
@@ -274,11 +276,13 @@ class TenantCacheTest(TestCase):
         self.assertTrue(call().__enter__().set(key, dump_content) in redis_connection.pipeline.mock_calls)
 
         redis_connection.get.return_value = dump_content
+        redis_health_check.return_value = True
         # Get tenant from cache
         if settings.AUTHENTICATE_WITH_ORG_ID:
             tenant = tenant_cache.get_tenant(tenant_org_id)
         else:
             tenant = tenant_cache.get_tenant(tenant_name)
+        redis_health_check.assert_called_once()
         redis_connection.get.assert_called_once_with(key)
         self.assertEqual(tenant, self.tenant)
 
@@ -288,3 +292,29 @@ class TenantCacheTest(TestCase):
         else:
             tenant_cache.delete_tenant(tenant_name)
         redis_connection.delete.assert_called_once_with(key)
+
+    @patch("management.cache.TenantCache.connection")
+    @patch("management.cache.BasicCache.redis_health_check")
+    def test_tenant_cache_functions_failure(self, redis_health_check, redis_connection):
+        tenant_name = self.tenant.tenant_name
+        tenant_org_id = self.tenant.org_id
+        if settings.AUTHENTICATE_WITH_ORG_ID:
+            key = f"rbac::tenant::tenant={tenant_org_id}"
+        else:
+            key = f"rbac::tenant::tenant={tenant_name}"
+        dump_content = pickle.dumps(self.tenant)
+
+        # Save tenant to cache
+        tenant_cache = TenantCache()
+        tenant_cache.save_tenant(self.tenant)
+        self.assertTrue(call().__enter__().set(key, dump_content) in redis_connection.pipeline.mock_calls)
+
+        redis_connection.get.return_value = dump_content
+        redis_health_check.return_value = False
+        # Get tenant from cache (should fail because redis_health_check failed)
+        if settings.AUTHENTICATE_WITH_ORG_ID:
+            tenant = tenant_cache.get_tenant(tenant_org_id)
+        else:
+            tenant = tenant_cache.get_tenant(tenant_name)
+        redis_health_check.assert_called_once()
+        self.assertNotEqual(tenant, self.tenant)

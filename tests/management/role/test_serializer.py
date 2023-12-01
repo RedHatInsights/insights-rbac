@@ -17,7 +17,7 @@
 from django.test import TestCase
 from unittest.mock import Mock
 from api.models import Tenant
-from management.models import Permission, Role
+from management.models import Permission
 from management.role.serializer import RoleSerializer
 
 

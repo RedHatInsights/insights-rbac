@@ -6,11 +6,17 @@ import logging
 import pickle
 
 from django.conf import settings
+from prometheus_client import Counter
 from redis import BlockingConnectionPool, exceptions
 from redis.client import Redis
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 _connection_pool = BlockingConnectionPool(**settings.REDIS_CACHE_CONNECTION_PARAMS)  # should match gunicorn.threads
+
+redis_enable_cache_get_total = Counter("redis_enable_cache_get_total", "Total amount of use_caching is true")
+redis_disable_cache_get_total = Counter(
+    "redis_disable_cache_get_total", "Total amount of times cache has been disabled"
+)
 
 
 class BasicCache:
@@ -19,6 +25,7 @@ class BasicCache:
     def __init__(self):
         """Init the class."""
         self._connection = None
+        self.use_caching = True
 
     @property
     def connection(self):
@@ -31,6 +38,36 @@ class BasicCache:
                 self._connection = None
                 raise
         return self._connection
+
+    def enable_caching(self):
+        """Enable caching and incremements prometheus metric that redis caching is enabled."""
+        self.use_caching = True
+        logger.info("Redis Cache Enabled")
+        redis_enable_cache_get_total.inc()
+        return self.use_caching
+
+    def disable_caching(self):
+        """Disable caching and increment prometheus metric that redis caching is disabled."""
+        self.use_caching = False
+        logger.info("Redis Cache Disabled")
+        redis_disable_cache_get_total.inc()
+        return self.use_caching
+
+    def redis_health_check(self):
+        """Check whether redis cache is reachable. If it is not reachable, then disable caching."""
+        self._connection = Redis(connection_pool=_connection_pool, ssl=settings.REDIS_SSL)
+        try:
+            response = self._connection.ping()
+            if response:
+                logger.info("Redis cache is reachable.")
+                self.enable_caching()
+                return True
+            else:
+                logger.info("Redis cache is not reachable.")
+                self.disable_caching()
+                return False
+        except Exception as e:
+            logger.exception("Error:", e)
 
     @contextlib.contextmanager
     def delete_handler(self, err_msg):
@@ -47,7 +84,14 @@ class BasicCache:
     def get_cached(self, key, error_message):
         """Get cached object from redis, throw error if there is any."""
         try:
-            return self.get_from_redis(key)
+            if self.redis_health_check() is True:
+                if self.use_caching:
+                    return self.get_from_redis(key)
+            else:
+                # Retrieve data directly
+                logger.info("Not Retrieving Data from Redis Cache")
+                self.disable_caching()
+                pass
         except exceptions.RedisError:
             logger.exception(error_message)
         return None
@@ -163,3 +207,33 @@ class AccessCache(BasicCache):
         if not settings.ACCESS_CACHE_ENABLED:
             return
         super().save((uuid, sub_key), policy, "policy")
+
+
+class JWKSCache(BasicCache):
+    """Redis-based caching for the storage of JKWS certificates."""
+
+    JWKS_CACHE_KEY = "rbac::jwks:response"
+
+    def key_for(self):
+        """Redis key for the JWKS certificate response."""
+        return "rbac::jwks::response"
+
+    def set_cache(self, pipe, key, item):
+        """Set cache to redis."""
+        pipe.hset(key=key, value=json.dumps(item), name="hi")
+        pipe.expire(name=key, time=settings.IT_TOKEN_JKWS_CACHE_LIFETIME)
+        pipe.execute()
+
+    def get_from_redis(self, args):
+        """Get object from redis based on args."""
+        obj = self.connection.hget(*(self.JWKS_CACHE_KEY, args[1]))
+        if obj:
+            return json.loads(obj)
+
+    def get_jwks_response(self):
+        """Get the JWKS certificates' response from Redis."""
+        return super().get_cached(self.JWKS_CACHE_KEY, "Unable to fetch the JWKS response from Redis")
+
+    def set_jwks_response(self, response):
+        """Save the JWKS certificates' response in Redis."""
+        super().save(self.JWKS_CACHE_KEY, response, "JWKS response")

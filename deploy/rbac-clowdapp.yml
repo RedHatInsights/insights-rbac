@@ -8,6 +8,8 @@ objects:
   kind: ClowdApp
   metadata:
     name: rbac
+    annotations:
+      bonfire.dependencies: ${BONFIRE_DEPENDENCIES}
   spec:
     envName: ${ENV_NAME}
     testing:
@@ -464,6 +466,24 @@ objects:
             value: ${SERVICE_MIGRATE_AND_SEED_ON_INIT}
           - name: USE_CLOWDER_CA_FOR_BOP
             value: ${USE_CLOWDER_CA_FOR_BOP}
+          - name: IT_BYPASS_IT_CALLS
+            value: ${IT_BYPASS_IT_CALLS}
+          - name: IT_BYPASS_PERMISSIONS_MODIFY_SERVICE_ACCOUNTS
+            value: ${IT_BYPASS_PERMISSIONS_MODIFY_SERVICE_ACCOUNTS}
+          - name: IT_BYPASS_TOKEN_VALIDATION
+            value: ${IT_BYPASS_TOKEN_VALIDATION}
+          - name: IT_SERVICE_BASE_PATH
+            value: ${IT_SERVICE_BASE_PATH}
+          - name: IT_SERVICE_HOST
+            value: ${IT_SERVICE_HOST}
+          - name: IT_SERVICE_PORT
+            value: ${IT_SERVICE_PORT}
+          - name: IT_SERVICE_PROTOCOL_SCHEME
+            value: ${IT_SERVICE_PROTOCOL_SCHEME}
+          - name: IT_SERVICE_TIMEOUT_SECONDS
+            value: ${IT_SERVICE_TIMEOUT_SECONDS}
+          - name: IT_TOKEN_JKWS_CACHE_LIFETIME
+            value: ${IT_TOKEN_JKWS_CACHE_LIFETIME}
     jobs:
       - name: tenant-org-id-populator
         podSpec:
@@ -545,6 +565,8 @@ objects:
     postgres-sql-service-host: rbac-pgsql.rbac-stage.svc
     postgres-sql-service-port: "5432"
     rbac-log-level: INFO
+
+# rbac-config ConfigMap
 - apiVersion: v1
   data:
     approval.json: |
@@ -1339,13 +1361,10 @@ objects:
             "description": "A Compliance role that grants full access to any Compliance resource.",
             "system": true,
             "admin_default": true,
-            "version": 11,
+            "version": 12,
             "access": [
               {
                 "permission": "compliance:*:*"
-              },
-              {
-                "permission": "inventory:*:read"
               },
               {
                 "permission": "remediations:remediation:read"
@@ -1360,7 +1379,7 @@ objects:
             "description": "A Compliance role that grants read access to any Compliance resource.",
             "system": true,
             "platform_default": true,
-            "version": 4,
+            "version": 5,
             "access": [
               {
                 "permission": "compliance:policy:read"
@@ -1370,9 +1389,6 @@ objects:
               },
               {
                 "permission": "compliance:system:read"
-              },
-              {
-                "permission": "inventory:*:read"
               },
               {
                 "permission": "remediations:remediation:read"
@@ -1391,7 +1407,7 @@ objects:
             "system": true,
             "admin_default": true,
             "platform_default": false,
-            "version": 5,
+            "version": 6,
             "access": [
               {
                 "permission": "config-manager:activation_keys:*"
@@ -1404,9 +1420,6 @@ objects:
               },
               {
                 "permission": "config-manager:state-changes:read"
-              },
-              {
-                "permission": "inventory:*:read"
               },
               {
                 "permission": "playbook-dispatcher:run:read",
@@ -1431,7 +1444,7 @@ objects:
             "description": "Can view the current configurations on RHC manager",
             "system": true,
             "platform_default": true,
-            "version": 5,
+            "version": 6,
             "access": [
               {
                 "permission": "config-manager:activation_keys:read"
@@ -1441,9 +1454,6 @@ objects:
               },
               {
                 "permission": "config-manager:state-changes:read"
-              },
-              {
-                "permission": "inventory:*:read"
               },
               {
                 "permission": "playbook-dispatcher:run:read",
@@ -1509,17 +1519,21 @@ objects:
               "name": "Cost Price List Administrator",
               "description": "A cost management role that grants read and write permissions on cost models.",
               "system": true,
-              "version": 3,
+              "version": 5,
               "access": [{
                   "permission": "cost-management:cost_model:*"
+              }, {
+                  "permission": "cost-management:settings:*"
               }]
           }, {
               "name": "Cost Price List Viewer",
               "description": "A cost management role that grants read permissions on cost models.",
               "system": true,
-              "version": 3,
+              "version": 4,
               "access": [{
                   "permission": "cost-management:cost_model:read"
+              }, {
+                  "permission": "cost-management:settings:read"
               }]
           }, {
               "name": "Cost Cloud Viewer",
@@ -1557,7 +1571,7 @@ objects:
             "description": "Perform any available operation against any Drift Analysis resource.",
             "system": true,
             "admin_default": true,
-            "version": 11,
+            "version": 13,
             "access": [
               {
                 "permission": "drift:comparisons:read"
@@ -1578,7 +1592,7 @@ objects:
                 "permission": "drift:notifications:write"
               },
               {
-                "permission": "inventory:*:read"
+                "permission": "drift:*:*"
               }
             ]
           },
@@ -1587,7 +1601,7 @@ objects:
             "description": "Perform read only operation against Drift Analysis resources.",
             "system": true,
             "platform_default": true,
-            "version": 3,
+            "version": 4,
             "access": [
               {
                 "permission": "drift:comparisons:read"
@@ -1600,9 +1614,24 @@ objects:
               },
               {
                 "permission": "drift:notifications:read"
-              },
+              }
+            ]
+          }
+        ]
+      }
+    hybrid-committed-spend.json: |
+      {
+        "roles": [
+          {
+            "name": "Hybrid Committed Spend viewer",
+            "description": "View any Hybrid Committed Spend report.",
+            "system": true,
+            "admin_default": false,
+            "platform_default": false,
+            "version": 1,
+            "access": [
               {
-                "permission": "inventory:*:read"
+                "permission": "hybrid-committed-spend:reports:read"
               }
             ]
           }
@@ -1617,13 +1646,10 @@ objects:
             "description": "Perform any available operation against any RHEL Advisor resource.",
             "system": true,
             "platform_default": true,
-            "version": 10,
+            "version": 11,
             "access": [
               {
                 "permission": "advisor:*:*"
-              },
-              {
-                "permission": "inventory:*:read"
               }
             ]
           }
@@ -1702,6 +1728,37 @@ objects:
                 "permission": "inventory:groups:read"
               }
             ]
+          },
+          {
+            "name": "Account Staleness and Culling Administrator",
+            "description": "Be able to read and edit Account Staleness and Deletion data.",
+            "system": true,
+            "platform_default": false,
+            "admin_default": true,
+            "display_name": "Account Staleness and Deletion Administrator",
+            "version": 4,
+            "access": [
+              {
+                "permission": "inventory:staleness:write"
+              },
+              {
+                "permission": "inventory:staleness:read"
+              }
+            ]
+          },
+          {
+            "name": "Account Staleness and Culling Viewer",
+            "description": "Be able to read Account Staleness and Deletion data.",
+            "system": true,
+            "platform_default": true,
+            "admin_default": false,
+            "display_name": "Account Staleness and Deletion Viewer",
+            "version": 4,
+            "access": [
+              {
+                "permission": "inventory:staleness:read"
+              }
+            ]
           }
         ]
       }
@@ -1714,13 +1771,10 @@ objects:
             "description": "Perform any available operation against any malware-detection resource.",
             "system": true,
             "admin_default": true,
-            "version": 2,
+            "version": 3,
             "access": [
               {
                 "permission": "malware-detection:*:*"
-              },
-              {
-                "permission": "inventory:*:read"
               }
             ]
           },
@@ -1729,30 +1783,10 @@ objects:
             "display_name": "Malware detection viewer",
             "description": "Read any malware-detection resource.",
             "system": true,
-            "version": 1,
-            "access": [
-              {
-                "permission": "malware-detection:*:read"
-              },
-              {
-                "permission": "inventory:*:read"
-              }
-            ]
-          }
-        ]
-      }
-    migration_analytics.json: |
-      {
-        "roles": [
-          {
-            "name": "Migration Analytics administrator",
-            "description": "Perform any available operation against any Migration Analytics resource.",
-            "system": true,
-            "platform_default": true,
             "version": 2,
             "access": [
               {
-                "permission": "migration-analytics:*:*"
+                "permission": "malware-detection:*:read"
               }
             ]
           }
@@ -1792,7 +1826,7 @@ objects:
               }
             ]
           }
-  
+
         ]
       }
     ocm.json: |
@@ -1869,6 +1903,18 @@ objects:
               "id": "OrganizationAdmin",
               "tenant": "ocm"
             }
+          },
+          {
+            "name": "OCM Cluster Autoscaler Editor",
+            "display_name": "OCM Cluster Autoscaler Editor",
+            "description": "Grants permission to edit cluster autoscaler",
+            "system": true,
+            "platform_default": false,
+            "version": 1,
+            "external": {
+              "id": "ClusterAutoscalerEditor",
+              "tenant": "ocm"
+            }
           }
         ]
       }
@@ -1899,13 +1945,10 @@ objects:
             "system": true,
             "platform_default": false,
             "admin_default": true,
-            "version": 8,
+            "version": 9,
             "access": [
               {
                 "permission": "patch:*:*"
-              },
-              {
-                "permission": "inventory:*:read"
               },
               {
                 "permission": "remediations:*:read"
@@ -1921,13 +1964,10 @@ objects:
             "system": true,
             "platform_default": true,
             "admin_default": false,
-            "version": 3,
+            "version": 4,
             "access": [
               {
                 "permission": "patch:*:read"
-              },
-              {
-                "permission": "inventory:*:read"
               }
             ]
           }
@@ -1941,16 +1981,13 @@ objects:
             "description": "Perform any available operation against any Policies resource.",
             "system": true,
             "admin_default": true,
-            "version": 7,
+            "version": 8,
             "access": [
               {
                 "permission": "policies:policies:read"
               },
               {
                 "permission": "policies:policies:write"
-              },
-              {
-                "permission": "inventory:*:read"
               }
             ]
           },
@@ -1959,13 +1996,10 @@ objects:
             "description": "Perform read only operation against any Policies resource.",
             "system": true,
             "platform_default": true,
-            "version": 1,
+            "version": 2,
             "access": [
               {
                 "permission": "policies:policies:read"
-              },
-              {
-                "permission": "inventory:*:read"
               }
             ]
           }
@@ -1986,7 +2020,8 @@ objects:
               "name": "Launch Viewer",
               "description": "An launch role that grants read permissions on launch reservation and related resources.",
               "system": true,
-              "version": 1,
+              "platform_default": true,
+              "version": 2,
               "access": [{
                   "permission": "provisioning:source:read"
               }, {
@@ -2052,8 +2087,9 @@ objects:
             "display_name": "User Access administrator",
             "description": "Grants a non-org admin full access to configure and manage user access to services hosted on console.redhat.com. This role can only be viewed and assigned by Organization Administrators.",
             "system": true,
+            "admin_default": true,
             "platform_default": false,
-            "version": 2,
+            "version": 3,
             "access": [
               {
                 "permission": "rbac:*:*"
@@ -2083,13 +2119,10 @@ objects:
             "description": "Perform any available operation against any Remediations resource",
             "system": true,
             "platform_default": false,
-            "version": 7,
+            "version": 8,
             "access": [
               {
                 "permission": "remediations:*:*"
-              },
-              {
-                "permission": "inventory:*:read"
               },
               {
                 "permission": "playbook-dispatcher:run:read",
@@ -2143,13 +2176,10 @@ objects:
               "system": true,
               "platform_default": false,
               "admin_default": true,
-              "version": 2,
+              "version": 3,
               "access": [
                 {
                   "permission": "ros:*:*"
-                },
-                {
-                  "permission": "inventory:*:read"
                 }
               ]
             },
@@ -2158,13 +2188,10 @@ objects:
               "description": "A Resource Optimization user role that grants read only permission.",
               "system": true,
               "platform_default": true,
-              "version": 1,
+              "version": 2,
               "access": [
                 {
                   "permission": "ros:*:read"
-                },
-                {
-                  "permission": "inventory:*:read"
                 }
               ]
             }
@@ -2198,13 +2225,10 @@ objects:
             "system": true,
             "admin_default": true,
             "platform_default": false,
-            "version": 6,
+            "version": 7,
             "access": [
               {
                 "permission": "subscriptions:*:*"
-              },
-              {
-                "permission": "inventory:*:read"
               }
             ]
           },
@@ -2213,7 +2237,7 @@ objects:
             "description": "View any Subscriptions resource.",
             "system": true,
             "platform_default": true,
-            "version": 3,
+            "version": 5,
             "access": [
               {
                 "permission": "subscriptions:reports:read"
@@ -2228,7 +2252,7 @@ objects:
                 "permission": "subscriptions:products:read"
               },
               {
-                "permission": "inventory:*:read"
+                "permission": "subscriptions:cloud_access:read"
               }
             ]
           }
@@ -2243,13 +2267,10 @@ objects:
             "system": true,
             "platform_default": false,
             "admin_default": true,
-            "version": 2,
+            "version": 3,
             "access": [
               {
                 "permission": "tasks:*:*"
-              },
-              {
-                "permission": "inventory:*:read"
               },
               {
                 "permission": "playbook-dispatcher:run:read",
@@ -2276,13 +2297,10 @@ objects:
             "system": true,
             "platform_default": false,
             "admin_default": true,
-            "version": 10,
+            "version": 11,
             "access": [
               {
                 "permission": "vulnerability:*:*"
-              },
-              {
-                "permission": "inventory:*:read"
               },
               {
                 "permission": "remediations:*:read"
@@ -2298,7 +2316,7 @@ objects:
             "system": true,
             "platform_default": true,
             "admin_default": false,
-            "version": 3,
+            "version": 4,
             "access": [
               {
                 "permission": "vulnerability:vulnerability_results:read"
@@ -2310,9 +2328,6 @@ objects:
                 "permission": "vulnerability:report_and_export:read"
               },
               {
-                "permission": "inventory:*:read"
-              },
-              {
                 "permission": "vulnerability:advanced_report:read"
               }
             ]
@@ -2322,6 +2337,8 @@ objects:
   kind: ConfigMap
   metadata:
     name: rbac-config
+
+# model-access-permissions ConfigMap
 - apiVersion: v1
   data:
     advisor.json: |
@@ -2679,6 +2696,17 @@ objects:
                   "verb": "write"
               }
           ],
+          "settings": [
+              {
+                  "verb": "*"
+              },
+              {
+                  "verb": "read"
+              },
+              {
+                  "verb": "write"
+              }
+          ],
           "*": [
               {
                   "verb": "*"
@@ -2719,6 +2747,14 @@ objects:
           }
         ]
       }
+    hybrid-committed-spend.json: |
+      {
+          "reports": [
+              {
+                  "verb": "read"
+              }
+          ]
+      }
     integrations.json: |
       {
           "endpoints": [
@@ -2757,6 +2793,17 @@ objects:
               }
           ],
           "groups": [
+              {
+                  "verb": "read"
+              },
+              {
+                  "verb": "write"
+              },
+              {
+                  "verb": "*"
+              }
+          ],
+          "staleness": [
               {
                   "verb": "read"
               },
@@ -3037,6 +3084,14 @@ objects:
                   "verb": "write"
               }
           ],
+          "cloud_access": [
+              {
+                  "verb": "read"
+              },
+              {
+                  "verb": "write"
+              }
+          ],
           "*": [
               {
                   "verb": "*"
@@ -3096,11 +3151,17 @@ objects:
               {
                   "verb": "read"
               }
+          ],
+          "toggle_cves_without_errata": [
+              {
+                  "verb": "write"
+              }
           ]
       }
   kind: ConfigMap
   metadata:
     name: model-access-permissions
+
 - apiVersion: v1
   kind: Secret
   metadata:
@@ -3366,3 +3427,33 @@ parameters:
   value: 'rbac-secret'
 - name: USE_CLOWDER_CA_FOR_BOP
   value: 'False'
+- name: IT_BYPASS_IT_CALLS
+  description: Bypass calling IT for fetching real service accounts and to use mocked responses instead?
+  value: 'False'
+- name: IT_BYPASS_PERMISSIONS_MODIFY_SERVICE_ACCOUNTS
+  description: Bypass the permissions check for when a user wants to add or remove a service account from a group?
+  value: 'False'
+- name: IT_BYPASS_TOKEN_VALIDATION
+  description: Bypass validating the token that the user must provide in the Authorization header for making IT calls?
+  value: 'False'
+- name: IT_SERVICE_BASE_PATH
+  description: Path of the IT service's API
+  value: '/auth/realms/redhat-external/apis'
+- name: IT_SERVICE_HOST
+  description: Host of the IT service
+  required: true
+- name: IT_SERVICE_PORT
+  description: Port of the IT service
+  value: '443'
+- name: IT_SERVICE_PROTOCOL_SCHEME
+  description: Protocol scheme of the IT service
+  value: 'https'
+- name: IT_SERVICE_TIMEOUT_SECONDS
+  description: Number of seconds to wait for a response from IT before timing out and failing the request
+  value: '10'
+- name: IT_TOKEN_JKWS_CACHE_LIFETIME
+  description: Amount of time for which the Redis cache will store the JWKS certificates from IT. They recommend having it set to 8 hours.
+  value: '28800'
+- name: BONFIRE_DEPENDENCIES
+  description: A comma separated list of non ClowdApp dependencies for bonfire to deploy
+  value: "model-access-permissions-yml-stage,rbac-config-yml-stage"

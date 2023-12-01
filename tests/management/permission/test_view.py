@@ -404,7 +404,10 @@ class PermissionViewsetTests(IdentityRequest):
         self.assertCountEqual(expected, response_permissions)
 
     def test_allowed_only_filters_any_roles_not_in_allow_list_out_when_true_in_chain(self):
-        """Test that we filter out any permissions not in the allow list when allowed_only=true, chained with other filters."""
+        """
+        Test that we filter out any permissions not in the allow list when allowed_only=true,
+        chained with other filters.
+        """
         response = CLIENT.get(f"{LIST_URL}?allowed_only=true&exclude_globals=true", **self.headers)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data.get("data")), 0)
@@ -513,7 +516,6 @@ class PermissionViewsetTestsNonAdmin(IdentityRequest):
         # Add principal to that admin group
         principal = Principal.objects.create(username=self.user_data["username"], tenant=self.tenant)
         group.principals.add(principal)
-        group.principals
         response = CLIENT.get(LIST_URL, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 

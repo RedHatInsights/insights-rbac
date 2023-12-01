@@ -22,6 +22,7 @@ from django.urls import reverse
 from django.conf import settings
 from django.test.utils import override_settings
 from rest_framework import status
+from rest_framework.response import Response
 from rest_framework.test import APIClient
 
 from api.models import Tenant, User
@@ -92,7 +93,15 @@ class PrincipalViewNonAdminTests(IdentityRequest):
             account=self.customer["account_id"],
             limit=10,
             offset=0,
-            options={"sort_order": "asc", "status": "enabled", "admin_only": "false", "username_only": "false"},
+            options={
+                "limit": 10,
+                "offset": 0,
+                "sort_order": "asc",
+                "status": "enabled",
+                "admin_only": "false",
+                "username_only": "false",
+                "principal_type": None,
+            },
             org_id=self.customer["org_id"],
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -149,7 +158,15 @@ class PrincipalViewsetTests(IdentityRequest):
             account=self.customer_data["account_id"],
             limit=10,
             offset=0,
-            options={"sort_order": "asc", "status": "enabled", "admin_only": "false", "username_only": "false"},
+            options={
+                "limit": 10,
+                "offset": 0,
+                "sort_order": "asc",
+                "status": "enabled",
+                "admin_only": "false",
+                "username_only": "false",
+                "principal_type": None,
+            },
             org_id=self.customer_data["org_id"],
         )
         # /principals/ endpoint won't return the cross_account_principal, which does not exist in IT.
@@ -200,7 +217,9 @@ class PrincipalViewsetTests(IdentityRequest):
         self.assertEqual(len(response.data.get("data")), 1)
 
         principal = response.data.get("data")[0]
-        self.assertCountEqual(list(principal.keys()), ["username", "first_name", "last_name", "email", "user_id"])
+        self.assertCountEqual(
+            list(principal.keys()), ["username", "first_name", "last_name", "email", "user_id", "type"]
+        )
         self.assertIsNotNone(principal.get("username"))
         self.assertEqual(principal.get("username"), self.principal.username)
 
@@ -235,7 +254,15 @@ class PrincipalViewsetTests(IdentityRequest):
             account=self.customer_data["account_id"],
             limit=10,
             offset=0,
-            options={"sort_order": "asc", "status": "enabled", "admin_only": "false", "username_only": "false"},
+            options={
+                "limit": 10,
+                "offset": 0,
+                "sort_order": "asc",
+                "status": "enabled",
+                "admin_only": "false",
+                "username_only": "false",
+                "principal_type": None,
+            },
             org_id=self.customer_data["org_id"],
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -272,7 +299,14 @@ class PrincipalViewsetTests(IdentityRequest):
             org_id=ANY,
             limit=10,
             offset=30,
-            options={"sort_order": "asc", "status": "enabled", "username_only": "false"},
+            options={
+                "limit": 10,
+                "offset": 30,
+                "sort_order": "asc",
+                "status": "enabled",
+                "username_only": "false",
+                "principal_type": None,
+            },
         )
         # Cross account user won't be returned.
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -304,7 +338,14 @@ class PrincipalViewsetTests(IdentityRequest):
             org_id=ANY,
             limit=10,
             offset=30,
-            options={"sort_order": "asc", "status": "enabled", "username_only": "false"},
+            options={
+                "limit": 10,
+                "offset": 30,
+                "sort_order": "asc",
+                "status": "enabled",
+                "username_only": "false",
+                "principal_type": None,
+            },
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         for keyname in ["meta", "links", "data"]:
@@ -332,7 +373,14 @@ class PrincipalViewsetTests(IdentityRequest):
             input={"principalStartsWith": "test_us"},
             limit=10,
             offset=30,
-            options={"sort_order": "asc", "status": "enabled", "username_only": "false"},
+            options={
+                "limit": 10,
+                "offset": 30,
+                "sort_order": "asc",
+                "status": "enabled",
+                "username_only": "false",
+                "principal_type": None,
+            },
             org_id=self.customer_data["org_id"],
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -361,7 +409,14 @@ class PrincipalViewsetTests(IdentityRequest):
             input={"principalStartsWith": "test_us", "emailStartsWith": "test"},
             limit=10,
             offset=30,
-            options={"sort_order": "asc", "status": "enabled", "username_only": "false"},
+            options={
+                "limit": 10,
+                "offset": 30,
+                "sort_order": "asc",
+                "status": "enabled",
+                "username_only": "false",
+                "principal_type": None,
+            },
             org_id=self.customer_data["org_id"],
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -425,7 +480,14 @@ class PrincipalViewsetTests(IdentityRequest):
             org_id=ANY,
             limit=10,
             offset=30,
-            options={"sort_order": "desc", "status": "enabled", "username_only": "false"},
+            options={
+                "limit": 10,
+                "offset": 30,
+                "sort_order": "desc",
+                "status": "enabled",
+                "username_only": "false",
+                "principal_type": None,
+            },
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         for keyname in ["meta", "links", "data"]:
@@ -523,7 +585,14 @@ class PrincipalViewsetTests(IdentityRequest):
             input={"primaryEmail": "test_user@example.com"},
             limit=10,
             offset=0,
-            options={"sort_order": "asc", "status": "enabled", "username_only": "false"},
+            options={
+                "limit": 10,
+                "offset": 0,
+                "sort_order": "asc",
+                "status": "enabled",
+                "username_only": "false",
+                "principal_type": None,
+            },
             org_id=self.customer_data["org_id"],
         )
 
@@ -551,7 +620,15 @@ class PrincipalViewsetTests(IdentityRequest):
             account=self.customer_data["account_id"],
             limit=10,
             offset=0,
-            options={"sort_order": "asc", "status": "disabled", "admin_only": "false", "username_only": "false"},
+            options={
+                "limit": 10,
+                "offset": 0,
+                "sort_order": "asc",
+                "status": "disabled",
+                "admin_only": "false",
+                "username_only": "false",
+                "principal_type": None,
+            },
             org_id=self.customer_data["org_id"],
         )
 
@@ -577,7 +654,15 @@ class PrincipalViewsetTests(IdentityRequest):
             account=self.customer_data["account_id"],
             limit=10,
             offset=0,
-            options={"sort_order": "asc", "admin_only": "false", "status": "enabled", "username_only": "false"},
+            options={
+                "limit": 10,
+                "offset": 0,
+                "sort_order": "asc",
+                "admin_only": "false",
+                "status": "enabled",
+                "username_only": "false",
+                "principal_type": None,
+            },
             org_id=self.customer_data["org_id"],
         )
 
@@ -603,7 +688,15 @@ class PrincipalViewsetTests(IdentityRequest):
             account=self.customer_data["account_id"],
             limit=10,
             offset=0,
-            options={"sort_order": "asc", "status": "enabled", "admin_only": "true", "username_only": "false"},
+            options={
+                "limit": 10,
+                "offset": 0,
+                "sort_order": "asc",
+                "status": "enabled",
+                "admin_only": "true",
+                "username_only": "false",
+                "principal_type": None,
+            },
             org_id=self.customer_data["org_id"],
         )
 
@@ -659,8 +752,87 @@ class PrincipalViewsetTests(IdentityRequest):
             input={"emailStartsWith": "test_use"},
             limit=10,
             offset=0,
-            options={"sort_order": "asc", "status": "enabled", "username_only": "false"},
+            options={
+                "limit": 10,
+                "offset": 0,
+                "sort_order": "asc",
+                "status": "enabled",
+                "username_only": "false",
+                "principal_type": None,
+            },
             org_id=self.customer_data["org_id"],
         )
 
         self.assertEqual(resp[0]["username"], "test_user")
+
+    def test_read_principal_invalid_type_query_params(self):
+        """Test that when an invalid "principal type" query parameter is specified, a bad request response is returned"""
+        url = reverse("principals")
+        client = APIClient()
+
+        invalidQueryParams = ["hello", "world", "service-accounts", "users"]
+        for invalidQueryParam in invalidQueryParams:
+            response = client.get(url, {"type": invalidQueryParam}, **self.headers)
+
+            self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_principals",
+        return_value={
+            "status_code": 200,
+            "data": [{"username": "test_user", "account_number": "1234", "org_id": "4321"}],
+        },
+    )
+    def test_read_principal_users(self, mock_request):
+        """Test that when the "user" query parameter is specified, the real users are returned."""
+        # Create a cross_account user in rbac.
+        cross_account_principal = Principal.objects.create(
+            username="cross_account_user", cross_account=True, tenant=self.tenant
+        )
+
+        url = reverse("principals")
+        client = APIClient()
+        response = client.get(url, **self.headers)
+
+        mock_request.assert_called_once_with(
+            account=self.customer_data["account_id"],
+            limit=10,
+            offset=0,
+            options={
+                "limit": 10,
+                "offset": 0,
+                "sort_order": "asc",
+                "status": "enabled",
+                "admin_only": "false",
+                "username_only": "false",
+                "principal_type": None,
+            },
+            org_id=self.customer_data["org_id"],
+        )
+        # /principals/ endpoint won't return the cross_account_principal, which does not exist in IT.
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        for keyname in ["meta", "links", "data"]:
+            self.assertIn(keyname, response.data)
+        self.assertIsInstance(response.data.get("data"), list)
+        self.assertEqual(int(response.data.get("meta").get("count")), 1)
+        self.assertEqual(len(response.data.get("data")), 1)
+
+        principal = response.data.get("data")[0]
+        self.assertCountEqual(list(principal.keys()), ["username", "account_number", "org_id"])
+        self.assertIsNotNone(principal.get("username"))
+        self.assertEqual(principal.get("username"), self.principal.username)
+
+        cross_account_principal.delete()
+
+    def test_fetch_service_accounts(self):
+        """Test fetching service accounts while not providing a token
+
+        Test that when the user request the service accounts without an authorization token, an unauthorized response
+        is returned
+        """
+
+        url = f'{reverse("principals")}?type=service-account'
+        client = APIClient()
+        response: Response = client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)

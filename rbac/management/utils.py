@@ -27,12 +27,13 @@ from management.permissions.principal_access import PrincipalAccessPermission
 from management.principal.proxy import PrincipalProxy
 from rest_framework import serializers, status
 
-from api.models import CrossAccountRequest, Tenant
+from api.models import CrossAccountRequest, Tenant, User
 
 
 USERNAME_KEY = "username"
 APPLICATION_KEY = "application"
 PRINCIPAL_PERMISSION_INSTANCE = PrincipalAccessPermission()
+SERVICE_ACCOUNT_KEY = "service-account"
 
 
 def validate_psk(psk, client_id):
@@ -76,6 +77,13 @@ def get_principal(username, request, verify_principal=True, from_query=False):
         principal = Principal.objects.get(username__iexact=username, tenant=tenant)
     except Principal.DoesNotExist:
         verify_principal_with_proxy(username, request, verify_principal=verify_principal)
+
+        # In the case that the user that made the request was a service account, store it accordingly in the database.
+        user: User = request.user
+        if user and user.is_service_account:
+            principal = Principal.objects.get_or_create(
+                username=user.username, tenant=tenant, type=SERVICE_ACCOUNT_KEY, service_account_id=user.client_id
+            )
 
         # Avoid possible race condition if the user was created while checking BOP
         principal, created = Principal.objects.get_or_create(
@@ -286,7 +294,7 @@ def get_admin_from_proxy(username, request):
     """Return org_admin status of a username from the proxy."""
     bop_resp = verify_principal_with_proxy(username, request, verify_principal=True)
 
-    if bop_resp.get("data") == []:
+    if not bop_resp.get("data"):
         key = "detail"
         message = "No data found for principal with username '{}'.".format(username)
         raise serializers.ValidationError({key: _(message)})

@@ -16,13 +16,18 @@
 #
 
 """View for principal management."""
+import requests
 from management.utils import validate_and_get_key
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from api.common.pagination import StandardResultsSetPagination
+from .it_service import ITService
 from .proxy import PrincipalProxy
+from .unexpected_status_code_from_it import UnexpectedStatusCodeFromITError
+from ..authorization.token_validator import ITSSOTokenValidator, InvalidTokenError, MissingAuthorizationError
+from ..authorization.token_validator import UnableMeetPrerequisitesError
 from ..permissions.principal_access import PrincipalAccessPermission
 
 USERNAMES_KEY = "usernames"
@@ -36,6 +41,8 @@ VALID_STATUS_VALUE = ["enabled", "disabled", "all"]
 ADMIN_ONLY_KEY = "admin_only"
 VALID_BOOLEAN_VALUE = ["true", "false"]
 USERNAME_ONLY_KEY = "username_only"
+PRINCIPAL_TYPE_KEY = "type"
+VALID_PRINCIPAL_TYPE_VALUE = ["service-account", "user"]
 
 
 class PrincipalView(APIView):
@@ -52,6 +59,8 @@ class PrincipalView(APIView):
 
     @apiParam (Query) {Number} offset Parameter for selecting the start of data (default is 0).
     @apiParam (Query) {Number} limit Parameter for selecting the amount of data (default is 10).
+    @apiParam (Query) {String} type Parameter for selecting the type of principal to be returned
+                                    (either "service-account" or "user").
 
     @apiSuccess {Object} meta The metadata for pagination.
     @apiSuccess {Object} links  The object containing links of results.
@@ -96,6 +105,8 @@ class PrincipalView(APIView):
         try:
             limit = int(query_params.get("limit", default_limit))
             offset = int(query_params.get("offset", 0))
+            options["limit"] = limit
+            options["offset"] = offset
             options["sort_order"] = validate_and_get_key(query_params, SORTORDER_KEY, VALID_SORTORDER_VALUE, "asc")
             options["status"] = validate_and_get_key(query_params, STATUS_KEY, VALID_STATUS_VALUE, "enabled")
         except ValueError:
@@ -111,7 +122,93 @@ class PrincipalView(APIView):
         if offset - limit > 0:
             previous_offset = offset - limit
 
-        resp, usernames_filter = self.users_from_proxy(user, query_params, options, limit, offset)
+        # Attempt validating and obtaining the "prinicpal type" query
+        # parameter.
+        principal_type = validate_and_get_key(
+            query_params, PRINCIPAL_TYPE_KEY, VALID_PRINCIPAL_TYPE_VALUE, required=False
+        )
+        options["principal_type"] = principal_type
+
+        # Get either service accounts or user principals, depending on what the user specified.
+        if principal_type == "service-account":
+            bearer_token: str = None
+            try:
+                # Attempt validating the JWT token.
+                token_validator = ITSSOTokenValidator()
+                bearer_token = token_validator.validate_token(request=request)
+            except MissingAuthorizationError:
+                return Response(
+                    status=status.HTTP_401_UNAUTHORIZED,
+                    data={
+                        "errors": [
+                            {
+                                "detail": "The authorization header is required for fetching service accounts.",
+                                "source": "principals",
+                                "status": str(status.HTTP_401_UNAUTHORIZED),
+                            }
+                        ]
+                    },
+                )
+            except InvalidTokenError:
+                return Response(
+                    status=status.HTTP_401_UNAUTHORIZED,
+                    data={
+                        "errors": [
+                            {
+                                "detail": "Invalid token provided.",
+                                "source": "principals",
+                                "status": str(status.HTTP_401_UNAUTHORIZED),
+                            }
+                        ]
+                    },
+                )
+            except UnableMeetPrerequisitesError:
+                return Response(
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    data={
+                        "errors": [
+                            {
+                                "detail": "Unable to validate token.",
+                                "source": "principals",
+                                "status": str(status.HTTP_500_INTERNAL_SERVER_ERROR),
+                            }
+                        ]
+                    },
+                )
+
+            options["email"] = query_params.get(EMAIL_KEY)
+            options["match_criteria"] = validate_and_get_key(
+                query_params, MATCH_CRITERIA_KEY, VALID_MATCH_VALUE, required=False
+            )
+            options["username_only"] = validate_and_get_key(
+                query_params, USERNAME_ONLY_KEY, VALID_BOOLEAN_VALUE, required=False
+            )
+            options["usernames"] = query_params.get(USERNAMES_KEY)
+
+            # Fetch the service accounts from IT.
+            try:
+                it_service = ITService()
+                service_accounts = it_service.get_service_accounts(
+                    user=user, bearer_token=bearer_token, options=options
+                )
+            except (requests.exceptions.ConnectionError, UnexpectedStatusCodeFromITError):
+                return Response(
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    data={
+                        "errors": [
+                            {
+                                "detail": "Unexpected internal error.",
+                                "source": "principals",
+                                "status": str(status.HTTP_500_INTERNAL_SERVER_ERROR),
+                            }
+                        ]
+                    },
+                )
+
+            # Adapt the response object to reuse the code below.
+            resp = {"status_code": status.HTTP_200_OK, "data": service_accounts}
+        else:
+            resp, usernames_filter = self.users_from_proxy(user, query_params, options, limit, offset)
 
         status_code = resp.get("status_code")
         response_data = {}

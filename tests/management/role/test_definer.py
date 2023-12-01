@@ -104,7 +104,7 @@ class RoleDefinerTests(IdentityRequest):
 
     @patch("core.kafka.RBACProducer.send_kafka_message")
     def test_role_update_platform_default_role(self, send_kafka_message):
-        """Test that role seeding updates send out notificaiton."""
+        """Test that role seeding updates send out notification."""
         kafka_mock = copy_call_args(send_kafka_message)
         self.try_seed_roles()
 
@@ -198,7 +198,7 @@ class RoleDefinerTests(IdentityRequest):
         for relation in ext_relations:
             self.assertIsNotNone(relation.role)
 
-        # Update relatoin to point to a new role. Seed again would update relation back.
+        # Update relation to point to a new role. Seed again would update relation back.
         ext_relation = ExtRoleRelation.objects.first()
         origin_role = ext_relation.role
         ext_relation.role = Role.objects.get(name="RBAC Administrator Local Test")

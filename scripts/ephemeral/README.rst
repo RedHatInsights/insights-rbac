@@ -48,4 +48,3 @@ Running makefile tasks
 6. Release the Namespace (this will happen automatically at the end of the reserve time)::
 
     $ make ephemeral-release
-

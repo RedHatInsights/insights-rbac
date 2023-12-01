@@ -163,7 +163,7 @@ class PrincipalProxy:  # pylint: disable=too-few-public-methods
         """Send request to proxy service."""
         metrics_method = method.__name__.upper()
         if params and params.get("username_only") == "true":
-            principals = Principal.objects.all()
+            principals = Principal.objects.filter(type="user")
             if data and "users" in data:
                 principals = principals.filter(username__in=data["users"])
             data = [dict(username=principal.username) for principal in principals]
@@ -172,7 +172,7 @@ class PrincipalProxy:  # pylint: disable=too-few-public-methods
         if settings.BYPASS_BOP_VERIFICATION:
             to_return = []
             if data is None:
-                for principal in Principal.objects.all():
+                for principal in Principal.objects.filter(type="user"):
                     to_return.append(
                         dict(
                             username=principal.username,
@@ -180,12 +180,20 @@ class PrincipalProxy:  # pylint: disable=too-few-public-methods
                             last_name="bar",
                             email="baz",
                             user_id="51736777",
+                            type=principal.type,
                         )
                     )
             elif "users" in data:
                 for principal in data["users"]:
                     to_return.append(
-                        dict(username=principal, first_name="foo", last_name="bar", email="baz", user_id=principal)
+                        dict(
+                            username=principal,
+                            first_name="foo",
+                            last_name="bar",
+                            email="baz",
+                            user_id=principal,
+                            type="user",
+                        )
                     )
             elif "primaryEmail" in data:
                 # We can't fake a lookup for an email address, so we won't try.

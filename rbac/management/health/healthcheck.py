@@ -14,26 +14,19 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
+"""Celery Task for Redis Health Check."""
 
-"""Model for principal management."""
-from uuid import uuid4
+import logging
+import time
 
-from django.db import models
+from management.cache import BasicCache
 
-from api.models import TenantAwareModel
+logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 
-class Principal(TenantAwareModel):
-    """A principal."""
+def redis_health():
+    """Check health of redis cache."""
+    time.sleep(10)
 
-    uuid = models.UUIDField(default=uuid4, editable=False, unique=True, null=False)
-    username = models.CharField(max_length=150)
-    cross_account = models.BooleanField(default=False)
-    type = models.TextField(null=False, default="user")
-    service_account_id = models.TextField()
-
-    class Meta:
-        ordering = ["username"]
-        constraints = [
-            models.UniqueConstraint(fields=["username", "tenant"], name="unique principal username per tenant")
-        ]
+    redis_cache = BasicCache()
+    redis_cache.redis_health_check()

@@ -15,7 +15,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Test the principal proxy."""
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
 from django.test import TestCase
 from rest_framework import status
@@ -72,7 +72,7 @@ def mocked_requests_get_200_json(*args, **kwargs):  # pylint: disable=unused-arg
 
 
 def mocked_requests_get_200_json_count(*args, **kwargs):  # pylint: disable=unused-argument
-    """Mock valid response that returns json with usercount."""
+    """Mock valid response that returns json with userCount."""
     user1 = {
         "username": "test_user1",
         "email": "test_user1@email.foo",

@@ -1,4 +1,4 @@
-version: '3'
+version: '3.9'
 
 services:
   rbac-server:
@@ -44,7 +44,17 @@ services:
       links:
         - db
       depends_on:
-        - db
+        db:
+          condition: service_healthy
+        rbac-worker:
+          condition: service_healthy
+        rbac-scheduler:
+          condition: service_healthy
+      healthcheck:
+        test: curl -q http://localhost:8080/metrics
+        interval: 5s
+        timeout: 5s
+        retries: 10
 
   rbac-worker:
       container_name: rbac_worker
@@ -57,7 +67,13 @@ services:
       links:
           - redis
       depends_on:
-          - redis
+        redis:
+          condition: service_healthy
+      healthcheck:
+        test: [ "CMD-SHELL", "celery --broker=redis://redis:6379/0 -A rbac.celery status" ]
+        interval: 30s
+        timeout: 10s
+        retries: 3
 
   rbac-scheduler:
       container_name: rbac_scheduler
@@ -70,13 +86,24 @@ services:
       links:
           - redis
       depends_on:
-          - redis
+        redis:
+          condition: service_healthy
+      healthcheck:
+        test: [ "CMD-SHELL", "celery --broker=redis://redis:6379/0 -A rbac.celery status" ]
+        interval: 30s
+        timeout: 10s
+        retries: 3
 
   redis:
     container_name: rbac_redis
     image: redis:5.0.4
     ports:
       - "6379:6379"
+    healthcheck:
+      test: [ "CMD-SHELL", "redis-cli ping | grep PONG" ]
+      interval: 1s
+      timeout: 3s
+      retries: 5
 
   db:
     container_name: rbac_db
@@ -89,6 +116,20 @@ services:
       - "15432:5432"
     volumes:
       - ./pg_data:/var/lib/postgresql/data:z
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U postgres" ]
+      interval: 5s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+  wait_for_app:
+    container_name: wait_for_app
+    image: hello-world:latest
+    depends_on:
+      rbac-server:
+        condition: service_healthy
+
 networks:
   default:
     name: rbac-network

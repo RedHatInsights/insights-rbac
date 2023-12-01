@@ -34,12 +34,14 @@ def error_obj(key, message):
 
 
 def add_padding(encoded_header):
-    """Calculate and add padding to header.
+    """
+    Calculate and add padding to a Base64 encoded header string.
 
     Args:
-        header(str): The header to decode
+        encoded_header (str): The Base64 encoded header without padding.
+
     Returns:
-        Encoded(str): Base64 header with padding
+        str: The Base64 encoded header with padding added to make its length a multiple of 4.
     """
     return encoded_header + "=" * (-len(encoded_header) % 4)
 
@@ -55,7 +57,6 @@ def extract_header(request, header):
         Decoded(dict): Identity dictionary
     """
     rh_auth_header = request.META[header]
-    decoded_rh_auth = None
     try:
         decoded_rh_auth = b64decode(rh_auth_header)
     except binascii.Error as err:
@@ -65,7 +66,7 @@ def extract_header(request, header):
         rh_auth_header = add_padding(rh_auth_header)
         decoded_rh_auth = b64decode(rh_auth_header)
     json_rh_auth = json_loads(decoded_rh_auth)
-    return (rh_auth_header, json_rh_auth)
+    return rh_auth_header, json_rh_auth
 
 
 def create_tenant_name(account):
