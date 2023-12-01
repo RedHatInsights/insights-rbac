@@ -15,13 +15,24 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 
-"""API views for import organization"""
-# flake8: noqa
-# pylint: disable=unused-import
-from management.principal.view import PrincipalView
-from management.group.view import GroupViewSet
-from management.role.view import RoleViewSet
-from management.policy.view import PolicyViewSet
-from management.access.view import AccessView
-from management.permission.view import PermissionViewSet
-from management.audit_log.view import AuditLogViewSet
+"""View for Audit Logs."""
+from management.models import AuditLog
+from management.serializers import AuditLogSerializer
+from rest_framework import mixins, viewsets
+from rest_framework.permissions import AllowAny
+
+
+class AuditLogViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
+    """Audit Logs View.
+
+    A viewset that provides default `list()` actions.
+
+    """
+
+    queryset = AuditLog.objects.all()
+    serializer_class = AuditLogSerializer
+    permission_classes = (AllowAny,)
+
+    def get(self, request, *args, **kwargs):
+        """List all of the audiit logs that are stored within database."""
+        return super().list(request=request, args=args, kwargs=kwargs)
