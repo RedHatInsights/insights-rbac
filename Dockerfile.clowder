@@ -12,16 +12,16 @@ ENV NODEJS_VERSION=10 \
     UPGRADE_PIP_TO_LATEST=true
 
 LABEL summary="$SUMMARY" \
-      description="$DESCRIPTION" \
-      io.k8s.description="$DESCRIPTION" \
-      io.k8s.display-name="insights-rbac" \
-      io.openshift.expose-services="8080:http" \
-      io.openshift.tags="python,python36,rh-python36" \
-      com.redhat.component="python36-docker" \
-      name="insights-rbac" \
-      version="1" \
-      maintainer="Red Hat Insights"
-
+    description="$DESCRIPTION" \
+    io.k8s.description="$DESCRIPTION" \
+    io.k8s.display-name="insights-rbac" \
+    io.openshift.expose-services="8080:http" \
+    io.openshift.tags="python,python36,rh-python36" \
+    com.redhat.component="python36-docker" \
+    name="insights-rbac" \
+    version="1" \
+    maintainer="Red Hat Insights"
+    
 USER 0
 COPY Pipfile Pipfile
 COPY Pipfile.lock Pipfile.lock
