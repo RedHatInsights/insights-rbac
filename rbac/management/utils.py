@@ -137,24 +137,19 @@ def access_for_roles(roles, param_applications):
     return set(access)
 
 
-def groups_for_principal(principal: Principal, tenant, **kwargs):
+def groups_for_principal(principal, tenant, **kwargs):
     """Gathers all groups for a principal, including the default."""
     if principal.cross_account:
         return set()
     assigned_group_set = principal.group.all()
     public_tenant = Tenant.objects.get(tenant_name="public")
-    platform_default_group_set = Group.platform_default_set().filter(tenant=tenant)
+    platform_default_group_set = Group.platform_default_set().filter(
+        tenant=tenant
+    ) or Group.platform_default_set().filter(tenant=public_tenant)
 
-    # Service accounts should not get any access details related to the default groups.
-    if not platform_default_group_set and principal.type == "user":
-        platform_default_group_set = Group.platform_default_set().filter(tenant=public_tenant)
-
-    admin_default_group_set = Group.admin_default_set().filter(tenant=tenant)
-
-    # Same as above, the default admin group should only be fetched for the users.
-    if not admin_default_group_set and principal.type == "user":
-        Group.admin_default_set().filter(tenant=public_tenant)
-
+    admin_default_group_set = Group.admin_default_set().filter(tenant=tenant) or Group.admin_default_set().filter(
+        tenant=public_tenant
+    )
     prefetch_lookups = kwargs.get("prefetch_lookups_for_groups")
 
     if prefetch_lookups:
