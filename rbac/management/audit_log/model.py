@@ -56,7 +56,10 @@ class AuditLog(models.Model):
         """Audit Log when group or user is created."""
         self.requester = request.user.username
         self.description = "Created " + request.data["name"]
-        self.resource = resource
+        if resource == "role":
+            self.resource = AuditLog.ROLE
+        elif resource == "group":
+            self.resource = AuditLog.GROUP
         self.action = AuditLog.CREATE
         super(AuditLog, self).save()
 
@@ -69,7 +72,10 @@ class AuditLog(models.Model):
             raise ValueError
         self.requester = request._user.username
         self.description = "Deleted " + get_object_name
-        self.resource = resource
+        if resource == "role":
+            self.resource = AuditLog.ROLE
+        elif resource == "group":
+            self.resource = AuditLog.GROUP
         self.action = AuditLog.DELETE
         super(AuditLog, self).save()
 
@@ -77,6 +83,9 @@ class AuditLog(models.Model):
         """Audit log when a group or user is edited."""
         self.requester = request.user.username
         self.description = "Edited " + request.data["name"]
-        self.resource = resource
+        if resource == "role":
+            self.resource = AuditLog.ROLE
+        elif resource == "group":
+            self.resource = AuditLog.GROUP
         self.action = AuditLog.EDIT
         super(AuditLog, self).save()
