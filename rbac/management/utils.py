@@ -153,7 +153,7 @@ def groups_for_principal(principal: Principal, tenant, **kwargs):
 
     # Same as above, the default admin group should only be fetched for the users.
     if not admin_default_group_set and principal.type == "user":
-        Group.admin_default_set().filter(tenant=public_tenant)
+        admin_default_group_set = Group.admin_default_set().filter(tenant=public_tenant)
 
     prefetch_lookups = kwargs.get("prefetch_lookups_for_groups")
 
