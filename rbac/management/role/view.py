@@ -28,12 +28,19 @@ from django.db.models.aggregates import Count
 from django.http import Http404
 from django.utils.translation import gettext as _
 from django_filters import rest_framework as filters
+from management.audit_log.model import AuditLog
 from management.filters import CommonFilters
 from management.models import Permission
-from management.notifications.notification_handlers import role_obj_change_notification_handler
+from management.notifications.notification_handlers import (
+    role_obj_change_notification_handler,
+)
 from management.permissions import RoleAccessPermission
 from management.querysets import get_role_queryset
-from management.role.serializer import AccessSerializer, RoleDynamicSerializer, RolePatchSerializer
+from management.role.serializer import (
+    AccessSerializer,
+    RoleDynamicSerializer,
+    RolePatchSerializer,
+)
 from management.utils import validate_uuid
 from rest_framework import mixins, serializers, status, viewsets
 from rest_framework.decorators import action
@@ -75,8 +82,12 @@ class RoleFilter(CommonFilters):
         applications = values.split(",")
         query = Q()
         for application in applications:
-            app_permission_filter = Q(access__permission__permission__istartswith=f"{application}:")
-            app_external_tenant_filter = Q(ext_relation__ext_tenant__name__iexact=application)
+            app_permission_filter = Q(
+                access__permission__permission__istartswith=f"{application}:"
+            )
+            app_external_tenant_filter = Q(
+                ext_relation__ext_tenant__name__iexact=application
+            )
             query = query | app_permission_filter | app_external_tenant_filter
         return queryset.distinct().filter(query)
 
@@ -84,7 +95,9 @@ class RoleFilter(CommonFilters):
         """Filter to lookup role by application(s) in permissions."""
         permissions = values.split(",")
 
-        return queryset.filter(access__permission__permission__in=permissions).distinct()
+        return queryset.filter(
+            access__permission__permission__in=permissions
+        ).distinct()
 
     def display_name_filter(self, queryset, field, value):
         """Filter to lookup display_name, partial or exact."""
@@ -95,11 +108,17 @@ class RoleFilter(CommonFilters):
         return queryset.filter(ext_relation__ext_tenant__name__iexact=value)
 
     name = filters.CharFilter(field_name="name", method="name_filter")
-    display_name = filters.CharFilter(field_name="display_name", method="display_name_filter")
-    application = filters.CharFilter(field_name="application", method="application_filter")
+    display_name = filters.CharFilter(
+        field_name="display_name", method="display_name_filter"
+    )
+    application = filters.CharFilter(
+        field_name="application", method="application_filter"
+    )
     permission = filters.CharFilter(field_name="permission", method="permission_filter")
     system = filters.BooleanFilter(field_name="system")
-    external_tenant = filters.CharFilter(field_name="external_tenant", method="external_tenant_filter")
+    external_tenant = filters.CharFilter(
+        field_name="external_tenant", method="external_tenant_filter"
+    )
 
     class Meta:
         model = Role
@@ -138,7 +157,9 @@ class RoleViewSet(
         """Get serializer class based on route."""
         if self.request.path.endswith("roles/") and self.request.method == "GET":
             return RoleDynamicSerializer
-        if self.request.method == "PATCH" and re.match(".*/roles/.*/$", self.request.path):
+        if self.request.method == "PATCH" and re.match(
+            ".*/roles/.*/$", self.request.path
+        ):
             return RolePatchSerializer
         return RoleSerializer
 
@@ -148,7 +169,9 @@ class RoleViewSet(
         kwargs["context"] = self.get_serializer_context()
 
         if self.action == "list":
-            kwargs["fields"] = self.validate_and_get_additional_field_key(self.request.query_params)
+            kwargs["fields"] = self.validate_and_get_additional_field_key(
+                self.request.query_params
+            )
 
         return serializer_class(*args, **kwargs)
 
@@ -209,7 +232,13 @@ class RoleViewSet(
             }
         """
         self.validate_role(request)
-        return super().create(request=request, args=args, kwargs=kwargs)
+        create_role = super().create(request=request, args=args, kwargs=kwargs)
+
+        # Add the changes to the Audit Log database
+        if status.is_success(create_role.status_code):
+            auditlog = AuditLog()
+            auditlog.log_create(request, "role")
+            return create_role
 
     def list(self, request, *args, **kwargs):
         """Obtain the list of roles for the tenant.
@@ -323,6 +352,11 @@ class RoleViewSet(
         with transaction.atomic():
             self.delete_policies_if_no_role_attached(role)
             response = super().destroy(request=request, args=args, kwargs=kwargs)
+
+            # Add the changes to the Audit Log database
+            auditlog = AuditLog()
+            auditlog.log_delete(request, role, "role", args=args, kwargs=kwargs)
+
         if response.status_code == status.HTTP_204_NO_CONTENT:
             role_obj_change_notification_handler(role, "deleted", request.user)
         return response
@@ -337,7 +371,16 @@ class RoleViewSet(
                 message = f"Field '{field}' is not supported. Please use one or more of: {VALID_PATCH_FIELDS}."
                 error = {key: [_(message)]}
                 raise serializers.ValidationError(error)
-        return super().update(request=request, args=args, kwargs=kwargs)
+        patch_role = super().update(request=request, args=args, kwargs=kwargs)
+        
+        #Add the changes to the audit logs database
+        if status.is_success(patch_role.status_code):
+            if payload == {}:
+                return patch_role
+            else:
+                auditlog = AuditLog()
+                auditlog.log_edit(request, "role")
+                return patch_role
 
     def update(self, request, *args, **kwargs):
         """Update a role.
@@ -399,7 +442,13 @@ class RoleViewSet(
         """
         validate_uuid(kwargs.get("uuid"), "role uuid validation")
         self.validate_role(request)
-        return super().update(request=request, args=args, kwargs=kwargs)
+        edit_role = super().update(request=request, args=args, kwargs=kwargs)
+
+        #Add changes to the Audit Log database
+        if status.is_success(edit_role.status_code):
+            auditlog = AuditLog()
+            auditlog.edit_data(request, "role")
+            return edit_role
 
     @action(detail=True, methods=["get"])
     def access(self, request, uuid=None):
@@ -419,7 +468,9 @@ class RoleViewSet(
         access_list = data.get("access")
         if not isinstance(access_list, list):
             key = "access"
-            message = "A list of access is expected, but {} is found.".format(type(access_list).__name__)
+            message = "A list of access is expected, but {} is found.".format(
+                type(access_list).__name__
+            )
             error = {key: [_(message)]}
             raise serializers.ValidationError(error)
         for access in access_list:
@@ -466,9 +517,13 @@ class RoleViewSet(
                     error = {key: [_(message)]}
                     raise serializers.ValidationError(error)
 
-                required_permissions = list(db_permission.permissions.all().values_list("permission", flat=True))
+                required_permissions = list(
+                    db_permission.permissions.all().values_list("permission", flat=True)
+                )
                 if required_permissions:
-                    all_required_permissions_sent = all(perm in sent_permissions for perm in required_permissions)
+                    all_required_permissions_sent = all(
+                        perm in sent_permissions for perm in required_permissions
+                    )
                     if not all_required_permissions_sent:
                         key = "role"
                         message = f"Permission '{db_permission.permission}' requires: '{required_permissions}'"
