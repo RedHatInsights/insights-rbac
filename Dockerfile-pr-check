@@ -1,0 +1,22 @@
+FROM registry.access.redhat.com/ubi8/python-39:latest
+WORKDIR $APP_ROOT
+USER root
+COPY Pipfile .
+COPY Pipfile.lock .
+COPY tox.ini .
+COPY requirements.txt .
+COPY Makefile .
+
+# install related pip dependencies
+ENV PIP_DEFAULT_TIMEOUT=100
+RUN pip install --upgrade pip
+RUN pip install pipenv
+RUN pip install tox
+RUN pipenv install --deploy && \
+    pipenv --clear
+
+#copy the src files
+COPY . .
+
+#Add command to run tox 
+CMD ["tox"]

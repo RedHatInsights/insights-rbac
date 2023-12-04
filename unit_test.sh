@@ -1,27 +1,62 @@
-# Deploy ephemeral db
-source $CICD_ROOT/deploy_ephemeral_db.sh
+#!/bin/bash
 
-# Map env vars set by `deploy_ephemeral_db.sh` if vars the app uses are different
-export PGPASSWORD=$DATABASE_ADMIN_PASSWORD
+set -ex
+export CONTAINER_NAME="rbac-pr-check"
+export IMAGE_TAG="rbac:pr-check"
 
-python3 -m venv app-venv
-source app-venv/bin/activate
-pip install --upgrade pip setuptools wheel pipenv tox psycopg2-binary
-tox -r
-result=$?
-source .bonfire_venv/bin/activate
+# spin up the db for integration tests
+DB_CONTAINER="rbac-$(uuidgen)"
+echo "Spinning up container: ${DB_CONTAINER}"
 
-# TODO: add unittest-xml-reporting to rbac so that junit results can be parsed by jenkins
+docker run -d \
+    --name $DB_CONTAINER \
+    -p 5432 \
+    -e POSTGRESQL_USER=root \
+    -e POSTGRESQL_PASSWORD=root \
+    -e POSTGRESQL_DATABASE=rbac \
+    quay.io/cloudservices/postgresql-rds:14-1
+
+PORT=$(docker inspect $DB_CONTAINER | grep HostPort | sort | uniq | grep -o [0-9]*)
+echo "DB Listening on Port: ${PORT}"
+
+export DATABASE_HOST=localhost
+export DATABASE_PORT=$PORT
+export DATABASE_USER=root
+export DATABASE_PASSWORD=root
+export DATABASE_NAME=rbac
+
+echo "Running tests...here we go"
+
+# Build PR_CHECK Image
+docker build -f './Dockerfile-pr-check' --label $CONTAINER_NAME --tag $IMAGE_TAG .
+
+# Build PR_Check Container
+docker run -i --rm --name $CONTAINER_NAME \
+    -e DATABASE_NAME=$DATABASE_NAME \
+    -e DATABASE_HOST=$DATABASE_HOST \
+    -e DATABASE_PORT=$DATABASE_PORT \
+    -e DATABASE_USER=$DATABASE_USER \
+    -e DATABASE_PASSWORD=$DATABASE_PASSWORD \
+    --net=host \
+    $IMAGE_TAG tox
+
+OUT_CODE=$?
+
+echo "Killing DB Container..."
+docker kill $DB_CONTAINER
+echo "Removing DB Container..."
+docker rm -f $DB_CONTAINER
+
+
+if [[ $OUT_CODE != 0 ]]; then
+    exit 1
+fi
+
+# Pass Jenkins dummy artifacts as it needs
+# an xml output to consider the job a success.
 mkdir -p $WORKSPACE/artifacts
 cat << EOF > $WORKSPACE/artifacts/junit-dummy.xml
 <testsuite tests="1">
     <testcase classname="dummy" name="dummytest"/>
 </testsuite>
 EOF
-
-if [ $result -ne 0 ]; then
-  echo '====================================='
-  echo '====  ✖ ERROR: UNIT TEST FAILED  ===='
-  echo '====================================='
-  exit 1
-fi
