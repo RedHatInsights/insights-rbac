@@ -28,12 +28,19 @@ from django.db.models.aggregates import Count
 from django.http import Http404
 from django.utils.translation import gettext as _
 from django_filters import rest_framework as filters
+from management.audit_log.model import AuditLog
 from management.filters import CommonFilters
 from management.models import Permission
-from management.notifications.notification_handlers import role_obj_change_notification_handler
+from management.notifications.notification_handlers import (
+    role_obj_change_notification_handler,
+)
 from management.permissions import RoleAccessPermission
 from management.querysets import get_role_queryset
-from management.role.serializer import AccessSerializer, RoleDynamicSerializer, RolePatchSerializer
+from management.role.serializer import (
+    AccessSerializer,
+    RoleDynamicSerializer,
+    RolePatchSerializer,
+)
 from management.utils import validate_uuid
 from rest_framework import mixins, serializers, status, viewsets
 from rest_framework.decorators import action
@@ -209,7 +216,13 @@ class RoleViewSet(
             }
         """
         self.validate_role(request)
-        return super().create(request=request, args=args, kwargs=kwargs)
+        create_role = super().create(request=request, args=args, kwargs=kwargs)
+
+        # Add the changes to the audit log database
+        if status.is_success(create_role.status_code):
+            auditlog = AuditLog()
+            auditlog.log_create(request, AuditLog.ROLE)
+            return create_role
 
     def list(self, request, *args, **kwargs):
         """Obtain the list of roles for the tenant.
@@ -323,6 +336,11 @@ class RoleViewSet(
         with transaction.atomic():
             self.delete_policies_if_no_role_attached(role)
             response = super().destroy(request=request, args=args, kwargs=kwargs)
+
+            # Add  changes to audit log database
+            auditlog = AuditLog()
+            auditlog.log_delete(request, role, AuditLog.ROLE, args=args, kwargs=kwargs)
+
         if response.status_code == status.HTTP_204_NO_CONTENT:
             role_obj_change_notification_handler(role, "deleted", request.user)
         return response
@@ -337,7 +355,16 @@ class RoleViewSet(
                 message = f"Field '{field}' is not supported. Please use one or more of: {VALID_PATCH_FIELDS}."
                 error = {key: [_(message)]}
                 raise serializers.ValidationError(error)
-        return super().update(request=request, args=args, kwargs=kwargs)
+        patch_role = super().update(request=request, args=args, kwargs=kwargs)
+
+        # Add changes to audit log database
+        if status.is_success(patch_role.status_code):
+            if payload == {}:
+                return patch_role
+            else:
+                auditlog = AuditLog()
+                auditlog.log_edit(request, AuditLog.ROLE)
+                return patch_role
 
     def update(self, request, *args, **kwargs):
         """Update a role.
@@ -399,7 +426,13 @@ class RoleViewSet(
         """
         validate_uuid(kwargs.get("uuid"), "role uuid validation")
         self.validate_role(request)
-        return super().update(request=request, args=args, kwargs=kwargs)
+        edit_role = super().update(request=request, args=args, kwargs=kwargs)
+
+        # Add changes to the Audit Log database
+        if status.is_success(edit_role.status_code):
+            auditlog = AuditLog()
+            auditlog.log_edit(request, AuditLog.ROLE)
+            return edit_role
 
     @action(detail=True, methods=["get"])
     def access(self, request, uuid=None):

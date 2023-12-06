@@ -25,6 +25,7 @@ from django.db import transaction
 from django.db.models.aggregates import Count
 from django.utils.translation import gettext as _
 from django_filters import rest_framework as filters
+from management.audit_log.model import AuditLog
 from management.filters import CommonFilters
 from management.group.definer import add_roles, remove_roles, set_system_flag_before_update
 from management.group.model import Group
@@ -226,7 +227,12 @@ class GroupViewSet(
             }
         """
         validate_group_name(request.data.get("name"))
-        return super().create(request=request, args=args, kwargs=kwargs)
+        create_group = super().create(request=request, args=args, kwargs=kwargs)
+        if status.is_success(create_group.status_code):
+            # Add to the changes to the audit log database
+            auditlog = AuditLog()
+            auditlog.log_create(request, AuditLog.GROUP)
+            return create_group
 
     def list(self, request, *args, **kwargs):
         """Obtain the list of groups for the tenant.
@@ -331,6 +337,11 @@ class GroupViewSet(
         self.protect_system_groups("delete")
         group = self.get_object()
         response = super().destroy(request=request, args=args, kwargs=kwargs)
+
+        # Add changes to the audit log database
+        auditlog = AuditLog()
+        auditlog.log_delete(request, group, AuditLog.GROUP, AuditLog.DELETE, args=args, kwargs=kwargs)
+
         if response.status_code == status.HTTP_204_NO_CONTENT:
             group_obj_change_notification_handler(request.user, group, "deleted")
         return response
@@ -359,7 +370,14 @@ class GroupViewSet(
         """
         validate_uuid(kwargs.get("uuid"), "group uuid validation")
         self.protect_system_groups("update")
-        return super().update(request=request, args=args, kwargs=kwargs)
+
+        edit_group = super().update(request=request, args=args, kwargs=kwargs)
+
+        if status.is_success(edit_group.status_code):
+            # Add changes to audit log database
+            auditlog = AuditLog()
+            auditlog.log_edit(request, AuditLog.GROUP)
+            return edit_group
 
     def add_principals(self, group, principals, account=None, org_id=None):
         """Process list of principals and add them to the group."""
