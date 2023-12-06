@@ -55,7 +55,10 @@ class GroupViewsetTests(IdentityRequest):
         TENANTS.delete_tenant(test_tenant_org_id)
 
         self.test_tenant = Tenant(
-            tenant_name="acct1111111", account_id="1111111", org_id=test_tenant_org_id, ready=True
+            tenant_name="acct1111111",
+            account_id="1111111",
+            org_id=test_tenant_org_id,
+            ready=True,
         )
         self.test_tenant.save()
         self.test_principal = Principal(username="test_user", tenant=self.test_tenant)
@@ -66,7 +69,11 @@ class GroupViewsetTests(IdentityRequest):
         self.test_principalC.save()
         user_data = {"username": "test_user", "email": "test@gmail.com"}
         test_request_context = self._create_request_context(
-            {"account_id": "1111111", "tenant_name": "acct1111111", "org_id": test_tenant_org_id},
+            {
+                "account_id": "1111111",
+                "tenant_name": "acct1111111",
+                "org_id": test_tenant_org_id,
+            },
             user_data,
             is_org_admin=True,
         )
@@ -83,7 +90,10 @@ class GroupViewsetTests(IdentityRequest):
         self.group = Group(name="groupA", tenant=self.tenant)
         self.group.save()
         self.role = Role.objects.create(
-            name="roleA", description="A role for a group.", system=True, tenant=self.tenant
+            name="roleA",
+            description="A role for a group.",
+            system=True,
+            tenant=self.tenant,
         )
         self.ext_tenant = ExtTenant.objects.create(name="foo")
         self.ext_role_relation = ExtRoleRelation.objects.create(role=self.role, ext_tenant=self.ext_tenant)
@@ -94,14 +104,29 @@ class GroupViewsetTests(IdentityRequest):
         self.group.principals.add(self.principal, self.principalB)
         self.group.save()
 
-        self.defGroup = Group(name="groupDef", platform_default=True, system=True, tenant=self.public_tenant)
+        self.defGroup = Group(
+            name="groupDef",
+            platform_default=True,
+            system=True,
+            tenant=self.public_tenant,
+        )
         self.defGroup.save()
         self.defGroup.principals.add(self.principal, self.test_principal)
         self.defGroup.save()
-        self.defPolicy = Policy(name="defPolicy", system=True, tenant=self.public_tenant, group=self.defGroup)
+        self.defPolicy = Policy(
+            name="defPolicy",
+            system=True,
+            tenant=self.public_tenant,
+            group=self.defGroup,
+        )
         self.defPolicy.save()
 
-        self.adminGroup = Group(name="groupAdmin", admin_default=True, tenant=self.public_tenant, system=True)
+        self.adminGroup = Group(
+            name="groupAdmin",
+            admin_default=True,
+            tenant=self.public_tenant,
+            system=True,
+        )
         self.adminGroup.save()
         self.adminGroup.principals.add(self.principal, self.test_principal)
         self.adminGroup.save()
@@ -157,6 +182,24 @@ class GroupViewsetTests(IdentityRequest):
             response = client.post(url, test_data, format="json", **self.headers)
             uuid = response.data.get("uuid")
             self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+            # test that created group is added correctly within audit logs
+            al_url = "/api/v1/auditlogs/"
+            al_client = APIClient()
+            al_response = al_client.get(al_url, **self.headers)
+            retrieve_data = al_response.data.get("data")
+            al_list = retrieve_data
+            al_dict = al_list[0]
+
+            al_dict_requester = al_dict["requester"]
+            al_dict_description = al_dict["description"]
+            al_dict_resource = al_dict["resource"]
+            al_dict_action = al_dict["action"]
+
+            self.assertEqual(self.user_data["username"], al_dict_requester)
+            self.assertIsNotNone(al_dict_description)
+            self.assertEqual(al_dict_resource, "group")
+            self.assertEqual(al_dict_action, "create")
 
             # test that we can retrieve the group
             url = reverse("group-detail", kwargs={"uuid": response.data.get("uuid")})
@@ -433,7 +476,12 @@ class GroupViewsetTests(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         response_group_uuids = [group["uuid"] for group in response.data.get("data")]
         self.assertCountEqual(
-            response_group_uuids, [str(self.defGroup.uuid), str(system_group.uuid), str(self.adminGroup.uuid)]
+            response_group_uuids,
+            [
+                str(self.defGroup.uuid),
+                str(system_group.uuid),
+                str(self.adminGroup.uuid),
+            ],
         )
 
     def test_filter_group_list_by_system_false(self):
@@ -458,7 +506,10 @@ class GroupViewsetTests(IdentityRequest):
     def test_filter_group_list_by_platform_default_true(self):
         """Test that we can filter a list of groups by platform_default flag true."""
         default_group = Group.objects.create(
-            name="Platform Default", platform_default=True, system=False, tenant=self.tenant
+            name="Platform Default",
+            platform_default=True,
+            system=False,
+            tenant=self.tenant,
         )
 
         url = f"{reverse('group-list')}?platform_default=true"
@@ -493,7 +544,10 @@ class GroupViewsetTests(IdentityRequest):
     def test_filter_group_list_by_admin_default_true(self):
         """Test that we can filter a list of groups by admin default flag true."""
         default_group = Group.objects.create(
-            name="Default admin access", admin_default=True, system=False, tenant=self.tenant
+            name="Default admin access",
+            admin_default=True,
+            system=False,
+            tenant=self.tenant,
         )
 
         url = f"{reverse('group-list')}?admin_default=true"
@@ -571,6 +625,24 @@ class GroupViewsetTests(IdentityRequest):
                 },
                 ANY,
             )
+
+        # test that updated group is added correctly within audit logs
+        al_url = "/api/v1/auditlogs/"
+        al_client = APIClient()
+        al_response = al_client.get(al_url, **self.headers)
+        retrieve_data = al_response.data.get("data")
+        al_list = retrieve_data
+        al_dict = al_list[0]
+
+        al_dict_requester = al_dict["requester"]
+        al_dict_description = al_dict["description"]
+        al_dict_resource = al_dict["resource"]
+        al_dict_action = al_dict["action"]
+
+        self.assertEqual(self.user_data["username"], al_dict_requester)
+        self.assertIsNotNone(al_dict_description)
+        self.assertEqual(al_dict_resource, "group")
+        self.assertEqual(al_dict_action, "edit")
 
     def test_update_default_group(self):
         """Test that platform_default groups are protected from updates"""
@@ -669,6 +741,24 @@ class GroupViewsetTests(IdentityRequest):
                 ANY,
             )
 
+        # test that deleted group log is added correctly within audit logs
+        al_url = "/api/v1/auditlogs/"
+        al_client = APIClient()
+        al_response = al_client.get(al_url, **self.headers)
+        retrieve_data = al_response.data.get("data")
+        al_list = retrieve_data
+        al_dict = al_list[0]
+
+        al_dict_requester = al_dict["requester"]
+        al_dict_description = al_dict["description"]
+        al_dict_resource = al_dict["resource"]
+        al_dict_action = al_dict["action"]
+
+        self.assertEqual(self.user_data["username"], al_dict_requester)
+        self.assertIsNotNone(al_dict_description)
+        self.assertEqual(al_dict_resource, "group")
+        self.assertEqual(al_dict_action, "delete")
+
     def test_delete_default_group(self):
         """Test that platform_default groups are protected from deletion"""
         url = reverse("group-detail", kwargs={"uuid": self.defGroup.uuid})
@@ -682,11 +772,21 @@ class GroupViewsetTests(IdentityRequest):
         becomes default for the tenant
         """
         client = APIClient()
-        customDefGroup = Group(name="customDefGroup", platform_default=True, system=False, tenant=self.tenant)
+        customDefGroup = Group(
+            name="customDefGroup",
+            platform_default=True,
+            system=False,
+            tenant=self.tenant,
+        )
         customDefGroup.save()
         customDefGroup.principals.add(self.test_principal)
         customDefGroup.save()
-        customDefPolicy = Policy(name="customDefPolicy", system=True, tenant=self.tenant, group=customDefGroup)
+        customDefPolicy = Policy(
+            name="customDefPolicy",
+            system=True,
+            tenant=self.tenant,
+            group=customDefGroup,
+        )
         customDefPolicy.save()
 
         url = f"{reverse('group-list')}?platform_default=true"
@@ -742,7 +842,12 @@ class GroupViewsetTests(IdentityRequest):
         url = reverse("group-principals", kwargs={"uuid": self.group.uuid})
         client = APIClient()
         new_username = uuid4()
-        test_data = {"principals": [{"username": self.principal.username}, {"username": new_username}]}
+        test_data = {
+            "principals": [
+                {"username": self.principal.username},
+                {"username": new_username},
+            ]
+        }
         response = client.post(url, test_data, format="json", **self.headers)
         self.assertEqual(response.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
         self.assertEqual(response.data[0]["detail"], "Unexpected error.")
@@ -792,7 +897,12 @@ class GroupViewsetTests(IdentityRequest):
             url = reverse("group-principals", kwargs={"uuid": test_group.uuid})
             client = APIClient()
             username = "test_add_user"
-            test_data = {"principals": [{"username": username}, {"username": cross_account_user.username}]}
+            test_data = {
+                "principals": [
+                    {"username": username},
+                    {"username": cross_account_user.username},
+                ]
+            }
 
             response = client.post(url, test_data, format="json", **self.headers)
             principal = Principal.objects.get(username=username)
@@ -902,7 +1012,12 @@ class GroupViewsetTests(IdentityRequest):
         mock_request.assert_called_with(
             ANY,
             org_id=ANY,
-            options={"sort_order": None, "username_only": "false", "admin_only": True, "principal_type": None},
+            options={
+                "sort_order": None,
+                "username_only": "false",
+                "admin_only": True,
+                "principal_type": None,
+            },
         )
 
         self.assertTrue(self.principal.username in username_arg)
@@ -976,7 +1091,10 @@ class GroupViewsetTests(IdentityRequest):
         client = APIClient()
         response = client.delete(url, format="json", **self.headers)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertEqual(str(response.data.get("errors")[0].get("detail")), f"{invalid_uuid} is not a valid UUID.")
+        self.assertEqual(
+            str(response.data.get("errors")[0].get("detail")),
+            f"{invalid_uuid} is not a valid UUID.",
+        )
 
     def test_remove_group_principals_invalid_username(self):
         """Test that removing a principal returns an error for invalid username."""
@@ -1339,14 +1457,22 @@ class GroupViewsetTests(IdentityRequest):
         if settings.AUTHENTICATE_WITH_ORG_ID:
             mock_request.assert_called_with(
                 [],
-                options={"sort_order": None, "username_only": "false", "principal_type": None},
+                options={
+                    "sort_order": None,
+                    "username_only": "false",
+                    "principal_type": None,
+                },
                 org_id=self.customer_data["org_id"],
             )
         else:
             mock_request.assert_called_with(
                 [],
                 account=self.customer_data["account_id"],
-                options={"sort_order": None, "username_only": "false", "principal_type": None},
+                options={
+                    "sort_order": None,
+                    "username_only": "false",
+                    "principal_type": None,
+                },
             )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(principals), 0)
@@ -1366,7 +1492,11 @@ class GroupViewsetTests(IdentityRequest):
         if settings.AUTHENTICATE_WITH_ORG_ID:
             mock_request.assert_called_with(
                 [self.principal.username],
-                options={"sort_order": None, "username_only": "false", "principal_type": None},
+                options={
+                    "sort_order": None,
+                    "username_only": "false",
+                    "principal_type": None,
+                },
                 org_id=self.customer_data["org_id"],
             )
         else:
@@ -1393,14 +1523,22 @@ class GroupViewsetTests(IdentityRequest):
         if settings.AUTHENTICATE_WITH_ORG_ID:
             mock_request.assert_called_with(
                 expected_principals,
-                options={"sort_order": "asc", "username_only": "false", "principal_type": None},
+                options={
+                    "sort_order": "asc",
+                    "username_only": "false",
+                    "principal_type": None,
+                },
                 org_id=self.customer_data["org_id"],
             )
         else:
             mock_request.assert_called_with(
                 expected_principals,
                 account=self.customer_data["account_id"],
-                options={"sort_order": "asc", "username_only": "false", "principal_type": None},
+                options={
+                    "sort_order": "asc",
+                    "username_only": "false",
+                    "principal_type": None,
+                },
             )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(principals), 1)
@@ -1525,7 +1663,10 @@ class GroupViewsetTests(IdentityRequest):
                                     "username": self.user_data["username"],
                                     "uuid": str(custom_default_group.uuid),
                                     "operation": "added",
-                                    "role": {"uuid": str(self.roleB.uuid), "name": self.roleB.name},
+                                    "role": {
+                                        "uuid": str(self.roleB.uuid),
+                                        "name": self.roleB.name,
+                                    },
                                 },
                             }
                         ],
@@ -1613,7 +1754,10 @@ class GroupViewsetTests(IdentityRequest):
                                     "username": self.user_data["username"],
                                     "uuid": str(custom_default_group.uuid),
                                     "operation": "removed",
-                                    "role": {"uuid": str(default_role.uuid), "name": default_role.name},
+                                    "role": {
+                                        "uuid": str(default_role.uuid),
+                                        "name": default_role.name,
+                                    },
                                 },
                             }
                         ],
@@ -1715,7 +1859,10 @@ class GroupViewsetTests(IdentityRequest):
                                     "username": self.user_data["username"],
                                     "uuid": str(groupC.uuid),
                                     "operation": "added",
-                                    "role": {"uuid": str(self.role.uuid), "name": self.role.name},
+                                    "role": {
+                                        "uuid": str(self.role.uuid),
+                                        "name": self.role.name,
+                                    },
                                 },
                             }
                         ],
@@ -1739,7 +1886,10 @@ class GroupViewsetTests(IdentityRequest):
                                     "username": self.user_data["username"],
                                     "uuid": str(groupC.uuid),
                                     "operation": "added",
-                                    "role": {"uuid": str(self.roleB.uuid), "name": self.roleB.name},
+                                    "role": {
+                                        "uuid": str(self.roleB.uuid),
+                                        "name": self.roleB.name,
+                                    },
                                 },
                             }
                         ],
@@ -1842,7 +1992,10 @@ class GroupViewsetTests(IdentityRequest):
                                     "username": self.user_data["username"],
                                     "uuid": str(self.group.uuid),
                                     "operation": "removed",
-                                    "role": {"uuid": str(self.role.uuid), "name": self.role.name},
+                                    "role": {
+                                        "uuid": str(self.role.uuid),
+                                        "name": self.role.name,
+                                    },
                                 },
                             }
                         ],
@@ -1866,7 +2019,10 @@ class GroupViewsetTests(IdentityRequest):
                                     "username": self.user_data["username"],
                                     "uuid": str(self.group.uuid),
                                     "operation": "removed",
-                                    "role": {"uuid": str(self.roleB.uuid), "name": self.roleB.name},
+                                    "role": {
+                                        "uuid": str(self.roleB.uuid),
+                                        "name": self.roleB.name,
+                                    },
                                 },
                             }
                         ],
@@ -1979,7 +2135,15 @@ class GroupViewNonAdminTests(IdentityRequest):
         self.headers = request.META
         self.access_data = {
             "permission": "app:*:*",
-            "resourceDefinitions": [{"attributeFilter": {"key": "key1", "operation": "equal", "value": "value1"}}],
+            "resourceDefinitions": [
+                {
+                    "attributeFilter": {
+                        "key": "key1",
+                        "operation": "equal",
+                        "value": "value1",
+                    }
+                }
+            ],
         }
 
         self.principal = Principal(username=self.user_data["username"], tenant=self.tenant)
@@ -1993,7 +2157,10 @@ class GroupViewNonAdminTests(IdentityRequest):
         self.roleB = Role.objects.create(name="roleB", system=False, tenant=self.tenant)
         self.roleB.save()
         self.role = Role.objects.create(
-            name="roleA", description="A role for a group.", system=False, tenant=self.tenant
+            name="roleA",
+            description="A role for a group.",
+            system=False,
+            tenant=self.tenant,
         )
         self.role.save()
 
