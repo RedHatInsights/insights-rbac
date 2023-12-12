@@ -132,6 +132,7 @@ def add_roles(group, roles_or_role_ids, tenant, user=None):
     roles = Role.objects.filter(
         Q(tenant=tenant) | Q(tenant=Tenant.objects.get(tenant_name="public")), name__in=role_names
     )
+    role_list = []
     for role in roles:
         accesses = role.access.all()
         for access in accesses:
@@ -145,6 +146,8 @@ def add_roles(group, roles_or_role_ids, tenant, user=None):
 
             # Send notifications
             group_role_change_notification_handler(user, group, role, "added")
+            role_list.append(role)
+    return role_list
 
 
 def remove_roles(group, roles_or_role_ids, tenant, user=None):
