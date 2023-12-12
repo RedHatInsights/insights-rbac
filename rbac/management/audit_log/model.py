@@ -110,7 +110,6 @@ class AuditLog(models.Model):
 
     def log_add(self, request, group, item, who):
         """Audit log when a role or user/principal is added to a group."""
-
         self.requester = request.user.username
         group_name = group.name
 

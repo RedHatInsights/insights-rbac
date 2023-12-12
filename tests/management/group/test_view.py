@@ -684,7 +684,6 @@ class GroupViewsetTests(IdentityRequest):
         username = "test_user"
         test_data = {"principals": [{"username": username}, {"username": "cross_account_user"}]}
         response = client.post(url, test_data, format="json", **self.headers)
-        print(response)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
     def test_update_group_invalid(self):
@@ -954,6 +953,7 @@ class GroupViewsetTests(IdentityRequest):
             self.assertIsNotNone(al_dict_description)
             self.assertEqual(al_dict_resource, "user")
             self.assertEqual(al_dict_action, "add")
+
     @patch(
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
         return_value={"status_code": 200, "data": []},
@@ -1600,7 +1600,7 @@ class GroupViewsetTests(IdentityRequest):
         self.assertEqual(system_policy.tenant, self.tenant)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
-        # test that when roles are added to the group, the action is logged correctly to group 
+        # test that when roles are added to the group, the action is logged correctly to group
         al_url = "/api/v1/auditlogs/"
         al_client = APIClient()
         al_response = al_client.get(al_url, **self.headers)
@@ -1616,7 +1616,6 @@ class GroupViewsetTests(IdentityRequest):
             self.assertIsNotNone(al_dict_description)
             self.assertEqual(al_dict_resource, "role")
             self.assertEqual(al_dict_action, "add")
-
 
     @patch("core.kafka.RBACProducer.send_kafka_message")
     def test_system_flag_update_on_add(self, send_kafka_message):
@@ -1829,13 +1828,12 @@ class GroupViewsetTests(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(responseB.status_code, status.HTTP_200_OK)
 
-        # test when multiple roles are added to the group, the action is logged correctly to group 
+        # test when multiple roles are added to the group, the action is logged correctly to group
         al_url = "/api/v1/auditlogs/"
         al_client = APIClient()
         al_response = al_client.get(al_url, **self.headers)
         retrieve_data = al_response.data.get("data")
         al_list = retrieve_data
-        print(al_list)
         for al_dict in al_list:
             al_dict_requester = al_dict["requester"]
             al_dict_description = al_dict["description"]
@@ -1846,7 +1844,6 @@ class GroupViewsetTests(IdentityRequest):
             self.assertIsNotNone(al_dict_description)
             self.assertEqual(al_dict_resource, "role")
             self.assertEqual(al_dict_action, "add")
-
 
     def test_add_group_roles_system_policy_get_success(self):
         """Test that adding a role to a group with existing system policy returns successfully."""
@@ -1873,7 +1870,7 @@ class GroupViewsetTests(IdentityRequest):
         self.assertEqual(roles[0].get("description"), self.role.description)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
-        # test that when roles are added to the group, the action is logged correctly to group 
+        # test that when roles are added to the group, the action is logged correctly to group
         al_url = "/api/v1/auditlogs/"
         al_client = APIClient()
         al_response = al_client.get(al_url, **self.headers)
@@ -1969,8 +1966,8 @@ class GroupViewsetTests(IdentityRequest):
                 ),
             ]
             kafka_mock.assert_has_calls(notification_messages, any_order=True)
-        
-        # test when multiple roles are added to the group, the action is logged correctly to group 
+
+        # test when multiple roles are added to the group, the action is logged correctly to group
         al_url = "/api/v1/auditlogs/"
         al_client = APIClient()
         al_response = al_client.get(al_url, **self.headers)
