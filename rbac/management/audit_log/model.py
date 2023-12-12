@@ -107,3 +107,23 @@ class AuditLog(models.Model):
         self.resource = resource
         self.action = AuditLog.EDIT
         super(AuditLog, self).save()
+
+    def log_add(self, request, group, item, who):
+        """Audit log when a role or user/principal is added to a group."""
+
+        self.requester = request.user.username
+        group_name = group.name
+
+        if who == "role":
+            role_name = item.display_name
+            self.description = "Added role " + role_name + " to group " + group_name
+            self.resource = AuditLog.ROLE
+        elif who == "user":
+            user_name = item
+            self.description = "Added user " + user_name + " to group " + group_name
+            self.resource = AuditLog.USER
+        else:
+            ValueError("Not role, user, or permission that is being added")
+
+        self.action = AuditLog.ADD
+        super(AuditLog, self).save()
