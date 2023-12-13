@@ -129,7 +129,7 @@ You can modify this header to add new users to your tenant by changing the `user
 
 This will allow you to simulate a JWT or basic-auth request from the gateway.
 
-Serivce to Service Requests
+Service to Service Requests
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 RBAC also allows for service-to-service requests. These requests require a PSK, and some additional headers in order to authorize the request as an "admin". To test this locally, do the following:
