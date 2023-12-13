@@ -17,6 +17,7 @@
 
 """Model for audit logging."""
 from django.db import models
+from django.utils import timezone
 
 
 class AuditLog(models.Model):
@@ -46,7 +47,7 @@ class AuditLog(models.Model):
         (REMOVE, "Remove"),
     )
 
-    date = models.DateField(auto_now_add=True)
+    created_at = models.DateTimeField(default=timezone.now)
     requester = models.TextField(max_length=255, null=False)
     description = models.TextField(max_length=255, null=False)
     resource = models.CharField(max_length=32, choices=RESOURCE_CHOICES)
@@ -66,7 +67,7 @@ class AuditLog(models.Model):
         if get_uuid == str(object.uuid):
             get_object_name = object.name
         else:
-            raise ValueError
+            raise ValueError("Object name is not available/wrong.")
         self.requester = request._user.username
         self.description = "Deleted " + get_object_name
         self.resource = resource
@@ -76,7 +77,33 @@ class AuditLog(models.Model):
     def log_edit(self, request, resource):
         """Audit log when a group or user is edited."""
         self.requester = request.user.username
-        self.description = "Edited " + request.data["name"]
+        if resource == AuditLog.GROUP:
+            if "description" not in request.data:
+                self.description = "Edited group name to " + request.data["name"]
+            else:
+                self.description = (
+                    "Edited group name to "
+                    + request.data["name"]
+                    + " and group description to "
+                    + request.data["description"]
+                )
+        if resource == AuditLog.ROLE:
+            if "description" not in request.data and "name" in request.data:
+                self.description = "Edited role name to " + request.data["name"]
+            elif "display_name" in request.data:
+                self.description = (
+                    "Edited role name to "
+                    + request.data["name"]
+                    + " and role display_name to "
+                    + request.data["display_name"]
+                )
+            else:
+                self.description = (
+                    "Edited role name to "
+                    + request.data["name"]
+                    + " and role description to "
+                    + request.data["description"]
+                )
         self.resource = resource
         self.action = AuditLog.EDIT
         super(AuditLog, self).save()
