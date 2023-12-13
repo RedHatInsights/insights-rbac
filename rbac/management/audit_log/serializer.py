@@ -1,5 +1,5 @@
 #
-# Copyright 2019 Red Hat, Inc.
+# Copyright 2023 Red Hat, Inc.
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -36,7 +36,7 @@ class AuditLogSerializer(serializers.ModelSerializer):
         ("create", AuditLog.CREATE),
         ("remove", AuditLog.REMOVE),
     )
-    date = serializers.DateField(required=True)
+    created_at = serializers.DateTimeField(required=True)
     requester = serializers.CharField(required=True, max_length=255)
     description = serializers.CharField(required=True, max_length=255)
     resource = serializers.ChoiceField(choices=RESOURCE_CHOICES)
@@ -44,4 +44,4 @@ class AuditLogSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = AuditLog
-        fields = ("date", "requester", "description", "resource", "action")
+        fields = ("created_at", "requester", "description", "resource", "action")
