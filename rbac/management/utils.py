@@ -143,17 +143,19 @@ def groups_for_principal(principal: Principal, tenant, **kwargs):
         return set()
     assigned_group_set = principal.group.all()
     public_tenant = Tenant.objects.get(tenant_name="public")
-    platform_default_group_set = Group.platform_default_set().filter(tenant=tenant)
 
-    # Service accounts should not get any access details related to the default groups.
-    if not platform_default_group_set and principal.type == "user":
-        platform_default_group_set = Group.platform_default_set().filter(tenant=public_tenant)
-
-    admin_default_group_set = Group.admin_default_set().filter(tenant=tenant)
-
-    # Same as above, the default admin group should only be fetched for the users.
-    if not admin_default_group_set and principal.type == "user":
-        admin_default_group_set = Group.admin_default_set().filter(tenant=public_tenant)
+    # Service accounts should not get permissions from any of the default groups. The customers need to explicitly add
+    # the service accounts to new RBAC groups and assign them permissions.
+    if principal.type == "service-account":
+        admin_default_group_set = Group.objects.filter(admin_default=False).filter(tenant=tenant)
+        platform_default_group_set = Group.objects.filter(platform_default=False).filter(tenant=tenant)
+    else:
+        admin_default_group_set = Group.admin_default_set().filter(tenant=tenant) or Group.admin_default_set().filter(
+            tenant=public_tenant
+        )
+        platform_default_group_set = Group.platform_default_set().filter(
+            tenant=tenant
+        ) or Group.platform_default_set().filter(tenant=public_tenant)
 
     prefetch_lookups = kwargs.get("prefetch_lookups_for_groups")
 
