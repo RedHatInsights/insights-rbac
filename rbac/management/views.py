@@ -24,3 +24,16 @@ from management.role.view import RoleViewSet
 from management.policy.view import PolicyViewSet
 from management.access.view import AccessView
 from management.permission.view import PermissionViewSet
+from rest_framework.views import APIView
+from rest_framework.response import Response
+
+
+# Mock for SpiceDB
+class SpiceDb(APIView):
+    import json
+
+    permission_classes = []
+
+    def post(self, request):
+        data = json.loads(request.data)
+        return Response({"success": "true"}, status=400)
