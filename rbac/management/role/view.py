@@ -28,6 +28,7 @@ from django.db.models.aggregates import Count
 from django.http import Http404
 from django.utils.translation import gettext as _
 from django_filters import rest_framework as filters
+from management.decorators import SpiceDb
 from management.filters import CommonFilters
 from management.models import Permission
 from management.notifications.notification_handlers import role_obj_change_notification_handler
@@ -152,6 +153,7 @@ class RoleViewSet(
 
         return serializer_class(*args, **kwargs)
 
+    @SpiceDb.sync
     def create(self, request, *args, **kwargs):
         """Create a roles.
 
