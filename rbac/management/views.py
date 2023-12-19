@@ -35,5 +35,5 @@ class SpiceDb(APIView):
     permission_classes = []
 
     def post(self, request):
-        data = json.loads(request.data)
+        print(f"***** SpiceDB Received POST With: {request.data} *****")
         return Response({"success": "true"}, status=400)
