@@ -40,12 +40,9 @@ class SpiceDb:
                         view_response = view_method(self, request, *args, **kwargs)
                         spice_db_response = _call_spice_db(view_response, request, **options)
                         spice_db_response.raise_for_status()
-                        zed_token = spice_db_response.json()["zed_token"]
-                        logger.info(f"SpiceDB token received: {zed_token}")
-                        query = options["resource_type"].objects.filter(uuid=view_response.data["uuid"])
-                        query.update(zed_token=zed_token)
+                        _persist_zed_token(view_response, spice_db_response)
                     # except "transaction commit issue" as e:
-                    #     call SpiceDB to clean up records?
+                    #     call SpiceDB to clean up relations?
                     except requests.exceptions.ReadTimeout as e:
                         view_response = _error_response(f"Dependent SpiceDB call timed out: {e}")
                     except requests.exceptions.RequestException as e:
@@ -60,6 +57,11 @@ class SpiceDb:
                     return view_response
 
             return _sync
+
+        def _persist_zed_token(view_response, spice_db_response):
+            zed_token = spice_db_response.json()["zed_token"]
+            query = options["resource_type"].objects.filter(uuid=view_response.data["uuid"])
+            query.update(zed_token=zed_token)
 
         def _call_spice_db(view_response, request, **options):
             data = {
