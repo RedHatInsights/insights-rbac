@@ -15,12 +15,16 @@
 #    along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Decorators for management module."""
+import logging
+
 import requests
 from django.db import transaction
 from rest_framework import status
 from rest_framework.response import Response
 
 from rbac.settings import SPICE_DB_URL
+
+logger = logging.getLogger(__name__)
 
 
 class SpiceDb:
@@ -34,34 +38,35 @@ class SpiceDb:
                 with transaction.atomic():
                     try:
                         view_response = view_method(self, request, *args, **kwargs)
-                        data = {
-                            "resource_type": options["resource_type"],
-                            "action": options["action"],
-                            "resource": view_response.data,
-                        }
-                        spice_db_response = requests.post(f"{SPICE_DB_URL}/api/rbac/v1/spicedb/", json=data)
+                        spice_db_response = _call_spice_db(view_response, **options)
                         spice_db_response.raise_for_status()
                     except requests.exceptions.RequestException as e:
-                        transaction.set_rollback(True)
-                        view_response = Response(
-                            {
-                                "errors": [
-                                    {
-                                        "detail": f"Dependent SpiceDB call failed with: {e.response.reason}",
-                                        "spice_db_status": spice_db_response.status_code,
-                                    }
-                                ]
-                            },
-                            status=status.HTTP_424_FAILED_DEPENDENCY,
+                        error_msg = (
+                            f"Dependent SpiceDB call failed with a "
+                            f"{spice_db_response.status_code}: {e.response.reason} for: {view_response.data}"
                         )
+                        view_response = _error_response(error_msg)
                     except Exception as e:
-                        transaction.set_rollback(True)
-                        view_response = Response(
-                            {"errors": [{"detail": f"Failed to save record with: {e}"}]},
-                            status=status.HTTP_424_FAILED_DEPENDENCY,
-                        )
+                        error_msg = f"Failed to save record with: {e}"
+                        view_response = _error_response(error_msg)
                     return view_response
 
             return _sync
+
+        def _call_spice_db(view_response, **options):
+            data = {
+                "resource_type": options["resource_type"],
+                "action": options["action"],
+                "resource": view_response.data,
+            }
+            return requests.post(f"{SPICE_DB_URL}/api/rbac/v1/spicedb/", json=data)
+
+        def _error_response(error_msg):
+            _rollback_and_log(error_msg)
+            return Response({"errors": [{"detail": error_msg}]}, status=status.HTTP_424_FAILED_DEPENDENCY)
+
+        def _rollback_and_log(error_msg):
+            transaction.set_rollback(True)
+            logger.error(error_msg)
 
         return _sync_wrapper
