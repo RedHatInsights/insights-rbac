@@ -22,7 +22,7 @@ from django.db import transaction
 from rest_framework import status
 from rest_framework.response import Response
 
-from rbac.settings import SPICE_DB_URL
+from rbac.settings import SPICE_DB_TIMEOUT, SPICE_DB_URL
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +40,8 @@ class SpiceDb:
                         view_response = view_method(self, request, *args, **kwargs)
                         spice_db_response = _call_spice_db(view_response, **options)
                         spice_db_response.raise_for_status()
+                    except requests.exceptions.ReadTimeout as e:
+                        view_response = _error_response(f"Dependent SpiceDB call timed out: {e}")
                     except requests.exceptions.RequestException as e:
                         error_msg = (
                             f"Dependent SpiceDB call failed with a "
@@ -59,7 +61,7 @@ class SpiceDb:
                 "action": options["action"],
                 "resource": view_response.data,
             }
-            return requests.post(f"{SPICE_DB_URL}/api/rbac/v1/spicedb/", json=data)
+            return requests.post(f"{SPICE_DB_URL}/api/rbac/v1/spicedb/", json=data, timeout=SPICE_DB_TIMEOUT)
 
         def _error_response(error_msg):
             _rollback_and_log(error_msg)
