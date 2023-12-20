@@ -38,8 +38,9 @@ class SpiceDb:
                 with transaction.atomic():
                     try:
                         view_response = view_method(self, request, *args, **kwargs)
-                        spice_db_response = _call_spice_db(view_response, **options)
+                        spice_db_response = _call_spice_db(view_response, request, **options)
                         spice_db_response.raise_for_status()
+                        logger.info(f"SpiceDB token received: {spice_db_response.json()['spice_db_token']}")
                     except requests.exceptions.ReadTimeout as e:
                         view_response = _error_response(f"Dependent SpiceDB call timed out: {e}")
                     except requests.exceptions.RequestException as e:
@@ -55,11 +56,12 @@ class SpiceDb:
 
             return _sync
 
-        def _call_spice_db(view_response, **options):
+        def _call_spice_db(view_response, request, **options):
             data = {
                 "resource_type": options["resource_type"],
                 "action": options["action"],
                 "resource": view_response.data,
+                "mock_status": request.data.get("mock_status", "400"),
             }
             return requests.post(f"{SPICE_DB_URL}/api/rbac/v1/spicedb/", json=data, timeout=SPICE_DB_TIMEOUT)
 

@@ -26,14 +26,17 @@ from management.access.view import AccessView
 from management.permission.view import PermissionViewSet
 from rest_framework.views import APIView
 from rest_framework.response import Response
+import uuid
 
 
 # Mock for SpiceDB
 class SpiceDb(APIView):
-    import json
-
     permission_classes = []
 
     def post(self, request):
         print(f"***** SpiceDB Received POST With: {request.data} *****")
-        return Response({"success": "true"}, status=400)
+        status = request.data["mock_status"]
+        if status == "200":
+            return Response({"success": "true", "spice_db_token": uuid.uuid4()}, status=200)
+        else:
+            return Response({"success": "false"}, status=status)
