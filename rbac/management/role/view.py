@@ -153,7 +153,7 @@ class RoleViewSet(
 
         return serializer_class(*args, **kwargs)
 
-    @SpiceDb.sync(resource_type="role", action="create")
+    @SpiceDb.sync(resource_type=Role, action="create")
     def create(self, request, *args, **kwargs):
         """Create a roles.
 

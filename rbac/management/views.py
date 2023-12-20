@@ -37,6 +37,6 @@ class SpiceDb(APIView):
         print(f"***** SpiceDB Received POST With: {request.data} *****")
         status = request.data["mock_status"]
         if status == "200":
-            return Response({"success": "true", "spice_db_token": uuid.uuid4()}, status=200)
+            return Response({"success": "true", "zed_token": uuid.uuid4()}, status=200)
         else:
             return Response({"success": "false"}, status=status)
