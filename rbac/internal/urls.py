@@ -77,7 +77,7 @@ urlpatterns = [
     path("api/utils/ocm_performance/", views.ocm_performance),
     path("api/utils/get_org_admin/<int:org_or_account>/", views.get_org_admin),
     path("api/utils/roles/<uuid:role_uuid>/", views.role_removal),
-    path("api/utils/permissions/<uuid:permission_uuid>/", views.permission_removal),
+    path("api/utils/permission/", views.permission_removal),
 ]
 
 urlpatterns.extend(integration_urlpatterns)

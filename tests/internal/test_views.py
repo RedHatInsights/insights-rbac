@@ -15,6 +15,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Test the internal viewset."""
+from uuid import uuid4
 from rest_framework import status
 from rest_framework.test import APIClient
 from django.conf import settings
@@ -26,7 +27,7 @@ import pytz
 import json
 
 from api.models import User, Tenant
-from management.models import Group, Policy, Role
+from management.models import Group, Permission, Policy, Role
 from tests.identity_request import IdentityRequest
 
 
@@ -325,8 +326,8 @@ class InternalViewsetTests(IdentityRequest):
 
     def test_get_org_admin_bad_connection(self):
         """Test getting the org admin and failing to connect to BOP."""
-        response = self.client.get(f"/_private/api/utils/get_org_admin/123456/?type=account_id", **self.request.META)
-        expected_message = f"Unable to connect for URL"
+        response = self.client.get("/_private/api/utils/get_org_admin/123456/?type=account_id", **self.request.META)
+        expected_message = "Unable to connect for URL"
         self.assertEqual(response.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
         self.assertIn(expected_message, response.content.decode())
 
@@ -338,7 +339,7 @@ class InternalViewsetTests(IdentityRequest):
         mockresponse.json.return_value = {"userCount": "1", "users": [{"username": "test_user"}]}
         users = [{"username": "test_user"}]
         mock_proxy.get.return_value = mockresponse
-        response = self.client.get(f"/_private/api/utils/get_org_admin/123456/?type=account_id", **self.request.META)
+        response = self.client.get("/_private/api/utils/get_org_admin/123456/?type=account_id", **self.request.META)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         string_data = response.content.decode()
         dictionary_data = eval(string_data.replace("null", "None"))
@@ -352,7 +353,7 @@ class InternalViewsetTests(IdentityRequest):
         mockresponse.json.return_value = {"userCount": "1", "users": [{"username": "test_user"}]}
         users = [{"username": "test_user"}]
         mock_proxy.get.return_value = mockresponse
-        response = self.client.get(f"/_private/api/utils/get_org_admin/123456/?type=org_id", **self.request.META)
+        response = self.client.get("/_private/api/utils/get_org_admin/123456/?type=org_id", **self.request.META)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         string_data = response.content.decode()
         dictionary_data = eval(string_data.replace("null", "None"))
@@ -365,8 +366,50 @@ class InternalViewsetTests(IdentityRequest):
         mockresponse.status_code = 500
         mockresponse.json.return_value = {"error": "some error"}
         mock_proxy.get.return_value = mockresponse
-        response = self.client.get(f"/_private/api/utils/get_org_admin/123456/?type=org_id", **self.request.META)
+        response = self.client.get("/_private/api/utils/get_org_admin/123456/?type=org_id", **self.request.META)
         self.assertEqual(response.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
         string_data = response.content.decode()
         dictionary_data = eval(string_data.replace("null", "None"))
         self.assertEqual(dictionary_data, mockresponse.json.return_value)
+
+    @override_settings(INTERNAL_DESTRUCTIVE_API_OK_UNTIL=invalid_destructive_time())
+    def test_delete_selective_roles_disallowed(self):
+        """Test that we cannot delete selective roles when disallowed."""
+        response = self.client.delete(f"/_private/api/utils/roles/{self.role.uuid}/", **self.request.META)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.content.decode(), "Destructive operations disallowed.")
+
+    @override_settings(INTERNAL_DESTRUCTIVE_API_OK_UNTIL=valid_destructive_time())
+    def test_delete_selective_roles(self):
+        """Test that we can delete selective roles when allowed and no roles."""
+        response = self.client.delete(f"/_private/api/utils/roles/{uuid4()}/", **self.request.META)
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+        response = self.client.delete(f"/_private/api/utils/roles/{self.role.uuid}/", **self.request.META)
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+
+    @override_settings(INTERNAL_DESTRUCTIVE_API_OK_UNTIL=invalid_destructive_time())
+    def test_delete_selective_permission_disallowed(self):
+        """Test that we cannot delete selective permission when disallowed."""
+        response = self.client.delete("/_private/api/utils/permission/", **self.request.META)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.content.decode(), "Destructive operations disallowed.")
+
+    @override_settings(INTERNAL_DESTRUCTIVE_API_OK_UNTIL=valid_destructive_time())
+    def test_delete_selective_permission(self):
+        """Test that we can delete selective permission when allowed and no permissions."""
+        # No permission param specified
+        response = self.client.delete("/_private/api/utils/permission/", **self.request.META)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+        # No permission found
+        response = self.client.delete(
+            "/_private/api/utils/permission/?permission=rbac:roles:write", **self.request.META
+        )
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+        Permission.objects.create(permission="rbac:roles:write", tenant=self.tenant)
+        response = self.client.delete(
+            "/_private/api/utils/permission/?permission=rbac:roles:write", **self.request.META
+        )
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
