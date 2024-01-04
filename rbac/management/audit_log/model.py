@@ -18,6 +18,7 @@
 """Model for audit logging."""
 from django.db import models
 from django.utils import timezone
+from management.principal.model import Principal
 
 from api.models import TenantAwareModel
 
@@ -50,7 +51,9 @@ class AuditLog(TenantAwareModel):
     )
 
     created = models.DateTimeField(default=timezone.now)
-    requester = models.TextField(max_length=255, null=False)
+    principal = models.ForeignKey(Principal, on_delete=models.CASCADE, null=True, to_field="id")
+    principal_username = models.TextField(max_length=255, null=False)
     description = models.TextField(max_length=255, null=False)
     resource = models.CharField(max_length=32, choices=RESOURCE_CHOICES)
+    resource_id = models.CharField(max_length=32, null=True)
     action = models.CharField(max_length=32, choices=ACTION_CHOICES)
