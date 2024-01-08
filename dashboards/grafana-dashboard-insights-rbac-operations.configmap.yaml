@@ -1,7 +1,8 @@
 apiVersion: v1
 data:
-  rbac-grafana-prod-new.json: |-
+  new_rbac_dashboard.json: |-
     {
+      "__inputs": [],
       "__elements": {},
       "__requires": [
         {
@@ -224,7 +225,8 @@ data:
         },
         {
           "datasource": {
-              "uid": "$datasource"
+            "type": "prometheus",
+            "uid": "$datasource"
           },
           "fieldConfig": {
             "defaults": {
@@ -271,10 +273,10 @@ data:
           "targets": [
             {
               "datasource": {
-                 "uid": "$datasource"
+                "uid": "$datasource"
               },
               "editorMode": "code",
-              "expr": "sum(redis_enable_cache_get_total{job=\"rbac-service\"})",
+              "expr": "sum(increase(redis_enable_cache_get_total{job=\"rbac-service\"}[$__range]))",
               "legendFormat": "__auto",
               "range": true,
               "refId": "A"
@@ -285,7 +287,8 @@ data:
         },
         {
           "datasource": {
-              "uid": "$datasource"
+            "type": "prometheus",
+            "uid": "$datasource"
           },
           "fieldConfig": {
             "defaults": {
@@ -335,7 +338,7 @@ data:
                 "uid": "$datasource"
               },
               "editorMode": "code",
-              "expr": "sum(redis_disable_cache_get_total{job=\"rbac-service\"})",
+              "expr": "sum(increase(redis_disable_cache_get_total{job=\"rbac-service\"}[$__range]))",
               "legendFormat": "__auto",
               "range": true,
               "refId": "A"
@@ -860,8 +863,7 @@ data:
                     "mode": "percentage",
                     "steps": [
                       {
-                        "color": "green",
-                        "value": null
+                        "color": "green"
                       }
                     ]
                   },
@@ -919,8 +921,7 @@ data:
                     "mode": "absolute",
                     "steps": [
                       {
-                        "color": "green",
-                        "value": null
+                        "color": "green"
                       },
                       {
                         "color": "red",
@@ -979,8 +980,7 @@ data:
                     "mode": "percentage",
                     "steps": [
                       {
-                        "color": "green",
-                        "value": null
+                        "color": "green"
                       },
                       {
                         "color": "red",
@@ -1038,8 +1038,7 @@ data:
                     "mode": "percentage",
                     "steps": [
                       {
-                        "color": "green",
-                        "value": null
+                        "color": "green"
                       }
                     ]
                   },
@@ -1093,8 +1092,7 @@ data:
                     "mode": "percentage",
                     "steps": [
                       {
-                        "color": "green",
-                        "value": null
+                        "color": "green"
                       }
                     ]
                   },
@@ -1916,8 +1914,7 @@ data:
                     "mode": "absolute",
                     "steps": [
                       {
-                        "color": "red",
-                        "value": null
+                        "color": "red"
                       },
                       {
                         "color": "green",
@@ -2014,8 +2011,7 @@ data:
                     "mode": "absolute",
                     "steps": [
                       {
-                        "color": "transparent",
-                        "value": null
+                        "color": "transparent"
                       },
                       {
                         "color": "red",
@@ -2545,7 +2541,7 @@ data:
         "list": [
           {
             "current": {
-              "selected": true,
+              "selected": false,
               "text": "crcp01ue1-prometheus",
               "value": "crcp01ue1-prometheus"
             },
@@ -2646,13 +2642,10 @@ data:
       "timezone": "",
       "title": "Operations - Rbac w/CPU",
       "uid": "TjP_nMWMk",
-      "version": 4,
+      "version": 5,
       "weekStart": ""
     }
 kind: ConfigMap
 metadata:
-  name: grafana-dashboard-clouddot-rbac-operations
-  labels:
-    grafana_dashboard: "true"
-  annotations:
-    grafana-folder: /grafana-dashboard-definitions/Insights
+  creationTimestamp: null
+  name: grafana-dashboard-insights-rbac-operations
