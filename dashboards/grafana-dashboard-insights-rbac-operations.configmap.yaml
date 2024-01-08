@@ -2541,7 +2541,7 @@ data:
         "list": [
           {
             "current": {
-              "selected": false,
+              "selected": true,
               "text": "crcp01ue1-prometheus",
               "value": "crcp01ue1-prometheus"
             },
@@ -2591,7 +2591,7 @@ data:
             },
             "definition": "kube_pod_container_status_restarts_total{}",
             "hide": 0,
-            "includeAll": true,
+            "includeAll": false,
             "multi": false,
             "name": "Namespace",
             "options": [],
