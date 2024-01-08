@@ -2591,7 +2591,7 @@ data:
             },
             "definition": "kube_pod_container_status_restarts_total{}",
             "hide": 0,
-            "includeAll": false,
+            "includeAll": true,
             "multi": false,
             "name": "Namespace",
             "options": [],
@@ -2647,5 +2647,8 @@ data:
     }
 kind: ConfigMap
 metadata:
-  creationTimestamp: null
-  name: grafana-dashboard-insights-rbac-operations
+  name: grafana-dashboard-clouddot-rbac-operations
+  labels:
+    grafana_dashboard: "true"
+  annotations:
+    grafana-folder: /grafana-dashboard-definitions/Insights
