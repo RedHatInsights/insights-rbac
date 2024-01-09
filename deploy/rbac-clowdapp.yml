@@ -3195,21 +3195,6 @@ objects:
     principal-proxy-ssl-verify: RmFsc2U=
     sentry-dsn: ''
   type: Opaque
-- apiVersion: v1
-  kind: Service
-  metadata:
-    name: rbac
-    labels:
-      app: rbac
-      pod: rbac-service
-  spec:
-    ports:
-    - port: 8080
-      protocol: TCP
-      targetPort: 8000
-      name: weblegacy
-    selector:
-      pod: rbac-service
 
 parameters:
 - description: Image name
