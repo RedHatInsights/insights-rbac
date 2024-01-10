@@ -18,6 +18,7 @@
 """Serializer for CrossAccountRequest."""
 from django.db import transaction
 from management.models import Role
+from management.notifications.notification_handlers import cross_account_access_handler
 from management.permission.serializer import PermissionSerializer
 from rest_framework import serializers
 
@@ -110,6 +111,7 @@ class CrossAccountRequestDetailSerializer(serializers.ModelSerializer):
         role_data = validated_data.pop("roles")
         display_names = [role["display_name"] for role in role_data]
         request = CrossAccountRequest.objects.create(**validated_data)
+        cross_account_access_handler(request, self.context["user"])
 
         roles = Role.objects.filter(display_name__in=display_names)
         for role in roles:

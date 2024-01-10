@@ -23,6 +23,7 @@ from django.conf import settings
 from django.urls import reverse
 from django.utils import timezone
 from management.models import Role, Principal
+from management.notifications.notification_handlers import EVENT_TYPE_RH_TAM_REQUEST_CREATED
 from rest_framework import status
 from rest_framework.test import APIClient
 
@@ -395,12 +396,14 @@ class CrossAccountRequestViewTests(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
         self.assertEqual(response.data["errors"][0]["detail"].code, "permission_denied")
 
-    def test_create_requests_success(self):
+    @patch("management.notifications.notification_handlers.notify")
+    def test_create_requests_success(self, notify_mock):
         """Test the creation of cross account request success."""
         client = APIClient()
-        response = client.post(
-            f"{URL_LIST}?", self.data4create, format="json", **self.associate_non_admin_request.META
-        )
+        with self.settings(NOTIFICATIONS_ENABLED=True):
+            response = client.post(
+                f"{URL_LIST}?", self.data4create, format="json", **self.associate_non_admin_request.META
+            )
 
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertEqual(response.data["target_account"], self.data4create["target_account"])
@@ -408,6 +411,15 @@ class CrossAccountRequestViewTests(IdentityRequest):
         self.assertEqual(response.data["start_date"], self.data4create["start_date"])
         self.assertEqual(response.data["end_date"], self.data4create["end_date"])
         self.assertEqual(len(response.data["roles"]), 2)
+        notify_mock.assert_called_once_with(
+            EVENT_TYPE_RH_TAM_REQUEST_CREATED,
+            {
+                "username": self.user_data["username"],
+                "request_id": response.data["request_id"],
+            },
+            self.data4create["target_account"],
+            self.data4create["target_org"],
+        )
 
     def test_create_requests_fail_for_no_account(self):
         """Test the creation of cross account request fails when the account doesn't exist."""
