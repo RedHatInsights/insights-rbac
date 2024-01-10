@@ -20,6 +20,7 @@ import binascii
 import json
 import logging
 from json.decoder import JSONDecodeError
+from unittest.mock import Mock
 
 from django.conf import settings
 from django.db import IntegrityError
@@ -42,6 +43,7 @@ from api.common import (
 )
 from api.models import Tenant, User
 from api.serializers import create_tenant_name, extract_header
+from rbac.env import ENVIRONMENT
 
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
@@ -193,6 +195,18 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
         """
         # Get request ID
         request.req_id = request.META.get(RH_INSIGHTS_REQUEST_ID)
+
+        # Temporary log for the stage environment in order to debug https://issues.redhat.com/browse/RHCLOUD-29917.
+        # Remove after being finished with debugging.
+        environment: str = ENVIRONMENT.get_value("ENV_NAME", default="local-dev")
+        if not isinstance(request, Mock) and environment == "local-dev" or environment == "stage":
+            all_headers: dict = {}
+            for header in request.headers:
+                all_headers[header] = request.headers.get(header)
+
+            logger.info(
+                "Incoming headers for request with ID '%s': %s", request.META.get(RH_INSIGHTS_REQUEST_ID), all_headers
+            )
 
         if any([request.path.startswith(prefix) for prefix in settings.INTERNAL_API_PATH_PREFIXES]):
             # This request is for a private API endpoint
