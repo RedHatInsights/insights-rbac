@@ -7,7 +7,6 @@ import uuid
 
 
 class Migration(migrations.Migration):
-
     initial = True
 
     dependencies = []
@@ -16,15 +15,34 @@ class Migration(migrations.Migration):
         migrations.CreateModel(
             name="Access",
             fields=[
-                ("id", models.AutoField(auto_created=True, primary_key=True, serialize=False, verbose_name="ID")),
+                (
+                    "id",
+                    models.AutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
                 ("permission", models.TextField()),
             ],
         ),
         migrations.CreateModel(
             name="Group",
             fields=[
-                ("id", models.AutoField(auto_created=True, primary_key=True, serialize=False, verbose_name="ID")),
-                ("uuid", models.UUIDField(default=uuid.uuid4, editable=False, unique=True)),
+                (
+                    "id",
+                    models.AutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                (
+                    "uuid",
+                    models.UUIDField(default=uuid.uuid4, editable=False, unique=True),
+                ),
                 ("name", models.CharField(max_length=150, unique=True)),
             ],
             options={"ordering": ["name"]},
@@ -32,8 +50,19 @@ class Migration(migrations.Migration):
         migrations.CreateModel(
             name="Policy",
             fields=[
-                ("id", models.AutoField(auto_created=True, primary_key=True, serialize=False, verbose_name="ID")),
-                ("uuid", models.UUIDField(default=uuid.uuid4, editable=False, unique=True)),
+                (
+                    "id",
+                    models.AutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                (
+                    "uuid",
+                    models.UUIDField(default=uuid.uuid4, editable=False, unique=True),
+                ),
                 ("name", models.CharField(max_length=150, unique=True)),
                 (
                     "group",
@@ -50,8 +79,19 @@ class Migration(migrations.Migration):
         migrations.CreateModel(
             name="Principal",
             fields=[
-                ("id", models.AutoField(auto_created=True, primary_key=True, serialize=False, verbose_name="ID")),
-                ("uuid", models.UUIDField(default=uuid.uuid4, editable=False, unique=True)),
+                (
+                    "id",
+                    models.AutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                (
+                    "uuid",
+                    models.UUIDField(default=uuid.uuid4, editable=False, unique=True),
+                ),
                 ("username", models.CharField(max_length=150, unique=True)),
                 ("email", models.EmailField(blank=True, max_length=254)),
             ],
@@ -60,8 +100,19 @@ class Migration(migrations.Migration):
         migrations.CreateModel(
             name="ResourceDefinition",
             fields=[
-                ("id", models.AutoField(auto_created=True, primary_key=True, serialize=False, verbose_name="ID")),
-                ("attributeFilter", django.contrib.postgres.fields.jsonb.JSONField(default=dict)),
+                (
+                    "id",
+                    models.AutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                (
+                    "attributeFilter",
+                    django.contrib.postgres.fields.jsonb.JSONField(default=dict),
+                ),
                 (
                     "access",
                     models.ForeignKey(
@@ -76,8 +127,19 @@ class Migration(migrations.Migration):
         migrations.CreateModel(
             name="Role",
             fields=[
-                ("id", models.AutoField(auto_created=True, primary_key=True, serialize=False, verbose_name="ID")),
-                ("uuid", models.UUIDField(default=uuid.uuid4, editable=False, unique=True)),
+                (
+                    "id",
+                    models.AutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                (
+                    "uuid",
+                    models.UUIDField(default=uuid.uuid4, editable=False, unique=True),
+                ),
                 ("name", models.CharField(max_length=150, unique=True)),
             ],
             options={"ordering": ["name"]},
@@ -96,7 +158,10 @@ class Migration(migrations.Migration):
             model_name="access",
             name="role",
             field=models.ForeignKey(
-                null=True, on_delete=django.db.models.deletion.CASCADE, related_name="access", to="management.Role"
+                null=True,
+                on_delete=django.db.models.deletion.CASCADE,
+                related_name="access",
+                to="management.Role",
             ),
         ),
     ]

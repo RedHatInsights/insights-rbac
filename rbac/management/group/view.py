@@ -25,8 +25,13 @@ from django.db import transaction
 from django.db.models.aggregates import Count
 from django.utils.translation import gettext as _
 from django_filters import rest_framework as filters
+from management.audit_log.model import AuditLog
 from management.filters import CommonFilters
-from management.group.definer import add_roles, remove_roles, set_system_flag_before_update
+from management.group.definer import (
+    add_roles,
+    remove_roles,
+    set_system_flag_before_update,
+)
 from management.group.model import Group
 from management.group.serializer import (
     GroupInputSerializer,
@@ -45,7 +50,11 @@ from management.principal.it_service import ITService
 from management.principal.model import Principal
 from management.principal.proxy import PrincipalProxy
 from management.principal.serializer import PrincipalSerializer
-from management.principal.view import ADMIN_ONLY_KEY, USERNAME_ONLY_KEY, VALID_BOOLEAN_VALUE
+from management.principal.view import (
+    ADMIN_ONLY_KEY,
+    USERNAME_ONLY_KEY,
+    VALID_BOOLEAN_VALUE,
+)
 from management.querysets import get_group_queryset, get_role_queryset
 from management.role.view import RoleViewSet
 from management.utils import validate_and_get_key, validate_group_name, validate_uuid
@@ -58,7 +67,11 @@ from api.common.pagination import StandardResultsSetPagination
 from api.models import Tenant, User
 from .insufficient_privileges import InsufficientPrivilegesError
 from .service_account_not_found_error import ServiceAccountNotFoundError
-from ..authorization.token_validator import ITSSOTokenValidator, InvalidTokenError, MissingAuthorizationError
+from ..authorization.token_validator import (
+    ITSSOTokenValidator,
+    InvalidTokenError,
+    MissingAuthorizationError,
+)
 from ..authorization.token_validator import UnableMeetPrerequisitesError
 from ..principal.unexpected_status_code_from_it import UnexpectedStatusCodeFromITError
 
@@ -74,7 +87,12 @@ ROLE_DISCRIMINATOR_KEY = "role_discriminator"
 SERVICE_ACCOUNT_USERNAME_FORMAT = "service-account-{clientID}"
 TYPE_SERVICE_ACCOUNT = "service-account"
 VALID_EXCLUDE_VALUES = ["true", "false"]
-VALID_GROUP_ROLE_FILTERS = ["role_name", "role_description", "role_display_name", "role_system"]
+VALID_GROUP_ROLE_FILTERS = [
+    "role_name",
+    "role_description",
+    "role_display_name",
+    "role_system",
+]
 VALID_GROUP_PRINCIPAL_FILTERS = ["principal_username"]
 VALID_PRINCIPAL_ORDER_FIELDS = ["username"]
 VALID_PRINCIPAL_TYPE_VALUE = ["service-account", "user"]
@@ -102,7 +120,10 @@ class GroupFilter(CommonFilters):
         roles_list = [value.lower() for value in values.split(",")]
 
         discriminator = validate_and_get_key(
-            self.request.query_params, ROLE_DISCRIMINATOR_KEY, VALID_ROLE_ROLE_DISCRIMINATOR, "any"
+            self.request.query_params,
+            ROLE_DISCRIMINATOR_KEY,
+            VALID_ROLE_ROLE_DISCRIMINATOR,
+            "any",
         )
 
         if discriminator == "any":
@@ -155,7 +176,8 @@ class GroupViewSet(
     """
 
     queryset = Group.objects.annotate(
-        principalCount=Count("principals", distinct=True), policyCount=Count("policies", distinct=True)
+        principalCount=Count("principals", distinct=True),
+        policyCount=Count("policies", distinct=True),
     )
     permission_classes = (GroupAccessPermission,)
     lookup_field = "uuid"
@@ -226,7 +248,13 @@ class GroupViewSet(
             }
         """
         validate_group_name(request.data.get("name"))
-        return super().create(request=request, args=args, kwargs=kwargs)
+        create_group = super().create(request=request, args=args, kwargs=kwargs)
+
+        if status.is_success(create_group.status_code):
+            # Add to the changes to the audit log database
+            auditlog = AuditLog()
+            auditlog.log_create(request, AuditLog.GROUP)
+            return create_group
 
     def list(self, request, *args, **kwargs):
         """Obtain the list of groups for the tenant.
@@ -331,6 +359,11 @@ class GroupViewSet(
         self.protect_system_groups("delete")
         group = self.get_object()
         response = super().destroy(request=request, args=args, kwargs=kwargs)
+
+        # Add changes to the audit log database
+        auditlog = AuditLog()
+        auditlog.log_delete(request, group, AuditLog.GROUP, AuditLog.DELETE, args=args, kwargs=kwargs)
+
         if response.status_code == status.HTTP_204_NO_CONTENT:
             group_obj_change_notification_handler(request.user, group, "deleted")
         return response
@@ -359,7 +392,14 @@ class GroupViewSet(
         """
         validate_uuid(kwargs.get("uuid"), "group uuid validation")
         self.protect_system_groups("update")
-        return super().update(request=request, args=args, kwargs=kwargs)
+
+        edit_group = super().update(request=request, args=args, kwargs=kwargs)
+
+        if status.is_success(edit_group.status_code):
+            # Add changes to audit log database
+            auditlog = AuditLog()
+            auditlog.log_edit(request, AuditLog.GROUP)
+            return edit_group
 
     def add_principals(self, group, principals, account=None, org_id=None):
         """Process list of principals and add them to the group."""
@@ -375,7 +415,13 @@ class GroupViewSet(
         if len(resp.get("data", [])) == 0:
             return {
                 "status_code": status.HTTP_404_NOT_FOUND,
-                "errors": [{"detail": "User(s) {} not found.".format(users), "status": "404", "source": "principals"}],
+                "errors": [
+                    {
+                        "detail": "User(s) {} not found.".format(users),
+                        "status": "404",
+                        "source": "principals",
+                    }
+                ],
             }
         for item in resp.get("data", []):
             username = item["username"]
@@ -389,6 +435,13 @@ class GroupViewSet(
                     logger.info("Created new principal %s for account_id %s.", username, account)
             group.principals.add(principal)
             group_principal_change_notification_handler(self.request.user, group, username, "added")
+
+        # Audit Log for when principal/principals added to a group
+        who = "user"
+        for user in users:
+            auditLog = AuditLog()
+            print("user", user)
+            auditLog.log_add(self.request, group, user, who)
         return group
 
     def add_service_accounts(
@@ -446,9 +499,17 @@ class GroupViewSet(
                 )
 
                 if settings.AUTHENTICATE_WITH_ORG_ID:
-                    logger.info("Created new service account %s for org_id %s.", client_id, org_id)
+                    logger.info(
+                        "Created new service account %s for org_id %s.",
+                        client_id,
+                        org_id,
+                    )
                 else:
-                    logger.info("Created new principal %s for account_id %s.", client_id, account_name)
+                    logger.info(
+                        "Created new principal %s for account_id %s.",
+                        client_id,
+                        account_name,
+                    )
 
             group.principals.add(principal)
             group_principal_change_notification_handler(
@@ -668,7 +729,13 @@ class GroupViewSet(
                     return Response(
                         status=status.HTTP_403_FORBIDDEN,
                         data={
-                            "errors": [{"detail": str(ipe), "status": status.HTTP_403_FORBIDDEN, "source": "groups"}]
+                            "errors": [
+                                {
+                                    "detail": str(ipe),
+                                    "status": status.HTTP_403_FORBIDDEN,
+                                    "source": "groups",
+                                }
+                            ]
                         },
                     )
                 except ServiceAccountNotFoundError as sanfe:
@@ -676,7 +743,11 @@ class GroupViewSet(
                         status=status.HTTP_400_BAD_REQUEST,
                         data={
                             "errors": [
-                                {"detail": str(sanfe), "source": "group", "status": str(status.HTTP_400_BAD_REQUEST)}
+                                {
+                                    "detail": str(sanfe),
+                                    "source": "group",
+                                    "status": str(status.HTTP_400_BAD_REQUEST),
+                                }
                             ]
                         },
                     )
@@ -708,7 +779,11 @@ class GroupViewSet(
 
             # Get the "username_only" query parameter.
             username_only = validate_and_get_key(
-                request.query_params, USERNAME_ONLY_KEY, VALID_BOOLEAN_VALUE, "false", required=False
+                request.query_params,
+                USERNAME_ONLY_KEY,
+                VALID_BOOLEAN_VALUE,
+                "false",
+                required=False,
             )
 
             # Build the options dict.
@@ -718,7 +793,10 @@ class GroupViewSet(
             # parameter. It is important because we need to call BOP for
             # the users, and IT for the service accounts.
             principalType = validate_and_get_key(
-                request.query_params, PRINCIPAL_TYPE_KEY, VALID_PRINCIPAL_TYPE_VALUE, required=False
+                request.query_params,
+                PRINCIPAL_TYPE_KEY,
+                VALID_PRINCIPAL_TYPE_VALUE,
+                required=False,
             )
 
             # Store the principal type in the options dict.
@@ -782,7 +860,10 @@ class GroupViewSet(
                     service_accounts = it_service.get_service_accounts_group(
                         group=group, bearer_token=bearer_token, options=options
                     )
-                except (requests.exceptions.ConnectionError, UnexpectedStatusCodeFromITError):
+                except (
+                    requests.exceptions.ConnectionError,
+                    UnexpectedStatusCodeFromITError,
+                ):
                     return Response(
                         status=status.HTTP_500_INTERNAL_SERVER_ERROR,
                         data={
@@ -850,7 +931,13 @@ class GroupViewSet(
                     return Response(
                         status=status.HTTP_403_FORBIDDEN,
                         data={
-                            "errors": [{"detail": str(ipe), "status": status.HTTP_403_FORBIDDEN, "source": "groups"}]
+                            "errors": [
+                                {
+                                    "detail": str(ipe),
+                                    "status": status.HTTP_403_FORBIDDEN,
+                                    "source": "groups",
+                                }
+                            ]
                         },
                     )
                 except ValueError as ve:
@@ -878,7 +965,10 @@ class GroupViewSet(
                 else:
                     resp = self.remove_principals(group, principals, account=account)
                 if isinstance(resp, dict) and "errors" in resp:
-                    return Response(status=resp.get("status_code"), data={"errors": resp.get("errors")})
+                    return Response(
+                        status=resp.get("status_code"),
+                        data={"errors": resp.get("errors")},
+                    )
                 response = Response(status=status.HTTP_204_NO_CONTENT)
 
         return response
@@ -975,8 +1065,16 @@ class GroupViewSet(
             if serializer.is_valid(raise_exception=True):
                 roles = request.data.pop(ROLES_KEY, [])
             group = set_system_flag_before_update(group, request.tenant, request.user)
-            add_roles(group, roles, request.tenant, user=request.user)
+            al_roles = add_roles(group, roles, request.tenant, user=request.user)
             response_data = GroupRoleSerializerIn(group)
+
+            # Audit Log for when role/roles added to a group
+
+            who = "role"
+            for role in al_roles:
+                auditLog = AuditLog()
+                auditLog.log_add(request, group, role, who)
+
         elif request.method == "GET":
             serialized_roles = self.obtain_roles(request, group)
             page = self.paginate_queryset(serialized_roles)
@@ -1061,7 +1159,12 @@ class GroupViewSet(
         return roles.exclude(uuid__in=roles_for_group)
 
     def remove_service_accounts(
-        self, user: User, group: Group, service_accounts: [str], account_name: str = None, org_id: str = None
+        self,
+        user: User,
+        group: Group,
+        service_accounts: [str],
+        account_name: str = None,
+        org_id: str = None,
     ) -> None:
         """Remove the given service accounts from the tenant."""
         # Log our intention.
@@ -1079,7 +1182,10 @@ class GroupViewSet(
 
         # Get the group's service accounts that match the service accounts that the user specified.
         valid_service_accounts = Principal.objects.filter(
-            group=group, tenant=tenant, type="service-account", username__in=service_accounts
+            group=group,
+            tenant=tenant,
+            type="service-account",
+            username__in=service_accounts,
         )
 
         # Collect the usernames the user specified.
