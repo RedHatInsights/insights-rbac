@@ -50,7 +50,6 @@ Please use \`make <target>' where <target> is one of:
   docker-down               shut down service containers
   docker-shell              run django and db containers with shell access to server (for pdb)
   docker-logs               connect to console logs for all services
-  docker-test-all           run unittests
   docker-grype				Run security checks on the project image(s)
 
 --- Commands using an Ephemeral Cluster ---
@@ -292,9 +291,6 @@ docker-logs:
 
 docker-shell:
 	docker-compose run --service-ports server
-
-docker-test-all:
-	docker-compose -f rbac-test.yml up --build
 
 docker-down:
 	@docker ps --format '{{.Names}}' |grep -q  rbac >/dev/null 2>&1 && docker-compose down || echo ""
