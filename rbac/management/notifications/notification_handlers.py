@@ -28,6 +28,7 @@ from management.utils import account_id_for_tenant
 
 from api.models import Tenant
 
+EVENT_TYPE_RH_TAM_REQUEST_CREATED = "rh-new-tam-request-created"
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 noto_producer = RBACProducer()
@@ -232,3 +233,21 @@ def payload_builder(username, resource_obj, operation=None, extra_info=None):
             raise Exception(f"Unknown extra_info {extra_info[0]}, valid ones are role/principal")
 
     return payload
+
+
+def cross_account_access_handler(cross_request, request_user):
+    """Signal handler for sending notification message when cross access request created."""
+    if not settings.NOTIFICATIONS_ENABLED:
+        return
+
+    account_id = cross_request.target_account
+    if settings.AUTHENTICATE_WITH_ORG_ID:
+        org_id = cross_request.target_org
+    else:
+        org_id = None
+    payload = {
+        "username": request_user.username,
+        "request_id": str(cross_request.request_id),
+    }
+
+    notify(EVENT_TYPE_RH_TAM_REQUEST_CREATED, payload, account_id, org_id)

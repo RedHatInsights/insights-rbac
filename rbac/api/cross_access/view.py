@@ -127,6 +127,12 @@ class CrossAccountRequestViewSet(
             return CrossAccountRequestSerializer
         return CrossAccountRequestDetailSerializer
 
+    def get_serializer_context(self):
+        """Get serializer context."""
+        context = super().get_serializer_context()
+        context["user"] = self.request.user
+        return context
+
     def create(self, request, *args, **kwargs):
         """Create cross account requests for associate."""
         self.validate_and_format_input(request.data)
