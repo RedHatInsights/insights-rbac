@@ -53,6 +53,11 @@ it_request_error = Counter(
     ["error"],
 )
 
+# Keys for the "options" dictionary. The "options" dictionary represents the query parameters passed by the calling
+# client.
+SERVICE_ACCOUNT_DESCRIPTION_KEY = "service_account_description"
+SERVICE_ACCOUNT_NAME_KEY = "service_account_name"
+
 
 def limit_offset_validation(offset, limit):
     """Limit and offset should not be negative number."""
@@ -278,7 +283,36 @@ class ITService:
             service_account_principals=sap_dict, it_service_accounts=it_service_accounts, options=options
         )
 
-        return service_accounts
+        # If either the description or name filters were specified, we need to only keep the service accounts that
+        # match that criteria.
+        sa_description_filter = options.get(SERVICE_ACCOUNT_DESCRIPTION_KEY)
+        sa_name_filter = options.get(SERVICE_ACCOUNT_NAME_KEY)
+
+        if sa_description_filter or sa_name_filter:
+            filtered_service_accounts: list[dict] = []
+
+            for sa in service_accounts:
+                # Initialize both matches as "True", because having them at "False" would force us to make them "True"
+                # whenever one of the filters is not specified, since otherwise not specifying a filter would stop the
+                # service account to be included in the resulting list.
+                sa_description_filter_matches: bool = True
+                sa_name_filter_matches: bool = True
+
+                if sa_description_filter:
+                    sa_description_filter_matches = ("description" in sa) and (
+                        sa_description_filter in sa["description"]
+                    )
+
+                if sa_name_filter:
+                    sa_name_filter_matches = ("name" in sa) and (sa_name_filter in sa["name"])
+
+                # When both filters are specified we require them both to have a positive match for the fields.
+                if sa_description_filter_matches and sa_name_filter_matches:
+                    filtered_service_accounts.append(sa)
+
+            return filtered_service_accounts
+        else:
+            return service_accounts
 
     def _transform_incoming_payload(self, input: dict) -> dict:
         """Transform the incoming service account from IT into a dict which fits our response structure."""

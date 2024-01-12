@@ -70,6 +70,8 @@ PRINCIPAL_TYPE_KEY = "principal_type"
 PRINCIPAL_USERNAME_KEY = "principal_username"
 VALID_ROLE_ORDER_FIELDS = list(RoleViewSet.ordering_fields)
 ROLE_DISCRIMINATOR_KEY = "role_discriminator"
+SERVICE_ACCOUNT_DESCRIPTION_KEY = "service_account_description"
+SERVICE_ACCOUNT_NAME_KEY = "service_account_name"
 SERVICE_ACCOUNT_USERNAME_FORMAT = "service-account-{clientID}"
 TYPE_SERVICE_ACCOUNT = "service-account"
 VALID_EXCLUDE_VALUES = ["true", "false"]
@@ -770,7 +772,10 @@ class GroupViewSet(
                         },
                     )
 
-                # Get the principal username option parameter and the limit and offset parameters too.
+                # Get the service account's description and name filters, and the principal's username filter too.
+                # Finally, get the limit and offset parameters.
+                options[SERVICE_ACCOUNT_DESCRIPTION_KEY] = request.query_params.get(SERVICE_ACCOUNT_DESCRIPTION_KEY)
+                options[SERVICE_ACCOUNT_NAME_KEY] = request.query_params.get(SERVICE_ACCOUNT_NAME_KEY)
                 options[PRINCIPAL_USERNAME_KEY] = request.query_params.get(PRINCIPAL_USERNAME_KEY)
 
                 # Fetch the group's service accounts.
