@@ -84,11 +84,11 @@ def get_principal(username, request, verify_principal=True, from_query=False):
             principal = Principal.objects.get_or_create(
                 username=user.username, tenant=tenant, type=SERVICE_ACCOUNT_KEY, service_account_id=user.client_id
             )
-
-        # Avoid possible race condition if the user was created while checking BOP
-        principal, created = Principal.objects.get_or_create(
-            username=username, tenant=tenant
-        )  # pylint: disable=unused-variable
+        else:
+            # Avoid possible race condition if the user was created while checking BOP
+            principal = Principal.objects.get_or_create(
+                username=username, tenant=tenant
+            )  # pylint: disable=unused-variable
 
     return principal
 
