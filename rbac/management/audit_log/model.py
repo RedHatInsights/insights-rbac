@@ -54,6 +54,6 @@ class AuditLog(TenantAwareModel):
     principal = models.ForeignKey(Principal, on_delete=models.CASCADE, null=True, to_field="id")
     principal_username = models.TextField(max_length=255, null=False)
     description = models.TextField(max_length=255, null=False)
-    resource = models.CharField(max_length=32, choices=RESOURCE_CHOICES)
-    resource_id = models.CharField(max_length=32, null=True)
+    resource_type = models.CharField(max_length=32, choices=RESOURCE_CHOICES)
+    resource_id = models.IntegerField(null=True)
     action = models.CharField(max_length=32, choices=ACTION_CHOICES)
