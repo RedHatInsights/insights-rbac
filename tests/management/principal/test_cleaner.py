@@ -15,6 +15,8 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Test the principal cleaner."""
+import uuid
+
 from unittest.mock import patch
 
 from rest_framework import status
@@ -57,6 +59,38 @@ class PrincipalCleanerTests(IdentityRequest):
         except Exception:
             self.fail(msg="clean_tenant_principals encountered an exception")
         self.assertEqual(Principal.objects.count(), 1)
+
+    @patch(
+        "management.principal.proxy.PrincipalProxy._request_principals",
+        return_value={"status_code": status.HTTP_200_OK, "data": []},
+    )
+    def test_principal_cleanup_skips_service_account_principals(self, mock_request):
+        """Test that principal clean up on a tenant will skip service account principals."""
+        # Create a to-be-removed user principal and a service account that should be left untouched.
+        service_account_client_id = str(uuid.uuid4())
+        Principal.objects.create(username="regular user", tenant=self.tenant)
+        Principal.objects.create(
+            username=f"service-account-{service_account_client_id}",
+            service_account_id=service_account_client_id,
+            tenant=self.tenant,
+            type="service-account",
+        )
+        self.assertEqual(Principal.objects.count(), 2)
+
+        try:
+            clean_tenant_principals(self.tenant)
+        except Exception:
+            self.fail(msg="clean_tenant_principals encountered an exception")
+
+        # Assert that the only principal left for the tenant is the service account, which should have been left
+        # untouched.
+        principals = Principal.objects.all()
+        self.assertEqual(len(principals), 1)
+
+        service_account = principals[0]
+        self.assertEqual(service_account.service_account_id, service_account_client_id)
+        self.assertEqual(service_account.type, "service-account")
+        self.assertEqual(service_account.username, f"service-account-{service_account_client_id}")
 
     @patch(
         "management.principal.proxy.PrincipalProxy._request_principals",
