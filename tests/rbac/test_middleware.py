@@ -19,6 +19,7 @@ import collections
 import os
 from unittest.mock import Mock
 from django.conf import settings
+from django.http import QueryDict
 
 from django.test import TestCase
 from django.urls import reverse
@@ -272,6 +273,74 @@ class IdentityHeaderMiddlewareTest(IdentityRequest):
         middleware.process_request(request)
         self.assertEqual(Tenant.objects.filter(tenant_name="test_user").count(), 1)
         self.assertEqual(Tenant.objects.filter(tenant_name="test_user").first().org_id, None)
+
+    def test_is_allowed_load_user_permissions_org_admin(self):
+        """Tests that the function that determines if user permissions should be loaded returns False for org admins."""
+        user = User()
+        user.admin = True
+
+        middleware = IdentityHeaderMiddleware(get_response=Mock())
+        self.assertEqual(middleware.is_allowed_load_user_permissions(Mock(), user), False)
+
+    def test_is_allowed_load_user_permissions_regular_user_non_access_endpoint(self):
+        """Tests that the function under test returns True for regular users who have requested a path which isn't the access path"""
+        user = User()
+        user.admin = False
+
+        request = Mock()
+        request.path = "/principals/"
+
+        middleware = IdentityHeaderMiddleware(get_response=Mock())
+        self.assertEqual(middleware.is_allowed_load_user_permissions(request, user), True)
+
+    def test_is_allowed_load_user_permissions_regular_user_access_non_get_request(self):
+        """Tests that the function under test returns True for regular users who have requested the access path but with a different HTTP verb than GET"""
+        user = User()
+        user.admin = False
+
+        request = Mock()
+        request.path = "/access/"
+
+        middleware = IdentityHeaderMiddleware(get_response=Mock())
+
+        invalid_verbs = ["DELETE", "POST", "PATCH"]
+        for verb in invalid_verbs:
+            request.method = verb
+            self.assertEqual(middleware.is_allowed_load_user_permissions(request, user), True)
+
+    def test_is_allowed_load_user_permissions_regular_user_access(self):
+        """Tests that the function under test returns True for regular users who have requested the access path with the expected query parameters"""
+        user = User()
+        user.admin = False
+
+        request = Mock()
+        request.path = "/access/"
+        request.method = "GET"
+        request.GET = QueryDict("application=rbac&username=foo")
+        middleware = IdentityHeaderMiddleware(get_response=Mock())
+        self.assertEqual(middleware.is_allowed_load_user_permissions(request, user), True)
+
+    def test_is_allowed_load_user_permissions_regular_user_access_missing_query_params(self):
+        """Tests that the function under test returns False for regular users who have requested the access path without the expected query parameters"""
+        user = User()
+        user.admin = False
+
+        request = Mock()
+        request.path = "/access/"
+        request.method = "GET"
+
+        test_cases: list[QueryDict] = [
+            QueryDict("application=rbac"),
+            QueryDict("username=foo"),
+            QueryDict("applications=rbac&username=foo"),
+            QueryDict("application=rbac&usernames=foo"),
+        ]
+
+        middleware = IdentityHeaderMiddleware(get_response=Mock())
+        for test_case in test_cases:
+            request.GET = test_case
+
+            self.assertEqual(middleware.is_allowed_load_user_permissions(request, user), False)
 
 
 class ServiceToService(IdentityRequest):

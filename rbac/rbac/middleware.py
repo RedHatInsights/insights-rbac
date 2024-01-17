@@ -22,8 +22,9 @@ import logging
 from json.decoder import JSONDecodeError
 
 from django.conf import settings
+from django.core.handlers.wsgi import WSGIRequest
 from django.db import IntegrityError
-from django.http import Http404, HttpResponse
+from django.http import Http404, HttpResponse, QueryDict
 from django.urls import resolve
 from django.utils.deprecation import MiddlewareMixin
 from management.cache import TenantCache
@@ -259,7 +260,7 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
                 return HttpResponse(json.dumps(payload), content_type="application/json", status=400)
 
             if settings.AUTHENTICATE_WITH_ORG_ID:
-                if not user.admin and not (request.path.endswith("/access/") and request.method == "GET"):
+                if self.is_allowed_load_user_permissions(request, user):
                     try:
                         tenant = Tenant.objects.filter(org_id=user.org_id).get()
                     except Tenant.DoesNotExist:
@@ -268,7 +269,7 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
 
                     user.access = IdentityHeaderMiddleware._get_access_for_user(user.username, tenant)
             else:
-                if not user.admin and not (request.path.endswith("/access/") and request.method == "GET"):
+                if self.is_allowed_load_user_permissions(request, user):
                     try:
                         tenant_name = create_tenant_name(user.account)
                         tenant = Tenant.objects.filter(tenant_name=tenant_name).get()
@@ -415,6 +416,29 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
 
         IdentityHeaderMiddleware.log_request(request, response, is_internal)
         return response
+
+    def is_allowed_load_user_permissions(self, request: WSGIRequest, user: User) -> bool:
+        """Decide whether RBAC should load the access permissions for the user based on the given request."""
+        # Organization administrators will have already all the permissions so there is no need to load permissions for
+        # them.
+        if user.admin:
+            return False
+
+        # The access endpoint gets a lot of traffic, so we need to restrict for which queries we are actually going
+        # to load the user permissions, since it is a very heavy operation. The following Jira tickets have more
+        # details:
+        #
+        # - RHCLOUD-15394
+        # - RHCLOUD-29631
+        #
+        # There is one use case where we need to load the user's permissions: whenever they want to query for their
+        # or other users' permissions. In that case, we need to know if they're allowed to do so, and for that, we
+        # need to preload their permissions to check them afterwards in the subsequent permission checkers.
+        if request.path.endswith("/access/") and request.method == "GET":
+            query_params: QueryDict = request.GET
+            return "application" in query_params and "username" in query_params
+        else:
+            return True
 
 
 class DisableCSRF(MiddlewareMixin):  # pylint: disable=too-few-public-methods
