@@ -20,7 +20,7 @@ from django.db import models
 from django.utils import timezone
 from management.principal.model import Principal
 
-from api.models import TenantAwareModel
+from api.models import Tenant, TenantAwareModel
 
 
 class AuditLog(TenantAwareModel):
@@ -51,9 +51,10 @@ class AuditLog(TenantAwareModel):
     )
 
     created = models.DateTimeField(default=timezone.now)
-    principal = models.ForeignKey(Principal, on_delete=models.CASCADE, null=True, to_field="id")
+    principal = models.ForeignKey(Principal, on_delete=models.SET_NULL, null=True)
     principal_username = models.TextField(max_length=255, null=False)
     description = models.TextField(max_length=255, null=False)
     resource_type = models.CharField(max_length=32, choices=RESOURCE_CHOICES)
     resource_id = models.IntegerField(null=True)
     action = models.CharField(max_length=32, choices=ACTION_CHOICES)
+    tenant = models.ForeignKey(Tenant, on_delete=models.SET_NULL, null=True)
