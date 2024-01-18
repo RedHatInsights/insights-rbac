@@ -2495,7 +2495,7 @@
             "name": "application",
             "in": "query",
             "description": "The application name(s) to obtain access for the principal. This is an exact match. When no application is supplied, all permissions for the principal are returned. You may also use a comma-separated list to match on multiple applications.",
-            "required": false,
+            "required": true,
             "default": "",
             "schema": {
               "type": "string"
