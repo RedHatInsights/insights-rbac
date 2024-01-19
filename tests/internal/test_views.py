@@ -375,17 +375,29 @@ class InternalViewsetTests(IdentityRequest):
     @override_settings(INTERNAL_DESTRUCTIVE_API_OK_UNTIL=invalid_destructive_time())
     def test_delete_selective_roles_disallowed(self):
         """Test that we cannot delete selective roles when disallowed."""
-        response = self.client.delete(f"/_private/api/utils/roles/{self.role.uuid}/", **self.request.META)
+        response = self.client.delete(f"/_private/api/utils/role/?name={self.role.name}", **self.request.META)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(response.content.decode(), "Destructive operations disallowed.")
 
     @override_settings(INTERNAL_DESTRUCTIVE_API_OK_UNTIL=valid_destructive_time())
     def test_delete_selective_roles(self):
         """Test that we can delete selective roles when allowed and no roles."""
-        response = self.client.delete(f"/_private/api/utils/roles/{uuid4()}/", **self.request.META)
+        # No name speicified
+        response = self.client.delete(f"/_private/api/utils/role/", **self.request.META)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+        # No role found
+        response = self.client.delete("/_private/api/utils/role/?name=non_exist_name", **self.request.META)
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
-        response = self.client.delete(f"/_private/api/utils/roles/{self.role.uuid}/", **self.request.META)
+        # Custom roles cannot be deleted
+        response = self.client.delete(f"/_private/api/utils/role/?name={self.role.name}", **self.request.META)
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+        # Delete successful
+        self.role.tenant = self.public_tenant
+        self.role.save()
+        response = self.client.delete(f"/_private/api/utils/role/?name={self.role.name}", **self.request.META)
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
 
     @override_settings(INTERNAL_DESTRUCTIVE_API_OK_UNTIL=invalid_destructive_time())

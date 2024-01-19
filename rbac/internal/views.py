@@ -403,20 +403,27 @@ def invalid_default_admin_groups(request):
     return HttpResponse('Invalid method, only "DELETE" and "GET" are allowed.', status=405)
 
 
-def role_removal(request, role_uuid):
+def role_removal(request):
     """View method for internal role removal requests.
 
-    DELETE /_private/api/utils/roles/<role_uuid>/
+    DELETE /_private/api/utils/role/
     """
     logger.info(f"Role removal: {request.method} {request.user.username}")
     if request.method == "DELETE":
         if not destructive_ok():
             return HttpResponse("Destructive operations disallowed.", status=400)
 
-        role_obj = get_object_or_404(Role, uuid=role_uuid)
+        role_name = request.GET.get("name")
+        if not role_name:
+            return HttpResponse(
+                'Invalid request, must supply the "name" query parameter.',
+                status=400,
+            )
+        # Add tenant public to prevent deletion of custom roles
+        role_obj = get_object_or_404(Role, name=role_name, tenant=Tenant.objects.get(tenant_name="public"))
         with transaction.atomic():
             try:
-                logger.warning(f"Deleting role {role_uuid}. Requested by {request.user.username}")
+                logger.warning(f"Deleting role {role_name}. Requested by {request.user.username}")
                 role_obj.delete()
                 return HttpResponse(status=204)
             except Exception:
