@@ -24,6 +24,7 @@ from django.conf import settings
 from django.urls import reverse
 from django.test.utils import override_settings
 from rest_framework import status
+from rest_framework.response import Response
 from rest_framework.test import APIClient
 
 from api.models import Tenant, User
@@ -2128,6 +2129,66 @@ class GroupViewsetTests(IdentityRequest):
             self.assertEqual(response.status_code, status.HTTP_200_OK)
             self.assertEqual(int(response.data.get("meta").get("count")), 3)
             self.assertEqual(len(response.data.get("data")), 3)
+
+    def test_get_group_principals_check_service_account_ids_empty_client_ids(self):
+        """Test that an empty service account IDs query param returns a bad request response"""
+        url = f"{reverse('group-principals', kwargs={'uuid': self.group.uuid})}?service_account_client_ids="
+        client = APIClient()
+        response: Response = client.get(url, **self.headers)
+
+        # Assert that we received a 400 response.
+        self.assertEqual(
+            status.HTTP_400_BAD_REQUEST,
+            response.status_code,
+            "unexpected status code received",
+        )
+
+        # Assert that the error message is the expected one.
+        self.assertEqual(
+            str(response.data.get("errors")[0].get("detail")),
+            "Not a single client ID was specified for the client IDs filter",
+            "unexpected error message detail",
+        )
+
+    def test_get_group_principals_check_service_account_ids_blank_string(self):
+        """Test that a blank service account IDs query param returns a bad request response"""
+        url = f"{reverse('group-principals', kwargs={'uuid': self.group.uuid})}?service_account_client_ids=     "
+        client = APIClient()
+        response: Response = client.get(url, **self.headers)
+
+        # Assert that we received a 400 response.
+        self.assertEqual(
+            status.HTTP_400_BAD_REQUEST,
+            response.status_code,
+            "unexpected status code received",
+        )
+
+        # Assert that the error message is the expected one.
+        self.assertEqual(
+            str(response.data.get("errors")[0].get("detail")),
+            "Not a single client ID was specified for the client IDs filter",
+            "unexpected error message detail",
+        )
+
+    def test_get_group_principals_check_service_account_ids_invalid_uuid(self):
+        """Test that an invalid service account ID query param returns a bad request response"""
+        url = f"{reverse('group-principals', kwargs={'uuid': self.group.uuid})}?service_account_client_ids=abcde"
+        client = APIClient()
+        response: Response = client.get(url, **self.headers)
+
+        # Assert that we received a 400 response.
+        self.assertEqual(
+            status.HTTP_400_BAD_REQUEST,
+            response.status_code,
+            "unexpected status code received",
+        )
+
+        # Assert that the error message is the expected one.
+        self.assertEqual(
+            str(response.data.get("errors")[0].get("detail")),
+            "The specified client ID 'abcde' is not a valid UUID",
+            "unexpected error message detail",
+        )
 
 
 class GroupViewNonAdminTests(IdentityRequest):
