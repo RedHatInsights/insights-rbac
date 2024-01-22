@@ -260,7 +260,7 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
                 return HttpResponse(json.dumps(payload), content_type="application/json", status=400)
 
             if settings.AUTHENTICATE_WITH_ORG_ID:
-                if self.is_allowed_load_user_permissions(request, user):
+                if self.should_load_user_permissions(request, user):
                     try:
                         tenant = Tenant.objects.filter(org_id=user.org_id).get()
                     except Tenant.DoesNotExist:
@@ -269,7 +269,7 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
 
                     user.access = IdentityHeaderMiddleware._get_access_for_user(user.username, tenant)
             else:
-                if self.is_allowed_load_user_permissions(request, user):
+                if self.should_load_user_permissions(request, user):
                     try:
                         tenant_name = create_tenant_name(user.account)
                         tenant = Tenant.objects.filter(tenant_name=tenant_name).get()
@@ -417,7 +417,7 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
         IdentityHeaderMiddleware.log_request(request, response, is_internal)
         return response
 
-    def is_allowed_load_user_permissions(self, request: WSGIRequest, user: User) -> bool:
+    def should_load_user_permissions(self, request: WSGIRequest, user: User) -> bool:
         """Decide whether RBAC should load the access permissions for the user based on the given request."""
         # Organization administrators will have already all the permissions so there is no need to load permissions for
         # them.
