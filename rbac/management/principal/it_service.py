@@ -232,7 +232,7 @@ class ITService:
         # Fetch the service accounts from the group.
         group_service_account_principals = group.principals.filter(type=TYPE_SERVICE_ACCOUNT)
 
-        # Apply the specified query pamareters for the collection. Begin with the sort order.
+        # Apply the specified query parameters for the collection. Begin with the sort order.
         sort_order = options.get("sort_order")
         if sort_order:
             if sort_order == "asc":
