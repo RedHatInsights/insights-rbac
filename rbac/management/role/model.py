@@ -27,13 +27,14 @@ from internal.integration import sync_handlers
 from management.cache import AccessCache
 from management.models import Permission, Principal
 from management.rbac_fields import AutoDateTimeField
+from management.spice_db.model import SpiceDbAwareModel
 
 from api.models import TenantAwareModel
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 
-class Role(TenantAwareModel):
+class Role(TenantAwareModel, SpiceDbAwareModel):
     """A role."""
 
     uuid = models.UUIDField(default=uuid4, editable=False, unique=True, null=False)
