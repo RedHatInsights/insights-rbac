@@ -280,15 +280,15 @@ class ITService:
 
         return service_accounts
 
-    def _transform_incoming_payload(self, input: dict) -> dict:
+    def _transform_incoming_payload(self, service_account_from_it_service: dict) -> dict:
         """Transform the incoming service account from IT into a dict which fits our response structure."""
         service_account: dict = {}
 
-        client_id = input.get("clientId")
-        name = input.get("name")
-        description = input.get("description")
-        created_by = input.get("createdBy")
-        created_at = input.get("createdAt")
+        client_id = service_account_from_it_service.get("clientId")
+        name = service_account_from_it_service.get("name")
+        description = service_account_from_it_service.get("description")
+        created_by = service_account_from_it_service.get("createdBy")
+        created_at = service_account_from_it_service.get("createdAt")
 
         if client_id:
             service_account["clientID"] = client_id
