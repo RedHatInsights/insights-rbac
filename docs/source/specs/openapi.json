@@ -665,7 +665,14 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PrincipalPagination"
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/PrincipalPagination"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ServiceAccountPagination"
+                    }
+                  ]
                 }
               }
             }
@@ -1273,7 +1280,14 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PrincipalPagination"
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/PrincipalPagination"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ServiceAccountPagination"
+                    }
+                  ]
                 }
               }
             }
@@ -2878,7 +2892,7 @@
         }
       }
     }
-  ],  
+  ],
   "components": {
     "parameters": {
       "QueryOffset": {
@@ -3190,7 +3204,8 @@
             "oneOf": [
               {
                 "type": "string"
-              }, {
+              },
+              {
                 "type": "integer"
               }
             ],
@@ -3252,6 +3267,66 @@
                       "$ref": "#/components/schemas/PrincipalMinimal"
                     }
                   ]
+                }
+              }
+            }
+          }
+        ]
+      },
+      "ServiceAccount": {
+        "required": [
+          "clientID",
+          "username",
+          "type"
+        ],
+        "properties": {
+          "username": {
+            "type": "string",
+            "example": "service-account-fe593ba0-9c62-013c-1dc2-6aa2427b506a"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "service-account"
+            ]
+          },
+          "clientID": {
+            "type": "string",
+            "example": "fe593ba0-9c62-013c-1dc2-6aa2427b506a"
+          },
+          "name": {
+            "type": "string",
+            "example": "MyServiceAccount"
+          },
+          "description": {
+            "type": "string",
+            "example": "My new shiny Service Account"
+          },
+          "owner": {
+            "type": "string",
+            "example": "smithj"
+          },
+          "time_created": {
+            "type": "integer",
+            "example": 1706100532
+          }
+        }
+      },
+      "ServiceAccountPagination": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ListPagination"
+          },
+          {
+            "type": "object",
+            "required": [
+              "data"
+            ],
+            "properties": {
+              "data": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ServiceAccount"
                 }
               }
             }
@@ -3802,7 +3877,10 @@
                     }
                   ]
                 },
-                "example": ["value1", "value2"],
+                "example": [
+                  "value1",
+                  "value2"
+                ],
                 "nullable": true
               }
             ]
