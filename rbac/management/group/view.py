@@ -1126,7 +1126,7 @@ class GroupViewSet(
         if owner:
             is_user_owner = user.username == owner
 
-        # Check if the user has the "User Access administator" permission. Leaving the RAW query here
+        # Check if the user has the "User Access administrator" permission. Leaving the RAW query here
         username: str = user.username
         query = (
             "SELECT EXISTS ( "
