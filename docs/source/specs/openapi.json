@@ -612,12 +612,12 @@
             "description": "Get only admin users within an account. Setting this would ignore the parameters: usernames, email",
             "required": false,
             "schema": {
-              "type": "string",
+              "type": "boolean",
               "enum": [
-                "true",
-                "false"
+                true,
+                false
               ],
-              "default": "false"
+              "default": false
             }
           },
           {
@@ -1212,12 +1212,12 @@
             "description": "Get only admin users within an account.",
             "required": false,
             "schema": {
-              "type": "string",
+              "type": "boolean",
               "enum": [
-                "true",
-                "false"
+                true,
+                false
               ],
-              "default": "false"
+              "default": false
             }
           },
           {
