@@ -3312,6 +3312,24 @@
           }
         }
       },
+      "ServiceAccountIn": {
+        "required": [
+          "type",
+          "clientID"
+        ],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "service-account"
+            ]
+          },
+          "clientID": {
+            "type": "string",
+            "example": "fe593ba0-9c62-013c-1dc2-6aa2427b506a"
+          }
+        }
+      },
       "ServiceAccountPagination": {
         "allOf": [
           {
@@ -3409,7 +3427,14 @@
           "principals": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/PrincipalIn"
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/PrincipalIn"
+                },
+                {
+                  "$ref": "#/components/schemas/ServiceAccountIn"
+                }
+              ]
             }
           }
         }
