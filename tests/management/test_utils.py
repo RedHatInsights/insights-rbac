@@ -138,7 +138,7 @@ class UtilsTests(IdentityRequest):
     @mock.patch("management.utils.verify_principal_with_proxy")
     def test_get_principal_created(self, mocked):
         """Test that when a user principal does not exist in the database, it gets created."""
-        # Build a non existent service account.
+        # Build a non existent user principal.
         user = User()
         user.username = "abcde"
 
