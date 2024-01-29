@@ -34,7 +34,7 @@ proxy = PrincipalProxy()  # pylint: disable=invalid-name
 def clean_tenant_principals(tenant):
     """Check if all the principals in the tenant exist, remove non-existent principals."""
     removed_principals = []
-    principals = list(Principal.objects.filter(tenant=tenant))
+    principals = list(Principal.objects.filter(type="user").filter(tenant=tenant))
     if settings.AUTHENTICATE_WITH_ORG_ID:
         tenant_id = tenant.org_id
     else:
