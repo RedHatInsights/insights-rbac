@@ -23,7 +23,7 @@ from django.conf import settings
 from django.db.models import Q
 from management.models import Group, Principal
 from prometheus_client import Counter, Histogram
-from rest_framework import status
+from rest_framework import serializers, status
 
 from api.models import User
 from .unexpected_status_code_from_it import UnexpectedStatusCodeFromITError
@@ -52,6 +52,14 @@ it_request_error = Counter(
     "Number of requests from RBAC to IT's SSO that failed and the reason why they failed",
     ["error"],
 )
+
+
+def limit_offset_validation(offset, limit):
+    """Limit and offset should not be negative number."""
+    if offset < 0 or limit < 0:
+        detail = "Values for limit and offset must be positive numbers."
+        source = "service accounts"
+        raise serializers.ValidationError({source: [detail]})
 
 
 class ITService:
@@ -194,12 +202,13 @@ class ITService:
         else:
             service_account_principals = service_account_principals.order_by("-username")
 
-        # We always set a default offset and a limit if the user doesn't specify them so it is safe to simply put the
+        # We always set a default offset and a limit if the user doesn't specify them, so it is safe to simply put the
         # two parameters in the query to slice it.
         offset = options.get("offset")
         limit = options.get("limit")
+        limit_offset_validation(offset, limit)
 
-        service_account_principals[offset:limit]
+        service_account_principals = service_account_principals[offset : offset + limit]
 
         # If we are in an ephemeral or test environment, we will take all the service accounts of the user that are
         # stored in the database and generate a mocked response for them, simulating that IT has the corresponding
@@ -250,11 +259,12 @@ class ITService:
             )
 
         # Get the limit and the offset. We always have default values for these, so it is safe to simply fetch them.
-        limit = options["limit"]
-        offset = options["offset"]
+        offset = options.get("offset")
+        limit = options.get("limit")
+        limit_offset_validation(offset, limit)
 
         # Filter the service accounts with the offset and the limit.
-        group_service_account_principals[offset:limit]
+        group_service_account_principals = group_service_account_principals[offset : offset + limit]
 
         # If we are in an ephemeral or test environment, we will take all the service accounts of the user that are
         # stored in the database and generate a mocked response for them, simulating that IT has the corresponding

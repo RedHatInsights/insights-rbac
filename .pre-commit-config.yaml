@@ -5,7 +5,10 @@ repos:
   rev: "3.7.9"
   hooks:
   - id: flake8
-    args: ["rbac"]
+    # E203 = Whitespace before ':'
+    # C901 = Function is too complex
+    # W503 = Line break before binary operator
+    args: ["--ignore=E203,C901,W503", "rbac"]
     pass_filenames: false
     require_serial: true
 - repo: https://github.com/psf/black
