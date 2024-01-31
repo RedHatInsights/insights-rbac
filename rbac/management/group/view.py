@@ -54,7 +54,6 @@ from rest_framework.decorators import action
 from rest_framework.filters import OrderingFilter
 from rest_framework.response import Response
 
-from api.common.pagination import StandardResultsSetPagination
 from api.models import Tenant, User
 from .insufficient_privileges import InsufficientPrivilegesError
 from .service_account_not_found_error import ServiceAccountNotFoundError
@@ -771,10 +770,8 @@ class GroupViewSet(
                         },
                     )
 
-                # Get the principal username option parameter and the limit and offset parameters too.
+                # Get the principal username option parameter.
                 options[PRINCIPAL_USERNAME_KEY] = request.query_params.get(PRINCIPAL_USERNAME_KEY)
-                options["limit"] = int(request.query_params.get("limit", StandardResultsSetPagination.default_limit))
-                options["offset"] = int(request.query_params.get("offset", 0))
 
                 # Fetch the group's service accounts.
                 it_service = ITService()
@@ -796,10 +793,12 @@ class GroupViewSet(
                         },
                     )
 
-                # Prettify the output payload and return it.
-                page = self.paginate_queryset(service_accounts)
-                serializer = PrincipalSerializer(page, many=True)
+                self.paginate_queryset(service_accounts)
 
+                # Filter the service accounts with the offset and the limit.
+                service_accounts = service_accounts[
+                    self.paginator.offset : self.paginator.offset + self.paginator.limit
+                ]
                 return self.get_paginated_response(service_accounts)
 
             principals_from_params = self.filtered_principals(group, request)

@@ -205,6 +205,9 @@ class PrincipalView(APIView):
                     },
                 )
 
+            service_accounts_count = len(service_accounts)
+            service_accounts = service_accounts[offset : offset + limit]
+
             # Adapt the response object to reuse the code below.
             resp = {"status_code": status.HTTP_200_OK, "data": service_accounts}
         else:
@@ -214,14 +217,16 @@ class PrincipalView(APIView):
         response_data = {}
         if status_code == status.HTTP_200_OK:
             data = resp.get("data", [])
-            if isinstance(data, dict):
+            if principal_type == "service-account":
+                count = service_accounts_count
+            elif isinstance(data, dict):
                 count = data.get("userCount")
                 data = data.get("users")
             elif isinstance(data, list):
                 count = len(data)
             else:
                 count = None
-            response_data["meta"] = {"count": count}
+            response_data["meta"] = {"count": count, "limit": limit, "offset": offset}
             response_data["links"] = {
                 "first": f"{path}?limit={limit}&offset=0{usernames_filter}",
                 "next": f"{path}?limit={limit}&offset={offset + limit}{usernames_filter}",
