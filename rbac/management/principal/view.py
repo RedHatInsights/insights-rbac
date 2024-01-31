@@ -188,7 +188,7 @@ class PrincipalView(APIView):
             # Fetch the service accounts from IT.
             try:
                 it_service = ITService()
-                service_accounts = it_service.get_service_accounts(
+                service_accounts, sa_count = it_service.get_service_accounts(
                     user=user, bearer_token=bearer_token, options=options
                 )
             except (requests.exceptions.ConnectionError, UnexpectedStatusCodeFromITError):
@@ -214,7 +214,9 @@ class PrincipalView(APIView):
         response_data = {}
         if status_code == status.HTTP_200_OK:
             data = resp.get("data", [])
-            if isinstance(data, dict):
+            if principal_type == "service-account":
+                count = sa_count
+            elif isinstance(data, dict):
                 count = data.get("userCount")
                 data = data.get("users")
             elif isinstance(data, list):
