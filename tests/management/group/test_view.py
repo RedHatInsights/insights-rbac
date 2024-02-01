@@ -896,8 +896,6 @@ class GroupViewsetTests(IdentityRequest):
 
         call_args, kwargs = mock_request.call_args_list[0]
         username_arg = call_args[0]
-        print(response.data.get("data"))
-        print(response.data.get("meta"))
 
         mock_request.assert_called_with(
             ANY,
