@@ -209,6 +209,45 @@ def filter_queryset_by_tenant(queryset, tenant):
     return queryset.filter(tenant=tenant)
 
 
+def deduplicate_access_queryset(queryset):
+    """
+    Deduplicate the access queryset.
+
+    Takes a queryset on the Access model, and returns a list of the minimal
+    permissions described in the original queryset.  These deduplications are
+    performed:
+
+    1: two exactly matching permissions are combined - e.g. 'app:*:read' and
+       'app:*:read' - including joining together their resourceDefinitions.
+
+    Others may be added later, such as combining permissions that wholly
+    include others.  For now let's stick with what's simple.
+    """
+    # Since the ordering does not matter, we record these in a dict by the
+    # permission, for ease of access.
+    deduplicated_access = dict()
+
+    def matching_perms(this_access, sought_access):
+        """Find all access objects that match the app and resource given."""
+        tap = this_access.permission
+        sap = sought_access.permission
+        return tap.app == sap.app and tap.resource_type == sap.resource_type
+
+    for access in queryset:
+        if not access.permission:
+            # Cannot emit an access permission if it doesn't have one
+            continue
+        if access.permission.permission in deduplicated_access:
+            # Combine this access object's resource definitions into that
+            # already stored.  Note that at this stage we DO NOT attempt to
+            # merge attributeFilter structures.
+            deduplicated_access[access.permission.permission].resourceDefinitions.extend(
+                access.resourceDefinitions
+            )
+    # Return access object list in order by permission for testing consistency
+    return (deduplicated_access[perm] for perm in sorted(deduplicated_access.keys()))
+
+
 def validate_and_get_key(params, query_key, valid_values, default_value=None, required=True):
     """Validate and return the key."""
     value = params.get(query_key, default_value)

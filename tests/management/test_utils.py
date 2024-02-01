@@ -23,6 +23,7 @@ from management.utils import (
     policies_for_principal,
     roles_for_principal,
     account_id_for_tenant,
+    deduplicate_access_queryset,
 )
 from tests.identity_request import IdentityRequest
 
@@ -130,3 +131,29 @@ class UtilsTests(IdentityRequest):
         """Test that we get the expected account number from a tenant name."""
         tenant = Tenant.objects.create(tenant_name="acct1234")
         self.assertEqual(account_id_for_tenant(tenant), "1234")
+
+    def test_deduplicate_access_queryset(self):
+        """
+        Test a variety of scenarios where we need to deduplicate the data
+        """
+        ih_hosts_read = Permission.objects.create(permission='inventory:hosts:read', tenant=self.tenant)
+        ihhr_access1 = Access.objects.create(permission=ih_hosts_read, role=self.roleA, tenant=self.tenant)
+        groups_rdef2 = ResourceDefinition.objects.create(access=ihhr_access1, attributeFilter={
+            'key': 'group.id', 'operation': 'in', 'value': [
+                '78e3dc30-cec3-4b49-be2d-37482c74a9a1',
+                '78e3dc30-cec3-4b49-be2d-37482c74a9b1'
+            ]
+        })
+        ihhr_access2 = Access.objects.create(permission=ih_hosts_read, role=self.roleA, tenant=self.tenant)
+        groups_rdef2 = ResourceDefinition.objects.create(access=ihhr_access2, attributeFilter={
+            'key': 'group.id', 'operation': 'in', 'value': [
+                '78e3dc30-cec3-4b49-be2d-37482c74a9a2',
+                '78e3dc30-cec3-4b49-be2d-37482c74a9b2'
+            ]
+        })
+
+        # First basic test: what do these get merged into?
+        queryset = Access.objects.filter(tenant=self.tenant)
+        deduped = deduplicate_access_queryset(queryset)
+        print("deduped:", deduped)
+        self.assertEqual(len(deduped), 1)

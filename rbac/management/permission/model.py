@@ -31,6 +31,20 @@ class Permission(TenantAwareModel):
     description = models.TextField(default="")
     permissions = models.ManyToManyField("self", symmetrical=False, related_name="requiring_permissions")
 
+    def __eq__(self, other):
+        return self.permission == other.permission
+
+    def __contains__(self, other):
+        # Note that the sense of 'contains' is opposite to the sense of 'in':
+        # A is in B if B contains A.
+        if self.permission == other.permission:
+            return True
+        if not (self.application == other.application or self.application == '*'):
+            return False
+        if not (self.resource_type == other.resource_type or self.resource_type == '*'):
+            return False
+        return (self.verb == other.verb or self.verb == '*' or (other.verb == 'read' and self.verb == 'write'))
+
     def save(self, *args, **kwargs):
         """Populate the application, resource_type and verb field before saving."""
         context = self.permission.split(":")

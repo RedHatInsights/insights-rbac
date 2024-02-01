@@ -23,6 +23,7 @@ from management.querysets import get_access_queryset
 from management.role.serializer import AccessSerializer
 from management.utils import (
     APPLICATION_KEY,
+    deduplicate_access_queryset,
     get_principal_from_request,
     validate_and_get_key,
     validate_key,
@@ -129,7 +130,9 @@ class AccessView(APIView):
         access_policy = cache.get_policy(principal.uuid, sub_key)
         if access_policy is None:
             queryset = self.get_queryset(ordering)
-            access_policy = self.serializer_class(queryset, many=True).data
+            access_policy = self.serializer_class(
+                deduplicate_access_queryset(queryset), many=True
+            ).data
             cache.save_policy(principal.uuid, sub_key, access_policy)
 
         page = self.paginate_queryset(access_policy)
