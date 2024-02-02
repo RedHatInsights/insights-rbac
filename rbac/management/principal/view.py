@@ -122,7 +122,7 @@ class PrincipalView(APIView):
         if offset - limit > 0:
             previous_offset = offset - limit
 
-        # Attempt validating and obtaining the "prinicpal type" query
+        # Attempt validating and obtaining the "principal type" query
         # parameter.
         principal_type = validate_and_get_key(
             query_params, PRINCIPAL_TYPE_KEY, VALID_PRINCIPAL_TYPE_VALUE, required=False
