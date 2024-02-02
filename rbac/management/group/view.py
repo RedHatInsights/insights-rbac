@@ -609,7 +609,6 @@ class GroupViewSet(
 
             # Process the service accounts and add them to the group.
             if len(service_accounts) > 0:
-                bearer_token: str = None
                 try:
                     # Attempt validating the JWT token.
                     token_validator = ITSSOTokenValidator()
@@ -725,7 +724,6 @@ class GroupViewSet(
 
             # Make sure we return early for service accounts.
             if principalType == "service-account":
-                bearer_token: str = None
                 try:
                     # Attempt validating the JWT token.
                     token_validator = ITSSOTokenValidator()
