@@ -1128,7 +1128,7 @@ class GroupViewSet(
             is_user_owner = user.username == owner
 
         # Check if the user has the "User Access administrator" permission. Leaving the RAW query here
-        username: str = user.username
+        username: str = user.username  # type: ignore
         query = (
             "SELECT EXISTS ( "
             "SELECT "

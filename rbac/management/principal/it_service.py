@@ -358,10 +358,10 @@ class ITService:
                 sa_principal = service_account_principals[it_service_account["clientID"]]
 
                 if username_only and username_only == "true":
-                    service_accounts.append({"username": sa_principal.username})
+                    service_accounts.append({"username": sa_principal.username})  # type: ignore
                 else:
                     # Get the principal's username from the database and set it in the response for the user.
-                    it_service_account["username"] = sa_principal.username
+                    it_service_account["username"] = sa_principal.username  # type: ignore
 
                     service_accounts.append(it_service_account)
             # If we cannot find a requested service account to IT in the database, we simply
