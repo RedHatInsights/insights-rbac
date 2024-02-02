@@ -182,7 +182,6 @@ class ITService:
         # If "match_criteria" is specified, only the first username is taken into account.
         match_criteria = options.get("match_criteria")
         if match_criteria:
-            match_criteria: str = options["match_criteria"]
             username = usernames[0]
 
             if match_criteria == "partial":
