@@ -22,6 +22,7 @@ from uuid import uuid4
 from django.db import transaction
 from django.conf import settings
 from django.urls import reverse
+from django.test.utils import override_settings
 from rest_framework import status
 from rest_framework.test import APIClient
 
@@ -121,12 +122,32 @@ class GroupViewsetTests(IdentityRequest):
         # role that's not assigned to principal
         self.roleOrphan = Role.objects.create(name="roleOrphan", tenant=self.tenant)
 
-        # group that associates with multipal roles
+        # group that associates with multiple roles
         self.groupMultiRole = Group.objects.create(name="groupMultiRole", tenant=self.tenant)
         self.policyMultiRole = Policy.objects.create(name="policyMultiRole", tenant=self.tenant)
         self.policyMultiRole.roles.add(self.role)
         self.policyMultiRole.roles.add(self.roleB)
         self.groupMultiRole.policies.add(self.policyMultiRole)
+
+        # fixtures for Service Accounts
+        self.sa_client_ids = [
+            "b6636c60-a31d-013c-b93d-6aa2427b506c",
+            "69a116a0-a3d4-013c-b940-6aa2427b506c",
+            "6f3c2700-a3d4-013c-b941-6aa2427b506c",
+        ]
+        self.service_accounts = []
+        for uuid in self.sa_client_ids:
+            principal = Principal(
+                username="service_account-" + uuid,
+                tenant=self.tenant,
+                type="service-account",
+                service_account_id=uuid,
+            )
+            self.service_accounts.append(principal)
+            principal.save()
+
+        self.group.principals.add(*self.service_accounts)
+        self.group.save()
 
     def tearDown(self):
         """Tear down group viewset tests."""
@@ -1960,6 +1981,153 @@ class GroupViewsetTests(IdentityRequest):
         self.assertEqual(response.data.get("meta").get("count"), 2)
         self.assertEqual(response.data.get("data")[0].get("username"), self.principal.username)
         self.assertEqual(response.data.get("data")[1].get("username"), self.principalB.username)
+
+    @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
+    @patch("management.principal.it_service.ITService.request_service_accounts")
+    def test_get_group_service_account_success(self, mock_request):
+        """Test that getting the "service-account" type principals from a nonempty group returns successfully."""
+        mocked_values = []
+        for uuid in self.sa_client_ids:
+            mocked_values.append(
+                {
+                    "clientID": uuid,
+                    "name": f"service_account_name_{uuid.split('-')[0]}",
+                    "description": f"Service Account description {uuid.split('-')[0]}",
+                    "owner": "jsmith",
+                    "username": "service_account-" + uuid,
+                    "time_created": 1706784741,
+                    "type": "service-account",
+                }
+            )
+
+        mock_request.return_value = mocked_values
+
+        url = f"{reverse('group-principals', kwargs={'uuid': self.group.uuid})}?principal_type=service-account"
+        client = APIClient()
+        response = client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIsInstance(response.data.get("data"), list)
+        self.assertEqual(int(response.data.get("meta").get("count")), 3)
+        self.assertEqual(len(response.data.get("data")), 3)
+
+        sa = response.data.get("data")[0]
+        self.assertCountEqual(
+            list(sa.keys()),
+            ["clientID", "name", "description", "owner", "time_created", "type", "username"],
+        )
+
+        for mock_sa in mocked_values:
+            if mock_sa["clientID"] == sa.get("clientID"):
+                self.assertEqual(sa.get("name"), mock_sa["name"])
+                self.assertEqual(sa.get("description"), mock_sa["description"])
+                self.assertEqual(sa.get("owner"), mock_sa["owner"])
+                self.assertEqual(sa.get("type"), "service-account")
+                self.assertEqual(sa.get("username"), mock_sa["username"])
+
+    @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
+    @patch("management.principal.it_service.ITService.request_service_accounts")
+    def test_get_group_service_account_empty_response(self, mock_request):
+        """Test that empty response is returned when tenant doesn't have a service account in a group."""
+        uuid = self.sa_client_ids[0]
+        mock_request.return_value = [
+            {
+                "clientID": uuid,
+                "name": f"service_account_name_{uuid.split('-')[0]}",
+                "description": f"Service Account description {uuid.split('-')[0]}",
+                "owner": "jsmith",
+                "username": "service_account-" + uuid,
+                "time_created": 1706784741,
+                "type": "service-account",
+            }
+        ]
+
+        url = f"{reverse('group-principals', kwargs={'uuid': self.groupB.uuid})}?principal_type=service-account"
+        client = APIClient()
+        response = client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIsInstance(response.data.get("data"), list)
+        self.assertEqual(int(response.data.get("meta").get("count")), 0)
+        self.assertEqual(len(response.data.get("data")), 0)
+
+    @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
+    @patch("management.principal.it_service.ITService.request_service_accounts")
+    def test_get_group_service_account_valid_limit_offset(self, mock_request):
+        """Test that we can read a list of service accounts according to the given limit and offset."""
+        mocked_values = []
+        for uuid in self.sa_client_ids:
+            mocked_values.append(
+                {
+                    "clientID": uuid,
+                    "name": f"service_account_name_{uuid.split('-')[0]}",
+                    "description": f"Service Account description {uuid.split('-')[0]}",
+                    "owner": "jsmith",
+                    "username": "service_account-" + uuid,
+                    "time_created": 1706784741,
+                    "type": "service-account",
+                }
+            )
+
+        mock_request.return_value = mocked_values
+
+        # without limit and offset the default values are used
+        # limit=10, offset=0
+        url = f"{reverse('group-principals', kwargs={'uuid': self.group.uuid})}?principal_type=service-account"
+        client = APIClient()
+        response = client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(int(response.data.get("meta").get("count")), 3)
+        self.assertEqual(len(response.data.get("data")), 3)
+
+        # set custom limit and offset
+        test_values = [(1, 1), (2, 2), (5, 5)]
+        for limit, offset in test_values:
+            base_url = f"{reverse('group-principals', kwargs={'uuid': self.group.uuid})}"
+            query_params = f"?principal_type=service-account&limit={limit}&offset={offset}"
+            url = f"{base_url}{query_params}"
+            client = APIClient()
+            response = client.get(url, **self.headers)
+
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            self.assertEqual(int(response.data.get("meta").get("count")), 3)
+            # for limit=1, offset=1, count=3 is the result min(1, max(0, 2)) = 1
+            # for limit=2, offset=2, count=3 is the result min(2, max(0, 1)) = 1
+            # for limit=5, offset=5, count=3 is the result min(5, max(0, -2)) = 0
+            self.assertEqual(len(response.data.get("data")), min(limit, max(0, 3 - offset)))
+
+    @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
+    @patch("management.principal.it_service.ITService.request_service_accounts", return_value=None)
+    def test_get_group_service_account_invalid_limit_offset(self, mock_request):
+        """Test that default values are used for invalid limit and offset."""
+        mocked_values = []
+        for uuid in self.sa_client_ids:
+            mocked_values.append(
+                {
+                    "clientID": uuid,
+                    "name": f"service_account_name_{uuid.split('-')[0]}",
+                    "description": f"Service Account description {uuid.split('-')[0]}",
+                    "owner": "jsmith",
+                    "username": "service_account-" + uuid,
+                    "time_created": 1706784741,
+                    "type": "service-account",
+                }
+            )
+
+        mock_request.return_value = mocked_values
+
+        test_values = [(-1, 0), (10, -2), ("xxx", 0), (10, "xxx")]
+        for limit, offset in test_values:
+            base_url = f"{reverse('group-principals', kwargs={'uuid': self.group.uuid})}"
+            query_params = f"?principal_type=service-account&limit={limit}&offset={offset}"
+            url = f"{base_url}{query_params}"
+            client = APIClient()
+            response = client.get(url, **self.headers)
+
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            self.assertEqual(int(response.data.get("meta").get("count")), 3)
+            self.assertEqual(len(response.data.get("data")), 3)
 
 
 class GroupViewNonAdminTests(IdentityRequest):

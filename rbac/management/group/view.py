@@ -44,7 +44,7 @@ from management.permissions import GroupAccessPermission
 from management.principal.it_service import ITService
 from management.principal.model import Principal
 from management.principal.proxy import PrincipalProxy
-from management.principal.serializer import PrincipalSerializer
+from management.principal.serializer import PrincipalSerializer, ServiceAccountSerializer
 from management.principal.view import ADMIN_ONLY_KEY, USERNAME_ONLY_KEY, VALID_BOOLEAN_VALUE
 from management.querysets import get_group_queryset, get_role_queryset
 from management.role.view import RoleViewSet
@@ -54,7 +54,6 @@ from rest_framework.decorators import action
 from rest_framework.filters import OrderingFilter
 from rest_framework.response import Response
 
-from api.common.pagination import StandardResultsSetPagination
 from api.models import Tenant, User
 from .insufficient_privileges import InsufficientPrivilegesError
 from .service_account_not_found_error import ServiceAccountNotFoundError
@@ -773,8 +772,6 @@ class GroupViewSet(
 
                 # Get the principal username option parameter and the limit and offset parameters too.
                 options[PRINCIPAL_USERNAME_KEY] = request.query_params.get(PRINCIPAL_USERNAME_KEY)
-                options["limit"] = int(request.query_params.get("limit", StandardResultsSetPagination.default_limit))
-                options["offset"] = int(request.query_params.get("offset", 0))
 
                 # Fetch the group's service accounts.
                 it_service = ITService()
@@ -798,9 +795,9 @@ class GroupViewSet(
 
                 # Prettify the output payload and return it.
                 page = self.paginate_queryset(service_accounts)
-                serializer = PrincipalSerializer(page, many=True)
+                serializer = ServiceAccountSerializer(page, many=True)
 
-                return self.get_paginated_response(service_accounts)
+                return self.get_paginated_response(serializer.data)
 
             principals_from_params = self.filtered_principals(group, request)
             page = self.paginate_queryset(principals_from_params)
