@@ -12,6 +12,7 @@
 !tests/
 !requirements.txt
 !Makefile
+!mypy.ini
 
 # keep the test files out of the final image
 #**/*test*
