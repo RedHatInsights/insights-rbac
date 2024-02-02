@@ -149,7 +149,7 @@ class ITService:
 
         return service_accounts
 
-    def get_service_accounts(self, user: User, bearer_token: str, options: dict = {}) -> (list[dict], int):
+    def get_service_accounts(self, user: User, bearer_token: str, options: dict = {}) -> list[dict]:
         """Request and returns the service accounts for the given tenant."""
         # We might want to bypass calls to the IT service on ephemeral or test environments.
         it_service_accounts: list[dict] = []
@@ -208,7 +208,6 @@ class ITService:
         limit = options.get("limit")
         limit_offset_validation(offset, limit)
 
-        count = len(service_account_principals)
         service_account_principals = service_account_principals[offset : offset + limit]
 
         # If we are in an ephemeral or test environment, we will take all the service accounts of the user that are
@@ -230,7 +229,7 @@ class ITService:
             service_account_principals=sap_dict, it_service_accounts=it_service_accounts, options=options
         )
 
-        return service_accounts, count
+        return service_accounts
 
     def get_service_accounts_group(self, group: Group, bearer_token: str, options: dict = {}) -> list[dict]:
         """Get the service accounts for the given group."""
@@ -258,6 +257,14 @@ class ITService:
             group_service_account_principals = group_service_account_principals.filter(
                 username__contains=principal_username
             )
+
+        # Get the limit and the offset. We always have default values for these, so it is safe to simply fetch them.
+        offset = options.get("offset")
+        limit = options.get("limit")
+        limit_offset_validation(offset, limit)
+
+        # Filter the service accounts with the offset and the limit.
+        group_service_account_principals = group_service_account_principals[offset : offset + limit]
 
         # If we are in an ephemeral or test environment, we will take all the service accounts of the user that are
         # stored in the database and generate a mocked response for them, simulating that IT has the corresponding
