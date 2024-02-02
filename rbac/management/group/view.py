@@ -17,6 +17,7 @@
 
 """View for group management."""
 import logging
+from typing import Iterable
 
 import requests
 from django.conf import settings
@@ -397,9 +398,9 @@ class GroupViewSet(
         user: User,
         group: Group,
         bearer_token: str,
-        service_accounts: [dict],
-        account_name: str = None,
-        org_id: str = None,
+        service_accounts: Iterable[dict],
+        account_name: str = "",
+        org_id: str = "",
     ) -> Group:
         """Process the list of service accounts and add them to the group."""
         # Fetch all the user's service accounts from IT. If we are on a development or testing environment, we might
@@ -1061,7 +1062,7 @@ class GroupViewSet(
         return roles.exclude(uuid__in=roles_for_group)
 
     def remove_service_accounts(
-        self, user: User, group: Group, service_accounts: [str], account_name: str = None, org_id: str = None
+        self, user: User, group: Group, service_accounts: Iterable[str], account_name: str = "", org_id: str = ""
     ) -> None:
         """Remove the given service accounts from the tenant."""
         # Log our intention.

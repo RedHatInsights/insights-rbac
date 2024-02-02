@@ -17,6 +17,7 @@
 """Class to manage interactions with the IT service accounts service."""
 import logging
 import time
+from typing import Tuple
 
 import requests
 from django.conf import settings
@@ -154,7 +155,7 @@ class ITService:
 
         return service_accounts
 
-    def get_service_accounts(self, user: User, bearer_token: str, options: dict = {}) -> (list[dict], int):
+    def get_service_accounts(self, user: User, bearer_token: str, options: dict = {}) -> Tuple[list[dict], int]:
         """Request and returns the service accounts for the given tenant."""
         # We might want to bypass calls to the IT service on ephemeral or test environments.
         it_service_accounts: list[dict] = []
@@ -173,7 +174,7 @@ class ITService:
         # - Admin only
         # - Email
         # - Status
-        usernames: [str] = []
+        usernames: list[str] = []
         specified_usernames = options.get("usernames")
         if specified_usernames:
             usernames = specified_usernames.split(",")
@@ -222,7 +223,7 @@ class ITService:
 
         # Filter the incoming service accounts. Also, transform them to the payload we will
         # be returning.
-        service_accounts: [dict] = self._merge_principals_it_service_accounts(
+        service_accounts: list[dict] = self._merge_principals_it_service_accounts(
             service_account_principals=sap_dict, it_service_accounts=it_service_accounts, options=options
         )
 
@@ -279,7 +280,7 @@ class ITService:
 
         # Filter the incoming service accounts. Also, transform them to the payload we will
         # be returning.
-        service_accounts: [dict] = self._merge_principals_it_service_accounts(
+        service_accounts: list[dict] = self._merge_principals_it_service_accounts(
             service_account_principals=sap_dict, it_service_accounts=it_service_accounts, options=options
         )
 
@@ -348,7 +349,7 @@ class ITService:
         self, service_account_principals: dict[str, dict], it_service_accounts: list[dict], options: dict
     ) -> list[dict]:
         """Merge the database principals with the service account principals and return the response payload."""
-        service_accounts: [dict] = []
+        service_accounts: list[dict] = []
 
         # If the "username_only" parameter was set, we should only return that for the user.
         username_only = options.get("username_only")
