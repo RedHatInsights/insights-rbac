@@ -76,7 +76,7 @@ class ServiceAccountSerializer(serializers.Serializer):
 
     clientID = serializers.UUIDField()
     name = serializers.CharField()
-    description = serializers.CharField()
+    description = serializers.CharField(allow_null=True, required=False)
     owner = serializers.CharField()
     time_created = serializers.IntegerField()
     type = serializers.CharField()
