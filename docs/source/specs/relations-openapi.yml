@@ -60,6 +60,96 @@ paths:
       responses:
         '201':
           description: '{}'
+  /groups/{uuid}/roles/relationships/:
+    post:
+      tags:
+        - Group
+      summary: Add a role to a group in the tenant
+      operationId: addRoleToGroup
+      parameters:
+        - name: uuid
+          in: path
+          description: TODO
+          required: true
+          schema:
+            type: string
+            format: uuid
+      description: |
+        Example of request body from platform RBAC API
+        ```
+          {
+            "roles": [
+              "94846f2f-cced-474f-b7f3-47e2ec51dd11"
+            ]
+          }
+        ```
+        
+        Schema in SpiceDB
+        ```
+        ```
+
+        Example of relations in SpiceDB creation (in zed format)
+        ```
+        ```
+      requestBody:
+        content:
+            application/json:
+                schema:
+                    $ref: '#/components/schemas/api.rebac.v1.CreateRelationshipsRequest'
+                examples:
+                  addPrincipalToGroupExample:
+                    $ref: '#/components/examples/AddRoleToGroupExample'
+      responses:
+        '200':
+          description: '{}'
+  /roles/relationships/:
+    post:
+      tags:
+        - Group
+      summary: Add a role to a group in the tenant
+      operationId: createRole
+      description: |
+        Example of request body from platform RBAC API
+        ```
+          {
+            "name": "RoleA",
+            "display_name": "ARoleName",
+            "description": "A description of RoleA",
+            "access": [
+              {
+                "permission": "cost-management:*:read",
+                "resourceDefinitions": [
+                  {
+                    "attributeFilter": {
+                      "key": "cost-management.aws.account",
+                      "operation": "equal",
+                      "value": "123456"
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ```
+        
+        Schema in SpiceDB
+        ```
+        ```
+
+        Example of relations in SpiceDB creation (in zed format)
+        ```
+        ```
+      requestBody:
+        content:
+            application/json:
+                schema:
+                    $ref: '#/components/schemas/api.rebac.v1.CreateRelationshipsRequest'
+                examples:
+                  addPrincipalToGroupExample:
+                    $ref: '#/components/examples/CreateRoleExample'
+      responses:
+        '200':
+          description: '{}'
 components:
   schemas:
     api.rebac.v1.CreateRelationshipsRequest:
@@ -98,6 +188,32 @@ components:
   examples:
     AddPrincipalToGroupExample:
       summary: An example of adding principal to group
+      value:
+        touch: true
+        relationships:
+          - object:
+              type: group
+              id: 9aca5b38-07b1-4873-aaae-d02c94c05673
+            relation: member
+            subject:
+              object:
+                type: user
+                id: user_dev
+    AddRoleToGroupExample:
+      summary: TODO - needs to updated - An example of adding role to group
+      value:
+        touch: true
+        relationships:
+          - object:
+              type: group
+              id: 9aca5b38-07b1-4873-aaae-d02c94c05673
+            relation: member
+            subject:
+              object:
+                type: user
+                id: user_dev
+    CreateRoleExample:
+      summary: TODO - needs to updated - An example of adding role to group
       value:
         touch: true
         relationships:
