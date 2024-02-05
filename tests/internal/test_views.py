@@ -15,7 +15,6 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Test the internal viewset."""
-from uuid import uuid4
 from rest_framework import status
 from rest_framework.test import APIClient
 from django.conf import settings

@@ -23,7 +23,6 @@ from django.test import TestCase
 from faker import Faker
 
 from api.models import Tenant
-from api.serializers import create_tenant_name
 from api.common import RH_IDENTITY_HEADER
 
 
