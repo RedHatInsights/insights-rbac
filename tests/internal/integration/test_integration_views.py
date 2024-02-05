@@ -80,7 +80,7 @@ class IntegrationViewsTests(IdentityRequest):
         policy = Policy.objects.create(name="A Policy", group=group, tenant=self.tenant)
         policy.roles.add(Role.objects.get(name="Role A"))
         group.policies.add(policy)
-        group.save
+        group.save()
 
         self.modifiedTenant1 = Tenant.objects.create(tenant_name="Modified Group", org_id=1111)
         modifiedTenant1Group = Group.objects.create(
