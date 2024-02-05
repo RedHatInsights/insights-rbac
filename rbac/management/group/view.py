@@ -395,7 +395,7 @@ class GroupViewSet(
         user: User,
         group: Group,
         bearer_token: str,
-        service_acounts: [dict],
+        service_accounts: [dict],
         account_name: str = None,
         org_id: str = None,
     ) -> Group:
@@ -414,7 +414,7 @@ class GroupViewSet(
             # Make sure that the service accounts the user specified are visible by them.
             it_sa_client_ids = it_service_accounts_by_client_ids.keys()
             invalid_service_accounts: set = set()
-            for specified_sa in service_acounts:
+            for specified_sa in service_accounts:
                 if specified_sa["clientID"] not in it_sa_client_ids:
                     invalid_service_accounts.add(specified_sa["clientID"])
 
@@ -427,7 +427,7 @@ class GroupViewSet(
 
         # Fetch the service account from our database to add it to the group. If it doesn't exist, we create
         # it.
-        for specified_sa in service_acounts:
+        for specified_sa in service_accounts:
             self.user_has_permission_act_on_service_account(user=user, service_account=specified_sa)
 
             client_id = specified_sa["clientID"]
@@ -658,7 +658,7 @@ class GroupViewSet(
                     resp = self.add_service_accounts(
                         user=request.user,
                         group=group,
-                        service_acounts=service_accounts,
+                        service_accounts=service_accounts,
                         bearer_token=bearer_token,
                         account_name=account,
                         org_id=org_id,
