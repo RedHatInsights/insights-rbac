@@ -2,13 +2,10 @@ default_language_version:
   python: python3.9
 repos:
 - repo: https://github.com/PyCQA/flake8
-  rev: "3.7.9"
+  rev: "7.0.0"
   hooks:
   - id: flake8
-    # E203 = Whitespace before ':'
-    # C901 = Function is too complex
-    # W503 = Line break before binary operator
-    args: ["--ignore=E203,C901,W503", "rbac"]
+    args: ["rbac"]
     pass_filenames: false
     require_serial: true
 - repo: https://github.com/psf/black

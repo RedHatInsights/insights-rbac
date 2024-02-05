@@ -233,7 +233,8 @@ class ITService:
         limit_offset_validation(offset, limit)
 
         count = len(service_accounts)
-        service_accounts = service_accounts[offset : offset + limit]  # type: ignore
+        # flake8 ignore E203 = Whitespace before ':' -> false positive https://github.com/PyCQA/pycodestyle/issues/373
+        service_accounts = service_accounts[offset : offset + limit]  # type: ignore # noqa: E203
 
         return service_accounts, count
 
