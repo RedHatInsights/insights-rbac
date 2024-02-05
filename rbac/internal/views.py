@@ -383,22 +383,24 @@ def invalid_default_admin_groups(request):
     """
     logger.info(f"Invalid default admin groups: {request.method} {request.user.username}")
     public_tenant = Tenant.objects.get(tenant_name="public")
-    invalid_default_admin_groups = Group.objects.filter(
+    invalid_default_admin_groups_list = Group.objects.filter(
         admin_default=True, system=False, platform_default=False
     ).exclude(tenant=public_tenant)
 
     if request.method == "GET":
         payload = {
             "invalid_default_admin_groups": list(
-                invalid_default_admin_groups.values("name", "admin_default", "system", "platform_default", "tenant")
+                invalid_default_admin_groups_list.values(
+                    "name", "admin_default", "system", "platform_default", "tenant"
+                )
             ),
-            "invalid_default_admin_groups_count": invalid_default_admin_groups.count(),
+            "invalid_default_admin_groups_count": invalid_default_admin_groups_list.count(),
         }
         return HttpResponse(json.dumps(payload), content_type="application/json")
     if request.method == "DELETE":
         if not destructive_ok():
             return HttpResponse("Destructive operations disallowed.", status=400)
-        invalid_default_admin_groups.delete()
+        invalid_default_admin_groups_list.delete()
         return HttpResponse(status=204)
     return HttpResponse('Invalid method, only "DELETE" and "GET" are allowed.', status=405)
 
