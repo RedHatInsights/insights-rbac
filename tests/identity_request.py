@@ -15,6 +15,8 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Test Case extension to collect common test data."""
+import uuid
+
 from base64 import b64encode
 from json import dumps as json_dumps
 from unittest.mock import Mock
@@ -69,21 +71,29 @@ class IdentityRequest(TestCase):
         user_data = {"username": cls.fake.user_name(), "email": cls.fake.email()}
         return user_data
 
+    def _create_service_account_data(cls) -> dict[str, str]:
+        """Create service account data"""
+        client_id = str(uuid.uuid4())
+        return {"client_id": client_id, "username": f"service-account-{client_id}"}
+
     @classmethod
     def _create_request_context(
         cls,
-        customer_data,
-        user_data,
-        is_org_admin=True,
-        is_internal=False,
-        cross_account=False,
+        customer_data: dict[str, str],
+        user_data: dict[str, str],
+        is_org_admin: bool = True,
+        is_internal: bool = False,
+        cross_account: bool = False,
+        service_account_data: dict[str, str] = None,
     ):
         """Create the request context for a user."""
         customer = customer_data
         account = customer.get("account_id")
         org_id = customer.get("org_id", None)
 
-        identity = cls._build_identity(user_data, account, org_id, is_org_admin, is_internal)
+        identity = cls._build_identity(
+            user_data, account, org_id, is_org_admin, is_internal, service_account_data=service_account_data
+        )
         if cross_account:
             identity["identity"]["internal"] = {"cross_access": True}
         json_identity = json_dumps(identity)
@@ -95,7 +105,15 @@ class IdentityRequest(TestCase):
         return request_context
 
     @classmethod
-    def _build_identity(cls, user_data, account, org_id, is_org_admin, is_internal):
+    def _build_identity(
+        cls,
+        user_data: dict[str, str],
+        account: str,
+        org_id: str,
+        is_org_admin: bool,
+        is_internal: bool,
+        service_account_data: dict[str, str] = None,
+    ):
         identity = {"identity": {"account_number": account, "org_id": org_id}}
         if user_data is not None:
             identity["identity"]["user"] = {
@@ -105,11 +123,20 @@ class IdentityRequest(TestCase):
                 "user_id": "1111111",
             }
 
+        if service_account_data is not None:
+            identity["identity"]["service_account"] = {
+                "client_id": service_account_data.get("client_id"),
+                "username": service_account_data.get("username"),
+            }
+
         if is_internal:
             identity["identity"]["type"] = "Associate"
             identity["identity"]["associate"] = identity.get("identity").get("user")
             identity["identity"]["user"]["is_internal"] = True
         else:
-            identity["identity"]["type"] = "User"
+            if user_data:
+                identity["identity"]["type"] = "User"
+            else:
+                identity["identity"]["type"] = "Service account"
 
         return identity

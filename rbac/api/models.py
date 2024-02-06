@@ -72,5 +72,6 @@ class User:
     is_active = True
     org_id = None
     # Service account properties.
+    bearer_token: str = None
     client_id: str = ""
     is_service_account: bool = False

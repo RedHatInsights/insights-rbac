@@ -53,13 +53,12 @@ from management.utils import validate_and_get_key, validate_group_name, validate
 from rest_framework import mixins, serializers, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.filters import OrderingFilter
+from rest_framework.request import Request
 from rest_framework.response import Response
 
 from api.models import Tenant, User
 from .insufficient_privileges import InsufficientPrivilegesError
 from .service_account_not_found_error import ServiceAccountNotFoundError
-from ..authorization.token_validator import ITSSOTokenValidator, InvalidTokenError, MissingAuthorizationError
-from ..authorization.token_validator import UnableMeetPrerequisitesError
 from ..principal.unexpected_status_code_from_it import UnexpectedStatusCodeFromITError
 
 USERNAMES_KEY = "usernames"
@@ -397,7 +396,6 @@ class GroupViewSet(
         self,
         user: User,
         group: Group,
-        bearer_token: str,
         service_accounts: Iterable[dict],
         account_name: str = "",
         org_id: str = "",
@@ -407,7 +405,7 @@ class GroupViewSet(
         # want to skip calling IT
         it_service = ITService()
         if not settings.IT_BYPASS_IT_CALLS:
-            it_service_accounts = it_service.request_service_accounts(bearer_token=bearer_token)
+            it_service_accounts = it_service.request_service_accounts(bearer_token=user.bearer_token)
 
             # Organize them by their client ID.
             it_service_accounts_by_client_ids: dict[str, dict] = {}
@@ -502,7 +500,7 @@ class GroupViewSet(
         return group
 
     @action(detail=True, methods=["get", "post", "delete"])
-    def principals(self, request, uuid=None):
+    def principals(self, request: Request, uuid=None):
         """Get, add or remove principals from a group."""
         """
         @api {get} /api/v1/groups/:uuid/principals/    Get principals for a group
@@ -613,55 +611,10 @@ class GroupViewSet(
             # Process the service accounts and add them to the group.
             if len(service_accounts) > 0:
                 try:
-                    # Attempt validating the JWT token.
-                    token_validator = ITSSOTokenValidator()
-                    bearer_token = token_validator.validate_token(request=request)
-                except MissingAuthorizationError:
-                    return Response(
-                        status=status.HTTP_401_UNAUTHORIZED,
-                        data={
-                            "errors": [
-                                {
-                                    "detail": "The authorization header is required for fetching service accounts.",
-                                    "source": "groups",
-                                    "status": str(status.HTTP_401_UNAUTHORIZED),
-                                }
-                            ]
-                        },
-                    )
-                except InvalidTokenError:
-                    return Response(
-                        status=status.HTTP_401_UNAUTHORIZED,
-                        data={
-                            "errors": [
-                                {
-                                    "detail": "Invalid token provided.",
-                                    "source": "groups",
-                                    "status": str(status.HTTP_401_UNAUTHORIZED),
-                                }
-                            ]
-                        },
-                    )
-                except UnableMeetPrerequisitesError:
-                    return Response(
-                        status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                        data={
-                            "errors": [
-                                {
-                                    "detail": "Unable to validate token.",
-                                    "source": "groups",
-                                    "status": str(status.HTTP_500_INTERNAL_SERVER_ERROR),
-                                }
-                            ]
-                        },
-                    )
-
-                try:
                     resp = self.add_service_accounts(
                         user=request.user,
                         group=group,
                         service_accounts=service_accounts,
-                        bearer_token=bearer_token,
                         account_name=account,
                         org_id=org_id,
                     )
@@ -727,61 +680,19 @@ class GroupViewSet(
 
             # Make sure we return early for service accounts.
             if principalType == "service-account":
-                try:
-                    # Attempt validating the JWT token.
-                    token_validator = ITSSOTokenValidator()
-                    bearer_token = token_validator.validate_token(request=request)
-                except MissingAuthorizationError:
-                    return Response(
-                        status=status.HTTP_401_UNAUTHORIZED,
-                        data={
-                            "errors": [
-                                {
-                                    "detail": "The authorization header is required for fetching service accounts.",
-                                    "source": "groups",
-                                    "status": str(status.HTTP_401_UNAUTHORIZED),
-                                }
-                            ]
-                        },
-                    )
-                except InvalidTokenError:
-                    return Response(
-                        status=status.HTTP_401_UNAUTHORIZED,
-                        data={
-                            "errors": [
-                                {
-                                    "detail": "Invalid token provided.",
-                                    "source": "groups",
-                                    "status": str(status.HTTP_401_UNAUTHORIZED),
-                                }
-                            ]
-                        },
-                    )
-                except UnableMeetPrerequisitesError:
-                    return Response(
-                        status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                        data={
-                            "errors": [
-                                {
-                                    "detail": "Unable to validate token.",
-                                    "source": "groups",
-                                    "status": str(status.HTTP_500_INTERNAL_SERVER_ERROR),
-                                }
-                            ]
-                        },
-                    )
-
                 # Get the service account's description and name filters, and the principal's username filter too.
                 # Finally, get the limit and offset parameters.
                 options[SERVICE_ACCOUNT_DESCRIPTION_KEY] = request.query_params.get(SERVICE_ACCOUNT_DESCRIPTION_KEY)
                 options[SERVICE_ACCOUNT_NAME_KEY] = request.query_params.get(SERVICE_ACCOUNT_NAME_KEY)
+
+                # Get the principal username option parameter and the limit and offset parameters too.
                 options[PRINCIPAL_USERNAME_KEY] = request.query_params.get(PRINCIPAL_USERNAME_KEY)
 
                 # Fetch the group's service accounts.
                 it_service = ITService()
                 try:
                     service_accounts = it_service.get_service_accounts_group(
-                        group=group, bearer_token=bearer_token, options=options
+                        group=group, user=request.user, options=options
                     )
                 except (requests.exceptions.ConnectionError, UnexpectedStatusCodeFromITError):
                     return Response(

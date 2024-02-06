@@ -155,12 +155,12 @@ class ITService:
 
         return service_accounts
 
-    def get_service_accounts(self, user: User, bearer_token: str, options: dict = {}) -> Tuple[list[dict], int]:
+    def get_service_accounts(self, user: User, options: dict = {}) -> Tuple[list[dict], int]:
         """Request and returns the service accounts for the given tenant."""
         # We might want to bypass calls to the IT service on ephemeral or test environments.
         it_service_accounts: list[dict] = []
         if not settings.IT_BYPASS_IT_CALLS:
-            it_service_accounts = self.request_service_accounts(bearer_token=bearer_token)
+            it_service_accounts = self.request_service_accounts(bearer_token=user.bearer_token)
 
         # Get the service accounts from the database. The weird filter is to fetch the service accounts depending on
         # the account number or the organization ID the user gave.
@@ -238,12 +238,12 @@ class ITService:
 
         return service_accounts, count
 
-    def get_service_accounts_group(self, group: Group, bearer_token: str, options: dict = {}) -> list[dict]:
+    def get_service_accounts_group(self, group: Group, user: User, options: dict = {}) -> list[dict]:
         """Get the service accounts for the given group."""
         # We might want to bypass calls to the IT service on ephemeral or test environments.
         it_service_accounts: list[dict] = []
         if not settings.IT_BYPASS_IT_CALLS:
-            it_service_accounts = self.request_service_accounts(bearer_token=bearer_token)
+            it_service_accounts = self.request_service_accounts(bearer_token=user.bearer_token)
 
         # Fetch the service accounts from the group.
         group_service_account_principals = group.principals.filter(type=TYPE_SERVICE_ACCOUNT)

@@ -27,6 +27,8 @@ from django.db import IntegrityError
 from django.http import Http404, HttpResponse, QueryDict
 from django.urls import resolve
 from django.utils.deprecation import MiddlewareMixin
+from management.authorization.token_validator import ITSSOTokenValidator, InvalidTokenError, MissingAuthorizationError
+from management.authorization.token_validator import UnableMeetPrerequisitesError
 from management.cache import TenantCache
 from management.models import Principal
 from management.utils import APPLICATION_KEY, access_for_principal, validate_psk
@@ -232,6 +234,12 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
                 user.user_id = None
                 user.system = False
 
+                # The requests made by service accounts are expected to come with an Authorization header which
+                # contains a Bearer token. Therefore, we will attempt to extract it and validate it, and also store it
+                # in case we need to use it to contact IT with it.
+                token_validator = ITSSOTokenValidator()
+                user.bearer_token = token_validator.validate_token(request=request)
+
             # If we did not get the user information or service account information from the "x-rh-identity" header,
             # then the request is directly unauthorized.
             if not user_info and not service_account:
@@ -287,6 +295,52 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
                         logger.error("Cross account request permission denied. Requester is not internal user.")
                         return HttpResponseUnauthorizedRequest()
                     user.username = f"{user.account}-{user.user_id}"
+        except InvalidTokenError:
+            return HttpResponse(
+                content=json.dumps(
+                    {
+                        "errors": [
+                            {
+                                "detail": "Invalid token provided.",
+                                "status": str(status.HTTP_401_UNAUTHORIZED),
+                            }
+                        ]
+                    }
+                ),
+                content_type="application/json",
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+        except MissingAuthorizationError:
+            return HttpResponse(
+                content=json.dumps(
+                    {
+                        "errors": [
+                            {
+                                "detail": "A Bearer token in an authorization header is required when contacting RBAC"
+                                " with a service account.",
+                                "status": str(status.HTTP_401_UNAUTHORIZED),
+                            }
+                        ]
+                    }
+                ),
+                content_type="application/json",
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+        except UnableMeetPrerequisitesError:
+            return HttpResponse(
+                content=json.dumps(
+                    {
+                        "errors": [
+                            {
+                                "detail": "Unable to validate the provided token.",
+                                "status": str(status.HTTP_500_INTERNAL_SERVER_ERROR),
+                            }
+                        ]
+                    }
+                ),
+                content_type="application/json",
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
         except (KeyError, TypeError, JSONDecodeError):
             request_psk = request.META.get(RH_RBAC_PSK)
             account = request.META.get(RH_RBAC_ACCOUNT)

@@ -827,19 +827,6 @@ class PrincipalViewsetTests(IdentityRequest):
 
         cross_account_principal.delete()
 
-    def test_fetch_service_accounts(self):
-        """Test fetching service accounts while not providing a token
-
-        Test that when the user request the service accounts without an authorization token, an unauthorized response
-        is returned
-        """
-
-        url = f'{reverse("principals")}?type=service-account'
-        client = APIClient()
-        response: Response = client.get(url, **self.headers)
-
-        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
-
     @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
     @patch("management.principal.it_service.ITService.request_service_accounts")
     def test_read_principal_service_account_list_success(self, mock_request):
