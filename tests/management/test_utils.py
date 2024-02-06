@@ -15,16 +15,20 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Test the utils module."""
-from api.models import Tenant
-from management.models import Group, Permission, Principal, Policy, Role, Access
+import uuid
+
+from api.models import Tenant, User
+from management.models import Access, Group, Permission, Principal, Policy, Role
 from management.utils import (
     access_for_principal,
     groups_for_principal,
     policies_for_principal,
     roles_for_principal,
     account_id_for_tenant,
+    get_principal,
 )
 from tests.identity_request import IdentityRequest
+from unittest import mock
 
 
 class UtilsTests(IdentityRequest):
@@ -130,3 +134,48 @@ class UtilsTests(IdentityRequest):
         """Test that we get the expected account number from a tenant name."""
         tenant = Tenant.objects.create(tenant_name="acct1234")
         self.assertEqual(account_id_for_tenant(tenant), "1234")
+
+    @mock.patch("management.utils.verify_principal_with_proxy")
+    def test_get_principal_created(self, mocked):
+        """Test that when a user principal does not exist in the database, it gets created."""
+        # Build a non existent user principal.
+        user = User()
+        user.username = "abcde"
+
+        request = mock.Mock()
+        request.user = user
+        request.tenant = self.tenant
+        request.query_params = {}
+
+        # Attempt to fetch the service account principal from the database. Since it does not exist, it should create
+        # one.
+        get_principal(username=user.username, request=request)
+
+        # Assert that the service account was properly created in the database.
+        created_service_account = Principal.objects.get(username=user.username)
+        self.assertEqual(created_service_account.type, "user")
+        self.assertEqual(created_service_account.username, user.username)
+
+    @mock.patch("management.utils.verify_principal_with_proxy")
+    def test_get_principal_service_account_created(self, mocked):
+        """Test that when a service account principal does not exist in the database, it gets created."""
+        # Build a non existent service account.
+        user = User()
+        user.client_id = uuid.uuid4()
+        user.is_service_account = True
+        user.username = "abcde"
+
+        request = mock.Mock()
+        request.user = user
+        request.tenant = self.tenant
+        request.query_params = {}
+
+        # Attempt to fetch the service account principal from the database. Since it does not exist, it should create
+        # one.
+        get_principal(username=user.username, request=request)
+
+        # Assert that the service account was properly created in the database.
+        created_service_account = Principal.objects.get(username=user.username)
+        self.assertEqual(created_service_account.service_account_id, str(user.client_id))
+        self.assertEqual(created_service_account.type, "service-account")
+        self.assertEqual(created_service_account.username, user.username)

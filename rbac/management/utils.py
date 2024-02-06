@@ -81,14 +81,14 @@ def get_principal(username, request, verify_principal=True, from_query=False):
         # In the case that the user that made the request was a service account, store it accordingly in the database.
         user: User = request.user
         if user and user.is_service_account:
-            principal = Principal.objects.get_or_create(
+            principal, _ = Principal.objects.get_or_create(
                 username=user.username, tenant=tenant, type=SERVICE_ACCOUNT_KEY, service_account_id=user.client_id
             )
-
-        # Avoid possible race condition if the user was created while checking BOP
-        principal, created = Principal.objects.get_or_create(
-            username=username, tenant=tenant
-        )  # pylint: disable=unused-variable
+        else:
+            # Avoid possible race condition if the user was created while checking BOP
+            principal, _ = Principal.objects.get_or_create(
+                username=username, tenant=tenant
+            )  # pylint: disable=unused-variable
 
     return principal
 
