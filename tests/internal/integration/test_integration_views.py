@@ -80,7 +80,7 @@ class IntegrationViewsTests(IdentityRequest):
         policy = Policy.objects.create(name="A Policy", group=group, tenant=self.tenant)
         policy.roles.add(Role.objects.get(name="Role A"))
         group.policies.add(policy)
-        group.save
+        group.save()
 
         self.modifiedTenant1 = Tenant.objects.create(tenant_name="Modified Group", org_id=1111)
         modifiedTenant1Group = Group.objects.create(
@@ -319,7 +319,10 @@ class IntegrationViewsTests(IdentityRequest):
         self.assertEqual(response.data.get("meta").get("count"), 1)
 
     def test_roles_for_group_principal_valid(self):
-        """Test that a valid request to /tenant/<id>/principal/user_admin/groups/<uuid>/roles/ from an internal account works."""
+        """
+        Test that a valid request to /tenant/<id>/principal/user_admin/groups/<uuid>/roles/
+        from an internal account works.
+        """
         group_all_uuid = Group.objects.get(name="Group All").uuid
         response = self.client.get(
             f"/_private/api/v1/integrations/tenant/{self.tenant.org_id}/principal/user_admin/groups/{group_all_uuid}/roles/",
@@ -331,7 +334,10 @@ class IntegrationViewsTests(IdentityRequest):
         self.assertEqual(response.data.get("meta").get("count"), 3)
 
     def test_roles_for_group_principal_invalid_account(self):
-        """Test that a valid request to /tenant/<id>/principal/user_admin/groups/<uuid>/roles/ from an external account fails."""
+        """
+        Test that a valid request to /tenant/<id>/principal/user_admin/groups/<uuid>/roles/
+        from an external account fails.
+        """
         group_all_uuid = Group.objects.get(name="Group All").uuid
         external_request_context = self._create_request_context(self.customer, self.user_data, is_internal=False)
         request = external_request_context["request"]

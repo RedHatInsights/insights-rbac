@@ -766,7 +766,10 @@ class PrincipalViewsetTests(IdentityRequest):
         self.assertEqual(resp[0]["username"], "test_user")
 
     def test_read_principal_invalid_type_query_params(self):
-        """Test that when an invalid "principal type" query parameter is specified, a bad request response is returned"""
+        """
+        Test that when an invalid "principal type" query parameter is specified,
+        a bad request response is returned
+        """
         url = reverse("principals")
         client = APIClient()
 

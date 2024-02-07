@@ -21,7 +21,6 @@ from unittest.mock import call, patch
 
 from django.conf import settings
 from django.test import TestCase
-from management.cache import BasicCache
 from management.cache import TenantCache
 from management.models import Access, Group, Permission, Policy, Principal, ResourceDefinition, Role
 

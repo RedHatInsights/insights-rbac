@@ -318,7 +318,7 @@ class CrossAccountRequestViewTests(IdentityRequest):
         self.assertEqual(response.data["data"][0].get("status"), "approved")
 
     def test_list_requests_query_by_user_id_fail_if_not_associate(self):
-        """Test listing cross account request based on user id of identity would fail for non associate."""
+        """Test listing cross account request based on user id of identity would fail for non-associate."""
         client = APIClient()
         response = client.get(f"{URL_LIST}?query_by=user_id", **self.headers)
 
@@ -380,7 +380,7 @@ class CrossAccountRequestViewTests(IdentityRequest):
         self.assertEqual(len(response.data.get("roles")), 2)
 
     def test_retrieve_request_query_by_user_id_fail_if_request_by_another_associate(self):
-        """Test retrieve cross account request based on user id of identity would fail for non associate."""
+        """Test retrieve cross account request based on user id of identity would fail for non-associate."""
         client = APIClient()
         response = client.get(
             f"{URL_LIST}{self.request_2.request_id}/?query_by=user_id", **self.associate_non_admin_request.META
@@ -389,7 +389,7 @@ class CrossAccountRequestViewTests(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
     def test_retrieve_request_query_by_user_id_fail_if_not_associate(self):
-        """Test retrieve cross account request based on user id of identity would fail for non associate."""
+        """Test retrieve cross account request based on user id of identity would fail for non-associate."""
         client = APIClient()
         response = client.get(f"{URL_LIST}{self.request_1.request_id}/?query_by=user_id", **self.headers)
 

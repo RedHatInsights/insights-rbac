@@ -252,7 +252,6 @@ class PrincipalView(APIView):
             )
             return resp, ""
         proxyInput = {}
-        resp = None
         if usernames:
             principals = usernames.split(",")
             if match_criteria != "partial":
