@@ -131,7 +131,6 @@ class PrincipalView(APIView):
 
         # Get either service accounts or user principals, depending on what the user specified.
         if principal_type == "service-account":
-            bearer_token: str = None
             try:
                 # Attempt validating the JWT token.
                 token_validator = ITSSOTokenValidator()
