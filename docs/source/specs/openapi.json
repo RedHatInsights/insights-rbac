@@ -1272,6 +1272,24 @@
                 "user"
               ]
             }
+          },
+          {
+            "in": "query",
+            "name": "service_account_description",
+            "required": false,
+            "description": "Parameter for filtering the service accounts by their description.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "service_account_name",
+            "required": false,
+            "description": "Parameter for filtering the service accounts by their name.",
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
