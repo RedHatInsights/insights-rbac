@@ -15,6 +15,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Test the Management queryset helpers."""
+import uuid
 from unittest.mock import Mock, patch
 
 from django.core.exceptions import PermissionDenied
@@ -32,6 +33,7 @@ from management.querysets import (
     get_policy_queryset,
     get_role_queryset,
     get_access_queryset,
+    _filter_default_groups,
 )
 from management.utils import APPLICATION_KEY
 from rest_framework import serializers
@@ -759,3 +761,64 @@ class QuerySetTest(TestCase):
         group.principals.add(principal)
         group.policies.add(policy)
         return roles
+
+    def test_filter_default_groups(self):
+        """Test that filtering the default groups works when the conditions are met"""
+        # Create two "default" groups.
+        Group.objects.create(name="default-group-one", tenant=self.tenant, admin_default=True, platform_default=True)
+        Group.objects.create(name="default-group-two", tenant=self.tenant, admin_default=True, platform_default=True)
+        # Create another two regular groups.
+        Group.objects.create(name="group-one", tenant=self.tenant, admin_default=False, platform_default=False)
+        Group.objects.create(name="group-two", tenant=self.tenant, admin_default=False, platform_default=False)
+
+        # Define the query parameters that should trigger the filtering of the default groups.
+        query_parameters_test_case = [
+            {"username": f"service-account-{uuid.uuid4()}"},
+            {"exclude_username": True},
+        ]
+
+        for qptc in query_parameters_test_case:
+            request = Mock()
+            request.query_params: dict[str, str] = qptc
+
+            query_set = Group.objects.all()
+            returned_query_set = _filter_default_groups(request=request, queryset=query_set)
+
+            self.assertFalse(
+                len(query_set) == len(returned_query_set), "the filtering should have removed the default groups"
+            )
+
+            for group in returned_query_set:
+                self.assertFalse(
+                    group.admin_default,
+                    "the group should not be an admin default one since it should have been filtered by the"
+                    f' function under test when the query parameter "{qptc}" is specified',
+                )
+                self.assertFalse(
+                    group.platform_default,
+                    "the group should not be a platform default one since it should have been filtered by the"
+                    f' function under test when the query parameter "{qptc}" is specified',
+                )
+
+    def test_dont_filter_default_groups(self):
+        """Test that default groups are not filtered when the conditions are not met"""
+        # Create two "default" groups.
+        Group.objects.create(name="default-group-one", tenant=self.tenant, admin_default=True, platform_default=True)
+        Group.objects.create(name="default-group-two", tenant=self.tenant, admin_default=True, platform_default=True)
+        # Create another two regular groups.
+        Group.objects.create(name="group-one", tenant=self.tenant, admin_default=False, platform_default=False)
+        Group.objects.create(name="group-two", tenant=self.tenant, admin_default=False, platform_default=False)
+
+        # Create a mocked request.
+        request = Mock()
+        request.query_params = {}
+
+        query_set = Group.objects.all()
+        returned_query_set = _filter_default_groups(request=request, queryset=query_set)
+
+        self.assertEqual(
+            query_set,
+            returned_query_set,
+            "the query set returned by the function under test should have been left untouched since the"
+            " conditions for filtering the default groups are not met",
+        )

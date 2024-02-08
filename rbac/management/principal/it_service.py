@@ -17,6 +17,7 @@
 """Class to manage interactions with the IT service accounts service."""
 import logging
 import time
+import uuid
 from typing import Tuple
 
 import requests
@@ -79,17 +80,16 @@ class ITService:
         self.port = settings.IT_SERVICE_PORT
         self.protocol = settings.IT_SERVICE_PROTOCOL_SCHEME
         self.it_request_timeout = settings.IT_SERVICE_TIMEOUT_SECONDS
+        self.it_url = f"{self.protocol}://{self.host}:{self.port}{self.base_path}{IT_PATH_GET_SERVICE_ACCOUNTS}"
 
     @it_request_all_service_accounts_time_tracking.time()
-    def request_service_accounts(self, bearer_token: str) -> list[dict]:
+    def request_service_accounts(self, bearer_token: str, client_ids: list[str] = None) -> list[dict]:
         """Request the service accounts for a tenant and returns the entire list that IT has."""
         # We cannot talk to IT if we don't have a bearer token.
         if not bearer_token:
             raise MissingAuthorizationError()
 
         received_service_accounts: list[dict] = []
-        # Prepare the URL to fetch the service accounts.
-        url = f"{self.protocol}://{self.host}:{self.port}{self.base_path}{IT_PATH_GET_SERVICE_ACCOUNTS}"
 
         # Attempt fetching all the service accounts for the tenant.
         try:
@@ -98,11 +98,16 @@ class ITService:
 
             # If the offset is zero, that means that we need to call the service at least once to get the first
             # service accounts. If it equals the limit, that means that there are more pages to fetch.
+            parameters = {"first": offset, "max": limit}
+            # If we were given client IDs to filter the collection with, do it!
+            if client_ids:
+                parameters["clientId"] = client_ids
+
             while offset == 0 or offset == limit:
                 response = requests.get(
-                    url=url,
+                    url=self.it_url,
                     headers={"Authorization": f"Bearer {bearer_token}"},
-                    params={"first": offset, "max": limit},
+                    params=parameters,
                     timeout=self.it_request_timeout,
                 )
 
@@ -134,7 +139,7 @@ class ITService:
         except requests.exceptions.ConnectionError as exception:
             LOGGER.error(
                 "Unable to connect to IT to fetch the service accounts. Attempted URL %s with error: %s",
-                url,
+                self.it_url,
                 exception,
             )
 
@@ -146,7 +151,7 @@ class ITService:
         except requests.exceptions.Timeout as exception:
             LOGGER.error(
                 "The connection to IT timed out when trying to fetch service accounts. Attempted URL %s with error: %s",
-                url,
+                self.it_url,
                 exception,
             )
 
@@ -159,6 +164,49 @@ class ITService:
             service_accounts.append(self._transform_incoming_payload(incoming_service_account))
 
         return service_accounts
+
+    def is_service_account_valid_by_client_id(self, user: User, service_account_client_id: str) -> bool:
+        """Check if the specified service account is valid."""
+        if settings.IT_BYPASS_IT_CALLS:
+            return False
+
+        return self._is_service_account_valid(user=user, client_id=service_account_client_id)
+
+    def is_service_account_valid_by_username(self, user: User, service_account_username: str) -> bool:
+        """Check if the specified service account is valid."""
+        # The usernames for the service accounts usually come in the form "service-account-${CLIENT_ID}". We don't need
+        # the prefix of the username to query IT, since they only accept client IDs to filter collections.
+        if settings.IT_BYPASS_IT_CALLS:
+            return True
+
+        if self.is_username_service_account(service_account_username):
+            client_id = service_account_username.replace("service-account-", "")
+        else:
+            client_id = service_account_username
+
+        return self._is_service_account_valid(user=user, client_id=client_id)
+
+    def _is_service_account_valid(self, user: User, client_id: str) -> bool:
+        """Check if the provided client ID can be found in the tenant's organization by calling IT."""
+        if settings.IT_BYPASS_IT_CALLS:
+            return True
+        else:
+            service_accounts: list[dict] = self.request_service_accounts(
+                bearer_token=user.bearer_token,
+                client_ids=[client_id],
+            )
+
+            if len(service_accounts) == 0:
+                return False
+            elif len(service_accounts) == 1:
+                sa = service_accounts[0]
+                return client_id == sa.get("clientId")
+            else:
+                LOGGER.error(
+                    f'unexpected number of service accounts received from IT. Wanted one with client ID "{client_id}",'
+                    f" got {len(service_accounts)}: {service_accounts}"
+                )
+                return False
 
     def get_service_accounts(self, user: User, options: dict = {}) -> Tuple[list[dict], int]:
         """Request and returns the service accounts for the given tenant."""
@@ -319,6 +367,29 @@ class ITService:
             return filtered_service_accounts
         else:
             return service_accounts
+
+    @staticmethod
+    def is_username_service_account(username: str) -> bool:
+        """Check if the given username belongs to a service account."""
+        return username.startswith("service-account-")
+
+    @staticmethod
+    def extract_client_id_service_account_username(username: str) -> uuid.UUID:
+        """Extract the client ID from the service account's username."""
+        # If it has the "service-account" prefix, we just need to strip it and return the rest of the username, which
+        # contains the client ID. Else, we have just received the client ID.
+        try:
+            if ITService.is_username_service_account(username=username):
+                return uuid.UUID(username.replace("service-account-", ""))
+            else:
+                return uuid.UUID(username)
+        except ValueError:
+            raise serializers.ValidationError(
+                {
+                    "detail": "unable to extract the client ID from the service account's username because the"
+                    " provided UUID is invalid"
+                }
+            )
 
     def _transform_incoming_payload(self, service_account_from_it_service: dict) -> dict:
         """Transform the incoming service account from IT into a dict which fits our response structure."""
