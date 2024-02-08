@@ -105,6 +105,8 @@ class PrincipalView(APIView):
         try:
             limit = int(query_params.get("limit", default_limit))
             offset = int(query_params.get("offset", 0))
+            if limit < 0 or offset < 0:
+                raise ValueError
             options["limit"] = limit
             options["offset"] = offset
             options["sort_order"] = validate_and_get_key(query_params, SORTORDER_KEY, VALID_SORTORDER_VALUE, "asc")
@@ -222,7 +224,7 @@ class PrincipalView(APIView):
                 count = len(data)
             else:
                 count = None
-            response_data["meta"] = {"count": count}
+            response_data["meta"] = {"count": count, "limit": limit, "offset": offset}
             response_data["links"] = {
                 "first": f"{path}?limit={limit}&offset=0{usernames_filter}",
                 "next": f"{path}?limit={limit}&offset={offset + limit}{usernames_filter}",

@@ -207,15 +207,6 @@ class ITService:
         else:
             service_account_principals = service_account_principals.order_by("-username")
 
-        # We always set a default offset and a limit if the user doesn't specify them, so it is safe to simply put the
-        # two parameters in the query to slice it.
-        offset = options.get("offset")
-        limit = options.get("limit")
-        limit_offset_validation(offset, limit)
-
-        count = len(service_account_principals)
-        service_account_principals = service_account_principals[offset : offset + limit]
-
         # If we are in an ephemeral or test environment, we will take all the service accounts of the user that are
         # stored in the database and generate a mocked response for them, simulating that IT has the corresponding
         # service account to complement the information.
@@ -234,6 +225,15 @@ class ITService:
         service_accounts: [dict] = self._merge_principals_it_service_accounts(
             service_account_principals=sap_dict, it_service_accounts=it_service_accounts, options=options
         )
+
+        # We always set a default offset and a limit if the user doesn't specify them, so it is safe to simply put the
+        # two parameters in the query to slice it.
+        offset = options.get("offset")
+        limit = options.get("limit")
+        limit_offset_validation(offset, limit)
+
+        count = len(service_accounts)
+        service_accounts = service_accounts[offset : offset + limit]  # type: ignore
 
         return service_accounts, count
 
