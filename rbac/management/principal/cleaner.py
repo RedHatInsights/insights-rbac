@@ -39,7 +39,9 @@ def clean_tenant_principals(tenant):
         tenant_id = tenant.org_id
     else:
         tenant_id = tenant.tenant_name
-    logger.info("clean_tenant_principals: Running clean up on %d principals for tenant %s.", len(principals), tenant_id)
+    logger.info(
+        "clean_tenant_principals: Running clean up on %d principals for tenant %s.", len(principals), tenant_id
+    )
     for principal in principals:
         if principal.cross_account:
             continue
@@ -59,7 +61,11 @@ def clean_tenant_principals(tenant):
             removed_principals.append(principal.username)
             # we are temporarily disabling the delete
             # principal.delete()
-            logger.info("clean_tenant_principals: Username %s not found for tenant %s, principal eligible for removal.", principal.username, tenant_id)
+            logger.info(
+                "clean_tenant_principals: Username %s not found for tenant %s, principal eligible for removal.",
+                principal.username,
+                tenant_id,
+            )
         else:
             logger.warning(
                 "Unknown status %d when checking username %s" " for tenant %s, no change needed.",
