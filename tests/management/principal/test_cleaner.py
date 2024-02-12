@@ -123,7 +123,9 @@ class PrincipalCleanerTests(IdentityRequest):
             clean_tenant_principals(self.tenant)
         except Exception:
             self.fail(msg="clean_tenant_principals encountered an exception")
-        self.assertEqual(Principal.objects.count(), 0)
+        # we are disabling the deletion so temporarily the principal will not be deleted
+        self.assertEqual(Principal.objects.count(), 1)
+        # self.assertEqual(Principal.objects.count(), 0)
 
     @patch(
         "management.principal.proxy.PrincipalProxy._request_principals",
