@@ -67,8 +67,7 @@ class ITSSOTokenValidator:
         except Exception as e:
             logger.debug(
                 "Fetching the JSON Web Key Set from Redis raised an exception, attempting to fetch the keys from the"
-                " OIDC configuration instead. Raised error: ",
-                e,
+                f" OIDC configuration instead. Raised error: {e}"
             )
 
         if jwks_certificates_response:
@@ -79,7 +78,7 @@ class ITSSOTokenValidator:
             if not status.is_success(oidc_response.status_code):
                 logger.error(
                     f"Unable to get the OIDC configuration payload when attempting to validate a JWT token. Response"
-                    f" code: {oidc_response.status_code}. Response body: {oidc_response.content}"
+                    f" code: {oidc_response.status_code!r}. Response body: {oidc_response.content!r}"
                 )
                 raise UnableMeetPrerequisitesError()
 
@@ -90,7 +89,7 @@ class ITSSOTokenValidator:
             if not jwks_uri:
                 logger.error(
                     f"Unable to extract the JWKs' URI when attempting to validate a JWT token. Actual payload:"
-                    f"{oidc_response.content}"
+                    f"{oidc_response.content!r}"
                 )
                 raise UnableMeetPrerequisitesError()
 
@@ -117,7 +116,7 @@ class ITSSOTokenValidator:
         try:
             return KeySet.import_key_set(jwks_certificates_response)
         except Exception as e:
-            logger.error("Unable to import IT's public keys to validate the token: {token:%s}".format(token=str(e)))
+            logger.error(f"Unable to import IT's public keys to validate the token: {e}")
             raise UnableMeetPrerequisitesError()
 
     def validate_token(self, request: Request) -> str:
