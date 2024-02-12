@@ -32,7 +32,7 @@ jmespath==1.0.1; python_version >= '3.7'
 joserfc==0.8.0; python_version >= '3.8'
 kafka-python==2.0.2
 kombu==5.3.5; python_version >= '3.8'
-markupsafe==2.1.4; python_version >= '3.7'
+markupsafe==2.1.5; python_version >= '3.7'
 packaging==23.2; python_version >= '3.7'
 prometheus-client==0.15.0; python_version >= '3.6'
 prompt-toolkit==3.0.43; python_full_version >= '3.7.0'
