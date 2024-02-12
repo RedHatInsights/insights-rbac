@@ -488,7 +488,7 @@ objects:
             value: ${IT_SERVICE_TIMEOUT_SECONDS}
           - name: IT_TOKEN_JKWS_CACHE_LIFETIME
             value: ${IT_TOKEN_JKWS_CACHE_LIFETIME}
-          - nmae: PRINCIPAL_CLEANUP_DELETION_ENABLED
+          - name: PRINCIPAL_CLEANUP_DELETION_ENABLED
             value: ${PRINCIPAL_CLEANUP_DELETION_ENABLED}
     jobs:
       - name: tenant-org-id-populator
@@ -3444,9 +3444,10 @@ parameters:
   value: '10'
 - name: IT_TOKEN_JKWS_CACHE_LIFETIME
   value: '28800'
-- name: BONFIRE_DEPENDENCIES
-  description: A comma separated list of non ClowdApp dependencies for bonfire to deploy
-  value: "model-access-permissions-yml-stage,rbac-config-yml-stage"
 - name: PRINCIPAL_CLEANUP_DELETION_ENABLED
   description: Allow or disallow cleanup job to delete principals
   value: 'False'
+- name: BONFIRE_DEPENDENCIES
+  description: A comma separated list of non ClowdApp dependencies for bonfire to deploy
+  value: "model-access-permissions-yml-stage,rbac-config-yml-stage"
+
