@@ -15,7 +15,6 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Test the principal cleaner."""
-import logging
 import uuid
 
 from unittest.mock import patch
@@ -26,6 +25,8 @@ from management.group.model import Group
 from management.principal.cleaner import clean_tenant_principals
 from management.principal.model import Principal
 from tests.identity_request import IdentityRequest
+
+from rbac.settings import PRINCIPAL_CLEANUP_DELETION_ENABLED
 
 
 class PrincipalCleanerTests(IdentityRequest):
@@ -60,8 +61,10 @@ class PrincipalCleanerTests(IdentityRequest):
         except Exception:
             self.fail(msg="clean_tenant_principals encountered an exception")
         # we are disabling the deletion so temporarily the principal will not be deleted
-        self.assertEqual(Principal.objects.count(), 2)
-        # self.assertEqual(Principal.objects.count(), 1)
+        if PRINCIPAL_CLEANUP_DELETION_ENABLED:
+            self.assertEqual(Principal.objects.count(), 1)
+        else:
+            self.assertEqual(Principal.objects.count(), 2)
 
     @patch(
         "management.principal.proxy.PrincipalProxy._request_principals",
@@ -89,8 +92,10 @@ class PrincipalCleanerTests(IdentityRequest):
         # untouched.
         # we are disabling the deletion so temporarily the principal will not be deleted
         principals = Principal.objects.all()
-        # self.assertEqual(len(principals), 1)
-        self.assertEqual(len(principals), 2)
+        if PRINCIPAL_CLEANUP_DELETION_ENABLED:
+            self.assertEqual(Principal.objects.count(), 1)
+        else:
+            self.assertEqual(Principal.objects.count(), 2)
 
         service_account = Principal.objects.all().filter(type="service-account").first()
         self.assertEqual(service_account.service_account_id, service_account_client_id)
@@ -112,8 +117,10 @@ class PrincipalCleanerTests(IdentityRequest):
         except Exception:
             self.fail(msg="clean_tenant_principals encountered an exception")
         # we are disabling the deletion so temporarily the principal will not be deleted
-        self.assertEqual(Principal.objects.count(), 1)
-        # self.assertEqual(Principal.objects.count(), 0)
+        if PRINCIPAL_CLEANUP_DELETION_ENABLED:
+            self.assertEqual(Principal.objects.count(), 0)
+        else:
+            self.assertEqual(Principal.objects.count(), 1)
 
     @patch(
         "management.principal.proxy.PrincipalProxy._request_principals",
@@ -128,8 +135,10 @@ class PrincipalCleanerTests(IdentityRequest):
         except Exception:
             self.fail(msg="clean_tenant_principals encountered an exception")
         # we are disabling the deletion so temporarily the principal will not be deleted
-        self.assertEqual(Principal.objects.count(), 1)
-        # self.assertEqual(Principal.objects.count(), 0)
+        if PRINCIPAL_CLEANUP_DELETION_ENABLED:
+            self.assertEqual(Principal.objects.count(), 0)
+        else:
+            self.assertEqual(Principal.objects.count(), 1)
 
     @patch(
         "management.principal.proxy.PrincipalProxy._request_principals",
