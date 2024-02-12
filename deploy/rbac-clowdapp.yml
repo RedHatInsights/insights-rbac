@@ -195,6 +195,8 @@ objects:
             value: ${EXTERNAL_CHROME_TOPIC}
           - name: MIGRATE_AND_SEED_ON_INIT
             value: ${WORKER_MIGRATE_AND_SEED_ON_INIT}
+          - name: PRINCIPAL_CLEANUP_DELETION_ENABLED
+            value: ${PRINCIPAL_CLEANUP_DELETION_ENABLED}
 
     - name: scheduler-service
       minReplicas: ${{MIN_SCHEDULER_REPLICAS}}
@@ -268,6 +270,8 @@ objects:
               name: ${GLITCHTIP_SECRET}
               key: dsn
               optional: true
+        - name: PRINCIPAL_CLEANUP_DELETION_ENABLED
+          value: ${PRINCIPAL_CLEANUP_DELETION_ENABLED}
 
     - name: service
       minReplicas: ${{MIN_REPLICAS}}
@@ -484,6 +488,8 @@ objects:
             value: ${IT_SERVICE_TIMEOUT_SECONDS}
           - name: IT_TOKEN_JKWS_CACHE_LIFETIME
             value: ${IT_TOKEN_JKWS_CACHE_LIFETIME}
+          - name: PRINCIPAL_CLEANUP_DELETION_ENABLED
+            value: ${PRINCIPAL_CLEANUP_DELETION_ENABLED}
     jobs:
       - name: tenant-org-id-populator
         podSpec:
@@ -3438,6 +3444,9 @@ parameters:
   value: '10'
 - name: IT_TOKEN_JKWS_CACHE_LIFETIME
   value: '28800'
+- name: PRINCIPAL_CLEANUP_DELETION_ENABLED
+  description: Allow or disallow cleanup job to delete principals
+  value: 'False'
 - name: BONFIRE_DEPENDENCIES
   description: A comma separated list of non ClowdApp dependencies for bonfire to deploy
   value: "model-access-permissions-yml-stage,rbac-config-yml-stage"
