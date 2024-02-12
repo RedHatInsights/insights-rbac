@@ -39,7 +39,7 @@ def clean_tenant_principals(tenant):
         tenant_id = tenant.org_id
     else:
         tenant_id = tenant.tenant_name
-    logger.info("Running clean up on %d principals for tenant %s.", len(principals), tenant_id)
+    logger.info("clean_tenant_principals: Running clean up on %d principals for tenant %s.", len(principals), tenant_id)
     for principal in principals:
         if principal.cross_account:
             continue
@@ -52,12 +52,14 @@ def clean_tenant_principals(tenant):
             resp = proxy.request_filtered_principals([principal.username], account=account)
         status_code = resp.get("status_code")
         data = resp.get("data")
+        logger.info("clean_tenant_principals: Response code: %s Data: %s", str(status_code), str(data))
         if status_code == status.HTTP_200_OK and data:
             logger.debug("Username %s found for tenant %s, no change needed.", principal.username, tenant_id)
         elif status_code == status.HTTP_200_OK and not data:
             removed_principals.append(principal.username)
-            principal.delete()
-            logger.info("Username %s not found for tenant %s, principal removed.", principal.username, tenant_id)
+            # we are temporarily disabling the delete
+            # principal.delete()
+            logger.info("clean_tenant_principals: Username %s not found for tenant %s, principal eligible for removal.", principal.username, tenant_id)
         else:
             logger.warning(
                 "Unknown status %d when checking username %s" " for tenant %s, no change needed.",
@@ -66,15 +68,16 @@ def clean_tenant_principals(tenant):
                 tenant_id,
             )
     logger.info(
-        "Completed clean up of %d principals for tenant %s, %d removed.",
+        "clean_tenant_principals: Completed clean up of %d principals for tenant %s, %d eligible for removal: %s.",
         len(principals),
         tenant_id,
         len(removed_principals),
+        str(removed_principals),
     )
 
 
 def clean_tenants_principals():
-    """Update any roles at startup."""
+    """Check which principals are eligible for clean up."""
     logger.info("Start principal clean up.")
 
     for tenant in list(Tenant.objects.all()):

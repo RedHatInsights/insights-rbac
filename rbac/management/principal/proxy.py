@@ -211,6 +211,8 @@ class PrincipalProxy:  # pylint: disable=too-few-public-methods
             if self.source_cert:
                 kwargs["verify"] = self.client_cert_path
             response = method(url, **kwargs)
+            LOGGER.info("Response directly from BOP for org id %s and principal %s. Status: %s, Response: %s",
+                        org_id, data, str(response.status_code), str(response.json()))
         except requests.exceptions.ConnectionError as conn:
             LOGGER.error("Unable to connect for URL %s with error: %s", url, conn)
             resp = {"status_code": status.HTTP_500_INTERNAL_SERVER_ERROR, "errors": [unexpected_error]}
