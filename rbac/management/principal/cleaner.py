@@ -25,6 +25,7 @@ from management.utils import account_id_for_tenant
 from rest_framework import status
 
 from api.models import Tenant
+from rbac.settings import PRINCIPAL_CLEANUP_DELETION_ENABLED
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
@@ -45,7 +46,7 @@ def clean_tenant_principals(tenant):
     for principal in principals:
         if principal.cross_account:
             continue
-        logger.debug("Checking for username %s for tenant %s.", principal.username, tenant_id)
+        logger.debug("clean_tenant_principals: Checking for username %s for tenant %s.", principal.username, tenant_id)
         account = account_id_for_tenant(tenant)
         org_id = tenant.org_id
         if settings.AUTHENTICATE_WITH_ORG_ID:
@@ -56,25 +57,38 @@ def clean_tenant_principals(tenant):
         data = resp.get("data")
         logger.info("clean_tenant_principals: Response code: %s Data: %s", str(status_code), str(data))
         if status_code == status.HTTP_200_OK and data:
-            logger.debug("Username %s found for tenant %s, no change needed.", principal.username, tenant_id)
+            logger.debug(
+                "clean_tenant_principals: Username %s found for tenant %s, no change needed.",
+                principal.username,
+                tenant_id,
+            )
         elif status_code == status.HTTP_200_OK and not data:
             removed_principals.append(principal.username)
-            # we are temporarily disabling the delete
-            # principal.delete()
             logger.info(
                 "clean_tenant_principals: Username %s not found for tenant %s, principal eligible for removal.",
                 principal.username,
                 tenant_id,
             )
+            # we are temporarily disabling the delete
+            if PRINCIPAL_CLEANUP_DELETION_ENABLED:
+                principal.delete()
+                logger.info(
+                    "clean_tenant_principals: Username %s removed.",
+                    principal.username,
+                )
         else:
             logger.warning(
-                "Unknown status %d when checking username %s" " for tenant %s, no change needed.",
+                "clean_tenant_principals: Unknown status %d when checking username %s"
+                " for tenant %s, no change needed.",
                 status_code,
                 principal.username,
                 tenant_id,
             )
+    removal_message = "clean_tenant_principals: Completed clean up of %d principals for tenant %s, %d eligible for removal: %s."  # noqa E501
+    if PRINCIPAL_CLEANUP_DELETION_ENABLED:
+        removal_message = "clean_tenant_principals: Completed clean up of %d principals for tenant %s, %d removed: %s."
     logger.info(
-        "clean_tenant_principals: Completed clean up of %d principals for tenant %s, %d eligible for removal: %s.",
+        removal_message,
         len(principals),
         tenant_id,
         len(removed_principals),
@@ -84,9 +98,11 @@ def clean_tenant_principals(tenant):
 
 def clean_tenants_principals():
     """Check which principals are eligible for clean up."""
-    logger.info("Start principal clean up.")
+    logger.info("clean_tenant_principals: Start principal clean up.")
 
     for tenant in list(Tenant.objects.all()):
-        logger.info("Running principal clean up for tenant %s.", tenant.tenant_name)
+        logger.info("clean_tenant_principals: Running principal clean up for tenant %s.", tenant.tenant_name)
         clean_tenant_principals(tenant)
-        logger.info("Completed principal clean up for tenant %s.", tenant.tenant_name)
+        logger.info("clean_tenant_principals: Completed principal clean up for tenant %s.", tenant.tenant_name)
+
+    logger.info("clean_tenant_principals: Principal cleanup complete for all tenants.")
