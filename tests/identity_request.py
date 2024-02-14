@@ -123,7 +123,7 @@ class IdentityRequest(TestCase):
                 "user_id": "1111111",
             }
 
-        if service_account_data is not None:
+        if service_account_data:
             identity["identity"]["service_account"] = {
                 "client_id": service_account_data.get("client_id"),
                 "username": service_account_data.get("username"),
@@ -137,6 +137,6 @@ class IdentityRequest(TestCase):
             if user_data:
                 identity["identity"]["type"] = "User"
             else:
-                identity["identity"]["type"] = "Service account"
+                identity["identity"]["type"] = "ServiceAccount"
 
         return identity

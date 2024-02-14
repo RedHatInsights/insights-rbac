@@ -685,7 +685,7 @@ class GroupViewSet(
                 options[SERVICE_ACCOUNT_DESCRIPTION_KEY] = request.query_params.get(SERVICE_ACCOUNT_DESCRIPTION_KEY)
                 options[SERVICE_ACCOUNT_NAME_KEY] = request.query_params.get(SERVICE_ACCOUNT_NAME_KEY)
 
-                # Get the principal username option parameter and the limit and offset parameters too.
+                # Get the "principal username" parameter.
                 options[PRINCIPAL_USERNAME_KEY] = request.query_params.get(PRINCIPAL_USERNAME_KEY)
 
                 # Fetch the group's service accounts.
