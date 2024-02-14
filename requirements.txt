@@ -15,7 +15,7 @@ click-didyoumean==0.3.0; python_full_version >= '3.6.2' and python_full_version 
 click-plugins==1.1.1
 click-repl==0.3.0; python_version >= '3.6'
 cryptography==43.0.0.dev1; python_version >= '3.7'
-django==4.2.7; python_version >= '3.8'
+django==4.2.10; python_version >= '3.8'
 django-cors-headers==3.13.0; python_version >= '3.7'
 django-environ==0.10.0; python_version >= '3.5' and python_version < '4'
 django-extensions==3.2.1; python_version >= '3.6'
