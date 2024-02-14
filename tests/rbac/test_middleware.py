@@ -303,8 +303,8 @@ class IdentityHeaderMiddlewareTest(IdentityRequest):
 
         middleware = IdentityHeaderMiddleware(get_response=Mock())
 
-        invalid_verbs = ["DELETE", "POST", "PATCH"]
-        for verb in invalid_verbs:
+        http_verbs = ["DELETE", "PATCH", "POST"]
+        for verb in http_verbs:
             request.method = verb
             self.assertEqual(middleware.should_load_user_permissions(request, user), True)
 

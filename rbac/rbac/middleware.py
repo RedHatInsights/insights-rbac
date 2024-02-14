@@ -433,10 +433,10 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
         #
         # There is one use case where we need to load the user's permissions: whenever they want to query for their
         # or other users' permissions. In that case, we need to know if they're allowed to do so, and for that, we
-        # need to preload their permissions to check them afterwards in the subsequent permission checkers.
+        # need to preload their permissions to check them afterward in the subsequent permission checkers.
         if request.path.endswith("/access/") and request.method == "GET":
             query_params: QueryDict = request.GET
-            return "application" in query_params and "username" in query_params
+            return "username" in query_params and "application" in query_params
         else:
             return True
 
