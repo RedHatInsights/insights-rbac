@@ -16,7 +16,9 @@
 #
 """Test the project middleware."""
 import collections
+import json
 import os
+from unittest import mock
 from unittest.mock import Mock
 from django.conf import settings
 from django.http import QueryDict
@@ -31,6 +33,7 @@ from api.models import Tenant, User
 from api.serializers import create_tenant_name
 from tests.identity_request import IdentityRequest
 from rbac.middleware import HttpResponseUnauthorizedRequest, IdentityHeaderMiddleware
+from management.authorization.token_validator import UnableMeetPrerequisitesError
 from management.models import Access, Group, Permission, Principal, Policy, ResourceDefinition, Role
 
 
@@ -341,6 +344,201 @@ class IdentityHeaderMiddlewareTest(IdentityRequest):
             request.GET = test_case
 
             self.assertEqual(middleware.should_load_user_permissions(request, user), False)
+
+    def test_service_account_with_no_authorization_header(self):
+        """Test that a 401 is returned when a service account with no authorization header contacts RBAC."""
+        # Prepare the mocked service account data.
+        service_account_data = self._create_service_account_data()
+        customer = self._create_customer_data()
+
+        # Prepare the mocked request.
+        request_context = self._create_request_context(
+            customer_data=customer, user_data=None, service_account_data=service_account_data
+        )
+        mock_request = request_context["request"]
+        mock_request.path = "/api/v1/access/"
+        middleware = IdentityHeaderMiddleware(get_response=IdentityHeaderMiddleware.process_request)
+
+        # Set the authorization header to an empty one to test that a missing authorization exception is raised.
+        mock_request.headers = {"Authorization": None}
+
+        # Call the middleware under test.
+        result = middleware.process_request(mock_request)
+
+        # Assert that the content type header has the correct value.
+        self.assertEqual(
+            "application/json", result.headers.get("Content-Type"), "the content type header has the incorrect value"
+        )
+
+        # Assert that the status code is the expected one.
+        self.assertEqual(
+            status.HTTP_401_UNAUTHORIZED,
+            result.status_code,
+            "unexpected status code received when the authorization header is missing",
+        )
+
+        # Assert that the contents of the body are the expected ones.
+        content = json.loads(result.content.decode("utf-8"))
+        errors = content["errors"]
+        if not errors:
+            self.fail('expected an "errors" array in the received response\'s body, but it was not found')
+
+        if len(errors) != 1:
+            self.fail(f'expected a single error in the "errors" array, {len(errors)} errors received')
+
+        error = errors[0]
+        error_detail = error.get("detail")
+
+        if not error_detail:
+            self.fail("the error detail is missing from the error object")
+
+        self.assertEqual(
+            error_detail,
+            "A Bearer token in an authorization header is required when contacting RBAC with a service account.",
+            "unexpected error detail received in the response",
+        )
+
+        error_status = error.get("status")
+
+        if not error_status:
+            self.fail("the error object is missing the status code")
+
+        self.assertEqual(
+            str(status.HTTP_401_UNAUTHORIZED),
+            error_status,
+            "unexpected status code received in the body of the response",
+        )
+
+    @mock.patch("management.authorization.token_validator.ITSSOTokenValidator._get_json_web_keyset")
+    def test_service_account_unable_validate_token(self, _get_json_web_keyset: Mock):
+        """Test 500 response for a service account request when unable to meet prerequisites to validate the token."""
+        # Prepare the mocked service account data.
+        service_account_data = self._create_service_account_data()
+        customer = self._create_customer_data()
+
+        # Prepare the mocked request.
+        request_context = self._create_request_context(
+            customer_data=customer, user_data=None, service_account_data=service_account_data
+        )
+        mock_request = request_context["request"]
+        mock_request.path = "/api/v1/access/"
+        middleware = IdentityHeaderMiddleware(get_response=IdentityHeaderMiddleware.process_request)
+
+        # Set a non-empty authorization header.
+        mock_request.headers = {"Authorization": "invalid-bearer-token"}
+        # Pretend that we are not able to contact IT in order to fetch the required key set to validate the token.
+        _get_json_web_keyset.side_effect = UnableMeetPrerequisitesError()
+
+        # Call the middleware under test.
+        result = middleware.process_request(mock_request)
+
+        # Assert that the content type header has the correct value.
+        self.assertEqual(
+            "application/json", result.headers.get("Content-Type"), "the content type header has the incorrect value"
+        )
+
+        # Assert that the status code is the expected one.
+        self.assertEqual(
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            result.status_code,
+            "unexpected status code received when we are unable to meet the prerequisites to validate the token",
+        )
+
+        # Assert that the contents of the body are the expected ones.
+        content = json.loads(result.content.decode("utf-8"))
+        errors = content["errors"]
+        if not errors:
+            self.fail('expected an "errors" array in the received response\'s body, but it was not found')
+
+        if len(errors) != 1:
+            self.fail(f'expected a single error in the "errors" array, {len(errors)} errors received')
+
+        error = errors[0]
+        error_detail = error.get("detail")
+
+        if not error_detail:
+            self.fail("the error detail is missing from the error object")
+
+        self.assertEqual(
+            error_detail, "Unable to validate the provided token.", "unexpected error detail received in the response"
+        )
+
+        error_status = error.get("status")
+
+        if not error_status:
+            self.fail("the error object is missing the status code")
+
+        self.assertEqual(
+            str(status.HTTP_500_INTERNAL_SERVER_ERROR),
+            error_status,
+            "unexpected status code received in the body of the response",
+        )
+
+    @mock.patch("management.authorization.token_validator.ITSSOTokenValidator._get_json_web_keyset")
+    @mock.patch("management.authorization.token_validator.jwt.decode")
+    def test_service_account_with_invalid_bearer_token(self, decode: Mock, _get_json_web_keyset: Mock):
+        """Test 401 response for a service account request with an invalid bearer token."""
+        # Prepare the mocked service account data.
+        service_account_data = self._create_service_account_data()
+        customer = self._create_customer_data()
+
+        # Prepare the mocked request.
+        request_context = self._create_request_context(
+            customer_data=customer, user_data=None, service_account_data=service_account_data
+        )
+        mock_request = request_context["request"]
+        mock_request.path = "/api/v1/access/"
+        middleware = IdentityHeaderMiddleware(get_response=IdentityHeaderMiddleware.process_request)
+
+        # Set a non-empty authorization header.
+        mock_request.headers = {"Authorization": "invalid-bearer-token"}
+        # The token validator should avoid calling IT for the test.
+        _get_json_web_keyset.return_value = "invalid-return-value"
+        # Make the "decode" function raise any exception to test that it gets properly handled.
+        decode.side_effect = ValueError("invalid value")
+
+        # Call the middleware under test.
+        result = middleware.process_request(mock_request)
+
+        # Assert that the content type header has the correct value.
+        self.assertEqual(
+            "application/json", result.headers.get("Content-Type"), "the content type header has the incorrect value"
+        )
+
+        # Assert that the status code is the expected one.
+        self.assertEqual(
+            status.HTTP_401_UNAUTHORIZED,
+            result.status_code,
+            "unexpected status code received when the bearer token is invalid",
+        )
+
+        # Assert that the contents of the body are the expected ones.
+        content = json.loads(result.content.decode("utf-8"))
+        errors = content["errors"]
+        if not errors:
+            self.fail('expected an "errors" array in the received response\'s body, but it was not found')
+
+        if len(errors) != 1:
+            self.fail(f'expected a single error in the "errors" array, {len(errors)} errors received')
+
+        error = errors[0]
+        error_detail = error.get("detail")
+
+        if not error_detail:
+            self.fail("the error detail is missing from the error object")
+
+        self.assertEqual(error_detail, "Invalid token provided.", "unexpected error detail received in the response")
+
+        error_status = error.get("status")
+
+        if not error_status:
+            self.fail("the error object is missing the status code")
+
+        self.assertEqual(
+            str(status.HTTP_401_UNAUTHORIZED),
+            error_status,
+            "unexpected status code received in the body of the response",
+        )
 
 
 class ServiceToService(IdentityRequest):
