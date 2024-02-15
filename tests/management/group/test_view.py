@@ -16,6 +16,7 @@
 #
 """Test the group viewset."""
 import random
+import uuid
 from unittest.mock import call, patch, ANY
 from uuid import uuid4
 
@@ -2129,6 +2130,41 @@ class GroupViewsetTests(IdentityRequest):
             self.assertEqual(response.status_code, status.HTTP_200_OK)
             self.assertEqual(int(response.data.get("meta").get("count")), 3)
             self.assertEqual(len(response.data.get("data")), 3)
+
+    def test_get_group_principals_check_service_account_ids_incompatible_query_parameters(self):
+        """Test that no other query parameter can be used along with the "service_account_ids" one."""
+        # Use a few extra query parameter to test the behavior. Since we use a "len(query_params) > 1" condition it
+        # really does not matter which other query parameter we use for the test, but we are adding a bunch in case
+        # this changes in the future.
+        query_parameters_to_test: list[str] = [
+            "order_by",
+            "principal_type",
+            "principal_username",
+            "service_account_name",
+            "username_only",
+        ]
+
+        for query_parameter in query_parameters_to_test:
+            url = (
+                f"{reverse('group-principals', kwargs={'uuid': self.group.uuid})}"
+                f"?service_account_client_ids={uuid.uuid4()}&{query_parameter}=abcde"
+            )
+            client = APIClient()
+            response: Response = client.get(url, **self.headers)
+
+            # Assert that we received a 400 response.
+            self.assertEqual(
+                status.HTTP_400_BAD_REQUEST,
+                response.status_code,
+                "unexpected status code received",
+            )
+
+            # Assert that the error message is the expected one.
+            self.assertEqual(
+                str(response.data.get("errors")[0].get("detail")),
+                "The 'service_account_client_ids' parameter is incompatible with any other query parameter."
+                " Please, use it alone",
+            )
 
     def test_get_group_principals_check_service_account_ids_empty_client_ids(self):
         """Test that an empty service account IDs query param returns a bad request response"""
