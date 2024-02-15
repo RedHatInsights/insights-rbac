@@ -370,20 +370,25 @@ class ITServiceTests(IdentityRequest):
             request_client_ids_str.add(str(rci))
 
         # Assert that the mixed matches are identified correctly.
-        for key, value in result.items():
+        for client_id, is_it_present_in_group in result.items():
             # If the value is "true" it should be present in the service accounts' result set from above. Else, it
             # means that the specified client IDs were not part of the group, and that they should have been flagged
             # as such.
-            if value:
+            if is_it_present_in_group:
                 self.assertEqual(
                     True,
-                    key in group_service_accounts_set,
+                    client_id in group_service_accounts_set,
                     "a client ID which was not part of the group was incorrectly flagged as if it was",
                 )
             else:
                 self.assertEqual(
+                    False,
+                    is_it_present_in_group,
+                    "a client ID which was part of the group was incorrectly flagged as if it wasn't",
+                )
+                self.assertEqual(
                     True,
-                    key in request_client_ids_str,
+                    client_id in request_client_ids_str,
                     "a client ID which was part of the group was incorrectly flagged as if it wasn't",
                 )
 
