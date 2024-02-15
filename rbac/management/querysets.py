@@ -183,7 +183,7 @@ def get_role_queryset(request) -> QuerySet:
                 is_org_admin = request.user.admin
             else:
                 # Service accounts were agreed not to be considered organization administrators.
-                if request.user.is_service_account:
+                if ITService.is_username_service_account(username=username):
                     is_org_admin = False
                 else:
                     is_org_admin = get_admin_from_proxy(username, request)
@@ -258,7 +258,7 @@ def get_access_queryset(request: Request) -> QuerySet:
         is_org_admin = request.user.admin
     else:
         # Service accounts were agreed not to be considered organization administrators.
-        if request.user.is_service_account:
+        if ITService.is_username_service_account(username=username):
             is_org_admin = False
         else:
             is_org_admin = get_admin_from_proxy(username, request)
@@ -301,7 +301,7 @@ def _filter_admin_default(request: Request, queryset: QuerySet):
         is_org_admin = request.user.admin
     else:
         # Service accounts were agreed not to be considered organization administrators.
-        if request.user.is_service_account:
+        if ITService.is_username_service_account(username=username):
             is_org_admin = False
         else:
             is_org_admin = get_admin_from_proxy(username, request)
