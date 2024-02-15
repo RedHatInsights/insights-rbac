@@ -242,13 +242,9 @@ class ITServiceTests(IdentityRequest):
 
         # Simulate that a few client IDs were specified in the request.
         request_client_ids = set[uuid.UUID]()
-        specified_client_uuid_1 = uuid.uuid4()
-        specified_client_uuid_2 = uuid.uuid4()
-        specified_client_uuid_3 = uuid.uuid4()
-
-        request_client_ids.add(specified_client_uuid_1)
-        request_client_ids.add(specified_client_uuid_2)
-        request_client_ids.add(specified_client_uuid_3)
+        request_client_ids.add(uuid.uuid4())
+        request_client_ids.add(uuid.uuid4())
+        request_client_ids.add(uuid.uuid4())
 
         # Call the function under test.
         result: dict[str, bool] = self.it_service.generate_service_accounts_report_in_group(
@@ -342,19 +338,14 @@ class ITServiceTests(IdentityRequest):
 
         # Simulate that a few client IDs were specified in the request.
         request_client_ids = set[uuid.UUID]()
-        specified_client_uuid_1 = uuid.uuid4()
-        specified_client_uuid_2 = uuid.uuid4()
-        specified_client_uuid_3 = uuid.uuid4()
+        request_client_ids.add(uuid.uuid4())
+        request_client_ids.add(uuid.uuid4())
+        request_client_ids.add(uuid.uuid4())
+
         # Specify the service accounts' UUIDs here too, because the function under test should flag them as present in
         # the group.
-        specified_client_uuid_4 = client_uuid_1
-        specified_client_uuid_5 = client_uuid_2
-
-        request_client_ids.add(specified_client_uuid_1)
-        request_client_ids.add(specified_client_uuid_2)
-        request_client_ids.add(specified_client_uuid_3)
-        request_client_ids.add(specified_client_uuid_4)
-        request_client_ids.add(specified_client_uuid_5)
+        request_client_ids.add(client_uuid_1)
+        request_client_ids.add(client_uuid_2)
 
         # Call the function under test.
         result: dict[str, bool] = self.it_service.generate_service_accounts_report_in_group(
@@ -461,18 +452,12 @@ class ITServiceTests(IdentityRequest):
         group.save()
 
         # Simulate that a few client IDs were specified in the request.
-        request_client_ids = set[str]()
-        specified_client_uuid_1 = client_uuid_1
-        specified_client_uuid_2 = client_uuid_2
-        specified_client_uuid_3 = client_uuid_3
-        specified_client_uuid_4 = client_uuid_4
-        specified_client_uuid_5 = client_uuid_5
-
-        request_client_ids.add(specified_client_uuid_1)
-        request_client_ids.add(specified_client_uuid_2)
-        request_client_ids.add(specified_client_uuid_3)
-        request_client_ids.add(specified_client_uuid_4)
-        request_client_ids.add(specified_client_uuid_5)
+        request_client_ids = set[uuid.UUID]()
+        request_client_ids.add(client_uuid_1)
+        request_client_ids.add(client_uuid_2)
+        request_client_ids.add(client_uuid_3)
+        request_client_ids.add(client_uuid_4)
+        request_client_ids.add(client_uuid_5)
 
         # Call the function under test.
         result: dict[str, bool] = self.it_service.generate_service_accounts_report_in_group(
