@@ -263,17 +263,17 @@ class ITServiceTests(IdentityRequest):
             request_client_ids_str.add(str(rci))
 
         # Assert that all the service accounts were flagged as not present in the group.
-        for key, value in result.items():
+        for client_id, is_present_in_group in result.items():
             # Make sure the specified client IDs are in the set.
             self.assertEqual(
                 True,
-                key in request_client_ids_str,
+                client_id in request_client_ids_str,
                 "expected to find the specified client ID from the request in the returning result",
             )
             # Make sure they are all set to "false" since there shouldn't be any of those client IDs in the group.
             self.assertEqual(
                 False,
-                value,
+                is_present_in_group,
                 "the client ID should have not been found in the group, since the group had no service accounts",
             )
 
@@ -322,7 +322,7 @@ class ITServiceTests(IdentityRequest):
         # below.
         group_service_accounts_set = {str(sa_1.service_account_id), str(sa_2.service_account_id)}
 
-        # For this test, we don't associate any service accounts to it.
+        # Create a group and associate principals to it.
         group = Group(name="it-service-group", platform_default=False, system=False, tenant=self.tenant)
         group.save()
         # Add the principal accounts to make sure that we are only working with service accounts. If we weren't, these
@@ -444,7 +444,7 @@ class ITServiceTests(IdentityRequest):
             str(sa_5.service_account_id),
         }
 
-        # For this test, we don't associate any service accounts to it.
+        # Create a group and associate principals to it.
         group = Group(name="it-service-group", platform_default=False, system=False, tenant=self.tenant)
         group.save()
         # Add the principal accounts to make sure that we are only working with service accounts. If we weren't, these
@@ -488,20 +488,20 @@ class ITServiceTests(IdentityRequest):
             request_client_ids_str.add(str(rci))
 
         # Assert that all the results are flagged as being part of the group.
-        for key, value in result.items():
+        for client_id, is_present_in_group in result.items():
             self.assertEqual(
                 True,
-                key in request_client_ids_str,
+                client_id in request_client_ids_str,
                 "expected to find the specified client ID from the request in the returning result",
             )
             self.assertEqual(
                 True,
-                key in group_service_accounts_set,
+                client_id in group_service_accounts_set,
                 "expected to find the client ID from the result set in the service accounts' group set",
             )
             # Make sure they are all set to "true" since all the specified client IDs should be in the group.
             self.assertEqual(
                 True,
-                value,
+                is_present_in_group,
                 "the client ID should have been found in the group, since the group had all the service accounts added to it",
             )
