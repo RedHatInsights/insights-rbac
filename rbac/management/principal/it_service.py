@@ -18,7 +18,7 @@
 import logging
 import time
 import uuid
-from typing import Tuple
+from typing import Optional, Tuple, Union
 
 import requests
 from django.conf import settings
@@ -83,7 +83,7 @@ class ITService:
         self.it_url = f"{self.protocol}://{self.host}:{self.port}{self.base_path}{IT_PATH_GET_SERVICE_ACCOUNTS}"
 
     @it_request_all_service_accounts_time_tracking.time()
-    def request_service_accounts(self, bearer_token: str, client_ids: list[str] = None) -> list[dict]:
+    def request_service_accounts(self, bearer_token: str, client_ids: Optional[list[str]] = None) -> list[dict]:
         """Request the service accounts for a tenant and returns the entire list that IT has."""
         # We cannot talk to IT if we don't have a bearer token.
         if not bearer_token:
@@ -98,7 +98,7 @@ class ITService:
 
             # If the offset is zero, that means that we need to call the service at least once to get the first
             # service accounts. If it equals the limit, that means that there are more pages to fetch.
-            parameters = {"first": offset, "max": limit}
+            parameters: dict[str, Union[int, list[str]]] = {"first": offset, "max": limit}
             # If we were given client IDs to filter the collection with, do it!
             if client_ids:
                 parameters["clientId"] = client_ids
