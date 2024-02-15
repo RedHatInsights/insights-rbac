@@ -406,8 +406,10 @@ class ITService:
     def generate_service_accounts_report_in_group(self, group: Group, client_ids: set[UUID]) -> dict[str, bool]:
         """Check if the given service accounts are in the specified group."""
         # Fetch the service accounts from the group.
-        group_service_account_principals = group.principals.values_list("service_account_id", flat=True).filter(
-            type=TYPE_SERVICE_ACCOUNT
+        group_service_account_principals = (
+            group.principals.values_list("service_account_id", flat=True)
+            .filter(type=TYPE_SERVICE_ACCOUNT)
+            .filter(service_account_id__in=client_ids)
         )
 
         # Mark the specified client IDs as "present or missing" from the result set.ç
