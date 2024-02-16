@@ -400,9 +400,10 @@ if KAFKA_ENABLED:
         kafka_broker = LoadedConfig.kafka.brokers
         if len(kafka_broker) == 0:
             ValueError("No kafka brokers available")
-        for i in range(0,len(kafka_broker)):
+        for i in range(0, len(kafka_broker)):
             kafka_host = kafka_broker[i].hostname
             kafka_port = kafka_broker[i].port
+
             try:
                 if kafka_broker[i].authtype.value == "sasl":
                     KAFKA_AUTH.update(
@@ -420,7 +421,8 @@ if KAFKA_ENABLED:
                 KAFKA_AUTH = {}
     else:
         kafka_host = "localhost"
-        kafka_post = "9092"
+        kafka_port = "9092"
+
     KAFKA_SERVER = f"{kafka_host}:{kafka_port}"
 
     clowder_notifications_topic = KafkaTopics.get(NOTIFICATIONS_TOPIC)
