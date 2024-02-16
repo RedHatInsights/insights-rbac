@@ -104,7 +104,6 @@ def get_principal(
             else:
                 verify_principal_with_proxy(username, request, verify_principal=verify_principal)
 
-        # In the case that the user that made the request was a service account, store it accordingly in the database.
         if ITService.is_username_service_account(username=username):
             client_id: uuid.UUID = ITService.extract_client_id_service_account_username(username)
 
