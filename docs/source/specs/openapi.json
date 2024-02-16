@@ -1277,7 +1277,7 @@
             "in": "query",
             "name": "service_account_client_ids",
             "required": false,
-            "description": "By specifying a list of client IDs with this query parameter, RBAC will return an object with the specified client ID and it's matching boolean value to flag whether the client ID is present in the group or not",
+            "description": "By specifying a list of client IDs with this query parameter, RBAC will return an object with the specified client ID and it's matching boolean value to flag whether the client ID is present in the group or not. This query parameter cannot be used along with any other query parameter.",
             "schema": {
               "type": "array",
               "items": {
@@ -1316,6 +1316,9 @@
                     },
                     {
                       "$ref": "#/components/schemas/ServiceAccountPagination"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ServiceAccountInGroupResponse"
                     }
                   ]
                 }
@@ -3380,6 +3383,30 @@
             }
           }
         ]
+      },
+      "ServiceAccountInGroupResponse": {
+        "properties": {
+          "meta": {
+            "$ref": "#/components/schemas/PaginationMeta"
+          },
+          "links": {
+            "description": "The links object for this particular response will be empty, since there is no pagination available for the query parameter",
+            "type": "object",
+            "example": {}
+          },
+          "data": {
+            "description": "Object which indicates whether the given service account UUIDs in the query parameter are present in the specified group or not",
+            "type": "object",
+            "additionalProperties": {
+              "description": "The response is a map of the form \"UUID\": (true|false)",
+              "type": "boolean"
+            },
+            "example": {
+              "dd946f24-cfda-11ee-acb6-7b2702ff4dc8": true,
+              "3e728bb0-b167-013c-c455-6aa2427b506c": false
+            }
+          }
+        }
       },
       "Group": {
         "required": [
