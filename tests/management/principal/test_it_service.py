@@ -338,9 +338,21 @@ class ITServiceTests(IdentityRequest):
 
         # Simulate that a few client IDs were specified in the request.
         request_client_ids = set[uuid.UUID]()
-        request_client_ids.add(uuid.uuid4())
-        request_client_ids.add(uuid.uuid4())
-        request_client_ids.add(uuid.uuid4())
+        not_in_group = uuid.uuid4()
+        not_in_group_2 = uuid.uuid4()
+        not_in_group_3 = uuid.uuid4()
+
+        request_client_ids.add(not_in_group)
+        request_client_ids.add(not_in_group_2)
+        request_client_ids.add(not_in_group_3)
+
+        # Also, create a set with the service accounts that will NOT go in the group to make it easier to assert that
+        # the results flag them as such.
+        service_accounts_not_in_group_set = {
+            str(not_in_group),
+            str(not_in_group_2),
+            str(not_in_group_3),
+        }
 
         # Specify the service accounts' UUIDs here too, because the function under test should flag them as present in
         # the group.
@@ -373,13 +385,8 @@ class ITServiceTests(IdentityRequest):
                 )
             else:
                 self.assertEqual(
-                    False,
-                    is_it_present_in_group,
-                    "a client ID which was part of the group was incorrectly flagged as if it wasn't",
-                )
-                self.assertEqual(
                     True,
-                    client_id in request_client_ids_str,
+                    client_id in service_accounts_not_in_group_set,
                     "a client ID which was part of the group was incorrectly flagged as if it wasn't",
                 )
 
