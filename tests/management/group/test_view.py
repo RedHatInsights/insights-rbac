@@ -18,7 +18,7 @@
 import random
 import uuid
 from unittest.mock import call, patch, ANY
-from uuid import uuid4
+from uuid import uuid4, UUID
 
 from django.db import transaction
 from django.conf import settings
@@ -2130,6 +2130,188 @@ class GroupViewsetTests(IdentityRequest):
             self.assertEqual(response.status_code, status.HTTP_200_OK)
             self.assertEqual(int(response.data.get("meta").get("count")), 3)
             self.assertEqual(len(response.data.get("data")), 3)
+
+    def test_get_group_principals_check_service_account_ids(self):
+        """Test that the endpoint for checking if service accounts are part of a group works as expected."""
+        # Create a group and associate principals to it.
+        group = Group(name="it-service-group", platform_default=False, system=False, tenant=self.tenant)
+        group.save()
+
+        # The user principals should not be retrieved in the results.
+        group.principals.add(Principal.objects.create(username="user-1", tenant=self.tenant))
+        group.principals.add(Principal.objects.create(username="user-2", tenant=self.tenant))
+        group.principals.add(Principal.objects.create(username="user-3", tenant=self.tenant))
+        group.save()
+
+        # Create some service accounts and add some of them to the group.
+        client_uuid_1 = uuid.uuid4()
+        client_uuid_2 = uuid.uuid4()
+
+        sa_1 = Principal.objects.create(
+            username=f"service-account-{client_uuid_1}",
+            service_account_id=client_uuid_1,
+            type="service-account",
+            tenant=self.tenant,
+        )
+        sa_2 = Principal.objects.create(
+            username=f"service-account-{client_uuid_2}",
+            service_account_id=client_uuid_2,
+            type="service-account",
+            tenant=self.tenant,
+        )
+
+        group.principals.add(sa_1)
+        group.principals.add(sa_2)
+        group.save()
+
+        # Create a set with the service accounts that will go in the group. It will make it easier to make assertions
+        # below.
+        group_service_accounts_set = {str(sa_1.service_account_id), str(sa_2.service_account_id)}
+
+        # Create more service accounts that should not show in the results, since they're not going to be specified in
+        # the "client_ids" parameter.
+        Principal.objects.create(
+            username=f"service-account-{uuid.uuid4()}",
+            service_account_id=uuid.uuid4(),
+            type="service-account",
+            tenant=self.tenant,
+        )
+        Principal.objects.create(
+            username=f"service-account-{uuid.uuid4()}",
+            service_account_id=uuid.uuid4(),
+            type="service-account",
+            tenant=self.tenant,
+        )
+        Principal.objects.create(
+            username=f"service-account-{uuid.uuid4()}",
+            service_account_id=uuid.uuid4(),
+            type="service-account",
+            tenant=self.tenant,
+        )
+
+        # Create the UUIDs to be specified in the request.
+        not_in_group = uuid.uuid4()
+        not_in_group_2 = uuid.uuid4()
+        not_in_group_3 = uuid.uuid4()
+
+        # Also, create a set with the service accounts that will NOT go in the group to make it easier to assert that
+        # the results flag them as such.
+        service_accounts_not_in_group_set = {
+            str(not_in_group),
+            str(not_in_group_2),
+            str(not_in_group_3),
+        }
+
+        # Create the query parameter.
+        service_accounts_client_ids = (
+            f"{client_uuid_1},{client_uuid_2},{not_in_group},{not_in_group_2},{not_in_group_3}"
+        )
+
+        url = (
+            f"{reverse('group-principals', kwargs={'uuid': group.uuid})}"
+            f"?service_account_client_ids={service_accounts_client_ids}"
+        )
+
+        # Call the endpoint under test.
+        client = APIClient()
+        response: Response = client.get(url, **self.headers)
+
+        # Assert that we received a 200 response.
+        self.assertEqual(
+            status.HTTP_200_OK,
+            response.status_code,
+            "unexpected status code received",
+        )
+
+        # Assert that we received the correct results count.
+        self.assertEqual(
+            5,
+            response.data.get("meta").get("count"),
+            "The results of five client IDs should have been returned, since those were the ones sent to the endpoint",
+        )
+
+        # Assert that the mixed matches are identified correctly.
+        for client_id, is_it_present_in_group in response.data.get("data").items():
+            # If the value is "true" it should be present in the service accounts' result set from above. Else, it
+            # means that the specified client IDs were not part of the group, and that they should have been flagged
+            # as such.
+            if is_it_present_in_group:
+                self.assertEqual(
+                    True,
+                    client_id in group_service_accounts_set,
+                    "a client ID which was not part of the group was incorrectly flagged as if it was",
+                )
+            else:
+                self.assertEqual(
+                    True,
+                    client_id in service_accounts_not_in_group_set,
+                    "a client ID which was part of the group was incorrectly flagged as if it wasn't",
+                )
+
+    def test_get_group_principals_check_service_account_ids_non_existent(self):
+        """Test that when checking non-existent service account client IDs from another group the endpoint flags them as not present."""
+
+        # Create the UUIDs to be specified in the request.
+        not_in_group = uuid.uuid4()
+        not_in_group_2 = uuid.uuid4()
+        not_in_group_3 = uuid.uuid4()
+        not_in_group_4 = uuid.uuid4()
+        not_in_group_5 = uuid.uuid4()
+
+        # Also, create a set with the service accounts that will NOT go in the group to make it easier to assert that
+        # the results flag them as such.
+        service_accounts_not_in_group_set = {
+            str(not_in_group),
+            str(not_in_group_2),
+            str(not_in_group_3),
+            str(not_in_group_4),
+            str(not_in_group_5),
+        }
+
+        # Create the query parameter.
+        service_accounts_client_ids = (
+            f"{not_in_group},{not_in_group_2},{not_in_group_3},{not_in_group_4},{not_in_group_5}"
+        )
+
+        url = (
+            f"{reverse('group-principals', kwargs={'uuid': self.group.uuid})}"
+            f"?service_account_client_ids={service_accounts_client_ids}"
+        )
+
+        # Call the endpoint under test.
+        client = APIClient()
+        response: Response = client.get(url, **self.headers)
+
+        # Assert that we received a 200 response.
+        self.assertEqual(
+            status.HTTP_200_OK,
+            response.status_code,
+            "unexpected status code received",
+        )
+
+        # Assert that we received the correct results count.
+        self.assertEqual(
+            5,
+            response.data.get("meta").get("count"),
+            "The results of five client IDs should have been returned, since those were the ones sent to the endpoint",
+        )
+
+        # Assert that the mixed matches are identified correctly.
+        for client_id, is_it_present_in_group in response.data.get("data").items():
+            # If the value is "true" it should be present in the service accounts' result set from above. Else, it
+            # means that the specified client IDs were not part of the group, and that they should have been flagged
+            # as such.
+            if is_it_present_in_group:
+                self.fail(
+                    "no existing service accounts were specified in the query parameter. Still, some were flagged as"
+                    " present in the group"
+                )
+            else:
+                self.assertEqual(
+                    True,
+                    client_id in service_accounts_not_in_group_set,
+                    "a client ID which was part of the group was incorrectly flagged as if it wasn't",
+                )
 
     def test_get_group_principals_check_service_account_ids_incompatible_query_parameters(self):
         """Test that no other query parameter can be used along with the "service_account_ids" one."""
