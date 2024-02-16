@@ -400,7 +400,7 @@ if KAFKA_ENABLED:
         kafka_broker = LoadedConfig.kafka.brokers
         if len(kafka_broker) == 0:
             ValueError("No kafka brokers available")
-        for i in kafka_broker:
+        for i in len(kafka_broker):
             KAFKA_HOST = kafka_broker[i].hostname
             KAFKA_PORT = kafka_broker[i].port
             try:
