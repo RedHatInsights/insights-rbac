@@ -200,9 +200,15 @@ class ITServiceTests(IdentityRequest):
 
     def test_generate_service_accounts_report_in_group_zero_matches(self):
         """Test that the function under test is able to flag service accounts as not present in a group"""
-        principal_1 = Principal.objects.create(username="user-1", tenant=self.tenant)
-        principal_2 = Principal.objects.create(username="user-2", tenant=self.tenant)
-        principal_3 = Principal.objects.create(username="user-3", tenant=self.tenant)
+        # Create a group for the principals.
+        group = Group(name="it-service-group", platform_default=False, system=False, tenant=self.tenant)
+        group.save()
+
+        # Add the principal accounts to make sure that we are only working with service accounts. If we weren't, these
+        # principals below should give us unexpected results in our assertions.
+        group.principals.add(Principal.objects.create(username="user-1", tenant=self.tenant))
+        group.principals.add(Principal.objects.create(username="user-2", tenant=self.tenant))
+        group.principals.add(Principal.objects.create(username="user-3", tenant=self.tenant))
 
         # Create three service accounts for the group. Since these will not be specified in the "client_ids" parameter
         # of the function under test, they should not show up in the results.
@@ -224,15 +230,6 @@ class ITServiceTests(IdentityRequest):
             type="service-account",
             tenant=self.tenant,
         )
-
-        # Create a group for the principals.
-        group = Group(name="it-service-group", platform_default=False, system=False, tenant=self.tenant)
-        group.save()
-        # Add the principal accounts to make sure that we are only working with service accounts. If we weren't, these
-        # principals below should give us unexpected results in our assertions.
-        group.principals.add(principal_1)
-        group.principals.add(principal_2)
-        group.principals.add(principal_3)
 
         # Add the service account principals.
         group.principals.add(sa_1)
@@ -275,9 +272,16 @@ class ITServiceTests(IdentityRequest):
 
     def test_generate_service_accounts_report_in_group_mixed_results(self):
         """Test that the function under test is able to correctly flag the sevice accounts when there are mixed results"""
-        principal_1 = Principal.objects.create(username="user-1", tenant=self.tenant)
-        principal_2 = Principal.objects.create(username="user-2", tenant=self.tenant)
-        principal_3 = Principal.objects.create(username="user-3", tenant=self.tenant)
+        # Create a group and associate principals to it.
+        group = Group(name="it-service-group", platform_default=False, system=False, tenant=self.tenant)
+        group.save()
+
+        # Add the principal accounts to make sure that we are only working with service accounts. If we weren't, these
+        # principals below should give us unexpected results in our assertions.
+        group.principals.add(Principal.objects.create(username="user-1", tenant=self.tenant))
+        group.principals.add(Principal.objects.create(username="user-2", tenant=self.tenant))
+        group.principals.add(Principal.objects.create(username="user-3", tenant=self.tenant))
+        group.save()
 
         client_uuid_1 = uuid.uuid4()
         client_uuid_2 = uuid.uuid4()
@@ -293,6 +297,16 @@ class ITServiceTests(IdentityRequest):
             type="service-account",
             tenant=self.tenant,
         )
+
+        # Add the service accounts to the group.
+        group.principals.add(sa_1)
+        group.principals.add(sa_2)
+        group.save()
+
+        # Create a set with the service accounts that will go in the group. It will make it easier to make assertions
+        # below.
+        group_service_accounts_set = {str(sa_1.service_account_id), str(sa_2.service_account_id)}
+
         # Create more service accounts that should not show in the results, since they're not going to be specified in
         # the "client_ids" parameter.
         sa_3 = Principal.objects.create(
@@ -314,37 +328,16 @@ class ITServiceTests(IdentityRequest):
             tenant=self.tenant,
         )
 
-        # Create a set with the service accounts that will go in the group. It will make it easier to make assertions
-        # below.
-        group_service_accounts_set = {str(sa_1.service_account_id), str(sa_2.service_account_id)}
-
-        # Create a group and associate principals to it.
-        group = Group(name="it-service-group", platform_default=False, system=False, tenant=self.tenant)
-        group.save()
-        # Add the principal accounts to make sure that we are only working with service accounts. If we weren't, these
-        # principals below should give us unexpected results in our assertions.
-        group.principals.add(principal_1)
-        group.principals.add(principal_2)
-        group.principals.add(principal_3)
-        # Add the service accounts to the group.
-        group.principals.add(sa_1)
-        group.principals.add(sa_2)
         # Add the service accounts that should not show up in the results.
         group.principals.add(sa_3)
         group.principals.add(sa_4)
         group.principals.add(sa_5)
-
         group.save()
 
-        # Simulate that a few client IDs were specified in the request.
-        request_client_ids = set[uuid.UUID]()
+        # Create the service accounts' client IDs that will be specified in the request.
         not_in_group = uuid.uuid4()
         not_in_group_2 = uuid.uuid4()
         not_in_group_3 = uuid.uuid4()
-
-        request_client_ids.add(not_in_group)
-        request_client_ids.add(not_in_group_2)
-        request_client_ids.add(not_in_group_3)
 
         # Also, create a set with the service accounts that will NOT go in the group to make it easier to assert that
         # the results flag them as such.
@@ -354,6 +347,11 @@ class ITServiceTests(IdentityRequest):
             str(not_in_group_3),
         }
 
+        # Add all the UUIDs to a set to pass it to the function under test.
+        request_client_ids = set[uuid.UUID]()
+        request_client_ids.add(not_in_group)
+        request_client_ids.add(not_in_group_2)
+        request_client_ids.add(not_in_group_3)
         # Specify the service accounts' UUIDs here too, because the function under test should flag them as present in
         # the group.
         request_client_ids.add(client_uuid_1)
@@ -392,10 +390,17 @@ class ITServiceTests(IdentityRequest):
 
     def test_generate_service_accounts_report_in_group_full_match(self):
         """Test that the function under test is able to flag service accounts as all being present in the group."""
-        principal_1 = Principal.objects.create(username="user-1", tenant=self.tenant)
-        principal_2 = Principal.objects.create(username="user-2", tenant=self.tenant)
-        principal_3 = Principal.objects.create(username="user-3", tenant=self.tenant)
+        # Create a group and associate principals to it.
+        group = Group(name="it-service-group", platform_default=False, system=False, tenant=self.tenant)
+        group.save()
 
+        # Add the principal accounts to make sure that we are only working with service accounts. If we weren't, these
+        # principals below should give us unexpected results in our assertions.
+        group.principals.add(Principal.objects.create(username="user-1", tenant=self.tenant))
+        group.principals.add(Principal.objects.create(username="user-2", tenant=self.tenant))
+        group.principals.add(Principal.objects.create(username="user-3", tenant=self.tenant))
+
+        # Create the service accounts to be associated with the group.
         client_uuid_1 = uuid.uuid4()
         client_uuid_2 = uuid.uuid4()
         client_uuid_3 = uuid.uuid4()
@@ -442,14 +447,6 @@ class ITServiceTests(IdentityRequest):
             str(sa_5.service_account_id),
         }
 
-        # Create a group and associate principals to it.
-        group = Group(name="it-service-group", platform_default=False, system=False, tenant=self.tenant)
-        group.save()
-        # Add the principal accounts to make sure that we are only working with service accounts. If we weren't, these
-        # principals below should give us unexpected results in our assertions.
-        group.principals.add(principal_1)
-        group.principals.add(principal_2)
-        group.principals.add(principal_3)
         # Add the service accounts to the group.
         group.principals.add(sa_1)
         group.principals.add(sa_2)
