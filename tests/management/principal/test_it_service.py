@@ -33,6 +33,23 @@ class ITServiceTests(IdentityRequest):
     def setUp(self):
         self.it_service = ITService()
 
+    def test_it_service_singleton(self):
+        """Test that the IT Service class only gets instantiated once."""
+        class_instances = [
+            ITService(),
+            ITService(),
+            ITService(),
+            ITService(),
+            ITService(),
+        ]
+
+        for instance in class_instances:
+            self.assertEqual(
+                self.it_service,
+                instance,
+                "no new instances of the IT service class should have been created since it is supposed to be a singleton",
+            )
+
     @mock.patch("management.principal.it_service.ITService._is_service_account_valid")
     def test_is_service_account_valid_by_username_client_id(self, _is_service_account_valid: mock.Mock):
         """Test that the function under test calls the underlying function with the unmodified client ID."""

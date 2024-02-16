@@ -73,6 +73,16 @@ def limit_offset_validation(offset, limit):
 class ITService:
     """A class to handle interactions with the IT service."""
 
+    # Instance variable for the class.
+    _instance = None
+
+    def __new__(cls, *args, **kwargs):
+        """Create a single instance of the class."""
+        if cls._instance is None:
+            cls._instance = super().__new__(cls, *args, **kwargs)
+
+        return cls._instance
+
     def __init__(self):
         """Establish IT connection information."""
         self.host = settings.IT_SERVICE_HOST
