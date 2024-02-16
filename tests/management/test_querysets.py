@@ -34,6 +34,7 @@ from management.querysets import (
     get_role_queryset,
     get_access_queryset,
     _filter_default_groups,
+    _check_user_username_is_org_admin,
 )
 from management.utils import APPLICATION_KEY
 from rest_framework import serializers
@@ -822,3 +823,34 @@ class QuerySetTest(TestCase):
             "the query set returned by the function under test should have been left untouched since the"
             " conditions for filtering the default groups are not met",
         )
+
+    @patch("management.querysets.get_admin_from_proxy")
+    def test_check_user_username_is_org_admin_service_account(self, get_admin_from_proxy: Mock):
+        """Test that the function under test correctly identifies service accounts as non-org-admins"""
+        # Call the function under test.
+        self.assertEqual(
+            False,
+            _check_user_username_is_org_admin(request=Mock(), username=f"service-account-{uuid.uuid4()}"),
+            "the service account username should have been flagged as non organization administrator",
+        )
+
+    @patch("management.querysets.get_admin_from_proxy")
+    def test_check_user_username_is_org_admin_user_principal(self, get_admin_from_proxy: Mock):
+        """Test that the function under test correctly identifies service accounts as non-org-admins"""
+        # Return a mocked value for the dependant function, different to the value the function returns when the
+        # username is identified as a service account username.
+        get_admin_from_proxy.return_value = True
+
+        # Create the mocked parameters to assert that the underlying function got called correctly.
+        request = Mock()
+        username = "user-1"
+
+        # Call the function under test.
+        self.assertEqual(
+            True,
+            _check_user_username_is_org_admin(request=request, username=username),
+            "the user principal should have been identified as such, and the underlying function should have been called",
+        )
+
+        # Make sure the underlying function gets called.
+        get_admin_from_proxy.assert_called_with(request=request, username=username)

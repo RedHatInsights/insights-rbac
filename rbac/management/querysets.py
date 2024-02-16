@@ -182,11 +182,7 @@ def get_role_queryset(request) -> QuerySet:
             if settings.BYPASS_BOP_VERIFICATION:
                 is_org_admin = request.user.admin
             else:
-                # Service accounts were agreed not to be considered organization administrators.
-                if ITService.is_username_service_account(username=username):
-                    is_org_admin = False
-                else:
-                    is_org_admin = get_admin_from_proxy(username, request)
+                is_org_admin = _check_user_username_is_org_admin(request=request, username=username)
 
             request.user_from_query = User()
             request.user_from_query.username = username
@@ -257,11 +253,7 @@ def get_access_queryset(request: Request) -> QuerySet:
     if not username or settings.BYPASS_BOP_VERIFICATION:
         is_org_admin = request.user.admin
     else:
-        # Service accounts were agreed not to be considered organization administrators.
-        if ITService.is_username_service_account(username=username):
-            is_org_admin = False
-        else:
-            is_org_admin = get_admin_from_proxy(username, request)
+        is_org_admin = _check_user_username_is_org_admin(request=request, username=username)
 
     return get_object_principal_queryset(
         request,
@@ -300,11 +292,8 @@ def _filter_admin_default(request: Request, queryset: QuerySet):
     if not username or settings.BYPASS_BOP_VERIFICATION:
         is_org_admin = request.user.admin
     else:
-        # Service accounts were agreed not to be considered organization administrators.
-        if ITService.is_username_service_account(username=username):
-            is_org_admin = False
-        else:
-            is_org_admin = get_admin_from_proxy(username, request)
+        is_org_admin = _check_user_username_is_org_admin(request=request, username=username)
+
     # If the principal is an org admin, make sure they get any and all admin_default groups
     if is_org_admin:
         public_tenant = Tenant.objects.get(tenant_name="public")
@@ -326,3 +315,15 @@ def _filter_default_groups(request: Request, queryset: QuerySet) -> QuerySet:
         return queryset.exclude(platform_default=True).exclude(admin_default=True)
     else:
         return queryset
+
+
+def _check_user_username_is_org_admin(request: Request, username: str) -> bool:
+    """Check whether the given username is from a user that is an org admin or not.
+
+    Service Accounts are considered to not be organization admins, and regular user principals need to be checked using
+    the proxy.
+    """
+    if ITService.is_username_service_account(username=username):
+        return False
+    else:
+        return get_admin_from_proxy(request=request, username=username)
