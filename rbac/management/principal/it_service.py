@@ -22,6 +22,7 @@ from typing import Tuple
 import requests
 from django.conf import settings
 from django.db.models import Q
+from management.authorization.missing_authorization import MissingAuthorizationError
 from management.models import Group, Principal
 from prometheus_client import Counter, Histogram
 from rest_framework import serializers, status
@@ -82,6 +83,10 @@ class ITService:
     @it_request_all_service_accounts_time_tracking.time()
     def request_service_accounts(self, bearer_token: str) -> list[dict]:
         """Request the service accounts for a tenant and returns the entire list that IT has."""
+        # We cannot talk to IT if we don't have a bearer token.
+        if not bearer_token:
+            raise MissingAuthorizationError()
+
         received_service_accounts: list[dict] = []
         # Prepare the URL to fetch the service accounts.
         url = f"{self.protocol}://{self.host}:{self.port}{self.base_path}{IT_PATH_GET_SERVICE_ACCOUNTS}"
