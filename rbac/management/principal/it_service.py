@@ -19,7 +19,6 @@ import logging
 import time
 import uuid
 from typing import Optional, Tuple, Union
-from uuid import UUID
 
 import requests
 from django.conf import settings
@@ -403,7 +402,7 @@ class ITService:
                 }
             )
 
-    def generate_service_accounts_report_in_group(self, group: Group, client_ids: set[UUID]) -> dict[str, bool]:
+    def generate_service_accounts_report_in_group(self, group: Group, client_ids: set[str]) -> dict[str, bool]:
         """Check if the given service accounts are in the specified group."""
         # Fetch the service accounts from the group.
         group_service_account_principals = (
@@ -414,10 +413,8 @@ class ITService:
 
         # Mark the specified client IDs as "present or missing" from the result set.
         result: dict[str, bool] = {}
-        for rci_uuid in client_ids:
-            rci = str(rci_uuid)
-
-            result[rci] = rci in group_service_account_principals
+        for incoming_client_id in client_ids:
+            result[incoming_client_id] = incoming_client_id in group_service_account_principals
 
         return result
 

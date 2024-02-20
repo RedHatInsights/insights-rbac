@@ -693,10 +693,10 @@ class GroupViewSet(
                 # Turn the received and comma separated client IDs into a manageable set.
                 received_client_ids: set[str] = set(service_account_client_ids_raw.split(","))
 
-                processed_client_ids: set[UUID] = set()
+                # Validate that the provided strings are actually UUIDs.
                 for rci in received_client_ids:
                     try:
-                        processed_client_ids.add(UUID(str(rci)))
+                        UUID(rci)
                     except ValueError:
                         return Response(
                             status=status.HTTP_400_BAD_REQUEST,
@@ -715,7 +715,7 @@ class GroupViewSet(
                 # ones are available to be added to the given group.
                 it_service = ITService()
                 result: dict = it_service.generate_service_accounts_report_in_group(
-                    group=group, client_ids=processed_client_ids
+                    group=group, client_ids=received_client_ids
                 )
 
                 # Prettify the output payload and return it.

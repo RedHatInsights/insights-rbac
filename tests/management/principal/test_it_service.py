@@ -238,10 +238,10 @@ class ITServiceTests(IdentityRequest):
         group.save()
 
         # Simulate that a few client IDs were specified in the request.
-        request_client_ids = set[uuid.UUID]()
-        request_client_ids.add(uuid.uuid4())
-        request_client_ids.add(uuid.uuid4())
-        request_client_ids.add(uuid.uuid4())
+        request_client_ids = set[str]()
+        request_client_ids.add(str(uuid.uuid4()))
+        request_client_ids.add(str(uuid.uuid4()))
+        request_client_ids.add(str(uuid.uuid4()))
 
         # Call the function under test.
         result: dict[str, bool] = self.it_service.generate_service_accounts_report_in_group(
@@ -250,17 +250,12 @@ class ITServiceTests(IdentityRequest):
         # Assert that only the specified client IDs are present in the result.
         self.assertEqual(3, len(result))
 
-        # Transform the UUIDs to strings to match the generated result and be able to create assertions.
-        request_client_ids_str: set[str] = set()
-        for rci in request_client_ids:
-            request_client_ids_str.add(str(rci))
-
         # Assert that all the service accounts were flagged as not present in the group.
         for client_id, is_present_in_group in result.items():
             # Make sure the specified client IDs are in the set.
             self.assertEqual(
                 True,
-                client_id in request_client_ids_str,
+                client_id in request_client_ids,
                 "expected to find the specified client ID from the request in the returning result",
             )
             # Make sure they are all set to "false" since there shouldn't be any of those client IDs in the group.
@@ -348,14 +343,15 @@ class ITServiceTests(IdentityRequest):
         }
 
         # Add all the UUIDs to a set to pass it to the function under test.
-        request_client_ids = set[uuid.UUID]()
-        request_client_ids.add(not_in_group)
-        request_client_ids.add(not_in_group_2)
-        request_client_ids.add(not_in_group_3)
+        request_client_ids = set[str]()
+        request_client_ids.add(str(not_in_group))
+        request_client_ids.add(str(not_in_group_2))
+        request_client_ids.add(str(not_in_group_3))
+
         # Specify the service accounts' UUIDs here too, because the function under test should flag them as present in
         # the group.
-        request_client_ids.add(client_uuid_1)
-        request_client_ids.add(client_uuid_2)
+        request_client_ids.add(str(client_uuid_1))
+        request_client_ids.add(str(client_uuid_2))
 
         # Call the function under test.
         result: dict[str, bool] = self.it_service.generate_service_accounts_report_in_group(
@@ -364,11 +360,6 @@ class ITServiceTests(IdentityRequest):
 
         # Assert that all the specified client IDs are present in the result.
         self.assertEqual(5, len(result))
-
-        # Transform the UUIDs to strings to match the generated result and be able to create assertions.
-        request_client_ids_str: set[str] = set()
-        for rci in request_client_ids:
-            request_client_ids_str.add(str(rci))
 
         # Assert that the mixed matches are identified correctly.
         for client_id, is_it_present_in_group in result.items():
@@ -456,12 +447,12 @@ class ITServiceTests(IdentityRequest):
         group.save()
 
         # Simulate that a few client IDs were specified in the request.
-        request_client_ids = set[uuid.UUID]()
-        request_client_ids.add(client_uuid_1)
-        request_client_ids.add(client_uuid_2)
-        request_client_ids.add(client_uuid_3)
-        request_client_ids.add(client_uuid_4)
-        request_client_ids.add(client_uuid_5)
+        request_client_ids = set[str]()
+        request_client_ids.add(str(client_uuid_1))
+        request_client_ids.add(str(client_uuid_2))
+        request_client_ids.add(str(client_uuid_3))
+        request_client_ids.add(str(client_uuid_4))
+        request_client_ids.add(str(client_uuid_5))
 
         # Call the function under test.
         result: dict[str, bool] = self.it_service.generate_service_accounts_report_in_group(
@@ -471,16 +462,11 @@ class ITServiceTests(IdentityRequest):
         # Assert that all the specified client IDs are present in the result.
         self.assertEqual(5, len(result))
 
-        # Transform the UUIDs to strings to match the generated result and be able to create assertions.
-        request_client_ids_str: set[str] = set()
-        for rci in request_client_ids:
-            request_client_ids_str.add(str(rci))
-
         # Assert that all the results are flagged as being part of the group.
         for client_id, is_present_in_group in result.items():
             self.assertEqual(
                 True,
-                client_id in request_client_ids_str,
+                client_id in request_client_ids,
                 "expected to find the specified client ID from the request in the returning result",
             )
             self.assertEqual(
