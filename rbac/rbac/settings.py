@@ -429,9 +429,6 @@ if KAFKA_ENABLED:
         kafka_info = f"{kafka_host}:{kafka_port}"
         KAFKA_SERVERS.append(kafka_info)
 
-    if KAFKA_SERVERS == []:
-        raise AttributeError("Kafka servers not added to list and does not exist")
-
     clowder_notifications_topic = KafkaTopics.get(NOTIFICATIONS_TOPIC)
     if clowder_notifications_topic:
         NOTIFICATIONS_TOPIC = clowder_notifications_topic.name
