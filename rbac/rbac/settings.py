@@ -409,7 +409,7 @@ if KAFKA_ENABLED:
             KAFKA_SERVERS.append(kafka_info)
 
         try:
-            if kafka_brokers.authtype.value == "sasl":
+            if kafka_brokers[0].authtype.value == "sasl":
                 KAFKA_AUTH.update(
                     {
                         "bootstrap_servers": KAFKA_SERVERS,
@@ -419,7 +419,7 @@ if KAFKA_ENABLED:
                         "security_protocol": kafka_brokers.sasl.securityProtocol.upper(),
                     }
                 )
-            if kafka_brokers.cacert:
+            if kafka_brokers[0].cacert:
                 KAFKA_AUTH["ssl_cafile"] = LoadedConfig.kafka_ca()
         except AttributeError:
             KAFKA_AUTH = {}
