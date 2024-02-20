@@ -412,7 +412,7 @@ class ITService:
             .filter(service_account_id__in=client_ids)
         )
 
-        # Mark the specified client IDs as "present or missing" from the result set.ç
+        # Mark the specified client IDs as "present or missing" from the result set.
         result: dict[str, bool] = {}
         for rci_uuid in client_ids:
             rci = str(rci_uuid)
