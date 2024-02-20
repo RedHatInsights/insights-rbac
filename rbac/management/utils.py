@@ -21,6 +21,7 @@ from uuid import UUID
 
 from django.conf import settings
 from django.core.exceptions import PermissionDenied
+from django.core.handlers.wsgi import WSGIRequest
 from django.utils.translation import gettext as _
 from management.models import Access, Group, Policy, Principal, Role
 from management.permissions.principal_access import PrincipalAccessPermission
@@ -319,3 +320,13 @@ def get_admin_from_proxy(username, request):
 
     is_org_admin = bop_resp.get("data")[index]["is_org_admin"]
     return is_org_admin
+
+
+def request_has_bearer_authentication_header(request: WSGIRequest) -> bool:
+    """Check if the incoming request has an authorization header, of the bearer type."""
+    authorization_header_contents: str = request.headers.get("Authorization")
+
+    if authorization_header_contents:
+        return authorization_header_contents.startswith("Bearer")
+    else:
+        return False

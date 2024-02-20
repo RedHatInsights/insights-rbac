@@ -99,6 +99,7 @@ class IdentityRequest(TestCase):
         json_identity = json_dumps(identity)
         mock_header = b64encode(json_identity.encode("utf-8"))
         request = Mock()
+        request.headers = {RH_IDENTITY_HEADER: mock_header}
         request.META = {RH_IDENTITY_HEADER: mock_header}
         request.scope = {}
         request_context = {"request": request}

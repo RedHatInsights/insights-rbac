@@ -27,11 +27,12 @@ from django.db import IntegrityError
 from django.http import Http404, HttpResponse, QueryDict
 from django.urls import resolve
 from django.utils.deprecation import MiddlewareMixin
-from management.authorization.token_validator import ITSSOTokenValidator, InvalidTokenError, MissingAuthorizationError
+from management.authorization.token_validator import ITSSOTokenValidator, InvalidTokenError
 from management.authorization.token_validator import UnableMeetPrerequisitesError
 from management.cache import TenantCache
 from management.models import Principal
 from management.utils import APPLICATION_KEY, access_for_principal, validate_psk
+from management.utils import request_has_bearer_authentication_header
 from prometheus_client import Counter
 from rest_framework import status
 
@@ -234,9 +235,9 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
                 user.user_id = None
                 user.system = False
 
-                # The requests made by service accounts are expected to come with an Authorization header which
-                # contains a Bearer token. Therefore, we will attempt to extract it and validate it, and also store it
-                # in case we need to use it to contact IT with it.
+            # Any bearer token received through the authorization header will be validated with IT. We will try to
+            # extract it, validate it and store it in case we need to use it to contact IT.
+            if request_has_bearer_authentication_header(request=request):
                 token_validator = ITSSOTokenValidator()
                 try:
                     user.bearer_token = token_validator.validate_token(request=request)
@@ -247,22 +248,6 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
                                 "errors": [
                                     {
                                         "detail": "Invalid token provided.",
-                                        "status": str(status.HTTP_401_UNAUTHORIZED),
-                                    }
-                                ]
-                            }
-                        ),
-                        content_type="application/json",
-                        status=status.HTTP_401_UNAUTHORIZED,
-                    )
-                except MissingAuthorizationError:
-                    return HttpResponse(
-                        content=json.dumps(
-                            {
-                                "errors": [
-                                    {
-                                        "detail": "A Bearer token in an authorization header is required when"
-                                        " contacting RBAC with a service account.",
                                         "status": str(status.HTTP_401_UNAUTHORIZED),
                                     }
                                 ]
