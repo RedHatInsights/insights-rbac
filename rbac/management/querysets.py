@@ -16,12 +16,14 @@
 #
 """Queryset helpers for management module."""
 from django.conf import settings
+from django.db.models import QuerySet
 from django.db.models.aggregates import Count
 from django.urls import reverse
 from django.utils.translation import gettext as _
 from management.group.model import Group
 from management.permissions.role_access import RoleAccessPermission
 from management.policy.model import Policy
+from management.principal.it_service import ITService
 from management.role.model import Access, Role
 from management.utils import (
     APPLICATION_KEY,
@@ -36,6 +38,7 @@ from management.utils import (
     roles_for_principal,
 )
 from rest_framework import permissions, serializers
+from rest_framework.request import Request
 
 from api.models import Tenant, User
 from rbac.env import ENVIRONMENT
@@ -148,7 +151,7 @@ def annotate_roles_with_counts(queryset):
     return queryset.annotate(policyCount=Count("policies", distinct=True), accessCount=Count("access", distinct=True))
 
 
-def get_role_queryset(request):
+def get_role_queryset(request) -> QuerySet:
     """Obtain the queryset for roles."""
     scope = request.query_params.get(SCOPE_KEY, ACCOUNT_SCOPE)
     public_tenant = Tenant.objects.get(tenant_name="public")
@@ -179,7 +182,7 @@ def get_role_queryset(request):
             if settings.BYPASS_BOP_VERIFICATION:
                 is_org_admin = request.user.admin
             else:
-                is_org_admin = get_admin_from_proxy(username, request)
+                is_org_admin = _check_user_username_is_org_admin(request=request, username=username)
 
             request.user_from_query = User()
             request.user_from_query.username = username
@@ -233,7 +236,7 @@ def get_policy_queryset(request):
     return filter_queryset_by_tenant(Policy.objects.filter(uuid__in=access), request.tenant)
 
 
-def get_access_queryset(request):
+def get_access_queryset(request: Request) -> QuerySet:
     """Obtain the queryset for policies."""
     required_parameters = [APPLICATION_KEY]
     have_parameters = all(param in request.query_params for param in required_parameters)
@@ -250,7 +253,7 @@ def get_access_queryset(request):
     if not username or settings.BYPASS_BOP_VERIFICATION:
         is_org_admin = request.user.admin
     else:
-        is_org_admin = get_admin_from_proxy(username, request)
+        is_org_admin = _check_user_username_is_org_admin(request=request, username=username)
 
     return get_object_principal_queryset(
         request,
@@ -283,13 +286,14 @@ def get_object_principal_queryset(request, scope, clazz, **kwargs):
     return queryset_by_id(objects, clazz, **kwargs)
 
 
-def _filter_admin_default(request, queryset):
+def _filter_admin_default(request: Request, queryset: QuerySet):
     """Filter out admin default groups unless the principal is an org admin."""
     username = request.query_params.get("username")
     if not username or settings.BYPASS_BOP_VERIFICATION:
         is_org_admin = request.user.admin
     else:
-        is_org_admin = get_admin_from_proxy(username, request)
+        is_org_admin = _check_user_username_is_org_admin(request=request, username=username)
+
     # If the principal is an org admin, make sure they get any and all admin_default groups
     if is_org_admin:
         public_tenant = Tenant.objects.get(tenant_name="public")
@@ -302,9 +306,24 @@ def _filter_admin_default(request, queryset):
     return queryset
 
 
-def _filter_default_groups(request, queryset):
+def _filter_default_groups(request: Request, queryset: QuerySet) -> QuerySet:
     """Filter out default access group and admin default group."""
+    username = request.query_params.get("username")
     exclude_username = request.query_params.get("exclude_username")
-    if exclude_username:
+
+    if (username and ITService.is_username_service_account(username=username)) or exclude_username:
         return queryset.exclude(platform_default=True).exclude(admin_default=True)
-    return queryset
+    else:
+        return queryset
+
+
+def _check_user_username_is_org_admin(request: Request, username: str) -> bool:
+    """Check whether the given username is from a user that is an org admin or not.
+
+    Service Accounts are considered to not be organization admins, and regular user principals need to be checked using
+    the proxy.
+    """
+    if ITService.is_username_service_account(username=username):
+        return False
+    else:
+        return get_admin_from_proxy(request=request, username=username)

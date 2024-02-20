@@ -17,6 +17,7 @@
 """Helper utilities for management module."""
 import json
 import os
+import uuid
 from uuid import UUID
 
 from django.conf import settings
@@ -25,11 +26,12 @@ from django.core.handlers.wsgi import WSGIRequest
 from django.utils.translation import gettext as _
 from management.models import Access, Group, Policy, Principal, Role
 from management.permissions.principal_access import PrincipalAccessPermission
+from management.principal.it_service import ITService
 from management.principal.proxy import PrincipalProxy
 from rest_framework import serializers, status
+from rest_framework.request import Request
 
-from api.models import CrossAccountRequest, Tenant, User
-
+from api.models import CrossAccountRequest, Tenant
 
 USERNAME_KEY = "username"
 APPLICATION_KEY = "application"
@@ -66,24 +68,47 @@ def get_principal_from_request(request):
     return get_principal(username, request, verify_principal=bool(qs_user), from_query=from_query)
 
 
-def get_principal(username, request, verify_principal=True, from_query=False):
+def get_principal(
+    username: str, request: Request, verify_principal: bool = True, from_query: bool = False
+) -> Principal:
     """Get principals from username."""
     # First check if principal exist on our side,
     # if not call BOP to check if user exist in the account.
-    tenant = request.tenant
+    tenant: Tenant = request.tenant
     try:
-        # If the username was provided through a query we must verify if it is an org admin from the BOP
+        # If the username was provided through a query we must verify if it exists in the corresponding services first.
         if from_query:
-            verify_principal_with_proxy(username, request, verify_principal=verify_principal)
+            if ITService.is_username_service_account(username=username):
+                it_service = ITService()
+                if not it_service.is_service_account_valid_by_username(
+                    user=request.user, service_account_username=username
+                ):
+                    raise serializers.ValidationError(
+                        {"detail": f"No data found for service account with username '{username}'"}
+                    )
+            else:
+                verify_principal_with_proxy(username, request, verify_principal=verify_principal)
         principal = Principal.objects.get(username__iexact=username, tenant=tenant)
     except Principal.DoesNotExist:
-        verify_principal_with_proxy(username, request, verify_principal=verify_principal)
+        # If the "from query" parameter was specified, the username was validated above, so there is no need to
+        # validate it again.
+        if not from_query:
+            if ITService.is_username_service_account(username):
+                it_service = ITService()
+                if not it_service.is_service_account_valid_by_username(
+                    user=request.user, service_account_username=username
+                ):
+                    raise serializers.ValidationError(
+                        {"detail": f"No data found for service account with username '{username}'"}
+                    )
+            else:
+                verify_principal_with_proxy(username, request, verify_principal=verify_principal)
 
-        # In the case that the user that made the request was a service account, store it accordingly in the database.
-        user: User = request.user
-        if user and user.is_service_account:
+        if ITService.is_username_service_account(username=username):
+            client_id: uuid.UUID = ITService.extract_client_id_service_account_username(username)
+
             principal, _ = Principal.objects.get_or_create(
-                username=user.username, tenant=tenant, type=SERVICE_ACCOUNT_KEY, service_account_id=user.client_id
+                username=username, tenant=tenant, type=SERVICE_ACCOUNT_KEY, service_account_id=client_id
             )
         else:
             # Avoid possible race condition if the user was created while checking BOP
