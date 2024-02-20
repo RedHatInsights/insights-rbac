@@ -41,7 +41,9 @@ class RBACProducer:
                 if settings.KAFKA_AUTH:
                     self.producer = KafkaProducer(**settings.KAFKA_AUTH)
                 else:
-                    self.producer = KafkaProducer(bootstrap_servers=settings.KAFKA_SERVER)
+                    if settings.KAFKA_SERVERS == []:
+                        AttributeError("Empty servers list")
+                    self.producer = KafkaProducer(bootstrap_servers=settings.KAFKA_SERVERS)
         return self.producer
 
     def send_kafka_message(self, topic, message, headers=None):

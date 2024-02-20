@@ -394,6 +394,8 @@ if not KAFKA_ENABLED:
     NOTIFICATIONS_TOPIC = None
 
 # Kafka settings
+KAFKA_SERVERS = []
+
 if KAFKA_ENABLED:
     KAFKA_AUTH = {}
     if ENVIRONMENT.bool("CLOWDER_ENABLED", default=False):
@@ -403,6 +405,8 @@ if KAFKA_ENABLED:
         for i in range(0, len(kafka_broker)):
             kafka_host = kafka_broker[i].hostname
             kafka_port = kafka_broker[i].port
+            kakfka_info = f"{kafka_host}:{kafka_port}"
+            KAFKA_SERVERS.append(kakfka_info)
 
             try:
                 if kafka_broker[i].authtype.value == "sasl":
@@ -422,8 +426,11 @@ if KAFKA_ENABLED:
     else:
         kafka_host = "localhost"
         kafka_port = "9092"
+        kafka_info = f"{kafka_host}:{kafka_port}"
+        KAFKA_SERVERS.append(kafka_info)
 
-    KAFKA_SERVER = f"{kafka_host}:{kafka_port}"
+    # KAFKA_SERVERS = f"{kafka_host}:{kafka_port}"
+    print("kafka_servers", KAFKA_SERVERS)
 
     clowder_notifications_topic = KafkaTopics.get(NOTIFICATIONS_TOPIC)
     if clowder_notifications_topic:
