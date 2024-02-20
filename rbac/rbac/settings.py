@@ -399,38 +399,38 @@ KAFKA_SERVERS = []
 if KAFKA_ENABLED:
     KAFKA_AUTH = {}
     if ENVIRONMENT.bool("CLOWDER_ENABLED", default=False):
-        kafka_broker = LoadedConfig.kafka.brokers
-        if len(kafka_broker) == 0:
-            ValueError("No kafka brokers available")
-        for i in range(0, len(kafka_broker)):
-            kafka_host = kafka_broker[i].hostname
-            kafka_port = kafka_broker[i].port
-            kakfka_info = f"{kafka_host}:{kafka_port}"
-            KAFKA_SERVERS.append(kakfka_info)
+        kafka_brokers = LoadedConfig.kafka.brokers
+        if not kafka_brokers:
+            raise ValueError("No kafka brokers available")
+        for broker in kafka_brokers:
+            kafka_host = broker.hostname
+            kafka_port = broker.port
+            kafka_info = f"{kafka_host}:{kafka_port}"
+            KAFKA_SERVERS.append(kafka_info)
 
-            try:
-                if kafka_broker[i].authtype.value == "sasl":
-                    KAFKA_AUTH.update(
-                        {
-                            "bootstrap_servers": f"{kafka_host}:{kafka_port}",
-                            "sasl_plain_username": kafka_broker[i].sasl.username,
-                            "sasl_plain_password": kafka_broker[i].sasl.password,
-                            "sasl_mechanism": kafka_broker[i].sasl.saslMechanism.upper(),
-                            "security_protocol": kafka_broker[i].sasl.securityProtocol.upper(),
-                        }
-                    )
-                if kafka_broker[i].cacert:
-                    KAFKA_AUTH["ssl_cafile"] = LoadedConfig.kafka_ca()
-            except AttributeError:
-                KAFKA_AUTH = {}
+        try:
+            if kafka_brokers.authtype.value == "sasl":
+                KAFKA_AUTH.update(
+                    {
+                        "bootstrap_servers": KAFKA_SERVERS,
+                        "sasl_plain_username": kafka_brokers.sasl.username,
+                        "sasl_plain_password": kafka_brokers.sasl.password,
+                        "sasl_mechanism": kafka_brokers.sasl.saslMechanism.upper(),
+                        "security_protocol": kafka_brokers.sasl.securityProtocol.upper(),
+                    }
+                )
+            if kafka_brokers.cacert:
+                KAFKA_AUTH["ssl_cafile"] = LoadedConfig.kafka_ca()
+        except AttributeError:
+            KAFKA_AUTH = {}
     else:
         kafka_host = "localhost"
         kafka_port = "9092"
         kafka_info = f"{kafka_host}:{kafka_port}"
         KAFKA_SERVERS.append(kafka_info)
 
-    # KAFKA_SERVERS = f"{kafka_host}:{kafka_port}"
-    print("kafka_servers", KAFKA_SERVERS)
+    if KAFKA_SERVERS == []:
+        raise AttributeError("Kafka servers not added to list and does not exist")
 
     clowder_notifications_topic = KafkaTopics.get(NOTIFICATIONS_TOPIC)
     if clowder_notifications_topic:
