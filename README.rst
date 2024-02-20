@@ -52,7 +52,7 @@ If deploying with Openshift seems overly complex you can try an alternate local 
 Configuration
 ^^^^^^^^^^^^^
 
-This project is developed using the Django 4.1.7 web framework. Many configuration settings can be read in from a `.env` file. An example file `.env.example` is provided in the repository. To use the defaults simply ::
+This project is developed using the Django web framework. Many configuration settings can be read in from a `.env` file. An example file `.env.example` is provided in the repository. To use the defaults simply ::
 
     cp .env.example .env
 
