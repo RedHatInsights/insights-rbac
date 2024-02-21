@@ -413,10 +413,10 @@ if KAFKA_ENABLED:
                 KAFKA_AUTH.update(
                     {
                         "bootstrap_servers": KAFKA_SERVERS,
-                        "sasl_plain_username": kafka_brokers.sasl.username,
-                        "sasl_plain_password": kafka_brokers.sasl.password,
-                        "sasl_mechanism": kafka_brokers.sasl.saslMechanism.upper(),
-                        "security_protocol": kafka_brokers.sasl.securityProtocol.upper(),
+                        "sasl_plain_username": kafka_brokers[0].sasl.username,
+                        "sasl_plain_password": kafka_brokers[0].sasl.password,
+                        "sasl_mechanism": kafka_brokers[0].sasl.saslMechanism.upper(),
+                        "security_protocol": kafka_brokers[0].sasl.securityProtocol.upper(),
                     }
                 )
             if kafka_brokers[0].cacert:
