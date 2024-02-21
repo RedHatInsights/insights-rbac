@@ -17,7 +17,8 @@
 
 """View for group management."""
 import logging
-from typing import Iterable
+from typing import Iterable, Optional
+from uuid import UUID
 
 import requests
 from django.conf import settings
@@ -70,6 +71,7 @@ PRINCIPAL_TYPE_KEY = "principal_type"
 PRINCIPAL_USERNAME_KEY = "principal_username"
 VALID_ROLE_ORDER_FIELDS = list(RoleViewSet.ordering_fields)
 ROLE_DISCRIMINATOR_KEY = "role_discriminator"
+SERVICE_ACCOUNT_CLIENT_IDS_KEY = "service_account_client_ids"
 SERVICE_ACCOUNT_DESCRIPTION_KEY = "service_account_description"
 SERVICE_ACCOUNT_NAME_KEY = "service_account_name"
 SERVICE_ACCOUNT_USERNAME_FORMAT = "service-account-{clientID}"
@@ -500,7 +502,7 @@ class GroupViewSet(
         return group
 
     @action(detail=True, methods=["get", "post", "delete"])
-    def principals(self, request: Request, uuid=None):
+    def principals(self, request: Request, uuid: Optional[UUID] = None):
         """Get, add or remove principals from a group."""
         """
         @api {get} /api/v1/groups/:uuid/principals/    Get principals for a group
@@ -653,6 +655,79 @@ class GroupViewSet(
             # ... and return it.
             response = Response(status=status.HTTP_200_OK, data=output.data)
         elif request.method == "GET":
+            # Check if the request comes with a bunch of service account client IDs that we need to check. Since this
+            # query parameter is incompatible with any other query parameter, we make the checks first. That way if any
+            # other query parameter was specified, we simply return early.
+            if SERVICE_ACCOUNT_CLIENT_IDS_KEY in request.query_params:
+                if len(request.query_params) > 1:
+                    return Response(
+                        status=status.HTTP_400_BAD_REQUEST,
+                        data={
+                            "errors": [
+                                {
+                                    "detail": f"The '{SERVICE_ACCOUNT_CLIENT_IDS_KEY}' parameter is incompatible with"
+                                    " any other query parameter. Please, use it alone",
+                                    "source": "groups",
+                                    "status": str(status.HTTP_400_BAD_REQUEST),
+                                }
+                            ]
+                        },
+                    )
+
+                # Check that the specified query parameter is not empty.
+                service_account_client_ids_raw = request.query_params.get(SERVICE_ACCOUNT_CLIENT_IDS_KEY).strip()
+                if not service_account_client_ids_raw:
+                    return Response(
+                        status=status.HTTP_400_BAD_REQUEST,
+                        data={
+                            "errors": [
+                                {
+                                    "detail": "Not a single client ID was specified for the client IDs filter",
+                                    "source": "groups",
+                                    "status": str(status.HTTP_400_BAD_REQUEST),
+                                }
+                            ]
+                        },
+                    )
+
+                # Turn the received and comma separated client IDs into a manageable set.
+                received_client_ids: set[str] = set(service_account_client_ids_raw.split(","))
+
+                # Validate that the provided strings are actually UUIDs.
+                for rci in received_client_ids:
+                    try:
+                        UUID(rci)
+                    except ValueError:
+                        return Response(
+                            status=status.HTTP_400_BAD_REQUEST,
+                            data={
+                                "errors": [
+                                    {
+                                        "detail": f"The specified client ID '{rci}' is not a valid UUID",
+                                        "source": "groups",
+                                        "status": str(status.HTTP_400_BAD_REQUEST),
+                                    }
+                                ]
+                            },
+                        )
+
+                # Generate the report of which of the tenant's service accounts are in a group, and which
+                # ones are available to be added to the given group.
+                it_service = ITService()
+                result: dict = it_service.generate_service_accounts_report_in_group(
+                    group=group, client_ids=received_client_ids
+                )
+
+                # Prettify the output payload and return it.
+                return Response(
+                    status=status.HTTP_200_OK,
+                    data={
+                        "meta": {"count": len(result)},
+                        "links": {},
+                        "data": result,
+                    },
+                )
+
             # Get the "order_by" query parameter.
             all_valid_fields = VALID_PRINCIPAL_ORDER_FIELDS + ["-" + field for field in VALID_PRINCIPAL_ORDER_FIELDS]
             sort_order = None

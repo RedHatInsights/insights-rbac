@@ -33,6 +33,7 @@ from .unexpected_status_code_from_it import UnexpectedStatusCodeFromITError
 
 # Constants or global variables.
 LOGGER = logging.getLogger(__name__)
+SERVICE_ACCOUNT_CLIENT_IDS_KEY = "service_account_client_ids"
 TYPE_SERVICE_ACCOUNT = "service-account"
 
 # IT path to fetch the service accounts.
@@ -400,6 +401,22 @@ class ITService:
                     " provided UUID is invalid"
                 }
             )
+
+    def generate_service_accounts_report_in_group(self, group: Group, client_ids: set[str]) -> dict[str, bool]:
+        """Check if the given service accounts are in the specified group."""
+        # Fetch the service accounts from the group.
+        group_service_account_principals = (
+            group.principals.values_list("service_account_id", flat=True)
+            .filter(type=TYPE_SERVICE_ACCOUNT)
+            .filter(service_account_id__in=client_ids)
+        )
+
+        # Mark the specified client IDs as "present or missing" from the result set.
+        result: dict[str, bool] = {}
+        for incoming_client_id in client_ids:
+            result[incoming_client_id] = incoming_client_id in group_service_account_principals
+
+        return result
 
     def _transform_incoming_payload(self, service_account_from_it_service: dict) -> dict:
         """Transform the incoming service account from IT into a dict which fits our response structure."""

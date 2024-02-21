@@ -19,6 +19,7 @@ import uuid
 
 from django.conf import settings
 
+from management.models import Group, Principal
 from management.principal.it_service import ITService
 from rest_framework import serializers
 from tests.identity_request import IdentityRequest
@@ -195,4 +196,287 @@ class ITServiceTests(IdentityRequest):
                 "unable to extract the client ID from the service account's username because the provided UUID is invalid",
                 str(ve.detail.get("detail")),
                 "unexpected error message when providing an invalid UUID as the client ID",
+            )
+
+    def test_generate_service_accounts_report_in_group_zero_matches(self):
+        """Test that the function under test is able to flag service accounts as not present in a group"""
+        # Create a group for the principals.
+        group = Group(name="it-service-group", platform_default=False, system=False, tenant=self.tenant)
+        group.save()
+
+        # Add the principal accounts to make sure that we are only working with service accounts. If we weren't, these
+        # principals below should give us unexpected results in our assertions.
+        group.principals.add(Principal.objects.create(username="user-1", tenant=self.tenant))
+        group.principals.add(Principal.objects.create(username="user-2", tenant=self.tenant))
+        group.principals.add(Principal.objects.create(username="user-3", tenant=self.tenant))
+
+        # Create three service accounts for the group. Since these will not be specified in the "client_ids" parameter
+        # of the function under test, they should not show up in the results.
+        sa_1 = Principal.objects.create(
+            username=f"service-account-{uuid.uuid4()}",
+            service_account_id=uuid.uuid4(),
+            type="service-account",
+            tenant=self.tenant,
+        )
+        sa_2 = Principal.objects.create(
+            username=f"service-account-{uuid.uuid4()}",
+            service_account_id=uuid.uuid4(),
+            type="service-account",
+            tenant=self.tenant,
+        )
+        sa_3 = Principal.objects.create(
+            username=f"service-account-{uuid.uuid4()}",
+            service_account_id=uuid.uuid4(),
+            type="service-account",
+            tenant=self.tenant,
+        )
+
+        # Add the service account principals.
+        group.principals.add(sa_1)
+        group.principals.add(sa_2)
+        group.principals.add(sa_3)
+        group.save()
+
+        # Simulate that a few client IDs were specified in the request.
+        request_client_ids = set[str]()
+        request_client_ids.add(str(uuid.uuid4()))
+        request_client_ids.add(str(uuid.uuid4()))
+        request_client_ids.add(str(uuid.uuid4()))
+
+        # Call the function under test.
+        result: dict[str, bool] = self.it_service.generate_service_accounts_report_in_group(
+            group=group, client_ids=request_client_ids
+        )
+        # Assert that only the specified client IDs are present in the result.
+        self.assertEqual(3, len(result))
+
+        # Assert that all the service accounts were flagged as not present in the group.
+        for client_id, is_present_in_group in result.items():
+            # Make sure the specified client IDs are in the set.
+            self.assertEqual(
+                True,
+                client_id in request_client_ids,
+                "expected to find the specified client ID from the request in the returning result",
+            )
+            # Make sure they are all set to "false" since there shouldn't be any of those client IDs in the group.
+            self.assertEqual(
+                False,
+                is_present_in_group,
+                "the client ID should have not been found in the group, since the group had no service accounts",
+            )
+
+    def test_generate_service_accounts_report_in_group_mixed_results(self):
+        """Test that the function under test is able to correctly flag the sevice accounts when there are mixed results"""
+        # Create a group and associate principals to it.
+        group = Group(name="it-service-group", platform_default=False, system=False, tenant=self.tenant)
+        group.save()
+
+        # Add the principal accounts to make sure that we are only working with service accounts. If we weren't, these
+        # principals below should give us unexpected results in our assertions.
+        group.principals.add(Principal.objects.create(username="user-1", tenant=self.tenant))
+        group.principals.add(Principal.objects.create(username="user-2", tenant=self.tenant))
+        group.principals.add(Principal.objects.create(username="user-3", tenant=self.tenant))
+        group.save()
+
+        client_uuid_1 = uuid.uuid4()
+        client_uuid_2 = uuid.uuid4()
+        sa_1 = Principal.objects.create(
+            username=f"service-account-{client_uuid_1}",
+            service_account_id=client_uuid_1,
+            type="service-account",
+            tenant=self.tenant,
+        )
+        sa_2 = Principal.objects.create(
+            username=f"service-account-{client_uuid_2}",
+            service_account_id=client_uuid_2,
+            type="service-account",
+            tenant=self.tenant,
+        )
+
+        # Add the service accounts to the group.
+        group.principals.add(sa_1)
+        group.principals.add(sa_2)
+        group.save()
+
+        # Create a set with the service accounts that will go in the group. It will make it easier to make assertions
+        # below.
+        group_service_accounts_set = {str(sa_1.service_account_id), str(sa_2.service_account_id)}
+
+        # Create more service accounts that should not show in the results, since they're not going to be specified in
+        # the "client_ids" parameter.
+        sa_3 = Principal.objects.create(
+            username=f"service-account-{uuid.uuid4()}",
+            service_account_id=uuid.uuid4(),
+            type="service-account",
+            tenant=self.tenant,
+        )
+        sa_4 = Principal.objects.create(
+            username=f"service-account-{uuid.uuid4()}",
+            service_account_id=uuid.uuid4(),
+            type="service-account",
+            tenant=self.tenant,
+        )
+        sa_5 = Principal.objects.create(
+            username=f"service-account-{uuid.uuid4()}",
+            service_account_id=uuid.uuid4(),
+            type="service-account",
+            tenant=self.tenant,
+        )
+
+        # Add the service accounts that should not show up in the results.
+        group.principals.add(sa_3)
+        group.principals.add(sa_4)
+        group.principals.add(sa_5)
+        group.save()
+
+        # Create the service accounts' client IDs that will be specified in the request.
+        not_in_group = uuid.uuid4()
+        not_in_group_2 = uuid.uuid4()
+        not_in_group_3 = uuid.uuid4()
+
+        # Also, create a set with the service accounts that will NOT go in the group to make it easier to assert that
+        # the results flag them as such.
+        service_accounts_not_in_group_set = {
+            str(not_in_group),
+            str(not_in_group_2),
+            str(not_in_group_3),
+        }
+
+        # Add all the UUIDs to a set to pass it to the function under test.
+        request_client_ids = set[str]()
+        request_client_ids.add(str(not_in_group))
+        request_client_ids.add(str(not_in_group_2))
+        request_client_ids.add(str(not_in_group_3))
+
+        # Specify the service accounts' UUIDs here too, because the function under test should flag them as present in
+        # the group.
+        request_client_ids.add(str(client_uuid_1))
+        request_client_ids.add(str(client_uuid_2))
+
+        # Call the function under test.
+        result: dict[str, bool] = self.it_service.generate_service_accounts_report_in_group(
+            group=group, client_ids=request_client_ids
+        )
+
+        # Assert that all the specified client IDs are present in the result.
+        self.assertEqual(5, len(result))
+
+        # Assert that the mixed matches are identified correctly.
+        for client_id, is_it_present_in_group in result.items():
+            # If the value is "true" it should be present in the service accounts' result set from above. Else, it
+            # means that the specified client IDs were not part of the group, and that they should have been flagged
+            # as such.
+            if is_it_present_in_group:
+                self.assertEqual(
+                    True,
+                    client_id in group_service_accounts_set,
+                    "a client ID which was not part of the group was incorrectly flagged as if it was",
+                )
+            else:
+                self.assertEqual(
+                    True,
+                    client_id in service_accounts_not_in_group_set,
+                    "a client ID which was part of the group was incorrectly flagged as if it wasn't",
+                )
+
+    def test_generate_service_accounts_report_in_group_full_match(self):
+        """Test that the function under test is able to flag service accounts as all being present in the group."""
+        # Create a group and associate principals to it.
+        group = Group(name="it-service-group", platform_default=False, system=False, tenant=self.tenant)
+        group.save()
+
+        # Add the principal accounts to make sure that we are only working with service accounts. If we weren't, these
+        # principals below should give us unexpected results in our assertions.
+        group.principals.add(Principal.objects.create(username="user-1", tenant=self.tenant))
+        group.principals.add(Principal.objects.create(username="user-2", tenant=self.tenant))
+        group.principals.add(Principal.objects.create(username="user-3", tenant=self.tenant))
+
+        # Create the service accounts to be associated with the group.
+        client_uuid_1 = uuid.uuid4()
+        client_uuid_2 = uuid.uuid4()
+        client_uuid_3 = uuid.uuid4()
+        client_uuid_4 = uuid.uuid4()
+        client_uuid_5 = uuid.uuid4()
+        sa_1 = Principal.objects.create(
+            username=f"service-account-{client_uuid_1}",
+            service_account_id=client_uuid_1,
+            type="service-account",
+            tenant=self.tenant,
+        )
+        sa_2 = Principal.objects.create(
+            username=f"service-account-{client_uuid_2}",
+            service_account_id=client_uuid_2,
+            type="service-account",
+            tenant=self.tenant,
+        )
+        sa_3 = Principal.objects.create(
+            username=f"service-account-{client_uuid_3}",
+            service_account_id=client_uuid_3,
+            type="service-account",
+            tenant=self.tenant,
+        )
+        sa_4 = Principal.objects.create(
+            username=f"service-account-{client_uuid_4}",
+            service_account_id=client_uuid_4,
+            type="service-account",
+            tenant=self.tenant,
+        )
+        sa_5 = Principal.objects.create(
+            username=f"service-account-{client_uuid_5}",
+            service_account_id=client_uuid_5,
+            type="service-account",
+            tenant=self.tenant,
+        )
+
+        # Create a set with the service accounts that will go in the group. It will make it easier to make assertions
+        # below.
+        group_service_accounts_set = {
+            str(sa_1.service_account_id),
+            str(sa_2.service_account_id),
+            str(sa_3.service_account_id),
+            str(sa_4.service_account_id),
+            str(sa_5.service_account_id),
+        }
+
+        # Add the service accounts to the group.
+        group.principals.add(sa_1)
+        group.principals.add(sa_2)
+        group.principals.add(sa_3)
+        group.principals.add(sa_4)
+        group.principals.add(sa_5)
+        group.save()
+
+        # Simulate that a few client IDs were specified in the request.
+        request_client_ids = set[str]()
+        request_client_ids.add(str(client_uuid_1))
+        request_client_ids.add(str(client_uuid_2))
+        request_client_ids.add(str(client_uuid_3))
+        request_client_ids.add(str(client_uuid_4))
+        request_client_ids.add(str(client_uuid_5))
+
+        # Call the function under test.
+        result: dict[str, bool] = self.it_service.generate_service_accounts_report_in_group(
+            group=group, client_ids=request_client_ids
+        )
+
+        # Assert that all the specified client IDs are present in the result.
+        self.assertEqual(5, len(result))
+
+        # Assert that all the results are flagged as being part of the group.
+        for client_id, is_present_in_group in result.items():
+            self.assertEqual(
+                True,
+                client_id in request_client_ids,
+                "expected to find the specified client ID from the request in the returning result",
+            )
+            self.assertEqual(
+                True,
+                client_id in group_service_accounts_set,
+                "expected to find the client ID from the result set in the service accounts' group set",
+            )
+            # Make sure they are all set to "true" since all the specified client IDs should be in the group.
+            self.assertEqual(
+                True,
+                is_present_in_group,
+                "the client ID should have been found in the group, since the group had all the service accounts added to it",
             )
