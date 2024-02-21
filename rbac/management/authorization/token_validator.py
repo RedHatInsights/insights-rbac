@@ -43,13 +43,10 @@ class ITSSOTokenValidator:
 
     def __init__(self):
         """Get the OIDC configuration URL."""
-        # TODO replace it with:
         it_host = settings.IT_SERVICE_HOST
         it_port = settings.IT_SERVICE_PORT
         self.it_request_timeout_seconds = settings.IT_SERVICE_TIMEOUT_SECONDS
         it_scheme = settings.IT_SERVICE_PROTOCOL_SCHEME
-
-        # it_host = "https://sso.stage.redhat.com"
 
         # The host contains the URL including the port...
         self.host = f"{it_scheme}://{it_host}:{it_port}/auth/realms/redhat-external"
