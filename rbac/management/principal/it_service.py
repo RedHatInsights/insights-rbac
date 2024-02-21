@@ -18,7 +18,7 @@
 import logging
 import time
 import uuid
-from typing import Optional, Tuple, Union
+from typing import Any, Optional, Tuple, Union
 
 import requests
 from django.conf import settings
@@ -227,7 +227,7 @@ class ITService:
 
             return False
 
-    def get_service_accounts(self, user: User, options: dict[str, any] = {}) -> Tuple[list[dict], int]:
+    def get_service_accounts(self, user: User, options: dict[str, Any] = {}) -> Tuple[list[dict], int]:
         """Request and returns the service accounts for the given tenant."""
         # We might want to bypass calls to the IT service on ephemeral or test environments.
         it_service_accounts: list[dict] = []
@@ -310,10 +310,10 @@ class ITService:
 
         return service_accounts, count
 
-    def get_service_accounts_group(self, group: Group, user: User, options: dict[str, any] = {}) -> list[dict]:
+    def get_service_accounts_group(self, group: Group, user: User, options: dict[str, Any] = {}) -> list[dict]:
         """Get the service accounts for the given group."""
         # We might want to bypass calls to the IT service on ephemeral or test environments.
-        it_service_accounts: list[dict[str, any]] = []
+        it_service_accounts: list[dict[str, Union[str, int]]] = []
         if not settings.IT_BYPASS_IT_CALLS:
             it_service_accounts = self.request_service_accounts(bearer_token=user.bearer_token)
 
@@ -433,9 +433,9 @@ class ITService:
 
         return result
 
-    def _transform_incoming_payload(self, service_account_from_it_service: dict) -> dict[str, any]:
+    def _transform_incoming_payload(self, service_account_from_it_service: dict) -> dict[str, Any]:
         """Transform the incoming service account from IT into a dict which fits our response structure."""
-        service_account: dict[str, any] = {}
+        service_account: dict[str, Any] = {}
 
         client_id = service_account_from_it_service.get("clientId")
         name = service_account_from_it_service.get("name")
