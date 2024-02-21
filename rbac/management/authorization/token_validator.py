@@ -141,7 +141,11 @@ class ITSSOTokenValidator:
         # Decode the token.
         try:
             token: Token = jwt.decode(value=bearer_token, key=key_set)
-        except Exception:
+        except Exception as e:
+            logging.warning(
+                "[request_id: %s] Unable to decode token: %s", getattr(request, "req_id", None),
+                str(e)
+            )
             raise InvalidTokenError("Unable to decode token")
 
         # Make sure that the token issuer matches the IT issuer and that the scope contains the "service accounts"
@@ -163,7 +167,11 @@ class ITSSOTokenValidator:
             # below.
             claim_requests.validate(token.claims)
         except Exception as e:
-            logger.debug('Token "%s" rejected for having invalid claims: %s', token, str(e))
+            logging.warning(
+                "[request_id: %s] Token rejected for having invalid claims: %s",
+                getattr(request, "req_id", "no-request-id-present"),
+                str(e),
+            )
             raise InvalidTokenError("The token's claims are invalid")
 
         return bearer_token
