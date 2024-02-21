@@ -174,11 +174,55 @@ paths:
         
         Schema in SpiceDB
         ```
+          definition rbac/v1role {
+            relation role: role
+            relation binding: role_binding
+          }
+    
+          definition user {}
+
+          definition role {
+            relation cost_management_all_read: user:*
+          }
+          definition group {
+            relation member: user | group#member
+          }
+
+          definition role_binding {
+            relation subject : user | group#member
+            relation granted: role
+          }
+
+          definition workspace {
+            relation user_grant: role_binding
+          }
+
+          definition cost_management/aws_account {
+            relation user_grant: role_binding
+          }
         ```
 
         Example of relations in SpiceDB creation (in zed format)
         ```
+        // create a v2 role with inventory view all
+        role:7a8f2026-c53b-11ee-84cc-5fe720b60b72#cost_management_all_read@user:*
+        // so a query can find all roles and bindings that represent the RBAC role 7a8f2026-c53b-11ee-84cc-5fe720b60b72
+        rbac/v1role:7a8f2026-c53b-11ee-84cc-5fe720b60b72#role@role:7a8f2026-c53b-11ee-84cc-5fe720b60b72
+        // create a role_binding with the given role
+        role_binding:7a8f2026-c53b-11ee-84cc-5fe720b60b72#granted@role:7a8f2026-c53b-11ee-84cc-5fe720b60b72
+        // so a query can find all roles and bindings that represent the RBAC role 7a8f2026-c53b-11ee-84cc-5fe720b60b72
+        rbac/v1role:7a8f2026-c53b-11ee-84cc-5fe720b60b72#binding@role_binding:7a8f2026-c53b-11ee-84cc-5fe720b60b72
+        workspace:org_default#user_grant@role_binding:7a8f2026-c53b-11ee-84cc-5fe720b60b72
+        role:7a8f2026-c53b-11ee-84cc-5fe720b60b72_cost_management_all_read#cost_management_all_read@user:*
+        // so a query can find all roles and bindings that represent the RBAC role 7a8f2026-c53b-11ee-84cc-5fe720b60b72
+        rbac/v1role:7a8f2026-c53b-11ee-84cc-5fe720b60b72#role@role:7a8f2026-c53b-11ee-84cc-5fe720b60b72_cost_management_all_read
+        role_binding:7a8f2026-c53b-11ee-84cc-5fe720b60b72_cost_management_all_read#granted@role:7a8f2026-c53b-11ee-84cc-5fe720b60b72_cost_management_all_read
+        // so a query can find all roles and bindings that represent the RBAC role 7a8f2026-c53b-11ee-84cc-5fe720b60b72
+        rbac/v1role:7a8f2026-c53b-11ee-84cc-5fe720b60b72#binding@role_binding:7a8f2026-c53b-11ee-84cc-5fe720b60b72_cost_management_all_read
+        cost_management/aws_account:123456#user_grant@role_binding:7a8f2026-c53b-11ee-84cc-5fe720b60b72_cost_management_all_read
         ```
+
+        [Authzed playground](https://play.authzed.com/s/Gzs5uN-eCTO9/schema)
       requestBody:
         content:
             application/json:
