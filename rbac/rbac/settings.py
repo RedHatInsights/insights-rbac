@@ -404,14 +404,16 @@ if KAFKA_ENABLED:
         if not kafka_brokers:
             raise ValueError("No kafka brokers available")
         for broker in kafka_brokers:
-            kafka_host = broker.hostname
-            kafka_port = broker.port
-            kafka_info = f"{kafka_host}:{kafka_port}"
-            KAFKA_SERVERS.append(kafka_info)
+            if broker:
+                kafka_host = broker.hostname
+                kafka_port = broker.port
+                kafka_info = f"{kafka_host}:{kafka_port}"
+                KAFKA_SERVERS.append(kafka_info)
 
-            if broker and broker.authtype != None and broker.authtype.value == "sasl":
-                broker_index = kafka_brokers.index(broker)
-
+                if broker.authtype != None and broker.authtype.value == "sasl":
+                    broker_index = kafka_brokers.index(broker)
+            else:
+                raise ValueError("Broker value is none. It does not contain hostname, port, or authtype")
         try:
             if kafka_brokers[broker_index].authtype.value == "sasl":
                 KAFKA_AUTH.update(
