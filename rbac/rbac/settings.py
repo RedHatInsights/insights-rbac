@@ -400,6 +400,7 @@ if KAFKA_ENABLED:
     KAFKA_AUTH = {}
     if ENVIRONMENT.bool("CLOWDER_ENABLED", default=False):
         kafka_brokers = LoadedConfig.kafka.brokers
+        broker_index = 0
         if not kafka_brokers:
             raise ValueError("No kafka brokers available")
         for broker in kafka_brokers:
@@ -408,18 +409,21 @@ if KAFKA_ENABLED:
             kafka_info = f"{kafka_host}:{kafka_port}"
             KAFKA_SERVERS.append(kafka_info)
 
+            if broker and broker.authtype != None and broker.authtype.value == "sasl":
+                broker_index = kafka_brokers.index(broker)
+
         try:
-            if kafka_brokers[0].authtype.value == "sasl":
+            if kafka_brokers[broker_index].authtype.value == "sasl":
                 KAFKA_AUTH.update(
                     {
                         "bootstrap_servers": KAFKA_SERVERS,
-                        "sasl_plain_username": kafka_brokers[0].sasl.username,
-                        "sasl_plain_password": kafka_brokers[0].sasl.password,
-                        "sasl_mechanism": kafka_brokers[0].sasl.saslMechanism.upper(),
-                        "security_protocol": kafka_brokers[0].sasl.securityProtocol.upper(),
+                        "sasl_plain_username": kafka_brokers[broker_index].sasl.username,
+                        "sasl_plain_password": kafka_brokers[broker_index].sasl.password,
+                        "sasl_mechanism": kafka_brokers[broker_index].sasl.saslMechanism.upper(),
+                        "security_protocol": kafka_brokers[broker_index].sasl.securityProtocol.upper(),
                     }
                 )
-            if kafka_brokers[0].cacert:
+            if kafka_brokers[broker_index].cacert:
                 KAFKA_AUTH["ssl_cafile"] = LoadedConfig.kafka_ca()
         except AttributeError:
             KAFKA_AUTH = {}
