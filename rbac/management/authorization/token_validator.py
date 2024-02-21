@@ -34,8 +34,6 @@ from .unable_meet_prerequisites import UnableMeetPrerequisitesError
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
-# The audience claim we are expecting to find in the token.
-AUDIENCE_CLAIM = "cloud-services"
 # The service accounts claim we are expecting to find in the token.
 SERVICE_ACCOUNTS_CLAIM = "api.iam.service_accounts"
 
@@ -149,12 +147,9 @@ class ITSSOTokenValidator:
         except Exception:
             raise InvalidTokenError("Unable to decode token")
 
-        # Make sure that the token issuer matches the IT issuer, that the audience is set to the "cloud-services"
-        # client, and that the scope contains the "service accounts" claim.
-        claim_requests = JWTClaimsRegistry(
-            iss={"essential": True, "value": self.issuer},
-            aud={"essential": True, "value": AUDIENCE_CLAIM},
-        )
+        # Make sure that the token issuer matches the IT issuer and that the scope contains the "service accounts"
+        # claim.
+        claim_requests = JWTClaimsRegistry(iss={"essential": True, "value": self.issuer})
 
         # Make sure that the token is valid.
         try:
