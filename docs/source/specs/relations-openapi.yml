@@ -76,21 +76,61 @@ paths:
             format: uuid
       description: |
         Example of request body from platform RBAC API
+        
+        Request
+        ```
+        POST /groups/0ff698d7-3972-4385-9a15-0fe9cd49f740/roles/
+        ```
+        Body
         ```
           {
             "roles": [
-              "94846f2f-cced-474f-b7f3-47e2ec51dd11"
+              "ROLE-UUID"
             ]
           }
         ```
         
         Schema in SpiceDB
         ```
+          definition rbac/v1role {
+            relation role: role
+            relation binding: role_binding
+          }
+    
+          definition user {}
+  
+          definition role {
+          }
+          definition group {
+              relation member: user | group#member
+          }
+  
+          definition role_binding {
+            relation subject : user | group#member
+          }
         ```
 
-        Example of relations in SpiceDB creation (in zed format)
+        Prerequisites:
         ```
+          role_binding:ROLE-UUID#granted@role:ROLE-UUID
+        
+          rbac/v1role:ROLE-UUID#role@role:ROLE-UUID
+        
+          // NOTE at this relation has to be checked before we add relation in example section
+          rbac/v1role:ROLE-UUID#binding@role_binding:ROLE-UUID
         ```
+        
+        zed command to check:
+        ```
+          role_binding:ROLE-UUID#subject@group:94846f2f-cced-474f-b7f3-47e2ec51dd1#member
+        ```
+        
+        Example of relations in SpiceDB to add a role to a group (in zed format)
+        ```
+          role_binding:ROLE-UUID#subject@group:0ff698d7-3972-4385-9a15-0fe9cd49f740#member
+        ```
+        
+        [Authzed playground](https://play.authzed.com/s/NEIiBuig1-Bg/schema)
       requestBody:
         content:
             application/json:
@@ -200,18 +240,19 @@ components:
                 type: user
                 id: user_dev
     AddRoleToGroupExample:
-      summary: TODO - needs to updated - An example of adding role to group
+      summary: An example of adding role to group
       value:
         touch: true
         relationships:
           - object:
-              type: group
-              id: 9aca5b38-07b1-4873-aaae-d02c94c05673
-            relation: member
+              type: role_binding
+              id: ROLE-UUID
+            relation: subject
             subject:
+              relation: member
               object:
-                type: user
-                id: user_dev
+                type: group
+                id: 0ff698d7-3972-4385-9a15-0fe9cd49f74
     CreateRoleExample:
       summary: TODO - needs to updated - An example of adding role to group
       value:
