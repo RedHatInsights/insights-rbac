@@ -142,10 +142,7 @@ class ITSSOTokenValidator:
         try:
             token: Token = jwt.decode(value=bearer_token, key=key_set)
         except Exception as e:
-            logging.warning(
-                "[request_id: %s] Unable to decode token: %s", getattr(request, "req_id", None),
-                str(e)
-            )
+            logging.warning("[request_id: %s] Unable to decode token: %s", getattr(request, "req_id", None), str(e))
             raise InvalidTokenError("Unable to decode token")
 
         # Make sure that the token issuer matches the IT issuer and that the scope contains the "service accounts"
