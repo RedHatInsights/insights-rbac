@@ -590,7 +590,11 @@ class GroupViewSet(
         account = self.request.user.account
         org_id = self.request.user.org_id
         if request.method == "POST":
+            # Make sure that system groups are kept unmodified.
             self.protect_system_groups("add principals")
+
+            # Only organization administrators are allowed to add principals to groups with the "User Access
+            # Administrator" role.
             if not request.user.admin:
                 for role in group.roles_with_access():
                     for access in role.access.all():
@@ -598,6 +602,7 @@ class GroupViewSet(
                             key = "add_principals"
                             message = "Non-admin users may not add principals to Groups with RBAC permissions."
                             raise serializers.ValidationError({key: _(message)})
+
             serializer = GroupPrincipalInputSerializer(data=request.data)
 
             # Serialize the payload and validate that it is correct.
@@ -875,7 +880,10 @@ class GroupViewSet(
                         },
                     )
 
-                return Response(status=status.HTTP_204_NO_CONTENT)
+                # Create a default and successful response object. If no user principals are to be removed below, this
+                # response will be returned. Else, it will be overriden with whichever response the user removal
+                # generates.
+                response = Response(status=status.HTTP_204_NO_CONTENT)
 
             # Remove the users from the group too.
             if USERNAMES_KEY in request.query_params:

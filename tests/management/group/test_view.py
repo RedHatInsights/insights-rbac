@@ -16,7 +16,7 @@
 #
 """Test the group viewset."""
 import random
-from unittest.mock import call, patch, ANY
+from unittest.mock import call, patch, ANY, Mock
 from uuid import uuid4
 
 from django.db import transaction
@@ -30,7 +30,7 @@ from rest_framework.test import APIClient
 from api.models import Tenant, User
 from management.cache import TenantCache
 from management.group.serializer import GroupInputSerializer
-from management.models import Group, Principal, Policy, Role, ExtRoleRelation, ExtTenant
+from management.models import Access, Group, Permission, Principal, Policy, Role, ExtRoleRelation, ExtTenant
 from tests.core.test_kafka import copy_call_args
 from tests.identity_request import IdentityRequest
 
@@ -2643,6 +2643,59 @@ class GroupViewNonAdminTests(IdentityRequest):
         Role.objects.all().delete()
         Policy.objects.all().delete()
 
+    def _create_group_with_user_access_administrator_role(self, tenant: Tenant) -> Group:
+        """Create a group with an associated User Access Administrator role."""
+        # Replicate a "User Access Administrator" permission.
+        rbac_user_access_admin_permission = Permission()
+        rbac_user_access_admin_permission.application = "rbac"
+        rbac_user_access_admin_permission.permission = "rbac:*:*"
+        rbac_user_access_admin_permission.resource_type = "*"
+        rbac_user_access_admin_permission.tenant = tenant
+        rbac_user_access_admin_permission.verb = "*"
+        rbac_user_access_admin_permission.save()
+
+        # Replicate a "User Access Administrator" role.
+        user_access_admin_role = Role()
+        user_access_admin_role.admin_default = True
+        user_access_admin_role.description = "Grants a non-org admin full access to configure and manage user access to services hosted on console.redhat.com. This role can only be viewed and assigned by Organization Administrators."
+        user_access_admin_role.display_name = "User Access administrator"
+        user_access_admin_role.name = "User Access administrator"
+        user_access_admin_role.platform_default = False
+        user_access_admin_role.system = True
+        user_access_admin_role.tenant = tenant
+        user_access_admin_role.version = 3
+        user_access_admin_role.save()
+
+        # Associate the role and the permission.
+        access = Access()
+        access.permission = rbac_user_access_admin_permission
+        access.role = user_access_admin_role
+        access.tenant = tenant
+        access.save()
+
+        # Create the group that will be associated with the role.
+        user_access_admin_group = Group()
+        user_access_admin_group.admin_default = False
+        user_access_admin_group.description = "A group with the User Access Administrator associated role"
+        user_access_admin_group.name = "user-access-admin-group"
+        user_access_admin_group.platform_default = False
+        user_access_admin_group.system = False
+        user_access_admin_group.tenant = tenant
+        user_access_admin_group.save()
+
+        # Create a policy which will be associated with the role.
+        user_access_admin_policy = Policy()
+        user_access_admin_policy.group = user_access_admin_group
+        user_access_admin_policy.name = "User Access Administrator policy for regular-group"
+        user_access_admin_policy.system = True
+        user_access_admin_policy.tenant = tenant
+        user_access_admin_policy.save()
+
+        user_access_admin_policy.roles.add(user_access_admin_role)
+        user_access_admin_policy.save()
+
+        return user_access_admin_group
+
     def test_nonadmin_RonR_list(self):
         """Test that a nonadmin user can list groups in tenant"""
         url = "{}?application={}".format(reverse("group-list"), "rbac")
@@ -2679,3 +2732,585 @@ class GroupViewNonAdminTests(IdentityRequest):
         client = APIClient()
         response = client.get(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
+    @override_settings(IT_BYPASS_IT_CALLS=True)
+    @patch("management.principal.proxy.PrincipalProxy.request_filtered_principals")
+    def test_group_service_account_with_user_administrator_role_add_principals(
+        self, request_filtered_principals: Mock
+    ):
+        """Test that a service account with the User Access administrator role can manage principals in a group
+
+        The way the test is performed is the following:
+        - Creates a group with a User Access Administrator role associated to it.
+        - Creates a regular group which we will use for the tests.
+        - Sends a request with an unprivileged service account to attempt to add principals to the regular group.
+        - Creates a service account principal and adds it to the User Access Administrator group.
+        - Sends a request with the privileged user and asserts that the principals were added to the regular group.
+        """
+        # Create the customer data we will be using for the tenant.
+        customer_data = self._create_customer_data()
+
+        # Create a tenant.
+        user_access_admin_tenant = Tenant()
+        user_access_admin_tenant.account_id = customer_data["account_id"]
+        user_access_admin_tenant.org_id = customer_data["org_id"]
+        user_access_admin_tenant.ready = True
+        user_access_admin_tenant.tenant_name = "new-tenant"
+        user_access_admin_tenant.save()
+
+        user_access_admin_group = self._create_group_with_user_access_administrator_role(
+            tenant=user_access_admin_tenant
+        )
+
+        # Create a regular group that we will use to attempt to add principals to.
+        regular_group = Group()
+        regular_group.admin_default = False
+        regular_group.description = "Just a regular group"
+        regular_group.name = "regular-group"
+        regular_group.platform_default = False
+        regular_group.system = False
+        regular_group.tenant = user_access_admin_tenant
+        regular_group.save()
+
+        # Generate the URL for adding principals to the regular group.
+        group_principals_url = reverse("group-principals", kwargs={"uuid": regular_group.uuid})
+        api_client = APIClient()
+
+        # Create a new principal to be added to the regular group.
+        new_principal = Principal()
+        new_principal.cross_account = False
+        new_principal.tenant = user_access_admin_tenant
+        new_principal.type = "user"
+        new_principal.username = "fake-red-hat-user"
+        new_principal.save()
+
+        # Create a new service account to be added to the regular group.
+        new_sa_principal = Principal()
+        new_sa_principal.service_account_id = uuid4()
+        new_sa_principal.tenant = user_access_admin_tenant
+        new_sa_principal.type = "service-account"
+        new_sa_principal.username = f"service-account-{new_sa_principal.service_account_id}"
+        new_sa_principal.save()
+
+        # Create the test data to add a service account and a regular user to the group.
+        test_data = {
+            "principals": [
+                {"clientID": new_sa_principal.service_account_id, "type": "service-account"},
+                {"username": new_principal.username},
+            ]
+        }
+
+        # Make sure that before calling the endpoint the group has no members.
+        self.assertEqual(
+            0,
+            regular_group.principals.count(),
+            "the regular group should not have any principals associated with it",
+        )
+
+        # Create the request context for an unprivileged user.
+        privileged_request_context = self._create_request_context(
+            customer_data=customer_data,
+            user_data=None,
+            service_account_data=self._create_service_account_data(),
+            is_org_admin=False,
+        )
+
+        # Call the endpoint under test with an unprivileged user.
+        response = api_client.post(
+            group_principals_url, test_data, format="json", **privileged_request_context["request"].META
+        )
+
+        # Assert that the user does not have permission to perform this operation.
+        self.assertEqual(
+            status.HTTP_403_FORBIDDEN,
+            response.status_code,
+            "unexpected status code when an unprivileged user attempts to add principals to a group",
+        )
+
+        # Assert that no principals were added to the group.
+        self.assertEqual(
+            0,
+            regular_group.principals.count(),
+            "after a failed request to add a principal, the regular group should still have zero associated principals",
+        )
+
+        # Add the user access admin principal to the user access admin group.
+        service_account_data = self._create_service_account_data()
+
+        user_access_admin_sa_principal = Principal()
+        user_access_admin_sa_principal.cross_account = False
+        user_access_admin_sa_principal.service_account_id = service_account_data["client_id"]
+        user_access_admin_sa_principal.tenant = user_access_admin_tenant
+        user_access_admin_sa_principal.type = "service-account"
+        user_access_admin_sa_principal.username = service_account_data["username"]
+        user_access_admin_sa_principal.save()
+
+        user_access_admin_group.principals.add(user_access_admin_sa_principal)
+
+        # Simulate that the proxy validates the specified user principal correctly.
+        request_filtered_principals.return_value = {"data": [{"username": new_principal.username}]}
+
+        # Create the request context for privileged user.
+        privileged_request_context = self._create_request_context(
+            customer_data=customer_data, user_data=None, service_account_data=service_account_data, is_org_admin=False
+        )
+
+        # Call the endpoint under test with the user with "User Access Administrator" permissions.
+        response_two = api_client.post(
+            group_principals_url, test_data, format="json", **privileged_request_context["request"].META
+        )
+
+        # Assert that the response is the expected one.
+        self.assertEqual(
+            status.HTTP_200_OK,
+            response_two.status_code,
+            "unexpected status code when a user with the User Access Administrator role attempts to manage"
+            " principals on a group",
+        )
+
+        # Assert that both the service account and the user principal were added to the group.
+        self.assertEqual(
+            2,
+            regular_group.principals.count(),
+            "after adding a principal to the regular group, the added service account and the user principal"
+            " should be present",
+        )
+
+        # Double check that the principals are just a service account and a regular user principal.
+        for principal in regular_group.principals.all():
+            if principal.type == "service-account":
+                self.assertEqual(
+                    new_sa_principal.uuid,
+                    principal.uuid,
+                    "the created service account principal in the regular group is not the same as the one we expected",
+                )
+            else:
+                self.assertEqual(
+                    new_principal.uuid,
+                    principal.uuid,
+                    "the created user principal in the regular group is not the same as the one we expected",
+                )
+
+    @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
+    @override_settings(IT_BYPASS_IT_CALLS=True)
+    def test_group_service_account_with_user_administrator_role_remove_principals(self):
+        """Test that a service account with the User Access administrator role can manage principals in a group
+
+        The way the test is performed is the following:
+        - Creates a group with a User Access Administrator role associated to it.
+        - Creates a regular group which we will use for the tests.
+        - Adds a couple of principals to the regular group.
+        - Sends a request with an unprivileged service account to attempt to remove principals from the regular group.
+        - Sends a request with the privileged service account and asserts that the principals were added to the regular group.
+        """
+        # Create the customer data we will be using for the tenant.
+        customer_data = self._create_customer_data()
+
+        # Create a tenant.
+        user_access_admin_tenant = Tenant()
+        user_access_admin_tenant.account_id = customer_data["account_id"]
+        user_access_admin_tenant.org_id = customer_data["org_id"]
+        user_access_admin_tenant.ready = True
+        user_access_admin_tenant.tenant_name = "new-tenant"
+        user_access_admin_tenant.save()
+
+        user_access_admin_group = self._create_group_with_user_access_administrator_role(
+            tenant=user_access_admin_tenant
+        )
+
+        # Create a regular group that we will use to attempt to remove principals from.
+        regular_group = Group()
+        regular_group.admin_default = False
+        regular_group.description = "Just a regular group"
+        regular_group.name = "regular-group"
+        regular_group.platform_default = False
+        regular_group.system = False
+        regular_group.tenant = user_access_admin_tenant
+        regular_group.save()
+
+        # Add a service account principal to the group...
+        service_account_principal_to_delete = Principal()
+        service_account_principal_to_delete.service_account_id = uuid4()
+        service_account_principal_to_delete.tenant = user_access_admin_tenant
+        service_account_principal_to_delete.type = "service-account"
+        service_account_principal_to_delete.username = (
+            f"service-account-{service_account_principal_to_delete.service_account_id}"
+        )
+        service_account_principal_to_delete.save()
+
+        regular_group.principals.add(service_account_principal_to_delete)
+
+        # ... and a user principal one.
+        user_principal_to_remove = Principal()
+        user_principal_to_remove.cross_account = False
+        user_principal_to_remove.tenant = user_access_admin_tenant
+        user_principal_to_remove.type = "user"
+        user_principal_to_remove.username = "fake-red-hat-user"
+        user_principal_to_remove.save()
+
+        regular_group.principals.add(user_principal_to_remove)
+
+        # Generate the URL for removing the principals from the regular group.
+        group_principals_url = reverse("group-principals", kwargs={"uuid": regular_group.uuid})
+        group_principals_url = f"{group_principals_url}?service-accounts={service_account_principal_to_delete.username}&usernames={user_principal_to_remove.username}"
+        api_client = APIClient()
+
+        # Make sure that before calling the endpoint the group has the two principals.
+        self.assertEqual(
+            2,
+            regular_group.principals.count(),
+            "the regular group should have two principals before the deletion attempt",
+        )
+
+        # Create the request context for an unprivileged user.
+        privileged_request_context = self._create_request_context(
+            customer_data=customer_data,
+            user_data=None,
+            service_account_data=self._create_service_account_data(),
+            is_org_admin=False,
+        )
+
+        # Call the endpoint under test with an unprivileged user.
+        response = api_client.delete(
+            path=group_principals_url, data=None, format="json", **privileged_request_context["request"].META
+        )
+
+        # Assert that the user does not have permission to perform this operation.
+        self.assertEqual(
+            status.HTTP_403_FORBIDDEN,
+            response.status_code,
+            "unexpected status code when an unprivileged service account attempts to remove principals from a group",
+        )
+
+        # Assert that no principals were removed from the group.
+        self.assertEqual(
+            2,
+            regular_group.principals.count(),
+            "after a failed request to remove principals, the regular group should still two associated principals",
+        )
+
+        # Add the service account access admin principal to the user access admin group.
+        service_account_data = self._create_service_account_data()
+
+        user_access_admin_sa_principal = Principal()
+        user_access_admin_sa_principal.cross_account = False
+        user_access_admin_sa_principal.service_account_id = service_account_data["client_id"]
+        user_access_admin_sa_principal.tenant = user_access_admin_tenant
+        user_access_admin_sa_principal.type = "service-account"
+        user_access_admin_sa_principal.username = service_account_data["username"]
+        user_access_admin_sa_principal.save()
+
+        user_access_admin_group.principals.add(user_access_admin_sa_principal)
+
+        # Create the request context for privileged user.
+        privileged_request_context = self._create_request_context(
+            customer_data=customer_data, user_data=None, service_account_data=service_account_data, is_org_admin=False
+        )
+
+        # Call the endpoint under test with the user with "User Access Administrator" permissions.
+        response_two = api_client.delete(
+            path=group_principals_url, format="json", **privileged_request_context["request"].META
+        )
+
+        # Assert that the response is the expected one.
+        self.assertEqual(
+            status.HTTP_204_NO_CONTENT,
+            response_two.status_code,
+            "unexpected status code when a service account with the User Access Administrator role attempts to delete"
+            " principals from a group",
+        )
+
+        # Assert that both the service account and the user principal were added to the group.
+        self.assertEqual(
+            0,
+            regular_group.principals.count(),
+            "after removing the principals from the regular group, the added service account and the user"
+            " principal should no longer be present",
+        )
+
+    @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
+    @override_settings(IT_BYPASS_IT_CALLS=True)
+    @patch("management.principal.proxy.PrincipalProxy.request_filtered_principals")
+    def test_group_user_with_user_administrator_role_add_principals(self, request_filtered_principals: Mock):
+        """Test that a user with the User Access administrator role can manage principals in a group
+
+        The way the test is performed is the following:
+        - Creates a group with a User Access Administrator role associated to it.
+        - Creates a regular group which we will use for the tests.
+        - Sends a request with an unprivileged user to attempt to add principals to the regular group.
+        - Creates a user principal and adds it to the User Access Administrator group.
+        - Sends a request with the privileged user and asserts that the principals were added to the regular group.
+        """
+        # Create the customer data we will be using for the tenant.
+        customer_data = self._create_customer_data()
+
+        # Create a tenant.
+        user_access_admin_tenant = Tenant()
+        user_access_admin_tenant.account_id = customer_data["account_id"]
+        user_access_admin_tenant.org_id = customer_data["org_id"]
+        user_access_admin_tenant.ready = True
+        user_access_admin_tenant.tenant_name = "new-tenant"
+        user_access_admin_tenant.save()
+
+        user_access_admin_group = self._create_group_with_user_access_administrator_role(
+            tenant=user_access_admin_tenant
+        )
+
+        # Create a regular group that we will use to attempt to add principals to.
+        regular_group = Group()
+        regular_group.admin_default = False
+        regular_group.description = "Just a regular group"
+        regular_group.name = "regular-group"
+        regular_group.platform_default = False
+        regular_group.system = False
+        regular_group.tenant = user_access_admin_tenant
+        regular_group.save()
+
+        # Generate the URL for adding principals to the regular group.
+        group_principals_url = reverse("group-principals", kwargs={"uuid": regular_group.uuid})
+        api_client = APIClient()
+
+        # Create a new principal to be added to the regular group.
+        new_principal = Principal()
+        new_principal.cross_account = False
+        new_principal.tenant = user_access_admin_tenant
+        new_principal.type = "user"
+        new_principal.username = "fake-red-hat-user"
+        new_principal.save()
+
+        # Create a new service account to be added to the regular group.
+        new_sa_principal = Principal()
+        new_sa_principal.service_account_id = uuid4()
+        new_sa_principal.tenant = user_access_admin_tenant
+        new_sa_principal.type = "service-account"
+        new_sa_principal.username = f"service-account-{new_sa_principal.service_account_id}"
+        new_sa_principal.save()
+
+        # Create the test data to add a service account and a regular user to the group.
+        test_data = {
+            "principals": [
+                {"clientID": new_sa_principal.service_account_id, "type": "service-account"},
+                {"username": new_principal.username},
+            ]
+        }
+
+        # Make sure that before calling the endpoint the group has no members.
+        self.assertEqual(
+            0,
+            regular_group.principals.count(),
+            "the regular group should not have any principals associated with it",
+        )
+
+        # Create the request context for an unprivileged user.
+        privileged_request_context = self._create_request_context(
+            customer_data=customer_data, user_data=self._create_user_data(), is_org_admin=False
+        )
+
+        # Call the endpoint under test with an unprivileged user.
+        response = api_client.post(
+            path=group_principals_url, data=test_data, format="json", **privileged_request_context["request"].META
+        )
+
+        # Assert that the user does not have permission to perform this operation.
+        self.assertEqual(
+            status.HTTP_403_FORBIDDEN,
+            response.status_code,
+            "unexpected status code when an unprivileged user attempts to add principals to a group",
+        )
+
+        # Assert that no principals were added to the group.
+        self.assertEqual(
+            0,
+            regular_group.principals.count(),
+            "after a failed request to add a principal, the regular group should still have zero associated principals",
+        )
+
+        # Add the user access admin principal to the user access admin group.
+        user_data = self._create_user_data()
+
+        user_access_admin_principal = Principal()
+        user_access_admin_principal.cross_account = False
+        user_access_admin_principal.tenant = user_access_admin_tenant
+        user_access_admin_principal.type = "user"
+        user_access_admin_principal.username = user_data["username"]
+        user_access_admin_principal.save()
+
+        user_access_admin_group.principals.add(user_access_admin_principal)
+
+        # Simulate that the proxy validates the specified user principal correctly.
+        request_filtered_principals.return_value = {"data": [{"username": new_principal.username}]}
+
+        # Create the request context for privileged user.
+        privileged_request_context = self._create_request_context(
+            customer_data=customer_data, user_data=user_data, is_org_admin=False
+        )
+
+        # Call the endpoint under test with the user with "User Access Administrator" permissions.
+        response_two = api_client.post(
+            path=group_principals_url, data=test_data, format="json", **privileged_request_context["request"].META
+        )
+
+        # Assert that the response is the expected one.
+        self.assertEqual(
+            status.HTTP_200_OK,
+            response_two.status_code,
+            "unexpected status code when a user with the User Access Administrator role attempts to add"
+            " principals to a group",
+        )
+
+        # Assert that both the service account and the user principal were added to the group.
+        self.assertEqual(
+            2,
+            regular_group.principals.count(),
+            "after adding a principal to the regular group, the added service account and the user principal"
+            " should be present",
+        )
+
+        # Double check that the principals are just a service account and a regular user principal.
+        for principal in regular_group.principals.all():
+            if principal.type == "service-account":
+                self.assertEqual(
+                    new_sa_principal.uuid,
+                    principal.uuid,
+                    "the created service account principal in the regular group is not the same as the one we expected",
+                )
+            else:
+                self.assertEqual(
+                    new_principal.uuid,
+                    principal.uuid,
+                    "the created user principal in the regular group is not the same as the one we expected",
+                )
+
+    @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
+    @override_settings(IT_BYPASS_IT_CALLS=True)
+    def test_group_user_with_user_administrator_role_remove_principals(self):
+        """Test that a user with the User Access administrator role can manage principals in a group
+
+        The way the test is performed is the following:
+        - Creates a group with a User Access Administrator role associated to it.
+        - Creates a regular group which we will use for the tests.
+        - Adds a couple of principals to the regular group.
+        - Sends a request with an unprivileged user to attempt to remove principals from the regular group.
+        - Sends a request with the privileged user and asserts that the principals were added to the regular group.
+        """
+        # Create the customer data we will be using for the tenant.
+        customer_data = self._create_customer_data()
+
+        # Create a tenant.
+        user_access_admin_tenant = Tenant()
+        user_access_admin_tenant.account_id = customer_data["account_id"]
+        user_access_admin_tenant.org_id = customer_data["org_id"]
+        user_access_admin_tenant.ready = True
+        user_access_admin_tenant.tenant_name = "new-tenant"
+        user_access_admin_tenant.save()
+
+        user_access_admin_group = self._create_group_with_user_access_administrator_role(
+            tenant=user_access_admin_tenant
+        )
+
+        # Create a regular group that we will use to attempt to remove principals from.
+        regular_group = Group()
+        regular_group.admin_default = False
+        regular_group.description = "Just a regular group"
+        regular_group.name = "regular-group"
+        regular_group.platform_default = False
+        regular_group.system = False
+        regular_group.tenant = user_access_admin_tenant
+        regular_group.save()
+
+        # Add a service account principal to the group...
+        service_account_principal_to_delete = Principal()
+        service_account_principal_to_delete.service_account_id = uuid4()
+        service_account_principal_to_delete.tenant = user_access_admin_tenant
+        service_account_principal_to_delete.type = "service-account"
+        service_account_principal_to_delete.username = (
+            f"service-account-{service_account_principal_to_delete.service_account_id}"
+        )
+        service_account_principal_to_delete.save()
+
+        regular_group.principals.add(service_account_principal_to_delete)
+
+        # ... and a user principal one.
+        user_principal_to_remove = Principal()
+        user_principal_to_remove.cross_account = False
+        user_principal_to_remove.tenant = user_access_admin_tenant
+        user_principal_to_remove.type = "user"
+        user_principal_to_remove.username = "fake-red-hat-user"
+        user_principal_to_remove.save()
+
+        regular_group.principals.add(user_principal_to_remove)
+
+        # Generate the URL for removing the principals from the regular group.
+        group_principals_url = reverse("group-principals", kwargs={"uuid": regular_group.uuid})
+        group_principals_url = f"{group_principals_url}?service-accounts={service_account_principal_to_delete.username}&usernames={user_principal_to_remove.username}"
+        api_client = APIClient()
+
+        # Make sure that before calling the endpoint the group has the two principals.
+        self.assertEqual(
+            2,
+            regular_group.principals.count(),
+            "the regular group should have two principals before the deletion attempt",
+        )
+
+        # Create the request context for an unprivileged user.
+        privileged_request_context = self._create_request_context(
+            customer_data=customer_data, user_data=self._create_user_data(), is_org_admin=False
+        )
+
+        # Call the endpoint under test with an unprivileged user.
+        response = api_client.delete(
+            path=group_principals_url, data=None, format="json", **privileged_request_context["request"].META
+        )
+
+        # Assert that the user does not have permission to perform this operation.
+        self.assertEqual(
+            status.HTTP_403_FORBIDDEN,
+            response.status_code,
+            "unexpected status code when an unprivileged user attempts to remove principals from a group",
+        )
+
+        # Assert that no principals were removed from the group.
+        self.assertEqual(
+            2,
+            regular_group.principals.count(),
+            "after a failed request to remove principals, the regular group should still two associated principals",
+        )
+
+        # Add the user access admin principal to the user access admin group.
+        user_data = self._create_user_data()
+
+        user_access_admin_principal = Principal()
+        user_access_admin_principal.cross_account = False
+        user_access_admin_principal.tenant = user_access_admin_tenant
+        user_access_admin_principal.type = "user"
+        user_access_admin_principal.username = user_data["username"]
+        user_access_admin_principal.save()
+
+        user_access_admin_group.principals.add(user_access_admin_principal)
+
+        # Create the request context for privileged user.
+        privileged_request_context = self._create_request_context(
+            customer_data=customer_data, user_data=user_data, is_org_admin=False
+        )
+
+        # Call the endpoint under test with the user with "User Access Administrator" permissions.
+        response_two = api_client.delete(
+            path=group_principals_url, format="json", **privileged_request_context["request"].META
+        )
+
+        # Assert that the response is the expected one.
+        self.assertEqual(
+            status.HTTP_204_NO_CONTENT,
+            response_two.status_code,
+            "unexpected status code when a user with the User Access Administrator role attempts to delete"
+            " principals from a group",
+        )
+
+        # Assert that both the service account and the user principal were added to the group.
+        self.assertEqual(
+            0,
+            regular_group.principals.count(),
+            "after removing the principals from the regular group, the added service account and the user"
+            " principal should no longer be present",
+        )
