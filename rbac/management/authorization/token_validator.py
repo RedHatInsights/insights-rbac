@@ -34,8 +34,6 @@ from .unable_meet_prerequisites import UnableMeetPrerequisitesError
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
-# The audience claim we are expecting to find in the token.
-AUDIENCE_CLAIM = "cloud-services"
 # The service accounts claim we are expecting to find in the token.
 SERVICE_ACCOUNTS_CLAIM = "api.iam.service_accounts"
 
@@ -45,13 +43,10 @@ class ITSSOTokenValidator:
 
     def __init__(self):
         """Get the OIDC configuration URL."""
-        # TODO replace it with:
         it_host = settings.IT_SERVICE_HOST
         it_port = settings.IT_SERVICE_PORT
         self.it_request_timeout_seconds = settings.IT_SERVICE_TIMEOUT_SECONDS
         it_scheme = settings.IT_SERVICE_PROTOCOL_SCHEME
-
-        # it_host = "https://sso.stage.redhat.com"
 
         # The host contains the URL including the port...
         self.host = f"{it_scheme}://{it_host}:{it_port}/auth/realms/redhat-external"
@@ -146,15 +141,13 @@ class ITSSOTokenValidator:
         # Decode the token.
         try:
             token: Token = jwt.decode(value=bearer_token, key=key_set)
-        except Exception:
+        except Exception as e:
+            logging.warning("[request_id: %s] Unable to decode token: %s", getattr(request, "req_id", None), str(e))
             raise InvalidTokenError("Unable to decode token")
 
-        # Make sure that the token issuer matches the IT issuer, that the audience is set to the "cloud-services"
-        # client, and that the scope contains the "service accounts" claim.
-        claim_requests = JWTClaimsRegistry(
-            iss={"essential": True, "value": self.issuer},
-            aud={"essential": True, "value": AUDIENCE_CLAIM},
-        )
+        # Make sure that the token issuer matches the IT issuer and that the scope contains the "service accounts"
+        # claim.
+        claim_requests = JWTClaimsRegistry(iss={"essential": True, "value": self.issuer})
 
         # Make sure that the token is valid.
         try:
@@ -171,7 +164,11 @@ class ITSSOTokenValidator:
             # below.
             claim_requests.validate(token.claims)
         except Exception as e:
-            logger.debug('Token "%s" rejected for having invalid claims: %s', token, str(e))
+            logging.warning(
+                "[request_id: %s] Token rejected for having invalid claims: %s",
+                getattr(request, "req_id", "no-request-id-present"),
+                str(e),
+            )
             raise InvalidTokenError("The token's claims are invalid")
 
         return bearer_token
