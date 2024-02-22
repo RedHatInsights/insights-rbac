@@ -404,7 +404,7 @@ if KAFKA_ENABLED:
         if not kafka_brokers:
             raise ValueError("No kafka brokers available")
         for broker in kafka_brokers:
-            if broker:
+            if broker and broker.hostname != None and broker.port != None:
                 kafka_host = broker.hostname
                 kafka_port = broker.port
                 kafka_info = f"{kafka_host}:{kafka_port}"
