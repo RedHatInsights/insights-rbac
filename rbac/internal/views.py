@@ -32,6 +32,7 @@ from management.principal.proxy import API_TOKEN_HEADER, CLIENT_ID_HEADER, USER_
 from management.principal.proxy import PrincipalProxy
 from management.principal.proxy import bop_request_status_count, bop_request_time_tracking
 from management.tasks import (
+    populate_principals_user_id_in_worker,
     run_migrations_in_worker,
     run_ocm_performance_in_worker,
     run_reconcile_tenant_relations_in_worker,
@@ -459,6 +460,20 @@ def permission_removal(request):
             except Exception:
                 return HttpResponse("Permission cannot be deleted.", status=400)
     return HttpResponse('Invalid method, only "DELETE" is allowed.', status=405)
+
+
+def populate_principals_user_id(request):
+    """View method for populating Principal#user_id values for user based principals.
+
+    POST /_private/api/utils/populate_principals_user_id/
+    """
+    if request.method == "POST":
+        logger.info("Setting user_id on all user-based Principal objects.")
+        populate_principals_user_id_in_worker.delay()
+        return HttpResponse(
+            "User-based principal objects user_id values being updated in background worker.", status=200
+        )
+    return HttpResponse('Invalid method, only "POST" is allowed.', status=405)
 
 
 def ocm_performance(request):

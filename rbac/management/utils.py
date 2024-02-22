@@ -113,7 +113,7 @@ def get_principal(
         else:
             # Avoid possible race condition if the user was created while checking BOP
             principal, _ = Principal.objects.get_or_create(
-                username=username, tenant=tenant
+                username=username, tenant=tenant, user_id=request.user.user_id
             )  # pylint: disable=unused-variable
 
     return principal

@@ -78,6 +78,7 @@ urlpatterns = [
     path("api/utils/get_org_admin/<int:org_or_account>/", views.get_org_admin),
     path("api/utils/role/", views.role_removal),
     path("api/utils/permission/", views.permission_removal),
+    path("api/utils/populate_principals_user_id/", views.populate_principals_user_id),
 ]
 
 urlpatterns.extend(integration_urlpatterns)

@@ -31,9 +31,11 @@ class Principal(TenantAwareModel):
     cross_account = models.BooleanField(default=False)
     type = models.TextField(null=False, default="user")
     service_account_id = models.TextField(null=True)
+    user_id = models.CharField(max_length=15, default=None)
 
     class Meta:
         ordering = ["username"]
         constraints = [
-            models.UniqueConstraint(fields=["username", "tenant"], name="unique principal username per tenant")
+            models.UniqueConstraint(fields=["username", "tenant"], name="unique principal username per tenant"),
+            models.UniqueConstraint(fields=["user_id", "tenant"], name="unique principal user_id per tenant"),
         ]

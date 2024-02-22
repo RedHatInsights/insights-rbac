@@ -20,7 +20,7 @@ from __future__ import absolute_import, unicode_literals
 from celery import shared_task
 from django.core.management import call_command
 from management.health.healthcheck import redis_health
-from management.principal.cleaner import clean_tenants_principals
+from management.principal.cleaner import clean_tenants_principals, populate_principals_user_id
 
 
 @shared_task
@@ -63,3 +63,9 @@ def run_ocm_performance_in_worker():
 def run_redis_cache_health():
     """Celery task to check health of redis cache."""
     redis_health()
+
+
+@shared_task
+def populate_principals_user_id_in_worker():
+    """Celery task to populate user_id on all user principals."""
+    populate_principals_user_id()
