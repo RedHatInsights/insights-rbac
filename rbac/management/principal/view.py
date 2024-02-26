@@ -26,8 +26,6 @@ from api.common.pagination import StandardResultsSetPagination
 from .it_service import ITService
 from .proxy import PrincipalProxy
 from .unexpected_status_code_from_it import UnexpectedStatusCodeFromITError
-from ..authorization.token_validator import ITSSOTokenValidator, InvalidTokenError, MissingAuthorizationError
-from ..authorization.token_validator import UnableMeetPrerequisitesError
 from ..permissions.principal_access import PrincipalAccessPermission
 
 USERNAMES_KEY = "usernames"
@@ -105,6 +103,8 @@ class PrincipalView(APIView):
         try:
             limit = int(query_params.get("limit", default_limit))
             offset = int(query_params.get("offset", 0))
+            if limit < 0 or offset < 0:
+                raise ValueError
             options["limit"] = limit
             options["offset"] = offset
             options["sort_order"] = validate_and_get_key(query_params, SORTORDER_KEY, VALID_SORTORDER_VALUE, "asc")
@@ -122,7 +122,7 @@ class PrincipalView(APIView):
         if offset - limit > 0:
             previous_offset = offset - limit
 
-        # Attempt validating and obtaining the "prinicpal type" query
+        # Attempt validating and obtaining the "principal type" query
         # parameter.
         principal_type = validate_and_get_key(
             query_params, PRINCIPAL_TYPE_KEY, VALID_PRINCIPAL_TYPE_VALUE, required=False
@@ -131,51 +131,6 @@ class PrincipalView(APIView):
 
         # Get either service accounts or user principals, depending on what the user specified.
         if principal_type == "service-account":
-            bearer_token: str = None
-            try:
-                # Attempt validating the JWT token.
-                token_validator = ITSSOTokenValidator()
-                bearer_token = token_validator.validate_token(request=request)
-            except MissingAuthorizationError:
-                return Response(
-                    status=status.HTTP_401_UNAUTHORIZED,
-                    data={
-                        "errors": [
-                            {
-                                "detail": "The authorization header is required for fetching service accounts.",
-                                "source": "principals",
-                                "status": str(status.HTTP_401_UNAUTHORIZED),
-                            }
-                        ]
-                    },
-                )
-            except InvalidTokenError:
-                return Response(
-                    status=status.HTTP_401_UNAUTHORIZED,
-                    data={
-                        "errors": [
-                            {
-                                "detail": "Invalid token provided.",
-                                "source": "principals",
-                                "status": str(status.HTTP_401_UNAUTHORIZED),
-                            }
-                        ]
-                    },
-                )
-            except UnableMeetPrerequisitesError:
-                return Response(
-                    status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    data={
-                        "errors": [
-                            {
-                                "detail": "Unable to validate token.",
-                                "source": "principals",
-                                "status": str(status.HTTP_500_INTERNAL_SERVER_ERROR),
-                            }
-                        ]
-                    },
-                )
-
             options["email"] = query_params.get(EMAIL_KEY)
             options["match_criteria"] = validate_and_get_key(
                 query_params, MATCH_CRITERIA_KEY, VALID_MATCH_VALUE, required=False
@@ -188,9 +143,7 @@ class PrincipalView(APIView):
             # Fetch the service accounts from IT.
             try:
                 it_service = ITService()
-                service_accounts = it_service.get_service_accounts(
-                    user=user, bearer_token=bearer_token, options=options
-                )
+                service_accounts, sa_count = it_service.get_service_accounts(user=user, options=options)
             except (requests.exceptions.ConnectionError, UnexpectedStatusCodeFromITError):
                 return Response(
                     status=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -214,14 +167,16 @@ class PrincipalView(APIView):
         response_data = {}
         if status_code == status.HTTP_200_OK:
             data = resp.get("data", [])
-            if isinstance(data, dict):
+            if principal_type == "service-account":
+                count = sa_count
+            elif isinstance(data, dict):
                 count = data.get("userCount")
                 data = data.get("users")
             elif isinstance(data, list):
                 count = len(data)
             else:
                 count = None
-            response_data["meta"] = {"count": count}
+            response_data["meta"] = {"count": count, "limit": limit, "offset": offset}
             response_data["links"] = {
                 "first": f"{path}?limit={limit}&offset=0{usernames_filter}",
                 "next": f"{path}?limit={limit}&offset={offset + limit}{usernames_filter}",
@@ -250,7 +205,6 @@ class PrincipalView(APIView):
             )
             return resp, ""
         proxyInput = {}
-        resp = None
         if usernames:
             principals = usernames.split(",")
             if match_criteria != "partial":

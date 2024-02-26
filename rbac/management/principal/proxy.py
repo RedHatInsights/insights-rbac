@@ -223,7 +223,17 @@ class PrincipalProxy:  # pylint: disable=too-few-public-methods
             """Testing if account numbers match"""
             if settings.AUTHENTICATE_WITH_ORG_ID:
                 try:
+                    principal_list = []
+                    if data:
+                        principal_list = data.get("users")
                     data = response.json()
+                    LOGGER.info(
+                        "Response directly from BOP for org id %s and principal %s. Status: %s, Response: %s",
+                        org_id,
+                        str(principal_list),
+                        str(response.status_code),
+                        str(data),
+                    )
                     if isinstance(data, dict):
                         userList = self._process_data(data.get("users"), org_id, org_id_filter, return_id)
                         resp["data"] = {"userCount": data.get("userCount"), "users": userList}

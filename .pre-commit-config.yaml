@@ -2,7 +2,7 @@ default_language_version:
   python: python3.9
 repos:
 - repo: https://github.com/PyCQA/flake8
-  rev: "3.7.9"
+  rev: "7.0.0"
   hooks:
   - id: flake8
     args: ["rbac"]

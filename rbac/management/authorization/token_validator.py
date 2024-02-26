@@ -34,8 +34,6 @@ from .unable_meet_prerequisites import UnableMeetPrerequisitesError
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
-# The audience claim we are expecting to find in the token.
-AUDIENCE_CLAIM = "cloud-services"
 # The service accounts claim we are expecting to find in the token.
 SERVICE_ACCOUNTS_CLAIM = "api.iam.service_accounts"
 
@@ -45,13 +43,10 @@ class ITSSOTokenValidator:
 
     def __init__(self):
         """Get the OIDC configuration URL."""
-        # TODO replace it with:
         it_host = settings.IT_SERVICE_HOST
         it_port = settings.IT_SERVICE_PORT
         self.it_request_timeout_seconds = settings.IT_SERVICE_TIMEOUT_SECONDS
         it_scheme = settings.IT_SERVICE_PROTOCOL_SCHEME
-
-        # it_host = "https://sso.stage.redhat.com"
 
         # The host contains the URL including the port...
         self.host = f"{it_scheme}://{it_host}:{it_port}/auth/realms/redhat-external"
@@ -67,8 +62,7 @@ class ITSSOTokenValidator:
         except Exception as e:
             logger.debug(
                 "Fetching the JSON Web Key Set from Redis raised an exception, attempting to fetch the keys from the"
-                " OIDC configuration instead. Raised error: ",
-                e,
+                f" OIDC configuration instead. Raised error: {e}"
             )
 
         if jwks_certificates_response:
@@ -79,7 +73,7 @@ class ITSSOTokenValidator:
             if not status.is_success(oidc_response.status_code):
                 logger.error(
                     f"Unable to get the OIDC configuration payload when attempting to validate a JWT token. Response"
-                    f" code: {oidc_response.status_code}. Response body: {oidc_response.content}"
+                    f" code: {oidc_response.status_code!r}. Response body: {oidc_response.content!r}"
                 )
                 raise UnableMeetPrerequisitesError()
 
@@ -90,7 +84,7 @@ class ITSSOTokenValidator:
             if not jwks_uri:
                 logger.error(
                     f"Unable to extract the JWKs' URI when attempting to validate a JWT token. Actual payload:"
-                    f"{oidc_response.content}"
+                    f"{oidc_response.content!r}"
                 )
                 raise UnableMeetPrerequisitesError()
 
@@ -117,7 +111,7 @@ class ITSSOTokenValidator:
         try:
             return KeySet.import_key_set(jwks_certificates_response)
         except Exception as e:
-            logger.error("Unable to import IT's public keys to validate the token: {token:%s}".format(token=str(e)))
+            logger.error(f"Unable to import IT's public keys to validate the token: {e}")
             raise UnableMeetPrerequisitesError()
 
     def validate_token(self, request: Request) -> str:
@@ -147,15 +141,13 @@ class ITSSOTokenValidator:
         # Decode the token.
         try:
             token: Token = jwt.decode(value=bearer_token, key=key_set)
-        except Exception:
+        except Exception as e:
+            logging.warning("[request_id: %s] Unable to decode token: %s", getattr(request, "req_id", None), str(e))
             raise InvalidTokenError("Unable to decode token")
 
-        # Make sure that the token issuer matches the IT issuer, that the audience is set to the "cloud-services"
-        # client, and that the scope contains the "service accounts" claim.
-        claim_requests = JWTClaimsRegistry(
-            iss={"essential": True, "value": self.issuer},
-            aud={"essential": True, "value": AUDIENCE_CLAIM},
-        )
+        # Make sure that the token issuer matches the IT issuer and that the scope contains the "service accounts"
+        # claim.
+        claim_requests = JWTClaimsRegistry(iss={"essential": True, "value": self.issuer})
 
         # Make sure that the token is valid.
         try:
@@ -172,7 +164,11 @@ class ITSSOTokenValidator:
             # below.
             claim_requests.validate(token.claims)
         except Exception as e:
-            logger.debug('Token "%s" rejected for having invalid claims: %s', token, str(e))
+            logging.warning(
+                "[request_id: %s] Token rejected for having invalid claims: %s",
+                getattr(request, "req_id", "no-request-id-present"),
+                str(e),
+            )
             raise InvalidTokenError("The token's claims are invalid")
 
         return bearer_token

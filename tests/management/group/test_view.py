@@ -16,13 +16,16 @@
 #
 """Test the group viewset."""
 import random
+import uuid
 from unittest.mock import call, patch, ANY
-from uuid import uuid4
+from uuid import uuid4, UUID
 
 from django.db import transaction
 from django.conf import settings
 from django.urls import reverse
+from django.test.utils import override_settings
 from rest_framework import status
+from rest_framework.response import Response
 from rest_framework.test import APIClient
 
 from api.models import Tenant, User
@@ -121,12 +124,32 @@ class GroupViewsetTests(IdentityRequest):
         # role that's not assigned to principal
         self.roleOrphan = Role.objects.create(name="roleOrphan", tenant=self.tenant)
 
-        # group that associates with multipal roles
+        # group that associates with multiple roles
         self.groupMultiRole = Group.objects.create(name="groupMultiRole", tenant=self.tenant)
         self.policyMultiRole = Policy.objects.create(name="policyMultiRole", tenant=self.tenant)
         self.policyMultiRole.roles.add(self.role)
         self.policyMultiRole.roles.add(self.roleB)
         self.groupMultiRole.policies.add(self.policyMultiRole)
+
+        # fixtures for Service Accounts
+        self.sa_client_ids = [
+            "b6636c60-a31d-013c-b93d-6aa2427b506c",
+            "69a116a0-a3d4-013c-b940-6aa2427b506c",
+            "6f3c2700-a3d4-013c-b941-6aa2427b506c",
+        ]
+        self.service_accounts = []
+        for uuid in self.sa_client_ids:
+            principal = Principal(
+                username="service_account-" + uuid,
+                tenant=self.tenant,
+                type="service-account",
+                service_account_id=uuid,
+            )
+            self.service_accounts.append(principal)
+            principal.save()
+
+        self.group.principals.add(*self.service_accounts)
+        self.group.save()
 
     def tearDown(self):
         """Tear down group viewset tests."""
@@ -896,8 +919,6 @@ class GroupViewsetTests(IdentityRequest):
 
         call_args, kwargs = mock_request.call_args_list[0]
         username_arg = call_args[0]
-        print(response.data.get("data"))
-        print(response.data.get("meta"))
 
         mock_request.assert_called_with(
             ANY,
@@ -1962,6 +1983,430 @@ class GroupViewsetTests(IdentityRequest):
         self.assertEqual(response.data.get("meta").get("count"), 2)
         self.assertEqual(response.data.get("data")[0].get("username"), self.principal.username)
         self.assertEqual(response.data.get("data")[1].get("username"), self.principalB.username)
+
+    @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
+    @patch("management.principal.it_service.ITService.request_service_accounts")
+    def test_get_group_service_account_success(self, mock_request):
+        """Test that getting the "service-account" type principals from a nonempty group returns successfully."""
+        mocked_values = []
+        for uuid in self.sa_client_ids:
+            mocked_values.append(
+                {
+                    "clientID": uuid,
+                    "name": f"service_account_name_{uuid.split('-')[0]}",
+                    "description": f"Service Account description {uuid.split('-')[0]}",
+                    "owner": "jsmith",
+                    "username": "service_account-" + uuid,
+                    "time_created": 1706784741,
+                    "type": "service-account",
+                }
+            )
+
+        mock_request.return_value = mocked_values
+
+        url = f"{reverse('group-principals', kwargs={'uuid': self.group.uuid})}?principal_type=service-account"
+        client = APIClient()
+        response = client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIsInstance(response.data.get("data"), list)
+        self.assertEqual(int(response.data.get("meta").get("count")), 3)
+        self.assertEqual(len(response.data.get("data")), 3)
+
+        sa = response.data.get("data")[0]
+        self.assertCountEqual(
+            list(sa.keys()),
+            ["clientID", "name", "description", "owner", "time_created", "type", "username"],
+        )
+
+        for mock_sa in mocked_values:
+            if mock_sa["clientID"] == sa.get("clientID"):
+                self.assertEqual(sa.get("name"), mock_sa["name"])
+                self.assertEqual(sa.get("description"), mock_sa["description"])
+                self.assertEqual(sa.get("owner"), mock_sa["owner"])
+                self.assertEqual(sa.get("type"), "service-account")
+                self.assertEqual(sa.get("username"), mock_sa["username"])
+
+    @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
+    @patch("management.principal.it_service.ITService.request_service_accounts")
+    def test_get_group_service_account_empty_response(self, mock_request):
+        """Test that empty response is returned when tenant doesn't have a service account in a group."""
+        uuid = self.sa_client_ids[0]
+        mock_request.return_value = [
+            {
+                "clientID": uuid,
+                "name": f"service_account_name_{uuid.split('-')[0]}",
+                "description": f"Service Account description {uuid.split('-')[0]}",
+                "owner": "jsmith",
+                "username": "service_account-" + uuid,
+                "time_created": 1706784741,
+                "type": "service-account",
+            }
+        ]
+
+        url = f"{reverse('group-principals', kwargs={'uuid': self.groupB.uuid})}?principal_type=service-account"
+        client = APIClient()
+        response = client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIsInstance(response.data.get("data"), list)
+        self.assertEqual(int(response.data.get("meta").get("count")), 0)
+        self.assertEqual(len(response.data.get("data")), 0)
+
+    @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
+    @patch("management.principal.it_service.ITService.request_service_accounts")
+    def test_get_group_service_account_valid_limit_offset(self, mock_request):
+        """Test that we can read a list of service accounts according to the given limit and offset."""
+        mocked_values = []
+        for uuid in self.sa_client_ids:
+            mocked_values.append(
+                {
+                    "clientID": uuid,
+                    "name": f"service_account_name_{uuid.split('-')[0]}",
+                    "description": f"Service Account description {uuid.split('-')[0]}",
+                    "owner": "jsmith",
+                    "username": "service_account-" + uuid,
+                    "time_created": 1706784741,
+                    "type": "service-account",
+                }
+            )
+
+        mock_request.return_value = mocked_values
+
+        # without limit and offset the default values are used
+        # limit=10, offset=0
+        url = f"{reverse('group-principals', kwargs={'uuid': self.group.uuid})}?principal_type=service-account"
+        client = APIClient()
+        response = client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(int(response.data.get("meta").get("count")), 3)
+        self.assertEqual(len(response.data.get("data")), 3)
+
+        # set custom limit and offset
+        test_values = [(1, 1), (2, 2), (5, 5)]
+        for limit, offset in test_values:
+            base_url = f"{reverse('group-principals', kwargs={'uuid': self.group.uuid})}"
+            query_params = f"?principal_type=service-account&limit={limit}&offset={offset}"
+            url = f"{base_url}{query_params}"
+            client = APIClient()
+            response = client.get(url, **self.headers)
+
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            self.assertEqual(int(response.data.get("meta").get("count")), 3)
+            # for limit=1, offset=1, count=3 is the result min(1, max(0, 2)) = 1
+            # for limit=2, offset=2, count=3 is the result min(2, max(0, 1)) = 1
+            # for limit=5, offset=5, count=3 is the result min(5, max(0, -2)) = 0
+            self.assertEqual(len(response.data.get("data")), min(limit, max(0, 3 - offset)))
+
+    @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
+    @patch("management.principal.it_service.ITService.request_service_accounts", return_value=None)
+    def test_get_group_service_account_invalid_limit_offset(self, mock_request):
+        """Test that default values are used for invalid limit and offset."""
+        mocked_values = []
+        for uuid in self.sa_client_ids:
+            mocked_values.append(
+                {
+                    "clientID": uuid,
+                    "name": f"service_account_name_{uuid.split('-')[0]}",
+                    "description": f"Service Account description {uuid.split('-')[0]}",
+                    "owner": "jsmith",
+                    "username": "service_account-" + uuid,
+                    "time_created": 1706784741,
+                    "type": "service-account",
+                }
+            )
+
+        mock_request.return_value = mocked_values
+
+        test_values = [(-1, 0), (10, -2), ("xxx", 0), (10, "xxx")]
+        for limit, offset in test_values:
+            base_url = f"{reverse('group-principals', kwargs={'uuid': self.group.uuid})}"
+            query_params = f"?principal_type=service-account&limit={limit}&offset={offset}"
+            url = f"{base_url}{query_params}"
+            client = APIClient()
+            response = client.get(url, **self.headers)
+
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            self.assertEqual(int(response.data.get("meta").get("count")), 3)
+            self.assertEqual(len(response.data.get("data")), 3)
+
+    def test_get_group_principals_check_service_account_ids(self):
+        """Test that the endpoint for checking if service accounts are part of a group works as expected."""
+        # Create a group and associate principals to it.
+        group = Group(name="it-service-group", platform_default=False, system=False, tenant=self.tenant)
+        group.save()
+
+        # The user principals should not be retrieved in the results.
+        group.principals.add(Principal.objects.create(username="user-1", tenant=self.tenant))
+        group.principals.add(Principal.objects.create(username="user-2", tenant=self.tenant))
+        group.principals.add(Principal.objects.create(username="user-3", tenant=self.tenant))
+        group.save()
+
+        # Create some service accounts and add some of them to the group.
+        client_uuid_1 = uuid.uuid4()
+        client_uuid_2 = uuid.uuid4()
+
+        sa_1 = Principal.objects.create(
+            username=f"service-account-{client_uuid_1}",
+            service_account_id=client_uuid_1,
+            type="service-account",
+            tenant=self.tenant,
+        )
+        sa_2 = Principal.objects.create(
+            username=f"service-account-{client_uuid_2}",
+            service_account_id=client_uuid_2,
+            type="service-account",
+            tenant=self.tenant,
+        )
+
+        group.principals.add(sa_1)
+        group.principals.add(sa_2)
+        group.save()
+
+        # Create a set with the service accounts that will go in the group. It will make it easier to make assertions
+        # below.
+        group_service_accounts_set = {str(sa_1.service_account_id), str(sa_2.service_account_id)}
+
+        # Create more service accounts that should not show in the results, since they're not going to be specified in
+        # the "client_ids" parameter.
+        Principal.objects.create(
+            username=f"service-account-{uuid.uuid4()}",
+            service_account_id=uuid.uuid4(),
+            type="service-account",
+            tenant=self.tenant,
+        )
+        Principal.objects.create(
+            username=f"service-account-{uuid.uuid4()}",
+            service_account_id=uuid.uuid4(),
+            type="service-account",
+            tenant=self.tenant,
+        )
+        Principal.objects.create(
+            username=f"service-account-{uuid.uuid4()}",
+            service_account_id=uuid.uuid4(),
+            type="service-account",
+            tenant=self.tenant,
+        )
+
+        # Create the UUIDs to be specified in the request.
+        not_in_group = uuid.uuid4()
+        not_in_group_2 = uuid.uuid4()
+        not_in_group_3 = uuid.uuid4()
+
+        # Also, create a set with the service accounts that will NOT go in the group to make it easier to assert that
+        # the results flag them as such.
+        service_accounts_not_in_group_set = {
+            str(not_in_group),
+            str(not_in_group_2),
+            str(not_in_group_3),
+        }
+
+        # Create the query parameter.
+        service_accounts_client_ids = (
+            f"{client_uuid_1},{client_uuid_2},{not_in_group},{not_in_group_2},{not_in_group_3}"
+        )
+
+        url = (
+            f"{reverse('group-principals', kwargs={'uuid': group.uuid})}"
+            f"?service_account_client_ids={service_accounts_client_ids}"
+        )
+
+        # Call the endpoint under test.
+        client = APIClient()
+        response: Response = client.get(url, **self.headers)
+
+        # Assert that we received a 200 response.
+        self.assertEqual(
+            status.HTTP_200_OK,
+            response.status_code,
+            "unexpected status code received",
+        )
+
+        # Assert that we received the correct results count.
+        self.assertEqual(
+            5,
+            response.data.get("meta").get("count"),
+            "The results of five client IDs should have been returned, since those were the ones sent to the endpoint",
+        )
+
+        # Assert that the mixed matches are identified correctly.
+        for client_id, is_it_present_in_group in response.data.get("data").items():
+            # If the value is "true" it should be present in the service accounts' result set from above. Else, it
+            # means that the specified client IDs were not part of the group, and that they should have been flagged
+            # as such.
+            if is_it_present_in_group:
+                self.assertEqual(
+                    True,
+                    client_id in group_service_accounts_set,
+                    "a client ID which was not part of the group was incorrectly flagged as if it was",
+                )
+            else:
+                self.assertEqual(
+                    True,
+                    client_id in service_accounts_not_in_group_set,
+                    "a client ID which was part of the group was incorrectly flagged as if it wasn't",
+                )
+
+    def test_get_group_principals_check_service_account_ids_non_existent(self):
+        """Test that when checking non-existent service account client IDs from another group the endpoint flags them as not present."""
+
+        # Create the UUIDs to be specified in the request.
+        not_in_group = uuid.uuid4()
+        not_in_group_2 = uuid.uuid4()
+        not_in_group_3 = uuid.uuid4()
+        not_in_group_4 = uuid.uuid4()
+        not_in_group_5 = uuid.uuid4()
+
+        # Also, create a set with the service accounts that will NOT go in the group to make it easier to assert that
+        # the results flag them as such.
+        service_accounts_not_in_group_set = {
+            str(not_in_group),
+            str(not_in_group_2),
+            str(not_in_group_3),
+            str(not_in_group_4),
+            str(not_in_group_5),
+        }
+
+        # Create the query parameter.
+        service_accounts_client_ids = (
+            f"{not_in_group},{not_in_group_2},{not_in_group_3},{not_in_group_4},{not_in_group_5}"
+        )
+
+        url = (
+            f"{reverse('group-principals', kwargs={'uuid': self.group.uuid})}"
+            f"?service_account_client_ids={service_accounts_client_ids}"
+        )
+
+        # Call the endpoint under test.
+        client = APIClient()
+        response: Response = client.get(url, **self.headers)
+
+        # Assert that we received a 200 response.
+        self.assertEqual(
+            status.HTTP_200_OK,
+            response.status_code,
+            "unexpected status code received",
+        )
+
+        # Assert that we received the correct results count.
+        self.assertEqual(
+            5,
+            response.data.get("meta").get("count"),
+            "The results of five client IDs should have been returned, since those were the ones sent to the endpoint",
+        )
+
+        # Assert that the mixed matches are identified correctly.
+        for client_id, is_it_present_in_group in response.data.get("data").items():
+            # If the value is "true" it should be present in the service accounts' result set from above. Else, it
+            # means that the specified client IDs were not part of the group, and that they should have been flagged
+            # as such.
+            if is_it_present_in_group:
+                self.fail(
+                    "no existing service accounts were specified in the query parameter. Still, some were flagged as"
+                    " present in the group"
+                )
+            else:
+                self.assertEqual(
+                    True,
+                    client_id in service_accounts_not_in_group_set,
+                    "a client ID which was part of the group was incorrectly flagged as if it wasn't",
+                )
+
+    def test_get_group_principals_check_service_account_ids_incompatible_query_parameters(self):
+        """Test that no other query parameter can be used along with the "service_account_ids" one."""
+        # Use a few extra query parameter to test the behavior. Since we use a "len(query_params) > 1" condition it
+        # really does not matter which other query parameter we use for the test, but we are adding a bunch in case
+        # this changes in the future.
+        query_parameters_to_test: list[str] = [
+            "order_by",
+            "principal_type",
+            "principal_username",
+            "service_account_name",
+            "username_only",
+        ]
+
+        for query_parameter in query_parameters_to_test:
+            url = (
+                f"{reverse('group-principals', kwargs={'uuid': self.group.uuid})}"
+                f"?service_account_client_ids={uuid.uuid4()}&{query_parameter}=abcde"
+            )
+            client = APIClient()
+            response: Response = client.get(url, **self.headers)
+
+            # Assert that we received a 400 response.
+            self.assertEqual(
+                status.HTTP_400_BAD_REQUEST,
+                response.status_code,
+                "unexpected status code received",
+            )
+
+            # Assert that the error message is the expected one.
+            self.assertEqual(
+                str(response.data.get("errors")[0].get("detail")),
+                "The 'service_account_client_ids' parameter is incompatible with any other query parameter."
+                " Please, use it alone",
+            )
+
+    def test_get_group_principals_check_service_account_ids_empty_client_ids(self):
+        """Test that an empty service account IDs query param returns a bad request response"""
+        url = f"{reverse('group-principals', kwargs={'uuid': self.group.uuid})}?service_account_client_ids="
+        client = APIClient()
+        response: Response = client.get(url, **self.headers)
+
+        # Assert that we received a 400 response.
+        self.assertEqual(
+            status.HTTP_400_BAD_REQUEST,
+            response.status_code,
+            "unexpected status code received",
+        )
+
+        # Assert that the error message is the expected one.
+        self.assertEqual(
+            str(response.data.get("errors")[0].get("detail")),
+            "Not a single client ID was specified for the client IDs filter",
+            "unexpected error message detail",
+        )
+
+    def test_get_group_principals_check_service_account_ids_blank_string(self):
+        """Test that a blank service account IDs query param returns a bad request response"""
+        url = f"{reverse('group-principals', kwargs={'uuid': self.group.uuid})}?service_account_client_ids=     "
+        client = APIClient()
+        response: Response = client.get(url, **self.headers)
+
+        # Assert that we received a 400 response.
+        self.assertEqual(
+            status.HTTP_400_BAD_REQUEST,
+            response.status_code,
+            "unexpected status code received",
+        )
+
+        # Assert that the error message is the expected one.
+        self.assertEqual(
+            str(response.data.get("errors")[0].get("detail")),
+            "Not a single client ID was specified for the client IDs filter",
+            "unexpected error message detail",
+        )
+
+    def test_get_group_principals_check_service_account_ids_invalid_uuid(self):
+        """Test that an invalid service account ID query param returns a bad request response"""
+        url = f"{reverse('group-principals', kwargs={'uuid': self.group.uuid})}?service_account_client_ids=abcde"
+        client = APIClient()
+        response: Response = client.get(url, **self.headers)
+
+        # Assert that we received a 400 response.
+        self.assertEqual(
+            status.HTTP_400_BAD_REQUEST,
+            response.status_code,
+            "unexpected status code received",
+        )
+
+        # Assert that the error message is the expected one.
+        self.assertEqual(
+            str(response.data.get("errors")[0].get("detail")),
+            "The specified client ID 'abcde' is not a valid UUID",
+            "unexpected error message detail",
+        )
 
 
 class GroupViewNonAdminTests(IdentityRequest):

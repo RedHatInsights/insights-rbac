@@ -4,6 +4,7 @@ USER root
 COPY Pipfile .
 COPY Pipfile.lock .
 COPY tox.ini .
+COPY mypy.ini .
 COPY requirements.txt .
 COPY Makefile .
 
@@ -18,5 +19,5 @@ RUN pipenv install --deploy && \
 #copy the src files
 COPY . .
 
-#Add command to run tox 
+#Add command to run tox
 CMD ["tox"]

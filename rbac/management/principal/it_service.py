@@ -17,19 +17,23 @@
 """Class to manage interactions with the IT service accounts service."""
 import logging
 import time
+import uuid
+from typing import Optional, Tuple, Union
 
 import requests
 from django.conf import settings
 from django.db.models import Q
+from management.authorization.missing_authorization import MissingAuthorizationError
 from management.models import Group, Principal
 from prometheus_client import Counter, Histogram
-from rest_framework import status
+from rest_framework import serializers, status
 
 from api.models import User
 from .unexpected_status_code_from_it import UnexpectedStatusCodeFromITError
 
 # Constants or global variables.
 LOGGER = logging.getLogger(__name__)
+SERVICE_ACCOUNT_CLIENT_IDS_KEY = "service_account_client_ids"
 TYPE_SERVICE_ACCOUNT = "service-account"
 
 # IT path to fetch the service accounts.
@@ -53,9 +57,32 @@ it_request_error = Counter(
     ["error"],
 )
 
+# Keys for the "options" dictionary. The "options" dictionary represents the query parameters passed by the calling
+# client.
+SERVICE_ACCOUNT_DESCRIPTION_KEY = "service_account_description"
+SERVICE_ACCOUNT_NAME_KEY = "service_account_name"
+
+
+def limit_offset_validation(offset, limit):
+    """Limit and offset should not be negative number."""
+    if offset < 0 or limit < 0:
+        detail = "Values for limit and offset must be positive numbers."
+        source = "service accounts"
+        raise serializers.ValidationError({source: [detail]})
+
 
 class ITService:
     """A class to handle interactions with the IT service."""
+
+    # Instance variable for the class.
+    _instance = None
+
+    def __new__(cls, *args, **kwargs):
+        """Create a single instance of the class."""
+        if cls._instance is None:
+            cls._instance = super().__new__(cls, *args, **kwargs)
+
+        return cls._instance
 
     def __init__(self):
         """Establish IT connection information."""
@@ -64,13 +91,16 @@ class ITService:
         self.port = settings.IT_SERVICE_PORT
         self.protocol = settings.IT_SERVICE_PROTOCOL_SCHEME
         self.it_request_timeout = settings.IT_SERVICE_TIMEOUT_SECONDS
+        self.it_url = f"{self.protocol}://{self.host}:{self.port}{self.base_path}{IT_PATH_GET_SERVICE_ACCOUNTS}"
 
     @it_request_all_service_accounts_time_tracking.time()
-    def request_service_accounts(self, bearer_token: str) -> list[dict]:
+    def request_service_accounts(self, bearer_token: str, client_ids: Optional[list[str]] = None) -> list[dict]:
         """Request the service accounts for a tenant and returns the entire list that IT has."""
+        # We cannot talk to IT if we don't have a bearer token.
+        if not bearer_token:
+            raise MissingAuthorizationError()
+
         received_service_accounts: list[dict] = []
-        # Prepare the URL to fetch the service accounts.
-        url = f"{self.protocol}://{self.host}:{self.port}{self.base_path}{IT_PATH_GET_SERVICE_ACCOUNTS}"
 
         # Attempt fetching all the service accounts for the tenant.
         try:
@@ -79,11 +109,16 @@ class ITService:
 
             # If the offset is zero, that means that we need to call the service at least once to get the first
             # service accounts. If it equals the limit, that means that there are more pages to fetch.
+            parameters: dict[str, Union[int, list[str]]] = {"first": offset, "max": limit}
+            # If we were given client IDs to filter the collection with, do it!
+            if client_ids:
+                parameters["clientId"] = client_ids
+
             while offset == 0 or offset == limit:
                 response = requests.get(
-                    url=url,
+                    url=self.it_url,
                     headers={"Authorization": f"Bearer {bearer_token}"},
-                    params={"first": offset, "max": limit},
+                    params=parameters,
                     timeout=self.it_request_timeout,
                 )
 
@@ -115,7 +150,7 @@ class ITService:
         except requests.exceptions.ConnectionError as exception:
             LOGGER.error(
                 "Unable to connect to IT to fetch the service accounts. Attempted URL %s with error: %s",
-                url,
+                self.it_url,
                 exception,
             )
 
@@ -127,7 +162,7 @@ class ITService:
         except requests.exceptions.Timeout as exception:
             LOGGER.error(
                 "The connection to IT timed out when trying to fetch service accounts. Attempted URL %s with error: %s",
-                url,
+                self.it_url,
                 exception,
             )
 
@@ -141,12 +176,55 @@ class ITService:
 
         return service_accounts
 
-    def get_service_accounts(self, user: User, bearer_token: str, options: dict = {}) -> list[dict]:
+    def is_service_account_valid_by_client_id(self, user: User, service_account_client_id: str) -> bool:
+        """Check if the specified service account is valid."""
+        if settings.IT_BYPASS_IT_CALLS:
+            return False
+
+        return self._is_service_account_valid(user=user, client_id=service_account_client_id)
+
+    def is_service_account_valid_by_username(self, user: User, service_account_username: str) -> bool:
+        """Check if the specified service account is valid."""
+        # The usernames for the service accounts usually come in the form "service-account-${CLIENT_ID}". We don't need
+        # the prefix of the username to query IT, since they only accept client IDs to filter collections.
+        if settings.IT_BYPASS_IT_CALLS:
+            return True
+
+        if self.is_username_service_account(service_account_username):
+            client_id = service_account_username.replace("service-account-", "")
+        else:
+            client_id = service_account_username
+
+        return self._is_service_account_valid(user=user, client_id=client_id)
+
+    def _is_service_account_valid(self, user: User, client_id: str) -> bool:
+        """Check if the provided client ID can be found in the tenant's organization by calling IT."""
+        if settings.IT_BYPASS_IT_CALLS:
+            return True
+        else:
+            service_accounts: list[dict] = self.request_service_accounts(
+                bearer_token=user.bearer_token,
+                client_ids=[client_id],
+            )
+
+            if len(service_accounts) == 0:
+                return False
+            elif len(service_accounts) == 1:
+                sa = service_accounts[0]
+                return client_id == sa.get("clientId")
+            else:
+                LOGGER.error(
+                    f'unexpected number of service accounts received from IT. Wanted one with client ID "{client_id}",'
+                    f" got {len(service_accounts)}: {service_accounts}"
+                )
+                return False
+
+    def get_service_accounts(self, user: User, options: dict = {}) -> Tuple[list[dict], int]:
         """Request and returns the service accounts for the given tenant."""
         # We might want to bypass calls to the IT service on ephemeral or test environments.
         it_service_accounts: list[dict] = []
         if not settings.IT_BYPASS_IT_CALLS:
-            it_service_accounts = self.request_service_accounts(bearer_token=bearer_token)
+            it_service_accounts = self.request_service_accounts(bearer_token=user.bearer_token)
 
         # Get the service accounts from the database. The weird filter is to fetch the service accounts depending on
         # the account number or the organization ID the user gave.
@@ -160,7 +238,7 @@ class ITService:
         # - Admin only
         # - Email
         # - Status
-        usernames: [str] = []
+        usernames: list[str] = []
         specified_usernames = options.get("usernames")
         if specified_usernames:
             usernames = specified_usernames.split(",")
@@ -168,7 +246,6 @@ class ITService:
         # If "match_criteria" is specified, only the first username is taken into account.
         match_criteria = options.get("match_criteria")
         if match_criteria:
-            match_criteria: str = options["match_criteria"]
             username = usernames[0]
 
             if match_criteria == "partial":
@@ -194,13 +271,6 @@ class ITService:
         else:
             service_account_principals = service_account_principals.order_by("-username")
 
-        # We always set a default offset and a limit if the user doesn't specify them so it is safe to simply put the
-        # two parameters in the query to slice it.
-        offset = options.get("offset")
-        limit = options.get("limit")
-
-        service_account_principals[offset:limit]
-
         # If we are in an ephemeral or test environment, we will take all the service accounts of the user that are
         # stored in the database and generate a mocked response for them, simulating that IT has the corresponding
         # service account to complement the information.
@@ -216,18 +286,28 @@ class ITService:
 
         # Filter the incoming service accounts. Also, transform them to the payload we will
         # be returning.
-        service_accounts: [dict] = self._merge_principals_it_service_accounts(
+        service_accounts: list[dict] = self._merge_principals_it_service_accounts(
             service_account_principals=sap_dict, it_service_accounts=it_service_accounts, options=options
         )
 
-        return service_accounts
+        # We always set a default offset and a limit if the user doesn't specify them, so it is safe to simply put the
+        # two parameters in the query to slice it.
+        offset = options.get("offset")
+        limit = options.get("limit")
+        limit_offset_validation(offset, limit)
 
-    def get_service_accounts_group(self, group: Group, bearer_token: str, options: dict = {}) -> list[dict]:
+        count = len(service_accounts)
+        # flake8 ignore E203 = Whitespace before ':' -> false positive https://github.com/PyCQA/pycodestyle/issues/373
+        service_accounts = service_accounts[offset : offset + limit]  # type: ignore # noqa: E203
+
+        return service_accounts, count
+
+    def get_service_accounts_group(self, group: Group, user: User, options: dict = {}) -> list[dict]:
         """Get the service accounts for the given group."""
         # We might want to bypass calls to the IT service on ephemeral or test environments.
         it_service_accounts: list[dict] = []
         if not settings.IT_BYPASS_IT_CALLS:
-            it_service_accounts = self.request_service_accounts(bearer_token=bearer_token)
+            it_service_accounts = self.request_service_accounts(bearer_token=user.bearer_token)
 
         # Fetch the service accounts from the group.
         group_service_account_principals = group.principals.filter(type=TYPE_SERVICE_ACCOUNT)
@@ -249,13 +329,6 @@ class ITService:
                 username__contains=principal_username
             )
 
-        # Get the limit and the offset. We always have default values for these, so it is safe to simply fetch them.
-        limit = options["limit"]
-        offset = options["offset"]
-
-        # Filter the service accounts with the offset and the limit.
-        group_service_account_principals[offset:limit]
-
         # If we are in an ephemeral or test environment, we will take all the service accounts of the user that are
         # stored in the database and generate a mocked response for them, simulating that IT has the corresponding
         # service account to complement the information.
@@ -271,21 +344,89 @@ class ITService:
 
         # Filter the incoming service accounts. Also, transform them to the payload we will
         # be returning.
-        service_accounts: [dict] = self._merge_principals_it_service_accounts(
+        service_accounts: list[dict] = self._merge_principals_it_service_accounts(
             service_account_principals=sap_dict, it_service_accounts=it_service_accounts, options=options
         )
 
-        return service_accounts
+        # If either the description or name filters were specified, we need to only keep the service accounts that
+        # match that criteria.
+        sa_description_filter = options.get(SERVICE_ACCOUNT_DESCRIPTION_KEY)
+        sa_name_filter = options.get(SERVICE_ACCOUNT_NAME_KEY)
 
-    def _transform_incoming_payload(self, input: dict) -> dict:
+        if sa_description_filter or sa_name_filter:
+            filtered_service_accounts: list[dict] = []
+
+            for sa in service_accounts:
+                # Initialize both matches as "True", because having them at "False" would force us to make them "True"
+                # whenever one of the filters is not specified, since otherwise not specifying a filter would stop the
+                # service account to be included in the resulting list.
+                sa_description_filter_matches: bool = True
+                sa_name_filter_matches: bool = True
+
+                if sa_description_filter:
+                    sa_description_filter_matches = ("description" in sa) and (
+                        sa_description_filter in sa["description"]
+                    )
+
+                if sa_name_filter:
+                    sa_name_filter_matches = ("name" in sa) and (sa_name_filter in sa["name"])
+
+                # When both filters are specified we require them both to have a positive match for the fields.
+                if sa_description_filter_matches and sa_name_filter_matches:
+                    filtered_service_accounts.append(sa)
+
+            return filtered_service_accounts
+        else:
+            return service_accounts
+
+    @staticmethod
+    def is_username_service_account(username: str) -> bool:
+        """Check if the given username belongs to a service account."""
+        return username.startswith("service-account-")
+
+    @staticmethod
+    def extract_client_id_service_account_username(username: str) -> uuid.UUID:
+        """Extract the client ID from the service account's username."""
+        # If it has the "service-account" prefix, we just need to strip it and return the rest of the username, which
+        # contains the client ID. Else, we have just received the client ID.
+        try:
+            if ITService.is_username_service_account(username=username):
+                return uuid.UUID(username.replace("service-account-", ""))
+            else:
+                return uuid.UUID(username)
+        except ValueError:
+            raise serializers.ValidationError(
+                {
+                    "detail": "unable to extract the client ID from the service account's username because the"
+                    " provided UUID is invalid"
+                }
+            )
+
+    def generate_service_accounts_report_in_group(self, group: Group, client_ids: set[str]) -> dict[str, bool]:
+        """Check if the given service accounts are in the specified group."""
+        # Fetch the service accounts from the group.
+        group_service_account_principals = (
+            group.principals.values_list("service_account_id", flat=True)
+            .filter(type=TYPE_SERVICE_ACCOUNT)
+            .filter(service_account_id__in=client_ids)
+        )
+
+        # Mark the specified client IDs as "present or missing" from the result set.
+        result: dict[str, bool] = {}
+        for incoming_client_id in client_ids:
+            result[incoming_client_id] = incoming_client_id in group_service_account_principals
+
+        return result
+
+    def _transform_incoming_payload(self, service_account_from_it_service: dict) -> dict:
         """Transform the incoming service account from IT into a dict which fits our response structure."""
         service_account: dict = {}
 
-        client_id = input.get("clientId")
-        name = input.get("name")
-        description = input.get("description")
-        created_by = input.get("createdBy")
-        created_at = input.get("createdAt")
+        client_id = service_account_from_it_service.get("clientId")
+        name = service_account_from_it_service.get("name")
+        description = service_account_from_it_service.get("description")
+        created_by = service_account_from_it_service.get("createdBy")
+        created_at = service_account_from_it_service.get("createdAt")
 
         if client_id:
             service_account["clientID"] = client_id
@@ -311,7 +452,7 @@ class ITService:
         self, service_account_principals: dict[str, dict], it_service_accounts: list[dict], options: dict
     ) -> list[dict]:
         """Merge the database principals with the service account principals and return the response payload."""
-        service_accounts: [dict] = []
+        service_accounts: list[dict] = []
 
         # If the "username_only" parameter was set, we should only return that for the user.
         username_only = options.get("username_only")
@@ -321,10 +462,10 @@ class ITService:
                 sa_principal = service_account_principals[it_service_account["clientID"]]
 
                 if username_only and username_only == "true":
-                    service_accounts.append({"username": sa_principal.username})
+                    service_accounts.append({"username": sa_principal.username})  # type: ignore
                 else:
                     # Get the principal's username from the database and set it in the response for the user.
-                    it_service_account["username"] = sa_principal.username
+                    it_service_account["username"] = sa_principal.username  # type: ignore
 
                     service_accounts.append(it_service_account)
             # If we cannot find a requested service account to IT in the database, we simply

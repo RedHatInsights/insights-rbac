@@ -69,3 +69,20 @@ class PrincipalInputSerializer(serializers.Serializer):
         """Metadata for the serializer."""
 
         fields = ("username", "clientID", "type")
+
+
+class ServiceAccountSerializer(serializers.Serializer):
+    """Serializer for Service Account."""
+
+    clientID = serializers.UUIDField()
+    name = serializers.CharField()
+    description = serializers.CharField(allow_null=True, required=False)
+    owner = serializers.CharField()
+    time_created = serializers.IntegerField()
+    type = serializers.CharField()
+    username = serializers.CharField()
+
+    class Meta:
+        """Metadata for the serializer."""
+
+        fields = "__all__"

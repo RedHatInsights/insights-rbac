@@ -1,0 +1,312 @@
+openapi: 3.0.0
+info:
+  description: Mapping from Relation API for Role Based Access Control API
+  version: 1.0.0
+  title: Role Based Access Control
+  license:
+    name: AGPL-3.0
+    url: https://opensource.org/licenses/AGPL-3.0
+tags:
+  - name: Group
+    description: Operations about groups
+paths:
+  /groups/{uuid}/principals/relationships:
+    post:
+      tags:
+        - Group
+      summary: Add a principal to a group in the tenant
+      operationId: addPrincipalToGroup
+      parameters:
+        - name: uuid
+          in: path
+          description: '`uuid` is populated `relationships.object.id` request body'
+          required: true
+          schema:
+            type: string
+            format: uuid
+      description: |
+        Example of request body from platform RBAC API
+        ```
+        {
+          "principals": [
+            {
+              "username": "user_dev"
+            }
+          ]
+        }
+        ```
+        
+        Schema in SpiceDB
+        ```
+          definition user {}
+          
+          definition group {
+              relation member: user | group#member
+          }
+        ```
+
+        Example of relations in SpiceDB creation (in zed format)
+        ```
+          zed relationship read group:9aca5b38-07b1-4873-aaae-d02c94c05673 group:9aca5b38-07b1-4873-aaae-d02c94c05673 member user_dev
+        ```
+      requestBody:
+        content:
+            application/json:
+                schema:
+                    $ref: '#/components/schemas/api.rebac.v1.CreateRelationshipsRequest'
+                examples:
+                  addPrincipalToGroupExample:
+                    $ref: '#/components/examples/AddPrincipalToGroupExample'
+      responses:
+        '201':
+          description: '{}'
+  /groups/{uuid}/roles/relationships/:
+    post:
+      tags:
+        - Group
+      summary: Add a role to a group in the tenant
+      operationId: addRoleToGroup
+      parameters:
+        - name: uuid
+          in: path
+          description: TODO
+          required: true
+          schema:
+            type: string
+            format: uuid
+      description: |
+        Example of request body from platform RBAC API
+        
+        Request
+        ```
+        POST /groups/0ff698d7-3972-4385-9a15-0fe9cd49f740/roles/
+        ```
+        Body
+        ```
+          {
+            "roles": [
+              "ROLE-UUID"
+            ]
+          }
+        ```
+        
+        Schema in SpiceDB
+        ```
+          definition rbac/v1role {
+            relation role: role
+            relation binding: role_binding
+          }
+    
+          definition user {}
+  
+          definition role {
+          }
+          definition group {
+              relation member: user | group#member
+          }
+  
+          definition role_binding {
+            relation subject : user | group#member
+          }
+        ```
+
+        Prerequisites:
+        ```
+          role_binding:ROLE-UUID#granted@role:ROLE-UUID
+        
+          rbac/v1role:ROLE-UUID#role@role:ROLE-UUID
+        
+          // NOTE at this relation has to be checked before we add relation in example section
+          rbac/v1role:ROLE-UUID#binding@role_binding:ROLE-UUID
+        ```
+        
+        zed command to check:
+        ```
+          role_binding:ROLE-UUID#subject@group:94846f2f-cced-474f-b7f3-47e2ec51dd1#member
+        ```
+        
+        Example of relations in SpiceDB to add a role to a group (in zed format)
+        ```
+          role_binding:ROLE-UUID#subject@group:0ff698d7-3972-4385-9a15-0fe9cd49f740#member
+        ```
+        
+        [Authzed playground](https://play.authzed.com/s/NEIiBuig1-Bg/schema)
+      requestBody:
+        content:
+            application/json:
+                schema:
+                    $ref: '#/components/schemas/api.rebac.v1.CreateRelationshipsRequest'
+                examples:
+                  addPrincipalToGroupExample:
+                    $ref: '#/components/examples/AddRoleToGroupExample'
+      responses:
+        '200':
+          description: '{}'
+  /roles/relationships/:
+    post:
+      tags:
+        - Group
+      summary: Add a role to a group in the tenant
+      operationId: createRole
+      description: |
+        Example of request body from platform RBAC API
+        ```
+          {
+            "name": "RoleA",
+            "display_name": "ARoleName",
+            "description": "A description of RoleA",
+            "access": [
+              {
+                "permission": "cost-management:*:read",
+                "resourceDefinitions": [
+                  {
+                    "attributeFilter": {
+                      "key": "cost-management.aws.account",
+                      "operation": "equal",
+                      "value": "123456"
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ```
+        
+        Schema in SpiceDB
+        ```
+          definition rbac/v1role {
+            relation role: role
+            relation binding: role_binding
+          }
+    
+          definition user {}
+
+          definition role {
+            relation cost_management_all_read: user:*
+          }
+          definition group {
+            relation member: user | group#member
+          }
+
+          definition role_binding {
+            relation subject : user | group#member
+            relation granted: role
+          }
+
+          definition workspace {
+            relation user_grant: role_binding
+          }
+
+          definition cost_management/aws_account {
+            relation user_grant: role_binding
+          }
+        ```
+
+        Example of relations in SpiceDB creation (in zed format)
+        ```
+        // create a v2 role with inventory view all
+        role:7a8f2026-c53b-11ee-84cc-5fe720b60b72#cost_management_all_read@user:*
+        // so a query can find all roles and bindings that represent the RBAC role 7a8f2026-c53b-11ee-84cc-5fe720b60b72
+        rbac/v1role:7a8f2026-c53b-11ee-84cc-5fe720b60b72#role@role:7a8f2026-c53b-11ee-84cc-5fe720b60b72
+        // create a role_binding with the given role
+        role_binding:7a8f2026-c53b-11ee-84cc-5fe720b60b72#granted@role:7a8f2026-c53b-11ee-84cc-5fe720b60b72
+        // so a query can find all roles and bindings that represent the RBAC role 7a8f2026-c53b-11ee-84cc-5fe720b60b72
+        rbac/v1role:7a8f2026-c53b-11ee-84cc-5fe720b60b72#binding@role_binding:7a8f2026-c53b-11ee-84cc-5fe720b60b72
+        workspace:org_default#user_grant@role_binding:7a8f2026-c53b-11ee-84cc-5fe720b60b72
+        role:7a8f2026-c53b-11ee-84cc-5fe720b60b72_cost_management_all_read#cost_management_all_read@user:*
+        // so a query can find all roles and bindings that represent the RBAC role 7a8f2026-c53b-11ee-84cc-5fe720b60b72
+        rbac/v1role:7a8f2026-c53b-11ee-84cc-5fe720b60b72#role@role:7a8f2026-c53b-11ee-84cc-5fe720b60b72_cost_management_all_read
+        role_binding:7a8f2026-c53b-11ee-84cc-5fe720b60b72_cost_management_all_read#granted@role:7a8f2026-c53b-11ee-84cc-5fe720b60b72_cost_management_all_read
+        // so a query can find all roles and bindings that represent the RBAC role 7a8f2026-c53b-11ee-84cc-5fe720b60b72
+        rbac/v1role:7a8f2026-c53b-11ee-84cc-5fe720b60b72#binding@role_binding:7a8f2026-c53b-11ee-84cc-5fe720b60b72_cost_management_all_read
+        cost_management/aws_account:123456#user_grant@role_binding:7a8f2026-c53b-11ee-84cc-5fe720b60b72_cost_management_all_read
+        ```
+
+        [Authzed playground](https://play.authzed.com/s/Gzs5uN-eCTO9/schema)
+      requestBody:
+        content:
+            application/json:
+                schema:
+                    $ref: '#/components/schemas/api.rebac.v1.CreateRelationshipsRequest'
+                examples:
+                  addPrincipalToGroupExample:
+                    $ref: '#/components/examples/CreateRoleExample'
+      responses:
+        '200':
+          description: '{}'
+components:
+  schemas:
+    api.rebac.v1.CreateRelationshipsRequest:
+        type: object
+        properties:
+            touch:
+                type: boolean
+                description: 'true means that request will not error if any of the user-group assignments has already been created. Could also be false for the opposite semantics: i.e. to fail if any of the relationships already exist.'
+            relationships:
+                type: array
+                items:
+                    $ref: '#/components/schemas/api.rebac.v1.Relationship'
+    api.rebac.v1.Relationship:
+        type: object
+        properties:
+            object:
+                $ref: '#/components/schemas/api.rebac.v1.ObjectReference'
+            relation:
+                type: string
+            subject:
+                $ref: '#/components/schemas/api.rebac.v1.SubjectReference'
+    api.rebac.v1.SubjectReference:
+        type: object
+        properties:
+            relation:
+                type: string
+            object:
+                $ref: '#/components/schemas/api.rebac.v1.ObjectReference'
+    api.rebac.v1.ObjectReference:
+        type: object
+        properties:
+            type:
+                type: string
+            id:
+                type: string
+  examples:
+    AddPrincipalToGroupExample:
+      summary: An example of adding principal to group
+      value:
+        touch: true
+        relationships:
+          - object:
+              type: group
+              id: 9aca5b38-07b1-4873-aaae-d02c94c05673
+            relation: member
+            subject:
+              object:
+                type: user
+                id: user_dev
+    AddRoleToGroupExample:
+      summary: An example of adding role to group
+      value:
+        touch: true
+        relationships:
+          - object:
+              type: role_binding
+              id: ROLE-UUID
+            relation: subject
+            subject:
+              relation: member
+              object:
+                type: group
+                id: 0ff698d7-3972-4385-9a15-0fe9cd49f74
+    CreateRoleExample:
+      summary: TODO - needs to updated - An example of adding role to group
+      value:
+        touch: true
+        relationships:
+          - object:
+              type: group
+              id: 9aca5b38-07b1-4873-aaae-d02c94c05673
+            relation: member
+            subject:
+              object:
+                type: user
+                id: user_dev

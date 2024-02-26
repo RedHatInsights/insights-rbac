@@ -17,6 +17,8 @@
 
 """View for group management."""
 import logging
+from typing import Iterable, Optional
+from uuid import UUID
 
 import requests
 from django.conf import settings
@@ -44,7 +46,7 @@ from management.permissions import GroupAccessPermission
 from management.principal.it_service import ITService
 from management.principal.model import Principal
 from management.principal.proxy import PrincipalProxy
-from management.principal.serializer import PrincipalSerializer
+from management.principal.serializer import PrincipalSerializer, ServiceAccountSerializer
 from management.principal.view import ADMIN_ONLY_KEY, USERNAME_ONLY_KEY, VALID_BOOLEAN_VALUE
 from management.querysets import get_group_queryset, get_role_queryset
 from management.role.view import RoleViewSet
@@ -52,14 +54,12 @@ from management.utils import validate_and_get_key, validate_group_name, validate
 from rest_framework import mixins, serializers, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.filters import OrderingFilter
+from rest_framework.request import Request
 from rest_framework.response import Response
 
-from api.common.pagination import StandardResultsSetPagination
 from api.models import Tenant, User
 from .insufficient_privileges import InsufficientPrivilegesError
 from .service_account_not_found_error import ServiceAccountNotFoundError
-from ..authorization.token_validator import ITSSOTokenValidator, InvalidTokenError, MissingAuthorizationError
-from ..authorization.token_validator import UnableMeetPrerequisitesError
 from ..principal.unexpected_status_code_from_it import UnexpectedStatusCodeFromITError
 
 USERNAMES_KEY = "usernames"
@@ -71,6 +71,9 @@ PRINCIPAL_TYPE_KEY = "principal_type"
 PRINCIPAL_USERNAME_KEY = "principal_username"
 VALID_ROLE_ORDER_FIELDS = list(RoleViewSet.ordering_fields)
 ROLE_DISCRIMINATOR_KEY = "role_discriminator"
+SERVICE_ACCOUNT_CLIENT_IDS_KEY = "service_account_client_ids"
+SERVICE_ACCOUNT_DESCRIPTION_KEY = "service_account_description"
+SERVICE_ACCOUNT_NAME_KEY = "service_account_name"
 SERVICE_ACCOUNT_USERNAME_FORMAT = "service-account-{clientID}"
 TYPE_SERVICE_ACCOUNT = "service-account"
 VALID_EXCLUDE_VALUES = ["true", "false"]
@@ -395,17 +398,16 @@ class GroupViewSet(
         self,
         user: User,
         group: Group,
-        bearer_token: str,
-        service_acounts: [dict],
-        account_name: str = None,
-        org_id: str = None,
+        service_accounts: Iterable[dict],
+        account_name: str = "",
+        org_id: str = "",
     ) -> Group:
         """Process the list of service accounts and add them to the group."""
         # Fetch all the user's service accounts from IT. If we are on a development or testing environment, we might
         # want to skip calling IT
         it_service = ITService()
         if not settings.IT_BYPASS_IT_CALLS:
-            it_service_accounts = it_service.request_service_accounts(bearer_token=bearer_token)
+            it_service_accounts = it_service.request_service_accounts(bearer_token=user.bearer_token)
 
             # Organize them by their client ID.
             it_service_accounts_by_client_ids: dict[str, dict] = {}
@@ -415,7 +417,7 @@ class GroupViewSet(
             # Make sure that the service accounts the user specified are visible by them.
             it_sa_client_ids = it_service_accounts_by_client_ids.keys()
             invalid_service_accounts: set = set()
-            for specified_sa in service_acounts:
+            for specified_sa in service_accounts:
                 if specified_sa["clientID"] not in it_sa_client_ids:
                     invalid_service_accounts.add(specified_sa["clientID"])
 
@@ -428,7 +430,7 @@ class GroupViewSet(
 
         # Fetch the service account from our database to add it to the group. If it doesn't exist, we create
         # it.
-        for specified_sa in service_acounts:
+        for specified_sa in service_accounts:
             self.user_has_permission_act_on_service_account(user=user, service_account=specified_sa)
 
             client_id = specified_sa["clientID"]
@@ -500,7 +502,7 @@ class GroupViewSet(
         return group
 
     @action(detail=True, methods=["get", "post", "delete"])
-    def principals(self, request, uuid=None):
+    def principals(self, request: Request, uuid: Optional[UUID] = None):
         """Get, add or remove principals from a group."""
         """
         @api {get} /api/v1/groups/:uuid/principals/    Get principals for a group
@@ -610,57 +612,11 @@ class GroupViewSet(
 
             # Process the service accounts and add them to the group.
             if len(service_accounts) > 0:
-                bearer_token: str = None
-                try:
-                    # Attempt validating the JWT token.
-                    token_validator = ITSSOTokenValidator()
-                    bearer_token = token_validator.validate_token(request=request)
-                except MissingAuthorizationError:
-                    return Response(
-                        status=status.HTTP_401_UNAUTHORIZED,
-                        data={
-                            "errors": [
-                                {
-                                    "detail": "The authorization header is required for fetching service accounts.",
-                                    "source": "groups",
-                                    "status": str(status.HTTP_401_UNAUTHORIZED),
-                                }
-                            ]
-                        },
-                    )
-                except InvalidTokenError:
-                    return Response(
-                        status=status.HTTP_401_UNAUTHORIZED,
-                        data={
-                            "errors": [
-                                {
-                                    "detail": "Invalid token provided.",
-                                    "source": "groups",
-                                    "status": str(status.HTTP_401_UNAUTHORIZED),
-                                }
-                            ]
-                        },
-                    )
-                except UnableMeetPrerequisitesError:
-                    return Response(
-                        status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                        data={
-                            "errors": [
-                                {
-                                    "detail": "Unable to validate token.",
-                                    "source": "groups",
-                                    "status": str(status.HTTP_500_INTERNAL_SERVER_ERROR),
-                                }
-                            ]
-                        },
-                    )
-
                 try:
                     resp = self.add_service_accounts(
                         user=request.user,
                         group=group,
-                        service_acounts=service_accounts,
-                        bearer_token=bearer_token,
+                        service_accounts=service_accounts,
                         account_name=account,
                         org_id=org_id,
                     )
@@ -699,6 +655,79 @@ class GroupViewSet(
             # ... and return it.
             response = Response(status=status.HTTP_200_OK, data=output.data)
         elif request.method == "GET":
+            # Check if the request comes with a bunch of service account client IDs that we need to check. Since this
+            # query parameter is incompatible with any other query parameter, we make the checks first. That way if any
+            # other query parameter was specified, we simply return early.
+            if SERVICE_ACCOUNT_CLIENT_IDS_KEY in request.query_params:
+                if len(request.query_params) > 1:
+                    return Response(
+                        status=status.HTTP_400_BAD_REQUEST,
+                        data={
+                            "errors": [
+                                {
+                                    "detail": f"The '{SERVICE_ACCOUNT_CLIENT_IDS_KEY}' parameter is incompatible with"
+                                    " any other query parameter. Please, use it alone",
+                                    "source": "groups",
+                                    "status": str(status.HTTP_400_BAD_REQUEST),
+                                }
+                            ]
+                        },
+                    )
+
+                # Check that the specified query parameter is not empty.
+                service_account_client_ids_raw = request.query_params.get(SERVICE_ACCOUNT_CLIENT_IDS_KEY).strip()
+                if not service_account_client_ids_raw:
+                    return Response(
+                        status=status.HTTP_400_BAD_REQUEST,
+                        data={
+                            "errors": [
+                                {
+                                    "detail": "Not a single client ID was specified for the client IDs filter",
+                                    "source": "groups",
+                                    "status": str(status.HTTP_400_BAD_REQUEST),
+                                }
+                            ]
+                        },
+                    )
+
+                # Turn the received and comma separated client IDs into a manageable set.
+                received_client_ids: set[str] = set(service_account_client_ids_raw.split(","))
+
+                # Validate that the provided strings are actually UUIDs.
+                for rci in received_client_ids:
+                    try:
+                        UUID(rci)
+                    except ValueError:
+                        return Response(
+                            status=status.HTTP_400_BAD_REQUEST,
+                            data={
+                                "errors": [
+                                    {
+                                        "detail": f"The specified client ID '{rci}' is not a valid UUID",
+                                        "source": "groups",
+                                        "status": str(status.HTTP_400_BAD_REQUEST),
+                                    }
+                                ]
+                            },
+                        )
+
+                # Generate the report of which of the tenant's service accounts are in a group, and which
+                # ones are available to be added to the given group.
+                it_service = ITService()
+                result: dict = it_service.generate_service_accounts_report_in_group(
+                    group=group, client_ids=received_client_ids
+                )
+
+                # Prettify the output payload and return it.
+                return Response(
+                    status=status.HTTP_200_OK,
+                    data={
+                        "meta": {"count": len(result)},
+                        "links": {},
+                        "data": result,
+                    },
+                )
+
             # Get the "order_by" query parameter.
             all_valid_fields = VALID_PRINCIPAL_ORDER_FIELDS + ["-" + field for field in VALID_PRINCIPAL_ORDER_FIELDS]
             sort_order = None
@@ -726,61 +755,19 @@ class GroupViewSet(
 
             # Make sure we return early for service accounts.
             if principalType == "service-account":
-                bearer_token: str = None
-                try:
-                    # Attempt validating the JWT token.
-                    token_validator = ITSSOTokenValidator()
-                    bearer_token = token_validator.validate_token(request=request)
-                except MissingAuthorizationError:
-                    return Response(
-                        status=status.HTTP_401_UNAUTHORIZED,
-                        data={
-                            "errors": [
-                                {
-                                    "detail": "The authorization header is required for fetching service accounts.",
-                                    "source": "groups",
-                                    "status": str(status.HTTP_401_UNAUTHORIZED),
-                                }
-                            ]
-                        },
-                    )
-                except InvalidTokenError:
-                    return Response(
-                        status=status.HTTP_401_UNAUTHORIZED,
-                        data={
-                            "errors": [
-                                {
-                                    "detail": "Invalid token provided.",
-                                    "source": "groups",
-                                    "status": str(status.HTTP_401_UNAUTHORIZED),
-                                }
-                            ]
-                        },
-                    )
-                except UnableMeetPrerequisitesError:
-                    return Response(
-                        status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                        data={
-                            "errors": [
-                                {
-                                    "detail": "Unable to validate token.",
-                                    "source": "groups",
-                                    "status": str(status.HTTP_500_INTERNAL_SERVER_ERROR),
-                                }
-                            ]
-                        },
-                    )
+                # Get the service account's description and name filters, and the principal's username filter too.
+                # Finally, get the limit and offset parameters.
+                options[SERVICE_ACCOUNT_DESCRIPTION_KEY] = request.query_params.get(SERVICE_ACCOUNT_DESCRIPTION_KEY)
+                options[SERVICE_ACCOUNT_NAME_KEY] = request.query_params.get(SERVICE_ACCOUNT_NAME_KEY)
 
-                # Get the principal username option parameter and the limit and offset parameters too.
+                # Get the "principal username" parameter.
                 options[PRINCIPAL_USERNAME_KEY] = request.query_params.get(PRINCIPAL_USERNAME_KEY)
-                options["limit"] = int(request.query_params.get("limit", StandardResultsSetPagination.default_limit))
-                options["offset"] = int(request.query_params.get("offset", 0))
 
                 # Fetch the group's service accounts.
                 it_service = ITService()
                 try:
                     service_accounts = it_service.get_service_accounts_group(
-                        group=group, bearer_token=bearer_token, options=options
+                        group=group, user=request.user, options=options
                     )
                 except (requests.exceptions.ConnectionError, UnexpectedStatusCodeFromITError):
                     return Response(
@@ -798,9 +785,9 @@ class GroupViewSet(
 
                 # Prettify the output payload and return it.
                 page = self.paginate_queryset(service_accounts)
-                serializer = PrincipalSerializer(page, many=True)
+                serializer = ServiceAccountSerializer(page, many=True)
 
-                return self.get_paginated_response(service_accounts)
+                return self.get_paginated_response(serializer.data)
 
             principals_from_params = self.filtered_principals(group, request)
             page = self.paginate_queryset(principals_from_params)
@@ -1061,7 +1048,7 @@ class GroupViewSet(
         return roles.exclude(uuid__in=roles_for_group)
 
     def remove_service_accounts(
-        self, user: User, group: Group, service_accounts: [str], account_name: str = None, org_id: str = None
+        self, user: User, group: Group, service_accounts: Iterable[str], account_name: str = "", org_id: str = ""
     ) -> None:
         """Remove the given service accounts from the tenant."""
         # Log our intention.
@@ -1126,8 +1113,8 @@ class GroupViewSet(
         if owner:
             is_user_owner = user.username == owner
 
-        # Check if the user has the "User Access administator" permission. Leaving the RAW query here
-        username: str = user.username
+        # Check if the user has the "User Access administrator" permission. Leaving the RAW query here
+        username: str = user.username  # type: ignore
         query = (
             "SELECT EXISTS ( "
             "SELECT "

@@ -40,7 +40,7 @@ class BasicCache:
         return self._connection
 
     def enable_caching(self):
-        """Enable caching and incremements prometheus metric that redis caching is enabled."""
+        """Enable caching and increment prometheus metric that redis caching is enabled."""
         self.use_caching = True
         logger.info("Redis Cache Enabled")
         redis_enable_cache_get_total.inc()

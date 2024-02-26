@@ -15,17 +15,12 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Test the caching system."""
-import pickle
-
 from unittest import skipIf
-from unittest.mock import call, MagicMock, patch
+from unittest.mock import patch
 from rbac.settings import KAFKA_ENABLED, MOCK_KAFKA
 
-from django.conf import settings
-from django.db import connection
 from django.test import TestCase
 
-from management.cache import TenantCache
 from management.models import Access, Group, Permission, Policy, Principal, ResourceDefinition, Role
 from api.models import Tenant
 

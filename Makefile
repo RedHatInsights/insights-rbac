@@ -30,6 +30,7 @@ Please use \`make <target>' where <target> is one of:
   html                     create html documentation for the project
   lint                     run linting against the project
   format                   format linting errors found by lint task
+  typecheck                run type check
 
 --- Commands using local services ---
   create-test-db-file      create a Postgres DB dump file for RBAC
@@ -94,6 +95,9 @@ lint:
 
 format:
 	black -t py39 -l 119 rbac tests
+
+typecheck:
+	mypy --install-types --non-interactive rbac
 
 reinitdb:
 	make start-db

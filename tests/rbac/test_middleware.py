@@ -16,9 +16,12 @@
 #
 """Test the project middleware."""
 import collections
+import json
 import os
+from unittest import mock
 from unittest.mock import Mock
 from django.conf import settings
+from django.http import QueryDict
 
 from django.test import TestCase
 from django.urls import reverse
@@ -30,6 +33,7 @@ from api.models import Tenant, User
 from api.serializers import create_tenant_name
 from tests.identity_request import IdentityRequest
 from rbac.middleware import HttpResponseUnauthorizedRequest, IdentityHeaderMiddleware
+from management.authorization.token_validator import UnableMeetPrerequisitesError
 from management.models import Access, Group, Permission, Principal, Policy, ResourceDefinition, Role
 
 
@@ -272,6 +276,205 @@ class IdentityHeaderMiddlewareTest(IdentityRequest):
         middleware.process_request(request)
         self.assertEqual(Tenant.objects.filter(tenant_name="test_user").count(), 1)
         self.assertEqual(Tenant.objects.filter(tenant_name="test_user").first().org_id, None)
+
+    def test_should_load_user_permissions_org_admin(self):
+        """Tests that the function that determines if user permissions should be loaded returns False for org admins."""
+        user = User()
+        user.admin = True
+
+        middleware = IdentityHeaderMiddleware(get_response=Mock())
+        self.assertEqual(middleware.should_load_user_permissions(Mock(), user), False)
+
+    def test_should_load_user_permissions_regular_user_non_access_endpoint(self):
+        """Tests that the function under test returns True for regular users who have requested a path which isn't the access path"""
+        user = User()
+        user.admin = False
+
+        request = Mock()
+        request.path = "/principals/"
+
+        middleware = IdentityHeaderMiddleware(get_response=Mock())
+        self.assertEqual(middleware.should_load_user_permissions(request, user), True)
+
+    def test_should_load_user_permissions_regular_user_access_non_get_request(self):
+        """Tests that the function under test returns True for regular users who have requested the access path but with a different HTTP verb than GET"""
+        user = User()
+        user.admin = False
+
+        request = Mock()
+        request.path = "/access/"
+
+        middleware = IdentityHeaderMiddleware(get_response=Mock())
+
+        http_verbs = ["DELETE", "PATCH", "POST"]
+        for verb in http_verbs:
+            request.method = verb
+            self.assertEqual(middleware.should_load_user_permissions(request, user), True)
+
+    def test_should_load_user_permissions_regular_user_access(self):
+        """Tests that the function under test returns True for regular users who have requested the access path with the expected query parameters"""
+        user = User()
+        user.admin = False
+
+        request = Mock()
+        request.path = "/access/"
+        request.method = "GET"
+        request.GET = QueryDict("application=rbac&username=foo")
+        middleware = IdentityHeaderMiddleware(get_response=Mock())
+        self.assertEqual(middleware.should_load_user_permissions(request, user), True)
+
+    def test_should_load_user_permissions_regular_user_access_missing_query_params(self):
+        """Tests that the function under test returns False for regular users who have requested the access path without the expected query parameters"""
+        user = User()
+        user.admin = False
+
+        request = Mock()
+        request.path = "/access/"
+        request.method = "GET"
+
+        test_cases: list[QueryDict] = [
+            QueryDict("application=rbac"),
+            QueryDict("username=foo"),
+            QueryDict("applications=rbac&username=foo"),
+            QueryDict("application=rbac&usernames=foo"),
+        ]
+
+        middleware = IdentityHeaderMiddleware(get_response=Mock())
+        for test_case in test_cases:
+            request.GET = test_case
+
+            self.assertEqual(middleware.should_load_user_permissions(request, user), False)
+
+    @mock.patch("management.authorization.token_validator.ITSSOTokenValidator._get_json_web_keyset")
+    def test_service_account_unable_validate_token(self, _get_json_web_keyset: Mock):
+        """Test 500 response for a service account request when unable to meet prerequisites to validate the token."""
+        # Prepare the mocked service account data.
+        service_account_data = self._create_service_account_data()
+        customer = self._create_customer_data()
+
+        # Prepare the mocked request.
+        request_context = self._create_request_context(
+            customer_data=customer, user_data=None, service_account_data=service_account_data
+        )
+        mock_request = request_context["request"]
+        mock_request.path = "/api/v1/access/"
+        middleware = IdentityHeaderMiddleware(get_response=IdentityHeaderMiddleware.process_request)
+
+        # Set a non-empty authorization header.
+        mock_request.headers = {"Authorization": "Bearer invalid-bearer-token"}
+        # Pretend that we are not able to contact IT in order to fetch the required key set to validate the token.
+        _get_json_web_keyset.side_effect = UnableMeetPrerequisitesError()
+
+        # Call the middleware under test.
+        result = middleware.process_request(mock_request)
+
+        # Assert that the content type header has the correct value.
+        self.assertEqual(
+            "application/json", result.headers.get("Content-Type"), "the content type header has the incorrect value"
+        )
+
+        # Assert that the status code is the expected one.
+        self.assertEqual(
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            result.status_code,
+            "unexpected status code received when we are unable to meet the prerequisites to validate the token",
+        )
+
+        # Assert that the contents of the body are the expected ones.
+        content = json.loads(result.content.decode("utf-8"))
+        errors = content["errors"]
+        if not errors:
+            self.fail('expected an "errors" array in the received response\'s body, but it was not found')
+
+        if len(errors) != 1:
+            self.fail(f'expected a single error in the "errors" array, {len(errors)} errors received')
+
+        error = errors[0]
+        error_detail = error.get("detail")
+
+        if not error_detail:
+            self.fail("the error detail is missing from the error object")
+
+        self.assertEqual(
+            error_detail, "Unable to validate the provided token.", "unexpected error detail received in the response"
+        )
+
+        error_status = error.get("status")
+
+        if not error_status:
+            self.fail("the error object is missing the status code")
+
+        self.assertEqual(
+            str(status.HTTP_500_INTERNAL_SERVER_ERROR),
+            error_status,
+            "unexpected status code received in the body of the response",
+        )
+
+    @mock.patch("management.authorization.token_validator.ITSSOTokenValidator._get_json_web_keyset")
+    @mock.patch("management.authorization.token_validator.jwt.decode")
+    def test_service_account_with_invalid_bearer_token(self, decode: Mock, _get_json_web_keyset: Mock):
+        """Test 401 response for a service account request with an invalid bearer token."""
+        # Prepare the mocked service account data.
+        service_account_data = self._create_service_account_data()
+        customer = self._create_customer_data()
+
+        # Prepare the mocked request.
+        request_context = self._create_request_context(
+            customer_data=customer, user_data=None, service_account_data=service_account_data
+        )
+        mock_request = request_context["request"]
+        mock_request.path = "/api/v1/access/"
+        middleware = IdentityHeaderMiddleware(get_response=IdentityHeaderMiddleware.process_request)
+
+        # Set a non-empty authorization header.
+        mock_request.headers = {"Authorization": "Bearer invalid-bearer-token"}
+        # The token validator should avoid calling IT for the test.
+        _get_json_web_keyset.return_value = "invalid-return-value"
+        # Make the "decode" function raise any exception to test that it gets properly handled.
+        decode.side_effect = ValueError("invalid value")
+
+        # Call the middleware under test.
+        result = middleware.process_request(mock_request)
+
+        # Assert that the content type header has the correct value.
+        self.assertEqual(
+            "application/json", result.headers.get("Content-Type"), "the content type header has the incorrect value"
+        )
+
+        # Assert that the status code is the expected one.
+        self.assertEqual(
+            status.HTTP_401_UNAUTHORIZED,
+            result.status_code,
+            "unexpected status code received when the bearer token is invalid",
+        )
+
+        # Assert that the contents of the body are the expected ones.
+        content = json.loads(result.content.decode("utf-8"))
+        errors = content["errors"]
+        if not errors:
+            self.fail('expected an "errors" array in the received response\'s body, but it was not found')
+
+        if len(errors) != 1:
+            self.fail(f'expected a single error in the "errors" array, {len(errors)} errors received')
+
+        error = errors[0]
+        error_detail = error.get("detail")
+
+        if not error_detail:
+            self.fail("the error detail is missing from the error object")
+
+        self.assertEqual(error_detail, "Invalid token provided.", "unexpected error detail received in the response")
+
+        error_status = error.get("status")
+
+        if not error_status:
+            self.fail("the error object is missing the status code")
+
+        self.assertEqual(
+            str(status.HTTP_401_UNAUTHORIZED),
+            error_status,
+            "unexpected status code received in the body of the response",
+        )
 
 
 class ServiceToService(IdentityRequest):
