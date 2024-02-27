@@ -17,7 +17,9 @@
 """Test the API exception handler module."""
 
 from django.test import TestCase
+from management.authorization.invalid_token import InvalidTokenError
 from management.authorization.missing_authorization import MissingAuthorizationError
+from management.authorization.unable_meet_prerequisites import UnableMeetPrerequisitesError
 from rest_framework import status
 from rest_framework.views import Response
 from unittest.mock import Mock
@@ -88,8 +90,56 @@ class ExceptionHandlerTest(TestCase):
         ]
         self.assertEqual(formatted_errors, expected)
 
+    def test_invalid_token_exception_handled(self):
+        """Test that an "invalid token" exception gets properly handled."""
+        # Call the function under test.
+        response: Response = custom_exception_handler(exc=InvalidTokenError(), context=Mock())
+
+        # Assert that the correct response was returned for the exception.
+        self.assertEqual(
+            status.HTTP_401_UNAUTHORIZED,
+            response.status_code,
+            "unexpected status code in the response for the 'InvalidTokenError' exception handling",
+        )
+
+        self.assertEqual(
+            "Invalid token provided.",
+            str(response.data.get("errors")[0].get("detail")),
+            "unexpected error message in the response for the 'InvalidTokenError' exception handling",
+        )
+
     def test_missing_authorization_exception_handled(self):
-        """Test that a missing authorization exception gets properly handled"""
+        """Test that a "missing authorization" exception gets properly handled."""
+        # Mock the view and the context.
+        mocked_view = Mock()
+        mocked_view.basename = "some-view-handler"
+
+        context = {"view": mocked_view}
+
+        # Call the function under test.
+        response: Response = custom_exception_handler(exc=MissingAuthorizationError(), context=context)
+
+        # Assert that the correct response was returned for the exception.
+        self.assertEqual(
+            status.HTTP_401_UNAUTHORIZED,
+            response.status_code,
+            "unexpected status code in the response for the 'MissingAuthorizationError' exception handling",
+        )
+
+        self.assertEqual(
+            "A Bearer token in an authorization header is required when performing service account operations.",
+            str(response.data.get("errors")[0].get("detail")),
+            "unexpected error message in the response for the 'MissingAuthorizationError' exception handling",
+        )
+
+        self.assertEqual(
+            mocked_view.basename,
+            str(response.data.get("errors")[0].get("source")),
+            "unexpected source view in the response for the 'MissingAuthorizationError' exception handling",
+        )
+
+    def test_unable_meet_prerequisites_exception_handled(self):
+        """Test that an "unable to meet prerequisites" exception gets properly handled."""
         # Mock the view and the context.
         mocked_view = Mock()
         mocked_view.basename = "some-view-handler"

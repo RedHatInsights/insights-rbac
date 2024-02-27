@@ -19,7 +19,9 @@
 import copy
 
 from django.db import IntegrityError
+from management.authorization.invalid_token import InvalidTokenError
 from management.authorization.missing_authorization import MissingAuthorizationError
+from management.authorization.unable_meet_prerequisites import UnableMeetPrerequisitesError
 from rest_framework import status
 from rest_framework.views import Response, exception_handler
 
@@ -83,21 +85,47 @@ def custom_exception_handler(exc, context):
             },  # noqa: E231
             status=status.HTTP_400_BAD_REQUEST,
         )
-    elif isinstance(exc, MissingAuthorizationError):
-        source_view = context.get("view")
+    elif isinstance(exc, InvalidTokenError):
         response = Response(
             data={
                 "errors": [
                     {
-                        "detail": "A Bearer token in an authorization header is required when"
-                        " performing service account operations.",
-                        "source": source_view.basename,
+                        "detail": "Invalid token provided.",
                         "status": str(status.HTTP_401_UNAUTHORIZED),
                     }
                 ]
             },
             content_type="application/json",
             status=status.HTTP_401_UNAUTHORIZED,
+        )
+    elif isinstance(exc, MissingAuthorizationError):
+        response = Response(
+            data={
+                "errors": [
+                    {
+                        "detail": "A Bearer token in an authorization header is required when"
+                        " performing service account operations.",
+                        "source": context.get("view").basename,
+                        "status": str(status.HTTP_401_UNAUTHORIZED),
+                    }
+                ]
+            },
+            content_type="application/json",
+            status=status.HTTP_401_UNAUTHORIZED,
+        )
+    elif isinstance(exc, UnableMeetPrerequisitesError):
+        response = Response(
+            data={
+                "errors": [
+                    {
+                        "detail": "Unable to validate the provided token.",
+                        "source": context.get("view").basename,
+                        "status": str(status.HTTP_500_INTERNAL_SERVER_ERROR),
+                    }
+                ]
+            },
+            content_type="application/json",
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
 
     return response

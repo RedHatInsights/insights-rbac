@@ -27,6 +27,8 @@ from django.db import transaction
 from django.db.models.aggregates import Count
 from django.utils.translation import gettext as _
 from django_filters import rest_framework as filters
+from management.authorization.scope_claims import ScopeClaims
+from management.authorization.token_validator import ITSSOTokenValidator
 from management.filters import CommonFilters
 from management.group.definer import add_roles, remove_roles, set_system_flag_before_update
 from management.group.model import Group
@@ -612,6 +614,12 @@ class GroupViewSet(
 
             # Process the service accounts and add them to the group.
             if len(service_accounts) > 0:
+                token_validator = ITSSOTokenValidator()
+                request.user.bearer_token = token_validator.validate_token(
+                    request=request,
+                    additional_scopes_to_validate=set[ScopeClaims]([ScopeClaims.SERVICE_ACCOUNTS_CLAIM]),
+                )
+
                 try:
                     resp = self.add_service_accounts(
                         user=request.user,
@@ -764,6 +772,12 @@ class GroupViewSet(
                 options[PRINCIPAL_USERNAME_KEY] = request.query_params.get(PRINCIPAL_USERNAME_KEY)
 
                 # Fetch the group's service accounts.
+                token_validator = ITSSOTokenValidator()
+                request.user.bearer_token = token_validator.validate_token(
+                    request=request,
+                    additional_scopes_to_validate=set[ScopeClaims]([ScopeClaims.SERVICE_ACCOUNTS_CLAIM]),
+                )
+
                 it_service = ITService()
                 try:
                     service_accounts = it_service.get_service_accounts_group(
@@ -826,6 +840,12 @@ class GroupViewSet(
                 ]
 
                 try:
+                    token_validator = ITSSOTokenValidator()
+                    request.user.bearer_token = token_validator.validate_token(
+                        request=request,
+                        additional_scopes_to_validate=set[ScopeClaims]([ScopeClaims.SERVICE_ACCOUNTS_CLAIM]),
+                    )
+
                     self.remove_service_accounts(
                         user=request.user,
                         service_accounts=service_accounts,

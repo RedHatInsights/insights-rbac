@@ -15,7 +15,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 
-"""A token instrospector class which validates that the given token is valid."""
+"""A token introspector class which validates that the given token is valid."""
 import logging
 import re
 
@@ -30,16 +30,24 @@ from rest_framework.request import Request
 
 from .invalid_token import InvalidTokenError
 from .missing_authorization import MissingAuthorizationError
+from .scope_claims import ScopeClaims
 from .unable_meet_prerequisites import UnableMeetPrerequisitesError
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
-# The service accounts claim we are expecting to find in the token.
-SERVICE_ACCOUNTS_CLAIM = "api.iam.service_accounts"
-
 
 class ITSSOTokenValidator:
     """JWT token  validator."""
+
+    # Instance variable for the class.
+    _instance = None
+
+    def __new__(cls, *args, **kwargs):
+        """Create a single instance of the class."""
+        if cls._instance is None:
+            cls._instance = super().__new__(cls, *args, **kwargs)
+
+        return cls._instance
 
     def __init__(self):
         """Get the OIDC configuration URL."""
@@ -114,7 +122,7 @@ class ITSSOTokenValidator:
             logger.error(f"Unable to import IT's public keys to validate the token: {e}")
             raise UnableMeetPrerequisitesError()
 
-    def validate_token(self, request: Request) -> str:
+    def validate_token(self, request: Request, additional_scopes_to_validate: set[ScopeClaims]) -> str:
         """Validate the JWT token issued by Red Hat's SSO.
 
         Performs validations on the issuer, audience and scope of the token. Raises exceptions if the token is not
@@ -151,14 +159,21 @@ class ITSSOTokenValidator:
 
         # Make sure that the token is valid.
         try:
-            # Manually check for the service accounts claim in the scope claim. We do this because "joserfc" doesn't
-            # have a way to specify that we want to focus of one of the multiple scope claims that the token may
-            # have.
-            scope_claim = token.claims.get("scope")
-            if not scope_claim:
-                raise ValueError("the provided token does not have the required scope claim")
-            elif SERVICE_ACCOUNTS_CLAIM not in scope_claim:
-                raise ValueError(f"the provided token does not have the required {SERVICE_ACCOUNTS_CLAIM}")
+            # Manually check for the additional scope claims in the incoming scope claim. We do this because "joserfc"
+            # doesn't have a way to specify that we want to focus on some specific claims from the many that the token
+            # may have.
+            if len(additional_scopes_to_validate) > 0:
+                # Make sure that the "scope" claim of the token is not empty.
+                scope_claim = token.claims.get("scope")
+                if not scope_claim:
+                    raise ValueError("the provided does not have any contents in the scope claim")
+
+                # Validate that the additional scopes are present in the token.
+                for scope_to_validate in additional_scopes_to_validate:
+                    if scope_to_validate not in scope_claim:
+                        raise ValueError(
+                            f"the provided token does not have the required '{scope_to_validate}' claim in the scope"
+                        )
 
             # Validate the rest of the claims, including the token expiration which will be validated with the function
             # below.
