@@ -218,7 +218,7 @@ For additional information please refer to Contributing_.
 
 .. |license| image:: https://img.shields.io/github/license/RedHatInsights/insights-rbac.svg
    :target: https://github.com/RedHatInsights/insights-rbac/blob/master/LICENSE
-.. |Build Status| image:: https://ci.ext.devshift.net/job/RedHatInsights-insights-rbac-gh-build-master/badge/icon
+.. |Build Status| image:: https://ci.ext.devshift.net/buildStatus/icon?job=RedHatInsights-insights-rbac-gh-build-master
    :target: https://ci.ext.devshift.net/job/RedHatInsights-insights-rbac-gh-build-master/
 .. |Docs| image:: https://readthedocs.org/projects/insights-rbac/badge/
    :target: https://insights-rbac.readthedocs.io/en/latest/
