@@ -667,20 +667,23 @@ class GroupViewSet(
             # query parameter is incompatible with any other query parameter, we make the checks first. That way if any
             # other query parameter was specified, we simply return early.
             if SERVICE_ACCOUNT_CLIENT_IDS_KEY in request.query_params:
-                if len(request.query_params) > 1:
-                    return Response(
-                        status=status.HTTP_400_BAD_REQUEST,
-                        data={
-                            "errors": [
-                                {
-                                    "detail": f"The '{SERVICE_ACCOUNT_CLIENT_IDS_KEY}' parameter is incompatible with"
-                                    " any other query parameter. Please, use it alone",
-                                    "source": "groups",
-                                    "status": str(status.HTTP_400_BAD_REQUEST),
-                                }
-                            ]
-                        },
-                    )
+                # pagination is ignored in this case
+                for query_param in request.query_params:
+                    if query_param not in [SERVICE_ACCOUNT_CLIENT_IDS_KEY, "limit", "offset"]:
+                        return Response(
+                            status=status.HTTP_400_BAD_REQUEST,
+                            data={
+                                "errors": [
+                                    {
+                                        "detail": f"The '{SERVICE_ACCOUNT_CLIENT_IDS_KEY}' "
+                                        "parameter is incompatible with "
+                                        "any other query parameter. Please, use it alone",
+                                        "source": "groups",
+                                        "status": str(status.HTTP_400_BAD_REQUEST),
+                                    }
+                                ]
+                            },
+                        )
 
                 # Check that the specified query parameter is not empty.
                 service_account_client_ids_raw = request.query_params.get(SERVICE_ACCOUNT_CLIENT_IDS_KEY).strip()
