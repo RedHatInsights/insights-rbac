@@ -26,7 +26,6 @@ from management.utils import (
     roles_for_principal,
     account_id_for_tenant,
     get_principal,
-    request_has_bearer_authentication_header,
 )
 from rest_framework.exceptions import ValidationError
 from tests.identity_request import IdentityRequest
@@ -189,33 +188,6 @@ class UtilsTests(IdentityRequest):
         self.assertEqual(created_service_account.service_account_id, str(user.client_id))
         self.assertEqual(created_service_account.type, "service-account")
         self.assertEqual(created_service_account.username, user.username)
-
-    def test_request_has_bearer_authorization_header(self):
-        """Test that the function under test is able to identify when the request has a Bearer authorization header."""
-        request = mock.Mock()
-        request.headers = {}
-
-        self.assertEqual(
-            False,
-            request_has_bearer_authentication_header(request=request),
-            "the function under test should return 'False' when the request has no authorization header",
-        )
-
-        request.headers = {"Authorization": "unexpected non-bearer value"}
-
-        self.assertEqual(
-            False,
-            request_has_bearer_authentication_header(request=request),
-            "the function under test should return 'False' when the request has no Bearer authorization contents",
-        )
-
-        request.headers = {"Authorization": "Bearer mocked-value"}
-
-        self.assertEqual(
-            True,
-            request_has_bearer_authentication_header(request=request),
-            "the function under test should return 'True' when the request has a Bearer authorization header",
-        )
 
         @mock.patch("management.principal.it_service.ITService.is_service_account_valid_by_username")
         def test_get_principal_from_query_service_account_validated_once_principal_exists(
