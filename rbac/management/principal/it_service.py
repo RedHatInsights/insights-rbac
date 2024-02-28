@@ -211,7 +211,7 @@ class ITService:
                 return False
             elif len(service_accounts) == 1:
                 sa = service_accounts[0]
-                return client_id == sa.get("clientId")
+                return client_id == sa.get("clientID")
             else:
                 LOGGER.error(
                     f'unexpected number of service accounts received from IT. Wanted one with client ID "{client_id}",'

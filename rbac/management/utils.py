@@ -23,6 +23,8 @@ from uuid import UUID
 from django.conf import settings
 from django.core.exceptions import PermissionDenied
 from django.utils.translation import gettext as _
+from management.authorization.scope_claims import ScopeClaims
+from management.authorization.token_validator import ITSSOTokenValidator
 from management.models import Access, Group, Policy, Principal, Role
 from management.permissions.principal_access import PrincipalAccessPermission
 from management.principal.it_service import ITService
@@ -74,14 +76,21 @@ def get_principal(
     # First check if principal exist on our side,
     # if not call BOP to check if user exist in the account.
     tenant: Tenant = request.tenant
+    user = request.user
+
+    # Get the Bearer Token validated to get Service Accounts from IT
+    if ITService.is_username_service_account(username=username):
+        token_validator = ITSSOTokenValidator()
+        user.bearer_token = token_validator.validate_token(
+            request=request, additional_scopes_to_validate=set[ScopeClaims]([ScopeClaims.SERVICE_ACCOUNTS_CLAIM])
+        )
+
     try:
         # If the username was provided through a query we must verify if it exists in the corresponding services first.
         if from_query:
             if ITService.is_username_service_account(username=username):
                 it_service = ITService()
-                if not it_service.is_service_account_valid_by_username(
-                    user=request.user, service_account_username=username
-                ):
+                if not it_service.is_service_account_valid_by_username(user=user, service_account_username=username):
                     raise serializers.ValidationError(
                         {"detail": f"No data found for service account with username '{username}'"}
                     )
@@ -94,9 +103,7 @@ def get_principal(
         if not from_query:
             if ITService.is_username_service_account(username):
                 it_service = ITService()
-                if not it_service.is_service_account_valid_by_username(
-                    user=request.user, service_account_username=username
-                ):
+                if not it_service.is_service_account_valid_by_username(user=user, service_account_username=username):
                     raise serializers.ValidationError(
                         {"detail": f"No data found for service account with username '{username}'"}
                     )
