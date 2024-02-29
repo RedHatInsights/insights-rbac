@@ -290,7 +290,16 @@ class IntegrationViewsTests(IdentityRequest):
                     "username": "user_a",
                     "account_number": "1111111",
                     "is_active": True,
-                }
+                },
+                {
+                    "org_id": "100001",
+                    "is_org_admin": False,
+                    "is_internal": False,
+                    "id": 52567474,
+                    "username": "user_admin",
+                    "account_number": "1111111",
+                    "is_active": True,
+                },
             ],
         },
     )

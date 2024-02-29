@@ -48,7 +48,7 @@ from management.permissions import GroupAccessPermission
 from management.principal.it_service import ITService
 from management.principal.model import Principal
 from management.principal.proxy import PrincipalProxy
-from management.principal.serializer import PrincipalSerializer, ServiceAccountSerializer
+from management.principal.serializer import ServiceAccountSerializer
 from management.principal.view import ADMIN_ONLY_KEY, USERNAME_ONLY_KEY, VALID_BOOLEAN_VALUE
 from management.querysets import get_group_queryset, get_role_queryset
 from management.role.view import RoleViewSet
@@ -807,25 +807,21 @@ class GroupViewSet(
                 return self.get_paginated_response(serializer.data)
 
             principals_from_params = self.filtered_principals(group, request)
-            page = self.paginate_queryset(principals_from_params)
-            serializer = PrincipalSerializer(page, many=True)
-            principal_data = serializer.data
-            if principal_data:
-                username_list = [principal["username"] for principal in principal_data]
-            else:
-                username_list = []
-            proxy = PrincipalProxy()
+            username_list = [principal.username for principal in principals_from_params]
 
             admin_only = validate_and_get_key(request.query_params, ADMIN_ONLY_KEY, VALID_BOOLEAN_VALUE, False, False)
             if admin_only == "true":
                 options[ADMIN_ONLY_KEY] = True
 
+            proxy = PrincipalProxy()
             if settings.AUTHENTICATE_WITH_ORG_ID:
                 resp = proxy.request_filtered_principals(username_list, org_id=org_id, options=options)
             else:
                 resp = proxy.request_filtered_principals(username_list, account=account, options=options)
             if isinstance(resp, dict) and "errors" in resp:
                 return Response(status=resp.get("status_code"), data=resp.get("errors"))
+
+            self.paginate_queryset(resp.get("data"))
             response = self.get_paginated_response(resp.get("data"))
         else:
             self.protect_system_groups("remove principals")
