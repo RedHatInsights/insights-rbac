@@ -239,15 +239,28 @@ class ITServiceTests(IdentityRequest):
             "the client ID was not correctly extracted from a full username",
         )
 
-        # Call the function under test with an invalid username which contains a bad formed UUID.
+        # Call the function under test with a username without client ID (UUID).
         try:
-            ITService.extract_client_id_service_account_username(username="abcde")
+            self.assertFalse(ITService.extract_client_id_service_account_username(username="abcde"))
             self.fail(
                 "when providing an invalid UUID as the client ID to be extracted, the function under test should raise an error"
             )
         except serializers.ValidationError as ve:
             self.assertEqual(
-                "unable to extract the client ID from the service account's username because the provided UUID is invalid",
+                "Invalid ClientId for a Service Account username",
+                str(ve.detail.get("detail")),
+                "unexpected error message when providing an invalid UUID as the client ID",
+            )
+
+        # Call the function under test with an invalid username which contains a bad formed UUID.
+        try:
+            ITService.extract_client_id_service_account_username(username="service-account-xxxxx")
+            self.fail(
+                "when providing an invalid UUID as the client ID to be extracted, the function under test should raise an error"
+            )
+        except serializers.ValidationError as ve:
+            self.assertEqual(
+                "Invalid format for a Service Account username",
                 str(ve.detail.get("detail")),
                 "unexpected error message when providing an invalid UUID as the client ID",
             )
