@@ -202,22 +202,16 @@ class ITService:
         if settings.IT_BYPASS_IT_CALLS:
             return True
         else:
-            service_accounts: list[dict] = self.request_service_accounts(
-                bearer_token=user.bearer_token,
-                client_ids=[client_id],
-            )
+            # In theory, we should be able to pass the client ID to the function below to just get the specified
+            # service account and check if it is present or not. However, due to a bug, we need to fetch the whole
+            # collection for now. More details in https://issues.redhat.com/browse/RHCLOUD-31265 .
+            service_accounts: list[dict] = self.request_service_accounts(bearer_token=user.bearer_token)
 
-            if len(service_accounts) == 0:
-                return False
-            elif len(service_accounts) == 1:
-                sa = service_accounts[0]
-                return client_id == sa.get("clientID")
-            else:
-                LOGGER.error(
-                    f'unexpected number of service accounts received from IT. Wanted one with client ID "{client_id}",'
-                    f" got {len(service_accounts)}: {service_accounts}"
-                )
-                return False
+            for sa in service_accounts:
+                if client_id == sa.get("clientID"):
+                    return True
+
+            return False
 
     def get_service_accounts(self, user: User, options: dict = {}) -> Tuple[list[dict], int]:
         """Request and returns the service accounts for the given tenant."""

@@ -88,6 +88,60 @@ class ITServiceTests(IdentityRequest):
             settings.IT_BYPASS_IT_CALLS = original_bypass_it_calls_value
 
     @mock.patch("management.principal.it_service.ITService.request_service_accounts")
+    def test_is_service_account_valid(self, request_service_accounts: mock.Mock):
+        """Tests that the service account is considered valid when there is a match between the response from IT and the requested service account"""
+        user = User()
+        user.bearer_token = "mocked-bt"
+
+        expected_client_id = str(uuid.uuid4())
+        request_service_accounts.return_value = [{"clientID": expected_client_id}]
+
+        self.assertEqual(
+            True,
+            self.it_service._is_service_account_valid(user=user, client_id=expected_client_id),
+            "when IT responds with a single service account and it matches, the function under test should return 'True'",
+        )
+
+        request_service_accounts.return_value = [
+            {"clientID": str(uuid.uuid4())},
+            {"clientID": str(uuid.uuid4())},
+            {"clientID": expected_client_id},
+        ]
+
+        self.assertEqual(
+            True,
+            self.it_service._is_service_account_valid(user=user, client_id=expected_client_id),
+            "when IT responds with multiple service accounts and one of them matches, the function under test should return 'True'",
+        )
+
+    @mock.patch("management.principal.it_service.ITService.request_service_accounts")
+    def test_is_service_account_invalid(self, request_service_accounts: mock.Mock):
+        """Tests that the service account is considered invalid when there isn't a match between the response from IT and the requested service account"""
+        user = User()
+        user.bearer_token = "mocked-bt"
+
+        expected_client_id = str(uuid.uuid4())
+        request_service_accounts.return_value = []
+
+        self.assertEqual(
+            False,
+            self.it_service._is_service_account_valid(user=user, client_id=expected_client_id),
+            "when IT responds with a single service account and it does not match, the function under test should return 'False'",
+        )
+
+        request_service_accounts.return_value = [
+            {"clientID": str(uuid.uuid4())},
+            {"clientID": str(uuid.uuid4())},
+            {"clientID": str(uuid.uuid4())},
+        ]
+
+        self.assertEqual(
+            False,
+            self.it_service._is_service_account_valid(user=user, client_id=expected_client_id),
+            "when IT responds with multiple service accounts and none of them match, the function under test should return 'False'",
+        )
+
+    @mock.patch("management.principal.it_service.ITService.request_service_accounts")
     def test_is_service_account_valid_zero_results_from_it(self, request_service_accounts: mock.Mock):
         """Test that the function under test treats an empty result from IT as an invalid service account."""
         request_service_accounts.return_value = []
