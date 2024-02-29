@@ -161,9 +161,12 @@ class UtilsTests(IdentityRequest):
         self.assertEqual(created_service_account.type, "user")
         self.assertEqual(created_service_account.username, user.username)
 
+    @mock.patch("management.authorization.token_validator.ITSSOTokenValidator.validate_token")
     @mock.patch("management.principal.it_service.ITService.is_service_account_valid_by_username")
     @mock.patch("management.utils.verify_principal_with_proxy")
-    def test_get_principal_service_account_created(self, mocked: Mock, is_service_account_valid_by_username: Mock):
+    def test_get_principal_service_account_created(
+        self, mocked: Mock, is_service_account_valid_by_username: Mock, validate_token: Mock
+    ):
         """Test that when a service account principal does not exist in the database, it gets created."""
         # Build a non-existent service account.
         user = User()
@@ -202,6 +205,9 @@ class UtilsTests(IdentityRequest):
                 username=username, tenant=self.tenant, type=SERVICE_ACCOUNT_KEY, service_account_id=client_id
             )
 
+            # Simulate that a bearer token was given, and that it was correctly validated.
+            validate_token.return_value = "mocked-bearer-token"
+
             # Simulate that the IT service says the service account's username is valid.
             is_service_account_valid_by_username.return_value = True
 
@@ -221,18 +227,18 @@ class UtilsTests(IdentityRequest):
                 "the service account principal we created and the returned principal should be the same",
             )
 
+    @mock.patch("management.authorization.token_validator.ITSSOTokenValidator.validate_token")
     @mock.patch("management.principal.it_service.ITService.is_service_account_valid_by_username")
     def test_get_principal_from_query_service_account_not_validated_validation_error(
-        self, is_service_account_valid_by_username: Mock
+        self, is_service_account_valid_by_username: Mock, validate_token: Mock
     ):
         """Test that when the service account username cannot be validated, a validation error is raised"""
         # Create a service account principal in the database, which will be fetched by the function under test.
         client_id = uuid.uuid4()
         username = f"service-account-{client_id}"
 
-        created_principal = Principal.objects.create(
-            username=username, tenant=self.tenant, type=SERVICE_ACCOUNT_KEY, service_account_id=client_id
-        )
+        # Simulate that a bearer token was given, and that it was correctly validated.
+        validate_token.return_value = "mocked-bearer-token"
 
         # Simulate that the IT service says the service account's username is valid.
         is_service_account_valid_by_username.return_value = False
@@ -256,9 +262,10 @@ class UtilsTests(IdentityRequest):
         # Assert that the validation function gets called once.
         is_service_account_valid_by_username.assert_called_with(user=request.user, service_account_username=username)
 
+    @mock.patch("management.authorization.token_validator.ITSSOTokenValidator.validate_token")
     @mock.patch("management.principal.it_service.ITService.is_service_account_valid_by_username")
     def test_get_principal_from_query_service_account_validated_principal_exists(
-        self, is_service_account_valid_by_username: Mock
+        self, is_service_account_valid_by_username: Mock, validate_token: Mock
     ):
         """Test that when specifying the "from query" parameter the service account is validated"""
         # Create a service account principal in the database, which will be fetched by the function under test.
@@ -268,6 +275,9 @@ class UtilsTests(IdentityRequest):
         created_principal = Principal.objects.create(
             username=username, tenant=self.tenant, type=SERVICE_ACCOUNT_KEY, service_account_id=client_id
         )
+
+        # Simulate that a bearer token was given, and that it was correctly validated.
+        validate_token.return_value = "mocked-bearer-token"
 
         # Simulate that the IT service says the service account's username is valid.
         is_service_account_valid_by_username.return_value = True
@@ -290,14 +300,18 @@ class UtilsTests(IdentityRequest):
             "the service account principal we created and the returned principal should be the same",
         )
 
+    @mock.patch("management.authorization.token_validator.ITSSOTokenValidator.validate_token")
     @mock.patch("management.principal.it_service.ITService.is_service_account_valid_by_username")
     def test_get_principal_from_query_service_account_validated_principal_not_exists(
-        self, is_service_account_valid_by_username: Mock
+        self, is_service_account_valid_by_username: Mock, validate_token: Mock
     ):
         """Test that when specifying the "from query" parameter the service account is validated just once"""
         # Create a service account principal in the database, which will be fetched by the function under test.
         client_id = uuid.uuid4()
         username = f"service-account-{client_id}"
+
+        # Simulate that a bearer token was given, and that it was correctly validated.
+        validate_token.return_value = "mocked-bearer-token"
 
         # Simulate that the IT service says the service account's username is valid.
         is_service_account_valid_by_username.return_value = True
@@ -347,14 +361,18 @@ class UtilsTests(IdentityRequest):
             "the client ID of the created service account principal does not match the one given to the function under test",
         )
 
+    @mock.patch("management.authorization.token_validator.ITSSOTokenValidator.validate_token")
     @mock.patch("management.principal.it_service.ITService.is_service_account_valid_by_username")
     def test_get_principal_service_account_validated_principal_not_exists(
-        self, is_service_account_valid_by_username: Mock
+        self, is_service_account_valid_by_username: Mock, validate_token: Mock
     ):
         """Test that when the "from query" parameter is missing the service account is validated just once"""
         # Create a service account principal in the database, which will be fetched by the function under test.
         client_id = uuid.uuid4()
         username = f"service-account-{client_id}"
+
+        # Simulate that a bearer token was given, and that it was correctly validated.
+        validate_token.return_value = "mocked-bearer-token"
 
         # Simulate that the IT service says the service account's username is valid.
         is_service_account_valid_by_username.return_value = True

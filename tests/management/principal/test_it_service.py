@@ -104,7 +104,7 @@ class ITServiceTests(IdentityRequest):
     def test_is_service_account_valid_one_matching_result_from_it(self, request_service_accounts: mock.Mock):
         """Test that the function under test positively validates the given service account if IT responds with that service account."""
         client_id = "client-id-123"
-        request_service_accounts.return_value = [{"clientId": client_id}]
+        request_service_accounts.return_value = [{"clientID": client_id}]
         user = User()
         user.bearer_token = "mocked-bt"
 
@@ -118,7 +118,7 @@ class ITServiceTests(IdentityRequest):
     def test_is_service_account_valid_not_matching_result_from_it(self, request_service_accounts: mock.Mock):
         """Test that the function under test does not validate the given service account if IT does not return a response with a proper service account."""
         client_id = "client-id-123"
-        request_service_accounts.return_value = [{"clientId": "different-client-id"}]
+        request_service_accounts.return_value = [{"clientID": "different-client-id"}]
         user = User()
         user.bearer_token = "mocked-bt"
 
