@@ -1279,7 +1279,7 @@
             "required": false,
             "description": "By specifying a comma separated list of client IDs with this query parameter, RBAC will return an object with the specified client ID and it's matching boolean value to flag whether the client ID is present in the group or not. This query parameter cannot be used along with any other query parameter.",
             "schema": {
-              "type": "string",
+              "type": "string"
             }
           },
           {
