@@ -1279,10 +1279,8 @@
             "required": false,
             "description": "By specifying a list of client IDs with this query parameter, RBAC will return an object with the specified client ID and it's matching boolean value to flag whether the client ID is present in the group or not. This query parameter cannot be used along with any other query parameter.",
             "schema": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
+              "type": "string",
+              "example": "e4b74850-b934-013c-244b-6aa2427b506c,7ef40690-b936-013c-244c-6aa2427b506c"
             }
           },
           {
