@@ -21,6 +21,8 @@ from management.serializers import AuditLogSerializer
 from rest_framework import mixins, viewsets
 from rest_framework.permissions import AllowAny
 
+from management.querysets import get_auditlog_queryset
+
 
 class AuditLogViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
     """Audit Logs View.
@@ -32,7 +34,11 @@ class AuditLogViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
     queryset = AuditLog.objects.all()
     serializer_class = AuditLogSerializer
     permission_classes = (AllowAny,)
-
-    def get(self, request, *args, **kwargs):
+    
+    def get_queryset(self):
+        """Obtain queryset for requesting user based on access."""
+        return get_auditlog_queryset(self.request)
+        
+    def list(self, request, *args, **kwargs):
         """List all of the audiit logs that are stored within database."""
         return super().list(request=request, args=args, kwargs=kwargs)
