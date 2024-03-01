@@ -14,13 +14,16 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
-
 """Model for audit logging."""
 from django.db import models
+from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from management.principal.model import Principal
-
 from api.models import Tenant, TenantAwareModel
+from management.principal.model import Principal
+from management.group.model import Group
+from management.role.model import Role
+import management.utils
 
 
 class AuditLog(TenantAwareModel):
@@ -58,3 +61,82 @@ class AuditLog(TenantAwareModel):
     resource_id = models.IntegerField(null=True)
     action = models.CharField(max_length=32, choices=ACTION_CHOICES)
     tenant = models.ForeignKey(Tenant, on_delete=models.SET_NULL, null=True)
+
+    # helper function to find the ID of the related object
+    def get_resource_item(self, r_type, request, *args, **kwargs):
+        if r_type == AuditLog.ROLE:
+            role_items = []
+            if request.data != {}:
+                role_object = get_object_or_404(Role, name=request.data["name"])
+                # retrieve role id and name
+                role_object_id = role_object.id 
+                role_object_name = "role: " + role_object.name
+                role_items.append(role_object_id)
+                role_items.append(role_object_name)
+                return role_items
+            else:
+                role_object = kwargs["kwargs"]
+                role_object_id = role_object.id
+                role_object_name = "role: "  + role_object.name
+                role_items.append(role_object_id)
+                role_items.append(role_object_name)
+                return role_items 
+            
+        elif r_type == AuditLog.GROUP:
+            if request._data != None:
+                group_object = get_object_or_404(Group, name=request.data["name"])
+                
+            else:
+                group_uuid = kwargs["kwargs"]["uuid"]
+                group_object = get_object_or_404(Group, uuid=group_uuid)
+            return group_object.id
+        elif r_type == AuditLog.PERMISSION:
+            # TODO: finding the id for the permission
+            return None
+        elif r_type == "principal":
+            current_user = management.utils.get_principal_from_request(request)
+            principal_object = get_object_or_404(
+                Principal, username=current_user.username
+            )
+            list_principal_object = [principal_object.id, principal_object.username]
+            return list_principal_object
+        elif r_type == "tenant":
+            tenant_object = get_object_or_404(Tenant, org_id=request._user.org_id)
+            return tenant_object.id
+        else:
+            return ValueError(
+                "This resource type does not exist. It needs to be either: group, role, principal/user, tenant, or permission"
+            )
+
+    def log_create(self, request, resource):
+        """Audit Log when group or user is created."""
+        principal_items = self.get_resource_item("principal", request)
+        self.principal_id = principal_items[0]
+        self.principal_username = principal_items[1]
+
+        create_resource_items = self.get_resource_item(resource, request)
+
+        self.resource_type = resource
+        self.resource_id = create_resource_items[0]
+        self.description = "Created " + create_resource_items[1]
+
+        self.action = AuditLog.CREATE
+        self.tenant_id = self.get_resource_item("tenant", request)
+        super(AuditLog, self).save()
+
+    def log_delete(self, object, request, resource, *args, **kwargs):
+        """Audit log when a group or user is deleted."""
+
+        print("we have entered the log delete)")
+        principal_items = self.get_resource_item("principal", request)
+        self.principal_id = principal_items[0]
+        self.principal_username = principal_items[1]
+
+        delete_resource_items = self.get_resource_item(resource, request, kwargs=object)
+        self.resource_type = resource
+        self.resource_id = delete_resource_items[0]
+        self.description = "Deleted " + delete_resource_items[1]
+
+        self.action = AuditLog.DELETE
+        self.tenant_id = self.get_resource_item("tenant", request)
+        super(AuditLog, self).save()

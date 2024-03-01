@@ -29,7 +29,7 @@ from django.http import Http404
 from django.utils.translation import gettext as _
 from django_filters import rest_framework as filters
 from management.filters import CommonFilters
-from management.models import Permission
+from management.models import Permission, AuditLog
 from management.notifications.notification_handlers import role_obj_change_notification_handler
 from management.permissions import RoleAccessPermission
 from management.querysets import get_role_queryset
@@ -209,7 +209,15 @@ class RoleViewSet(
             }
         """
         self.validate_role(request)
-        return super().create(request=request, args=args, kwargs=kwargs)
+
+        create_role = super().create(request=request, args=args, kwargs=kwargs)
+
+        if status.is_success(create_role.status_code):
+            auditlog = AuditLog()
+            auditlog.log_create(request, AuditLog.ROLE)
+            return create_role
+
+
 
     def list(self, request, *args, **kwargs):
         """Obtain the list of roles for the tenant.
@@ -323,6 +331,11 @@ class RoleViewSet(
         with transaction.atomic():
             self.delete_policies_if_no_role_attached(role)
             response = super().destroy(request=request, args=args, kwargs=kwargs)
+            if status.is_success(response.status_code):
+            # Add changes to audit log database
+                auditlog = AuditLog()
+                auditlog.log_delete(role, request, AuditLog.ROLE, args=args, kwargs=kwargs)
+                print("finished adding items to audit log")
         if response.status_code == status.HTTP_204_NO_CONTENT:
             role_obj_change_notification_handler(role, "deleted", request.user)
         return response
