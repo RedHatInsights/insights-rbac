@@ -61,6 +61,25 @@ def _generate_errors_from_dict(data, **kwargs):
     return errors
 
 
+def _generate_error_data_payload_response(detail: str, context, http_status_code: int) -> dict:
+    """Generate the payload for the "data" parameter of the response."""
+    data = {
+        "errors": [
+            {
+                "detail": detail,
+                "status": str(http_status_code),
+            }
+        ]
+    }
+
+    # Some exceptions might be raised from places that are not views.
+    view = context.get("view")
+    if view:
+        data["errors"][0]["source"] = view.basename
+
+    return data
+
+
 def custom_exception_handler(exc, context):
     """Create custom response for exceptions."""
     response = exception_handler(exc, context)
@@ -87,43 +106,30 @@ def custom_exception_handler(exc, context):
         )
     elif isinstance(exc, InvalidTokenError):
         response = Response(
-            data={
-                "errors": [
-                    {
-                        "detail": "Invalid token provided.",
-                        "status": str(status.HTTP_401_UNAUTHORIZED),
-                    }
-                ]
-            },
+            data=_generate_error_data_payload_response(
+                detail="Invalid token provided.", context=context, http_status_code=status.HTTP_401_UNAUTHORIZED
+            ),
             content_type="application/json",
             status=status.HTTP_401_UNAUTHORIZED,
         )
     elif isinstance(exc, MissingAuthorizationError):
         response = Response(
-            data={
-                "errors": [
-                    {
-                        "detail": "A Bearer token in an authorization header is required when"
-                        " performing service account operations.",
-                        "source": context.get("view").basename,
-                        "status": str(status.HTTP_401_UNAUTHORIZED),
-                    }
-                ]
-            },
+            data=_generate_error_data_payload_response(
+                detail="A Bearer token in an authorization header is required when performing service account"
+                " operations.",
+                context=context,
+                http_status_code=status.HTTP_401_UNAUTHORIZED,
+            ),
             content_type="application/json",
             status=status.HTTP_401_UNAUTHORIZED,
         )
     elif isinstance(exc, UnableMeetPrerequisitesError):
         response = Response(
-            data={
-                "errors": [
-                    {
-                        "detail": "Unable to validate the provided token.",
-                        "source": context.get("view").basename,
-                        "status": str(status.HTTP_500_INTERNAL_SERVER_ERROR),
-                    }
-                ]
-            },
+            data=_generate_error_data_payload_response(
+                detail="Unable to validate the provided token.",
+                context=context,
+                http_status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            ),
             content_type="application/json",
             status=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
