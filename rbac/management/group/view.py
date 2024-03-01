@@ -27,6 +27,8 @@ from django.db import transaction
 from django.db.models.aggregates import Count
 from django.utils.translation import gettext as _
 from django_filters import rest_framework as filters
+from management.authorization.scope_claims import ScopeClaims
+from management.authorization.token_validator import ITSSOTokenValidator
 from management.filters import CommonFilters
 from management.group.definer import add_roles, remove_roles, set_system_flag_before_update
 from management.group.model import Group
@@ -46,7 +48,7 @@ from management.permissions import GroupAccessPermission
 from management.principal.it_service import ITService
 from management.principal.model import Principal
 from management.principal.proxy import PrincipalProxy
-from management.principal.serializer import PrincipalSerializer, ServiceAccountSerializer
+from management.principal.serializer import ServiceAccountSerializer
 from management.principal.view import ADMIN_ONLY_KEY, USERNAME_ONLY_KEY, VALID_BOOLEAN_VALUE
 from management.querysets import get_group_queryset, get_role_queryset
 from management.role.view import RoleViewSet
@@ -612,6 +614,12 @@ class GroupViewSet(
 
             # Process the service accounts and add them to the group.
             if len(service_accounts) > 0:
+                token_validator = ITSSOTokenValidator()
+                request.user.bearer_token = token_validator.validate_token(
+                    request=request,
+                    additional_scopes_to_validate=set[ScopeClaims]([ScopeClaims.SERVICE_ACCOUNTS_CLAIM]),
+                )
+
                 try:
                     resp = self.add_service_accounts(
                         user=request.user,
@@ -659,20 +667,23 @@ class GroupViewSet(
             # query parameter is incompatible with any other query parameter, we make the checks first. That way if any
             # other query parameter was specified, we simply return early.
             if SERVICE_ACCOUNT_CLIENT_IDS_KEY in request.query_params:
-                if len(request.query_params) > 1:
-                    return Response(
-                        status=status.HTTP_400_BAD_REQUEST,
-                        data={
-                            "errors": [
-                                {
-                                    "detail": f"The '{SERVICE_ACCOUNT_CLIENT_IDS_KEY}' parameter is incompatible with"
-                                    " any other query parameter. Please, use it alone",
-                                    "source": "groups",
-                                    "status": str(status.HTTP_400_BAD_REQUEST),
-                                }
-                            ]
-                        },
-                    )
+                # pagination is ignored in this case
+                for query_param in request.query_params:
+                    if query_param not in [SERVICE_ACCOUNT_CLIENT_IDS_KEY, "limit", "offset"]:
+                        return Response(
+                            status=status.HTTP_400_BAD_REQUEST,
+                            data={
+                                "errors": [
+                                    {
+                                        "detail": f"The '{SERVICE_ACCOUNT_CLIENT_IDS_KEY}' "
+                                        "parameter is incompatible with "
+                                        "any other query parameter. Please, use it alone",
+                                        "source": "groups",
+                                        "status": str(status.HTTP_400_BAD_REQUEST),
+                                    }
+                                ]
+                            },
+                        )
 
                 # Check that the specified query parameter is not empty.
                 service_account_client_ids_raw = request.query_params.get(SERVICE_ACCOUNT_CLIENT_IDS_KEY).strip()
@@ -764,6 +775,12 @@ class GroupViewSet(
                 options[PRINCIPAL_USERNAME_KEY] = request.query_params.get(PRINCIPAL_USERNAME_KEY)
 
                 # Fetch the group's service accounts.
+                token_validator = ITSSOTokenValidator()
+                request.user.bearer_token = token_validator.validate_token(
+                    request=request,
+                    additional_scopes_to_validate=set[ScopeClaims]([ScopeClaims.SERVICE_ACCOUNTS_CLAIM]),
+                )
+
                 it_service = ITService()
                 try:
                     service_accounts = it_service.get_service_accounts_group(
@@ -790,25 +807,21 @@ class GroupViewSet(
                 return self.get_paginated_response(serializer.data)
 
             principals_from_params = self.filtered_principals(group, request)
-            page = self.paginate_queryset(principals_from_params)
-            serializer = PrincipalSerializer(page, many=True)
-            principal_data = serializer.data
-            if principal_data:
-                username_list = [principal["username"] for principal in principal_data]
-            else:
-                username_list = []
-            proxy = PrincipalProxy()
+            username_list = [principal.username for principal in principals_from_params]
 
             admin_only = validate_and_get_key(request.query_params, ADMIN_ONLY_KEY, VALID_BOOLEAN_VALUE, False, False)
             if admin_only == "true":
                 options[ADMIN_ONLY_KEY] = True
 
+            proxy = PrincipalProxy()
             if settings.AUTHENTICATE_WITH_ORG_ID:
                 resp = proxy.request_filtered_principals(username_list, org_id=org_id, options=options)
             else:
                 resp = proxy.request_filtered_principals(username_list, account=account, options=options)
             if isinstance(resp, dict) and "errors" in resp:
                 return Response(status=resp.get("status_code"), data=resp.get("errors"))
+
+            self.paginate_queryset(resp.get("data"))
             response = self.get_paginated_response(resp.get("data"))
         else:
             self.protect_system_groups("remove principals")
@@ -826,6 +839,12 @@ class GroupViewSet(
                 ]
 
                 try:
+                    token_validator = ITSSOTokenValidator()
+                    request.user.bearer_token = token_validator.validate_token(
+                        request=request,
+                        additional_scopes_to_validate=set[ScopeClaims]([ScopeClaims.SERVICE_ACCOUNTS_CLAIM]),
+                    )
+
                     self.remove_service_accounts(
                         user=request.user,
                         service_accounts=service_accounts,

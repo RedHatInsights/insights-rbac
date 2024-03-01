@@ -26,7 +26,6 @@ from management.utils import (
     roles_for_principal,
     account_id_for_tenant,
     get_principal,
-    request_has_bearer_authentication_header,
 )
 from rest_framework.exceptions import ValidationError
 from tests.identity_request import IdentityRequest
@@ -162,272 +161,69 @@ class UtilsTests(IdentityRequest):
         self.assertEqual(created_service_account.type, "user")
         self.assertEqual(created_service_account.username, user.username)
 
-    @mock.patch("management.principal.it_service.ITService.is_service_account_valid_by_username")
     @mock.patch("management.utils.verify_principal_with_proxy")
-    def test_get_principal_service_account_created(self, mocked: Mock, is_service_account_valid_by_username: Mock):
-        """Test that when a service account principal does not exist in the database, it gets created."""
-        # Build a non-existent service account.
-        user = User()
-        user.client_id = uuid.uuid4()
-        user.is_service_account = True
-        user.username = f"service-account-{user.client_id}"
+    def test_get_username_principal_not_service_account_validated(self, verify_principal_with_proxy: Mock):
+        """Test that the username gets validated only when it is not a service account username."""
+        # Create a database principal in order to make the function under test get it from the database, and to make
+        # sure that we are calling the first "verify_principal_with_proxy" call and not the one in the exception
+        # handling block.
+        database_principal = Principal()
+        database_principal.cross_account = False
+        database_principal.tenant = self.tenant
+        database_principal.type = "user"
+        database_principal.username = "clearly-not-a-service-account-db"
+        database_principal.save()
 
         request = mock.Mock()
-        request.user = user
+        request.tenant = self.tenant
+
+        # Call the function under test with the database principal's username and the "from_query" flag as "True", so
+        # that we execute the "verify_principal_with_proxy" function from the "try" block, and not the "except" one.
+        fetched_result = get_principal(username=database_principal.username, request=request, from_query=True)
+
+        # Verify that the principal validation function got called.
+        verify_principal_with_proxy.assert_called_with(
+            username=database_principal.username, request=request, verify_principal=True
+        )
+
+        self.assertEqual(
+            database_principal.uuid,
+            fetched_result.uuid,
+            "this flags that the fetched principal is not the one created to avoid executing the code in the"
+            " exception handling block",
+        )
+
+        # Call the function under test again which should create the new principal, and run the
+        # "verify_principal_with_proxy" method from the "except" block, and not from the "try" block.
+        username = "clearly-not-another-service-account"
+
+        created_result = get_principal(username=username, request=request, from_query=False)
+
+        # Verify that the principal validation function got called.
+        verify_principal_with_proxy.assert_called_with(username=username, request=request, verify_principal=True)
+
+        self.assertNotEqual(
+            database_principal.uuid,
+            created_result.uuid,
+            "this flags that the specified username is from the database principal created in the test, but in"
+            "this case we were expecting a new principal to be created",
+        )
+
+    def test_get_principal_service_account_created(self):
+        """Test that when a service account principal does not exist in the database, it gets created."""
+        client_id = uuid.uuid4()
+        service_account_username = f"service-account-{client_id}"
+
+        request = mock.Mock()
         request.tenant = self.tenant
         request.query_params = {}
 
-        # Make sure the service account gets flagged as valid so that it gets persisted in the database.
-        is_service_account_valid_by_username.return_value = True
-
         # Attempt to fetch the service account principal from the database. Since it does not exist, it should create
         # one.
-        get_principal(username=user.username, request=request)
+        get_principal(username=service_account_username, request=request)
 
         # Assert that the service account was properly created in the database.
-        created_service_account = Principal.objects.get(username=user.username)
-        self.assertEqual(created_service_account.service_account_id, str(user.client_id))
+        created_service_account = Principal.objects.get(username=service_account_username)
+        self.assertEqual(created_service_account.service_account_id, str(client_id))
         self.assertEqual(created_service_account.type, "service-account")
-        self.assertEqual(created_service_account.username, user.username)
-
-    def test_request_has_bearer_authorization_header(self):
-        """Test that the function under test is able to identify when the request has a Bearer authorization header."""
-        request = mock.Mock()
-        request.headers = {}
-
-        self.assertEqual(
-            False,
-            request_has_bearer_authentication_header(request=request),
-            "the function under test should return 'False' when the request has no authorization header",
-        )
-
-        request.headers = {"Authorization": "unexpected non-bearer value"}
-
-        self.assertEqual(
-            False,
-            request_has_bearer_authentication_header(request=request),
-            "the function under test should return 'False' when the request has no Bearer authorization contents",
-        )
-
-        request.headers = {"Authorization": "Bearer mocked-value"}
-
-        self.assertEqual(
-            True,
-            request_has_bearer_authentication_header(request=request),
-            "the function under test should return 'True' when the request has a Bearer authorization header",
-        )
-
-        @mock.patch("management.principal.it_service.ITService.is_service_account_valid_by_username")
-        def test_get_principal_from_query_service_account_validated_once_principal_exists(
-            self, is_service_account_valid_by_username: Mock
-        ):
-            """Test that when specifying the "from query" parameter the service account is validated"""
-            # Create a service account principal in the database, which will be fetched by the function under test.
-            client_id = uuid.uuid4()
-            username = f"service-account-{client_id}"
-
-            created_principal = Principal.objects.create(
-                username=username, tenant=self.tenant, type=SERVICE_ACCOUNT_KEY, service_account_id=client_id
-            )
-
-            # Simulate that the IT service says the service account's username is valid.
-            is_service_account_valid_by_username.return_value = True
-
-            # Mock the request with the required bits.
-            request = Mock()
-            request.tenant = self.tenant
-            request.user = User()
-
-            # Call the function under test.
-            returned_principal = get_principal(
-                username=username, request=request, verify_principal=True, from_query=True
-            )
-
-            self.assertEqual(
-                created_principal,
-                returned_principal,
-                "the service account principal we created and the returned principal should be the same",
-            )
-
-    @mock.patch("management.principal.it_service.ITService.is_service_account_valid_by_username")
-    def test_get_principal_from_query_service_account_not_validated_validation_error(
-        self, is_service_account_valid_by_username: Mock
-    ):
-        """Test that when the service account username cannot be validated, a validation error is raised"""
-        # Create a service account principal in the database, which will be fetched by the function under test.
-        client_id = uuid.uuid4()
-        username = f"service-account-{client_id}"
-
-        created_principal = Principal.objects.create(
-            username=username, tenant=self.tenant, type=SERVICE_ACCOUNT_KEY, service_account_id=client_id
-        )
-
-        # Simulate that the IT service says the service account's username is valid.
-        is_service_account_valid_by_username.return_value = False
-
-        # Mock the request with the required bits.
-        request = Mock()
-        request.tenant = self.tenant
-        request.user = User()
-
-        # Call the function under test.
-        try:
-            get_principal(username=username, request=request, verify_principal=True, from_query=True)
-            self.fail("expected a validation exception, none gotten")
-        except ValidationError as ve:
-            self.assertEqual(
-                f"No data found for service account with username '{username}'",
-                str(ve.detail.get("detail")),
-                "unexpected exception message",
-            )
-
-        # Assert that the validation function gets called once.
-        is_service_account_valid_by_username.assert_called_with(user=request.user, service_account_username=username)
-
-    @mock.patch("management.principal.it_service.ITService.is_service_account_valid_by_username")
-    def test_get_principal_from_query_service_account_validated_principal_exists(
-        self, is_service_account_valid_by_username: Mock
-    ):
-        """Test that when specifying the "from query" parameter the service account is validated"""
-        # Create a service account principal in the database, which will be fetched by the function under test.
-        client_id = uuid.uuid4()
-        username = f"service-account-{client_id}"
-
-        created_principal = Principal.objects.create(
-            username=username, tenant=self.tenant, type=SERVICE_ACCOUNT_KEY, service_account_id=client_id
-        )
-
-        # Simulate that the IT service says the service account's username is valid.
-        is_service_account_valid_by_username.return_value = True
-
-        # Mock the request with the required bits.
-        request = Mock()
-        request.tenant = self.tenant
-        request.user = User()
-
-        # Call the function under test.
-        returned_principal = get_principal(username=username, request=request, verify_principal=True, from_query=True)
-
-        # Assert that the validation function gets called once.
-        is_service_account_valid_by_username.assert_called_with(user=request.user, service_account_username=username)
-
-        # Assert that the returned principal is the same one as the one created for the test.
-        self.assertEqual(
-            created_principal,
-            returned_principal,
-            "the service account principal we created and the returned principal should be the same",
-        )
-
-    @mock.patch("management.principal.it_service.ITService.is_service_account_valid_by_username")
-    def test_get_principal_from_query_service_account_validated_principal_not_exists(
-        self, is_service_account_valid_by_username: Mock
-    ):
-        """Test that when specifying the "from query" parameter the service account is validated just once"""
-        # Create a service account principal in the database, which will be fetched by the function under test.
-        client_id = uuid.uuid4()
-        username = f"service-account-{client_id}"
-
-        # Simulate that the IT service says the service account's username is valid.
-        is_service_account_valid_by_username.return_value = True
-
-        # Mock the request with the required bits.
-        user = User()
-        user.client_id = str(uuid.uuid4())
-        user.is_service_account = True
-        user.username = f"service-account-{user.client_id}"
-
-        request = Mock()
-        request.tenant = self.tenant
-        request.user = user
-
-        # Call the function under test.
-        returned_principal: Principal = get_principal(
-            username=username, request=request, verify_principal=True, from_query=True
-        )
-
-        # Assert that the validation function gets called once.
-        self.assertEqual(
-            1,
-            is_service_account_valid_by_username.call_count,
-            "the verification of the service account should have only be made once",
-        )
-        is_service_account_valid_by_username.assert_called_with(user=request.user, service_account_username=username)
-
-        # Assert that the created principal has the data from the username.
-        self.assertEqual(
-            username,
-            returned_principal.username,
-            "the username of the created service account principal does not match the given username to the function",
-        )
-        self.assertEqual(
-            self.tenant,
-            returned_principal.tenant,
-            "the created service account's principal tenant does not match the one specified",
-        )
-        self.assertEqual(
-            SERVICE_ACCOUNT_KEY,
-            returned_principal.type,
-            "the type of the created service account principal is not correct",
-        )
-        self.assertEqual(
-            client_id,
-            returned_principal.service_account_id,
-            "the client ID of the created service account principal does not match the one given to the function under test",
-        )
-
-    @mock.patch("management.principal.it_service.ITService.is_service_account_valid_by_username")
-    def test_get_principal_service_account_validated_principal_not_exists(
-        self, is_service_account_valid_by_username: Mock
-    ):
-        """Test that when the "from query" parameter is missing the service account is validated just once"""
-        # Create a service account principal in the database, which will be fetched by the function under test.
-        client_id = uuid.uuid4()
-        username = f"service-account-{client_id}"
-
-        # Simulate that the IT service says the service account's username is valid.
-        is_service_account_valid_by_username.return_value = True
-
-        # Mock the request with the required bits.
-        user = User()
-        user.client_id = str(uuid.uuid4())
-        user.is_service_account = True
-        user.username = f"service-account-{user.client_id}"
-
-        request = Mock()
-        request.tenant = self.tenant
-        request.user = user
-
-        # Call the function under test.
-        returned_principal: Principal = get_principal(
-            username=username, request=request, verify_principal=True, from_query=False
-        )
-
-        # Assert that the validation function gets called once.
-        self.assertEqual(
-            1,
-            is_service_account_valid_by_username.call_count,
-            "the verification of the service account should have only be made once",
-        )
-        is_service_account_valid_by_username.assert_called_with(user=request.user, service_account_username=username)
-
-        # Assert that the created principal has the data from the username.
-        self.assertEqual(
-            username,
-            returned_principal.username,
-            "the username of the created service account principal does not match the given username to the function",
-        )
-        self.assertEqual(
-            self.tenant,
-            returned_principal.tenant,
-            "the created service account's principal tenant does not match the one specified",
-        )
-        self.assertEqual(
-            SERVICE_ACCOUNT_KEY,
-            returned_principal.type,
-            "the type of the created service account principal is not correct",
-        )
-        self.assertEqual(
-            client_id,
-            returned_principal.service_account_id,
-            "the client ID of the created service account principal does not match the one given to the function under test",
-        )
+        self.assertEqual(created_service_account.username, service_account_username)

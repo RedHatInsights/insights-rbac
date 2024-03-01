@@ -88,6 +88,60 @@ class ITServiceTests(IdentityRequest):
             settings.IT_BYPASS_IT_CALLS = original_bypass_it_calls_value
 
     @mock.patch("management.principal.it_service.ITService.request_service_accounts")
+    def test_is_service_account_valid(self, request_service_accounts: mock.Mock):
+        """Tests that the service account is considered valid when there is a match between the response from IT and the requested service account"""
+        user = User()
+        user.bearer_token = "mocked-bt"
+
+        expected_client_id = str(uuid.uuid4())
+        request_service_accounts.return_value = [{"clientID": expected_client_id}]
+
+        self.assertEqual(
+            True,
+            self.it_service._is_service_account_valid(user=user, client_id=expected_client_id),
+            "when IT responds with a single service account and it matches, the function under test should return 'True'",
+        )
+
+        request_service_accounts.return_value = [
+            {"clientID": str(uuid.uuid4())},
+            {"clientID": str(uuid.uuid4())},
+            {"clientID": expected_client_id},
+        ]
+
+        self.assertEqual(
+            True,
+            self.it_service._is_service_account_valid(user=user, client_id=expected_client_id),
+            "when IT responds with multiple service accounts and one of them matches, the function under test should return 'True'",
+        )
+
+    @mock.patch("management.principal.it_service.ITService.request_service_accounts")
+    def test_is_service_account_invalid(self, request_service_accounts: mock.Mock):
+        """Tests that the service account is considered invalid when there isn't a match between the response from IT and the requested service account"""
+        user = User()
+        user.bearer_token = "mocked-bt"
+
+        expected_client_id = str(uuid.uuid4())
+        request_service_accounts.return_value = []
+
+        self.assertEqual(
+            False,
+            self.it_service._is_service_account_valid(user=user, client_id=expected_client_id),
+            "when IT responds with a single service account and it does not match, the function under test should return 'False'",
+        )
+
+        request_service_accounts.return_value = [
+            {"clientID": str(uuid.uuid4())},
+            {"clientID": str(uuid.uuid4())},
+            {"clientID": str(uuid.uuid4())},
+        ]
+
+        self.assertEqual(
+            False,
+            self.it_service._is_service_account_valid(user=user, client_id=expected_client_id),
+            "when IT responds with multiple service accounts and none of them match, the function under test should return 'False'",
+        )
+
+    @mock.patch("management.principal.it_service.ITService.request_service_accounts")
     def test_is_service_account_valid_zero_results_from_it(self, request_service_accounts: mock.Mock):
         """Test that the function under test treats an empty result from IT as an invalid service account."""
         request_service_accounts.return_value = []
@@ -104,7 +158,7 @@ class ITServiceTests(IdentityRequest):
     def test_is_service_account_valid_one_matching_result_from_it(self, request_service_accounts: mock.Mock):
         """Test that the function under test positively validates the given service account if IT responds with that service account."""
         client_id = "client-id-123"
-        request_service_accounts.return_value = [{"clientId": client_id}]
+        request_service_accounts.return_value = [{"clientID": client_id}]
         user = User()
         user.bearer_token = "mocked-bt"
 
@@ -118,7 +172,7 @@ class ITServiceTests(IdentityRequest):
     def test_is_service_account_valid_not_matching_result_from_it(self, request_service_accounts: mock.Mock):
         """Test that the function under test does not validate the given service account if IT does not return a response with a proper service account."""
         client_id = "client-id-123"
-        request_service_accounts.return_value = [{"clientId": "different-client-id"}]
+        request_service_accounts.return_value = [{"clientID": "different-client-id"}]
         user = User()
         user.bearer_token = "mocked-bt"
 
@@ -185,15 +239,28 @@ class ITServiceTests(IdentityRequest):
             "the client ID was not correctly extracted from a full username",
         )
 
-        # Call the function under test with an invalid username which contains a bad formed UUID.
+        # Call the function under test with a username without client ID (UUID).
         try:
-            ITService.extract_client_id_service_account_username(username="abcde")
+            self.assertFalse(ITService.extract_client_id_service_account_username(username="abcde"))
             self.fail(
                 "when providing an invalid UUID as the client ID to be extracted, the function under test should raise an error"
             )
         except serializers.ValidationError as ve:
             self.assertEqual(
-                "unable to extract the client ID from the service account's username because the provided UUID is invalid",
+                "Invalid ClientId for a Service Account username",
+                str(ve.detail.get("detail")),
+                "unexpected error message when providing an invalid UUID as the client ID",
+            )
+
+        # Call the function under test with an invalid username which contains a bad formed UUID.
+        try:
+            ITService.extract_client_id_service_account_username(username="service-account-xxxxx")
+            self.fail(
+                "when providing an invalid UUID as the client ID to be extracted, the function under test should raise an error"
+            )
+        except serializers.ValidationError as ve:
+            self.assertEqual(
+                "Invalid format for a Service Account username",
                 str(ve.detail.get("detail")),
                 "unexpected error message when providing an invalid UUID as the client ID",
             )

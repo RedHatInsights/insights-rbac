@@ -2313,6 +2313,47 @@ class GroupViewsetTests(IdentityRequest):
                     "a client ID which was part of the group was incorrectly flagged as if it wasn't",
                 )
 
+    def test_get_group_principals_check_service_account_ids_with_limit_offset(self):
+        """
+        Test that the endpoint for checking if service accounts are part of a group works as expected
+        with 'limit' and 'offset' present in the query.
+        """
+        # Create a group and associate principals to it.
+        group = Group(name="it-service-group", platform_default=False, system=False, tenant=self.tenant)
+        group.save()
+
+        # Create a service account and it into group.
+        client_uuid = uuid.uuid4()
+        sa = Principal.objects.create(
+            username=f"service-account-{client_uuid}",
+            service_account_id=client_uuid,
+            type="service-account",
+            tenant=self.tenant,
+        )
+        group.principals.add(sa)
+        group.save()
+
+        url = (
+            f"{reverse('group-principals', kwargs={'uuid': group.uuid})}"
+            f"?service_account_client_ids={client_uuid}&limit=10&offset=0"
+        )
+
+        # Call the endpoint under test.
+        client = APIClient()
+        response: Response = client.get(url, **self.headers)
+
+        # Assert that we received a 200 response.
+        self.assertEqual(
+            status.HTTP_200_OK,
+            response.status_code,
+            "unexpected status code received",
+        )
+
+        # Assert that we received the correct results.
+        self.assertEqual(1, response.data.get("meta").get("count"))
+        is_present_in_group = response.data.get("data")[str(client_uuid)]
+        self.assertTrue(is_present_in_group)
+
     def test_get_group_principals_check_service_account_ids_incompatible_query_parameters(self):
         """Test that no other query parameter can be used along with the "service_account_ids" one."""
         # Use a few extra query parameter to test the behavior. Since we use a "len(query_params) > 1" condition it

@@ -17,6 +17,8 @@
 
 """View for principal management."""
 import requests
+from management.authorization.scope_claims import ScopeClaims
+from management.authorization.token_validator import ITSSOTokenValidator
 from management.utils import validate_and_get_key
 from rest_framework import status
 from rest_framework.response import Response
@@ -141,6 +143,11 @@ class PrincipalView(APIView):
             options["usernames"] = query_params.get(USERNAMES_KEY)
 
             # Fetch the service accounts from IT.
+            token_validator = ITSSOTokenValidator()
+            user.bearer_token = token_validator.validate_token(
+                request=request, additional_scopes_to_validate=set[ScopeClaims]([ScopeClaims.SERVICE_ACCOUNTS_CLAIM])
+            )
+
             try:
                 it_service = ITService()
                 service_accounts, sa_count = it_service.get_service_accounts(user=user, options=options)
