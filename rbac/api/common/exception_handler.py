@@ -74,7 +74,7 @@ def _generate_error_data_payload_response(detail: str, context, http_status_code
 
     # Some exceptions might be raised from places that are not views.
     view = context.get("view")
-    if view:
+    if view and hasattr(view, "basename"):
         data["errors"][0]["source"] = view.basename
 
     return data
