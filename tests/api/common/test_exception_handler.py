@@ -207,10 +207,38 @@ class ExceptionHandlerTest(TestCase):
 
         self.assertEqual(detail, only_error.get("detail"), f"unexpected detail message in the payload: {result}")
 
+        self.assertEqual(mocked_view.basename, only_error.get("source"), f"unexpected source in the payload: {result}")
+
         self.assertEqual(
-            mocked_view.basename, only_error.get("source"), f"unexpected detail message in the payload: {result}"
+            str(http_status_code), only_error.get("status"), f"unexpected status code in the payload: {result}"
         )
 
+    def test_generate_error_data_payload_without_view_basename(self):
+        """
+        Tests that the function under test generates the data payload correctly
+        when a view is passed in the context without basename attribute."""
+        # Prepare a payload with a view in the context without "basename" attribute.
+        detail = "some error message"
+        context = {"view": []}
+        http_status_code = status.HTTP_200_OK
+
+        # Call the function under test.
+        result = _generate_error_data_payload_response(
+            detail=detail, context=context, http_status_code=http_status_code
+        )
+
+        # Assert that the correct structure is returned.
+        errors = result.get("errors")
+        if not errors:
+            self.fail(f"the errors array was not present in the payload: {result}")
+
+        if len(errors) != 1:
+            self.fail(f"only one error was expected in the payload: {result}")
+
+        only_error = errors[0]
+
+        self.assertEqual(detail, only_error.get("detail"), f"unexpected detail message in the payload: {result}")
+        self.assertIsNone(only_error.get("source"), f"unexpected 'source' in the payload: {result}")
         self.assertEqual(
             str(http_status_code), only_error.get("status"), f"unexpected status code in the payload: {result}"
         )
