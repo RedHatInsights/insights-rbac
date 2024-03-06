@@ -2076,6 +2076,67 @@ class GroupViewsetTests(IdentityRequest):
         self.assertEqual(response.data.get("data")[0].get("username"), self.principal.username)
         self.assertEqual(response.data.get("data")[1].get("username"), self.principalB.username)
 
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={"status_code": 200, "data": []},
+    )
+    def test_get_group_user_principals_nonempty_limit_offset(self, mock_request):
+        """
+        Test that getting the user based principals from a group returns successfully
+        according to the given limit and offset.
+        """
+        # Create a group with 3 user based principals
+        group_name = "TestGroup"
+        group = Group(name=group_name, tenant=self.tenant)
+        group.save()
+
+        principals_list = []
+        for i in range(3):
+            principal = Principal(username=f"user_based_principal_{i}", tenant=self.test_tenant)
+            principal.save()
+            principals_list.append(principal)
+            group.principals.add(principal)
+        group.save()
+
+        # Set the return value for the mock
+        mock_request.return_value["data"] = [
+            {"username": principals_list[0].username},
+            {"username": principals_list[1].username},
+            {"username": principals_list[2].username},
+        ]
+
+        # Test that /groups/{uuid}/principals/ returns correct data with default limit and offset
+        url = f"{reverse('group-principals', kwargs={'uuid': group.uuid})}"
+        client = APIClient()
+        response = client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(int(response.data.get("meta").get("count")), 3)
+        self.assertEqual(int(response.data.get("meta").get("limit")), 10)
+        self.assertEqual(int(response.data.get("meta").get("offset")), 0)
+        self.assertEqual(len(response.data.get("data")), 3)
+
+        # Test that /groups/{uuid}/principals/ returns correct data for given offset and limit
+        test_data = [
+            {"limit": 10, "offset": 3, "expected_data_count": 0},
+            {"limit": 10, "offset": 2, "expected_data_count": 1},
+            {"limit": 1, "offset": 0, "expected_data_count": 1},
+            {"limit": 2, "offset": 2, "expected_data_count": 1},
+        ]
+        for item in test_data:
+            limit = item["limit"]
+            offset = item["offset"]
+            expected_data_count = item["expected_data_count"]
+            url = f"{reverse('group-principals', kwargs={'uuid': group.uuid})}?limit={limit}&offset={offset}"
+            client = APIClient()
+            response = client.get(url, **self.headers)
+
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            self.assertEqual(int(response.data.get("meta").get("count")), 3)
+            self.assertEqual(int(response.data.get("meta").get("limit")), limit)
+            self.assertEqual(int(response.data.get("meta").get("offset")), offset)
+            self.assertEqual(len(response.data.get("data")), expected_data_count)
+
     @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
     @patch("management.principal.it_service.ITService.request_service_accounts")
     def test_get_group_service_account_success(self, mock_request):
