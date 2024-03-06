@@ -25,6 +25,7 @@ from joserfc import jwt
 from joserfc.jwk import KeySet
 from joserfc.jwt import JWTClaimsRegistry, Token
 from management.cache import JWKSCache
+from requests import Response
 from rest_framework import status
 from rest_framework.request import Request
 
@@ -63,64 +64,94 @@ class ITSSOTokenValidator:
         self.issuer = f"{it_scheme}://{it_host}/auth/realms/redhat-external"
         self.oidc_configuration_url = f"{self.host}/.well-known/openid-configuration"
 
+        # Initialize the cache dependency.
+        self.jwks_cache = JWKSCache()
+
     def _get_json_web_keyset(self) -> KeySet:
-        jwks_cache = JWKSCache()
         try:
-            jwks_certificates_response = jwks_cache.get_jwks_response()
+            jwks_certificates = self.jwks_cache.get_jwks_response()
         except Exception as e:
+            jwks_certificates = None
             logger.debug(
                 "Fetching the JSON Web Key Set from Redis raised an exception, attempting to fetch the keys from the"
                 f" OIDC configuration instead. Raised error: {e}"
             )
 
-        if jwks_certificates_response:
+        if jwks_certificates:
             logger.debug("JWKS response loaded from cache. Skipped fetching the OIDC configuration.")
         else:
             # Attempt getting IT's OIDC configuration.
-            oidc_response = requests.get(url=self.oidc_configuration_url)
+            try:
+                oidc_response: Response = requests.get(url=self.oidc_configuration_url)
+            except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as ce:
+                logger.error("Unable to fetch the OIDC configuration to validate the token: %s", ce)
+
+                raise UnableMeetPrerequisitesError("unable to fetch the OIDC configuration to validate the token")
+
             if not status.is_success(oidc_response.status_code):
                 logger.error(
-                    f"Unable to get the OIDC configuration payload when attempting to validate a JWT token. Response"
-                    f" code: {oidc_response.status_code!r}. Response body: {oidc_response.content!r}"
+                    f"Unable to get the OIDC configuration payload when attempting to validate a JWT token due to an"
+                    f" unexpected status code: {oidc_response.status_code}. Response body:"
+                    f" {oidc_response.content.decode()}"
                 )
-                raise UnableMeetPrerequisitesError()
+                raise UnableMeetPrerequisitesError(
+                    "unexpected status code received from IT when attempting to fetch the OIDC configuration"
+                )
 
             logger.debug('OIDC configuration fetched from "%s"', self.oidc_configuration_url)
 
             # Attempt getting their public certificates' URL.
-            jwks_uri = oidc_response.json()["jwks_uri"]
+            try:
+                jwks_uri = oidc_response.json()["jwks_uri"]
+            except KeyError:
+                logger.error(
+                    f"Unable to extract the JWKs' URI when attempting to validate a JWT token. Actual payload:"
+                    f" {oidc_response.content.decode()}"
+                )
+                raise UnableMeetPrerequisitesError('the "jwks_uri" key was not present in the response payload')
+
             if not jwks_uri:
                 logger.error(
                     f"Unable to extract the JWKs' URI when attempting to validate a JWT token. Actual payload:"
-                    f"{oidc_response.content!r}"
+                    f" {oidc_response.content.decode()}"
                 )
-                raise UnableMeetPrerequisitesError()
+                raise UnableMeetPrerequisitesError('the "jwks_uri" key has an empty value')
 
             logger.debug('JWKS URI extracted: "%s"', jwks_uri)
 
             # Attempt getting their public certificates.
-            jwks_certificates_response = requests.get(url=jwks_uri)
+            try:
+                jwks_certificates_response: Response = requests.get(url=jwks_uri)
+            except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as ce:
+                logger.error("unable to fetch the JWKS certificates to validate the token: %s", ce)
+
+                raise UnableMeetPrerequisitesError("unable to fetch the JWKS certificates to validate the token")
+
             if not status.is_success(jwks_certificates_response.status_code):
                 logger.error(
-                    f"Unable to obtain the JWK certificates when attempting to validate a JWT token. Response code:"
-                    f"{jwks_certificates_response.status_code}. Response body: {jwks_certificates_response.content}"
+                    "Unable to obtain the JWK certificates when attempting to validate a JWT token. Response code:"
+                    f"{jwks_certificates_response.status_code}. Response body:"
+                    f" {jwks_certificates_response.content.decode()}"
                 )
-                raise UnableMeetPrerequisitesError()
+                raise UnableMeetPrerequisitesError(
+                    "unexpected status code received from IT when attempting to fetch the JWKS certificates"
+                )
 
             logger.debug('JWKS fetched from "%s"', jwks_uri)
 
-            jwks_cache.set_jwks_response(jwks_certificates_response.json())
+            # Cache the JWKS contents.
+            self.jwks_cache.set_jwks_response(jwks_certificates_response.json())
 
             logger.debug("JWKS response stored in cache")
 
-            jwks_certificates_response = jwks_certificates_response.json()
+            jwks_certificates = jwks_certificates_response.json()
 
         # Import the certificates.
         try:
-            return KeySet.import_key_set(jwks_certificates_response)
+            return KeySet.import_key_set(jwks_certificates)
         except Exception as e:
             logger.error(f"Unable to import IT's public keys to validate the token: {e}")
-            raise UnableMeetPrerequisitesError()
+            raise UnableMeetPrerequisitesError("unable to import IT's public keys to validate the token")
 
     def validate_token(self, request: Request, additional_scopes_to_validate: set[ScopeClaims]) -> str:
         """Validate the JWT token issued by Red Hat's SSO.
@@ -144,7 +175,7 @@ class ITSSOTokenValidator:
             bearer_token = re.sub("Bearer\\s+", "", bearer_token)
 
         # Import the certificates.
-        key_set = self._get_json_web_keyset()
+        key_set: KeySet = self._get_json_web_keyset()
 
         # Decode the token.
         try:
