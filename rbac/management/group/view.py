@@ -823,8 +823,8 @@ class GroupViewSet(
             if isinstance(resp, dict) and "errors" in resp:
                 return Response(status=resp.get("status_code"), data=resp.get("errors"))
 
-            self.paginate_queryset(resp.get("data"))
-            response = self.get_paginated_response(resp.get("data"))
+            page = self.paginate_queryset(resp.get("data"))
+            response = self.get_paginated_response(page)
         else:
             self.protect_system_groups("remove principals")
 
