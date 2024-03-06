@@ -24,6 +24,7 @@ import requests
 from django.conf import settings
 from django.db import connection
 from django.db import transaction
+from django.db.models import Q
 from django.db.models.aggregates import Count
 from django.utils.translation import gettext as _
 from django_filters import rest_framework as filters
@@ -160,7 +161,8 @@ class GroupViewSet(
     """
 
     queryset = Group.objects.annotate(
-        principalCount=Count("principals", distinct=True), policyCount=Count("policies", distinct=True)
+        principalCount=Count("principals", filter=Q(principals__type="user"), distinct=True),
+        policyCount=Count("policies", distinct=True),
     )
     permission_classes = (GroupAccessPermission,)
     lookup_field = "uuid"

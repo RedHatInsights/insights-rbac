@@ -16,7 +16,7 @@
 #
 """Queryset helpers for management module."""
 from django.conf import settings
-from django.db.models import QuerySet
+from django.db.models import Q, QuerySet
 from django.db.models.aggregates import Count
 from django.urls import reverse
 from django.utils.translation import gettext as _
@@ -60,7 +60,8 @@ PRINCIPAL_QUERYSET_MAP = {
 def get_annotated_groups():
     """Return an annotated set of groups for the tenant."""
     return Group.objects.annotate(
-        principalCount=Count("principals", distinct=True), policyCount=Count("policies", distinct=True)
+        principalCount=Count("principals", filter=Q(principals__type="user"), distinct=True),
+        policyCount=Count("policies", distinct=True),
     )
 
 
