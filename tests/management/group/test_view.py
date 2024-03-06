@@ -16,9 +16,8 @@
 #
 """Test the group viewset."""
 import random
-import uuid
 from unittest.mock import call, patch, ANY
-from uuid import uuid4, UUID
+from uuid import uuid4
 
 from django.db import transaction
 from django.conf import settings
@@ -2144,8 +2143,8 @@ class GroupViewsetTests(IdentityRequest):
         group.save()
 
         # Create some service accounts and add some of them to the group.
-        client_uuid_1 = uuid.uuid4()
-        client_uuid_2 = uuid.uuid4()
+        client_uuid_1 = uuid4()
+        client_uuid_2 = uuid4()
 
         sa_1 = Principal.objects.create(
             username=f"service-account-{client_uuid_1}",
@@ -2171,28 +2170,28 @@ class GroupViewsetTests(IdentityRequest):
         # Create more service accounts that should not show in the results, since they're not going to be specified in
         # the "client_ids" parameter.
         Principal.objects.create(
-            username=f"service-account-{uuid.uuid4()}",
-            service_account_id=uuid.uuid4(),
+            username=f"service-account-{uuid4()}",
+            service_account_id=uuid4(),
             type="service-account",
             tenant=self.tenant,
         )
         Principal.objects.create(
-            username=f"service-account-{uuid.uuid4()}",
-            service_account_id=uuid.uuid4(),
+            username=f"service-account-{uuid4()}",
+            service_account_id=uuid4(),
             type="service-account",
             tenant=self.tenant,
         )
         Principal.objects.create(
-            username=f"service-account-{uuid.uuid4()}",
-            service_account_id=uuid.uuid4(),
+            username=f"service-account-{uuid4()}",
+            service_account_id=uuid4(),
             type="service-account",
             tenant=self.tenant,
         )
 
         # Create the UUIDs to be specified in the request.
-        not_in_group = uuid.uuid4()
-        not_in_group_2 = uuid.uuid4()
-        not_in_group_3 = uuid.uuid4()
+        not_in_group = uuid4()
+        not_in_group_2 = uuid4()
+        not_in_group_3 = uuid4()
 
         # Also, create a set with the service accounts that will NOT go in the group to make it easier to assert that
         # the results flag them as such.
@@ -2252,11 +2251,11 @@ class GroupViewsetTests(IdentityRequest):
         """Test that when checking non-existent service account client IDs from another group the endpoint flags them as not present."""
 
         # Create the UUIDs to be specified in the request.
-        not_in_group = uuid.uuid4()
-        not_in_group_2 = uuid.uuid4()
-        not_in_group_3 = uuid.uuid4()
-        not_in_group_4 = uuid.uuid4()
-        not_in_group_5 = uuid.uuid4()
+        not_in_group = uuid4()
+        not_in_group_2 = uuid4()
+        not_in_group_3 = uuid4()
+        not_in_group_4 = uuid4()
+        not_in_group_5 = uuid4()
 
         # Also, create a set with the service accounts that will NOT go in the group to make it easier to assert that
         # the results flag them as such.
@@ -2323,7 +2322,7 @@ class GroupViewsetTests(IdentityRequest):
         group.save()
 
         # Create a service account and it into group.
-        client_uuid = uuid.uuid4()
+        client_uuid = uuid4()
         sa = Principal.objects.create(
             username=f"service-account-{client_uuid}",
             service_account_id=client_uuid,
@@ -2370,7 +2369,7 @@ class GroupViewsetTests(IdentityRequest):
         for query_parameter in query_parameters_to_test:
             url = (
                 f"{reverse('group-principals', kwargs={'uuid': self.group.uuid})}"
-                f"?service_account_client_ids={uuid.uuid4()}&{query_parameter}=abcde"
+                f"?service_account_client_ids={uuid4()}&{query_parameter}=abcde"
             )
             client = APIClient()
             response: Response = client.get(url, **self.headers)
