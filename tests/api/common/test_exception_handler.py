@@ -17,12 +17,15 @@
 """Test the API exception handler module."""
 
 from django.test import TestCase
+from management.authorization.invalid_token import InvalidTokenError
 from management.authorization.missing_authorization import MissingAuthorizationError
+from management.authorization.unable_meet_prerequisites import UnableMeetPrerequisitesError
 from rest_framework import status
 from rest_framework.views import Response
 from unittest.mock import Mock
 
-from api.common.exception_handler import _generate_errors_from_dict, custom_exception_handler
+from api.common.exception_handler import custom_exception_handler
+from api.common.exception_handler import _generate_errors_from_dict, _generate_error_data_payload_response
 
 
 class ExceptionHandlerTest(TestCase):
@@ -88,8 +91,38 @@ class ExceptionHandlerTest(TestCase):
         ]
         self.assertEqual(formatted_errors, expected)
 
+    def test_invalid_token_exception_handled(self):
+        """Test that an "invalid token" exception gets properly handled."""
+        # Mock the view and the context.
+        mocked_view = Mock()
+        mocked_view.basename = "some-view-handler"
+
+        context = {"view": mocked_view}
+
+        # Call the function under test.
+        response: Response = custom_exception_handler(exc=InvalidTokenError(), context=context)
+
+        # Assert that the correct response was returned for the exception.
+        self.assertEqual(
+            status.HTTP_401_UNAUTHORIZED,
+            response.status_code,
+            "unexpected status code in the response for the 'InvalidTokenError' exception handling",
+        )
+
+        self.assertEqual(
+            "Invalid token provided.",
+            str(response.data.get("errors")[0].get("detail")),
+            "unexpected error message in the response for the 'InvalidTokenError' exception handling",
+        )
+
+        self.assertEqual(
+            mocked_view.basename,
+            str(response.data.get("errors")[0].get("source")),
+            "unexpected source view in the response for the 'MissingAuthorizationError' exception handling",
+        )
+
     def test_missing_authorization_exception_handled(self):
-        """Test that a missing authorization exception gets properly handled"""
+        """Test that a "missing authorization" exception gets properly handled."""
         # Mock the view and the context.
         mocked_view = Mock()
         mocked_view.basename = "some-view-handler"
@@ -116,4 +149,124 @@ class ExceptionHandlerTest(TestCase):
             mocked_view.basename,
             str(response.data.get("errors")[0].get("source")),
             "unexpected source view in the response for the 'MissingAuthorizationError' exception handling",
+        )
+
+    def test_unable_meet_prerequisites_exception_handled(self):
+        """Test that an "unable to meet prerequisites" exception gets properly handled."""
+        # Mock the view and the context.
+        mocked_view = Mock()
+        mocked_view.basename = "some-view-handler"
+
+        context = {"view": mocked_view}
+
+        # Call the function under test.
+        response: Response = custom_exception_handler(exc=UnableMeetPrerequisitesError(), context=context)
+
+        # Assert that the correct response was returned for the exception.
+        self.assertEqual(
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            response.status_code,
+            "unexpected status code in the response for the 'UnableMeetPrerequisitesError' exception handling",
+        )
+
+        self.assertEqual(
+            "Unable to validate the provided token.",
+            str(response.data.get("errors")[0].get("detail")),
+            "unexpected error message in the response for the 'UnableMeetPrerequisitesError' exception handling",
+        )
+
+        self.assertEqual(
+            mocked_view.basename,
+            str(response.data.get("errors")[0].get("source")),
+            "unexpected source view in the response for the 'UnableMeetPrerequisitesError' exception handling",
+        )
+
+    def test_generate_error_data_payload_with_view_response(self):
+        """Tests that the function under test generates the data payload correctly when a view is passed in the context."""
+        # Prepare a payload with a view in the context.
+        detail = "some error message"
+        mocked_view = Mock()
+        mocked_view.basename = "some-view-handler"
+        context = {"view": mocked_view}
+        http_status_code = status.HTTP_200_OK
+
+        # Call the function under test.
+        result = _generate_error_data_payload_response(
+            detail=detail, context=context, http_status_code=http_status_code
+        )
+
+        # Assert that the correct structure is returned.
+        errors = result.get("errors")
+        if not errors:
+            self.fail(f"the errors array was not present in the payload: {result}")
+
+        if len(errors) != 1:
+            self.fail(f"only one error was expected in the payload: {result}")
+
+        only_error = errors[0]
+
+        self.assertEqual(detail, only_error.get("detail"), f"unexpected detail message in the payload: {result}")
+
+        self.assertEqual(mocked_view.basename, only_error.get("source"), f"unexpected source in the payload: {result}")
+
+        self.assertEqual(
+            str(http_status_code), only_error.get("status"), f"unexpected status code in the payload: {result}"
+        )
+
+    def test_generate_error_data_payload_without_view_basename(self):
+        """
+        Tests that the function under test generates the data payload correctly
+        when a view is passed in the context without basename attribute."""
+        # Prepare a payload with a view in the context without "basename" attribute.
+        detail = "some error message"
+        context = {"view": []}
+        http_status_code = status.HTTP_200_OK
+
+        # Call the function under test.
+        result = _generate_error_data_payload_response(
+            detail=detail, context=context, http_status_code=http_status_code
+        )
+
+        # Assert that the correct structure is returned.
+        errors = result.get("errors")
+        if not errors:
+            self.fail(f"the errors array was not present in the payload: {result}")
+
+        if len(errors) != 1:
+            self.fail(f"only one error was expected in the payload: {result}")
+
+        only_error = errors[0]
+
+        self.assertEqual(detail, only_error.get("detail"), f"unexpected detail message in the payload: {result}")
+        self.assertIsNone(only_error.get("source"), f"unexpected 'source' in the payload: {result}")
+        self.assertEqual(
+            str(http_status_code), only_error.get("status"), f"unexpected status code in the payload: {result}"
+        )
+
+    def test_generate_error_data_payload_without_view_response(self):
+        """Tests that the function under test generates the data payload correctly when no view is passed in the context."""
+        # Prepare a payload without a view in the context.
+        detail = "some error message"
+        context = {}
+        http_status_code = status.HTTP_200_OK
+
+        # Call the function under test.
+        result = _generate_error_data_payload_response(
+            detail=detail, context=context, http_status_code=http_status_code
+        )
+
+        # Assert that the correct structure is returned.
+        errors = result.get("errors")
+        if not errors:
+            self.fail(f"the errors array was not present in the payload: {result}")
+
+        if len(errors) != 1:
+            self.fail(f"only one error was expected in the payload: {result}")
+
+        only_error = errors[0]
+
+        self.assertEqual(detail, only_error.get("detail"), f"unexpected detail message in the payload: {result}")
+
+        self.assertEqual(
+            str(http_status_code), only_error.get("status"), f"unexpected status code in the payload: {result}"
         )

@@ -22,7 +22,6 @@ from uuid import UUID
 
 from django.conf import settings
 from django.core.exceptions import PermissionDenied
-from django.core.handlers.wsgi import WSGIRequest
 from django.utils.translation import gettext as _
 from management.models import Access, Group, Policy, Principal, Role
 from management.permissions.principal_access import PrincipalAccessPermission
@@ -71,40 +70,44 @@ def get_principal_from_request(request):
 def get_principal(
     username: str, request: Request, verify_principal: bool = True, from_query: bool = False
 ) -> Principal:
-    """Get principals from username."""
-    # First check if principal exist on our side,
-    # if not call BOP to check if user exist in the account.
+    """Get principals from username.
+
+    The service account usernames are not being validated for now because that would require for the clients to send
+    tokens with the "api.iam.service_accounts" scope. That conflicts with the following two use cases:
+
+    - A user sends a request to the /access/?username=service-account-<uuid> endpoint.
+    - A service account makes a request to /access.
+
+    In these two cases, due to how "get_principal_from_request" works, we would need to validate the service account
+    against IT, but the only way to do it is by using a bearer token that we can only obtain from the incoming request.
+
+    Until RBAC is given some other means to validate the service accounts, we are skipping that validation. Also, this
+    does not affect the other endpoints where we need to validate service accounts —listed below just in case—, because
+    there the bearer token with that claim is a must to be able to manage the service accounts. The endpoints that are
+    fine are:
+
+    - GET /principals/?type=service-account
+    - GET /groups/{uuid}/principals/?principal_type=service-account
+    - POST /groups/{uuid}/principals/ with a service account payload
+    - DELETE /groups/{uuid}/principals/?service-account=<uuid>.
+    """
+    # First check if principal exist on our side, if not call BOP to check if user exist in the account.
     tenant: Tenant = request.tenant
+    is_username_service_account = ITService.is_username_service_account(username)
+
     try:
         # If the username was provided through a query we must verify if it exists in the corresponding services first.
-        if from_query:
-            if ITService.is_username_service_account(username=username):
-                it_service = ITService()
-                if not it_service.is_service_account_valid_by_username(
-                    user=request.user, service_account_username=username
-                ):
-                    raise serializers.ValidationError(
-                        {"detail": f"No data found for service account with username '{username}'"}
-                    )
-            else:
-                verify_principal_with_proxy(username, request, verify_principal=verify_principal)
+        if from_query and not is_username_service_account:
+            verify_principal_with_proxy(username=username, request=request, verify_principal=verify_principal)
+
         principal = Principal.objects.get(username__iexact=username, tenant=tenant)
     except Principal.DoesNotExist:
         # If the "from query" parameter was specified, the username was validated above, so there is no need to
         # validate it again.
-        if not from_query:
-            if ITService.is_username_service_account(username):
-                it_service = ITService()
-                if not it_service.is_service_account_valid_by_username(
-                    user=request.user, service_account_username=username
-                ):
-                    raise serializers.ValidationError(
-                        {"detail": f"No data found for service account with username '{username}'"}
-                    )
-            else:
-                verify_principal_with_proxy(username, request, verify_principal=verify_principal)
+        if not from_query and not is_username_service_account:
+            verify_principal_with_proxy(username=username, request=request, verify_principal=verify_principal)
 
-        if ITService.is_username_service_account(username=username):
+        if is_username_service_account:
             client_id: uuid.UUID = ITService.extract_client_id_service_account_username(username)
 
             principal, _ = Principal.objects.get_or_create(
@@ -345,13 +348,3 @@ def get_admin_from_proxy(username, request):
 
     is_org_admin = bop_resp.get("data")[index]["is_org_admin"]
     return is_org_admin
-
-
-def request_has_bearer_authentication_header(request: WSGIRequest) -> bool:
-    """Check if the incoming request has an authorization header, of the bearer type."""
-    authorization_header_contents: str = request.headers.get("Authorization")
-
-    if authorization_header_contents:
-        return authorization_header_contents.startswith("Bearer")
-    else:
-        return False
