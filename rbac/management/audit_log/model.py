@@ -69,7 +69,7 @@ class AuditLog(TenantAwareModel):
             if request.data != {}:
                 role_object = get_object_or_404(Role, name=request.data["name"])
                 # retrieve role id and name
-                role_object_id = role_object.id 
+                role_object_id = role_object.id
                 role_object_name = "role: " + role_object.name
                 role_items.append(role_object_id)
                 role_items.append(role_object_name)
@@ -77,15 +77,15 @@ class AuditLog(TenantAwareModel):
             else:
                 role_object = kwargs["kwargs"]
                 role_object_id = role_object.id
-                role_object_name = "role: "  + role_object.name
+                role_object_name = "role: " + role_object.name
                 role_items.append(role_object_id)
                 role_items.append(role_object_name)
-                return role_items 
-            
+                return role_items
+
         elif r_type == AuditLog.GROUP:
             if request._data != None:
                 group_object = get_object_or_404(Group, name=request.data["name"])
-                
+
             else:
                 group_uuid = kwargs["kwargs"]["uuid"]
                 group_object = get_object_or_404(Group, uuid=group_uuid)
@@ -95,9 +95,7 @@ class AuditLog(TenantAwareModel):
             return None
         elif r_type == "principal":
             current_user = management.utils.get_principal_from_request(request)
-            principal_object = get_object_or_404(
-                Principal, username=current_user.username
-            )
+            principal_object = get_object_or_404(Principal, username=current_user.username)
             list_principal_object = [principal_object.id, principal_object.username]
             return list_principal_object
         elif r_type == "tenant":

@@ -23,7 +23,12 @@ from rest_framework import serializers
 class AuditLogSerializer(serializers.ModelSerializer):
     """Serializer for Audit Log."""
 
-
     class Meta:
         model = AuditLog
-        fields = ("created","principal_username","description","resource_type","action",)
+        fields = (
+            "created",
+            "principal_username",
+            "description",
+            "resource_type",
+            "action",
+        )

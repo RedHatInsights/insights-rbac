@@ -237,6 +237,7 @@ def get_policy_queryset(request):
         return Policy.objects.none()
     return filter_queryset_by_tenant(Policy.objects.filter(uuid__in=access), request.tenant)
 
+
 def get_auditlog_queryset(request):
     if request.user.admin:
         return filter_queryset_by_tenant(AuditLog.objects.all(), request.tenant)
@@ -244,6 +245,7 @@ def get_auditlog_queryset(request):
         key = "detail"
         message = "User is not admin"
         raise serializers.ValidationError({key: _(message)})
+
 
 def get_access_queryset(request: Request) -> QuerySet:
     """Obtain the queryset for policies."""

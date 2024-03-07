@@ -217,8 +217,6 @@ class RoleViewSet(
             auditlog.log_create(request, AuditLog.ROLE)
             return create_role
 
-
-
     def list(self, request, *args, **kwargs):
         """Obtain the list of roles for the tenant.
 
@@ -332,7 +330,7 @@ class RoleViewSet(
             self.delete_policies_if_no_role_attached(role)
             response = super().destroy(request=request, args=args, kwargs=kwargs)
             if status.is_success(response.status_code):
-            # Add changes to audit log database
+                # Add changes to audit log database
                 auditlog = AuditLog()
                 auditlog.log_delete(role, request, AuditLog.ROLE, args=args, kwargs=kwargs)
                 print("finished adding items to audit log")

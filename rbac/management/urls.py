@@ -16,7 +16,15 @@
 """Describes the urls and patterns for the management application."""
 from django.conf.urls import include
 from django.urls import re_path
-from management.views import AccessView, GroupViewSet, PermissionViewSet, PolicyViewSet, PrincipalView, RoleViewSet, AuditLogViewSet
+from management.views import (
+    AccessView,
+    GroupViewSet,
+    PermissionViewSet,
+    PolicyViewSet,
+    PrincipalView,
+    RoleViewSet,
+    AuditLogViewSet,
+)
 from rest_framework.routers import DefaultRouter
 
 
