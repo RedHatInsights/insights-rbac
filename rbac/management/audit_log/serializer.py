@@ -23,25 +23,6 @@ from rest_framework import serializers
 class AuditLogSerializer(serializers.ModelSerializer):
     """Serializer for Audit Log."""
 
-    RESOURCE_CHOICES = (
-        ("group", AuditLog.GROUP),
-        ("role", AuditLog.ROLE),
-        ("user", AuditLog.USER),
-        ("permission", AuditLog.PERMISSION),
-    )
-    ACTION_CHOICES = (
-        ("delete", AuditLog.DELETE),
-        ("add", AuditLog.ADD),
-        ("edit", AuditLog.EDIT),
-        ("create", AuditLog.CREATE),
-        ("remove", AuditLog.REMOVE),
-    )
-    created = serializers.DateTimeField(required=True)
-    principal_username = serializers.CharField(required=True, max_length=255)
-    description = serializers.CharField(required=True, max_length=255)
-    resource_type = serializers.ChoiceField(choices=RESOURCE_CHOICES)
-    action = serializers.ChoiceField(choices=ACTION_CHOICES)
-
     class Meta:
         model = AuditLog
         fields = (
