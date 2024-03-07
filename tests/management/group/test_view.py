@@ -16,9 +16,8 @@
 #
 """Test the group viewset."""
 import random
-import uuid
 from unittest.mock import call, patch, ANY
-from uuid import uuid4, UUID
+from uuid import uuid4
 
 from django.db import transaction
 from django.conf import settings
@@ -30,6 +29,7 @@ from rest_framework.test import APIClient
 
 from api.models import Tenant, User
 from management.cache import TenantCache
+from management.group.serializer import GroupInputSerializer
 from management.models import Group, Principal, Policy, Role, ExtRoleRelation, ExtTenant
 from tests.core.test_kafka import copy_call_args
 from tests.identity_request import IdentityRequest
@@ -348,6 +348,98 @@ class GroupViewsetTests(IdentityRequest):
         group = response.data.get("data")[0]
         self.assertIsNotNone(group.get("name"))
         self.assertEqual(group.get("name"), self.group.name)
+
+        # check that all fields from GroupInputSerializer are present
+        for key in GroupInputSerializer().fields.keys():
+            self.assertIn(key, group.keys())
+
+    @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={
+            "status_code": 200,
+            "data": [
+                {
+                    "org_id": "100001",
+                    "is_org_admin": False,
+                    "is_internal": False,
+                    "id": 52567473,
+                    "username": "user_based_principal",
+                    "account_number": "1111111",
+                    "is_active": True,
+                }
+            ],
+        },
+    )
+    @patch(
+        "management.principal.it_service.ITService.request_service_accounts",
+        return_value=[
+            {
+                "clientID": "b7a82f30-bcef-013c-2452-6aa2427b506c",
+                "name": f"service_account_name",
+                "description": f"Service Account description",
+                "owner": "jsmith",
+                "username": "service_account-b7a82f30-bcef-013c-2452-6aa2427b506c",
+                "time_created": 1706784741,
+                "type": "service-account",
+            }
+        ],
+    )
+    def test_read_group_list_principalCount(self, mock_request, sa_mock_request):
+        """Test that correct number is returned for principalCount."""
+        # Create a test data - group with 1 user based and 1 service account principal
+        group_name = "TestGroup"
+        group = Group(name=group_name, tenant=self.tenant)
+        group.save()
+
+        user_based_principal = Principal(username="user_based_principal", tenant=self.test_tenant)
+        user_based_principal.save()
+
+        sa_uuid = "b7a82f30-bcef-013c-2452-6aa2427b506c"
+        sa_based_principal = Principal(
+            username="service_account-" + sa_uuid,
+            tenant=self.tenant,
+            type="service-account",
+            service_account_id=sa_uuid,
+        )
+        sa_based_principal.save()
+
+        group.principals.add(user_based_principal, sa_based_principal)
+        self.group.save()
+
+        # Test that /groups/{uuid}/principals/ returns correct count of user based principals
+        url = f"{reverse('group-principals', kwargs={'uuid': group.uuid})}"
+        client = APIClient()
+        response = client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(int(response.data.get("meta").get("count")), 1)
+        self.assertEqual(len(response.data.get("data")), 1)
+        principal_out = response.data.get("data")[0]
+        self.assertEqual(principal_out["username"], user_based_principal.username)
+
+        # Test that /groups/{uuid}/principals/?principal_type=service-account returns
+        # correct count of service account based principals
+        url = f"{reverse('group-principals', kwargs={'uuid': group.uuid})}?principal_type=service-account"
+        client = APIClient()
+        response = client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(int(response.data.get("meta").get("count")), 1)
+        self.assertEqual(len(response.data.get("data")), 1)
+        sa_out = response.data.get("data")[0]
+        self.assertEqual(sa_out["username"], sa_based_principal.username)
+
+        # Test that /groups/?name=<group_name> returns 1 group with principalCount for only user based principals
+        url = f"{reverse('group-list')}?name={group_name}"
+        client = APIClient()
+        response = client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data.get("data")), 1)
+
+        group = response.data.get("data")[0]
+        self.assertEqual(group["principalCount"], 1)
 
     def test_get_group_by_partial_name_by_default(self):
         """Test that getting groups by name returns partial match by default."""
@@ -1984,6 +2076,67 @@ class GroupViewsetTests(IdentityRequest):
         self.assertEqual(response.data.get("data")[0].get("username"), self.principal.username)
         self.assertEqual(response.data.get("data")[1].get("username"), self.principalB.username)
 
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={"status_code": 200, "data": []},
+    )
+    def test_get_group_user_principals_nonempty_limit_offset(self, mock_request):
+        """
+        Test that getting the user based principals from a group returns successfully
+        according to the given limit and offset.
+        """
+        # Create a group with 3 user based principals
+        group_name = "TestGroup"
+        group = Group(name=group_name, tenant=self.tenant)
+        group.save()
+
+        principals_list = []
+        for i in range(3):
+            principal = Principal(username=f"user_based_principal_{i}", tenant=self.test_tenant)
+            principal.save()
+            principals_list.append(principal)
+            group.principals.add(principal)
+        group.save()
+
+        # Set the return value for the mock
+        mock_request.return_value["data"] = [
+            {"username": principals_list[0].username},
+            {"username": principals_list[1].username},
+            {"username": principals_list[2].username},
+        ]
+
+        # Test that /groups/{uuid}/principals/ returns correct data with default limit and offset
+        url = f"{reverse('group-principals', kwargs={'uuid': group.uuid})}"
+        client = APIClient()
+        response = client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(int(response.data.get("meta").get("count")), 3)
+        self.assertEqual(int(response.data.get("meta").get("limit")), 10)
+        self.assertEqual(int(response.data.get("meta").get("offset")), 0)
+        self.assertEqual(len(response.data.get("data")), 3)
+
+        # Test that /groups/{uuid}/principals/ returns correct data for given offset and limit
+        test_data = [
+            {"limit": 10, "offset": 3, "expected_data_count": 0},
+            {"limit": 10, "offset": 2, "expected_data_count": 1},
+            {"limit": 1, "offset": 0, "expected_data_count": 1},
+            {"limit": 2, "offset": 2, "expected_data_count": 1},
+        ]
+        for item in test_data:
+            limit = item["limit"]
+            offset = item["offset"]
+            expected_data_count = item["expected_data_count"]
+            url = f"{reverse('group-principals', kwargs={'uuid': group.uuid})}?limit={limit}&offset={offset}"
+            client = APIClient()
+            response = client.get(url, **self.headers)
+
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            self.assertEqual(int(response.data.get("meta").get("count")), 3)
+            self.assertEqual(int(response.data.get("meta").get("limit")), limit)
+            self.assertEqual(int(response.data.get("meta").get("offset")), offset)
+            self.assertEqual(len(response.data.get("data")), expected_data_count)
+
     @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
     @patch("management.principal.it_service.ITService.request_service_accounts")
     def test_get_group_service_account_success(self, mock_request):
@@ -2144,8 +2297,8 @@ class GroupViewsetTests(IdentityRequest):
         group.save()
 
         # Create some service accounts and add some of them to the group.
-        client_uuid_1 = uuid.uuid4()
-        client_uuid_2 = uuid.uuid4()
+        client_uuid_1 = uuid4()
+        client_uuid_2 = uuid4()
 
         sa_1 = Principal.objects.create(
             username=f"service-account-{client_uuid_1}",
@@ -2171,28 +2324,28 @@ class GroupViewsetTests(IdentityRequest):
         # Create more service accounts that should not show in the results, since they're not going to be specified in
         # the "client_ids" parameter.
         Principal.objects.create(
-            username=f"service-account-{uuid.uuid4()}",
-            service_account_id=uuid.uuid4(),
+            username=f"service-account-{uuid4()}",
+            service_account_id=uuid4(),
             type="service-account",
             tenant=self.tenant,
         )
         Principal.objects.create(
-            username=f"service-account-{uuid.uuid4()}",
-            service_account_id=uuid.uuid4(),
+            username=f"service-account-{uuid4()}",
+            service_account_id=uuid4(),
             type="service-account",
             tenant=self.tenant,
         )
         Principal.objects.create(
-            username=f"service-account-{uuid.uuid4()}",
-            service_account_id=uuid.uuid4(),
+            username=f"service-account-{uuid4()}",
+            service_account_id=uuid4(),
             type="service-account",
             tenant=self.tenant,
         )
 
         # Create the UUIDs to be specified in the request.
-        not_in_group = uuid.uuid4()
-        not_in_group_2 = uuid.uuid4()
-        not_in_group_3 = uuid.uuid4()
+        not_in_group = uuid4()
+        not_in_group_2 = uuid4()
+        not_in_group_3 = uuid4()
 
         # Also, create a set with the service accounts that will NOT go in the group to make it easier to assert that
         # the results flag them as such.
@@ -2252,11 +2405,11 @@ class GroupViewsetTests(IdentityRequest):
         """Test that when checking non-existent service account client IDs from another group the endpoint flags them as not present."""
 
         # Create the UUIDs to be specified in the request.
-        not_in_group = uuid.uuid4()
-        not_in_group_2 = uuid.uuid4()
-        not_in_group_3 = uuid.uuid4()
-        not_in_group_4 = uuid.uuid4()
-        not_in_group_5 = uuid.uuid4()
+        not_in_group = uuid4()
+        not_in_group_2 = uuid4()
+        not_in_group_3 = uuid4()
+        not_in_group_4 = uuid4()
+        not_in_group_5 = uuid4()
 
         # Also, create a set with the service accounts that will NOT go in the group to make it easier to assert that
         # the results flag them as such.
@@ -2323,7 +2476,7 @@ class GroupViewsetTests(IdentityRequest):
         group.save()
 
         # Create a service account and it into group.
-        client_uuid = uuid.uuid4()
+        client_uuid = uuid4()
         sa = Principal.objects.create(
             username=f"service-account-{client_uuid}",
             service_account_id=client_uuid,
@@ -2370,7 +2523,7 @@ class GroupViewsetTests(IdentityRequest):
         for query_parameter in query_parameters_to_test:
             url = (
                 f"{reverse('group-principals', kwargs={'uuid': self.group.uuid})}"
-                f"?service_account_client_ids={uuid.uuid4()}&{query_parameter}=abcde"
+                f"?service_account_client_ids={uuid4()}&{query_parameter}=abcde"
             )
             client = APIClient()
             response: Response = client.get(url, **self.headers)
