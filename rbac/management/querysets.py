@@ -20,6 +20,7 @@ from django.db.models import Q, QuerySet
 from django.db.models.aggregates import Count
 from django.urls import reverse
 from django.utils.translation import gettext as _
+from management.audit_log.model import AuditLog
 from management.group.model import Group
 from management.permissions.role_access import RoleAccessPermission
 from management.policy.model import Policy
@@ -267,6 +268,16 @@ def get_access_queryset(request: Request) -> QuerySet:
             "is_org_admin": is_org_admin,
         },
     )
+
+
+def get_auditlog_queryset(request):
+    """Get the query set for audit logs based on tenant."""
+    if request.user.admin:
+        return filter_queryset_by_tenant(AuditLog.objects.all(), request.tenant)
+    else:
+        key = "detail"
+        message = "User is not admin"
+        raise serializers.ValidationError({key: _(message)})
 
 
 def get_object_principal_queryset(request, scope, clazz, **kwargs):
