@@ -22,7 +22,6 @@ from uuid import UUID
 
 import requests
 from django.conf import settings
-from django.db import connection
 from django.db import transaction
 from django.db.models import Q
 from django.db.models.aggregates import Count
@@ -435,8 +434,6 @@ class GroupViewSet(
         # Fetch the service account from our database to add it to the group. If it doesn't exist, we create
         # it.
         for specified_sa in service_accounts:
-            self.user_has_permission_act_on_service_account(user=user, service_account=specified_sa)
-
             client_id = specified_sa["clientID"]
             try:
                 principal = Principal.objects.get(
@@ -1122,62 +1119,3 @@ class GroupViewSet(
         )
         for username in service_accounts:
             group_principal_change_notification_handler(self.request.user, group, username, "removed")
-
-    def user_has_permission_act_on_service_account(self, user: User, service_account: dict = {}):
-        """Check if the user has permission to create or delete the service account.
-
-        Only org admins, users with the "User Access administrator" or the owner of the service account can create or
-        remove service accounts.
-        """
-        if settings.IT_BYPASS_PERMISSIONS_MODIFY_SERVICE_ACCOUNTS:
-            return
-
-        # Is the user an organization administrator?
-        is_organization_admin: bool = user.admin
-
-        # Is the user the owner of the service account?
-        is_user_owner: bool = False
-
-        owner = service_account.get("owner")
-        if owner:
-            is_user_owner = user.username == owner
-
-        # Check if the user has the "User Access administrator" permission. Leaving the RAW query here
-        username: str = user.username  # type: ignore
-        query = (
-            "SELECT EXISTS ( "
-            "SELECT "
-            "1 "
-            "FROM "
-            '"management_principal" AS "mp" '
-            "INNER JOIN "
-            '"management_group_principals" AS "mgp" ON "mgp"."principal_id" = "mp"."id" '
-            "INNER JOIN "
-            '"management_policy" AS "mpolicy" ON "mpolicy"."group_id" = "mgp"."group_id" '
-            "INNER JOIN "
-            '"management_policy_roles" AS "mpr" ON "mpr"."policy_id" = "mpolicy"."id" '
-            "INNER JOIN "
-            '"management_role" AS "mr" ON "mr"."id" = "mpr"."role_id" '
-            "WHERE "
-            '"mp"."username" = %s '
-            "AND "
-            "mr.\"name\" = 'User Access administrator' "
-            "LIMIT 1 "
-            ') AS "user_has_user_access_administrator_permission"'
-        )
-
-        with connection.cursor() as cursor:
-            cursor.execute(query, [username])
-
-            row: tuple = cursor.fetchone()
-
-        user_has_user_access_administrator_permission = row[0]
-
-        if (not is_organization_admin) and (not user_has_user_access_administrator_permission) and (not is_user_owner):
-            logger.debug(
-                f"User {user} was denied altering service account {service_account} due to insufficient privileges."
-            )
-
-            raise InsufficientPrivilegesError(
-                f"Unable to alter service account {service_account} due to insufficient privileges."
-            )
