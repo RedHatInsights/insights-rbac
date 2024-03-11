@@ -345,7 +345,7 @@ class GroupViewSet(
     def update(self, request, *args, **kwargs):
         """Update a group.
 
-        @api {post} /api/v1/groups/:uuid   Update a group
+        @api {put} /api/v1/groups/:uuid   Update a group
         @apiName updateGroup
         @apiGroup Group
         @apiVersion 1.0.0
