@@ -600,7 +600,7 @@ class GroupViewSet(
                     for access in role.access.all():
                         if access.permission_application() == "rbac":
                             key = "add_principals"
-                            message = "Non-admin users may not add principals to Groups with RBAC permissions."
+                            message = "Non-admin users may not add principals to Groups with RBAC Admin permissions."
                             raise serializers.ValidationError({key: _(message)})
 
             serializer = GroupPrincipalInputSerializer(data=request.data)
