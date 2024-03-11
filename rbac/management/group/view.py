@@ -337,6 +337,17 @@ class GroupViewSet(
         validate_uuid(kwargs.get("uuid"), "group uuid validation")
         self.protect_system_groups("delete")
         group = self.get_object()
+
+        # Only organization administrators are allowed to remove a groups with the "User Access Administrator" role.
+        if not request.user.admin:
+            for role in group.roles_with_access():
+                if role.name == USER_ACCESS_ADMINISTRATOR_ROLE_KEY:
+                    key = "remove_group"
+                    message = (
+                        f"Non-admin users may not remove a group with '{USER_ACCESS_ADMINISTRATOR_ROLE_KEY}' role."
+                    )
+                    raise serializers.ValidationError({key: _(message)})
+
         response = super().destroy(request=request, args=args, kwargs=kwargs)
         if response.status_code == status.HTTP_204_NO_CONTENT:
             group_obj_change_notification_handler(request.user, group, "deleted")
