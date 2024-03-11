@@ -881,7 +881,7 @@ class GroupViewSet(
                     )
 
                 # Create a default and successful response object. If no user principals are to be removed below, this
-                # response will be returned. Else, it will be overriden with whichever response the user removal
+                # response will be returned. Else, it will be overridden with whichever response the user removal
                 # generates.
                 response = Response(status=status.HTTP_204_NO_CONTENT)
 
