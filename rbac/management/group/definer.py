@@ -36,6 +36,7 @@ from rest_framework import serializers
 
 from api.models import Tenant
 
+USER_ACCESS_ADMINISTRATOR_ROLE_KEY = "User Access administrator"
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 
@@ -133,12 +134,11 @@ def add_roles(group, roles_or_role_ids, tenant, user=None):
         Q(tenant=tenant) | Q(tenant=Tenant.objects.get(tenant_name="public")), name__in=role_names
     )
     for role in roles:
-        accesses = role.access.all()
-        for access in accesses:
-            if access.permission_application() == "rbac" and user and not user.admin:
-                key = "add-roles"
-                message = f"Non-admin users cannot add RBAC role {role.display_name} to groups."
-                raise serializers.ValidationError({key: _(message)})
+        # Only Organization administrators are allowed to add 'User Access Administrator' role into a group.
+        if role.name == USER_ACCESS_ADMINISTRATOR_ROLE_KEY and user and not user.admin:
+            key = "add-roles"
+            message = f"Non-admin users cannot add '{USER_ACCESS_ADMINISTRATOR_ROLE_KEY}' role to groups."
+            raise serializers.ValidationError({key: _(message)})
         # Only add the role if it was not attached
         if not system_policy.roles.filter(pk=role.pk).exists():
             system_policy.roles.add(role)
