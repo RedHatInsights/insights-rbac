@@ -366,6 +366,18 @@ class GroupViewSet(
         """
         validate_uuid(kwargs.get("uuid"), "group uuid validation")
         self.protect_system_groups("update")
+
+        group = self.get_object()
+        # Only organization administrators are allowed to update a groups with the "User Access Administrator" role.
+        if not request.user.admin:
+            for role in group.roles_with_access():
+                if role.name == USER_ACCESS_ADMINISTRATOR_ROLE_KEY:
+                    key = "update_group"
+                    message = (
+                        f"Non-admin users may not update a group with '{USER_ACCESS_ADMINISTRATOR_ROLE_KEY}' role."
+                    )
+                    raise serializers.ValidationError({key: _(message)})
+
         return super().update(request=request, args=args, kwargs=kwargs)
 
     def add_principals(self, group, principals, account=None, org_id=None):
