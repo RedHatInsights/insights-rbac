@@ -30,7 +30,12 @@ from django_filters import rest_framework as filters
 from management.authorization.scope_claims import ScopeClaims
 from management.authorization.token_validator import ITSSOTokenValidator
 from management.filters import CommonFilters
-from management.group.definer import add_roles, remove_roles, set_system_flag_before_update
+from management.group.definer import (
+    USER_ACCESS_ADMINISTRATOR_ROLE_KEY,
+    add_roles,
+    remove_roles,
+    set_system_flag_before_update,
+)
 from management.group.model import Group
 from management.group.serializer import (
     GroupInputSerializer,
@@ -84,7 +89,6 @@ VALID_GROUP_PRINCIPAL_FILTERS = ["principal_username"]
 VALID_PRINCIPAL_ORDER_FIELDS = ["username"]
 VALID_PRINCIPAL_TYPE_VALUE = ["service-account", "user"]
 VALID_ROLE_ROLE_DISCRIMINATOR = ["all", "any"]
-USER_ACCESS_ADMINISTRATOR_ROLE_KEY = "User Access administrator"
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 
