@@ -1052,6 +1052,19 @@ class GroupViewSet(
             return self.get_paginated_response(serializer.data)
         else:
             self.protect_default_admin_group_roles(group)
+
+            # Only organization administrators are allowed to remove a role from a group
+            # with the "User Access Administrator" role.
+            if not request.user.admin:
+                for role in group.roles_with_access():
+                    if role.name == USER_ACCESS_ADMINISTRATOR_ROLE_KEY:
+                        key = "remove_role"
+                        message = (
+                            "Non-admin users may not remove a role from a group with "
+                            f"'{USER_ACCESS_ADMINISTRATOR_ROLE_KEY}' role."
+                        )
+                        raise serializers.ValidationError({key: _(message)})
+
             if ROLES_KEY not in request.query_params:
                 key = "detail"
                 message = "Query parameter {} is required.".format(ROLES_KEY)
