@@ -209,6 +209,19 @@ class GroupViewSet(
             error = {"group": [_("Default admin access cannot be modified.")]}
             raise serializers.ValidationError(error)
 
+    def protect_group_with_user_access_admin_role(self, roles, source_key):
+        """Disallow group with 'User Access administrator' role from being updated."""
+        # Only organization administrators are allowed to create, modify, or delete a group
+        # that is assigned the User Access administrator role.
+        for role in roles:
+            if role.name == USER_ACCESS_ADMINISTRATOR_ROLE_KEY:
+                key = source_key
+                message = (
+                    "Non-admin users are not allowed to create, modify, or delete a group that is assigned the "
+                    f"'{USER_ACCESS_ADMINISTRATOR_ROLE_KEY}' role."
+                )
+                raise serializers.ValidationError({key: _(message)})
+
     def create(self, request, *args, **kwargs):
         """Create a group.
 
@@ -341,16 +354,8 @@ class GroupViewSet(
         validate_uuid(kwargs.get("uuid"), "group uuid validation")
         self.protect_system_groups("delete")
         group = self.get_object()
-
-        # Only organization administrators are allowed to remove a groups with the "User Access Administrator" role.
         if not request.user.admin:
-            for role in group.roles_with_access():
-                if role.name == USER_ACCESS_ADMINISTRATOR_ROLE_KEY:
-                    key = "remove_group"
-                    message = (
-                        f"Non-admin users may not remove a group with '{USER_ACCESS_ADMINISTRATOR_ROLE_KEY}' role."
-                    )
-                    raise serializers.ValidationError({key: _(message)})
+            self.protect_group_with_user_access_admin_role(group.roles_with_access(), "remove_group")
 
         response = super().destroy(request=request, args=args, kwargs=kwargs)
         if response.status_code == status.HTTP_204_NO_CONTENT:
@@ -383,15 +388,8 @@ class GroupViewSet(
         self.protect_system_groups("update")
 
         group = self.get_object()
-        # Only organization administrators are allowed to update a groups with the "User Access Administrator" role.
         if not request.user.admin:
-            for role in group.roles_with_access():
-                if role.name == USER_ACCESS_ADMINISTRATOR_ROLE_KEY:
-                    key = "update_group"
-                    message = (
-                        f"Non-admin users may not update a group with '{USER_ACCESS_ADMINISTRATOR_ROLE_KEY}' role."
-                    )
-                    raise serializers.ValidationError({key: _(message)})
+            self.protect_group_with_user_access_admin_role(group.roles_with_access(), "update_group")
 
         return super().update(request=request, args=args, kwargs=kwargs)
 
@@ -618,17 +616,8 @@ class GroupViewSet(
             # Make sure that system groups are kept unmodified.
             self.protect_system_groups("add principals")
 
-            # Only organization administrators are allowed to add principals to groups with the "User Access
-            # Administrator" role.
             if not request.user.admin:
-                for role in group.roles_with_access():
-                    if role.name == USER_ACCESS_ADMINISTRATOR_ROLE_KEY:
-                        key = "add_principals"
-                        message = (
-                            "Non-admin users may not add principals to Groups with "
-                            f"'{USER_ACCESS_ADMINISTRATOR_ROLE_KEY}' role."
-                        )
-                        raise serializers.ValidationError({key: _(message)})
+                self.protect_group_with_user_access_admin_role(group.roles_with_access(), "add_principals")
 
             serializer = GroupPrincipalInputSerializer(data=request.data)
 
@@ -860,17 +849,8 @@ class GroupViewSet(
         else:
             self.protect_system_groups("remove principals")
 
-            # Only organization administrators are allowed to remove principals from groups with the
-            # "User Access Administrator" role.
             if not request.user.admin:
-                for role in group.roles_with_access():
-                    if role.name == USER_ACCESS_ADMINISTRATOR_ROLE_KEY:
-                        key = "remove_principals"
-                        message = (
-                            "Non-admin users may not remove principals from Groups with "
-                            f"'{USER_ACCESS_ADMINISTRATOR_ROLE_KEY}' role."
-                        )
-                        raise serializers.ValidationError({key: _(message)})
+                self.protect_group_with_user_access_admin_role(group.roles_with_access(), "remove_principals")
 
             if SERVICE_ACCOUNTS_KEY not in request.query_params and USERNAMES_KEY not in request.query_params:
                 key = "detail"
@@ -1027,17 +1007,8 @@ class GroupViewSet(
         if request.method == "POST":
             self.protect_default_admin_group_roles(group)
 
-            # Only organization administrators are allowed to add a role into a groups
-            # with the "User Access Administrator" role.
             if not request.user.admin:
-                for role in group.roles_with_access():
-                    if role.name == USER_ACCESS_ADMINISTRATOR_ROLE_KEY:
-                        key = "add_role"
-                        message = (
-                            "Non-admin users may not add a role into a group with "
-                            f"'{USER_ACCESS_ADMINISTRATOR_ROLE_KEY}' role."
-                        )
-                        raise serializers.ValidationError({key: _(message)})
+                self.protect_group_with_user_access_admin_role(group.roles_with_access(), "add_role")
 
             serializer = GroupRoleSerializerIn(data=request.data)
             if serializer.is_valid(raise_exception=True):
@@ -1053,17 +1024,8 @@ class GroupViewSet(
         else:
             self.protect_default_admin_group_roles(group)
 
-            # Only organization administrators are allowed to remove a role from a group
-            # with the "User Access Administrator" role.
             if not request.user.admin:
-                for role in group.roles_with_access():
-                    if role.name == USER_ACCESS_ADMINISTRATOR_ROLE_KEY:
-                        key = "remove_role"
-                        message = (
-                            "Non-admin users may not remove a role from a group with "
-                            f"'{USER_ACCESS_ADMINISTRATOR_ROLE_KEY}' role."
-                        )
-                        raise serializers.ValidationError({key: _(message)})
+                self.protect_group_with_user_access_admin_role(group.roles_with_access(), "remove_role")
 
             if ROLES_KEY not in request.query_params:
                 key = "detail"
