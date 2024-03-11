@@ -84,6 +84,7 @@ VALID_GROUP_PRINCIPAL_FILTERS = ["principal_username"]
 VALID_PRINCIPAL_ORDER_FIELDS = ["username"]
 VALID_PRINCIPAL_TYPE_VALUE = ["service-account", "user"]
 VALID_ROLE_ROLE_DISCRIMINATOR = ["all", "any"]
+USER_ACCESS_ADMINISTRATOR_ROLE_KEY = "User Access administrator"
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 
@@ -594,11 +595,13 @@ class GroupViewSet(
             # Administrator" role.
             if not request.user.admin:
                 for role in group.roles_with_access():
-                    for access in role.access.all():
-                        if access.permission_application() == "rbac":
-                            key = "add_principals"
-                            message = "Non-admin users may not add principals to Groups with RBAC Admin permissions."
-                            raise serializers.ValidationError({key: _(message)})
+                    if role.name == USER_ACCESS_ADMINISTRATOR_ROLE_KEY:
+                        key = "add_principals"
+                        message = (
+                            "Non-admin users may not add principals to Groups with "
+                            f"'{USER_ACCESS_ADMINISTRATOR_ROLE_KEY}' role."
+                        )
+                        raise serializers.ValidationError({key: _(message)})
 
             serializer = GroupPrincipalInputSerializer(data=request.data)
 
