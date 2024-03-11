@@ -1026,6 +1026,19 @@ class GroupViewSet(
         group = self.get_object()
         if request.method == "POST":
             self.protect_default_admin_group_roles(group)
+
+            # Only organization administrators are allowed to add a role into a groups
+            # with the "User Access Administrator" role.
+            if not request.user.admin:
+                for role in group.roles_with_access():
+                    if role.name == USER_ACCESS_ADMINISTRATOR_ROLE_KEY:
+                        key = "add_role"
+                        message = (
+                            "Non-admin users may not add a role into a group with "
+                            f"'{USER_ACCESS_ADMINISTRATOR_ROLE_KEY}' role."
+                        )
+                        raise serializers.ValidationError({key: _(message)})
+
             serializer = GroupRoleSerializerIn(data=request.data)
             if serializer.is_valid(raise_exception=True):
                 roles = request.data.pop(ROLES_KEY, [])
