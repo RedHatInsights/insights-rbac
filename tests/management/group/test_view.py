@@ -2636,6 +2636,62 @@ class GroupViewNonAdminTests(IdentityRequest):
         )
         self.role.save()
 
+        # Create 2 non org admin principals and 1 org admin
+        # 1. user based principal
+        self.user_based_principal = Principal(username="user_based_principal", tenant=self.tenant)
+        self.user_based_principal.save()
+
+        customer_data = {
+            "account_id": self.tenant.account_id,
+            "tenant_name": self.tenant.tenant_name,
+            "org_id": self.tenant.org_id,
+        }
+
+        request_context_user_based_principal = self._create_request_context(
+            customer_data=customer_data,
+            user_data={"username": self.user_based_principal.username, "email": "test@email.com"},
+            is_org_admin=False,
+        )
+        self.headers_user_based_principal = request_context_user_based_principal["request"].META
+
+        # 2. service account based principal
+        service_account_data = self._create_service_account_data()
+        self.service_account_principal = Principal(
+            username=service_account_data["username"],
+            tenant=self.tenant,
+            type="service-account",
+            service_account_id=service_account_data["client_id"],
+        )
+        self.service_account_principal.save()
+
+        request_context_service_account_principal = self._create_request_context(
+            customer_data=customer_data,
+            service_account_data=service_account_data,
+            is_org_admin=False,
+        )
+        self.headers_service_account_principal = request_context_service_account_principal["request"].META
+
+        # 3 org admin principal in the tenant
+        self.org_admin = Principal(username="org_admin", tenant=self.tenant)
+        self.org_admin.save()
+
+        request_context_org_admin = self._create_request_context(
+            customer_data=customer_data,
+            user_data={"username": self.org_admin.username, "email": "test@email.com"},
+            is_org_admin=True,
+        )
+        self.headers_org_admin = request_context_org_admin["request"].META
+
+        # Error messages
+        self.no_permission_err_message = "You do not have permission to perform this action."
+        self.user_access_admin_group_err_message = (
+            "Non-admin users are not allowed to create, modify, or delete a "
+            "group that is assigned the 'User Access administrator' role."
+        )
+        self.user_access_admin_role_err_message = (
+            "Non-admin users cannot add 'User Access administrator' role to groups."
+        )
+
     def tearDown(self):
         """Tear down group view tests."""
         Group.objects.all().delete()
