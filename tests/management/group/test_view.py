@@ -3702,3 +3702,287 @@ class GroupViewNonAdminTests(IdentityRequest):
         response = client.get(url, **self.headers_service_account_principal)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data.get("data")), 1)
+
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={"status_code": 200, "data": []},
+    )
+    def test_add_user_based_principal_in_group_without_User_Access_Admin_fail(self, mock_request):
+        """
+        Test that non org admin without 'User Access administrator' role cannot add
+        user based principal into a group without 'User Access administrator' role.
+        """
+        test_group = Group(name="test group", tenant=self.tenant)
+        test_group.save()
+
+        test_principal = Principal(username="test-principal", tenant=self.tenant)
+        test_principal.save()
+
+        # Set the return value for the mock
+        mock_request.return_value["data"] = [{"username": test_principal.username}]
+
+        url = reverse("group-principals", kwargs={"uuid": test_group.uuid})
+        client = APIClient()
+
+        request_body = {"principals": [{"username": test_principal.username}]}
+
+        response = client.post(url, request_body, format="json", **self.headers_user_based_principal)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(response.data.get("errors")[0].get("detail"), self.no_permission_err_message)
+
+        response = client.post(url, request_body, format="json", **self.headers_service_account_principal)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(response.data.get("errors")[0].get("detail"), self.no_permission_err_message)
+
+        # Org Admin can add this principal into a group
+        response = client.post(url, request_body, format="json", **self.headers_org_admin)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+    @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
+    @patch("management.principal.it_service.ITService.request_service_accounts")
+    def test_add_service_account_principal_in_group_without_User_Access_Admin_fail(self, mock_request):
+        """
+        Test that non org admin without 'User Access administrator' role cannot add
+        service account based principal into a group without 'User Access administrator' role.
+        """
+        test_group = Group(name="test group", tenant=self.tenant)
+        test_group.save()
+
+        service_account_data = self._create_service_account_data()
+        sa_principal = Principal(
+            username=service_account_data["username"],
+            tenant=self.tenant,
+            type="service-account",
+            service_account_id=service_account_data["client_id"],
+        )
+        sa_principal.save()
+
+        # Set the return value for the mock
+        sa_uuid = sa_principal.service_account_id
+        mocked_values = [
+            {
+                "clientID": sa_uuid,
+                "name": f"Service Account name",
+                "description": f"Service Account description",
+                "owner": "jsmith",
+                "username": "service_account-" + sa_uuid,
+                "time_created": 1706784741,
+                "type": "service-account",
+            }
+        ]
+        mock_request.return_value = mocked_values
+
+        url = reverse("group-principals", kwargs={"uuid": test_group.uuid})
+        client = APIClient()
+
+        request_body = {"principals": [{"clientID": sa_uuid, "type": "service-account"}]}
+
+        response = client.post(url, request_body, format="json", **self.headers_user_based_principal)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(response.data.get("errors")[0].get("detail"), self.no_permission_err_message)
+
+        response = client.post(url, request_body, format="json", **self.headers_service_account_principal)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(response.data.get("errors")[0].get("detail"), self.no_permission_err_message)
+
+        # Org Admin can add this principal into a group
+        response = client.post(url, request_body, format="json", **self.headers_org_admin)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={"status_code": 200, "data": []},
+    )
+    def test_add_user_based_principal_in_group_with_User_Access_Admin_success(self, mock_request):
+        """
+        Test that non org admin with 'User Access administrator' role can add
+        user based principal into a group without 'User Access administrator' role.
+        """
+        # Create a group with 'User Access administrator' role and add principals we use in headers
+        group_with_UA_admin = self._create_group_with_user_access_administrator_role(self.tenant)
+        group_with_UA_admin.principals.add(self.user_based_principal, self.service_account_principal)
+
+        # Create a group and a principal
+        test_group = Group(name="test group", tenant=self.tenant)
+        test_group.save()
+
+        test_principal = Principal(username="test-principal", tenant=self.tenant)
+        test_principal.save()
+
+        # Set the return value for the mock
+        mock_request.return_value["data"] = [{"username": test_principal.username}]
+
+        url = reverse("group-principals", kwargs={"uuid": test_group.uuid})
+        client = APIClient()
+
+        request_body = {"principals": [{"username": test_principal.username}]}
+
+        response = client.post(url, request_body, format="json", **self.headers_user_based_principal)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        response = client.post(url, request_body, format="json", **self.headers_service_account_principal)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+    @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
+    @patch("management.principal.it_service.ITService.request_service_accounts")
+    def test_add_service_account_principal_in_group_with_User_Access_Admin_success(self, mock_request):
+        """
+        Test that non org admin with 'User Access administrator' role can add
+        service account based principal into a group without 'User Access administrator' role.
+        """
+        # Create a group with 'User Access administrator' role and add principals we use in headers
+        group_with_UA_admin = self._create_group_with_user_access_administrator_role(self.tenant)
+        group_with_UA_admin.principals.add(self.user_based_principal, self.service_account_principal)
+
+        # Create a group and a principal
+        test_group = Group(name="test group", tenant=self.tenant)
+        test_group.save()
+
+        service_account_data = self._create_service_account_data()
+        sa_principal = Principal(
+            username=service_account_data["username"],
+            tenant=self.tenant,
+            type="service-account",
+            service_account_id=service_account_data["client_id"],
+        )
+        sa_principal.save()
+
+        # Set the return value for the mock
+        sa_uuid = sa_principal.service_account_id
+        mocked_values = [
+            {
+                "clientID": sa_uuid,
+                "name": f"Service Account name",
+                "description": f"Service Account description",
+                "owner": "jsmith",
+                "username": "service_account-" + sa_uuid,
+                "time_created": 1706784741,
+                "type": "service-account",
+            }
+        ]
+        mock_request.return_value = mocked_values
+
+        url = reverse("group-principals", kwargs={"uuid": test_group.uuid})
+        client = APIClient()
+
+        request_body = {"principals": [{"clientID": sa_uuid, "type": "service-account"}]}
+
+        response = client.post(url, request_body, format="json", **self.headers_user_based_principal)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        response = client.post(url, request_body, format="json", **self.headers_service_account_principal)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={"status_code": 200, "data": []},
+    )
+    def test_add_user_based_principal_in_group_with_User_Access_Admin_fail(self, mock_request):
+        """
+        Test that non org admin with 'User Access administrator' role cannot add
+        user based principal into a group with 'User Access administrator' role.
+        """
+        # Create a group with 'User Access administrator' role and add principals we use in headers
+        group_with_UA_admin = self._create_group_with_user_access_administrator_role(self.tenant)
+        group_with_UA_admin.principals.add(self.user_based_principal, self.service_account_principal)
+
+        # Create a group with 'User Access administrator' role and a principal
+        test_group = Group(name="test group", tenant=self.tenant)
+        test_group.save()
+
+        user_access_admin_role = group_with_UA_admin.roles()[0]
+        request_body = {"roles": [user_access_admin_role.uuid]}
+
+        url = reverse("group-roles", kwargs={"uuid": test_group.uuid})
+        client = APIClient()
+        response = client.post(url, request_body, format="json", **self.headers_org_admin)
+        # Role 'User Access administrator' added successfully into test group
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        test_principal = Principal(username="test-principal", tenant=self.tenant)
+        test_principal.save()
+
+        # Set the return value for the mock
+        mock_request.return_value["data"] = [{"username": test_principal.username}]
+
+        url = reverse("group-principals", kwargs={"uuid": test_group.uuid})
+        client = APIClient()
+
+        request_body = {"principals": [{"username": test_principal.username}]}
+
+        response = client.post(url, request_body, format="json", **self.headers_user_based_principal)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data.get("errors")[0].get("detail"), self.user_access_admin_group_err_message)
+
+        response = client.post(url, request_body, format="json", **self.headers_service_account_principal)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data.get("errors")[0].get("detail"), self.user_access_admin_group_err_message)
+
+        # Only Org Admin can add a principal into a group with 'User Access administrator' role
+        response = client.post(url, request_body, format="json", **self.headers_org_admin)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+    @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
+    @patch("management.principal.it_service.ITService.request_service_accounts")
+    def test_add_service_account_principal_in_group_with_User_Access_Admin_fail(self, mock_request):
+        """
+        Test that non org admin with 'User Access administrator' role cannot add
+        service account based principal into a group with 'User Access administrator' role.
+        """
+        # Create a group with 'User Access administrator' role and add principals we use in headers
+        group_with_UA_admin = self._create_group_with_user_access_administrator_role(self.tenant)
+        group_with_UA_admin.principals.add(self.user_based_principal, self.service_account_principal)
+
+        # Create a group with 'User Access administrator' role and a principal
+        test_group = Group(name="test group", tenant=self.tenant)
+        test_group.save()
+
+        user_access_admin_role = group_with_UA_admin.roles()[0]
+        request_body = {"roles": [user_access_admin_role.uuid]}
+
+        url = reverse("group-roles", kwargs={"uuid": test_group.uuid})
+        client = APIClient()
+        response = client.post(url, request_body, format="json", **self.headers_org_admin)
+        # Role 'User Access administrator' added successfully into test group
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        service_account_data = self._create_service_account_data()
+        sa_principal = Principal(
+            username=service_account_data["username"],
+            tenant=self.tenant,
+            type="service-account",
+            service_account_id=service_account_data["client_id"],
+        )
+        sa_principal.save()
+
+        # Set the return value for the mock
+        sa_uuid = sa_principal.service_account_id
+        mocked_values = [
+            {
+                "clientID": sa_uuid,
+                "name": f"Service Account name",
+                "description": f"Service Account description",
+                "owner": "jsmith",
+                "username": "service_account-" + sa_uuid,
+                "time_created": 1706784741,
+                "type": "service-account",
+            }
+        ]
+        mock_request.return_value = mocked_values
+
+        url = reverse("group-principals", kwargs={"uuid": test_group.uuid})
+        client = APIClient()
+
+        request_body = {"principals": [{"clientID": sa_uuid, "type": "service-account"}]}
+
+        response = client.post(url, request_body, format="json", **self.headers_user_based_principal)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data.get("errors")[0].get("detail"), self.user_access_admin_group_err_message)
+
+        response = client.post(url, request_body, format="json", **self.headers_service_account_principal)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data.get("errors")[0].get("detail"), self.user_access_admin_group_err_message)
+
+        # Only Org Admin can add a principal into a group with 'User Access administrator' role
+        response = client.post(url, request_body, format="json", **self.headers_org_admin)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
