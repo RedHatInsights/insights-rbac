@@ -2643,7 +2643,8 @@ class GroupViewNonAdminTests(IdentityRequest):
         Role.objects.all().delete()
         Policy.objects.all().delete()
 
-    def _create_group_with_user_access_administrator_role(self, tenant: Tenant) -> Group:
+    @staticmethod
+    def _create_group_with_user_access_administrator_role(tenant: Tenant) -> Group:
         """Create a group with an associated User Access Administrator role."""
         # Replicate a "User Access Administrator" permission.
         rbac_user_access_admin_permission = Permission()
