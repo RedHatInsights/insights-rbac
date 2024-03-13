@@ -3986,3 +3986,230 @@ class GroupViewNonAdminTests(IdentityRequest):
         # Only Org Admin can add a principal into a group with 'User Access administrator' role
         response = client.post(url, request_body, format="json", **self.headers_org_admin)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+    def test_remove_user_based_principal_from_group_without_User_Access_Admin_fail(self):
+        """
+        Test that non org admin without 'User Access administrator' role cannot remove
+        user based principal from a group without 'User Access administrator' role.
+        """
+        test_group = Group(name="test group", tenant=self.tenant)
+        test_group.save()
+        test_principal = Principal(username="test-principal", tenant=self.tenant)
+        test_principal.save()
+        test_group.principals.add(test_principal)
+        test_group.save()
+
+        url = reverse("group-principals", kwargs={"uuid": test_group.uuid}) + f"?usernames={test_principal.username}"
+        client = APIClient()
+
+        response = client.delete(url, format="json", **self.headers_user_based_principal)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(response.data.get("errors")[0].get("detail"), self.no_permission_err_message)
+
+        response = client.delete(url, format="json", **self.headers_service_account_principal)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(response.data.get("errors")[0].get("detail"), self.no_permission_err_message)
+
+        # Org Admin can remove a principal from a group
+        response = client.delete(url, format="json", **self.headers_org_admin)
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+
+    @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
+    def test_remove_service_account_principal_from_group_without_User_Access_Admin_fail(self):
+        """
+        Test that non org admin without 'User Access administrator' role cannot remove
+        service account based principal from a group without 'User Access administrator' role.
+        """
+        test_group = Group(name="test group", tenant=self.tenant)
+        test_group.save()
+
+        service_account_data = self._create_service_account_data()
+        sa_principal = Principal(
+            username=service_account_data["username"],
+            tenant=self.tenant,
+            type="service-account",
+            service_account_id=service_account_data["client_id"],
+        )
+        sa_principal.save()
+        test_group.principals.add(sa_principal)
+        test_group.save()
+
+        url = (
+            reverse("group-principals", kwargs={"uuid": test_group.uuid})
+            + f"?service-accounts={sa_principal.username}"
+        )
+        client = APIClient()
+
+        response = client.delete(url, format="json", **self.headers_user_based_principal)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(response.data.get("errors")[0].get("detail"), self.no_permission_err_message)
+
+        response = client.delete(url, format="json", **self.headers_service_account_principal)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(response.data.get("errors")[0].get("detail"), self.no_permission_err_message)
+
+        # Org Admin can remove a principal from a group
+        response = client.delete(url, format="json", **self.headers_org_admin)
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+
+    def test_remove_user_based_principal_from_group_with_User_Access_Admin_success(self):
+        """
+        Test that non org admin with 'User Access administrator' role can remove
+        user based principal from a group without 'User Access administrator' role.
+        """
+        # Create a group with 'User Access administrator' role and add principals we use in headers
+        group_with_UA_admin = self._create_group_with_user_access_administrator_role(self.tenant)
+        group_with_UA_admin.principals.add(self.user_based_principal, self.service_account_principal)
+
+        test_group = Group(name="test group", tenant=self.tenant)
+        test_group.save()
+        test_principal = Principal(username="test-principal", tenant=self.tenant)
+        test_principal.save()
+        test_group.principals.add(test_principal)
+        test_group.save()
+
+        url = reverse("group-principals", kwargs={"uuid": test_group.uuid}) + f"?usernames={test_principal.username}"
+        client = APIClient()
+
+        response = client.delete(url, format="json", **self.headers_user_based_principal)
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+
+        # Add once removed principal into group
+        test_group.principals.add(test_principal)
+        test_group.save()
+
+        response = client.delete(url, format="json", **self.headers_service_account_principal)
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+
+    @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
+    def test_remove_service_account_principal_from_group_with_User_Access_Admin_success(self):
+        """
+        Test that non org admin with 'User Access administrator' role can remove
+        service account based principal from a group without 'User Access administrator' role.
+        """
+        # Create a group with 'User Access administrator' role and add principals we use in headers
+        group_with_UA_admin = self._create_group_with_user_access_administrator_role(self.tenant)
+        group_with_UA_admin.principals.add(self.user_based_principal, self.service_account_principal)
+
+        test_group = Group(name="test group", tenant=self.tenant)
+        test_group.save()
+        service_account_data = self._create_service_account_data()
+        sa_principal = Principal(
+            username=service_account_data["username"],
+            tenant=self.tenant,
+            type="service-account",
+            service_account_id=service_account_data["client_id"],
+        )
+        sa_principal.save()
+        test_group.principals.add(sa_principal)
+        test_group.save()
+
+        url = (
+            reverse("group-principals", kwargs={"uuid": test_group.uuid})
+            + f"?service-accounts={sa_principal.username}"
+        )
+        client = APIClient()
+
+        response = client.delete(url, format="json", **self.headers_user_based_principal)
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+
+        # Add once removed principal into group
+        test_group.principals.add(sa_principal)
+        test_group.save()
+
+        response = client.delete(url, format="json", **self.headers_service_account_principal)
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+
+    def test_remove_user_based_principal_from_group_with_User_Access_Admin_fail(self):
+        """
+        Test that non org admin with 'User Access administrator' role cannot remove
+        user based principal from a group with 'User Access administrator' role.
+        """
+        # Create a group with 'User Access administrator' role and add principals we use in headers
+        group_with_UA_admin = self._create_group_with_user_access_administrator_role(self.tenant)
+        group_with_UA_admin.principals.add(self.user_based_principal, self.service_account_principal)
+
+        # Create a group with 'User Access administrator' role and a principal
+        test_group = Group(name="test group", tenant=self.tenant)
+        test_group.save()
+
+        user_access_admin_role = group_with_UA_admin.roles()[0]
+        request_body = {"roles": [user_access_admin_role.uuid]}
+
+        url = reverse("group-roles", kwargs={"uuid": test_group.uuid})
+        client = APIClient()
+        response = client.post(url, request_body, format="json", **self.headers_org_admin)
+        # Role 'User Access administrator' added successfully into test group
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        test_principal = Principal(username="test-principal", tenant=self.tenant)
+        test_principal.save()
+        test_group.principals.add(test_principal)
+        test_group.save()
+
+        url = reverse("group-principals", kwargs={"uuid": test_group.uuid}) + f"?usernames={test_principal.username}"
+        client = APIClient()
+
+        response = client.delete(url, format="json", **self.headers_user_based_principal)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data.get("errors")[0].get("detail"), self.user_access_admin_group_err_message)
+
+        response = client.delete(url, format="json", **self.headers_service_account_principal)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data.get("errors")[0].get("detail"), self.user_access_admin_group_err_message)
+
+        # Only Org admin can remove a principal from a group with 'User Access administrator' role
+        response = client.delete(url, format="json", **self.headers_org_admin)
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+
+    @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
+    def test_remove_service_account_principal_from_group_with_User_Access_Admin_fail(self):
+        """
+        Test that non org admin with 'User Access administrator' role cannot remove
+        service account based principal from a group with 'User Access administrator' role.
+        """
+        # Create a group with 'User Access administrator' role and add principals we use in headers
+        group_with_UA_admin = self._create_group_with_user_access_administrator_role(self.tenant)
+        group_with_UA_admin.principals.add(self.user_based_principal, self.service_account_principal)
+
+        # Create a group with 'User Access administrator' role and a principal
+        test_group = Group(name="test group", tenant=self.tenant)
+        test_group.save()
+
+        user_access_admin_role = group_with_UA_admin.roles()[0]
+        request_body = {"roles": [user_access_admin_role.uuid]}
+
+        url = reverse("group-roles", kwargs={"uuid": test_group.uuid})
+        client = APIClient()
+        response = client.post(url, request_body, format="json", **self.headers_org_admin)
+        # Role 'User Access administrator' added successfully into test group
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        service_account_data = self._create_service_account_data()
+        sa_principal = Principal(
+            username=service_account_data["username"],
+            tenant=self.tenant,
+            type="service-account",
+            service_account_id=service_account_data["client_id"],
+        )
+        sa_principal.save()
+        test_group.principals.add(sa_principal)
+        test_group.save()
+
+        url = (
+            reverse("group-principals", kwargs={"uuid": test_group.uuid})
+            + f"?service-accounts={sa_principal.username}"
+        )
+        client = APIClient()
+
+        response = client.delete(url, format="json", **self.headers_user_based_principal)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data.get("errors")[0].get("detail"), self.user_access_admin_group_err_message)
+
+        response = client.delete(url, format="json", **self.headers_service_account_principal)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data.get("errors")[0].get("detail"), self.user_access_admin_group_err_message)
+
+        # Only Org admin can remove a principal from a group with 'User Access administrator' role
+        response = client.delete(url, format="json", **self.headers_org_admin)
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
