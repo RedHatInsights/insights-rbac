@@ -2803,7 +2803,8 @@ class GroupViewNonAdminTests(IdentityRequest):
         - Creates a regular group which we will use for the tests.
         - Sends a request with an unprivileged service account to attempt to add principals to the regular group.
         - Creates a service account principal and adds it to the User Access Administrator group.
-        - Sends a request with the privileged user and asserts that the principals were added to the regular group.
+        - Sends a request with the privileged service account and asserts that the principals were added to the regular
+        group.
         """
         # Create the customer data we will be using for the tenant.
         customer_data = self._create_customer_data()
@@ -2865,24 +2866,24 @@ class GroupViewNonAdminTests(IdentityRequest):
             "the regular group should not have any principals associated with it",
         )
 
-        # Create the request context for an unprivileged user.
-        privileged_request_context = self._create_request_context(
+        # Create the request context for an unprivileged service account.
+        unprivileged_request_context = self._create_request_context(
             customer_data=customer_data,
             user_data=None,
             service_account_data=self._create_service_account_data(),
             is_org_admin=False,
         )
 
-        # Call the endpoint under test with an unprivileged user.
+        # Call the endpoint under test with an unprivileged service account.
         response = api_client.post(
-            group_principals_url, test_data, format="json", **privileged_request_context["request"].META
+            group_principals_url, test_data, format="json", **unprivileged_request_context["request"].META
         )
 
-        # Assert that the user does not have permission to perform this operation.
+        # Assert that the service account does not have permission to perform this operation.
         self.assertEqual(
             status.HTTP_403_FORBIDDEN,
             response.status_code,
-            "unexpected status code when an unprivileged user attempts to add principals to a group",
+            "unexpected status code when an unprivileged service account attempts to add principals to a group",
         )
 
         # Assert that no principals were added to the group.
@@ -2892,7 +2893,7 @@ class GroupViewNonAdminTests(IdentityRequest):
             "after a failed request to add a principal, the regular group should still have zero associated principals",
         )
 
-        # Add the user access admin principal to the user access admin group.
+        # Add the user access admin service account principal to the user access admin group.
         service_account_data = self._create_service_account_data()
 
         user_access_admin_sa_principal = Principal()
@@ -2908,7 +2909,7 @@ class GroupViewNonAdminTests(IdentityRequest):
         # Simulate that the proxy validates the specified user principal correctly.
         request_filtered_principals.return_value = {"data": [{"username": new_principal.username}]}
 
-        # Create the request context for privileged user.
+        # Create the request context for privileged service account.
         privileged_request_context = self._create_request_context(
             customer_data=customer_data, user_data=None, service_account_data=service_account_data, is_org_admin=False
         )
@@ -2922,8 +2923,8 @@ class GroupViewNonAdminTests(IdentityRequest):
         self.assertEqual(
             status.HTTP_200_OK,
             response_two.status_code,
-            "unexpected status code when a user with the User Access Administrator role attempts to manage"
-            " principals on a group",
+            "unexpected status code when a service account with the User Access Administrator role attempts to"
+            " manage principals on a group",
         )
 
         # Assert that both the service account and the user principal were added to the group.
@@ -2952,7 +2953,7 @@ class GroupViewNonAdminTests(IdentityRequest):
     @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
     @override_settings(IT_BYPASS_IT_CALLS=True)
     def test_group_service_account_with_user_administrator_role_remove_principals(self):
-        """Test that a service account with the User Access administrator role can manage principals in a group
+        """Test that a service account with the User Access administrator role can manage principals in a group.
 
         The way the test is performed is the following:
         - Creates a group with a User Access Administrator role associated to it.
@@ -3020,20 +3021,20 @@ class GroupViewNonAdminTests(IdentityRequest):
             "the regular group should have two principals before the deletion attempt",
         )
 
-        # Create the request context for an unprivileged user.
-        privileged_request_context = self._create_request_context(
+        # Create the request context for an unprivileged service account.
+        unprivileged_request_context = self._create_request_context(
             customer_data=customer_data,
             user_data=None,
             service_account_data=self._create_service_account_data(),
             is_org_admin=False,
         )
 
-        # Call the endpoint under test with an unprivileged user.
+        # Call the endpoint under test with an unprivileged service account.
         response = api_client.delete(
-            path=group_principals_url, data=None, format="json", **privileged_request_context["request"].META
+            path=group_principals_url, data=None, format="json", **unprivileged_request_context["request"].META
         )
 
-        # Assert that the user does not have permission to perform this operation.
+        # Assert that the service account does not have permission to perform this operation.
         self.assertEqual(
             status.HTTP_403_FORBIDDEN,
             response.status_code,
@@ -3060,12 +3061,12 @@ class GroupViewNonAdminTests(IdentityRequest):
 
         user_access_admin_group.principals.add(user_access_admin_sa_principal)
 
-        # Create the request context for privileged user.
+        # Create the request context for privileged service account.
         privileged_request_context = self._create_request_context(
             customer_data=customer_data, user_data=None, service_account_data=service_account_data, is_org_admin=False
         )
 
-        # Call the endpoint under test with the user with "User Access Administrator" permissions.
+        # Call the endpoint under test with the service account with "User Access Administrator" permissions.
         response_two = api_client.delete(
             path=group_principals_url, format="json", **privileged_request_context["request"].META
         )
@@ -3078,7 +3079,7 @@ class GroupViewNonAdminTests(IdentityRequest):
             " principals from a group",
         )
 
-        # Assert that both the service account and the user principal were added to the group.
+        # Assert that both the service account and the user principal were removed from the group.
         self.assertEqual(
             0,
             regular_group.principals.count(),
@@ -3160,13 +3161,13 @@ class GroupViewNonAdminTests(IdentityRequest):
         )
 
         # Create the request context for an unprivileged user.
-        privileged_request_context = self._create_request_context(
+        unprivileged_request_context = self._create_request_context(
             customer_data=customer_data, user_data=self._create_user_data(), is_org_admin=False
         )
 
         # Call the endpoint under test with an unprivileged user.
         response = api_client.post(
-            path=group_principals_url, data=test_data, format="json", **privileged_request_context["request"].META
+            path=group_principals_url, data=test_data, format="json", **unprivileged_request_context["request"].META
         )
 
         # Assert that the user does not have permission to perform this operation.
@@ -3198,7 +3199,7 @@ class GroupViewNonAdminTests(IdentityRequest):
         # Simulate that the proxy validates the specified user principal correctly.
         request_filtered_principals.return_value = {"data": [{"username": new_principal.username}]}
 
-        # Create the request context for privileged user.
+        # Create the request context for the privileged user.
         privileged_request_context = self._create_request_context(
             customer_data=customer_data, user_data=user_data, is_org_admin=False
         )
@@ -3311,13 +3312,13 @@ class GroupViewNonAdminTests(IdentityRequest):
         )
 
         # Create the request context for an unprivileged user.
-        privileged_request_context = self._create_request_context(
+        unprivileged_request_context = self._create_request_context(
             customer_data=customer_data, user_data=self._create_user_data(), is_org_admin=False
         )
 
         # Call the endpoint under test with an unprivileged user.
         response = api_client.delete(
-            path=group_principals_url, data=None, format="json", **privileged_request_context["request"].META
+            path=group_principals_url, data=None, format="json", **unprivileged_request_context["request"].META
         )
 
         # Assert that the user does not have permission to perform this operation.
@@ -3346,7 +3347,7 @@ class GroupViewNonAdminTests(IdentityRequest):
 
         user_access_admin_group.principals.add(user_access_admin_principal)
 
-        # Create the request context for privileged user.
+        # Create the request context for the privileged user.
         privileged_request_context = self._create_request_context(
             customer_data=customer_data, user_data=user_data, is_org_admin=False
         )
