@@ -4213,3 +4213,59 @@ class GroupViewNonAdminTests(IdentityRequest):
         # Only Org admin can remove a principal from a group with 'User Access administrator' role
         response = client.delete(url, format="json", **self.headers_org_admin)
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+
+    def test_list_roles_in_group_without_User_Access_Admin_fail(self):
+        """Test that non org admin without 'User Access administrator' role cannot list roles in the group."""
+        # Create a group, policy and role we need for the test
+        group = Group.objects.create(name="test group", tenant=self.tenant)
+        policy = Policy.objects.create(name="policy for test group", tenant=self.tenant)
+        role = Role.objects.create(
+            name="test role", description="test role description", system=False, tenant=self.tenant
+        )
+        policy.roles.add(role)
+        group.policies.add(policy)
+
+        url = reverse("group-roles", kwargs={"uuid": group.uuid})
+        client = APIClient()
+
+        response = client.get(url, format="json", **self.headers_user_based_principal)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(response.data.get("errors")[0].get("detail"), self.no_permission_err_message)
+
+        response = client.get(url, format="json", **self.headers_service_account_principal)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(response.data.get("errors")[0].get("detail"), self.no_permission_err_message)
+
+        # Check that role exists in the database
+        self.assertIsNotNone(Role.objects.get(uuid=role.uuid))
+
+        # Check that org admin can list the roles under group
+        response = client.get(url, format="json", **self.headers_org_admin)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data.get("data")), 1)
+
+    def test_list_roles_in_group_with_User_Access_Admin_success(self):
+        """Test that non org admin with 'User Access administrator' role can list roles in the group."""
+        # Create a group with 'User Access administrator' role and add principals we use in headers
+        group_with_UA_admin = self._create_group_with_user_access_administrator_role(self.tenant)
+        group_with_UA_admin.principals.add(self.user_based_principal, self.service_account_principal)
+
+        # Create a group, policy and role we need for the test
+        group = Group.objects.create(name="test group", tenant=self.tenant)
+        policy = Policy.objects.create(name="policy for test group", tenant=self.tenant)
+        role = Role.objects.create(
+            name="test role", description="test role description", system=False, tenant=self.tenant
+        )
+        policy.roles.add(role)
+        group.policies.add(policy)
+
+        url = reverse("group-roles", kwargs={"uuid": group.uuid})
+        client = APIClient()
+
+        response = client.get(url, format="json", **self.headers_user_based_principal)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data.get("data")), 1)
+
+        response = client.get(url, format="json", **self.headers_service_account_principal)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data.get("data")), 1)
