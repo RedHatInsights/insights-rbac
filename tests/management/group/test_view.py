@@ -3529,7 +3529,7 @@ class GroupViewNonAdminTests(IdentityRequest):
 
     def test_remove_group_with_User_Access_Admin_fail(self):
         """
-        Test that non org admin with 'User Access administrator' role cannot update a group
+        Test that non org admin with 'User Access administrator' role cannot remove a group
         with 'User Access administrator' role.
         """
         # Create a group with 'User Access administrator' role and add principals we use in headers
