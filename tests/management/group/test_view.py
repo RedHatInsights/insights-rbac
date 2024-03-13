@@ -3371,3 +3371,34 @@ class GroupViewNonAdminTests(IdentityRequest):
             "after removing the principals from the regular group, the added service account and the user"
             " principal should no longer be present",
         )
+
+    def test_create_group_without_User_Access_Admin_fail(self):
+        """Test that non org admin without 'User Access administrator' role cannot create a group."""
+        url = reverse("group-list")
+        client = APIClient()
+
+        request_body = {"name": "New group name"}
+        response = client.post(url, request_body, format="json", **self.headers_user_based_principal)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(response.data.get("errors")[0].get("detail"), self.no_permission_err_message)
+
+        response = client.post(url, request_body, format="json", **self.headers_service_account_principal)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(response.data.get("errors")[0].get("detail"), self.no_permission_err_message)
+
+    def test_create_group_with_User_Access_Admin_success(self):
+        """Test that non org admin with 'User Access administrator' role can create a group."""
+        # Create a group with 'User Access administrator' role and add principals we use in headers
+        group_with_UA_admin = self._create_group_with_user_access_administrator_role(self.tenant)
+        group_with_UA_admin.principals.add(self.user_based_principal, self.service_account_principal)
+
+        url = reverse("group-list")
+        client = APIClient()
+
+        request_body = {"name": "New group created by user based principal"}
+        response = client.post(url, request_body, format="json", **self.headers_user_based_principal)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+        request_body = {"name": "New group created by service account based principal"}
+        response = client.post(url, request_body, format="json", **self.headers_service_account_principal)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
