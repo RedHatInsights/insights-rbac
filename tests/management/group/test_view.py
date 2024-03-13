@@ -4543,3 +4543,43 @@ class GroupViewNonAdminTests(IdentityRequest):
 
         response = client.get(url, format="json", **self.headers_service_account_principal)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+    def test_read_group_without_User_Access_Admin_fail(self):
+        """Test that non org admin without 'User Access administrator' role cannot read a group."""
+        group = Group.objects.create(name="test group", tenant=self.tenant)
+
+        url = reverse("group-detail", kwargs={"uuid": group.uuid})
+        client = APIClient()
+
+        response = client.get(url, format="json", **self.headers_user_based_principal)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(response.data.get("errors")[0].get("detail"), self.no_permission_err_message)
+
+        response = client.get(url, format="json", **self.headers_service_account_principal)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(response.data.get("errors")[0].get("detail"), self.no_permission_err_message)
+
+        # Org Admin can read detail of a group
+        response = client.get(url, format="json", **self.headers_org_admin)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data.get("uuid"), str(group.uuid))
+
+    def test_read_group_with_User_Access_Admin_success(self):
+        """Test that non org admin with 'User Access administrator' role can read a group."""
+        # Create a group with 'User Access administrator' role and add principals we use in headers
+        group_with_UA_admin = self._create_group_with_user_access_administrator_role(self.tenant)
+        group_with_UA_admin.principals.add(self.user_based_principal, self.service_account_principal)
+
+        group = Group.objects.create(name="test group", tenant=self.tenant)
+
+        url = reverse("group-detail", kwargs={"uuid": group.uuid})
+        client = APIClient()
+
+        response = client.get(url, format="json", **self.headers_user_based_principal)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data.get("uuid"), str(group.uuid))
+
+        response = client.get(url, format="json", **self.headers_service_account_principal)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data.get("uuid"), str(group.uuid))
