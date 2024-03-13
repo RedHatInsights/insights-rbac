@@ -4392,3 +4392,128 @@ class GroupViewNonAdminTests(IdentityRequest):
 
         role_uuid_from_response = [item.get("uuid") for item in response.data.get("data")]
         self.assertIn(str(role.uuid), role_uuid_from_response)
+
+    def test_remove_role_from_group_without_User_Access_Admin_fail(self):
+        """Test that non org admin without 'User Access administrator' role cannot remove a role from the group."""
+        # Create a group, policy and role we need for the test
+        group = Group.objects.create(name="test group", tenant=self.tenant)
+        policy = Policy.objects.create(name="policy for test group", tenant=self.tenant)
+        role = Role.objects.create(
+            name="test role", description="test role description", system=False, tenant=self.tenant
+        )
+        policy.roles.add(role)
+        group.policies.add(policy)
+
+        url = reverse("group-roles", kwargs={"uuid": group.uuid}) + f"?roles={role.uuid}"
+        client = APIClient()
+
+        response = client.delete(url, format="json", **self.headers_user_based_principal)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(response.data.get("errors")[0].get("detail"), self.no_permission_err_message)
+
+        response = client.delete(url, format="json", **self.headers_service_account_principal)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(response.data.get("errors")[0].get("detail"), self.no_permission_err_message)
+
+        # Check that org admin can remove the roles from the group
+        response = client.delete(url, format="json", **self.headers_org_admin)
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+
+        # Check that the group doesn't contain the role anymore
+        self.assertTrue(len(group.roles()) == 0)
+
+    def test_remove_role_from_group_with_User_Access_Admin_success(self):
+        """Test that non org admin with 'User Access administrator' role can remove a role from the group."""
+        # Create a group with 'User Access administrator' role and add principals we use in headers
+        group_with_UA_admin = self._create_group_with_user_access_administrator_role(self.tenant)
+        group_with_UA_admin.principals.add(self.user_based_principal, self.service_account_principal)
+
+        # Create a group, policy and role we need for the test
+        group = Group.objects.create(name="test group", tenant=self.tenant)
+        policy = Policy.objects.create(name="policy for test group", tenant=self.tenant)
+        role = Role.objects.create(
+            name="test role", description="test role description", system=False, tenant=self.tenant
+        )
+        policy.roles.add(role)
+        group.policies.add(policy)
+
+        url = reverse("group-roles", kwargs={"uuid": group.uuid}) + f"?roles={role.uuid}"
+        client = APIClient()
+
+        response = client.delete(url, format="json", **self.headers_user_based_principal)
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+
+        # Add the role again to the group for the test with service account in headers
+        group.policies.add(policy)
+
+        response = client.delete(url, format="json", **self.headers_service_account_principal)
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+
+    def test_remove_role_from_group_with_User_Access_Admin_fail(self):
+        """
+        Test that non org admin with 'User Access administrator' role cannot remove a role
+        (different from 'User Access administrator') from the group with 'User Access administrator' role.
+        """
+        # Create a group with 'User Access administrator' role and add principals we use in headers
+        group_with_UA_admin = self._create_group_with_user_access_administrator_role(self.tenant)
+        group_with_UA_admin.principals.add(self.user_based_principal, self.service_account_principal)
+
+        # Add new role to the group with 'User Access administrator' role
+        role = Role.objects.create(
+            name="test role", description="test role description", system=False, tenant=self.tenant
+        )
+        request_body = {"roles": [role.uuid]}
+        url = reverse("group-roles", kwargs={"uuid": group_with_UA_admin.uuid})
+        client = APIClient()
+        response = client.post(url, request_body, format="json", **self.headers_org_admin)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        # Test that non org admin with 'User Access administrator' role cannot remove a role
+        url = reverse("group-roles", kwargs={"uuid": group_with_UA_admin.uuid}) + f"?roles={role.uuid}"
+
+        response = client.delete(url, format="json", **self.headers_user_based_principal)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data.get("errors")[0].get("detail"), self.user_access_admin_group_err_message)
+
+        response = client.delete(url, format="json", **self.headers_service_account_principal)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data.get("errors")[0].get("detail"), self.user_access_admin_group_err_message)
+
+        # Only Org Admin can remove role like this
+        response = client.delete(url, format="json", **self.headers_org_admin)
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+
+    def test_remove_User_Access_Admin_role_from_group_fail(self):
+        """
+        Test that non org admin with 'User Access administrator' role cannot remove the 'User Access administrator'
+        role from the group.
+        """
+        # Create a group with 'User Access administrator' role and add principals we use in headers
+        group_with_UA_admin = self._create_group_with_user_access_administrator_role(self.tenant)
+        group_with_UA_admin.principals.add(self.user_based_principal, self.service_account_principal)
+
+        # Create a group with 'User Access administrator' role
+        group = Group.objects.create(name="test group", tenant=self.tenant)
+
+        user_access_admin_role = group_with_UA_admin.roles()[0]
+        request_body = {"roles": [user_access_admin_role.uuid]}
+
+        url = reverse("group-roles", kwargs={"uuid": group.uuid})
+        client = APIClient()
+        response = client.post(url, request_body, format="json", **self.headers_org_admin)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        # Test that non org admin with 'User Access administrator' role cannot remove a role
+        url = reverse("group-roles", kwargs={"uuid": group.uuid}) + f"?roles={user_access_admin_role.uuid}"
+
+        response = client.delete(url, format="json", **self.headers_user_based_principal)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data.get("errors")[0].get("detail"), self.user_access_admin_group_err_message)
+
+        response = client.delete(url, format="json", **self.headers_service_account_principal)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data.get("errors")[0].get("detail"), self.user_access_admin_group_err_message)
+
+        # Only Org Admin can remove role like this
+        response = client.delete(url, format="json", **self.headers_org_admin)
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
