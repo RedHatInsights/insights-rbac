@@ -3484,3 +3484,81 @@ class GroupViewNonAdminTests(IdentityRequest):
         # Only Org Admin can update a group with 'User Access administrator'
         response = client.put(url, request_body, format="json", **self.headers_org_admin)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+    def test_remove_group_without_User_Access_Admin_fail(self):
+        """Test that non org admin without 'User Access administrator' role cannot remove a group."""
+        test_group = Group(name="test group", tenant=self.tenant)
+        test_group.save()
+
+        url = reverse("group-detail", kwargs={"uuid": test_group.uuid})
+        client = APIClient()
+
+        response = client.delete(url, **self.headers_user_based_principal)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(response.data.get("errors")[0].get("detail"), self.no_permission_err_message)
+
+        response = client.delete(url, **self.headers_service_account_principal)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(response.data.get("errors")[0].get("detail"), self.no_permission_err_message)
+
+    def test_remove_group_with_User_Access_Admin_success(self):
+        """
+        Test that non org admin with 'User Access administrator' role can remove a group
+        without 'User Access administrator' role.
+        """
+        # Create a group with 'User Access administrator' role and add principals we use in headers
+        group_with_UA_admin = self._create_group_with_user_access_administrator_role(self.tenant)
+        group_with_UA_admin.principals.add(self.user_based_principal, self.service_account_principal)
+
+        test_group = Group(name="test group", tenant=self.tenant)
+        test_group.save()
+
+        client = APIClient()
+
+        url = reverse("group-detail", kwargs={"uuid": test_group.uuid})
+        response = client.delete(url, **self.headers_user_based_principal)
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+
+        test_group = Group(name="test group", tenant=self.tenant)
+        test_group.save()
+
+        url = reverse("group-detail", kwargs={"uuid": test_group.uuid})
+        response = client.delete(url, **self.headers_service_account_principal)
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+
+    def test_remove_group_with_User_Access_Admin_fail(self):
+        """
+        Test that non org admin with 'User Access administrator' role cannot update a group
+        with 'User Access administrator' role.
+        """
+        # Create a group with 'User Access administrator' role and add principals we use in headers
+        group_with_UA_admin = self._create_group_with_user_access_administrator_role(self.tenant)
+        group_with_UA_admin.principals.add(self.user_based_principal, self.service_account_principal)
+
+        # Create another group with 'User Access administrator' role we will try to remove
+        test_group = Group(name="test group", tenant=self.tenant)
+        test_group.save()
+
+        user_access_admin_role = group_with_UA_admin.roles()[0]
+        request_body = {"roles": [user_access_admin_role.uuid]}
+
+        url = reverse("group-roles", kwargs={"uuid": test_group.uuid})
+        client = APIClient()
+        response = client.post(url, request_body, format="json", **self.headers_org_admin)
+        # Role 'User Access administrator' added successfully into test group
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        # Try to remove a group with 'User Access administrator'
+        url = reverse("group-detail", kwargs={"uuid": test_group.uuid})
+
+        response = client.delete(url, **self.headers_user_based_principal)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data.get("errors")[0].get("detail"), self.user_access_admin_group_err_message)
+
+        response = client.delete(url, **self.headers_service_account_principal)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data.get("errors")[0].get("detail"), self.user_access_admin_group_err_message)
+
+        # Only Org Admin can remove a group with 'User Access administrator'
+        response = client.delete(url, **self.headers_org_admin)
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
