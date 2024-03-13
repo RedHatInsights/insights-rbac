@@ -3562,3 +3562,143 @@ class GroupViewNonAdminTests(IdentityRequest):
         # Only Org Admin can remove a group with 'User Access administrator'
         response = client.delete(url, **self.headers_org_admin)
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+
+    def test_list_user_based_principals_in_group_without_User_Access_Admin_fail(self):
+        """
+        Test that non org admin without 'User Access administrator' role cannot list
+        user based principals in group.
+        """
+        test_group = Group(name="test group", tenant=self.tenant)
+        test_group.save()
+        test_group.principals.add(self.principal)
+        test_group.save()
+
+        url = reverse("group-principals", kwargs={"uuid": test_group.uuid})
+        client = APIClient()
+
+        response = client.get(url, format="json", **self.headers_user_based_principal)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(response.data.get("errors")[0].get("detail"), self.no_permission_err_message)
+
+        response = client.get(url, format="json", **self.headers_service_account_principal)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(response.data.get("errors")[0].get("detail"), self.no_permission_err_message)
+
+        # Check that principal is in the db
+        self.assertIsNotNone(Principal.objects.get(username=self.principal.username))
+
+    def test_list_service_account_principals_in_group_without_User_Access_Admin_fail(self):
+        """
+        Test that non org admin without 'User Access administrator' role cannot list
+        service account based principals in group.
+        """
+        test_group = Group(name="test group", tenant=self.tenant)
+        test_group.save()
+        service_account_data = self._create_service_account_data()
+        sa_principal = Principal(
+            username=service_account_data["username"],
+            tenant=self.tenant,
+            type="service-account",
+            service_account_id=service_account_data["client_id"],
+        )
+        sa_principal.save()
+        test_group.principals.add(sa_principal)
+        test_group.save()
+
+        url = reverse("group-principals", kwargs={"uuid": test_group.uuid}) + "?principal_type=service-account"
+        client = APIClient()
+
+        response = client.get(url, format="json", **self.headers_user_based_principal)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(response.data.get("errors")[0].get("detail"), self.no_permission_err_message)
+
+        response = client.get(url, format="json", **self.headers_service_account_principal)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(response.data.get("errors")[0].get("detail"), self.no_permission_err_message)
+
+        # Check that principal is in the db
+        self.assertIsNotNone(Principal.objects.get(username=sa_principal.username))
+
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={"status_code": 200, "data": []},
+    )
+    def test_list_user_based_principals_in_group_with_User_Access_Admin_success(self, mock_request):
+        """
+        Test that non org admin with 'User Access administrator' role can list
+        user based principals in group.
+        """
+        # Create a group with 'User Access administrator' role and add principals we use in headers
+        group_with_UA_admin = self._create_group_with_user_access_administrator_role(self.tenant)
+        group_with_UA_admin.principals.add(self.user_based_principal, self.service_account_principal)
+
+        test_group = Group(name="test group", tenant=self.tenant)
+        test_group.save()
+        test_principal = Principal(username="test-principal", tenant=self.tenant)
+        test_principal.save()
+        test_group.principals.add(test_principal)
+        test_group.save()
+
+        # Set the return value for the mock
+        mock_request.return_value["data"] = [{"username": test_principal.username}]
+
+        url = reverse("group-principals", kwargs={"uuid": test_group.uuid})
+        client = APIClient()
+
+        response = client.get(url, **self.headers_user_based_principal)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data.get("data")), 1)
+
+        response = client.get(url, **self.headers_service_account_principal)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data.get("data")), 1)
+
+    @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
+    @patch("management.principal.it_service.ITService.request_service_accounts")
+    def test_list_service_account_principals_in_group_with_User_Access_Admin_success(self, mock_request):
+        """
+        Test that non org admin with 'User Access administrator' role can list
+        service account based principals in group.
+        """
+        # Create a group with 'User Access administrator' role and add principals we use in headers
+        group_with_UA_admin = self._create_group_with_user_access_administrator_role(self.tenant)
+        group_with_UA_admin.principals.add(self.user_based_principal, self.service_account_principal)
+
+        test_group = Group(name="test group", tenant=self.tenant)
+        test_group.save()
+        service_account_data = self._create_service_account_data()
+        sa_principal = Principal(
+            username=service_account_data["username"],
+            tenant=self.tenant,
+            type="service-account",
+            service_account_id=service_account_data["client_id"],
+        )
+        sa_principal.save()
+        test_group.principals.add(sa_principal)
+        test_group.save()
+
+        # Set the return value for the mock
+        sa_uuid = sa_principal.service_account_id
+        mocked_values = [
+            {
+                "clientID": sa_uuid,
+                "name": f"Service Account name",
+                "description": f"Service Account description",
+                "owner": "jsmith",
+                "username": "service_account-" + sa_uuid,
+                "time_created": 1706784741,
+                "type": "service-account",
+            }
+        ]
+        mock_request.return_value = mocked_values
+
+        url = reverse("group-principals", kwargs={"uuid": test_group.uuid}) + "?principal_type=service-account"
+        client = APIClient()
+
+        response = client.get(url, **self.headers_user_based_principal)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data.get("data")), 1)
+
+        response = client.get(url, **self.headers_service_account_principal)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data.get("data")), 1)
