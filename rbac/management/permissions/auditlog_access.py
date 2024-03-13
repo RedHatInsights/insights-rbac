@@ -23,6 +23,4 @@ class AuditLogAccessPermission(permissions.BasePermission):
 
     def has_permission(self, request, view):
         """Check permission based on Account Admin property."""
-        if request.user.admin:
-            return True
         return request.user.admin

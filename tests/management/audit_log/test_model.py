@@ -38,7 +38,6 @@ class AuditLogModelTests(IdentityRequest):
             action=AuditLog.CREATE,
             tenant_id="2",
         )
-        self.AuditLog.save()
 
     def tearDown(self):
         """Tear down group model tests."""
