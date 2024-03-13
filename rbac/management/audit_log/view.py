@@ -17,10 +17,10 @@
 
 """View for Audit Logs."""
 from management.models import AuditLog
-from management.querysets import get_auditlog_queryset
+from management.permissions import AuditLogAccessPermission
 from management.serializers import AuditLogSerializer
+from management.utils import filter_queryset_by_tenant
 from rest_framework import mixins, viewsets
-from rest_framework.permissions import AllowAny
 
 
 class AuditLogViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
@@ -31,14 +31,9 @@ class AuditLogViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
 
     queryset = AuditLog.objects.all()
     serializer_class = AuditLogSerializer
-    permission_classes = (AllowAny,)
-
-    def get_queryset_by_tenant(self):
-        """Obtain queryset related to request tenant and verify that user is admin."""
-        new_queryset = get_auditlog_queryset(self.request)
-        return new_queryset
+    permission_classes = (AuditLogAccessPermission,)
 
     def list(self, request, *args, **kwargs):
         """List all of the audit logs within database by tenant."""
-        self.queryset = self.get_queryset_by_tenant()
+        self.queryset = filter_queryset_by_tenant(AuditLog.objects.all(), request.tenant)
         return super().list(request=request, args=args, kwargs=kwargs)
