@@ -153,7 +153,6 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
             for access_item in access_list:  # pylint: disable=too-many-nested-blocks
                 resource_type = access_item.permission.resource_type
                 operation = access_item.permission.verb
-                res_list = []
                 if operation == "*":
                     operation = "write"
                 res_list = ["*"]
