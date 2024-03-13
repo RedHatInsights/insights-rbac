@@ -4269,3 +4269,126 @@ class GroupViewNonAdminTests(IdentityRequest):
         response = client.get(url, format="json", **self.headers_service_account_principal)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data.get("data")), 1)
+
+    def test_add_role_in_group_without_User_Access_Admin_fail(self):
+        """
+        Test that non org admin without 'User Access administrator' role cannot add new role
+        (different from 'User Access administrator') to the group without 'User Access administrator' role.
+        """
+        # Create a group and role we need for the test
+        group = Group.objects.create(name="test group", tenant=self.tenant)
+        role = Role.objects.create(
+            name="test role", description="test role description", system=False, tenant=self.tenant
+        )
+
+        request_body = {"roles": [role.uuid]}
+        url = reverse("group-roles", kwargs={"uuid": group.uuid})
+        client = APIClient()
+
+        response = client.post(url, request_body, format="json", **self.headers_user_based_principal)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(response.data.get("errors")[0].get("detail"), self.no_permission_err_message)
+
+        response = client.post(url, request_body, format="json", **self.headers_service_account_principal)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(response.data.get("errors")[0].get("detail"), self.no_permission_err_message)
+
+        # Check that org admin can add a role in group
+        response = client.post(url, request_body, format="json", **self.headers_org_admin)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data.get("data")), 1)
+        self.assertEqual(response.data.get("data")[0].get("uuid"), str(role.uuid))
+
+    def test_add_role_in_group_with_User_Access_Admin_success(self):
+        """
+        Test that non org admin with 'User Access administrator' role can add new role
+        (different from 'User Access administrator') to the group without 'User Access administrator' role.
+        """
+        # Create a group with 'User Access administrator' role and add principals we use in headers
+        group_with_UA_admin = self._create_group_with_user_access_administrator_role(self.tenant)
+        group_with_UA_admin.principals.add(self.user_based_principal, self.service_account_principal)
+
+        # Create a group and role we need for the test
+        group = Group.objects.create(name="test group", tenant=self.tenant)
+        role = Role.objects.create(
+            name="test role", description="test role description", system=False, tenant=self.tenant
+        )
+
+        request_body = {"roles": [role.uuid]}
+        url = reverse("group-roles", kwargs={"uuid": group.uuid})
+        client = APIClient()
+
+        response = client.post(url, request_body, format="json", **self.headers_user_based_principal)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data.get("data")), 1)
+        self.assertEqual(response.data.get("data")[0].get("uuid"), str(role.uuid))
+
+        response = client.post(url, request_body, format="json", **self.headers_service_account_principal)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data.get("data")), 1)
+        self.assertEqual(response.data.get("data")[0].get("uuid"), str(role.uuid))
+
+    def test_add_User_Access_Admin_role_in_group_with_User_Access_Admin_fail(self):
+        """
+        Test that non org admin with 'User Access administrator' role cannot add the 'User Access
+        administrator' role to the group.
+        """
+        # Create a group with 'User Access administrator' role and add principals we use in headers
+        group_with_UA_admin = self._create_group_with_user_access_administrator_role(self.tenant)
+        group_with_UA_admin.principals.add(self.user_based_principal, self.service_account_principal)
+
+        # Create a group we need for the test
+        group = Group.objects.create(name="test group", tenant=self.tenant)
+        user_access_admin_role = group_with_UA_admin.roles()[0]
+
+        request_body = {"roles": [user_access_admin_role.uuid]}
+        url = reverse("group-roles", kwargs={"uuid": group.uuid})
+        client = APIClient()
+
+        response = client.post(url, request_body, format="json", **self.headers_user_based_principal)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data.get("errors")[0].get("detail"), self.user_access_admin_role_err_message)
+
+        response = client.post(url, request_body, format="json", **self.headers_service_account_principal)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data.get("errors")[0].get("detail"), self.user_access_admin_role_err_message)
+
+        # Only Org Admin can add 'User Access administrator' role into a group
+        response = client.post(url, request_body, format="json", **self.headers_org_admin)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data.get("data")), 1)
+        self.assertEqual(response.data.get("data")[0].get("uuid"), str(user_access_admin_role.uuid))
+
+    def test_add_role_in_group_with_User_Access_Admin_fail(self):
+        """
+        Test that non org admin with 'User Access administrator' role cannot add new role
+        (different from 'User Access administrator') to the group with 'User Access administrator' role.
+        """
+        # Create a group with 'User Access administrator' role and add principals we use in headers
+        group_with_UA_admin = self._create_group_with_user_access_administrator_role(self.tenant)
+        group_with_UA_admin.principals.add(self.user_based_principal, self.service_account_principal)
+
+        # Create a role we need for the test
+        role = Role.objects.create(
+            name="test role", description="test role description", system=False, tenant=self.tenant
+        )
+
+        request_body = {"roles": [role.uuid]}
+        url = reverse("group-roles", kwargs={"uuid": group_with_UA_admin.uuid})
+        client = APIClient()
+
+        response = client.post(url, request_body, format="json", **self.headers_user_based_principal)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data.get("errors")[0].get("detail"), self.user_access_admin_group_err_message)
+
+        response = client.post(url, request_body, format="json", **self.headers_service_account_principal)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data.get("errors")[0].get("detail"), self.user_access_admin_group_err_message)
+
+        # Only Org Admin can add a role to a group with 'User Access administrator' role
+        response = client.post(url, request_body, format="json", **self.headers_org_admin)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data.get("data")), 2)
+
+        role_uuid_from_response = [item.get("uuid") for item in response.data.get("data")]
+        self.assertIn(str(role.uuid), role_uuid_from_response)
