@@ -43,6 +43,12 @@ class AuditLogModelTests(IdentityRequest):
         """Tear down group model tests."""
         AuditLog.objects.all().delete()
 
-    def test_count_audit_log(self):
+    def test_audit_log_creation(self):
         """Test whether log was created through model."""
-        self.assert_(self.AuditLog, 1)
+        self.assertEqual(self.AuditLog.principal_id, "1")
+        self.assertEqual(self.AuditLog.principal_username, "test_user")
+        self.assertEqual(self.AuditLog.resource_type, "role")
+        self.assertEqual(self.AuditLog.resource_id, "1")
+        self.assertEqual(self.AuditLog.description, "Created a role asdf1234")
+        self.assertEqual(self.AuditLog.action, "create")
+        self.assertEqual(self.AuditLog.tenant_id, "2")
