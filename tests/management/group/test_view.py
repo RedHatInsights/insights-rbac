@@ -3935,8 +3935,7 @@ class GroupViewNonAdminTests(IdentityRequest):
         group_with_UA_admin.principals.add(self.user_based_principal, self.service_account_principal)
 
         # Create a group with 'User Access administrator' role and a principal
-        test_group = Group(name="test group", tenant=self.tenant)
-        test_group.save()
+        test_group = Group.objects.create(name="test group", tenant=self.tenant)
 
         user_access_admin_role = group_with_UA_admin.roles()[0]
         request_body = {"roles": [user_access_admin_role.uuid]}
