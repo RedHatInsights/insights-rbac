@@ -1,5 +1,5 @@
 #
-# Copyright 2019 Red Hat, Inc.
+# Copyright 2024 Red Hat, Inc.
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -15,13 +15,20 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 
-"""API views for import organization"""
-# flake8: noqa
-# pylint: disable=unused-import
-from management.principal.view import PrincipalView
-from management.group.view import GroupViewSet
-from management.role.view import RoleViewSet
-from management.policy.view import PolicyViewSet
-from management.access.view import AccessView
-from management.permission.view import PermissionViewSet
-from management.audit_log.view import AuditLogViewSet
+"""Serializer for Audit Logs."""
+from management.models import AuditLog
+from rest_framework import serializers
+
+
+class AuditLogSerializer(serializers.ModelSerializer):
+    """Serializer for Audit Log."""
+
+    class Meta:
+        model = AuditLog
+        fields = (
+            "created",
+            "principal_username",
+            "description",
+            "resource_type",
+            "action",
+        )

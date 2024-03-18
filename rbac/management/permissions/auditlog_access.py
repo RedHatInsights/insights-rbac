@@ -1,5 +1,5 @@
 #
-# Copyright 2019 Red Hat, Inc.
+# Copyright 2024 Red Hat, Inc.
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -14,14 +14,13 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
+"""Defines the Audit Log Access Permissions class."""
+from rest_framework import permissions
 
-"""API views for import organization"""
-# flake8: noqa
-# pylint: disable=unused-import
-from management.principal.view import PrincipalView
-from management.group.view import GroupViewSet
-from management.role.view import RoleViewSet
-from management.policy.view import PolicyViewSet
-from management.access.view import AccessView
-from management.permission.view import PermissionViewSet
-from management.audit_log.view import AuditLogViewSet
+
+class AuditLogAccessPermission(permissions.BasePermission):
+    """Determines if a user is an Account Admin."""
+
+    def has_permission(self, request, view):
+        """Check permission based on Account Admin property."""
+        return request.user.admin
