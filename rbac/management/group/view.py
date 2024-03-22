@@ -22,7 +22,6 @@ from uuid import UUID
 
 import requests
 from django.conf import settings
-from django.db import connection
 from django.db import transaction
 from django.db.models import Q
 from django.db.models.aggregates import Count
@@ -31,7 +30,12 @@ from django_filters import rest_framework as filters
 from management.authorization.scope_claims import ScopeClaims
 from management.authorization.token_validator import ITSSOTokenValidator
 from management.filters import CommonFilters
-from management.group.definer import add_roles, remove_roles, set_system_flag_before_update
+from management.group.definer import (
+    USER_ACCESS_ADMINISTRATOR_ROLE_KEY,
+    add_roles,
+    remove_roles,
+    set_system_flag_before_update,
+)
 from management.group.model import Group
 from management.group.serializer import (
     GroupInputSerializer,
@@ -205,6 +209,19 @@ class GroupViewSet(
             error = {"group": [_("Default admin access cannot be modified.")]}
             raise serializers.ValidationError(error)
 
+    def protect_group_with_user_access_admin_role(self, roles, source_key):
+        """Disallow group with 'User Access administrator' role from being updated."""
+        # Only organization administrators are allowed to create, modify, or delete a group
+        # that is assigned the User Access administrator role.
+        for role in roles:
+            if role.name == USER_ACCESS_ADMINISTRATOR_ROLE_KEY:
+                key = source_key
+                message = (
+                    "Non-admin users are not allowed to create, modify, or delete a group that is assigned the "
+                    f"'{USER_ACCESS_ADMINISTRATOR_ROLE_KEY}' role."
+                )
+                raise serializers.ValidationError({key: _(message)})
+
     def create(self, request, *args, **kwargs):
         """Create a group.
 
@@ -337,6 +354,9 @@ class GroupViewSet(
         validate_uuid(kwargs.get("uuid"), "group uuid validation")
         self.protect_system_groups("delete")
         group = self.get_object()
+        if not request.user.admin:
+            self.protect_group_with_user_access_admin_role(group.roles_with_access(), "remove_group")
+
         response = super().destroy(request=request, args=args, kwargs=kwargs)
         if response.status_code == status.HTTP_204_NO_CONTENT:
             group_obj_change_notification_handler(request.user, group, "deleted")
@@ -345,7 +365,7 @@ class GroupViewSet(
     def update(self, request, *args, **kwargs):
         """Update a group.
 
-        @api {post} /api/v1/groups/:uuid   Update a group
+        @api {put} /api/v1/groups/:uuid   Update a group
         @apiName updateGroup
         @apiGroup Group
         @apiVersion 1.0.0
@@ -366,6 +386,11 @@ class GroupViewSet(
         """
         validate_uuid(kwargs.get("uuid"), "group uuid validation")
         self.protect_system_groups("update")
+
+        group = self.get_object()
+        if not request.user.admin:
+            self.protect_group_with_user_access_admin_role(group.roles_with_access(), "update_group")
+
         return super().update(request=request, args=args, kwargs=kwargs)
 
     def add_principals(self, group, principals, account=None, org_id=None):
@@ -435,8 +460,6 @@ class GroupViewSet(
         # Fetch the service account from our database to add it to the group. If it doesn't exist, we create
         # it.
         for specified_sa in service_accounts:
-            self.user_has_permission_act_on_service_account(user=user, service_account=specified_sa)
-
             client_id = specified_sa["clientID"]
             try:
                 principal = Principal.objects.get(
@@ -590,14 +613,12 @@ class GroupViewSet(
         account = self.request.user.account
         org_id = self.request.user.org_id
         if request.method == "POST":
+            # Make sure that system groups are kept unmodified.
             self.protect_system_groups("add principals")
+
             if not request.user.admin:
-                for role in group.roles_with_access():
-                    for access in role.access.all():
-                        if access.permission_application() == "rbac":
-                            key = "add_principals"
-                            message = "Non-admin users may not add principals to Groups with RBAC permissions."
-                            raise serializers.ValidationError({key: _(message)})
+                self.protect_group_with_user_access_admin_role(group.roles_with_access(), "add_principals")
+
             serializer = GroupPrincipalInputSerializer(data=request.data)
 
             # Serialize the payload and validate that it is correct.
@@ -828,6 +849,9 @@ class GroupViewSet(
         else:
             self.protect_system_groups("remove principals")
 
+            if not request.user.admin:
+                self.protect_group_with_user_access_admin_role(group.roles_with_access(), "remove_principals")
+
             if SERVICE_ACCOUNTS_KEY not in request.query_params and USERNAMES_KEY not in request.query_params:
                 key = "detail"
                 message = "Query parameter {} or {} is required.".format(SERVICE_ACCOUNTS_KEY, USERNAMES_KEY)
@@ -875,7 +899,10 @@ class GroupViewSet(
                         },
                     )
 
-                return Response(status=status.HTTP_204_NO_CONTENT)
+                # Create a default and successful response object. If no user principals are to be removed below, this
+                # response will be returned. Else, it will be overridden with whichever response the user removal
+                # generates.
+                response = Response(status=status.HTTP_204_NO_CONTENT)
 
             # Remove the users from the group too.
             if USERNAMES_KEY in request.query_params:
@@ -979,6 +1006,10 @@ class GroupViewSet(
         group = self.get_object()
         if request.method == "POST":
             self.protect_default_admin_group_roles(group)
+
+            if not request.user.admin:
+                self.protect_group_with_user_access_admin_role(group.roles_with_access(), "add_role")
+
             serializer = GroupRoleSerializerIn(data=request.data)
             if serializer.is_valid(raise_exception=True):
                 roles = request.data.pop(ROLES_KEY, [])
@@ -992,6 +1023,10 @@ class GroupViewSet(
             return self.get_paginated_response(serializer.data)
         else:
             self.protect_default_admin_group_roles(group)
+
+            if not request.user.admin:
+                self.protect_group_with_user_access_admin_role(group.roles_with_access(), "remove_role")
+
             if ROLES_KEY not in request.query_params:
                 key = "detail"
                 message = "Query parameter {} is required.".format(ROLES_KEY)
@@ -1114,62 +1149,3 @@ class GroupViewSet(
         )
         for username in service_accounts:
             group_principal_change_notification_handler(self.request.user, group, username, "removed")
-
-    def user_has_permission_act_on_service_account(self, user: User, service_account: dict = {}):
-        """Check if the user has permission to create or delete the service account.
-
-        Only org admins, users with the "User Access administrator" or the owner of the service account can create or
-        remove service accounts.
-        """
-        if settings.IT_BYPASS_PERMISSIONS_MODIFY_SERVICE_ACCOUNTS:
-            return
-
-        # Is the user an organization administrator?
-        is_organization_admin: bool = user.admin
-
-        # Is the user the owner of the service account?
-        is_user_owner: bool = False
-
-        owner = service_account.get("owner")
-        if owner:
-            is_user_owner = user.username == owner
-
-        # Check if the user has the "User Access administrator" permission. Leaving the RAW query here
-        username: str = user.username  # type: ignore
-        query = (
-            "SELECT EXISTS ( "
-            "SELECT "
-            "1 "
-            "FROM "
-            '"management_principal" AS "mp" '
-            "INNER JOIN "
-            '"management_group_principals" AS "mgp" ON "mgp"."principal_id" = "mp"."id" '
-            "INNER JOIN "
-            '"management_policy" AS "mpolicy" ON "mpolicy"."group_id" = "mgp"."group_id" '
-            "INNER JOIN "
-            '"management_policy_roles" AS "mpr" ON "mpr"."policy_id" = "mpolicy"."id" '
-            "INNER JOIN "
-            '"management_role" AS "mr" ON "mr"."id" = "mpr"."role_id" '
-            "WHERE "
-            '"mp"."username" = %s '
-            "AND "
-            "mr.\"name\" = 'User Access administrator' "
-            "LIMIT 1 "
-            ') AS "user_has_user_access_administrator_permission"'
-        )
-
-        with connection.cursor() as cursor:
-            cursor.execute(query, [username])
-
-            row: tuple = cursor.fetchone()
-
-        user_has_user_access_administrator_permission = row[0]
-
-        if (not is_organization_admin) and (not user_has_user_access_administrator_permission) and (not is_user_owner):
-            logger.debug(
-                f"User {user} was denied altering service account {service_account} due to insufficient privileges."
-            )
-
-            raise InsufficientPrivilegesError(
-                f"Unable to alter service account {service_account} due to insufficient privileges."
-            )
