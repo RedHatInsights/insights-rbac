@@ -1710,3 +1710,48 @@ class RoleViewNonAdminTests(IdentityRequest):
         response = client.get(url, **self.headers_service_account_principal)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data.get("data")), self.non_system_roles_count)
+
+    def test_list_roles_without_User_Access_Admin_system_foo_fail(self):
+        """
+        Test that principal without 'User Access administrator' role cannot read a list of roles
+        with '?system=foo' in the request (where 'foo' is not supported value for the 'system' param
+        so the 'system' param is ignored in this case).
+        """
+        client = APIClient()
+        url = reverse("role-list") + "?system=foo"
+
+        response = client.get(url, **self.headers_user_based_principal)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(response.data.get("errors")[0].get("detail"), self.no_permission_err_message)
+
+        response = client.get(url, **self.headers_service_account_principal)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(response.data.get("errors")[0].get("detail"), self.no_permission_err_message)
+
+        # Org Admin can list the roles
+        response = client.get(url, **self.headers_org_admin)
+        expected_count = self.system_roles_count + self.non_system_roles_count
+        self.assertEqual(len(response.data.get("data")), expected_count)
+
+    def test_list_roles_with_User_Access_Admin_system_foo_success(self):
+        """
+        Test that principal with 'User Access administrator' role can read a list of roles
+        with '?system=foo' in the request (where 'foo' is not supported value for the 'system' param
+        so the 'system' param is ignored in this case).
+        """
+        # Create a group with 'User Access administrator' role and add principals we use in headers
+        group_with_UA_admin = self._create_group_with_user_access_admin_role(self.tenant)
+        group_with_UA_admin.principals.add(self.user_based_principal, self.service_account_principal)
+
+        client = APIClient()
+        url = reverse("role-list")
+
+        response = client.get(url, **self.headers_user_based_principal)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        expected_count = self.system_roles_count + self.non_system_roles_count + 1
+        self.assertEqual(len(response.data.get("data")), expected_count)
+
+        response = client.get(url, **self.headers_service_account_principal)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        expected_count = self.system_roles_count + self.non_system_roles_count + 1
+        self.assertEqual(len(response.data.get("data")), expected_count)
