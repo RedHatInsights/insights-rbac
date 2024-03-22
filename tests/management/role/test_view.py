@@ -1561,3 +1561,33 @@ class RoleViewNonAdminTests(IdentityRequest):
         test_tenant_org_id = "100001"
         cached_tenants = TenantCache()
         cached_tenants.delete_tenant(test_tenant_org_id)
+
+    @staticmethod
+    def _create_group_with_user_access_admin_role(tenant):
+        """Create a group with a 'User Access administrator' role."""
+        # Create a group with 'User Access administrator' role
+        rbac_admin_permission = Permission.objects.create(
+            application="rbac", permission="rbac:*:*", resource_type="*", verb="*", tenant=tenant
+        )
+        user_access_administrator_role = Role.objects.create(
+            admin_default=True,
+            description="User Access administrator role description",
+            display_name="User Access administrator",
+            platform_default=False,
+            system=True,
+            tenant=tenant,
+        )
+        Access.objects.create(permission=rbac_admin_permission, role=user_access_administrator_role, tenant=tenant)
+        rbac_admin_group = Group.objects.create(
+            admin_default=False,
+            description="A group with the 'User Access administrator' role",
+            name="rbac_admin_group",
+            platform_default=False,
+            system=False,
+            tenant=tenant,
+        )
+        policy_for_rbac_admin_group = Policy.objects.create(
+            group=rbac_admin_group, name="Policy for rbac_admin_group", system=True, tenant=tenant
+        )
+        policy_for_rbac_admin_group.roles.add(user_access_administrator_role)
+        return rbac_admin_group
