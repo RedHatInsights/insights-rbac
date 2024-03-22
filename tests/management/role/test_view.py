@@ -1633,3 +1633,40 @@ class RoleViewNonAdminTests(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         expected_count = self.system_roles_count + self.non_system_roles_count + 1
         self.assertEqual(len(response.data.get("data")), expected_count)
+
+    def test_list_roles_without_User_Access_Admin_system_true_success(self):
+        """
+        Test that principal without 'User Access administrator' role can read a list of roles
+        with '?system=true' in the request.
+        """
+        client = APIClient()
+        url = reverse("role-list") + "?system=true"
+
+        response = client.get(url, **self.headers_user_based_principal)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data.get("data")), self.system_roles_count)
+
+        response = client.get(url, **self.headers_service_account_principal)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data.get("data")), self.system_roles_count)
+
+    def test_list_roles_with_User_Access_Admin_system_true_success(self):
+        """
+        Test that principal with 'User Access administrator' role can read a list of roles
+        with '?system=true' in the request.
+        """
+        # Create a group with 'User Access administrator' role and add principals we use in headers
+        group_with_UA_admin = self._create_group_with_user_access_admin_role(self.tenant)
+        group_with_UA_admin.principals.add(self.user_based_principal, self.service_account_principal)
+        client = APIClient()
+        url = reverse("role-list") + "?system=true"
+
+        response = client.get(url, **self.headers_user_based_principal)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        expected_count = self.system_roles_count + 1
+        self.assertEqual(len(response.data.get("data")), expected_count)
+
+        response = client.get(url, **self.headers_service_account_principal)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        expected_count = self.system_roles_count + 1
+        self.assertEqual(len(response.data.get("data")), expected_count)
