@@ -39,7 +39,6 @@ from tests.core.test_kafka import copy_call_args
 from tests.identity_request import IdentityRequest
 from unittest.mock import ANY, patch
 
-
 URL = reverse("role-list")
 
 
@@ -1446,3 +1445,119 @@ class RoleViewsetTests(IdentityRequest):
         self.assertEqual(len(response.data.get("data")), 1)
         role = response.data.get("data")[0]
         self.assertEqual(role.get("groups_in_count"), 2)
+
+
+class RoleViewNonAdminTests(IdentityRequest):
+    """Test the role view for nonadmin user."""
+
+    def setUp(self):
+        """Set up the role viewset nonadmin tests."""
+        super().setUp()
+
+        platform_default_role_config = {
+            "name": "platform_default_role",
+            "display_name": "Platform Default Role",
+            "system": True,
+            "platform_default": True,
+            "admin_default": False,
+        }
+        self.platform_default_role = Role.objects.create(**platform_default_role_config, tenant=self.tenant)
+
+        admin_default_role_config = {
+            "name": "admin_default_role",
+            "display_name": "Admin Default Role",
+            "system": True,
+            "platform_default": False,
+            "admin_default": True,
+        }
+        self.admin_default_role = Role.objects.create(**admin_default_role_config, tenant=self.tenant)
+
+        not_system_role_config = {
+            "name": "not_system_role",
+            "display_name": "Not System Role",
+            "system": False,
+            "platform_default": False,
+            "admin_default": False,
+        }
+
+        self.not_system_role = Role.objects.create(**not_system_role_config, tenant=self.tenant)
+
+        self.system_roles_count = 2
+        self.non_system_roles_count = 1
+
+        self.display_fields = {
+            "applications",
+            "description",
+            "uuid",
+            "name",
+            "display_name",
+            "system",
+            "created",
+            "policyCount",
+            "accessCount",
+            "modified",
+            "platform_default",
+            "admin_default",
+            "external_role_id",
+            "external_tenant",
+        }
+
+        # Create 2 non org admin principals and 1 org admin
+        # 1. user based principal
+        self.user_based_principal = Principal(username="user_based_principal", tenant=self.tenant)
+        self.user_based_principal.save()
+
+        customer_data = {
+            "account_id": self.tenant.account_id,
+            "tenant_name": self.tenant.tenant_name,
+            "org_id": self.tenant.org_id,
+        }
+
+        request_context_user_based_principal = self._create_request_context(
+            customer_data=customer_data,
+            user_data={"username": self.user_based_principal.username, "email": "test@email.com"},
+            is_org_admin=False,
+        )
+        self.headers_user_based_principal = request_context_user_based_principal["request"].META
+
+        # 2. service account based principal
+        service_account_data = self._create_service_account_data()
+        self.service_account_principal = Principal(
+            username=service_account_data["username"],
+            tenant=self.tenant,
+            type="service-account",
+            service_account_id=service_account_data["client_id"],
+        )
+        self.service_account_principal.save()
+
+        request_context_service_account_principal = self._create_request_context(
+            customer_data=customer_data,
+            service_account_data=service_account_data,
+            is_org_admin=False,
+        )
+        self.headers_service_account_principal = request_context_service_account_principal["request"].META
+
+        # 3 org admin principal in the tenant
+        self.org_admin = Principal(username="org_admin", tenant=self.tenant)
+        self.org_admin.save()
+
+        request_context_org_admin = self._create_request_context(
+            customer_data=customer_data,
+            user_data={"username": self.org_admin.username, "email": "test@email.com"},
+            is_org_admin=True,
+        )
+        self.headers_org_admin = request_context_org_admin["request"].META
+
+        # Error messages
+        self.no_permission_err_message = "You do not have permission to perform this action."
+
+    def tearDown(self):
+        """Tear down role viewset nonadmin tests."""
+        Group.objects.all().delete()
+        Principal.objects.all().delete()
+        Role.objects.all().delete()
+
+        # we need to delete old test_tenant's that may exist in cache
+        test_tenant_org_id = "100001"
+        cached_tenants = TenantCache()
+        cached_tenants.delete_tenant(test_tenant_org_id)
