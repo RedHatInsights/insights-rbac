@@ -16,7 +16,6 @@
 #
 
 """View for Audit Logs."""
-from management.models import AuditLog
 from management.permissions import AuditLogAccessPermission
 from management.serializers import AuditLogSerializer
 from management.utils import filter_queryset_by_tenant
@@ -27,6 +26,7 @@ class AuditLogViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
     """Audit Logs View.
 
     A viewset that provides default `list()` actions.
+
     """
 
     queryset = AuditLog.objects.all()

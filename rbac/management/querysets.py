@@ -25,6 +25,7 @@ from management.permissions.role_access import RoleAccessPermission
 from management.policy.model import Policy
 from management.principal.it_service import ITService
 from management.role.model import Access, Role
+from management.audit_log.model import AuditLog
 from management.utils import (
     APPLICATION_KEY,
     access_for_principal,
@@ -238,6 +239,15 @@ def get_policy_queryset(request):
     if access == "None":
         return Policy.objects.none()
     return filter_queryset_by_tenant(Policy.objects.filter(uuid__in=access), request.tenant)
+
+
+def get_auditlog_queryset(request):
+    if request.user.admin:
+        return filter_queryset_by_tenant(AuditLog.objects.all(), request.tenant)
+    else:
+        key = "detail"
+        message = "User is not admin"
+        raise serializers.ValidationError({key: _(message)})
 
 
 def get_access_queryset(request: Request) -> QuerySet:
