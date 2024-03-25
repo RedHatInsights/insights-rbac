@@ -47,7 +47,7 @@ class RoleDefinerTests(IdentityRequest):
                 org_id = None
 
             self.assertTrue(len(roles))
-            self.assertFalse(Role.objects.get(name="RBAC Administrator Local Test").platform_default)
+            self.assertFalse(Role.objects.get(name="User Access administrator").platform_default)
 
             kafka_mock.assert_any_call(
                 settings.NOTIFICATIONS_TOPIC,
@@ -109,7 +109,7 @@ class RoleDefinerTests(IdentityRequest):
         self.try_seed_roles()
 
         # Update non platform default role
-        non_platform_role_to_update = Role.objects.get(name="RBAC Administrator Local Test")
+        non_platform_role_to_update = Role.objects.get(name="User Access administrator")
         non_platform_role_to_update.version = 0
         access = non_platform_role_to_update.access.first()
         access.permission = Permission.objects.get(permission="rbac:principal:read")
@@ -201,7 +201,7 @@ class RoleDefinerTests(IdentityRequest):
         # Update relation to point to a new role. Seed again would update relation back.
         ext_relation = ExtRoleRelation.objects.first()
         origin_role = ext_relation.role
-        ext_relation.role = Role.objects.get(name="RBAC Administrator Local Test")
+        ext_relation.role = Role.objects.get(name="User Access administrator")
         ext_relation.save()
         origin_role.version = 1
         origin_role.save()

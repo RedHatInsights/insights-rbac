@@ -1,5 +1,5 @@
 #
-# Copyright 2023 Red Hat, Inc.
+# Copyright 2024 Red Hat, Inc.
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -29,7 +29,7 @@ class AuditLogModelTests(IdentityRequest):
         """Set up the audit log model tests."""
         super().setUp()
 
-        self.AuditLog = AuditLog.objects.create(
+        self.audit_log = AuditLog.objects.create(
             principal_id="1",
             principal_username="test_user",
             resource_type=AuditLog.ROLE,
@@ -38,12 +38,17 @@ class AuditLogModelTests(IdentityRequest):
             action=AuditLog.CREATE,
             tenant_id="2",
         )
-        self.AuditLog.save()
 
     def tearDown(self):
         """Tear down group model tests."""
         AuditLog.objects.all().delete()
 
-    def test_count_audit_log(self):
+    def test_audit_log_creation(self):
         """Test whether log was created through model."""
-        self.assert_(self.AuditLog, 1)
+        self.assertEqual(self.audit_log.principal_id, "1")
+        self.assertEqual(self.audit_log.principal_username, "test_user")
+        self.assertEqual(self.audit_log.resource_type, "role")
+        self.assertEqual(self.audit_log.resource_id, "1")
+        self.assertEqual(self.audit_log.description, "Created a role asdf1234")
+        self.assertEqual(self.audit_log.action, "create")
+        self.assertEqual(self.audit_log.tenant_id, "2")

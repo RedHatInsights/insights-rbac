@@ -80,7 +80,7 @@ class IdentityRequest(TestCase):
     def _create_request_context(
         cls,
         customer_data: dict[str, str],
-        user_data: dict[str, str],
+        user_data: dict[str, str] = None,
         is_org_admin: bool = True,
         is_internal: bool = False,
         cross_account: bool = False,

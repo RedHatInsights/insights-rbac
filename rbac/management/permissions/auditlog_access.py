@@ -1,3 +1,4 @@
+#
 # Copyright 2024 Red Hat, Inc.
 #
 # This program is free software: you can redistribute it and/or modify
@@ -13,21 +14,13 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
-
-"""Serializer for Audit Logs."""
-from management.models import AuditLog
-from rest_framework import serializers
+"""Defines the Audit Log Access Permissions class."""
+from rest_framework import permissions
 
 
-class AuditLogSerializer(serializers.ModelSerializer):
-    """Serializer for Audit Log."""
+class AuditLogAccessPermission(permissions.BasePermission):
+    """Determines if a user is an Account Admin."""
 
-    class Meta:
-        model = AuditLog
-        fields = (
-            "created",
-            "principal_username",
-            "description",
-            "resource_type",
-            "action",
-        )
+    def has_permission(self, request, view):
+        """Check permission based on Account Admin property."""
+        return request.user.admin

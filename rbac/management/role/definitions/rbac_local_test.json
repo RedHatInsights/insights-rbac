@@ -1,7 +1,7 @@
 {
   "roles": [
     {
-      "name": "RBAC Administrator Local Test",
+      "name": "User Access administrator",
       "description": "Grants a non-org admin full access to configure and manage user access to services hosted on cloud.redhat.com. This role can only be viewed and assigned by Organization Administrators.",
       "system": true,
       "version": 3,

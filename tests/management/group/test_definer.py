@@ -75,7 +75,7 @@ class GroupDefinerTests(IdentityRequest):
         new_platform_role = Role.objects.create(
             name="new_platform_role", platform_default=True, tenant=self.public_tenant
         )
-        role_to_remove = Role.objects.get(name="RBAC Administrator Local Test")
+        role_to_remove = Role.objects.get(name="User Access administrator")
         with self.settings(NOTIFICATIONS_RH_ENABLED=True, NOTIFICATIONS_ENABLED=True):
             try:
                 seed_group()
@@ -147,7 +147,7 @@ class GroupDefinerTests(IdentityRequest):
     def modify_default_group(self, system=True):
         """Add a role to the default group and/or change the system flag"""
         group = Group.objects.get(platform_default=True)
-        roles = Role.objects.filter(name="RBAC Administrator Local Test")
+        roles = Role.objects.filter(name="User Access administrator")
         add_roles(group, roles, self.public_tenant)
 
         group.system = system

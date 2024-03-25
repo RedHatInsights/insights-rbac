@@ -18,12 +18,12 @@ from django.conf.urls import include
 from django.urls import re_path
 from management.views import (
     AccessView,
+    AuditLogViewSet,
     GroupViewSet,
     PermissionViewSet,
     PolicyViewSet,
     PrincipalView,
     RoleViewSet,
-    AuditLogViewSet,
 )
 from rest_framework.routers import DefaultRouter
 
