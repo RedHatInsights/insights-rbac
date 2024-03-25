@@ -23,7 +23,7 @@ from rest_framework.response import Response
 
 from api.status.model import Status
 from api.status.serializer import StatusSerializer
-
+import clients.relation_api_client as relation_api_client
 
 @api_view(["GET", "HEAD"])
 @permission_classes((permissions.AllowAny,))
@@ -75,4 +75,6 @@ def status(request):
     status_info = Status()
     serializer = StatusSerializer(status_info)
     server_info = serializer.data
+
+    relation_api_client.test_grpc_call()
     return Response(server_info)
