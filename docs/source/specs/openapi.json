@@ -565,8 +565,7 @@
             "description": "Comma separated usernames of principals to get. If match_criteria is specified, only the first username will be picked up for search.",
             "required": false,
             "schema": {
-              "type": "string",
-              "example": "userA,userB"
+              "type": "string"
             }
           },
           {
