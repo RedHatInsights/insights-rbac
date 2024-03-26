@@ -508,6 +508,10 @@ objects:
             value: ${IT_TOKEN_JKWS_CACHE_LIFETIME}
           - name: PRINCIPAL_CLEANUP_DELETION_ENABLED
             value: ${PRINCIPAL_CLEANUP_DELETION_ENABLED}
+          - name: RELATION_API_HOST
+            value: ${RELATION_API_HOST}
+          - name: RELATION_API_PORT
+            value: ${RELATION_API_PORT}
     jobs:
       - name: tenant-org-id-populator
         podSpec:
@@ -3488,4 +3492,8 @@ parameters:
 - name: BONFIRE_DEPENDENCIES
   description: A comma separated list of non ClowdApp dependencies for bonfire to deploy
   value: "model-access-permissions-yml-stage,rbac-config-yml-stage"
+- name: RELATION_API_HOST
+  value: "localhost"
+- name: RELATION_API_PORT
+  value: "9000"
 
