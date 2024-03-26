@@ -1,8 +1,8 @@
 from __future__ import print_function
 
 import grpc
-import relationships_pb2
-import relationships_pb2_grpc
+from clients.relation_api_grpc import relationships_pb2
+from clients.relation_api_grpc import relationships_pb2_grpc
 from rbac.env import ENVIRONMENT
 
 

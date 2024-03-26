@@ -2,7 +2,7 @@
 """Client and server classes corresponding to protobuf-defined services."""
 import grpc
 
-import relationships_pb2 as relationships__pb2
+from clients.relation_api_grpc import relationships_pb2 as relationships__pb2
 
 
 class RelationshipsStub(object):
