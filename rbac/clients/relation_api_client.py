@@ -6,7 +6,7 @@ from clients.relation_api_grpc import relationships_pb2_grpc
 from rbac.env import ENVIRONMENT
 
 
-relation_api_gRPC_server = ENVIRONMENT.get_value("RELATION_API_HOST", default=None) + ":" + ENVIRONMENT.get_value("RELATION_API_PORT", default=None)
+relation_api_gRPC_server = ENVIRONMENT.get_value("RELATION_API_HOST", default="") + ":" + ENVIRONMENT.get_value("RELATION_API_PORT", default="")
 
 
 def test_grpc_call():
