@@ -3493,7 +3493,9 @@ parameters:
   description: A comma separated list of non ClowdApp dependencies for bonfire to deploy
   value: "model-access-permissions-yml-stage,rbac-config-yml-stage"
 - name: RELATION_API_HOST
+  description: Relation API host
   value: "localhost"
 - name: RELATION_API_PORT
+  description: Relation API port
   value: "9000"
 
