@@ -7,7 +7,9 @@ from rbac.env import ENVIRONMENT
 
 
 relation_api_gRPC_server = ENVIRONMENT.get_value("RELATION_API_HOST", default="") + ":" + ENVIRONMENT.get_value("RELATION_API_PORT", default="")
-
+print("hello")
+print(relation_api_gRPC_server)
+print("hello")
 
 def test_grpc_call():
     with grpc.insecure_channel(relation_api_gRPC_server) as channel:
