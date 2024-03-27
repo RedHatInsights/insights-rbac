@@ -2,11 +2,31 @@ import grpc
 from clients.relation_api_grpc import relationships_pb2
 from clients.relation_api_grpc import relationships_pb2_grpc
 from rbac.env import ENVIRONMENT
-
+import requests
 
 class AuthAPIWrapper:
     def __init__(self):
         self.grpc_server_address = ENVIRONMENT.get_value("RELATION_API_GRPC_HOST", default="") + ":" + ENVIRONMENT.get_value("RELATION_API_GRPC_PORT", default="")
+        self.rest_server_address = ENVIRONMENT.get_value("RELATION_API_REST_HOST", default="") + ":" + ENVIRONMENT.get_value("RELATION_API_REST_PORT", default="")
+        self.is_grpc = ENVIRONMENT.get_value("RELATION_API_REST_OR_GRPC", default="") == "grpc"
+
+    def test_rest_call(self):
+        params = {
+            'filter.objectType': 'group',
+            'filter.objectId': 'bob_club',
+            'filter.relation': 'member'
+        }
+
+
+        url = 'http://' + self.rest_server_address + '/api/authz/v1/relationships'
+
+        response = requests.get(url, params=params)
+
+        if response.status_code == 200:
+            data = response.json()
+            print(data)
+        else:
+            print(f"Failed to fetch data. Status code: {response.status_code}")
 
     def test_grpc_call(self):
         with grpc.insecure_channel(self.grpc_server_address) as channel:
@@ -42,3 +62,10 @@ class AuthAPIWrapper:
             response = stub.ReadRelationships(request)
         print(response)
         print("End of ReadRelationshipsRequest")
+
+
+    def test_call(self):
+        if self.is_grpc:
+            self.test_grpc_call()
+        else:
+            self.test_rest_call()
