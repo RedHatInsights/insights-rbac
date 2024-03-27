@@ -512,6 +512,12 @@ objects:
             value: ${RELATION_API_GRPC_HOST}
           - name: RELATION_API_GRPC_PORT
             value: ${RELATION_API_GRPC_PORT}
+          - name: RELATION_API_REST_HOST
+            value: ${RELATION_API_REST_HOST}
+          - name: RELATION_API_REST_PORT
+            value: ${RELATION_API_REST_PORT}
+          - name: RELATION_API_REST_OR_GRPC
+            value: ${RELATION_API_REST_OR_GRPC}
     jobs:
       - name: tenant-org-id-populator
         podSpec:
@@ -3498,4 +3504,12 @@ parameters:
 - name: RELATION_API_GRPC_PORT
   description: Relation API port
   value: "9000"
-
+- name: RELATION_API_REST_HOST
+  description: Relation API host
+  value: "localhost"
+- name: RELATION_API_REST_PORT
+  description: Relation API port
+  value: "8000"
+- name: RELATION_API_REST_OR_GRPC
+  description: grpc or rest
+  value: "grpc"

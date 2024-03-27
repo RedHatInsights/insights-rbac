@@ -77,5 +77,5 @@ def status(request):
     server_info = serializer.data
 
     api_wrapper = auth_api_wrapper.AuthAPIWrapper()
-    api_wrapper.test_grpc_call()
+    api_wrapper.test_call()
     return Response(server_info)
