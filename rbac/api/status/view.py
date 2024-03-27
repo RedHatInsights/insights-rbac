@@ -23,7 +23,7 @@ from rest_framework.response import Response
 
 from api.status.model import Status
 from api.status.serializer import StatusSerializer
-
+import clients.auth_api_wrapper as auth_api_wrapper
 
 @api_view(["GET", "HEAD"])
 @permission_classes((permissions.AllowAny,))
@@ -75,4 +75,7 @@ def status(request):
     status_info = Status()
     serializer = StatusSerializer(status_info)
     server_info = serializer.data
+
+    api_wrapper = auth_api_wrapper.AuthAPIWrapper()
+    api_wrapper.test_call()
     return Response(server_info)
