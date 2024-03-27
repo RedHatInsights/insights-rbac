@@ -6,7 +6,7 @@ from rbac.env import ENVIRONMENT
 
 class AuthAPIWrapper:
     def __init__(self):
-        self.grpc_server_address = ENVIRONMENT.get_value("RELATION_API_HOST", default="") + ":" + ENVIRONMENT.get_value("RELATION_API_PORT", default="")
+        self.grpc_server_address = ENVIRONMENT.get_value("RELATION_API_GRPC_HOST", default="") + ":" + ENVIRONMENT.get_value("RELATION_API_GRPC_PORT", default="")
 
     def test_grpc_call(self):
         with grpc.insecure_channel(self.grpc_server_address) as channel:
