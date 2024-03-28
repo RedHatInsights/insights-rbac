@@ -1,5 +1,3 @@
-version: '3.9'
-
 services:
   rbac-server:
       container_name: rbac_server
