@@ -2754,11 +2754,11 @@ class GroupViewNonAdminTests(IdentityRequest):
         return user_access_admin_group
 
     def test_nonadmin_RonR_list(self):
-        """Test that a nonadmin user can list groups in tenant"""
+        """Test that a nonadmin user cannot list groups in tenant"""
         url = "{}?application={}".format(reverse("group-list"), "rbac")
         client = APIClient()
         response = client.get(url, **self.headers)
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
     def test_nonadmin_RonR_retrieve(self):
         """Test that a nonadmin user can't retrieve group RBAC resources"""
@@ -4519,15 +4519,17 @@ class GroupViewNonAdminTests(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
 
     def test_list_groups_without_User_Access_Admin_success(self):
-        """Test that non org admin without 'User Access administrator' role can list groups."""
+        """Test that non org admin without 'User Access administrator' role cannot list groups."""
         url = reverse("group-list")
         client = APIClient()
 
         response = client.get(url, format="json", **self.headers_user_based_principal)
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(response.data.get("errors")[0].get("detail"), self.no_permission_err_message)
 
         response = client.get(url, format="json", **self.headers_service_account_principal)
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(response.data.get("errors")[0].get("detail"), self.no_permission_err_message)
 
     def test_list_groups_with_User_Access_Admin_success(self):
         """Test that non org admin with 'User Access administrator' role can list groups."""
