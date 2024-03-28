@@ -39,6 +39,7 @@ class PrincipalInputSerializer(serializers.Serializer):
     """Serializer for the Principal model."""
 
     username = serializers.CharField(required=False, max_length=150)
+    user_id = serializers.CharField(max_length=15)
     clientID = serializers.UUIDField(required=False, source="service_account_id")
     type = serializers.CharField(required=False)
 
@@ -68,7 +69,7 @@ class PrincipalInputSerializer(serializers.Serializer):
     class Meta:
         """Metadata for the serializer."""
 
-        fields = ("username", "clientID", "type")
+        fields = ("username", "user_id", "clientID", "type")
 
 
 class ServiceAccountSerializer(serializers.Serializer):

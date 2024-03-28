@@ -19,6 +19,7 @@
 import logging
 
 from django.conf import settings
+from django.db import transaction
 from management.principal.model import Principal
 from management.principal.proxy import PrincipalProxy
 from management.utils import account_id_for_tenant
@@ -96,6 +97,63 @@ def clean_tenant_principals(tenant):
     )
 
 
+def populate_principal_user_ids(tenant):
+    """Populate the user_id field for user-based principals."""
+    principals = list(Principal.objects.filter(type="user").filter(tenant=tenant).filter(user_id=None))
+    if settings.AUTHENTICATE_WITH_ORG_ID:
+        tenant_id = tenant.org_id
+    else:
+        tenant_id = tenant.tenant_name
+    logger.info(
+        "populate_principal_user_ids: Populating user_id on %d principals for tenant %s.", len(principals), tenant_id
+    )
+    for principal in principals:
+        if principal.cross_account:
+            continue
+        logger.debug(
+            "populate_principal_user_ids: Checking BOP for user_id for username %s for tenant %s.",
+            principal.username,
+            tenant_id,
+        )
+        account = account_id_for_tenant(tenant)
+        org_id = tenant.org_id
+        if settings.AUTHENTICATE_WITH_ORG_ID:
+            resp = proxy.request_filtered_principals([principal.username], org_id=org_id)
+        else:
+            resp = proxy.request_filtered_principals([principal.username], account=account)
+        status_code = resp.get("status_code")
+        data = resp.get("data")
+        logger.info("populate_principal_user_ids: Response code: %s Data: %s", str(status_code), str(data))
+        if status_code == status.HTTP_200_OK and data:
+            user_id = data.get("id")
+            logger.debug(
+                "populate_principal_user_ids: user_id %s found for username %s for tenant %s.",
+                user_id,
+                principal.username,
+                tenant_id,
+            )
+            with transaction.atomic():
+                principal.user_id = user_id
+                principal.save()
+        elif status_code == status.HTTP_200_OK and not data:
+            logger.info(
+                "populate_principal_user_ids: No data found for username %s for tenant %s.",
+                principal.username,
+                tenant_id,
+            )
+        else:
+            logger.warning(
+                "populate_principal_user_ids: Unknown status %d when checking username %s" " for tenant %s.",
+                status_code,
+                principal.username,
+                tenant_id,
+            )
+    population_message = (
+        "populate_principal_user_ids: Completed user_id population of %d principals for tenant %s."  # noqa E501
+    )
+    logger.info(population_message, len(principals), tenant_id)
+
+
 def clean_tenants_principals():
     """Check which principals are eligible for clean up."""
     logger.info("clean_tenant_principals: Start principal clean up.")
@@ -106,3 +164,15 @@ def clean_tenants_principals():
         logger.info("clean_tenant_principals: Completed principal clean up for tenant %s.", tenant.tenant_name)
 
     logger.info("clean_tenant_principals: Principal cleanup complete for all tenants.")
+
+
+def populate_principals_user_ids():
+    """Populate eligible user-principals with user_id."""
+    logger.info("populate_principal_user_id: Starting user_id population.")
+
+    for tenant in list(Tenant.objects.all()):
+        logger.info("populate_principal_user_id: Running user_id population for tenant %s.", tenant.tenant_name)
+        populate_principal_user_ids(tenant)
+        logger.info("populate_principal_user_id: Completed user_id population for tenant %s.", tenant.tenant_name)
+
+    logger.info("populate_principal_user_id: user_id population complete for all tenants.")
