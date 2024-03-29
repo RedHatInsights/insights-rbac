@@ -23,6 +23,7 @@ from api.models import Tenant, TenantAwareModel
 from management.principal.model import Principal
 from management.group.model import Group
 from management.role.model import Role
+from management.policy.model import Policy
 import management.utils
 
 
@@ -83,15 +84,31 @@ class AuditLog(TenantAwareModel):
                 return role_items
 
         elif r_type == AuditLog.GROUP:
+            group_items = []
             if request._data != None:
                 group_object = get_object_or_404(Group, name=request.data["name"])
-
+                group_object_id = group_object.id 
+                group_object_name = "group: " + group_object.name
+                group_items.append(group_object_id)
+                group_items.append(group_object_name)
+                return group_items
             else:
                 group_uuid = kwargs["kwargs"]["uuid"]
                 group_object = get_object_or_404(Group, uuid=group_uuid)
-            return group_object.id
+                group_object_id = group_object.id
+                group_object_name = "group: " + group_object.name
+                group_items.append(group_object_id)
+                group_items.append(group_object_name)
+                return group_items
+
         elif r_type == AuditLog.PERMISSION:
-            # TODO: finding the id for the permission
+            policy_items = []
+            if request._data != None:
+                policy_object = get_object_or_404(Policy, name=request.data["name"])
+                policy_object_id = policy_object.id
+                policy_object_name = "policy: " + policy_object.name
+                policy_items.append(policy_object_id)
+                policy_items.append(policy_object_name)
             return None
         elif r_type == "principal":
             current_user = management.utils.get_principal_from_request(request)
@@ -115,6 +132,7 @@ class AuditLog(TenantAwareModel):
         create_resource_items = self.get_resource_item(resource, request)
 
         self.resource_type = resource
+
         self.resource_id = create_resource_items[0]
         self.description = "Created " + create_resource_items[1]
 

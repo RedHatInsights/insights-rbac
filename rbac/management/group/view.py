@@ -30,6 +30,7 @@ from django_filters import rest_framework as filters
 from management.authorization.scope_claims import ScopeClaims
 from management.authorization.token_validator import ITSSOTokenValidator
 from management.filters import CommonFilters
+from management.models import AuditLog
 from management.group.definer import (
     USER_ACCESS_ADMINISTRATOR_ROLE_KEY,
     add_roles,
@@ -250,7 +251,16 @@ class GroupViewSet(
             }
         """
         validate_group_name(request.data.get("name"))
-        return super().create(request=request, args=args, kwargs=kwargs)
+
+        create_group = super().create(request=request, args=args, kwargs=kwargs)
+        print("create_group status code", create_group.status_code)
+
+        if status.is_success(create_group.status_code):
+            auditlog = AuditLog()
+            auditlog.log_create(request, AuditLog.GROUP)
+            return create_group 
+        
+    
 
     def list(self, request, *args, **kwargs):
         """Obtain the list of groups for the tenant.

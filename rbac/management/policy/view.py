@@ -19,7 +19,8 @@
 from django_filters import rest_framework as filters
 from management.permissions import PolicyAccessPermission
 from management.querysets import get_policy_queryset
-from rest_framework import mixins, viewsets
+from management.models import AuditLog
+from rest_framework import mixins, viewsets, status
 from rest_framework.filters import OrderingFilter
 
 from .model import Policy
@@ -113,7 +114,13 @@ class PolicyViewSet(
                 ]
             }
         """
-        return super().create(request=request, args=args, kwargs=kwargs)
+        create_policy = super().create(request=request, args=args, kwargs=kwargs)
+        print("create_policy", create_policy.status_code)
+        
+        if status.is_success(create_policy.status_code):
+            auditlog = AuditLog()
+            auditlog.log_create(request, AuditLog.PERMISSION)
+            return create_policy
 
     def list(self, request, *args, **kwargs):
         """Obtain the list of policies for the tenant.

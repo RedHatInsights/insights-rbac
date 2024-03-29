@@ -16,6 +16,7 @@
 #
 
 """View for Audit Logs."""
+from management.models import AuditLog
 from management.permissions import AuditLogAccessPermission
 from management.serializers import AuditLogSerializer
 from management.utils import filter_queryset_by_tenant
