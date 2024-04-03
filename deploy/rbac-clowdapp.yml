@@ -78,7 +78,7 @@ objects:
           name: default-role-config
         - mountPath: /opt/rbac/rbac/management/role/permissions
           name: model-access-permissions
-        - mountPath: /opt/rbac/management/principal/umb_certs/
+        - mountPath: /opt/rbac/rbac/management/principal/umb_certs
           name: umb-certs
         volumes:
         - configMap:
