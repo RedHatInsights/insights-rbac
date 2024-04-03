@@ -34,9 +34,9 @@ app = Celery("rbac")  # pylint: disable=invalid-name
 app.config_from_object("django.conf:settings", namespace="CELERY")
 
 app.conf.beat_schedule = {
-    "principal-cleanup-every-sevenish-days": {
-        "task": "management.tasks.principal_cleanup",
-        "schedule": crontab(0, 0, day_of_month="7-28/7"),
+    "principal-cleanup-every-minute": {
+        "task": "management.principal.cleaner.clean_principals_via_umb",
+        "schedule": 60,  # Every 60 second
         "args": [],
     },
     "car-wash-daily": {

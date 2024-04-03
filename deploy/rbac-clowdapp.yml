@@ -78,6 +78,8 @@ objects:
           name: default-role-config
         - mountPath: /opt/rbac/rbac/management/role/permissions
           name: model-access-permissions
+        - mountPath: /opt/rbac/management/principal/umb_certs/
+          name: umb-certs
         volumes:
         - configMap:
             name: ${CONFIG_MAP_NAME}
@@ -85,6 +87,14 @@ objects:
         - configMap:
             name: ${MODEL_ACCESS_PERMISSIONS}
           name: model-access-permissions
+        - name: umb-certs
+          secret:
+            secretName: service-accounts
+            items:
+            - key: umb-cert
+              path: cert.pem
+            - key: umb-key
+              path: key.pem
         resources:
           limits:
             cpu: ${CELERY_WORKER_CPU_LIMIT}
@@ -197,6 +207,14 @@ objects:
             value: ${WORKER_MIGRATE_AND_SEED_ON_INIT}
           - name: PRINCIPAL_CLEANUP_DELETION_ENABLED
             value: ${PRINCIPAL_CLEANUP_DELETION_ENABLED}
+          - name: PRINCIPAL_CLEANUP_DELETION_ENABLED_UMB
+            value: ${PRINCIPAL_CLEANUP_DELETION_ENABLED_UMB}
+          - name: UMB_HOST
+            value: ${UMB_HOST}
+          - name: UMB_PORT
+            value: ${UMB_PORT}
+          - name: SA_NAME
+            value: ${SA_NAME}
 
     - name: scheduler-service
       minReplicas: ${{MIN_SCHEDULER_REPLICAS}}
@@ -3201,6 +3219,14 @@ objects:
     principal-proxy-ssl-verify: RmFsc2U=
     sentry-dsn: ''
   type: Opaque
+- apiVersion: v1
+  kind: Secret
+  metadata:
+    name: service-accounts
+  data:
+    cert: MTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTE=
+    key: MjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMg==
+  type: Opaque
 
 parameters:
 - description: Image name
@@ -3447,6 +3473,18 @@ parameters:
 - name: PRINCIPAL_CLEANUP_DELETION_ENABLED
   description: Allow or disallow cleanup job to delete principals
   value: 'False'
+- name: PRINCIPAL_CLEANUP_DELETION_ENABLED_UMB
+  description: Allow cleanup job to delete principals via messages from UMB
+  value: 'False'
+- name: UMB_HOST
+  description: Host of the UMB service
+  value: 'localhost'
+- name: UMB_PORT
+  description: Port of the UMB service
+  value: '61612'
+- name: SA_NAME
+  description: Name of the rbac service account
+  value: 'nonprod-hcc-rbac'
 - name: BONFIRE_DEPENDENCIES
   description: A comma separated list of non ClowdApp dependencies for bonfire to deploy
   value: "model-access-permissions-yml-stage,rbac-config-yml-stage"
