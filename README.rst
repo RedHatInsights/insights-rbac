@@ -208,7 +208,7 @@ Repositories of the roles to be seeded
 
 Default roles can be found in the `RBAC config repo`_.
 
-For additional information please refer to Contributing_.
+For additional information please refer to the Contributing_.
 
 .. _readthedocs: http://insights-rbac.readthedocs.io/en/latest/
 .. _platformdocs: https://consoledot.pages.redhat.com/docs/dev/services/rbac.html
