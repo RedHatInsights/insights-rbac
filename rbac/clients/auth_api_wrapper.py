@@ -1,6 +1,6 @@
 import grpc
-from rbac.clients.relation_api_grpc import relationships_pb2
-from rbac.clients.relation_api_grpc import relationships_pb2_grpc
+from clients.relation_api_grpc import relationships_pb2
+from clients.relation_api_grpc import relationships_pb2_grpc
 from rbac.env import ENVIRONMENT
 import requests
 
@@ -20,7 +20,7 @@ class AuthAPIWrapper:
         }
 
 
-        url = 'https://' + self.rest_server_address + '/api/authz/v1/relationships'
+        url = 'http://' + self.rest_server_address + '/api/authz/v1/relationships'
 
         response = requests.get(url, params=params)
 
