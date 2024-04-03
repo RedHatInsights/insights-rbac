@@ -37,8 +37,8 @@ from api.models import Tenant
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 proxy = PrincipalProxy()  # pylint: disable=invalid-name
-CERT_LOC = "/opt/rbac/management/principal/umb_certs/cert.pem"
-KEY_LOC = "/opt/rbac/management/principal/umb_certs/key.pem"
+CERT_LOC = "/opt/rbac/rbac/management/principal/umb_certs/cert.pem"
+KEY_LOC = "/opt/rbac/rbac/management/principal/umb_certs/key.pem"
 
 
 # TODO: Rmove the old way to clean the principals
