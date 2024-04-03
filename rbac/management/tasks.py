@@ -20,6 +20,13 @@ from __future__ import absolute_import, unicode_literals
 from celery import shared_task
 from django.core.management import call_command
 from management.health.healthcheck import redis_health
+from management.principal.cleaner import clean_principals_via_umb
+
+
+@shared_task
+def principal_cleanup():
+    """Celery task to clean up principals no longer existing."""
+    clean_principals_via_umb()
 
 
 @shared_task
