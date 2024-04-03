@@ -21,7 +21,9 @@ import os
 import ssl
 
 import xmltodict
+from celery import shared_task
 from django.conf import settings
+from management.group.view import TYPE_SERVICE_ACCOUNT
 from management.principal.model import Principal
 from management.principal.proxy import PrincipalProxy
 from management.utils import account_id_for_tenant
@@ -147,13 +149,18 @@ def clean_principal_umb(data_dict):
     """Delete the principal if it exists."""
     user_principal_login = data_dict["CanonicalMessage"]["Payload"]["Sync"]["User"]["Person"]["Credentials"]["Login"]
     # In case the user is under multiple account
-    principals = Principal.objects.filter(username=user_principal_login)
+    principals = (
+        Principal.objects.filter(username=user_principal_login)
+        .exclude(cross_account=True)
+        .exclude(type=TYPE_SERVICE_ACCOUNT)
+    )
     for principal in principals:
         # Log the group info in case it is needed
         logger.info(f"Principal was under these groups: {principal.group.values_list('name', flat=True)}")
         principal.delete()
 
 
+@shared_task
 def clean_principals_via_umb():
     """Check which principals are eligible for clean up via UMB."""
     if not settings.PRINCIPAL_CLEANUP_DELETION_ENABLED_UMB:
