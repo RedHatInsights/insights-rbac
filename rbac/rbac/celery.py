@@ -35,7 +35,7 @@ app.config_from_object("django.conf:settings", namespace="CELERY")
 
 app.conf.beat_schedule = {
     "principal-cleanup-every-minute": {
-        "task": "management.principal.cleaner.clean_principals_via_umb",
+        "task": "management.tasks.principal_cleanup",
         "schedule": 60,  # Every 60 second
         "args": [],
     },

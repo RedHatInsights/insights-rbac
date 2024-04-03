@@ -21,7 +21,6 @@ import os
 import ssl
 
 import xmltodict
-from celery import shared_task
 from django.conf import settings
 from management.group.view import TYPE_SERVICE_ACCOUNT
 from management.principal.model import Principal
@@ -160,7 +159,6 @@ def clean_principal_umb(data_dict):
         principal.delete()
 
 
-@shared_task
 def clean_principals_via_umb():
     """Check which principals are eligible for clean up via UMB."""
     if not settings.PRINCIPAL_CLEANUP_DELETION_ENABLED_UMB:
