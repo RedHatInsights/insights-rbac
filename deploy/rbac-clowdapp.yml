@@ -3500,13 +3500,13 @@ parameters:
   value: "model-access-permissions-yml-stage,rbac-config-yml-stage"
 - name: RELATION_API_GRPC_HOST
   description: Relation API host
-  value: "localhost"
+  value: "relationships-relationships"
 - name: RELATION_API_GRPC_PORT
   description: Relation API port
-  value: "9000"
+  value: "8000"
 - name: RELATION_API_REST_HOST
   description: Relation API host
-  value: "localhost"
+  value: "relations"
 - name: RELATION_API_REST_PORT
   description: Relation API port
   value: "8000"
