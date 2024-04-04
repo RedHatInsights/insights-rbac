@@ -121,6 +121,9 @@ def clean_tenants_principals():
 
 ssl_context = ssl.create_default_context()
 ssl_context.check_hostname = False
+# Cert verification of IT host is failing complains about self-signed cert
+# Since hot umb host it is within Red Hat network, we can trust the host
+ssl_context.verify_mode = ssl.CERT_NONE
 if os.path.isfile(CERT_LOC):
     ssl_context.load_cert_chain(CERT_LOC, keyfile=KEY_LOC)
 
