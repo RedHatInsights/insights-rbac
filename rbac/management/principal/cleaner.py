@@ -177,7 +177,7 @@ def clean_principals_via_umb():
     logger.info("clean_tenant_principals: Start principal clean up.")
     UMB_CLIENT.connect()
     UMB_CLIENT.subscribe(QUEUE, {StompSpec.ACK_HEADER: StompSpec.ACK_CLIENT_INDIVIDUAL})
-    while UMB_CLIENT.canRead(0):  # Check if queue is empty
+    while UMB_CLIENT.canRead(2):  # Check if queue is empty, two sec timeout
         frame = UMB_CLIENT.receiveFrame()
         data_dict = xmltodict.parse(frame.body)
         is_deactivate = is_umb_deactivate_msg(data_dict)
@@ -186,6 +186,8 @@ def clean_principals_via_umb():
             UMB_CLIENT.ack(frame)
             continue
         principal_name, groups = clean_principal_umb(data_dict)
+        if not groups:
+            logger.info(f"Principal {principal_name} was not under any groups.")
         for tenant, group_names in groups.items():
             logger.info(f"Principal {principal_name} was under tenant {tenant} in groups: {group_names}")
         UMB_CLIENT.ack(frame)  # This will remove the message from the queue
