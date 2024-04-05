@@ -230,8 +230,9 @@ class PrincipalCleanerUMBTests(IdentityRequest):
         client_mock.receiveFrame.assert_not_called()
         client_mock.disconnect.assert_called_once()
 
+    @patch("management.group.model.AccessCache")
     @patch("management.principal.cleaner.UMB_CLIENT")
-    def test_cleanup_principal_in_or_not_in_group(self, client_mock):
+    def test_cleanup_principal_in_or_not_in_group(self, client_mock, cache_class):
         """Test that we can run a principal clean up on a tenant with a principal in a group."""
         principal_name = "principal-test"
         self.principal = Principal(username=principal_name, tenant=self.tenant)
@@ -241,6 +242,8 @@ class PrincipalCleanerUMBTests(IdentityRequest):
 
         client_mock.canRead.side_effect = [True, False]
         client_mock.receiveFrame.return_value = MagicMock(body=FRAME_BODY)
+        cache_mock = MagicMock()
+        cache_class.return_value = cache_mock
         clean_principals_via_umb()
 
         client_mock.receiveFrame.assert_called_once()
@@ -249,6 +252,7 @@ class PrincipalCleanerUMBTests(IdentityRequest):
         self.assertFalse(Principal.objects.filter(username=principal_name).exists())
         self.group.refresh_from_db()
         self.assertFalse(self.group.principals.all())
+        cache_mock.delete_policy.assert_called_once_with(self.principal.uuid)
 
         # When principal not in group
         self.principal = Principal(username=principal_name, tenant=self.tenant)

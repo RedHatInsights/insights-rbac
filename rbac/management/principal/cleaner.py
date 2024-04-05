@@ -19,6 +19,7 @@
 import logging
 import os
 import ssl
+from collections import defaultdict
 
 import xmltodict
 from django.conf import settings
@@ -156,10 +157,16 @@ def clean_principal_umb(data_dict):
         .exclude(cross_account=True)
         .exclude(type=TYPE_SERVICE_ACCOUNT)
     )
+    groups = defaultdict(list)
     for principal in principals:
         # Log the group info in case it is needed
-        logger.info(f"Principal was under these groups: {principal.group.values_list('name', flat=True)}")
+        for group in principal.group.all():
+            groups[principal.tenant.tenant_name].append(group.name)
+            # We have to trigger the removal in order to clear the cache, or the console will still show the cached
+            # number of members
+            group.principals.remove(principal)
         principal.delete()
+    return user_principal_login, groups
 
 
 def clean_principals_via_umb():
@@ -178,7 +185,9 @@ def clean_principals_via_umb():
             # Drop the message cause it is not useless for us
             UMB_CLIENT.ack(frame)
             continue
-        clean_principal_umb(data_dict)
+        principal_name, groups = clean_principal_umb(data_dict)
+        for tenant, group_names in groups.items():
+            logger.info(f"Principal {principal_name} was under tenant {tenant} in groups: {group_names}")
         UMB_CLIENT.ack(frame)  # This will remove the message from the queue
     UMB_CLIENT.disconnect()
     logger.info("clean_tenant_principals: Principal clean up finished.")
