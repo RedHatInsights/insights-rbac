@@ -2685,14 +2685,14 @@ class GroupViewNonAdminTests(IdentityRequest):
         # Error messages
         self.no_permission_err_message = "You do not have permission to perform this action."
         self.user_access_admin_group_err_message = (
-            "Non-admin users are not allowed to create, modify, or delete a "
-            "group that is assigned the 'User Access administrator' role."
-        )
-        self.user_access_admin_role_err_message = (
-            "Non-admin users cannot add 'User Access administrator' role to groups."
+            "Non org admin users are not allowed to create, modify, or delete a group with higher than 'read' RBAC "
+            "permission."
         )
         self.invalid_value_for_scope_query_param = (
             "scope query parameter value foo is invalid. [account, org_id, principal] are valid inputs."
+        )
+        self.user_access_admin_role_err_message = (
+            "Non org admin users are not allowed to add RBAC role with higher than 'read' permission into groups."
         )
 
     def tearDown(self):
@@ -4352,11 +4352,17 @@ class GroupViewNonAdminTests(IdentityRequest):
 
         response = client.post(url, request_body, format="json", **self.headers_user_based_principal)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertEqual(response.data.get("errors")[0].get("detail"), self.user_access_admin_role_err_message)
+        self.assertEqual(
+            response.data.get("errors")[0].get("detail"),
+            self.user_access_admin_role_err_message.format(user_access_admin_role.display_name),
+        )
 
         response = client.post(url, request_body, format="json", **self.headers_service_account_principal)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertEqual(response.data.get("errors")[0].get("detail"), self.user_access_admin_role_err_message)
+        self.assertEqual(
+            response.data.get("errors")[0].get("detail"),
+            self.user_access_admin_role_err_message.format(user_access_admin_role.display_name),
+        )
 
         # Only Org Admin can add 'User Access administrator' role into a group
         response = client.post(url, request_body, format="json", **self.headers_org_admin)
