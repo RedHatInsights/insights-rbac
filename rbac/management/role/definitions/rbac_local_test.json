@@ -14,10 +14,10 @@
     },
     {
       "name": "User Access principal viewer",
-      "description": "Grants a non-org admin read access to principals within user access. This role can only be viewed and assigned by Organization Administrators.",
+      "description": "Grants a non-org admin read access to principals within user access.",
       "system": true,
       "platform_default": true,
-      "version": 2,
+      "version": 3,
       "access": [
         {
           "permission": "rbac:principal:read"
