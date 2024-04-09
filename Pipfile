@@ -35,7 +35,7 @@ psycopg2-binary = "==2.9.5"
 joserfc = "==0.8.0"
 jinja2 = "==3.1.3"
 stompest = "==2.3.0"
-xmltodict = "==0.13.0"
+xmltodict = "*"
 grpcio = "*"
 googleapis-common-protos = "*"
 
