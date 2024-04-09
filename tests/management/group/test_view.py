@@ -2691,11 +2691,16 @@ class GroupViewNonAdminTests(IdentityRequest):
         self.user_access_admin_role_err_message = (
             "Non-admin users cannot add 'User Access administrator' role to groups."
         )
+        self.invalid_value_for_scope_query_param = (
+            "scope query parameter value foo is invalid. [account, org_id, principal] are valid inputs."
+        )
 
     def tearDown(self):
         """Tear down group view tests."""
         Group.objects.all().delete()
         Principal.objects.all().delete()
+        Permission.objects.all().delete()
+        Access.objects.all().delete()
         Role.objects.all().delete()
         Policy.objects.all().delete()
 
@@ -2754,11 +2759,11 @@ class GroupViewNonAdminTests(IdentityRequest):
         return user_access_admin_group
 
     def test_nonadmin_RonR_list(self):
-        """Test that a nonadmin user can list groups in tenant"""
+        """Test that a nonadmin user cannot list groups in tenant"""
         url = "{}?application={}".format(reverse("group-list"), "rbac")
         client = APIClient()
         response = client.get(url, **self.headers)
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
     def test_nonadmin_RonR_retrieve(self):
         """Test that a nonadmin user can't retrieve group RBAC resources"""
@@ -4519,15 +4524,17 @@ class GroupViewNonAdminTests(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
 
     def test_list_groups_without_User_Access_Admin_success(self):
-        """Test that non org admin without 'User Access administrator' role can list groups."""
+        """Test that non org admin without 'User Access administrator' role cannot list groups."""
         url = reverse("group-list")
         client = APIClient()
 
         response = client.get(url, format="json", **self.headers_user_based_principal)
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(response.data.get("errors")[0].get("detail"), self.no_permission_err_message)
 
         response = client.get(url, format="json", **self.headers_service_account_principal)
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(response.data.get("errors")[0].get("detail"), self.no_permission_err_message)
 
     def test_list_groups_with_User_Access_Admin_success(self):
         """Test that non org admin with 'User Access administrator' role can list groups."""
@@ -4583,3 +4590,298 @@ class GroupViewNonAdminTests(IdentityRequest):
         response = client.get(url, format="json", **self.headers_service_account_principal)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data.get("uuid"), str(group.uuid))
+
+    def test_read_group_with_scope_org_id_success(self):
+        """
+        Test that org admin and user with 'User Access administrator' role can list groups
+        with '?scope=org_id' query param.
+        """
+        # Create a group with 'User Access administrator' role and add principals we use in headers
+        group_with_UA_admin = self._create_group_with_user_access_administrator_role(self.tenant)
+        group_with_UA_admin.principals.add(self.user_based_principal, self.service_account_principal)
+
+        url = reverse("group-list") + "?scope=org_id"
+        client = APIClient()
+
+        response = client.get(url, format="json", **self.headers_user_based_principal)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        response = client.get(url, format="json", **self.headers_service_account_principal)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        response = client.get(url, format="json", **self.headers_org_admin)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+    def test_read_group_with_scope_org_id_fail(self):
+        """
+        Test that user without 'User Access administrator' role cannot list groups
+        with '?scope=org_id' query param.
+        """
+
+        url = reverse("group-list") + "?scope=org_id"
+        client = APIClient()
+
+        response = client.get(url, format="json", **self.headers_user_based_principal)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(response.data.get("errors")[0].get("detail"), self.no_permission_err_message)
+
+        response = client.get(url, format="json", **self.headers_service_account_principal)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(response.data.get("errors")[0].get("detail"), self.no_permission_err_message)
+
+    def test_read_group_with_scope_foo_fail(self):
+        """
+        Test that users cannot list groups with invalid '?scope=foo' query param.
+        """
+        url = reverse("group-list") + "?scope=foo"
+        client = APIClient()
+
+        # The response for non admins is 403
+        response = client.get(url, format="json", **self.headers_user_based_principal)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(response.data.get("errors")[0].get("detail"), self.no_permission_err_message)
+
+        response = client.get(url, format="json", **self.headers_service_account_principal)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(response.data.get("errors")[0].get("detail"), self.no_permission_err_message)
+
+        # Create a group with 'User Access administrator' role and add principals we use in headers
+        group_with_UA_admin = self._create_group_with_user_access_administrator_role(self.tenant)
+        group_with_UA_admin.principals.add(self.user_based_principal, self.service_account_principal)
+
+        # The response for org admins and users with 'User Access administrator' role is 400
+        response = client.get(url, format="json", **self.headers_user_based_principal)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data.get("errors")[0].get("detail"), self.invalid_value_for_scope_query_param)
+
+        response = client.get(url, format="json", **self.headers_service_account_principal)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data.get("errors")[0].get("detail"), self.invalid_value_for_scope_query_param)
+
+        response = client.get(url, format="json", **self.headers_org_admin)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data.get("errors")[0].get("detail"), self.invalid_value_for_scope_query_param)
+
+    def test_read_group_with_scope_principal_success(self):
+        """
+        Test that users can list groups with '?scope=principal' query param.
+        """
+        url = reverse("group-list") + "?scope=principal"
+        client = APIClient()
+
+        response = client.get(url, format="json", **self.headers_user_based_principal)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data.get("data")), 0)
+
+        response = client.get(url, format="json", **self.headers_service_account_principal)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data.get("data")), 0)
+
+        # Create a group with 'User Access administrator' role and add principals we use in headers
+        group_with_UA_admin = self._create_group_with_user_access_administrator_role(self.tenant)
+        group_with_UA_admin.principals.add(self.user_based_principal, self.service_account_principal)
+
+        response = client.get(url, format="json", **self.headers_user_based_principal)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data.get("data")), 1)
+        self.assertEqual(response.data.get("data")[0]["uuid"], str(group_with_UA_admin.uuid))
+
+        response = client.get(url, format="json", **self.headers_service_account_principal)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data.get("data")), 1)
+        self.assertEqual(response.data.get("data")[0]["uuid"], str(group_with_UA_admin.uuid))
+
+        response = client.get(url, format="json", **self.headers_org_admin)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data.get("data")), 0)
+
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+    )
+    def test_read_group_with_username_and_scope_params(self, mock):
+        """
+        Test that user based principal with 'User Access administrator' role can list groups
+        with '?username=<value>' query param and adding the 'scope' param in the query doesn't
+        affect the response.
+        """
+        # Create a group with 'User Access administrator' role and add principals we use in headers
+        group_with_UA_admin = self._create_group_with_user_access_administrator_role(self.tenant)
+        group_with_UA_admin.principals.add(self.user_based_principal)
+
+        mock.return_value = {
+            "status_code": 200,
+            "data": [
+                {
+                    "org_id": "100001",
+                    "is_org_admin": False,
+                    "is_internal": False,
+                    "id": 52567473,
+                    "username": self.user_based_principal.username,
+                    "account_number": "1111111",
+                    "is_active": True,
+                }
+            ],
+        }
+
+        # The usernames in header and in query are same
+        client = APIClient()
+        username_param = f"?username={self.user_based_principal.username}"
+        url = reverse("group-list") + username_param
+
+        response = client.get(url, format="json", **self.headers_user_based_principal)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data.get("data")), 1)
+
+        # Adding the 'scope' param doesn't affect the response because the 'scope' param is ignored
+        # when query contains the 'username' param
+        for scope in ("org_id", "principal"):
+            url_with_scope = url + f"&scope={scope}"
+            response = client.get(url_with_scope, format="json", **self.headers_user_based_principal)
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            self.assertEqual(len(response.data.get("data")), 1)
+
+        # For invalid 'scope' param the 400 response is returned
+        url_with_scope = url + "&scope=foo"
+        response = client.get(url_with_scope, format="json", **self.headers_user_based_principal)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data.get("errors")[0].get("detail"), self.invalid_value_for_scope_query_param)
+
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+    )
+    def test_read_group_with_username_param_and_user_based_rbac_admin(self, mock):
+        """
+        Test that user based principal with 'User Access administrator' role can list groups
+        with '?username=<value>' query param.
+        """
+        # Create a group with 'User Access administrator' role and add principals we use in headers
+        group_with_UA_admin = self._create_group_with_user_access_administrator_role(self.tenant)
+        group_with_UA_admin.principals.add(self.user_based_principal)
+
+        # The usernames in header and in query are same
+        client = APIClient()
+        mock.return_value = {
+            "status_code": 200,
+            "data": [
+                {
+                    "org_id": "100001",
+                    "is_org_admin": False,
+                    "is_internal": False,
+                    "id": 52567473,
+                    "username": self.user_based_principal.username,
+                    "account_number": "1111111",
+                    "is_active": True,
+                }
+            ],
+        }
+        username_param = f"?username={self.user_based_principal.username}"
+        url = reverse("group-list") + username_param
+        response = client.get(url, format="json", **self.headers_user_based_principal)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data.get("data")), 1)
+
+        # The username in header and in query are not same
+        username_param = f"?username={self.service_account_principal.username}"
+        url = reverse("group-list") + username_param
+        response = client.get(url, format="json", **self.headers_user_based_principal)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data.get("data")), 0)
+
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+    )
+    def test_read_group_with_username_param_and_user_based_non_admin(self, mock):
+        """
+        Test that user based principal without 'User Access administrator' role can list groups
+        with '?username=<value>' query param only for themselves.
+        """
+        # The usernames in header and in query are same
+        client = APIClient()
+        mock.return_value = {
+            "status_code": 200,
+            "data": [
+                {
+                    "org_id": "100001",
+                    "is_org_admin": False,
+                    "is_internal": False,
+                    "id": 52567473,
+                    "username": self.user_based_principal.username,
+                    "account_number": "1111111",
+                    "is_active": True,
+                }
+            ],
+        }
+        username_param = f"?username={self.user_based_principal.username}"
+        url = reverse("group-list") + username_param
+        response = client.get(url, format="json", **self.headers_user_based_principal)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data.get("data")), 0)
+
+        # The username in header and in query are not same
+        username_param = f"?username={self.service_account_principal.username}"
+        url = reverse("group-list") + username_param
+        response = client.get(url, format="json", **self.headers_user_based_principal)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(response.data.get("errors")[0].get("detail"), self.no_permission_err_message)
+
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+    )
+    def test_read_group_with_username_param_and_service_account_based_rbac_admin(self, mock):
+        """
+        Test that service account based principal with 'User Access administrator' role can list groups
+        with '?username=<value>' query param.
+        """
+        # Create a group with 'User Access administrator' role and add principals we use in headers
+        group_with_UA_admin = self._create_group_with_user_access_administrator_role(self.tenant)
+        group_with_UA_admin.principals.add(self.service_account_principal)
+
+        # The usernames in header and in query are same
+        client = APIClient()
+
+        username_param = f"?username={self.service_account_principal.username}"
+        url = reverse("group-list") + username_param
+        response = client.get(url, format="json", **self.headers_service_account_principal)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data.get("data")), 1)
+
+        # The username in header and in query are not same
+        mock.return_value = {
+            "status_code": 200,
+            "data": [
+                {
+                    "org_id": "100001",
+                    "is_org_admin": False,
+                    "is_internal": False,
+                    "id": 52567473,
+                    "username": self.user_based_principal.username,
+                    "account_number": "1111111",
+                    "is_active": True,
+                }
+            ],
+        }
+        username_param = f"?username={self.user_based_principal.username}"
+        url = reverse("group-list") + username_param
+        response = client.get(url, format="json", **self.headers_service_account_principal)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data.get("data")), 0)
+
+    def test_read_group_with_username_param_and_service_account_based_non_admin(self):
+        """
+        Test that service account based principal without 'User Access administrator' role can list groups
+        with '?username=<value>' query param only for themselves.
+        """
+        # The usernames in header and in query are same
+        client = APIClient()
+        username_param = f"?username={self.service_account_principal.username}"
+        url = reverse("group-list") + username_param
+        response = client.get(url, format="json", **self.headers_service_account_principal)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data.get("data")), 0)
+
+        # The username in header and in query are not same
+        username_param = f"?username={self.user_based_principal.username}"
+        url = reverse("group-list") + username_param
+        response = client.get(url, format="json", **self.headers_service_account_principal)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(response.data.get("errors")[0].get("detail"), self.no_permission_err_message)
