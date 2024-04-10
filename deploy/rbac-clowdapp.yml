@@ -508,6 +508,16 @@ objects:
             value: ${IT_TOKEN_JKWS_CACHE_LIFETIME}
           - name: PRINCIPAL_CLEANUP_DELETION_ENABLED
             value: ${PRINCIPAL_CLEANUP_DELETION_ENABLED}
+          - name: RELATION_API_GRPC_HOST
+            value: ${RELATION_API_GRPC_HOST}
+          - name: RELATION_API_GRPC_PORT
+            value: ${RELATION_API_GRPC_PORT}
+          - name: RELATION_API_REST_HOST
+            value: ${RELATION_API_REST_HOST}
+          - name: RELATION_API_REST_PORT
+            value: ${RELATION_API_REST_PORT}
+          - name: RELATION_API_REST_OR_GRPC
+            value: ${RELATION_API_REST_OR_GRPC}
     jobs:
       - name: tenant-org-id-populator
         podSpec:
@@ -3488,4 +3498,18 @@ parameters:
 - name: BONFIRE_DEPENDENCIES
   description: A comma separated list of non ClowdApp dependencies for bonfire to deploy
   value: "model-access-permissions-yml-stage,rbac-config-yml-stage"
-
+- name: RELATION_API_GRPC_HOST
+  description: Relation API host
+  value: "relationships-relationships"
+- name: RELATION_API_GRPC_PORT
+  description: Relation API port
+  value: "9000"
+- name: RELATION_API_REST_HOST
+  description: Relation API host
+  value: "relationships-relationships"
+- name: RELATION_API_REST_PORT
+  description: Relation API port
+  value: "8000"
+- name: RELATION_API_REST_OR_GRPC
+  description: grpc or rest
+  value: "grpc"
