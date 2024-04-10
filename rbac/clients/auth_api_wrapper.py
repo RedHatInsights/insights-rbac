@@ -6,11 +6,9 @@ import requests
 
 class AuthAPIWrapper:
     def __init__(self):
-        #self.grpc_server_address = ENVIRONMENT.get_value("RELATION_API_GRPC_HOST", default="") + ":" + ENVIRONMENT.get_value("RELATION_API_GRPC_PORT", default="")
-        self.grpc_server_address = "relationships-relationships:9000"
+        self.grpc_server_address = ENVIRONMENT.get_value("RELATION_API_GRPC_HOST", default="") + ":" + ENVIRONMENT.get_value("RELATION_API_GRPC_PORT", default="")
         self.rest_server_address = ENVIRONMENT.get_value("RELATION_API_REST_HOST", default="") + ":" + ENVIRONMENT.get_value("RELATION_API_REST_PORT", default="")
-        #self.is_grpc = ENVIRONMENT.get_value("RELATION_API_REST_OR_GRPC", default="") == "grpc"
-        self.is_grpc = "grpc"
+        self.is_grpc = ENVIRONMENT.get_value("RELATION_API_REST_OR_GRPC", default="") == "grpc"
 
     def test_rest_call(self):
         params = {
