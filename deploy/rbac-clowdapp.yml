@@ -3503,10 +3503,10 @@ parameters:
   value: "relationships-relationships"
 - name: RELATION_API_GRPC_PORT
   description: Relation API port
-  value: "8000"
+  value: "9000"
 - name: RELATION_API_REST_HOST
   description: Relation API host
-  value: "relations"
+  value: "relationships-relationships"
 - name: RELATION_API_REST_PORT
   description: Relation API port
   value: "8000"
