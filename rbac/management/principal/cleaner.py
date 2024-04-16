@@ -42,7 +42,6 @@ CERT_LOC = "/opt/rbac/rbac/management/principal/umb_certs/cert.pem"
 KEY_LOC = "/opt/rbac/rbac/management/principal/umb_certs/key.pem"
 
 
-# TODO: Rmove the old way to clean the principals
 def clean_tenant_principals(tenant):
     """Check if all the principals in the tenant exist, remove non-existent principals."""
     removed_principals = []
@@ -80,13 +79,11 @@ def clean_tenant_principals(tenant):
                 principal.username,
                 tenant_id,
             )
-            # we are temporarily disabling the delete
-            if settings.PRINCIPAL_CLEANUP_DELETION_ENABLED:
-                principal.delete()
-                logger.info(
-                    "clean_tenant_principals: Username %s removed.",
-                    principal.username,
-                )
+            principal.delete()
+            logger.info(
+                "clean_tenant_principals: Username %s removed.",
+                principal.username,
+            )
         else:
             logger.warning(
                 "clean_tenant_principals: Unknown status %d when checking username %s"
@@ -95,9 +92,7 @@ def clean_tenant_principals(tenant):
                 principal.username,
                 tenant_id,
             )
-    removal_message = "clean_tenant_principals: Completed clean up of %d principals for tenant %s, %d eligible for removal: %s."  # noqa E501
-    if settings.PRINCIPAL_CLEANUP_DELETION_ENABLED:
-        removal_message = "clean_tenant_principals: Completed clean up of %d principals for tenant %s, %d removed: %s."
+    removal_message = "clean_tenant_principals: Completed clean up of %d principals for tenant %s, %d removed: %s."
     logger.info(
         removal_message,
         len(principals),
@@ -107,7 +102,6 @@ def clean_tenant_principals(tenant):
     )
 
 
-# TODO: Rmove the old way to clean the principals
 def clean_tenants_principals():
     """Check which principals are eligible for clean up."""
     logger.info("clean_tenant_principals: Start principal clean up.")
@@ -171,10 +165,7 @@ def clean_principal_umb(data_dict):
 
 def clean_principals_via_umb():
     """Check which principals are eligible for clean up via UMB."""
-    if not settings.PRINCIPAL_CLEANUP_DELETION_ENABLED_UMB:
-        logger.info("clean_tenant_principals: Principal clean up via UMB disabled.")
-        return
-    logger.info("clean_tenant_principals: Start principal clean up.")
+    logger.info("clean_tenant_principals: Start principal clean up via umb.")
     UMB_CLIENT.connect()
     UMB_CLIENT.subscribe(QUEUE, {StompSpec.ACK_HEADER: StompSpec.ACK_CLIENT_INDIVIDUAL})
     while UMB_CLIENT.canRead(2):  # Check if queue is empty, two sec timeout

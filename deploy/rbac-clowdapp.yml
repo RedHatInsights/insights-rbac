@@ -205,10 +205,6 @@ objects:
             value: ${EXTERNAL_CHROME_TOPIC}
           - name: MIGRATE_AND_SEED_ON_INIT
             value: ${WORKER_MIGRATE_AND_SEED_ON_INIT}
-          - name: PRINCIPAL_CLEANUP_DELETION_ENABLED
-            value: ${PRINCIPAL_CLEANUP_DELETION_ENABLED}
-          - name: PRINCIPAL_CLEANUP_DELETION_ENABLED_UMB
-            value: ${PRINCIPAL_CLEANUP_DELETION_ENABLED_UMB}
           - name: UMB_HOST
             value: ${UMB_HOST}
           - name: UMB_PORT
@@ -288,8 +284,8 @@ objects:
               name: ${GLITCHTIP_SECRET}
               key: dsn
               optional: true
-        - name: PRINCIPAL_CLEANUP_DELETION_ENABLED
-          value: ${PRINCIPAL_CLEANUP_DELETION_ENABLED}
+        - name: PRINCIPAL_CLEANUP_DELETION_ENABLED_UMB
+          value: ${PRINCIPAL_CLEANUP_DELETION_ENABLED_UMB}
 
     - name: service
       minReplicas: ${{MIN_REPLICAS}}
@@ -506,8 +502,6 @@ objects:
             value: ${IT_SERVICE_TIMEOUT_SECONDS}
           - name: IT_TOKEN_JKWS_CACHE_LIFETIME
             value: ${IT_TOKEN_JKWS_CACHE_LIFETIME}
-          - name: PRINCIPAL_CLEANUP_DELETION_ENABLED
-            value: ${PRINCIPAL_CLEANUP_DELETION_ENABLED}
     jobs:
       - name: tenant-org-id-populator
         podSpec:
@@ -3470,9 +3464,6 @@ parameters:
   value: '10'
 - name: IT_TOKEN_JKWS_CACHE_LIFETIME
   value: '28800'
-- name: PRINCIPAL_CLEANUP_DELETION_ENABLED
-  description: Allow or disallow cleanup job to delete principals
-  value: 'False'
 - name: PRINCIPAL_CLEANUP_DELETION_ENABLED_UMB
   description: Allow cleanup job to delete principals via messages from UMB
   value: 'False'
