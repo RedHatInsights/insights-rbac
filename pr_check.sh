@@ -15,10 +15,12 @@ export IQE_TEST_IMPORTANCE="critical" # This is the value passed to iqe --testIm
 export IQE_CJI_TIMEOUT="30m"  # This is the time to wait for smoke test to complete or fail
 
 export BONFIRE_REPO_ORG="mjholder"
+export CICD_REPO_ORG="mjholder"
 export BONFIRE_REPO_BRANCH="cleanup-tooling"
+export CICD_REPO_BRANCH="cleanup-tooling"
 
 # Install bonfire repo/initialize
-CICD_URL=https://raw.githubusercontent.com/RedHatInsights/bonfire/master/cicd
+CICD_URL=https://raw.githubusercontent.com/mjholder/bonfire/cleanup-tooling/cicd
 curl -s $CICD_URL/bootstrap.sh > .cicd_bootstrap.sh && source .cicd_bootstrap.sh
 
 # Build the image and push to quay
