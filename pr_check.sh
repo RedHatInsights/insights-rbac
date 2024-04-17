@@ -14,6 +14,8 @@ export IQE_FILTER_EXPRESSION=""  # This is the value passed to pytest -k
 export IQE_TEST_IMPORTANCE="critical" # This is the value passed to iqe --testImportance
 export IQE_CJI_TIMEOUT="30m"  # This is the time to wait for smoke test to complete or fail
 
+export BONFIRE_REPO_ORG="mjholder"
+export BONFIRE_REPO_BRANCH="cleanup-tooling"
 
 # Install bonfire repo/initialize
 CICD_URL=https://raw.githubusercontent.com/RedHatInsights/bonfire/master/cicd
