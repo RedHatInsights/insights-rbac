@@ -4734,17 +4734,11 @@ class GroupViewNonAdminTests(IdentityRequest):
 
         # Adding the 'scope' param doesn't affect the response because the 'scope' param is ignored
         # when query contains the 'username' param
-        for scope in ("org_id", "principal"):
+        for scope in ("org_id", "principal", "foo"):
             url_with_scope = url + f"&scope={scope}"
             response = client.get(url_with_scope, format="json", **self.headers_user_based_principal)
             self.assertEqual(response.status_code, status.HTTP_200_OK)
             self.assertEqual(len(response.data.get("data")), 1)
-
-        # For invalid 'scope' param the 400 response is returned
-        url_with_scope = url + "&scope=foo"
-        response = client.get(url_with_scope, format="json", **self.headers_user_based_principal)
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertEqual(response.data.get("errors")[0].get("detail"), self.invalid_value_for_scope_query_param)
 
     @patch(
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
