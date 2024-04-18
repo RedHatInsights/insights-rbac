@@ -28,8 +28,6 @@ from management.principal.cleaner import clean_principals_via_umb
 from api.models import Tenant
 from tests.identity_request import IdentityRequest
 
-from rbac.settings import PRINCIPAL_CLEANUP_DELETION_ENABLED
-
 
 class PrincipalCleanerTests(IdentityRequest):
     """Test the principal cleaner functions."""
@@ -62,11 +60,7 @@ class PrincipalCleanerTests(IdentityRequest):
             clean_tenant_principals(self.tenant)
         except Exception:
             self.fail(msg="clean_tenant_principals encountered an exception")
-        # we are disabling the deletion so temporarily the principal will not be deleted
-        if PRINCIPAL_CLEANUP_DELETION_ENABLED:
-            self.assertEqual(Principal.objects.count(), 1)
-        else:
-            self.assertEqual(Principal.objects.count(), 2)
+        self.assertEqual(Principal.objects.count(), 1)
 
     @patch(
         "management.principal.proxy.PrincipalProxy._request_principals",
@@ -92,12 +86,7 @@ class PrincipalCleanerTests(IdentityRequest):
 
         # Assert that the only principal left for the tenant is the service account, which should have been left
         # untouched.
-        # we are disabling the deletion so temporarily the principal will not be deleted
-        principals = Principal.objects.all()
-        if PRINCIPAL_CLEANUP_DELETION_ENABLED:
-            self.assertEqual(Principal.objects.count(), 1)
-        else:
-            self.assertEqual(Principal.objects.count(), 2)
+        self.assertEqual(Principal.objects.count(), 1)
 
         service_account = Principal.objects.all().filter(type="service-account").first()
         self.assertEqual(service_account.service_account_id, service_account_client_id)
@@ -118,11 +107,7 @@ class PrincipalCleanerTests(IdentityRequest):
             clean_tenant_principals(self.tenant)
         except Exception:
             self.fail(msg="clean_tenant_principals encountered an exception")
-        # we are disabling the deletion so temporarily the principal will not be deleted
-        if PRINCIPAL_CLEANUP_DELETION_ENABLED:
-            self.assertEqual(Principal.objects.count(), 0)
-        else:
-            self.assertEqual(Principal.objects.count(), 1)
+        self.assertEqual(Principal.objects.count(), 0)
 
     @patch(
         "management.principal.proxy.PrincipalProxy._request_principals",
@@ -136,11 +121,7 @@ class PrincipalCleanerTests(IdentityRequest):
             clean_tenant_principals(self.tenant)
         except Exception:
             self.fail(msg="clean_tenant_principals encountered an exception")
-        # we are disabling the deletion so temporarily the principal will not be deleted
-        if PRINCIPAL_CLEANUP_DELETION_ENABLED:
-            self.assertEqual(Principal.objects.count(), 0)
-        else:
-            self.assertEqual(Principal.objects.count(), 1)
+        self.assertEqual(Principal.objects.count(), 0)
 
     @patch(
         "management.principal.proxy.PrincipalProxy._request_principals",
@@ -211,7 +192,6 @@ FRAME_BODY = (
 )
 
 
-@patch("django.conf.settings.PRINCIPAL_CLEANUP_DELETION_ENABLED_UMB", True)
 class PrincipalCleanerUMBTests(IdentityRequest):
     """Test the principal cleaner functions."""
 

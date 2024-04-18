@@ -21,6 +21,7 @@ import os
 
 from celery import Celery
 from celery.schedules import crontab
+from django.conf import settings
 
 # set the default Django settings module for the 'celery' program.
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "rbac.settings")
@@ -34,11 +35,6 @@ app = Celery("rbac")  # pylint: disable=invalid-name
 app.config_from_object("django.conf:settings", namespace="CELERY")
 
 app.conf.beat_schedule = {
-    "principal-cleanup-every-minute": {
-        "task": "management.tasks.principal_cleanup",
-        "schedule": 60,  # Every 60 second
-        "args": [],
-    },
     "car-wash-daily": {
         "task": "api.tasks.cross_account_cleanup",
         "schedule": crontab(minute=0, hour=0),
@@ -50,6 +46,19 @@ app.conf.beat_schedule = {
         "args": [],
     },
 }
+
+if settings.PRINCIPAL_CLEANUP_DELETION_ENABLED_UMB:
+    app.conf.beat_schedule["principal-cleanup-every-minute"] = {
+        "task": "management.tasks.principal_cleanup_via_umb",
+        "schedule": 60,  # Every 60 second
+        "args": [],
+    }
+else:
+    app.conf.beat_schedule["principal-cleanup-every-sevenish-days"] = {
+        "task": "management.tasks.principal_cleanup",
+        "schedule": crontab(0, 0, day_of_month="7-28/7"),
+        "args": [],
+    }
 
 # Load task modules from all registered Django app configs.
 app.autodiscover_tasks()
