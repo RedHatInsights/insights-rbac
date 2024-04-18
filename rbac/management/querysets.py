@@ -96,13 +96,15 @@ def get_group_queryset(request, args=None, kwargs=None):
 
 def _gather_group_querysets(request, args, kwargs):
     """Decide which groups to provide for request."""
+    username = request.query_params.get("username")
+
     if settings.AUTHENTICATE_WITH_ORG_ID:
         scope = request.query_params.get(SCOPE_KEY, ORG_ID_SCOPE)
-        if scope != ORG_ID_SCOPE:
+        if scope != ORG_ID_SCOPE and not username:
             return get_object_principal_queryset(request, scope, Group)
     else:
         scope = request.query_params.get(SCOPE_KEY, ACCOUNT_SCOPE)
-        if scope != ACCOUNT_SCOPE:
+        if scope != ACCOUNT_SCOPE and not username:
             return get_object_principal_queryset(request, scope, Group)
 
     public_tenant = Tenant.objects.get(tenant_name="public")
@@ -110,7 +112,6 @@ def _gather_group_querysets(request, args, kwargs):
         tenant=request.tenant
     ) or Group.platform_default_set().filter(tenant=public_tenant)
 
-    username = request.query_params.get("username")
     exclude_username = request.query_params.get("exclude_username")
 
     if username and exclude_username:
