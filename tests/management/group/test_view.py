@@ -4885,3 +4885,42 @@ class GroupViewNonAdminTests(IdentityRequest):
         response = client.get(url, format="json", **self.headers_service_account_principal)
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
         self.assertEqual(response.data.get("errors")[0].get("detail"), self.no_permission_err_message)
+
+    def test_manipulate_with_group_with_rbac_read_permission(self):
+        """
+        Test that RBAC admin can manipulate with a group that contains RBAC viewer role.
+        """
+        # Create a group with 'User Access administrator' role and add principals we use in headers
+        group_with_UA_admin = self._create_group_with_user_access_administrator_role(self.tenant)
+        group_with_UA_admin.principals.add(self.user_based_principal, self.service_account_principal)
+
+        # Create a group with RBAC viewer role
+        group_with_RBAC_viewer = Group.objects.create(name="test group", tenant=self.tenant)
+        permission = Permission.objects.create(permission="rbac:principal:read", tenant=self.tenant)
+        role = Role.objects.create(tenant=self.tenant, name="User Access principal viewer")
+        access = Access.objects.create(permission=permission, role=role, tenant=self.tenant)
+        policy = Policy.objects.create(group=group_with_RBAC_viewer, name="RBAC viewer policy", tenant=self.tenant)
+        policy.roles.add(role)
+        policy.save()
+
+        # RBAC admin cannot update group with 'User Access administrator' role
+        url = reverse("group-detail", kwargs={"uuid": group_with_UA_admin.uuid})
+        request_body = {"name": "New name"}
+        client = APIClient()
+
+        response = client.put(url, request_body, format="json", **self.headers_user_based_principal)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data.get("errors")[0].get("detail"), self.user_access_admin_group_err_message)
+
+        response = client.put(url, request_body, format="json", **self.headers_service_account_principal)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data.get("errors")[0].get("detail"), self.user_access_admin_group_err_message)
+
+        # RBAC admin can update group with 'User Access principal viewer' role
+        url = reverse("group-detail", kwargs={"uuid": group_with_RBAC_viewer.uuid})
+
+        response = client.put(url, request_body, format="json", **self.headers_user_based_principal)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        response = client.put(url, request_body, format="json", **self.headers_service_account_principal)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
