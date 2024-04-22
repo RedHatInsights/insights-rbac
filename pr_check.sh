@@ -20,7 +20,7 @@ export BONFIRE_REPO_BRANCH="refactor-bootstrap-paths"
 export CICD_REPO_BRANCH="refactor-bootstrap-paths"
 
 # Install bonfire repo/initialize
-CICD_URL=https://raw.githubusercontent.com/Victoremepunto/bonfire/refactor-bootstrap-paths/cicd
+CICD_URL=https://raw.githubusercontent.com/RedHatInsights/bonfire/master/cicd
 curl -s $CICD_URL/bootstrap.sh > .cicd_bootstrap.sh && source .cicd_bootstrap.sh
 
 # Build the image and push to quay
