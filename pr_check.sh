@@ -14,9 +14,7 @@ export IQE_FILTER_EXPRESSION=""  # This is the value passed to pytest -k
 export IQE_TEST_IMPORTANCE="critical" # This is the value passed to iqe --testImportance
 export IQE_CJI_TIMEOUT="30m"  # This is the time to wait for smoke test to complete or fail
 
-export BONFIRE_REPO_ORG="Victoremepunto"
 export CICD_REPO_ORG="Victoremepunto"
-export BONFIRE_REPO_BRANCH="refactor-bootstrap-paths"
 export CICD_REPO_BRANCH="refactor-bootstrap-paths"
 
 # Install bonfire repo/initialize
