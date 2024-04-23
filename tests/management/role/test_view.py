@@ -19,6 +19,7 @@
 from uuid import uuid4
 
 from django.conf import settings
+from django.test.utils import override_settings
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APIClient
@@ -1755,3 +1756,45 @@ class RoleViewNonAdminTests(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         expected_count = self.system_roles_count + self.non_system_roles_count + 1
         self.assertEqual(len(response.data.get("data")), expected_count)
+
+    @override_settings(
+        ROLE_CREATE_ALLOW_LIST="cost-management,remediations,inventory,drift,policies,advisor,catalog,approval,"
+        "vulnerability,compliance,automation-analytics,notifications,patch,integrations,ros,"
+        "staleness,config-manager"
+    )
+    def test_create_role_with_rbac_permission_fail(self):
+        """
+        Test that it is not possible to create a custom role with RBAC permission.
+        """
+        # Create a group with 'User Access administrator' role and add principals we use in headers
+        group_with_UA_admin = self._create_group_with_user_access_admin_role(self.tenant)
+        group_with_UA_admin.principals.add(self.user_based_principal, self.service_account_principal)
+
+        Permission.objects.create(permission="rbac:principal:read", tenant=self.tenant)
+        permissions_count = len(Permission.objects.all())
+
+        client = APIClient()
+
+        # Test that permissions are present in the RBAC db
+        url = reverse("permission-list")
+        response = client.get(url, **self.headers_org_admin)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data.get("data")), permissions_count)
+
+        # It is not possible to create custom role with RBAC permission
+        url = reverse("role-list")
+        role_name = "My custom role"
+        access_data = [{"permission": "rbac:*:*", "resourceDefinitions": []}]
+        test_data = {"name": role_name, "access": access_data}
+
+        response = client.post(url, test_data, format="json", **self.headers_user_based_principal)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data.get("errors")[0].get("detail"), "Custom roles cannot be created for rbac")
+
+        response = client.post(url, test_data, format="json", **self.headers_service_account_principal)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data.get("errors")[0].get("detail"), "Custom roles cannot be created for rbac")
+
+        response = client.post(url, test_data, format="json", **self.headers_org_admin)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data.get("errors")[0].get("detail"), "Custom roles cannot be created for rbac")

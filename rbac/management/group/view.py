@@ -31,7 +31,6 @@ from management.authorization.scope_claims import ScopeClaims
 from management.authorization.token_validator import ITSSOTokenValidator
 from management.filters import CommonFilters
 from management.group.definer import (
-    USER_ACCESS_ADMINISTRATOR_ROLE_KEY,
     add_roles,
     remove_roles,
     set_system_flag_before_update,
@@ -212,15 +211,16 @@ class GroupViewSet(
     def protect_group_with_user_access_admin_role(self, roles, source_key):
         """Disallow group with 'User Access administrator' role from being updated."""
         # Only organization administrators are allowed to create, modify, or delete a group
-        # that is assigned the User Access administrator role.
+        # with RBAC permission higher than "read".
         for role in roles:
-            if role.name == USER_ACCESS_ADMINISTRATOR_ROLE_KEY:
-                key = source_key
-                message = (
-                    "Non-admin users are not allowed to create, modify, or delete a group that is assigned the "
-                    f"'{USER_ACCESS_ADMINISTRATOR_ROLE_KEY}' role."
-                )
-                raise serializers.ValidationError({key: _(message)})
+            for access in role.access.all():
+                if access.permission_application() == "rbac" and access.permission.verb != "read":
+                    key = source_key
+                    message = (
+                        "Non org admin users are not allowed to create, modify, or delete a group with higher "
+                        "than 'read' RBAC permission."
+                    )
+                    raise serializers.ValidationError({key: _(message)})
 
     def create(self, request, *args, **kwargs):
         """Create a group.
