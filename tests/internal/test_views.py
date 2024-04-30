@@ -55,7 +55,10 @@ class InternalViewsetTests(IdentityRequest):
         self.group = Group(name="System Group", system=True, tenant=self.tenant)
         self.group.save()
         self.role = Role.objects.create(
-            name="System Role", description="A role for a group.", system=True, tenant=self.tenant
+            name="System Role",
+            description="A role for a group.",
+            system=True,
+            tenant=self.tenant,
         )
         self.policy = Policy.objects.create(name="System Policy", group=self.group, tenant=self.tenant)
         self.policy.roles.add(self.role)
@@ -171,11 +174,13 @@ class InternalViewsetTests(IdentityRequest):
         response_data = json.loads(response.content)
         if settings.AUTHENTICATE_WITH_ORG_ID:
             self.assertCountEqual(
-                response_data["unmodified_tenants"], [self.tenant.org_id, unmodified_tenant_2.org_id]
+                response_data["unmodified_tenants"],
+                [self.tenant.org_id, unmodified_tenant_2.org_id],
             )
         else:
             self.assertCountEqual(
-                response_data["unmodified_tenants"], [self.tenant.tenant_name, unmodified_tenant_2.tenant_name]
+                response_data["unmodified_tenants"],
+                [self.tenant.tenant_name, unmodified_tenant_2.tenant_name],
             )
         self.assertEqual(response_data["unmodified_tenants_count"], 2)
         self.assertEqual(response_data["total_tenants_count"], 4)
@@ -204,7 +209,10 @@ class InternalViewsetTests(IdentityRequest):
         url = f"/_private/api/migrations/progress/"
         response = self.client.get(url, **self.request.META)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertEqual(response.content.decode(), "Please specify a migration name in the `?migration_name=` param.")
+        self.assertEqual(
+            response.content.decode(),
+            "Please specify a migration name in the `?migration_name=` param.",
+        )
 
     @patch("management.tasks.run_seeds_in_worker.delay")
     def test_run_seeds_with_defaults(self, seed_mock):
@@ -229,7 +237,8 @@ class InternalViewsetTests(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         seed_mock.assert_not_called()
         self.assertEqual(
-            response.content.decode(), "Valid options for \"seed_types\": ['permissions', 'roles', 'groups']."
+            response.content.decode(),
+            "Valid options for \"seed_types\": ['permissions', 'roles', 'groups'].",
         )
 
     @patch("api.tasks.populate_tenant_account_id_in_worker.delay")
@@ -239,7 +248,8 @@ class InternalViewsetTests(IdentityRequest):
         populate_mock.assert_called_once_with()
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(
-            response.content.decode(), "Tenant objects account_id values being updated in background worker."
+            response.content.decode(),
+            "Tenant objects account_id values being updated in background worker.",
         )
 
     @patch("api.tasks.populate_tenant_account_id_in_worker.delay")
@@ -253,10 +263,16 @@ class InternalViewsetTests(IdentityRequest):
     def test_get_invalid_default_admin_groups(self):
         """Test that we can get invalid groups."""
         invalid_admin_default_group = Group.objects.create(
-            admin_default=True, system=False, tenant=self.tenant, name="Invalid Default Admin Group"
+            admin_default=True,
+            system=False,
+            tenant=self.tenant,
+            name="Invalid Default Admin Group",
         )
         valid_admin_default_group = Group.objects.create(
-            admin_default=True, system=True, tenant=self.public_tenant, name="Valid Default Admin Group"
+            admin_default=True,
+            system=True,
+            tenant=self.public_tenant,
+            name="Valid Default Admin Group",
         )
         response = self.client.get(f"/_private/api/utils/invalid_default_admin_groups/", **self.request.META)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -284,10 +300,16 @@ class InternalViewsetTests(IdentityRequest):
     def test_delete_invalid_default_admin_groups(self):
         """Test that we can delete invalid groups when allowed."""
         invalid_admin_default_group = Group.objects.create(
-            admin_default=True, system=False, tenant=self.tenant, name="Invalid Default Admin Group"
+            admin_default=True,
+            system=False,
+            tenant=self.tenant,
+            name="Invalid Default Admin Group",
         )
         valid_admin_default_group = Group.objects.create(
-            admin_default=True, system=True, tenant=self.public_tenant, name="Valid Default Admin Group"
+            admin_default=True,
+            system=True,
+            tenant=self.public_tenant,
+            name="Valid Default Admin Group",
         )
         self.assertEqual(Group.objects.count(), 3)
         response = self.client.delete(f"/_private/api/utils/invalid_default_admin_groups/", **self.request.META)
@@ -309,7 +331,10 @@ class InternalViewsetTests(IdentityRequest):
 
     def test_get_org_admin_bad_type(self):
         """Test that we get a bad request for not using type query param."""
-        response = self.client.get(f"/_private/api/utils/get_org_admin/123456/?type=foobar", **self.request.META)
+        response = self.client.get(
+            f"/_private/api/utils/get_org_admin/123456/?type=foobar",
+            **self.request.META,
+        )
         option_key = "type"
         valid_values = ["account_id", "org_id"]
         expected_message = f'Valid options for "{option_key}": {valid_values}.'
@@ -325,7 +350,10 @@ class InternalViewsetTests(IdentityRequest):
 
     def test_get_org_admin_bad_connection(self):
         """Test getting the org admin and failing to connect to BOP."""
-        response = self.client.get("/_private/api/utils/get_org_admin/123456/?type=account_id", **self.request.META)
+        response = self.client.get(
+            "/_private/api/utils/get_org_admin/123456/?type=account_id",
+            **self.request.META,
+        )
         expected_message = "Unable to connect for URL"
         self.assertEqual(response.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
         self.assertIn(expected_message, response.content.decode())
@@ -335,10 +363,16 @@ class InternalViewsetTests(IdentityRequest):
         """Test getting the org admin back with mock proxy using account id."""
         mockresponse = MagicMock()
         mockresponse.status_code = 200
-        mockresponse.json.return_value = {"userCount": "1", "users": [{"username": "test_user"}]}
+        mockresponse.json.return_value = {
+            "userCount": "1",
+            "users": [{"username": "test_user"}],
+        }
         users = [{"username": "test_user"}]
         mock_proxy.get.return_value = mockresponse
-        response = self.client.get("/_private/api/utils/get_org_admin/123456/?type=account_id", **self.request.META)
+        response = self.client.get(
+            "/_private/api/utils/get_org_admin/123456/?type=account_id",
+            **self.request.META,
+        )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         string_data = response.content.decode()
         dictionary_data = eval(string_data.replace("null", "None"))
@@ -349,7 +383,10 @@ class InternalViewsetTests(IdentityRequest):
         """Test getting the org admin back with mock proxy using org id."""
         mockresponse = MagicMock()
         mockresponse.status_code = 200
-        mockresponse.json.return_value = {"userCount": "1", "users": [{"username": "test_user"}]}
+        mockresponse.json.return_value = {
+            "userCount": "1",
+            "users": [{"username": "test_user"}],
+        }
         users = [{"username": "test_user"}]
         mock_proxy.get.return_value = mockresponse
         response = self.client.get("/_private/api/utils/get_org_admin/123456/?type=org_id", **self.request.META)
@@ -415,12 +452,25 @@ class InternalViewsetTests(IdentityRequest):
 
         # No permission found
         response = self.client.delete(
-            "/_private/api/utils/permission/?permission=rbac:roles:write", **self.request.META
+            "/_private/api/utils/permission/?permission=rbac:roles:write",
+            **self.request.META,
         )
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
         Permission.objects.create(permission="rbac:roles:write", tenant=self.tenant)
         response = self.client.delete(
-            "/_private/api/utils/permission/?permission=rbac:roles:write", **self.request.META
+            "/_private/api/utils/permission/?permission=rbac:roles:write",
+            **self.request.META,
         )
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+
+    @patch("management.tasks.migrate_roles_in_worker.delay")
+    def test_run_migrations_of_roles(self, migration_mock):
+        """Test that we can trigger migrations of roles to migrate from V1 to V2."""
+        response = self.client.post(f"/_private/api/utils/role_migration/", **self.request.META)
+        migration_mock.assert_called_once()
+        self.assertEqual(response.status_code, status.HTTP_202_ACCEPTED)
+        self.assertEqual(
+            response.content.decode(),
+            "Role migration from V1 to V2 are running in a background worker.",
+        )
