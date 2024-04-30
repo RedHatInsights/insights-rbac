@@ -79,10 +79,7 @@
             "required": false,
             "description": "Parameter for filtering resource by an account number. Value can be a comma-separated list of ids. To be used in tandem with ?query_by=user_id to further filter a user's requests by account number.",
             "schema": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
+              "type": "string"
             }
           },
           {
@@ -91,10 +88,7 @@
             "required": false,
             "description": "Parameter for filtering resource by an org id. Value can be a comma-separated list of ids. To be used in tandem with ?query_by=user_id to further filter a user's requests by org id.",
             "schema": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
+              "type": "string"
             }
           },
           {
@@ -270,10 +264,7 @@
             "required": false,
             "description": "Parameter for filtering resource by an account number. Value can be a comma-separated list of ids. To be used in tandem with ?query_by=user_id to further filter a user's requests by account number.",
             "schema": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
+              "type": "string"
             }
           },
           {
@@ -574,10 +565,8 @@
             "description": "Comma separated usernames of principals to get. If match_criteria is specified, only the first username will be picked up for search.",
             "required": false,
             "schema": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
+              "type": "string",
+              "example": "userA,userB"
             }
           },
           {
@@ -1290,10 +1279,7 @@
             "required": false,
             "description": "By specifying a comma separated list of client IDs with this query parameter, RBAC will return an object with the specified client ID and it's matching boolean value to flag whether the client ID is present in the group or not. This query parameter cannot be used along with any other query parameter.",
             "schema": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
+              "type": "string"
             }
           },
           {
@@ -1386,10 +1372,7 @@
             "in": "query",
             "description": "A comma separated list of usernames for principals to remove from the group",
             "schema": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
+              "type": "string"
             }
           },
           {
@@ -1397,10 +1380,7 @@
             "in": "query",
             "description": "A comma separated list of usernames for service accounts to remove from the group",
             "schema": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
+              "type": "string"
             }
           }
         ],
@@ -1683,10 +1663,7 @@
             "description": "A comma separated list of role UUIDs for roles to remove from the group",
             "required": true,
             "schema": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
+              "type": "string"
             }
           }
         ],
@@ -1871,10 +1848,7 @@
             "description": "The application name(s) to filter roles by, from permissions or external tenant name. This is an exact match. You may also use a comma-separated list to match on multiple applications.",
             "required": false,
             "schema": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
+              "type": "string"
             }
           },
           {
@@ -1883,10 +1857,7 @@
             "description": "The permission(s) to filter roles by. This is an exact match. You may also use a comma-separated list to match on multiple permissions.",
             "required": false,
             "schema": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
+              "type": "string"
             }
           },
           {
@@ -2571,10 +2542,7 @@
             "required": true,
             "allowEmptyValue": true,
             "schema": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
+              "type": "string"
             }
           },
           {
@@ -2695,10 +2663,7 @@
             "description": "Exact match for the application name of a permission. You may also use a comma-separated list to match on multiple applications.",
             "required": false,
             "schema": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
+              "type": "string"
             }
           },
           {
@@ -2707,10 +2672,7 @@
             "description": "Exact match for the resource type name of a permission. You may also use a comma-separated list to match on multiple resource_types.",
             "required": false,
             "schema": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
+              "type": "string"
             }
           },
           {
@@ -2719,10 +2681,7 @@
             "description": "Exact match for the operation verb name of a permission You may also use a comma-separated list to match on multiple verbs.",
             "required": false,
             "schema": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
+              "type": "string"
             }
           },
           {
@@ -2754,10 +2713,7 @@
             "description": "An optional string filter which accepts one or more role UUIDs, comma-separated, to return permissions not associated with the supplied role(s).",
             "required": false,
             "schema": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
+              "type": "string"
             }
           },
           {
@@ -2847,10 +2803,7 @@
             "description": "Filter returned options based on application. You may also use a comma-separated list to filter on multiple applications.",
             "required": false,
             "schema": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
+              "type": "string"
             }
           },
           {
@@ -2859,10 +2812,7 @@
             "description": "Filter returned options based on resource_type. You may also use a comma-separated list to filter on multiple resource_types.",
             "required": false,
             "schema": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
+              "type": "string"
             }
           },
           {
@@ -2871,10 +2821,7 @@
             "description": "Filter returned options based on verb. You may also use a comma-separated list to filter on multiple verbs.",
             "required": false,
             "schema": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
+              "type": "string"
             }
           },
           {
