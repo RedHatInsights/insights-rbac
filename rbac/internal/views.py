@@ -476,12 +476,16 @@ def ocm_performance(request):
 def role_migration(request):
     """View method for running role migrations from V1 to V2 spiceDB schema.
 
-    POST /_private/api/utils/role_migration/
+    POST /_private/api/utils/role_migration/?exclude_apps=cost_management,rbac&orgs=id_1,id_2
     """
     if request.method != "POST":
         return HttpResponse('Invalid method, only "POST" is allowed.', status=405)
     logger.info("Running V1 Role migration.")
-    migrate_roles_in_worker.delay()
+    args = {
+        "exclude_apps": request.GET.get("exclude_apps", "").split(","),
+        "orgs": request.GET.get("orgs", "").split(","),
+    }
+    migrate_roles_in_worker.delay(args)
     return HttpResponse("Role migration from V1 to V2 are running in a background worker.", status=202)
 
 

@@ -112,22 +112,26 @@ def migrate_role(role: Role):
         logger.info(stringify_spicedb_relationship(rel))
 
 
-def migrate_roles_for_tenant(tenant: Tenant):
+def migrate_roles_for_tenant(tenant: Tenant, app_list: list):
     """Migrate all roles for a given tenant."""
-    for role in tenant.role_set.all():
+    roles = tenant.role_set.all()
+    if app_list:
+        roles = roles.exclude(access__permission__application__in=app_list)
+
+    for role in roles:
         migrate_role(role)
 
 
-def migrate_roles(exclude: bool, app_list: list, orgs: list):
+def migrate_roles(exclude_apps: list = [], orgs: list = []):
     """Migrate all roles for all tenants."""
     count = 0
-    total = Tenant.objects.exclude(tenant_name="public").count()
     tenants = Tenant.objects.exclude(tenant_name="public")
     if orgs:
         tenants = tenants.filter(org_id__in=orgs)
+    total = tenants.count()
     for tenant in tenants.iterator():
         logger.info(f"Migrating roles for tenant: {tenant.tenant_name}")
-        migrate_roles_for_tenant(tenant)
+        migrate_roles_for_tenant(tenant, exclude_apps)
         count += 1
         logger.info(f"Finished migrating roles for tenant: {tenant.tenant_name}. {count} of {total} tenants completed")
     logger.info("Finished migrating roles for all tenants")

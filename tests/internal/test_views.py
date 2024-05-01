@@ -467,8 +467,13 @@ class InternalViewsetTests(IdentityRequest):
     @patch("management.tasks.migrate_roles_in_worker.delay")
     def test_run_migrations_of_roles(self, migration_mock):
         """Test that we can trigger migrations of roles to migrate from V1 to V2."""
-        response = self.client.post(f"/_private/api/utils/role_migration/", **self.request.META)
-        migration_mock.assert_called_once()
+        response = self.client.post(
+            f"/_private/api/utils/role_migration/?exclude_apps=rbac,costmanagement&orgs=acct00001,acct00002",
+            **self.request.META,
+        )
+        migration_mock.assert_called_once_with(
+            {"exclude_apps": ["rbac", "costmanagement"], "orgs": ["acct00001", "acct00002"]}
+        )
         self.assertEqual(response.status_code, status.HTTP_202_ACCEPTED)
         self.assertEqual(
             response.content.decode(),

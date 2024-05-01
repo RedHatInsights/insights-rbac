@@ -26,7 +26,7 @@ def extract_info_into_v1_role(role: Role):
     perm_res_defs: dict[Tuple[str, str], list[V1resourcedef]] = {}
     roles: dict[str, list[str]] = {}
     for access in role.access.all():
-        for resource_def in access.resourceDefs.all():
+        for resource_def in access.resourceDefinitions.all():
             attri_filter = resource_def.attributeFilter
             res_def = V1resourcedef(attri_filter["key"], attri_filter["operation"], attri_filter["value"])
             role_id = f"{role.id}_{cleanNameForV2SchemaCompatibility(role.name)}"
