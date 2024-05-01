@@ -118,11 +118,14 @@ def migrate_roles_for_tenant(tenant: Tenant):
         migrate_role(role)
 
 
-def migrate_roles():
+def migrate_roles(exclude: bool, app_list: list, orgs: list):
     """Migrate all roles for all tenants."""
     count = 0
     total = Tenant.objects.exclude(tenant_name="public").count()
-    for tenant in Tenant.objects.exclude(tenant_name="public").iterator():
+    tenants = Tenant.objects.exclude(tenant_name="public")
+    if orgs:
+        tenants = tenants.filter(org_id__in=orgs)
+    for tenant in tenants.iterator():
         logger.info(f"Migrating roles for tenant: {tenant.tenant_name}")
         migrate_roles_for_tenant(tenant)
         count += 1

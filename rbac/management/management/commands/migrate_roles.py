@@ -28,7 +28,16 @@ class Command(BaseCommand):
 
     help = "Runs the migration for roles from V1 to V2 spiceDB schema"
 
+    def add_arguments(self, parser):
+        """Parse command arguments."""
+        parser.add_argument("--mode", type=str, default="exclude", help="Choice of include or exclude")
+        parser.add_argument("--apps", type=str, nargs="+", default="", help="List of space separated apps to include or exclude")
+        parser.add_argument("--orgs", type=str, nargs="+", default="", help="List of space separated org ids to include")
+
     def handle(self, *args, **options):
         """Handle method for command."""
         logger.info("*** Role migration started. ***\n")
-        migrate_roles()
+        exclude = True if options["mode"] == "exclude" else False
+        app_list = options["apps"].split(" ")
+        org_list = options["orgs"].split(" ")
+        migrate_roles(exclude, app_list, org_list)
