@@ -20,7 +20,6 @@ import os
 import uuid
 from uuid import UUID
 
-from django.conf import settings
 from django.core.exceptions import PermissionDenied
 from django.utils.translation import gettext as _
 from management.models import Access, Group, Policy, Principal, Role
@@ -124,14 +123,10 @@ def get_principal(
 
 def verify_principal_with_proxy(username, request, verify_principal=True):
     """Verify username through the BOP."""
-    account = request.user.account
     org_id = request.user.org_id
     proxy = PrincipalProxy()
     if verify_principal:
-        if settings.AUTHENTICATE_WITH_ORG_ID:
-            resp = proxy.request_filtered_principals([username], org_id=org_id, options=request.query_params)
-        else:
-            resp = proxy.request_filtered_principals([username], account, options=request.query_params)
+        resp = proxy.request_filtered_principals([username], org_id=org_id, options=request.query_params)
 
         if isinstance(resp, dict) and "errors" in resp:
             raise Exception("Dependency error: request to get users from dependent service failed.")
@@ -299,20 +294,14 @@ def validate_limit_and_offset(query_params):
 
 def roles_for_cross_account_principal(principal):
     """Return roles for cross account principals."""
-    target_account, user_id = principal.username.split("-")
+    _, user_id = principal.username.split("-")
     target_org = principal.tenant.org_id
-    if settings.AUTHENTICATE_WITH_ORG_ID:
-        role_names = (
-            CrossAccountRequest.objects.filter(target_org=target_org, user_id=user_id, status="approved")
-            .values_list("roles__name", flat=True)
-            .distinct()
-        )
-    else:
-        role_names = (
-            CrossAccountRequest.objects.filter(target_account=target_account, user_id=user_id, status="approved")
-            .values_list("roles__name", flat=True)
-            .distinct()
-        )
+    role_names = (
+        CrossAccountRequest.objects.filter(target_org=target_org, user_id=user_id, status="approved")
+        .values_list("roles__name", flat=True)
+        .distinct()
+    )
+
     role_names_list = list(role_names)
     return Role.objects.filter(name__in=role_names_list)
 

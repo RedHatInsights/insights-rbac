@@ -15,16 +15,14 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Defines the Admin Access Permissions class."""
-from django.conf import settings
 from django.urls import reverse
 from management.utils import validate_and_get_key
 from rest_framework import permissions
 
 QUERY_BY_KEY = "query_by"
 USER_ID = "user_id"
-ACCOUNT = "target_account"
 ORG_ID = "target_org"
-VALID_QUERY_BY_KEY = [ACCOUNT, USER_ID, ORG_ID]
+VALID_QUERY_BY_KEY = [USER_ID, ORG_ID]
 
 
 class CrossAccountRequestAccessPermission(permissions.BasePermission):
@@ -42,11 +40,8 @@ class CrossAccountRequestAccessPermission(permissions.BasePermission):
                 return True
 
             # For list
-            if settings.AUTHENTICATE_WITH_ORG_ID:
-                query_by = validate_and_get_key(request.query_params, QUERY_BY_KEY, VALID_QUERY_BY_KEY, ORG_ID)
-            else:
-                query_by = validate_and_get_key(request.query_params, QUERY_BY_KEY, VALID_QUERY_BY_KEY, ACCOUNT)
-            if query_by == ACCOUNT or query_by == ORG_ID:
+            query_by = validate_and_get_key(request.query_params, QUERY_BY_KEY, VALID_QUERY_BY_KEY, ORG_ID)
+            if query_by == ORG_ID:
                 return request.user.admin
             elif query_by == USER_ID:
                 return request.user.internal

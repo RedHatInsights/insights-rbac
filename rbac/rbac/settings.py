@@ -373,9 +373,6 @@ try:
 except ValueError as e:
     INTERNAL_DESTRUCTIVE_API_OK_UNTIL = datetime.datetime(1970, 1, 1, tzinfo=pytz.UTC)
 
-
-AUTHENTICATE_WITH_ORG_ID = ENVIRONMENT.bool("AUTHENTICATE_WITH_ORG_ID", default=False)
-
 KAFKA_ENABLED = ENVIRONMENT.get_value("KAFKA_ENABLED", default=False)
 MOCK_KAFKA = ENVIRONMENT.get_value("MOCK_KAFKA", default=False)
 

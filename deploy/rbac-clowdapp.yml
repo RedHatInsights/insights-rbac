@@ -103,8 +103,6 @@ objects:
             cpu: ${CELERY_WORKER_CPU_REQUEST}
             memory: ${CELERY_WORKER_MEMORY_REQUEST}
         env:
-          - name: AUTHENTICATE_WITH_ORG_ID
-            value: ${AUTHENTICATE_WITH_ORG_ID}
           - name: DJANGO_LOG_LEVEL
             value: ${DJANGO_LOG_LEVEL}
           - name: DJANGO_DEBUG
@@ -258,8 +256,6 @@ objects:
             cpu: ${CELERY_SCHEDULER_CPU_REQUEST}
             memory: ${CELERY_SCHEDULER_MEMORY_REQUEST}
         env:
-        - name: AUTHENTICATE_WITH_ORG_ID
-          value: ${AUTHENTICATE_WITH_ORG_ID}
         - name: DJANGO_LOG_LEVEL
           value: ${DJANGO_LOG_LEVEL}
         - name: DJANGO_DEBUG
@@ -464,8 +460,6 @@ objects:
             value: ${REDIS_SOCKET_CONNECT_TIMEOUT}
           - name: REDIS_SOCKET_TIMEOUT
             value: ${REDIS_SOCKET_TIMEOUT}
-          - name: AUTHENTICATE_WITH_ORG_ID
-            value: ${AUTHENTICATE_WITH_ORG_ID}
           - name: NOTIFICATIONS_ENABLED
             value: ${NOTIFICATIONS_ENABLED}
           - name: GUNICORN_WORKER_MULTIPLIER
@@ -3410,9 +3404,6 @@ parameters:
 - description: Enable sending out notification events of Red Hat changes
   name: NOTIFICATIONS_RH_ENABLED
   value: 'False'
-- description: Enable RBAC tenancy using Org ID
-  name: AUTHENTICATE_WITH_ORG_ID
-  value: 'True'
 - name: TENANT_TRANSLATOR_HOST
   required: true
 - name: TENANT_TRANSLATOR_PORT

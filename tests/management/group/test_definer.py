@@ -89,10 +89,7 @@ class GroupDefinerTests(IdentityRequest):
             for role in group.roles():
                 self.assertTrue(role.platform_default)
 
-            if settings.AUTHENTICATE_WITH_ORG_ID:
-                org_id = self.customer_data["org_id"]
-            else:
-                org_id = None
+            org_id = self.customer_data["org_id"]
 
             notification_messages = [
                 call(
@@ -102,7 +99,6 @@ class GroupDefinerTests(IdentityRequest):
                         "application": "rbac",
                         "event_type": "rh-new-role-added-to-default-access",
                         "timestamp": ANY,
-                        "account_id": self.customer_data["account_id"],
                         "events": [
                             {
                                 "metadata": {},
@@ -125,7 +121,6 @@ class GroupDefinerTests(IdentityRequest):
                         "application": "rbac",
                         "event_type": "rh-role-removed-from-default-access",
                         "timestamp": ANY,
-                        "account_id": self.customer_data["account_id"],
                         "events": [
                             {
                                 "metadata": {},

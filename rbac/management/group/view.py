@@ -393,15 +393,12 @@ class GroupViewSet(
 
         return super().update(request=request, args=args, kwargs=kwargs)
 
-    def add_principals(self, group, principals, account=None, org_id=None):
+    def add_principals(self, group, principals, org_id=None):
         """Process list of principals and add them to the group."""
         tenant = self.request.tenant
 
         users = [principal.get("username") for principal in principals]
-        if settings.AUTHENTICATE_WITH_ORG_ID:
-            resp = self.proxy.request_filtered_principals(users, org_id=org_id, limit=len(users))
-        else:
-            resp = self.proxy.request_filtered_principals(users, account=account, limit=len(users))
+        resp = self.proxy.request_filtered_principals(users, org_id=org_id, limit=len(users))
         if "errors" in resp:
             return resp
         if len(resp.get("data", [])) == 0:
@@ -415,10 +412,7 @@ class GroupViewSet(
                 principal = Principal.objects.get(username__iexact=username, tenant=tenant)
             except Principal.DoesNotExist:
                 principal = Principal.objects.create(username=username, tenant=tenant)
-                if settings.AUTHENTICATE_WITH_ORG_ID:
-                    logger.info("Created new principal %s for org_id %s.", username, org_id)
-                else:
-                    logger.info("Created new principal %s for account_id %s.", username, account)
+                logger.info("Created new principal %s for org_id %s.", username, org_id)
             group.principals.add(principal)
             group_principal_change_notification_handler(self.request.user, group, username, "added")
         return group
@@ -474,10 +468,7 @@ class GroupViewSet(
                     tenant=tenant,
                 )
 
-                if settings.AUTHENTICATE_WITH_ORG_ID:
-                    logger.info("Created new service account %s for org_id %s.", client_id, org_id)
-                else:
-                    logger.info("Created new principal %s for account_id %s.", client_id, account_name)
+                logger.info("Created new service account %s for org_id %s.", client_id, org_id)
 
             group.principals.add(principal)
             group_principal_change_notification_handler(
@@ -489,25 +480,19 @@ class GroupViewSet(
 
         return group
 
-    def remove_principals(self, group, principals, account=None, org_id=None):
+    def remove_principals(self, group, principals, org_id=None):
         """Process list of principals and remove them from the group."""
         req_id = getattr(self.request, "req_id", None)
         log_prefix = f"[Request_id:{req_id}]"
-        logger.info(f"{log_prefix} remove_principals({principals}),Group:{group.name},OrgId:{org_id},Acct:{account}")
+        logger.info(f"{log_prefix} remove_principals({principals}),Group:{group.name},OrgId:{org_id}")
 
-        if settings.AUTHENTICATE_WITH_ORG_ID:
-            tenant = Tenant.objects.get(org_id=org_id)
-        else:
-            tenant = Tenant.objects.get(tenant_name=f"acct{account}")
+        tenant = Tenant.objects.get(org_id=org_id)
 
         valid_principals = Principal.objects.filter(group=group, tenant=tenant, type="user", username__in=principals)
         valid_usernames = valid_principals.values_list("username", flat=True)
         usernames_diff = set(principals) - set(valid_usernames)
         if usernames_diff:
-            if settings.AUTHENTICATE_WITH_ORG_ID:
-                logger.info(f"Principals {usernames_diff} not found for org id {org_id}.")
-            else:
-                logger.info(f"Principals {usernames_diff} not found for account {account}.")
+            logger.info(f"Principals {usernames_diff} not found for org id {org_id}.")
             return {
                 "status_code": status.HTTP_404_NOT_FOUND,
                 "errors": [
@@ -670,10 +655,7 @@ class GroupViewSet(
 
             # Process user principals and add them to the group.
             if len(principals) > 0:
-                if settings.AUTHENTICATE_WITH_ORG_ID:
-                    resp = self.add_principals(group, principals, org_id=org_id)
-                else:
-                    resp = self.add_principals(group, principals, account=account)
+                resp = self.add_principals(group, principals, org_id=org_id)
 
             # Storing user principals might return an error structure instead of a group,
             # so we need to check that before returning a response.
@@ -837,10 +819,7 @@ class GroupViewSet(
                 options[ADMIN_ONLY_KEY] = True
 
             proxy = PrincipalProxy()
-            if settings.AUTHENTICATE_WITH_ORG_ID:
-                resp = proxy.request_filtered_principals(username_list, org_id=org_id, options=options)
-            else:
-                resp = proxy.request_filtered_principals(username_list, account=account, options=options)
+            resp = proxy.request_filtered_principals(username_list, org_id=org_id, options=options)
             if isinstance(resp, dict) and "errors" in resp:
                 return Response(status=resp.get("status_code"), data=resp.get("errors"))
 
@@ -908,10 +887,7 @@ class GroupViewSet(
             if USERNAMES_KEY in request.query_params:
                 username = request.query_params.get(USERNAMES_KEY, "")
                 principals = [name.strip() for name in username.split(",")]
-                if settings.AUTHENTICATE_WITH_ORG_ID:
-                    resp = self.remove_principals(group, principals, org_id=org_id)
-                else:
-                    resp = self.remove_principals(group, principals, account=account)
+                resp = self.remove_principals(group, principals, org_id=org_id)
                 if isinstance(resp, dict) and "errors" in resp:
                     return Response(status=resp.get("status_code"), data={"errors": resp.get("errors")})
                 response = Response(status=status.HTTP_204_NO_CONTENT)
@@ -1115,10 +1091,7 @@ class GroupViewSet(
         )
 
         # Fetch the tenant from the database.
-        if settings.AUTHENTICATE_WITH_ORG_ID:
-            tenant = Tenant.objects.get(org_id=org_id)
-        else:
-            tenant = Tenant.objects.get(tenant_name=f"acct{account_name}")
+        tenant = Tenant.objects.get(org_id=org_id)
 
         # Get the group's service accounts that match the service accounts that the user specified.
         valid_service_accounts = Principal.objects.filter(
@@ -1132,10 +1105,7 @@ class GroupViewSet(
         # that did not exist in the database.
         usernames_diff = set(service_accounts).difference(valid_usernames)
         if usernames_diff:
-            if settings.AUTHENTICATE_WITH_ORG_ID:
-                logger.info(f"Service accounts {usernames_diff} not found for org id {org_id}.")
-            else:
-                logger.info(f"Service account {usernames_diff} not found for account {account_name}.")
+            logger.info(f"Service accounts {usernames_diff} not found for org id {org_id}.")
 
             raise ValueError(f"Service account(s) {usernames_diff} not found in the group '{group.name}'")
 
