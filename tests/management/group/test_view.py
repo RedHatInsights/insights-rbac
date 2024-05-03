@@ -2602,6 +2602,77 @@ class GroupViewsetTests(IdentityRequest):
             "unexpected error message detail",
         )
 
+    @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
+    @patch("management.principal.it_service.ITService.request_service_accounts")
+    def test_get_group_service_account_filter_by_username_success(self, mock_request):
+        """
+        Test that filtering the Service Accounts by username returns expected results.
+        """
+        # Create a group with 2 Service Account
+        group = Group.objects.create(name="group_with_sa", tenant=self.tenant)
+
+        mocked_values = []
+        uuid1 = "e78dc6b2-5930-4649-999f-266f4b926f3e"  # uuid without "a" char
+        uuid2 = "d9f127fb-5e9d-41a0-b71a-f57273c3cd76"  # uuid with "a" char
+        for uuid in [uuid1, uuid2]:
+            mocked_values.append(
+                {
+                    "clientID": uuid,
+                    "name": f"service_account_name_{uuid.split('-')[0]}",
+                    "description": f"Service Account description {uuid.split('-')[0]}",
+                    "owner": "jsmith",
+                    "username": "service-account-" + uuid,
+                    "time_created": 1706784741,
+                    "type": "service-account",
+                }
+            )
+            principal = Principal(
+                username="service-account-" + uuid,
+                tenant=self.tenant,
+                type="service-account",
+                service_account_id=uuid,
+            )
+            principal.save()
+            group.principals.add(principal)
+
+        mock_request.return_value = mocked_values
+        group.save()
+
+        # Test that only 1 SA is returned for SA with "a" in username
+        service_account_principal = "principal_type=service-account"
+        principal_username_filter = "principal_username=a"
+        url = (
+            f"{reverse('group-principals', kwargs={'uuid': group.uuid})}"
+            f"?{service_account_principal}"
+            f"&{principal_username_filter}"
+        )
+        client = APIClient()
+        response = client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIsInstance(response.data.get("data"), list)
+        self.assertEqual(int(response.data.get("meta").get("count")), 1)
+        self.assertEqual(len(response.data.get("data")), 1)
+
+        sa = response.data.get("data")[0]
+        self.assertEqual(sa.get("clientID"), uuid2)
+        self.assertEqual(sa.get("username"), "service-account-" + uuid2)
+
+        # Test that 0 SA is returned for SA with "r" in username
+        principal_username_filter = "principal_username=r"
+        url = (
+            f"{reverse('group-principals', kwargs={'uuid': group.uuid})}"
+            f"?{service_account_principal}"
+            f"&{principal_username_filter}"
+        )
+        client = APIClient()
+        response = client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIsInstance(response.data.get("data"), list)
+        self.assertEqual(int(response.data.get("meta").get("count")), 0)
+        self.assertEqual(len(response.data.get("data")), 0)
+
 
 class GroupViewNonAdminTests(IdentityRequest):
     """Test the group view for nonadmin user."""
