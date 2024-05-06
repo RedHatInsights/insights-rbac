@@ -17,10 +17,13 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 import dataclasses
 import logging
+import uuid
 from typing import FrozenSet
 
 from management.role.model import Role
-from migration_tool.migrator import Migrator, V1group, V2rolebinding
+from migration_tool import spicedb
+from migration_tool.migrator import Migrator
+from migration_tool.models import Relationship, V1group, V2rolebinding
 from migration_tool.sharedSystemRolesReplicatedRoleBindings import (
     shared_system_role_replicated_role_bindings_v1_to_v2_mapping,
 )
@@ -29,17 +32,6 @@ from api.models import Tenant
 from .ingest import extract_info_into_v1_role
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
-
-
-@dataclasses.dataclass(frozen=True)
-class Relationship:
-    """Relationship definition."""
-
-    resource_type: str
-    resource_id: str
-    relation: str
-    subject_type: str
-    subject_id: str
 
 
 def spicedb_relationships(v2_role_bindings: FrozenSet[V2rolebinding]):
@@ -55,22 +47,32 @@ def spicedb_relationships(v2_role_bindings: FrozenSet[V2rolebinding]):
                 v2_role_binding.role.id,
             )
         )
+        relationships.add(
+            Relationship("rbac/v1role", v2_role_binding.originalRole.id, "binding", "role_binding", v2_role_binding.id)
+        )
         # Bind directly to resource for now
         # relationships.add(
         #    Relationship("workspace", "org_migration_root", "user_grant", "role_binding", v2_role_binding.id))
         for perm in v2_role_binding.role.permissions:
             relationships.add(Relationship("role", v2_role_binding.role.id, perm, "user", "*"))
-        for bound_resource in v2_role_binding.resources:
-            parent_relation = "parent" if bound_resource.resource_type == "workspace" else "workspace"
+        if not v2_role_binding.role.is_system:
             relationships.add(
                 Relationship(
-                    bound_resource.resource_type,
-                    bound_resource.resourceId,
-                    parent_relation,
-                    "workspace",
-                    "org_migration_root",
+                    "rbac/v1role", v2_role_binding.originalRole.id, "customrole", "role", v2_role_binding.role.id
                 )
             )
+        for bound_resource in v2_role_binding.resources:
+            parent_relation = "parent" if bound_resource.resource_type == "workspace" else "workspace"
+            if not bound_resource.resource_type == "workspace" and bound_resource.resourceId == "org_migration_root":
+                relationships.add(
+                    Relationship(
+                        bound_resource.resource_type,
+                        bound_resource.resourceId,
+                        parent_relation,
+                        "workspace",
+                        "org_migration_root",
+                    )
+                )
             relationships.add(
                 Relationship(
                     bound_resource.resource_type,
@@ -80,6 +82,7 @@ def spicedb_relationships(v2_role_bindings: FrozenSet[V2rolebinding]):
                     v2_role_binding.id,
                 )
             )
+
     return relationships
 
 
@@ -110,6 +113,11 @@ def migrate_role(role: Role):
     spicedb_rel_summary = spicedb_relationships(frozenset(v2_roles))
     for rel in spicedb_rel_summary:
         logger.info(stringify_spicedb_relationship(rel))
+
+    for role in v1_roles:
+        user = str(uuid.uuid4())
+        spicedb.assignV1RoleArtifactsToUser(user, role)
+        spicedb.assertRole(user, role)
 
 
 def migrate_roles_for_tenant(tenant: Tenant, app_list: list):

@@ -29,10 +29,10 @@ def extract_info_into_v1_role(role: Role):
         for resource_def in access.resourceDefinitions.all():
             attri_filter = resource_def.attributeFilter
             res_def = V1resourcedef(attri_filter["key"], attri_filter["operation"], attri_filter["value"])
-            role_id = f"{role.id}_{cleanNameForV2SchemaCompatibility(role.name)}"
+            role_id = f"{role.id}"
             if res_def.resource_id != "":
                 add_element(perm_res_defs, (role_id, access.permission.permission), res_def)
-            extend_unique(roles, role_id, access.permission.permission)
+        extend_unique(roles, role_id, access.permission.permission)
     v1_roles = []
     for role_id, perm_list in roles.items():
         v1_perms = []
@@ -44,11 +44,6 @@ def extract_info_into_v1_role(role: Role):
         v1_role = V1role(role_id, frozenset(v1_perms), frozenset())  # we don't get groups from the sheet
         v1_roles.append(v1_role)
     return v1_roles
-
-
-def cleanNameForV2SchemaCompatibility(name: str):
-    """Clean the name to be compatible with the V2 schema."""
-    return name.lower().replace("-", "_").replace(".", "_").replace(":", "_").replace(" ", "_").replace("*", "all")
 
 
 def add_element(dict, key, value):

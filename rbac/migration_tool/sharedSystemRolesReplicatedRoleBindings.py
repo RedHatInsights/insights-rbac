@@ -16,10 +16,11 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 
 import json
+import uuid
 from typing import Callable, FrozenSet, Type
 
-from migration_tool.ingest import add_element, cleanNameForV2SchemaCompatibility
-from migration_tool.migrator import (
+from migration_tool.ingest import add_element
+from migration_tool.models import (
     V1group,
     V1permission,
     V1resourcedef,
@@ -29,6 +30,7 @@ from migration_tool.migrator import (
     V2role,
     V2rolebinding,
 )
+from migration_tool.spicedb import cleanNameForV2SchemaCompatibility
 
 
 Permissiongroupings = dict[V1resourcedef, list[str]]
@@ -486,29 +488,35 @@ add_system_role(
     )
 )
 
+skipped_apps = {"cost-management", "playbook-dispatcher", "approval", "catalog"}
+
 
 def all_roles_v1_to_v2_mapping(v1_role: V1role) -> FrozenSet[V2rolebinding]:
     """Convert a V1 role to a set of V2 role bindings."""
     perm_groupings: Permissiongroupings = {}
     # Group V2 permissions by target
     for v1_perm in v1_role.permissions:
-        if is_for_discontinued_app(v1_perm):
+        if not is_for_enabled_app(v1_perm):
             continue
         v2_perm = v1_perm_to_v2_perm(v1_perm)
-        if v1_perm.app == "playbook-dispatcher":
-            add_element(
-                perm_groupings,
-                V2boundresource("workspace", "org_migration_root"),
-                convert_dispatcher_permission_to_v2(v1_perm),
-            )
-        elif v1_perm.resourceDefs and len(v1_perm.resourceDefs) > 0:
+        if v1_perm.resourceDefs and len(v1_perm.resourceDefs) > 0:
             for resource_def in v1_perm.resourceDefs:
                 resource_type = (
-                    "workspace" if v1_perm.app == "inventory" else resource_def.resource_type
-                )  # will assume workspaces exist already
+                    "workspace"
+                    if v1_perm.app == "inventory"
+                    else v1_attributefilter_resource_type_to_v2_resource_type(resource_def.resource_type)
+                )
+                # will assume workspaces exist already
                 for resource_id in split_resourcedef_literal(resource_def):
-                    if resource_type == "workspace" and resource_id is None:
-                        resource_id = "org_migration_root/ungrouped"
+                    if resource_type == "workspace":
+                        if resource_id is None:
+                            resource_id = "org_migration_root/ungrouped"
+                        if v1_perm == "inventory_groups_read":
+                            v1_perm = "workspace_read"
+                        elif v1_perm == "inventory_groups_write":
+                            v1_perm = "workspace_write"
+                        elif v1_perm == "inventory_groups_all":
+                            v1_perm = "workspace_all"
                     add_element(
                         perm_groupings,
                         V2boundresource(resource_type, resource_id),
@@ -529,7 +537,7 @@ def all_roles_v1_to_v2_mapping(v1_role: V1role) -> FrozenSet[V2rolebinding]:
     for role, resources in resource_roles.items():
         for resource in resources:
             for v2_group in v2_groups:
-                role_binding_id = role.id + "_" + resource.resourceId + "_" + v2_group.id
+                role_binding_id = str(uuid.uuid4())
                 v2_role_binding = V2rolebinding(role_binding_id, role, frozenset({resource}), frozenset({v2_group}))
                 v2_role_bindings.append(v2_role_binding)
     return frozenset(v2_role_bindings)
@@ -604,15 +612,15 @@ def extract_system_roles(perm_groupings, v1_role):
                     else:
                         candidate_system_roles[candidate] = {v1_role.id}
                 # Add a custom role
-                add_element(resource_roles, V2role(v1_role.id, frozenset(permissions)), resource)
+                add_element(resource_roles, V2role(str(uuid.uuid4()), frozenset(permissions)), resource)
                 global custom_roles_created
                 custom_roles_created += 1
     return resource_roles
 
 
-def is_for_discontinued_app(perm: V1permission):
+def is_for_enabled_app(perm: V1permission):
     """Return true if the permission is for an app that is no longer in use."""
-    return perm.app == "catalog" or perm.app == "approval"
+    return perm.app not in skipped_apps
 
 
 def split_resourcedef_literal(resourceDef: V1resourcedef):
@@ -640,6 +648,13 @@ def v1groups_to_v2groups(v1groups: FrozenSet[V1group]):
 
 def v1_perm_to_v2_perm(v1_permission):
     """Convert a V1 permission to a V2 permission."""
-    return cleanNameForV2SchemaCompatibility(
-        v1_permission.app + "_" + v1_permission.resource + "_" + v1_permission.perm
-    )
+    if v1_permission.app == "inventory" and v1_permission.resource == "groups":
+        return cleanNameForV2SchemaCompatibility(f"workspace_{v1_permission.perm}")
+
+
+def v1_attributefilter_resource_type_to_v2_resource_type(resourceType: str):  # Format is app.type
+    """Convert a V1 resource type to a V2 resource type."""
+    parts = resourceType.split(".", 1)
+    app = cleanNameForV2SchemaCompatibility(parts[0])
+    resource = cleanNameForV2SchemaCompatibility(parts[1])
+    return f"{app}/{resource}"
