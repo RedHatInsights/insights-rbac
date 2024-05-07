@@ -18,7 +18,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 from typing import Tuple
 
 from management.role.model import Role
-from migration_tool.migrator import V1permission, V1resourcedef, V1role
+from migration_tool.models import V1permission, V1resourcedef, V1role
 
 
 def extract_info_into_v1_role(role: Role):

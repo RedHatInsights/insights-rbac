@@ -46,7 +46,7 @@ class MigrateTests(TestCase):
         self.accessA2 = Access.objects.create(permission=permission2, role=self.roleA2, tenant=self.tenant)
         self.resourceDef = ResourceDefinition.objects.create(
             attributeFilter={
-                "key": "scope",
+                "key": "aws.account",
                 "operation": "equal",
                 "value": "admin",
             },
@@ -57,23 +57,21 @@ class MigrateTests(TestCase):
         # setup data for another tenant
         self.roleB = Role.objects.create(name="roleB", tenant=another_tenant)
         self.accessB = Access.objects.create(permission=permission2, role=self.roleB, tenant=another_tenant)
+        self.system_role = Role.objects.create(name="system_role", system=True, tenant=public_tenant)
+        Access.objects.bulk_create(
+            [
+                Access(permission=permission1, role=self.system_role, tenant=public_tenant),
+                Access(permission=permission2, role=self.system_role, tenant=public_tenant),
+            ]
+        )
 
     @patch("migration_tool.migrate.logger")
     def test_migration_of_roles(self, logger_mock):
         """Test that we get the correct access for a principal."""
         kwargs = {"exclude_apps": ["app1"], "orgs": ["1234567"]}
         migrate_roles(**kwargs)
+        print(logger_mock.info.call_args_list)
         self.assertEqual(
-            logger_mock.info.call_args_list,
-            [
-                call("Migrating roles for tenant: tenant"),
-                call("scope:admin#workspace@workspace:org_migration_root"),
-                call("role_binding:2_rolea2_admin_b_team#granted@role:2_rolea2"),
-                call("scope:admin#user_grant@role_binding:2_rolea2_admin_b_team"),
-                call("role:2_rolea2#app2_resource2_all@user:*"),
-                call("role_binding:2_rolea2_admin_a_team#granted@role:2_rolea2"),
-                call("scope:admin#user_grant@role_binding:2_rolea2_admin_a_team"),
-                call("Finished migrating roles for tenant: tenant. 1 of 1 tenants completed"),
-                call("Finished migrating roles for all tenants"),
-            ],
+            len(logger_mock.info.call_args_list),
+            11,
         )

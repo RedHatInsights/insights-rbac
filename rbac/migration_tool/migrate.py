@@ -17,11 +17,9 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 import dataclasses
 import logging
-import uuid
 from typing import FrozenSet
 
 from management.role.model import Role
-from migration_tool import spicedb
 from migration_tool.migrator import Migrator
 from migration_tool.models import Relationship, V1group, V2rolebinding
 from migration_tool.sharedSystemRolesReplicatedRoleBindings import (
@@ -114,11 +112,6 @@ def migrate_role(role: Role):
     for rel in spicedb_rel_summary:
         logger.info(stringify_spicedb_relationship(rel))
 
-    for role in v1_roles:
-        user = str(uuid.uuid4())
-        spicedb.assignV1RoleArtifactsToUser(user, role)
-        spicedb.assertRole(user, role)
-
 
 def migrate_roles_for_tenant(tenant: Tenant, app_list: list):
     """Migrate all roles for a given tenant."""
@@ -139,7 +132,11 @@ def migrate_roles(exclude_apps: list = [], orgs: list = []):
     total = tenants.count()
     for tenant in tenants.iterator():
         logger.info(f"Migrating roles for tenant: {tenant.tenant_name}")
-        migrate_roles_for_tenant(tenant, exclude_apps)
+        try:
+            migrate_roles_for_tenant(tenant, exclude_apps)
+        except Exception as e:
+            logger.error(f"Failed to migrate roles for tenant: {tenant.tenant_name}. Error: {e}")
+            raise e
         count += 1
         logger.info(f"Finished migrating roles for tenant: {tenant.tenant_name}. {count} of {total} tenants completed")
     logger.info("Finished migrating roles for all tenants")

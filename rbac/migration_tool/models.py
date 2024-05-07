@@ -112,6 +112,7 @@ class V2rolebinding:
     originalRole: V1role
     role: V2role
     resources: frozenset[V2boundresource]
+    groups: frozenset[V2group]
 
 
 def split_v2_perm(perm: str):
@@ -128,4 +129,8 @@ def split_v2_perm(perm: str):
     if first_delimiter == -1 or last_delimiter == -1 or first_delimiter == last_delimiter:
         raise ValueError("Invalid V2 permission: " + perm)
 
-    return perm[:first_delimiter], perm[(first_delimiter + 1) : last_delimiter], perm[(last_delimiter + 1) :]  # noqa: E203, E501
+    return (
+        perm[:first_delimiter],
+        perm[(first_delimiter + 1) : last_delimiter],  # noqa: E203
+        perm[(last_delimiter + 1) :],  # noqa: E203
+    )
