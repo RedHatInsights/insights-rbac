@@ -1640,10 +1640,10 @@ objects:
       {
           "roles": [{
               "name": "Launch Administrator",
-              "description": "An launch administrator role that grants read and write permissions.",
+              "description": "A launch administrator role that grants read and write permissions.",
               "system": true,
               "admin_default": true,
-              "version": 1,
+              "version": 2,
               "access": [{
                   "permission": "provisioning:*:*"
               }]
