@@ -587,6 +587,33 @@ objects:
 # rbac-config ConfigMap
 - apiVersion: v1
   data:
+    ansible-wisdom-admin-dashboard.json: |
+      {
+        "roles": [
+          {
+            "name": "Ansible Wisdom Admin Dashboard user",
+            "description": "An Ansible Wisdom Admin Dashboard user role that grants read permissions to Org Admins for all charts.",
+            "system": true,
+            "admin_default": true,
+            "platform_default": false,
+            "version": 3,
+            "access": [
+              {
+                "permission": "ansible-wisdom-admin-dashboard:chart-recommendations:read"
+              },
+              {
+                "permission": "ansible-wisdom-admin-dashboard:chart-user-sentiment:read"
+              },
+              {
+                "permission": "ansible-wisdom-admin-dashboard:chart-module-usage:read"
+              },
+              {
+                "permission": "ansible-wisdom-admin-dashboard:chart-active-users:read"
+              }
+            ]
+          }
+        ]
+      }
     approval.json: |
       {
         "roles": [
