@@ -2347,6 +2347,36 @@ objects:
               }
           ]
       }
+    idmsvc.json: |
+      {
+          "token": [
+              {
+                  "verb": "create"
+              }
+          ],
+          "domains": [
+              {
+                  "verb": "list"
+              },
+              {
+                  "verb": "read"
+              },
+              {
+                  "verb": "create"
+              },
+              {
+                  "verb": "update"
+              },
+              {
+                  "verb": "delete"
+              }
+          ],
+          "*": [
+              {
+                  "verb": "*"
+              }
+          ]
+      }
     integrations.json: |
       {
           "endpoints": [
