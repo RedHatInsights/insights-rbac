@@ -1214,6 +1214,54 @@ objects:
           }
         ]
       }
+    idmsvc.json: |
+      {
+        "roles": [
+          {
+            "name": "Domains administrator",
+            "description": "Perform any available operation against any domain resource.",
+            "system": true,
+            "platform_default": false,
+            "admin_default": true,
+            "version": 1,
+            "access": [
+              {
+                "permission": "idmsvc:token:create"
+              },
+              {
+                "permission": "idmsvc:domains:list"
+              },
+              {
+                "permission": "idmsvc:domains:read"
+              },
+              {
+                "permission": "idmsvc:domains:create"
+              },
+              {
+                "permission": "idmsvc:domains:update"
+              },
+              {
+                "permission": "idmsvc:domains:delete"
+              }
+            ]
+          },
+          {
+            "name": "Domains viewer",
+            "description": "Perform read only operations against domain resources.",
+            "system": true,
+            "platform_default": true,
+            "version": 1,
+            "access": [
+              {
+                "permission": "idmsvc:domains:list"
+              },
+              {
+                "permission": "idmsvc:domains:read"
+              }
+            ]
+          }
+        ]
+      }
     insights.json: |
       {
         "roles": [
