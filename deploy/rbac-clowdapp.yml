@@ -2197,6 +2197,14 @@ objects:
                   "verb": "write"
               }
           ],
+          "templates": [
+              {
+                  "verb": "read"
+              },
+              {
+                  "verb": "write"
+              }
+          ],
           "*": [
               {
                   "verb": "*"
