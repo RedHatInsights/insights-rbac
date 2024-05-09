@@ -1833,11 +1833,12 @@ objects:
         "roles": [
           {
             "name": "Sources administrator",
-            "description": "Perform any available operation against any Source",
+            "display_name": "Cloud Administrator",
+            "description": "Perform any available operation against any Source.",
             "system": true,
             "platform_default": false,
             "admin_default": true,
-            "version": 4,
+            "version": 5,
             "access": [
               {
                 "permission": "sources:*:*"
