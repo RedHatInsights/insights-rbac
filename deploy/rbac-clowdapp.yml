@@ -1840,6 +1840,42 @@ objects:
           }
         ]
       }
+    staleness.json: |
+      {
+        "roles": [
+          {
+            "name": "Organization Staleness and Deletion Administrator",
+            "description": "Be able to read and edit Organization Staleness and Deletion data.",
+            "system": true,
+            "platform_default": false,
+            "admin_default": true,
+            "display_name": "Organization Staleness and Deletion Administrator",
+            "version": 1,
+            "access": [
+              {
+                "permission": "staleness:staleness:write"
+              },
+              {
+                "permission": "staleness:staleness:read"
+              }
+            ]
+          },
+          {
+            "name": "Organization Staleness and Deletion Viewer",
+            "description": "Be able to read Organization Staleness and Deletion data.",
+            "system": true,
+            "platform_default": true,
+            "admin_default": false,
+            "display_name": "Organization Staleness and Deletion Viewer",
+            "version": 1,
+            "access": [
+              {
+                "permission": "staleness:staleness:read"
+              }
+            ]
+          }
+        ]
+      }
     subscriptions.json: |
       {
         "roles": [
