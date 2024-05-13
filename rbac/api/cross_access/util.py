@@ -56,7 +56,7 @@ def create_cross_principal(user_id, target_org=None):
 
 
 def get_cross_principal_name(target_org, user_id):
-    """Get cross-account principal string from account and UID."""
+    """Get cross-account principal string from org_id and UID."""
     return f"{target_org}-{user_id}"
 
 

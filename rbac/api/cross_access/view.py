@@ -52,6 +52,11 @@ class CrossAccountRequestFilter(filters.FilterSet):
         """Filter to lookup requests by target_org."""
         return CommonFilters.multiple_values_in(self, queryset, "target_org", values)
 
+    def account_filter(self, queryset, field, values):
+        """Filter to lookup requests by target_account."""
+        accounts = values.split(",")
+        return queryset.filter(target_account__in=accounts)
+
     def approved_filter(self, queryset, field, value):
         """Filter to lookup requests by status of approved."""
         if value:
@@ -68,13 +73,14 @@ class CrossAccountRequestFilter(filters.FilterSet):
             query = query | Q(status__iexact=status)
         return queryset.distinct().filter(query)
 
+    account = filters.CharFilter(field_name="target_account", method="account_filter")
     org_id = filters.CharFilter(field_name="target_org", method="org_id_filter")
     approved_only = filters.BooleanFilter(field_name="end_date", method="approved_filter")
     status = filters.CharFilter(field_name="status", method="status_filter")
 
     class Meta:
         model = CrossAccountRequest
-        fields = ["org_id", "approved_only", "status"]
+        fields = ["account", "org_id", "approved_only", "status"]
 
 
 class CrossAccountRequestViewSet(
@@ -169,7 +175,7 @@ class CrossAccountRequestViewSet(
         if validate_and_get_key(self.request.query_params, QUERY_BY_KEY, VALID_QUERY_BY_KEY, ORG_ID) == ORG_ID:
             user_id = result.data.pop("user_id")
             principal = PROXY.request_filtered_principals(
-                [user_id], account=None, org_id=None, options={"query_by": "user_id", "return_id": True}
+                [user_id], org_id=None, options={"query_by": "user_id", "return_id": True}
             ).get("data")[0]
 
             # Replace the user_id with user's info
@@ -187,7 +193,7 @@ class CrossAccountRequestViewSet(
         # Get principals through user_ids from BOP
         user_ids = [element["user_id"] for element in result.data["data"]]
         bop_resp = PROXY.request_filtered_principals(
-            user_ids, account=None, org_id=None, options={"query_by": "user_id", "return_id": True}
+            user_ids, org_id=None, options={"query_by": "user_id", "return_id": True}
         )
 
         # Make a mapping: user_id => principal
@@ -318,6 +324,9 @@ class CrossAccountRequestViewSet(
                 "Please use PATCH to update the status of the request.",
             )
 
-        # Do not allow updating the target_org.
+        # Do not allow updating the target_org or target_account.
         if request.data.get("target_org") and str(request.data.get("target_org")) != update_obj.target_org:
             self.throw_validation_error("cross-account-update", "Target org must stay the same.")
+
+        if request.data.get("target_account") and str(request.data.get("target_account")) != update_obj.target_account:
+            self.throw_validation_error("cross-account-update", "Target account must stay the same.")
