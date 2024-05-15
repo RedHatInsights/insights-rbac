@@ -18,7 +18,7 @@
 """View for openapi documentation."""
 import json
 
-from rest_framework import permissions, status
+from rest_framework import permissions
 from rest_framework.decorators import api_view, permission_classes, renderer_classes
 from rest_framework.renderers import JSONRenderer
 from rest_framework.response import Response
@@ -36,4 +36,3 @@ def openapi(request):
     with open(openapidoc) as api_file:
         data = json.load(api_file)
         return Response(data)
-    return Response(status=status.HTTP_404_NOT_FOUND)
