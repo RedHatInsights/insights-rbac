@@ -473,6 +473,14 @@ def ocm_performance(request):
     return HttpResponse('Invalid method, only "POST" is allowed.', status=405)
 
 
+def get_param_list(request, param_name):
+    """Get a list of params from a request."""
+    params = request.GET.get(param_name, [])
+    if params:
+        params = params.split(",")
+    return params
+
+
 def role_migration(request):
     """View method for running role migrations from V1 to V2 spiceDB schema.
 
@@ -481,9 +489,10 @@ def role_migration(request):
     if request.method != "POST":
         return HttpResponse('Invalid method, only "POST" is allowed.', status=405)
     logger.info("Running V1 Role migration.")
+
     args = {
-        "exclude_apps": request.GET.get("exclude_apps", "").split(","),
-        "orgs": request.GET.get("orgs", "").split(","),
+        "exclude_apps": get_param_list(request, "exclude_apps"),
+        "orgs": get_param_list(request, "orgs"),
     }
     migrate_roles_in_worker.delay(args)
     return HttpResponse("Role migration from V1 to V2 are running in a background worker.", status=202)

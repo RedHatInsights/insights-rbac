@@ -479,3 +479,16 @@ class InternalViewsetTests(IdentityRequest):
             response.content.decode(),
             "Role migration from V1 to V2 are running in a background worker.",
         )
+
+        # Without params
+        migration_mock.reset_mock()
+        response = self.client.post(
+            f"/_private/api/utils/role_migration/",
+            **self.request.META,
+        )
+        migration_mock.assert_called_once_with({"exclude_apps": [], "orgs": []})
+        self.assertEqual(response.status_code, status.HTTP_202_ACCEPTED)
+        self.assertEqual(
+            response.content.decode(),
+            "Role migration from V1 to V2 are running in a background worker.",
+        )
