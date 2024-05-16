@@ -1,6 +1,6 @@
 apiVersion: v1
 data:
-  new_rbac_dashboard.json: |-
+  rbac-grafana.json: |-
     {
       "__inputs": [],
       "__elements": {},
@@ -15,13 +15,7 @@ data:
           "type": "grafana",
           "id": "grafana",
           "name": "Grafana",
-          "version": "9.3.8"
-        },
-        {
-          "type": "panel",
-          "id": "graph",
-          "name": "Graph (old)",
-          "version": ""
+          "version": "10.4.1"
         },
         {
           "type": "panel",
@@ -78,7 +72,7 @@ data:
       "liveNow": false,
       "panels": [
         {
-          "collapsed": false,
+          "collapsed": true,
           "gridPos": {
             "h": 1,
             "w": 24,
@@ -86,266 +80,275 @@ data:
             "y": 0
           },
           "id": 45,
-          "panels": [],
-          "title": "RBAC Cache",
-          "type": "row"
-        },
-        {
-          "datasource": {
-            "uid": "$datasource"
-          },
-          "fieldConfig": {
-            "defaults": {
-              "color": {
-                "mode": "palette-classic"
+          "panels": [
+            {
+              "datasource": {
+                "uid": "$datasource"
               },
-              "custom": {
-                "axisCenteredZero": false,
-                "axisColorMode": "text",
-                "axisLabel": "",
-                "axisPlacement": "auto",
-                "barAlignment": 0,
-                "drawStyle": "line",
-                "fillOpacity": 16,
-                "gradientMode": "none",
-                "hideFrom": {
-                  "legend": false,
-                  "tooltip": false,
-                  "viz": false
+              "fieldConfig": {
+                "defaults": {
+                  "color": {
+                    "mode": "palette-classic"
+                  },
+                  "custom": {
+                    "axisBorderShow": false,
+                    "axisCenteredZero": false,
+                    "axisColorMode": "text",
+                    "axisLabel": "",
+                    "axisPlacement": "auto",
+                    "barAlignment": 0,
+                    "drawStyle": "line",
+                    "fillOpacity": 16,
+                    "gradientMode": "none",
+                    "hideFrom": {
+                      "legend": false,
+                      "tooltip": false,
+                      "viz": false
+                    },
+                    "insertNulls": false,
+                    "lineInterpolation": "linear",
+                    "lineStyle": {
+                      "fill": "solid"
+                    },
+                    "lineWidth": 2,
+                    "pointSize": 5,
+                    "scaleDistribution": {
+                      "type": "linear"
+                    },
+                    "showPoints": "auto",
+                    "spanNulls": false,
+                    "stacking": {
+                      "group": "A",
+                      "mode": "none"
+                    },
+                    "thresholdsStyle": {
+                      "mode": "line"
+                    }
+                  },
+                  "mappings": [],
+                  "thresholds": {
+                    "mode": "absolute",
+                    "steps": [
+                      {
+                        "color": "yellow",
+                        "value": null
+                      },
+                      {
+                        "color": "orange",
+                        "value": 50
+                      },
+                      {
+                        "color": "dark-red",
+                        "value": 80
+                      }
+                    ]
+                  }
                 },
-                "lineInterpolation": "linear",
-                "lineStyle": {
-                  "fill": "solid"
+                "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "sum(rate(redis_enable_cache_get_total {job=\"rbac-service\"}[30m]))"
+                    },
+                    "properties": [
+                      {
+                        "id": "displayName",
+                        "value": "cache enable"
+                      }
+                    ]
+                  },
+                  {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "sum(rate(redis_disable_cache_get_total {job=\"rbac-service\"}[30m]))"
+                    },
+                    "properties": [
+                      {
+                        "id": "displayName",
+                        "value": "cache disable"
+                      }
+                    ]
+                  }
+                ]
+              },
+              "gridPos": {
+                "h": 7,
+                "w": 9,
+                "x": 0,
+                "y": 1
+              },
+              "id": 47,
+              "options": {
+                "legend": {
+                  "calcs": [],
+                  "displayMode": "table",
+                  "placement": "bottom",
+                  "showLegend": true
                 },
-                "lineWidth": 2,
-                "pointSize": 5,
-                "scaleDistribution": {
-                  "type": "linear"
-                },
-                "showPoints": "auto",
-                "spanNulls": false,
-                "stacking": {
-                  "group": "A",
-                  "mode": "none"
-                },
-                "thresholdsStyle": {
-                  "mode": "line"
+                "tooltip": {
+                  "mode": "multi",
+                  "sort": "none"
                 }
               },
-              "mappings": [],
-              "thresholds": {
-                "mode": "absolute",
-                "steps": [
-                  {
-                    "color": "yellow",
-                    "value": null
+              "targets": [
+                {
+                  "datasource": {
+                    "uid": "$datasource"
                   },
-                  {
-                    "color": "orange",
-                    "value": 50
-                  },
-                  {
-                    "color": "dark-red",
-                    "value": 80
-                  }
-                ]
-              }
-            },
-            "overrides": [
-              {
-                "matcher": {
-                  "id": "byName",
-                  "options": "sum(rate(redis_enable_cache_get_total {job=\"rbac-service\"}[30m]))"
+                  "editorMode": "code",
+                  "expr": "sum(rate(redis_enable_cache_get_total {job=\"rbac-service\"}[30m]))",
+                  "legendFormat": "__auto",
+                  "range": true,
+                  "refId": "A"
                 },
-                "properties": [
-                  {
-                    "id": "displayName",
-                    "value": "cache enable"
-                  }
-                ]
+                {
+                  "datasource": {
+                    "uid": "$datasource"
+                  },
+                  "editorMode": "code",
+                  "expr": "sum(rate(redis_disable_cache_get_total {job=\"rbac-service\"}[30m]))",
+                  "hide": false,
+                  "legendFormat": "__auto",
+                  "range": true,
+                  "refId": "B"
+                }
+              ],
+              "title": " RBAC Cache Request Status ",
+              "type": "timeseries"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "$datasource"
               },
-              {
-                "matcher": {
-                  "id": "byName",
-                  "options": "sum(rate(redis_disable_cache_get_total {job=\"rbac-service\"}[30m]))"
+              "fieldConfig": {
+                "defaults": {
+                  "color": {
+                    "mode": "thresholds"
+                  },
+                  "mappings": [],
+                  "thresholds": {
+                    "mode": "absolute",
+                    "steps": [
+                      {
+                        "color": "red",
+                        "value": null
+                      },
+                      {
+                        "color": "green",
+                        "value": 80
+                      }
+                    ]
+                  }
                 },
-                "properties": [
-                  {
-                    "id": "displayName",
-                    "value": "cache disable"
-                  }
-                ]
-              }
-            ]
-          },
-          "gridPos": {
-            "h": 7,
-            "w": 9,
-            "x": 0,
-            "y": 1
-          },
-          "id": 47,
-          "options": {
-            "legend": {
-              "calcs": [],
-              "displayMode": "table",
-              "placement": "bottom",
-              "showLegend": true
-            },
-            "tooltip": {
-              "mode": "multi",
-              "sort": "none"
-            }
-          },
-          "targets": [
-            {
-              "datasource": {
-                "uid": "$datasource"
+                "overrides": []
               },
-              "editorMode": "code",
-              "expr": "sum(rate(redis_enable_cache_get_total {job=\"rbac-service\"}[30m]))",
-              "legendFormat": "__auto",
-              "range": true,
-              "refId": "A"
-            },
-            {
-              "datasource": {
-                "uid": "$datasource"
+              "gridPos": {
+                "h": 7,
+                "w": 3,
+                "x": 9,
+                "y": 1
               },
-              "editorMode": "code",
-              "expr": "sum(rate(redis_disable_cache_get_total {job=\"rbac-service\"}[30m]))",
-              "hide": false,
-              "legendFormat": "__auto",
-              "range": true,
-              "refId": "B"
-            }
-          ],
-          "title": " RBAC Cache Request Status ",
-          "type": "timeseries"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "$datasource"
-          },
-          "fieldConfig": {
-            "defaults": {
-              "color": {
-                "mode": "thresholds"
+              "id": 49,
+              "options": {
+                "minVizHeight": 75,
+                "minVizWidth": 75,
+                "orientation": "auto",
+                "reduceOptions": {
+                  "calcs": [
+                    "lastNotNull"
+                  ],
+                  "fields": "",
+                  "values": false
+                },
+                "showThresholdLabels": false,
+                "showThresholdMarkers": true,
+                "sizing": "auto"
               },
-              "mappings": [],
-              "thresholds": {
-                "mode": "absolute",
-                "steps": [
-                  {
-                    "color": "red",
-                    "value": null
+              "pluginVersion": "10.4.1",
+              "targets": [
+                {
+                  "datasource": {
+                    "uid": "$datasource"
                   },
-                  {
-                    "color": "green",
-                    "value": 80
-                  }
-                ]
-              }
-            },
-            "overrides": []
-          },
-          "gridPos": {
-            "h": 7,
-            "w": 3,
-            "x": 9,
-            "y": 1
-          },
-          "id": 49,
-          "options": {
-            "orientation": "auto",
-            "reduceOptions": {
-              "calcs": [
-                "lastNotNull"
+                  "editorMode": "code",
+                  "expr": "sum(increase(redis_enable_cache_get_total{job=\"rbac-service\"}[$__range]))",
+                  "legendFormat": "__auto",
+                  "range": true,
+                  "refId": "A"
+                }
               ],
-              "fields": "",
-              "values": false
+              "title": "Total Cache Enable Requests",
+              "type": "gauge"
             },
-            "showThresholdLabels": false,
-            "showThresholdMarkers": true
-          },
-          "pluginVersion": "9.3.8",
-          "targets": [
             {
               "datasource": {
+                "type": "prometheus",
                 "uid": "$datasource"
               },
-              "editorMode": "code",
-              "expr": "sum(increase(redis_enable_cache_get_total{job=\"rbac-service\"}[$__range]))",
-              "legendFormat": "__auto",
-              "range": true,
-              "refId": "A"
-            }
-          ],
-          "title": "Total Cache Enable Requests",
-          "type": "gauge"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "$datasource"
-          },
-          "fieldConfig": {
-            "defaults": {
-              "color": {
-                "mode": "thresholds"
-              },
-              "mappings": [],
-              "thresholds": {
-                "mode": "absolute",
-                "steps": [
-                  {
-                    "color": "green",
-                    "value": null
+              "fieldConfig": {
+                "defaults": {
+                  "color": {
+                    "mode": "thresholds"
                   },
-                  {
-                    "color": "red",
-                    "value": 1
+                  "mappings": [],
+                  "thresholds": {
+                    "mode": "absolute",
+                    "steps": [
+                      {
+                        "color": "green",
+                        "value": null
+                      },
+                      {
+                        "color": "red",
+                        "value": 1
+                      }
+                    ]
                   }
-                ]
-              }
-            },
-            "overrides": []
-          },
-          "gridPos": {
-            "h": 7,
-            "w": 3,
-            "x": 12,
-            "y": 1
-          },
-          "id": 51,
-          "options": {
-            "orientation": "auto",
-            "reduceOptions": {
-              "calcs": [
-                "lastNotNull"
-              ],
-              "fields": "",
-              "values": false
-            },
-            "showThresholdLabels": false,
-            "showThresholdMarkers": true
-          },
-          "pluginVersion": "9.3.8",
-          "targets": [
-            {
-              "datasource": {
-                "uid": "$datasource"
+                },
+                "overrides": []
               },
-              "editorMode": "code",
-              "expr": "sum(increase(redis_disable_cache_get_total{job=\"rbac-service\"}[$__range]))",
-              "legendFormat": "__auto",
-              "range": true,
-              "refId": "A"
+              "gridPos": {
+                "h": 7,
+                "w": 3,
+                "x": 12,
+                "y": 1
+              },
+              "id": 51,
+              "options": {
+                "minVizHeight": 75,
+                "minVizWidth": 75,
+                "orientation": "auto",
+                "reduceOptions": {
+                  "calcs": [
+                    "lastNotNull"
+                  ],
+                  "fields": "",
+                  "values": false
+                },
+                "showThresholdLabels": false,
+                "showThresholdMarkers": true,
+                "sizing": "auto"
+              },
+              "pluginVersion": "10.4.1",
+              "targets": [
+                {
+                  "datasource": {
+                    "uid": "$datasource"
+                  },
+                  "editorMode": "code",
+                  "expr": "sum(increase(redis_disable_cache_get_total{job=\"rbac-service\"}[$__range]))",
+                  "legendFormat": "__auto",
+                  "range": true,
+                  "refId": "A"
+                }
+              ],
+              "title": "Total Cache Disable Requests",
+              "type": "gauge"
             }
           ],
-          "title": "Total Cache Disable Requests",
-          "type": "gauge"
+          "title": "RBAC Cache",
+          "type": "row"
         },
         {
           "collapsed": true,
@@ -356,61 +359,90 @@ data:
             "h": 1,
             "w": 24,
             "x": 0,
-            "y": 8
+            "y": 1
           },
           "id": 27,
           "panels": [
             {
-              "aliasColors": {},
-              "bars": false,
-              "dashLength": 10,
-              "dashes": false,
               "datasource": {
                 "uid": "$datasource"
               },
               "fieldConfig": {
                 "defaults": {
-                  "links": []
+                  "color": {
+                    "mode": "palette-classic"
+                  },
+                  "custom": {
+                    "axisBorderShow": false,
+                    "axisCenteredZero": false,
+                    "axisColorMode": "text",
+                    "axisLabel": "",
+                    "axisPlacement": "auto",
+                    "barAlignment": 0,
+                    "drawStyle": "line",
+                    "fillOpacity": 10,
+                    "gradientMode": "none",
+                    "hideFrom": {
+                      "legend": false,
+                      "tooltip": false,
+                      "viz": false
+                    },
+                    "insertNulls": false,
+                    "lineInterpolation": "linear",
+                    "lineWidth": 1,
+                    "pointSize": 5,
+                    "scaleDistribution": {
+                      "type": "linear"
+                    },
+                    "showPoints": "never",
+                    "spanNulls": false,
+                    "stacking": {
+                      "group": "A",
+                      "mode": "normal"
+                    },
+                    "thresholdsStyle": {
+                      "mode": "off"
+                    }
+                  },
+                  "links": [],
+                  "mappings": [],
+                  "thresholds": {
+                    "mode": "absolute",
+                    "steps": [
+                      {
+                        "color": "green",
+                        "value": null
+                      },
+                      {
+                        "color": "red",
+                        "value": 80
+                      }
+                    ]
+                  },
+                  "unit": "s"
                 },
                 "overrides": []
               },
-              "fill": 1,
-              "fillGradient": 0,
               "gridPos": {
                 "h": 9,
                 "w": 12,
                 "x": 0,
-                "y": 33
+                "y": 2
               },
-              "hiddenSeries": false,
               "id": 11,
-              "legend": {
-                "alignAsTable": true,
-                "avg": false,
-                "current": false,
-                "max": false,
-                "min": false,
-                "rightSide": true,
-                "show": true,
-                "total": false,
-                "values": false
-              },
-              "lines": true,
-              "linewidth": 1,
-              "links": [],
-              "nullPointMode": "null",
               "options": {
-                "alertThreshold": true
+                "legend": {
+                  "calcs": [],
+                  "displayMode": "table",
+                  "placement": "right",
+                  "showLegend": true
+                },
+                "tooltip": {
+                  "mode": "multi",
+                  "sort": "desc"
+                }
               },
-              "percentage": false,
-              "pluginVersion": "9.3.8",
-              "pointradius": 5,
-              "points": false,
-              "renderer": "flot",
-              "seriesOverrides": [],
-              "spaceLength": 10,
-              "stack": true,
-              "steppedLine": false,
+              "pluginVersion": "10.4.1",
               "targets": [
                 {
                   "datasource": {
@@ -422,179 +454,200 @@ data:
                   "refId": "A"
                 }
               ],
-              "thresholds": [],
-              "timeRegions": [],
               "title": "CPU",
-              "tooltip": {
-                "shared": true,
-                "sort": 2,
-                "value_type": "individual"
-              },
-              "type": "graph",
-              "xaxis": {
-                "mode": "time",
-                "show": true,
-                "values": []
-              },
-              "yaxes": [
-                {
-                  "format": "s",
-                  "logBase": 1,
-                  "show": true
-                },
-                {
-                  "format": "short",
-                  "logBase": 1,
-                  "show": true
-                }
-              ],
-              "yaxis": {
-                "align": false
-              }
+              "type": "timeseries"
             },
             {
-              "aliasColors": {},
-              "bars": false,
-              "dashLength": 10,
-              "dashes": false,
               "datasource": {
+                "type": "prometheus",
                 "uid": "$datasource"
               },
               "description": "CPU consumption plotted against configured CPU limit of service",
               "fieldConfig": {
                 "defaults": {
-                  "links": []
+                  "color": {
+                    "mode": "palette-classic"
+                  },
+                  "custom": {
+                    "axisBorderShow": false,
+                    "axisCenteredZero": false,
+                    "axisColorMode": "text",
+                    "axisLabel": "",
+                    "axisPlacement": "auto",
+                    "barAlignment": 0,
+                    "drawStyle": "line",
+                    "fillOpacity": 10,
+                    "gradientMode": "none",
+                    "hideFrom": {
+                      "legend": false,
+                      "tooltip": false,
+                      "viz": false
+                    },
+                    "insertNulls": false,
+                    "lineInterpolation": "linear",
+                    "lineWidth": 1,
+                    "pointSize": 5,
+                    "scaleDistribution": {
+                      "type": "linear"
+                    },
+                    "showPoints": "never",
+                    "spanNulls": false,
+                    "stacking": {
+                      "group": "A",
+                      "mode": "none"
+                    },
+                    "thresholdsStyle": {
+                      "mode": "off"
+                    }
+                  },
+                  "links": [],
+                  "mappings": [],
+                  "min": 0,
+                  "thresholds": {
+                    "mode": "absolute",
+                    "steps": [
+                      {
+                        "color": "green",
+                        "value": null
+                      },
+                      {
+                        "color": "red",
+                        "value": 80
+                      }
+                    ]
+                  },
+                  "unit": "percentunit"
                 },
                 "overrides": []
               },
-              "fill": 1,
-              "fillGradient": 0,
               "gridPos": {
                 "h": 9,
                 "w": 12,
                 "x": 12,
-                "y": 33
+                "y": 2
               },
-              "hiddenSeries": false,
               "id": 15,
-              "legend": {
-                "avg": false,
-                "current": false,
-                "max": false,
-                "min": false,
-                "show": false,
-                "total": false,
-                "values": false
-              },
-              "lines": true,
-              "linewidth": 1,
-              "links": [],
-              "nullPointMode": "null",
               "options": {
-                "alertThreshold": true
+                "legend": {
+                  "calcs": [],
+                  "displayMode": "list",
+                  "placement": "bottom",
+                  "showLegend": true
+                },
+                "tooltip": {
+                  "mode": "multi",
+                  "sort": "none"
+                }
               },
-              "percentage": false,
-              "pluginVersion": "9.3.8",
-              "pointradius": 5,
-              "points": false,
-              "renderer": "flot",
-              "seriesOverrides": [],
-              "spaceLength": 10,
-              "stack": false,
-              "steppedLine": false,
+              "pluginVersion": "10.4.1",
               "targets": [
                 {
                   "datasource": {
                     "uid": "$datasource"
                   },
+                  "editorMode": "code",
                   "expr": "sum(rate(container_cpu_usage_seconds_total{namespace=\"$Namespace\",pod=~\".*rbac.*\"}[5m])) / sum(kube_pod_container_resource_limits{resource=\"cpu\",namespace=\"$Namespace\",pod=~\".*rbac.*\"})",
                   "interval": "15s",
-                  "legendFormat": "",
+                  "legendFormat": "limits",
+                  "range": true,
                   "refId": "A"
-                }
-              ],
-              "thresholds": [],
-              "timeRegions": [],
-              "title": "Percentage of CPU limit consumed",
-              "tooltip": {
-                "shared": true,
-                "sort": 0,
-                "value_type": "individual"
-              },
-              "type": "graph",
-              "xaxis": {
-                "mode": "time",
-                "show": true,
-                "values": []
-              },
-              "yaxes": [
-                {
-                  "format": "percentunit",
-                  "logBase": 1,
-                  "min": "0",
-                  "show": true
                 },
                 {
-                  "format": "short",
-                  "logBase": 1,
-                  "show": false
+                  "datasource": {
+                    "uid": "$datasource"
+                  },
+                  "editorMode": "code",
+                  "expr": "sum(rate(container_cpu_usage_seconds_total{namespace=\"$Namespace\", pod=~\".*rbac.*\"}[5m])) / sum(kube_pod_container_resource_requests{resource=\"cpu\", namespace=\"$Namespace\", pod=~\".*rbac.*\"})",
+                  "hide": false,
+                  "interval": "15s",
+                  "legendFormat": "requests",
+                  "range": true,
+                  "refId": "B"
                 }
               ],
-              "yaxis": {
-                "align": false
-              }
+              "title": "Percentage of CPU limit and request consumed",
+              "type": "timeseries"
             },
             {
-              "aliasColors": {},
-              "bars": false,
-              "dashLength": 10,
-              "dashes": false,
               "datasource": {
                 "uid": "$datasource"
               },
               "fieldConfig": {
                 "defaults": {
-                  "links": []
+                  "color": {
+                    "mode": "palette-classic"
+                  },
+                  "custom": {
+                    "axisBorderShow": false,
+                    "axisCenteredZero": false,
+                    "axisColorMode": "text",
+                    "axisLabel": "",
+                    "axisPlacement": "auto",
+                    "barAlignment": 0,
+                    "drawStyle": "line",
+                    "fillOpacity": 10,
+                    "gradientMode": "none",
+                    "hideFrom": {
+                      "legend": false,
+                      "tooltip": false,
+                      "viz": false
+                    },
+                    "insertNulls": false,
+                    "lineInterpolation": "linear",
+                    "lineWidth": 1,
+                    "pointSize": 5,
+                    "scaleDistribution": {
+                      "type": "linear"
+                    },
+                    "showPoints": "never",
+                    "spanNulls": false,
+                    "stacking": {
+                      "group": "A",
+                      "mode": "normal"
+                    },
+                    "thresholdsStyle": {
+                      "mode": "off"
+                    }
+                  },
+                  "links": [],
+                  "mappings": [],
+                  "thresholds": {
+                    "mode": "absolute",
+                    "steps": [
+                      {
+                        "color": "green",
+                        "value": null
+                      },
+                      {
+                        "color": "red",
+                        "value": 80
+                      }
+                    ]
+                  },
+                  "unit": "bytes"
                 },
                 "overrides": []
               },
-              "fill": 1,
-              "fillGradient": 0,
               "gridPos": {
                 "h": 9,
                 "w": 12,
                 "x": 0,
-                "y": 42
+                "y": 11
               },
-              "hiddenSeries": false,
               "id": 9,
-              "legend": {
-                "alignAsTable": true,
-                "avg": false,
-                "current": false,
-                "max": false,
-                "min": false,
-                "rightSide": true,
-                "show": true,
-                "total": false,
-                "values": false
-              },
-              "lines": true,
-              "linewidth": 1,
-              "links": [],
-              "nullPointMode": "null",
               "options": {
-                "alertThreshold": true
+                "legend": {
+                  "calcs": [],
+                  "displayMode": "table",
+                  "placement": "right",
+                  "showLegend": true
+                },
+                "tooltip": {
+                  "mode": "multi",
+                  "sort": "desc"
+                }
               },
-              "percentage": false,
-              "pluginVersion": "9.3.8",
-              "pointradius": 5,
-              "points": false,
-              "renderer": "flot",
-              "seriesOverrides": [],
-              "spaceLength": 10,
-              "stack": true,
-              "steppedLine": false,
+              "pluginVersion": "10.4.1",
               "targets": [
                 {
                   "datasource": {
@@ -606,221 +659,220 @@ data:
                   "refId": "A"
                 }
               ],
-              "thresholds": [],
-              "timeRegions": [],
               "title": "Memory",
-              "tooltip": {
-                "shared": true,
-                "sort": 2,
-                "value_type": "individual"
-              },
-              "type": "graph",
-              "xaxis": {
-                "mode": "time",
-                "show": true,
-                "values": []
-              },
-              "yaxes": [
-                {
-                  "format": "bytes",
-                  "logBase": 1,
-                  "show": true
-                },
-                {
-                  "format": "short",
-                  "logBase": 1,
-                  "show": true
-                }
-              ],
-              "yaxis": {
-                "align": false
-              }
+              "type": "timeseries"
             },
             {
-              "aliasColors": {},
-              "bars": false,
-              "dashLength": 10,
-              "dashes": false,
               "datasource": {
+                "type": "prometheus",
                 "uid": "$datasource"
               },
               "description": "",
               "fieldConfig": {
                 "defaults": {
-                  "links": []
+                  "color": {
+                    "mode": "palette-classic"
+                  },
+                  "custom": {
+                    "axisBorderShow": false,
+                    "axisCenteredZero": false,
+                    "axisColorMode": "text",
+                    "axisLabel": "",
+                    "axisPlacement": "auto",
+                    "barAlignment": 0,
+                    "drawStyle": "line",
+                    "fillOpacity": 10,
+                    "gradientMode": "none",
+                    "hideFrom": {
+                      "legend": false,
+                      "tooltip": false,
+                      "viz": false
+                    },
+                    "insertNulls": false,
+                    "lineInterpolation": "linear",
+                    "lineWidth": 1,
+                    "pointSize": 5,
+                    "scaleDistribution": {
+                      "type": "linear"
+                    },
+                    "showPoints": "never",
+                    "spanNulls": false,
+                    "stacking": {
+                      "group": "A",
+                      "mode": "none"
+                    },
+                    "thresholdsStyle": {
+                      "mode": "off"
+                    }
+                  },
+                  "decimals": 1,
+                  "links": [],
+                  "mappings": [],
+                  "max": 1,
+                  "thresholds": {
+                    "mode": "absolute",
+                    "steps": [
+                      {
+                        "color": "green",
+                        "value": null
+                      },
+                      {
+                        "color": "red",
+                        "value": 80
+                      }
+                    ]
+                  },
+                  "unit": "percentunit"
                 },
                 "overrides": []
               },
-              "fill": 1,
-              "fillGradient": 0,
               "gridPos": {
                 "h": 9,
                 "w": 12,
                 "x": 12,
-                "y": 42
+                "y": 11
               },
-              "hiddenSeries": false,
               "id": 19,
-              "legend": {
-                "avg": false,
-                "current": false,
-                "max": false,
-                "min": false,
-                "show": false,
-                "total": false,
-                "values": false
-              },
-              "lines": true,
-              "linewidth": 1,
-              "links": [],
-              "nullPointMode": "null",
               "options": {
-                "alertThreshold": true
+                "legend": {
+                  "calcs": [],
+                  "displayMode": "list",
+                  "placement": "bottom",
+                  "showLegend": true
+                },
+                "tooltip": {
+                  "mode": "multi",
+                  "sort": "none"
+                }
               },
-              "percentage": false,
-              "pluginVersion": "9.3.8",
-              "pointradius": 5,
-              "points": false,
-              "renderer": "flot",
-              "seriesOverrides": [],
-              "spaceLength": 10,
-              "stack": false,
-              "steppedLine": false,
+              "pluginVersion": "10.4.1",
               "targets": [
                 {
                   "datasource": {
                     "uid": "$datasource"
                   },
+                  "editorMode": "code",
                   "expr": "sum(container_memory_usage_bytes{namespace=\"$Namespace\",pod=~\".*rbac.*\",container!~\"sti-build|deployment|lifecycle\",name=\"\"}) / sum(kube_pod_container_resource_limits{resource=\"memory\",namespace=\"$Namespace\",pod=~\".*rbac.*\",container!~\"sti-build|deployment|lifecycle\",name=\"\"})",
                   "interval": "15s",
-                  "legendFormat": "",
+                  "legendFormat": "limits",
+                  "range": true,
                   "refId": "A"
-                }
-              ],
-              "thresholds": [],
-              "timeRegions": [],
-              "title": "Percentage of memory limit consumed",
-              "tooltip": {
-                "shared": true,
-                "sort": 0,
-                "value_type": "individual"
-              },
-              "type": "graph",
-              "xaxis": {
-                "mode": "time",
-                "show": true,
-                "values": []
-              },
-              "yaxes": [
-                {
-                  "decimals": 1,
-                  "format": "percentunit",
-                  "logBase": 1,
-                  "max": "1",
-                  "show": true
                 },
                 {
-                  "format": "short",
-                  "logBase": 1,
-                  "show": false
+                  "datasource": {
+                    "uid": "$datasource"
+                  },
+                  "editorMode": "code",
+                  "expr": "sum(container_memory_usage_bytes{namespace=\"$Namespace\",pod=~\".*rbac.*\",container!~\"sti-build|deployment|lifecycle\",name=\"\"}) / sum(kube_pod_container_resource_requests{resource=\"memory\",namespace=\"$Namespace\",pod=~\".*rbac.*\",container!~\"sti-build|deployment|lifecycle\",name=\"\"})",
+                  "hide": false,
+                  "interval": "15s",
+                  "legendFormat": "requests",
+                  "range": true,
+                  "refId": "B"
                 }
               ],
-              "yaxis": {
-                "align": false
-              }
+              "title": "Percentage of memory limit and request consumed",
+              "type": "timeseries"
             },
             {
-              "aliasColors": {},
-              "bars": false,
-              "dashLength": 10,
-              "dashes": false,
               "datasource": {
+                "type": "prometheus",
                 "uid": "$datasource"
               },
               "description": "Plots the number of container restarts in 5 minute chunks",
               "fieldConfig": {
                 "defaults": {
-                  "links": []
+                  "color": {
+                    "mode": "palette-classic"
+                  },
+                  "custom": {
+                    "axisBorderShow": false,
+                    "axisCenteredZero": false,
+                    "axisColorMode": "text",
+                    "axisLabel": "",
+                    "axisPlacement": "auto",
+                    "barAlignment": 0,
+                    "drawStyle": "line",
+                    "fillOpacity": 10,
+                    "gradientMode": "none",
+                    "hideFrom": {
+                      "legend": false,
+                      "tooltip": false,
+                      "viz": false
+                    },
+                    "insertNulls": false,
+                    "lineInterpolation": "linear",
+                    "lineWidth": 1,
+                    "pointSize": 5,
+                    "scaleDistribution": {
+                      "type": "linear"
+                    },
+                    "showPoints": "never",
+                    "spanNulls": false,
+                    "stacking": {
+                      "group": "A",
+                      "mode": "none"
+                    },
+                    "thresholdsStyle": {
+                      "mode": "off"
+                    }
+                  },
+                  "decimals": 0,
+                  "links": [],
+                  "mappings": [],
+                  "min": 0,
+                  "thresholds": {
+                    "mode": "absolute",
+                    "steps": [
+                      {
+                        "color": "green",
+                        "value": null
+                      },
+                      {
+                        "color": "red",
+                        "value": 80
+                      }
+                    ]
+                  },
+                  "unit": "short"
                 },
                 "overrides": []
               },
-              "fill": 1,
-              "fillGradient": 0,
               "gridPos": {
                 "h": 9,
                 "w": 12,
                 "x": 0,
-                "y": 51
+                "y": 20
               },
-              "hiddenSeries": false,
               "id": 17,
-              "legend": {
-                "avg": false,
-                "current": false,
-                "max": false,
-                "min": false,
-                "show": true,
-                "total": false,
-                "values": false
-              },
-              "lines": true,
-              "linewidth": 1,
-              "links": [],
-              "nullPointMode": "null",
               "options": {
-                "alertThreshold": true
+                "legend": {
+                  "calcs": [],
+                  "displayMode": "list",
+                  "placement": "bottom",
+                  "showLegend": true
+                },
+                "tooltip": {
+                  "mode": "multi",
+                  "sort": "none"
+                }
               },
-              "percentage": false,
-              "pluginVersion": "9.3.8",
-              "pointradius": 5,
-              "points": false,
-              "renderer": "flot",
-              "seriesOverrides": [],
-              "spaceLength": 10,
-              "stack": false,
-              "steppedLine": false,
+              "pluginVersion": "10.4.1",
               "targets": [
                 {
                   "datasource": {
                     "uid": "$datasource"
                   },
+                  "editorMode": "code",
                   "expr": "sum(increase(kube_pod_container_status_restarts_total{namespace=\"$Namespace\",pod=~\".*rbac.*\"}[5m]))",
                   "interval": "15s",
-                  "legendFormat": "",
+                  "legendFormat": "restarts total",
+                  "range": true,
                   "refId": "A"
                 }
               ],
-              "thresholds": [],
-              "timeRegions": [],
               "title": "Container Restarts",
-              "tooltip": {
-                "shared": true,
-                "sort": 0,
-                "value_type": "individual"
-              },
-              "type": "graph",
-              "xaxis": {
-                "mode": "time",
-                "show": true,
-                "values": []
-              },
-              "yaxes": [
-                {
-                  "decimals": 0,
-                  "format": "short",
-                  "logBase": 1,
-                  "min": "0",
-                  "show": true
-                },
-                {
-                  "format": "short",
-                  "logBase": 1,
-                  "show": true
-                }
-              ],
-              "yaxis": {
-                "align": false
-              }
+              "type": "timeseries"
             }
           ],
           "targets": [
@@ -845,7 +897,7 @@ data:
             "h": 1,
             "w": 24,
             "x": 0,
-            "y": 9
+            "y": 2
           },
           "id": 23,
           "panels": [
@@ -863,7 +915,8 @@ data:
                     "mode": "percentage",
                     "steps": [
                       {
-                        "color": "green"
+                        "color": "green",
+                        "value": null
                       }
                     ]
                   },
@@ -875,11 +928,13 @@ data:
                 "h": 5,
                 "w": 4,
                 "x": 0,
-                "y": 34
+                "y": 3
               },
               "id": 4,
               "interval": "",
               "options": {
+                "minVizHeight": 75,
+                "minVizWidth": 75,
                 "orientation": "auto",
                 "reduceOptions": {
                   "calcs": [
@@ -889,9 +944,10 @@ data:
                   "values": false
                 },
                 "showThresholdLabels": false,
-                "showThresholdMarkers": true
+                "showThresholdMarkers": true,
+                "sizing": "auto"
               },
-              "pluginVersion": "9.3.8",
+              "pluginVersion": "10.4.1",
               "targets": [
                 {
                   "datasource": {
@@ -921,7 +977,8 @@ data:
                     "mode": "absolute",
                     "steps": [
                       {
-                        "color": "green"
+                        "color": "green",
+                        "value": null
                       },
                       {
                         "color": "red",
@@ -937,10 +994,12 @@ data:
                 "h": 5,
                 "w": 4,
                 "x": 4,
-                "y": 34
+                "y": 3
               },
               "id": 6,
               "options": {
+                "minVizHeight": 75,
+                "minVizWidth": 75,
                 "orientation": "auto",
                 "reduceOptions": {
                   "calcs": [
@@ -950,9 +1009,10 @@ data:
                   "values": false
                 },
                 "showThresholdLabels": false,
-                "showThresholdMarkers": true
+                "showThresholdMarkers": true,
+                "sizing": "auto"
               },
-              "pluginVersion": "9.3.8",
+              "pluginVersion": "10.4.1",
               "targets": [
                 {
                   "datasource": {
@@ -980,7 +1040,8 @@ data:
                     "mode": "percentage",
                     "steps": [
                       {
-                        "color": "green"
+                        "color": "green",
+                        "value": null
                       },
                       {
                         "color": "red",
@@ -996,10 +1057,12 @@ data:
                 "h": 5,
                 "w": 4,
                 "x": 8,
-                "y": 34
+                "y": 3
               },
               "id": 5,
               "options": {
+                "minVizHeight": 75,
+                "minVizWidth": 75,
                 "orientation": "auto",
                 "reduceOptions": {
                   "calcs": [
@@ -1009,9 +1072,10 @@ data:
                   "values": false
                 },
                 "showThresholdLabels": false,
-                "showThresholdMarkers": true
+                "showThresholdMarkers": true,
+                "sizing": "auto"
               },
-              "pluginVersion": "9.3.8",
+              "pluginVersion": "10.4.1",
               "targets": [
                 {
                   "datasource": {
@@ -1038,7 +1102,8 @@ data:
                     "mode": "percentage",
                     "steps": [
                       {
-                        "color": "green"
+                        "color": "green",
+                        "value": null
                       }
                     ]
                   },
@@ -1050,11 +1115,13 @@ data:
                 "h": 5,
                 "w": 4,
                 "x": 12,
-                "y": 34
+                "y": 3
               },
               "id": 14,
               "interval": "",
               "options": {
+                "minVizHeight": 75,
+                "minVizWidth": 75,
                 "orientation": "auto",
                 "reduceOptions": {
                   "calcs": [
@@ -1064,9 +1131,10 @@ data:
                   "values": false
                 },
                 "showThresholdLabels": false,
-                "showThresholdMarkers": true
+                "showThresholdMarkers": true,
+                "sizing": "auto"
               },
-              "pluginVersion": "9.3.8",
+              "pluginVersion": "10.4.1",
               "targets": [
                 {
                   "datasource": {
@@ -1092,7 +1160,8 @@ data:
                     "mode": "percentage",
                     "steps": [
                       {
-                        "color": "green"
+                        "color": "green",
+                        "value": null
                       }
                     ]
                   },
@@ -1104,10 +1173,12 @@ data:
                 "h": 5,
                 "w": 4,
                 "x": 16,
-                "y": 34
+                "y": 3
               },
               "id": 25,
               "options": {
+                "minVizHeight": 75,
+                "minVizWidth": 75,
                 "orientation": "auto",
                 "reduceOptions": {
                   "calcs": [
@@ -1117,9 +1188,10 @@ data:
                   "values": false
                 },
                 "showThresholdLabels": false,
-                "showThresholdMarkers": true
+                "showThresholdMarkers": true,
+                "sizing": "auto"
               },
-              "pluginVersion": "9.3.8",
+              "pluginVersion": "10.4.1",
               "targets": [
                 {
                   "datasource": {
@@ -1136,52 +1208,87 @@ data:
               "type": "gauge"
             },
             {
-              "aliasColors": {},
-              "bars": true,
-              "dashLength": 10,
-              "dashes": false,
               "datasource": {
                 "uid": "$datasource"
               },
-              "fill": 1,
-              "fillGradient": 0,
+              "fieldConfig": {
+                "defaults": {
+                  "color": {
+                    "mode": "palette-classic"
+                  },
+                  "custom": {
+                    "axisBorderShow": false,
+                    "axisCenteredZero": false,
+                    "axisColorMode": "text",
+                    "axisLabel": "",
+                    "axisPlacement": "auto",
+                    "barAlignment": 0,
+                    "drawStyle": "bars",
+                    "fillOpacity": 100,
+                    "gradientMode": "none",
+                    "hideFrom": {
+                      "legend": false,
+                      "tooltip": false,
+                      "viz": false
+                    },
+                    "insertNulls": false,
+                    "lineInterpolation": "linear",
+                    "lineWidth": 1,
+                    "pointSize": 5,
+                    "scaleDistribution": {
+                      "type": "linear"
+                    },
+                    "showPoints": "never",
+                    "spanNulls": false,
+                    "stacking": {
+                      "group": "A",
+                      "mode": "none"
+                    },
+                    "thresholdsStyle": {
+                      "mode": "off"
+                    }
+                  },
+                  "mappings": [],
+                  "thresholds": {
+                    "mode": "absolute",
+                    "steps": [
+                      {
+                        "color": "green",
+                        "value": null
+                      },
+                      {
+                        "color": "red",
+                        "value": 80
+                      }
+                    ]
+                  },
+                  "unit": "short"
+                },
+                "overrides": []
+              },
               "gridPos": {
                 "h": 9,
                 "w": 12,
                 "x": 0,
-                "y": 39
+                "y": 8
               },
-              "hiddenSeries": false,
               "id": 8,
-              "legend": {
-                "alignAsTable": true,
-                "avg": false,
-                "current": true,
-                "max": false,
-                "min": false,
-                "rightSide": true,
-                "show": true,
-                "sort": "current",
-                "sortDesc": true,
-                "total": false,
-                "values": true
-              },
-              "lines": false,
-              "linewidth": 1,
               "maxDataPoints": 25,
-              "nullPointMode": "null",
               "options": {
-                "alertThreshold": true
+                "legend": {
+                  "calcs": [
+                    "lastNotNull"
+                  ],
+                  "displayMode": "table",
+                  "placement": "right",
+                  "showLegend": true
+                },
+                "tooltip": {
+                  "mode": "multi",
+                  "sort": "none"
+                }
               },
-              "percentage": false,
-              "pluginVersion": "9.3.8",
-              "pointradius": 2,
-              "points": false,
-              "renderer": "flot",
-              "seriesOverrides": [],
-              "spaceLength": 10,
-              "stack": false,
-              "steppedLine": false,
+              "pluginVersion": "10.4.1",
               "targets": [
                 {
                   "datasource": {
@@ -1193,36 +1300,8 @@ data:
                   "refId": "A"
                 }
               ],
-              "thresholds": [],
-              "timeRegions": [],
               "title": "Request Status/method/view",
-              "tooltip": {
-                "shared": true,
-                "sort": 0,
-                "value_type": "individual"
-              },
-              "type": "graph",
-              "xaxis": {
-                "mode": "time",
-                "show": true,
-                "values": []
-              },
-              "yaxes": [
-                {
-                  "format": "short",
-                  "label": "",
-                  "logBase": 1,
-                  "show": true
-                },
-                {
-                  "format": "short",
-                  "logBase": 1,
-                  "show": true
-                }
-              ],
-              "yaxis": {
-                "align": false
-              }
+              "type": "timeseries"
             },
             {
               "cards": {},
@@ -1256,7 +1335,7 @@ data:
                 "h": 9,
                 "w": 12,
                 "x": 12,
-                "y": 39
+                "y": 8
               },
               "heatmap": {},
               "hideZeroBuckets": false,
@@ -1295,7 +1374,8 @@ data:
                 },
                 "showValue": "never",
                 "tooltip": {
-                  "show": true,
+                  "mode": "single",
+                  "showColorScale": false,
                   "yHistogram": false
                 },
                 "yAxis": {
@@ -1304,7 +1384,7 @@ data:
                   "unit": "s"
                 }
               },
-              "pluginVersion": "9.3.8",
+              "pluginVersion": "10.4.1",
               "reverseYBuckets": false,
               "targets": [
                 {
@@ -1335,49 +1415,84 @@ data:
               "yBucketBound": "auto"
             },
             {
-              "aliasColors": {},
-              "bars": true,
-              "dashLength": 10,
-              "dashes": false,
               "datasource": {
                 "uid": "$datasource"
               },
-              "fill": 1,
-              "fillGradient": 0,
+              "fieldConfig": {
+                "defaults": {
+                  "color": {
+                    "mode": "palette-classic"
+                  },
+                  "custom": {
+                    "axisBorderShow": false,
+                    "axisCenteredZero": false,
+                    "axisColorMode": "text",
+                    "axisLabel": "",
+                    "axisPlacement": "auto",
+                    "barAlignment": 0,
+                    "drawStyle": "bars",
+                    "fillOpacity": 100,
+                    "gradientMode": "none",
+                    "hideFrom": {
+                      "legend": false,
+                      "tooltip": false,
+                      "viz": false
+                    },
+                    "insertNulls": false,
+                    "lineInterpolation": "linear",
+                    "lineWidth": 1,
+                    "pointSize": 5,
+                    "scaleDistribution": {
+                      "type": "linear"
+                    },
+                    "showPoints": "never",
+                    "spanNulls": false,
+                    "stacking": {
+                      "group": "A",
+                      "mode": "none"
+                    },
+                    "thresholdsStyle": {
+                      "mode": "off"
+                    }
+                  },
+                  "mappings": [],
+                  "thresholds": {
+                    "mode": "absolute",
+                    "steps": [
+                      {
+                        "color": "green",
+                        "value": null
+                      },
+                      {
+                        "color": "red",
+                        "value": 80
+                      }
+                    ]
+                  },
+                  "unit": "short"
+                },
+                "overrides": []
+              },
               "gridPos": {
                 "h": 8,
                 "w": 12,
                 "x": 0,
-                "y": 48
+                "y": 17
               },
-              "hiddenSeries": false,
               "id": 16,
-              "legend": {
-                "alignAsTable": true,
-                "avg": false,
-                "current": false,
-                "max": false,
-                "min": false,
-                "rightSide": true,
-                "show": true,
-                "total": false,
-                "values": false
-              },
-              "lines": false,
-              "linewidth": 1,
-              "nullPointMode": "null",
               "options": {
-                "alertThreshold": true
+                "legend": {
+                  "calcs": [],
+                  "displayMode": "table",
+                  "placement": "right",
+                  "showLegend": true
+                },
+                "tooltip": {
+                  "mode": "multi",
+                  "sort": "none"
+                }
               },
-              "percentage": false,
-              "pluginVersion": "9.3.8",
-              "pointradius": 2,
-              "points": false,
-              "renderer": "flot",
-              "seriesOverrides": [],
-              "spaceLength": 10,
-              "stack": false,
-              "steppedLine": false,
+              "pluginVersion": "10.4.1",
               "targets": [
                 {
                   "datasource": {
@@ -1389,35 +1504,8 @@ data:
                   "refId": "A"
                 }
               ],
-              "thresholds": [],
-              "timeRegions": [],
               "title": "BOP Request/Status",
-              "tooltip": {
-                "shared": true,
-                "sort": 0,
-                "value_type": "individual"
-              },
-              "type": "graph",
-              "xaxis": {
-                "mode": "time",
-                "show": true,
-                "values": []
-              },
-              "yaxes": [
-                {
-                  "format": "short",
-                  "logBase": 1,
-                  "show": true
-                },
-                {
-                  "format": "short",
-                  "logBase": 1,
-                  "show": false
-                }
-              ],
-              "yaxis": {
-                "align": false
-              }
+              "type": "timeseries"
             },
             {
               "cards": {},
@@ -1451,7 +1539,7 @@ data:
                 "h": 8,
                 "w": 12,
                 "x": 12,
-                "y": 48
+                "y": 17
               },
               "heatmap": {},
               "hideZeroBuckets": false,
@@ -1489,7 +1577,8 @@ data:
                 },
                 "showValue": "never",
                 "tooltip": {
-                  "show": true,
+                  "mode": "single",
+                  "showColorScale": false,
                   "yHistogram": false
                 },
                 "yAxis": {
@@ -1498,7 +1587,7 @@ data:
                   "unit": "s"
                 }
               },
-              "pluginVersion": "9.3.8",
+              "pluginVersion": "10.4.1",
               "reverseYBuckets": false,
               "targets": [
                 {
@@ -1551,152 +1640,189 @@ data:
             "h": 1,
             "w": 24,
             "x": 0,
-            "y": 10
+            "y": 3
           },
           "id": 21,
           "panels": [
             {
-              "aliasColors": {},
-              "bars": false,
-              "dashLength": 10,
-              "dashes": false,
               "datasource": {
+                "type": "prometheus",
                 "uid": "$datasource"
               },
               "fieldConfig": {
                 "defaults": {
-                  "links": []
+                  "color": {
+                    "mode": "palette-classic"
+                  },
+                  "custom": {
+                    "axisBorderShow": false,
+                    "axisCenteredZero": false,
+                    "axisColorMode": "text",
+                    "axisLabel": "",
+                    "axisPlacement": "auto",
+                    "barAlignment": 0,
+                    "drawStyle": "line",
+                    "fillOpacity": 10,
+                    "gradientMode": "none",
+                    "hideFrom": {
+                      "legend": false,
+                      "tooltip": false,
+                      "viz": false
+                    },
+                    "insertNulls": false,
+                    "lineInterpolation": "linear",
+                    "lineWidth": 1,
+                    "pointSize": 5,
+                    "scaleDistribution": {
+                      "type": "linear"
+                    },
+                    "showPoints": "never",
+                    "spanNulls": false,
+                    "stacking": {
+                      "group": "A",
+                      "mode": "none"
+                    },
+                    "thresholdsStyle": {
+                      "mode": "off"
+                    }
+                  },
+                  "links": [],
+                  "mappings": [],
+                  "thresholds": {
+                    "mode": "absolute",
+                    "steps": [
+                      {
+                        "color": "green",
+                        "value": null
+                      },
+                      {
+                        "color": "red",
+                        "value": 80
+                      }
+                    ]
+                  },
+                  "unit": "short"
                 },
                 "overrides": []
               },
-              "fill": 1,
-              "fillGradient": 0,
               "gridPos": {
                 "h": 9,
                 "w": 12,
                 "x": 0,
-                "y": 35
+                "y": 4
               },
-              "hiddenSeries": false,
               "id": 3,
-              "legend": {
-                "avg": false,
-                "current": false,
-                "max": false,
-                "min": false,
-                "show": false,
-                "total": false,
-                "values": false
-              },
-              "lines": true,
-              "linewidth": 1,
-              "links": [],
-              "nullPointMode": "null",
               "options": {
-                "alertThreshold": true
+                "legend": {
+                  "calcs": [],
+                  "displayMode": "list",
+                  "placement": "bottom",
+                  "showLegend": false
+                },
+                "tooltip": {
+                  "mode": "multi",
+                  "sort": "none"
+                }
               },
-              "percentage": false,
-              "pluginVersion": "9.3.8",
-              "pointradius": 5,
-              "points": false,
-              "renderer": "flot",
-              "seriesOverrides": [],
-              "spaceLength": 10,
-              "stack": false,
-              "steppedLine": false,
+              "pluginVersion": "10.4.1",
               "targets": [
                 {
                   "datasource": {
                     "uid": "$datasource"
                   },
+                  "editorMode": "code",
                   "expr": "sum(rate(api_3scale_gateway_api_time_count{exported_service=\"rbac\"}[5m]))",
                   "interval": "15s",
                   "legendFormat": "",
+                  "range": true,
                   "refId": "A"
                 }
               ],
-              "thresholds": [],
-              "timeRegions": [],
               "title": "Request Rate",
-              "tooltip": {
-                "shared": true,
-                "sort": 0,
-                "value_type": "individual"
-              },
-              "type": "graph",
-              "xaxis": {
-                "mode": "time",
-                "show": true,
-                "values": []
-              },
-              "yaxes": [
-                {
-                  "format": "short",
-                  "logBase": 1,
-                  "show": true
-                },
-                {
-                  "format": "short",
-                  "logBase": 1,
-                  "show": true
-                }
-              ],
-              "yaxis": {
-                "align": false
-              }
+              "type": "timeseries"
             },
             {
-              "aliasColors": {},
-              "bars": false,
-              "dashLength": 10,
-              "dashes": false,
               "datasource": {
                 "uid": "$datasource"
               },
               "description": "Proportion of 5xx status codes returned from this service.",
               "fieldConfig": {
                 "defaults": {
-                  "links": []
+                  "color": {
+                    "mode": "palette-classic"
+                  },
+                  "custom": {
+                    "axisBorderShow": false,
+                    "axisCenteredZero": false,
+                    "axisColorMode": "text",
+                    "axisLabel": "",
+                    "axisPlacement": "auto",
+                    "barAlignment": 0,
+                    "drawStyle": "line",
+                    "fillOpacity": 10,
+                    "gradientMode": "none",
+                    "hideFrom": {
+                      "legend": false,
+                      "tooltip": false,
+                      "viz": false
+                    },
+                    "insertNulls": false,
+                    "lineInterpolation": "linear",
+                    "lineWidth": 1,
+                    "pointSize": 5,
+                    "scaleDistribution": {
+                      "type": "linear"
+                    },
+                    "showPoints": "never",
+                    "spanNulls": false,
+                    "stacking": {
+                      "group": "A",
+                      "mode": "none"
+                    },
+                    "thresholdsStyle": {
+                      "mode": "line"
+                    }
+                  },
+                  "links": [],
+                  "mappings": [],
+                  "max": 10,
+                  "thresholds": {
+                    "mode": "absolute",
+                    "steps": [
+                      {
+                        "color": "green",
+                        "value": null
+                      },
+                      {
+                        "color": "red",
+                        "value": 1
+                      }
+                    ]
+                  },
+                  "unit": "percent"
                 },
                 "overrides": []
               },
-              "fill": 1,
-              "fillGradient": 0,
               "gridPos": {
                 "h": 9,
                 "w": 12,
                 "x": 12,
-                "y": 35
+                "y": 4
               },
-              "hiddenSeries": false,
               "id": 13,
-              "legend": {
-                "avg": false,
-                "current": false,
-                "hideEmpty": false,
-                "hideZero": false,
-                "max": false,
-                "min": false,
-                "show": false,
-                "total": false,
-                "values": false
-              },
-              "lines": true,
-              "linewidth": 1,
-              "links": [],
-              "nullPointMode": "null as zero",
               "options": {
-                "alertThreshold": true
+                "legend": {
+                  "calcs": [],
+                  "displayMode": "list",
+                  "placement": "bottom",
+                  "showLegend": false
+                },
+                "tooltip": {
+                  "mode": "multi",
+                  "sort": "none"
+                }
               },
-              "percentage": false,
               "pluginVersion": "9.3.8",
-              "pointradius": 5,
-              "points": false,
-              "renderer": "flot",
-              "seriesOverrides": [],
-              "spaceLength": 10,
-              "stack": false,
-              "steppedLine": false,
               "targets": [
                 {
                   "datasource": {
@@ -1708,36 +1834,8 @@ data:
                   "refId": "A"
                 }
               ],
-              "thresholds": [],
-              "timeRegions": [],
               "title": "Error Rate",
-              "tooltip": {
-                "shared": true,
-                "sort": 0,
-                "value_type": "individual"
-              },
-              "type": "graph",
-              "xaxis": {
-                "mode": "time",
-                "show": true,
-                "values": []
-              },
-              "yaxes": [
-                {
-                  "format": "percent",
-                  "logBase": 1,
-                  "min": "0",
-                  "show": true
-                },
-                {
-                  "format": "short",
-                  "logBase": 1,
-                  "show": true
-                }
-              ],
-              "yaxis": {
-                "align": false
-              }
+              "type": "timeseries"
             },
             {
               "cards": {},
@@ -1771,7 +1869,7 @@ data:
                 "h": 9,
                 "w": 12,
                 "x": 0,
-                "y": 44
+                "y": 13
               },
               "heatmap": {},
               "hideZeroBuckets": false,
@@ -1780,7 +1878,6 @@ data:
               "legend": {
                 "show": true
               },
-              "links": [],
               "maxDataPoints": 25,
               "options": {
                 "calculate": false,
@@ -1810,7 +1907,8 @@ data:
                 },
                 "showValue": "never",
                 "tooltip": {
-                  "show": true,
+                  "mode": "single",
+                  "showColorScale": false,
                   "yHistogram": false
                 },
                 "yAxis": {
@@ -1819,7 +1917,7 @@ data:
                   "unit": "dtdurations"
                 }
               },
-              "pluginVersion": "9.3.8",
+              "pluginVersion": "10.4.1",
               "reverseYBuckets": false,
               "targets": [
                 {
@@ -1868,7 +1966,7 @@ data:
             "h": 1,
             "w": 24,
             "x": 0,
-            "y": 11
+            "y": 4
           },
           "id": 29,
           "panels": [
@@ -1881,7 +1979,7 @@ data:
                 "h": 7,
                 "w": 3,
                 "x": 0,
-                "y": 36
+                "y": 5
               },
               "id": 39,
               "options": {
@@ -1893,7 +1991,7 @@ data:
                 "content": "\n\nThe percentage of time the RBAC has been up (as proportion of the 5xx requests out of the total number of requests) during last 28 days > 99 %",
                 "mode": "markdown"
               },
-              "pluginVersion": "9.3.8",
+              "pluginVersion": "10.4.1",
               "title": "RBAC Availability SLO",
               "type": "text"
             },
@@ -1914,7 +2012,8 @@ data:
                     "mode": "absolute",
                     "steps": [
                       {
-                        "color": "red"
+                        "color": "red",
+                        "value": null
                       },
                       {
                         "color": "green",
@@ -1930,10 +2029,12 @@ data:
                 "h": 7,
                 "w": 4,
                 "x": 3,
-                "y": 36
+                "y": 5
               },
               "id": 31,
               "options": {
+                "minVizHeight": 75,
+                "minVizWidth": 75,
                 "orientation": "auto",
                 "reduceOptions": {
                   "calcs": [
@@ -1943,9 +2044,10 @@ data:
                   "values": false
                 },
                 "showThresholdLabels": false,
-                "showThresholdMarkers": true
+                "showThresholdMarkers": true,
+                "sizing": "auto"
               },
-              "pluginVersion": "9.3.8",
+              "pluginVersion": "10.4.1",
               "targets": [
                 {
                   "datasource": {
@@ -1953,7 +2055,7 @@ data:
                     "uid": "$datasource"
                   },
                   "editorMode": "code",
-                  "expr": "avg_over_time(service:sli:status_5xx:pctl5rate5m{environment=\"prod\", exported_service=\"rbac\"}[28d])",
+                  "expr": "avg_over_time(service:sli:status_5xx:pctl5rate5m{exported_service=\"rbac\"}[28d])",
                   "hide": false,
                   "legendFormat": "__auto",
                   "range": true,
@@ -1975,6 +2077,7 @@ data:
                     "mode": "palette-classic"
                   },
                   "custom": {
+                    "axisBorderShow": false,
                     "axisCenteredZero": false,
                     "axisColorMode": "text",
                     "axisLabel": "",
@@ -1988,6 +2091,7 @@ data:
                       "tooltip": false,
                       "viz": false
                     },
+                    "insertNulls": false,
                     "lineInterpolation": "linear",
                     "lineWidth": 1,
                     "pointSize": 5,
@@ -2011,7 +2115,8 @@ data:
                     "mode": "absolute",
                     "steps": [
                       {
-                        "color": "transparent"
+                        "color": "transparent",
+                        "value": null
                       },
                       {
                         "color": "red",
@@ -2027,7 +2132,7 @@ data:
                 "h": 7,
                 "w": 13,
                 "x": 7,
-                "y": 36
+                "y": 5
               },
               "id": 33,
               "options": {
@@ -2051,7 +2156,7 @@ data:
                   },
                   "editorMode": "code",
                   "exemplar": false,
-                  "expr": "avg_over_time(service:sli:status_5xx:pctl5rate5m{environment=\"prod\", exported_service=\"rbac\"}[5m])",
+                  "expr": "avg_over_time(service:sli:status_5xx:pctl5rate5m{exported_service=\"rbac\"}[5m])",
                   "format": "heatmap",
                   "hide": false,
                   "instant": false,
@@ -2065,70 +2170,216 @@ data:
               "type": "timeseries"
             },
             {
-              "aliasColors": {
-                "1000 - 1500ms": "dark-yellow",
-                "1500 - 2000ms": "light-yellow",
-                "2000 - 2500ms": "light-orange",
-                "2500 - 3000ms": "dark-orange",
-                "3000 - 3500ms": "light-red",
-                "3500 - 4000ms": "semi-dark-red",
-                "500 - 1000ms": "light-green",
-                "> 4000ms": "dark-red"
-              },
-              "bars": false,
-              "dashLength": 10,
-              "dashes": false,
               "datasource": {
                 "type": "prometheus",
                 "uid": "$datasource"
               },
               "fieldConfig": {
                 "defaults": {
-                  "links": []
+                  "color": {
+                    "mode": "palette-classic"
+                  },
+                  "custom": {
+                    "axisBorderShow": false,
+                    "axisCenteredZero": false,
+                    "axisColorMode": "text",
+                    "axisLabel": "",
+                    "axisPlacement": "auto",
+                    "barAlignment": 0,
+                    "drawStyle": "line",
+                    "fillOpacity": 60,
+                    "gradientMode": "opacity",
+                    "hideFrom": {
+                      "legend": false,
+                      "tooltip": false,
+                      "viz": false
+                    },
+                    "insertNulls": false,
+                    "lineInterpolation": "linear",
+                    "lineWidth": 1,
+                    "pointSize": 5,
+                    "scaleDistribution": {
+                      "type": "linear"
+                    },
+                    "showPoints": "never",
+                    "spanNulls": false,
+                    "stacking": {
+                      "group": "A",
+                      "mode": "normal"
+                    },
+                    "thresholdsStyle": {
+                      "mode": "off"
+                    }
+                  },
+                  "links": [],
+                  "mappings": [],
+                  "max": 100,
+                  "min": 98,
+                  "thresholds": {
+                    "mode": "absolute",
+                    "steps": [
+                      {
+                        "color": "green",
+                        "value": null
+                      },
+                      {
+                        "color": "red",
+                        "value": 80
+                      }
+                    ]
+                  },
+                  "unit": "short"
                 },
-                "overrides": []
+                "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "1000 - 1500ms"
+                    },
+                    "properties": [
+                      {
+                        "id": "color",
+                        "value": {
+                          "fixedColor": "dark-yellow",
+                          "mode": "fixed"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "1500 - 2000ms"
+                    },
+                    "properties": [
+                      {
+                        "id": "color",
+                        "value": {
+                          "fixedColor": "light-yellow",
+                          "mode": "fixed"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "2000 - 2500ms"
+                    },
+                    "properties": [
+                      {
+                        "id": "color",
+                        "value": {
+                          "fixedColor": "light-orange",
+                          "mode": "fixed"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "2500 - 3000ms"
+                    },
+                    "properties": [
+                      {
+                        "id": "color",
+                        "value": {
+                          "fixedColor": "dark-orange",
+                          "mode": "fixed"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "3000 - 3500ms"
+                    },
+                    "properties": [
+                      {
+                        "id": "color",
+                        "value": {
+                          "fixedColor": "light-red",
+                          "mode": "fixed"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "3500 - 4000ms"
+                    },
+                    "properties": [
+                      {
+                        "id": "color",
+                        "value": {
+                          "fixedColor": "semi-dark-red",
+                          "mode": "fixed"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "500 - 1000ms"
+                    },
+                    "properties": [
+                      {
+                        "id": "color",
+                        "value": {
+                          "fixedColor": "light-green",
+                          "mode": "fixed"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "> 4000ms"
+                    },
+                    "properties": [
+                      {
+                        "id": "color",
+                        "value": {
+                          "fixedColor": "dark-red",
+                          "mode": "fixed"
+                        }
+                      }
+                    ]
+                  }
+                ]
               },
-              "fill": 1,
-              "fillGradient": 6,
               "gridPos": {
                 "h": 10,
                 "w": 20,
                 "x": 0,
-                "y": 43
+                "y": 12
               },
-              "hiddenSeries": false,
               "id": 42,
-              "legend": {
-                "avg": false,
-                "current": false,
-                "max": false,
-                "min": false,
-                "show": true,
-                "total": false,
-                "values": false
-              },
-              "lines": true,
-              "linewidth": 1,
-              "nullPointMode": "null",
               "options": {
-                "alertThreshold": true
+                "legend": {
+                  "calcs": [],
+                  "displayMode": "list",
+                  "placement": "bottom",
+                  "showLegend": true
+                },
+                "tooltip": {
+                  "mode": "multi",
+                  "sort": "none"
+                }
               },
-              "percentage": true,
-              "pluginVersion": "9.3.8",
-              "pointradius": 2,
-              "points": false,
-              "renderer": "flot",
-              "seriesOverrides": [],
-              "spaceLength": 10,
-              "stack": true,
-              "steppedLine": false,
+              "pluginVersion": "10.4.1",
               "targets": [
                 {
                   "datasource": {
                     "uid": "$datasource"
                   },
                   "editorMode": "code",
-                  "expr": "sum(rate(django_http_responses_total_by_status_total{job=\"rbac-service\", status=~\"2..\"}[5m])) > 0",
+                  "expr": "(sum(rate(django_http_responses_total_by_status_total{job=\"rbac-service\", status=~\"2..\"}[5m])) > 0) / (sum(rate(django_http_responses_total_by_status_total{job=\"rbac-service\"}[5m])) > 0) * 100",
                   "legendFormat": "2xx",
                   "range": true,
                   "refId": "A"
@@ -2138,7 +2389,7 @@ data:
                     "uid": "$datasource"
                   },
                   "editorMode": "code",
-                  "expr": "sum(rate(django_http_responses_total_by_status_total{job=\"rbac-service\", status=~\"3..\"}[5m])) > 0",
+                  "expr": "(sum(rate(django_http_responses_total_by_status_total{job=\"rbac-service\", status=~\"3..\"}[5m])) > 0) / (sum(rate(django_http_responses_total_by_status_total{job=\"rbac-service\"}[5m])) > 0) * 100",
                   "hide": false,
                   "legendFormat": "3xx",
                   "range": true,
@@ -2149,7 +2400,7 @@ data:
                     "uid": "$datasource"
                   },
                   "editorMode": "code",
-                  "expr": "sum(rate(django_http_responses_total_by_status_total{job=\"rbac-service\", status=~\"4..\"}[5m])) > 0",
+                  "expr": "(sum(rate(django_http_responses_total_by_status_total{job=\"rbac-service\", status=~\"4..\"}[5m])) > 0) / (sum(rate(django_http_responses_total_by_status_total{job=\"rbac-service\"}[5m])) > 0) * 100",
                   "hide": false,
                   "legendFormat": "4xx",
                   "range": true,
@@ -2160,47 +2411,30 @@ data:
                     "uid": "$datasource"
                   },
                   "editorMode": "code",
-                  "expr": "sum(rate(django_http_responses_total_by_status_total{job=\"rbac-service\", status=~\"5..\"}[5m])) > 0",
+                  "expr": "(sum(rate(django_http_responses_total_by_status_total{job=\"rbac-service\", status=~\"5..\"}[5m])) > 0) / (sum(rate(django_http_responses_total_by_status_total{job=\"rbac-service\"}[5m])) > 0) * 100",
                   "hide": false,
                   "legendFormat": "5xx",
                   "range": true,
                   "refId": "D"
                 }
               ],
-              "thresholds": [],
-              "timeRegions": [],
               "title": "Status Code Proportions",
-              "tooltip": {
-                "shared": true,
-                "sort": 0,
-                "value_type": "individual"
-              },
-              "type": "graph",
-              "xaxis": {
-                "mode": "time",
-                "show": true,
-                "values": []
-              },
-              "yaxes": [
-                {
-                  "$$hashKey": "object:177",
-                  "format": "short",
-                  "logBase": 1,
-                  "max": "100",
-                  "min": "99",
-                  "show": true
-                },
-                {
-                  "$$hashKey": "object:178",
-                  "format": "short",
-                  "logBase": 1,
-                  "show": false
-                }
-              ],
-              "yaxis": {
-                "align": false
-              }
-            },
+              "type": "timeseries"
+            }
+          ],
+          "title": "RBAC Availability SLO",
+          "type": "row"
+        },
+        {
+          "collapsed": true,
+          "gridPos": {
+            "h": 1,
+            "w": 24,
+            "x": 0,
+            "y": 5
+          },
+          "id": 74,
+          "panels": [
             {
               "datasource": {
                 "type": "prometheus",
@@ -2210,7 +2444,7 @@ data:
                 "h": 7,
                 "w": 3,
                 "x": 0,
-                "y": 53
+                "y": 6
               },
               "id": 38,
               "options": {
@@ -2222,7 +2456,7 @@ data:
                 "content": "The proportion of the service request durations under 500 ms during 28 days > 99 %",
                 "mode": "markdown"
               },
-              "pluginVersion": "9.3.8",
+              "pluginVersion": "10.4.1",
               "title": "RBAC Latency SLO",
               "type": "text"
             },
@@ -2243,7 +2477,8 @@ data:
                     "mode": "absolute",
                     "steps": [
                       {
-                        "color": "red"
+                        "color": "red",
+                        "value": null
                       },
                       {
                         "color": "green",
@@ -2259,10 +2494,12 @@ data:
                 "h": 7,
                 "w": 4,
                 "x": 3,
-                "y": 53
+                "y": 6
               },
               "id": 40,
               "options": {
+                "minVizHeight": 75,
+                "minVizWidth": 75,
                 "orientation": "auto",
                 "reduceOptions": {
                   "calcs": [
@@ -2272,9 +2509,10 @@ data:
                   "values": false
                 },
                 "showThresholdLabels": false,
-                "showThresholdMarkers": true
+                "showThresholdMarkers": true,
+                "sizing": "auto"
               },
-              "pluginVersion": "9.3.8",
+              "pluginVersion": "10.4.1",
               "targets": [
                 {
                   "datasource": {
@@ -2282,7 +2520,7 @@ data:
                     "uid": "$datasource"
                   },
                   "editorMode": "code",
-                  "expr": "sum(rate(django_http_requests_latency_including_middlewares_seconds_bucket{le=\"0.5\", namespace=\"rbac-prod\"}[28d])) / sum(rate(django_http_requests_latency_including_middlewares_seconds_count{namespace=\"rbac-prod\"}[28d]))",
+                  "expr": "sum(rate(django_http_requests_latency_including_middlewares_seconds_bucket{le=\"0.5\", namespace=\"$Namespace\"}[28d])) / sum(rate(django_http_requests_latency_including_middlewares_seconds_count{namespace=\"$Namespace\"}[28d]))",
                   "hide": false,
                   "legendFormat": "__auto",
                   "range": true,
@@ -2304,6 +2542,7 @@ data:
                     "mode": "palette-classic"
                   },
                   "custom": {
+                    "axisBorderShow": false,
                     "axisCenteredZero": false,
                     "axisColorMode": "text",
                     "axisLabel": "",
@@ -2317,6 +2556,7 @@ data:
                       "tooltip": false,
                       "viz": false
                     },
+                    "insertNulls": false,
                     "lineInterpolation": "linear",
                     "lineWidth": 1,
                     "pointSize": 5,
@@ -2340,7 +2580,8 @@ data:
                     "mode": "absolute",
                     "steps": [
                       {
-                        "color": "transparent"
+                        "color": "transparent",
+                        "value": null
                       },
                       {
                         "color": "red",
@@ -2356,7 +2597,7 @@ data:
                 "h": 7,
                 "w": 13,
                 "x": 7,
-                "y": 53
+                "y": 6
               },
               "id": 41,
               "options": {
@@ -2380,7 +2621,7 @@ data:
                   },
                   "editorMode": "code",
                   "exemplar": false,
-                  "expr": "sum(rate(django_http_requests_latency_including_middlewares_seconds_bucket{le=\"0.5\", namespace=\"rbac-prod\"}[5m])) / sum(rate(django_http_requests_latency_including_middlewares_seconds_count{namespace=\"rbac-prod\"}[5m]))",
+                  "expr": "sum(rate(django_http_requests_latency_including_middlewares_seconds_bucket{le=\"0.5\", namespace=\"$Namespace\"}[5m])) / sum(rate(django_http_requests_latency_including_middlewares_seconds_count{namespace=\"$Namespace\"}[5m]))",
                   "format": "heatmap",
                   "hide": false,
                   "instant": false,
@@ -2394,70 +2635,93 @@ data:
               "type": "timeseries"
             },
             {
-              "aliasColors": {
-                "1000 - 1500ms": "dark-yellow",
-                "1500 - 2000ms": "light-yellow",
-                "2000 - 2500ms": "light-orange",
-                "2500 - 3000ms": "dark-orange",
-                "3000 - 3500ms": "light-red",
-                "3500 - 4000ms": "semi-dark-red",
-                "500 - 1000ms": "light-green",
-                "> 4000ms": "dark-red"
-              },
-              "bars": false,
-              "dashLength": 10,
-              "dashes": false,
               "datasource": {
                 "type": "prometheus",
                 "uid": "$datasource"
               },
               "fieldConfig": {
                 "defaults": {
-                  "links": []
+                  "color": {
+                    "mode": "palette-classic"
+                  },
+                  "custom": {
+                    "axisBorderShow": false,
+                    "axisCenteredZero": false,
+                    "axisColorMode": "text",
+                    "axisLabel": "",
+                    "axisPlacement": "auto",
+                    "barAlignment": 0,
+                    "drawStyle": "line",
+                    "fillOpacity": 60,
+                    "gradientMode": "opacity",
+                    "hideFrom": {
+                      "legend": false,
+                      "tooltip": false,
+                      "viz": false
+                    },
+                    "insertNulls": false,
+                    "lineInterpolation": "linear",
+                    "lineWidth": 1,
+                    "pointSize": 5,
+                    "scaleDistribution": {
+                      "type": "linear"
+                    },
+                    "showPoints": "never",
+                    "spanNulls": false,
+                    "stacking": {
+                      "group": "A",
+                      "mode": "normal"
+                    },
+                    "thresholdsStyle": {
+                      "mode": "off"
+                    }
+                  },
+                  "links": [],
+                  "mappings": [],
+                  "thresholds": {
+                    "mode": "absolute",
+                    "steps": [
+                      {
+                        "color": "green",
+                        "value": null
+                      },
+                      {
+                        "color": "red",
+                        "value": 80
+                      }
+                    ]
+                  },
+                  "unit": "short"
                 },
                 "overrides": []
               },
-              "fill": 1,
-              "fillGradient": 6,
               "gridPos": {
                 "h": 10,
                 "w": 20,
                 "x": 0,
-                "y": 60
+                "y": 13
               },
-              "hiddenSeries": false,
               "id": 43,
-              "legend": {
-                "avg": false,
-                "current": false,
-                "max": false,
-                "min": false,
-                "show": true,
-                "total": false,
-                "values": false
-              },
-              "lines": true,
-              "linewidth": 1,
-              "nullPointMode": "null",
               "options": {
-                "alertThreshold": true
+                "legend": {
+                  "calcs": [],
+                  "displayMode": "list",
+                  "placement": "bottom",
+                  "showLegend": true
+                },
+                "tooltip": {
+                  "mode": "multi",
+                  "sort": "none"
+                }
               },
-              "percentage": true,
-              "pluginVersion": "9.3.8",
-              "pointradius": 2,
-              "points": false,
-              "renderer": "flot",
-              "seriesOverrides": [],
-              "spaceLength": 10,
-              "stack": true,
-              "steppedLine": false,
+              "pluginVersion": "10.4.1",
               "targets": [
                 {
                   "datasource": {
                     "uid": "$datasource"
                   },
                   "editorMode": "code",
-                  "expr": "sum(rate(django_http_requests_latency_including_middlewares_seconds_bucket{le=\"0.5\", namespace=\"rbac-prod\"}[5m])) > 0",
+                  "expr": "(sum(rate(django_http_requests_latency_including_middlewares_seconds_bucket{le=\"0.5\", namespace=\"$Namespace\"}[5m])) > 0) / (sum(rate(django_http_requests_latency_including_middlewares_seconds_bucket{le=\"+Inf\", namespace=\"$Namespace\"}[5m]))) * 100",
                   "legendFormat": "< 500 ms",
                   "range": true,
                   "refId": "A"
@@ -2467,7 +2731,7 @@ data:
                     "uid": "$datasource"
                   },
                   "editorMode": "code",
-                  "expr": "sum(rate(django_http_requests_latency_including_middlewares_seconds_bucket{le=\"1.0\", namespace=\"rbac-prod\"}[5m])) - sum(rate(django_http_requests_latency_including_middlewares_seconds_bucket{le=\"0.5\", namespace=\"rbac-prod\"}[5m])) > 0",
+                  "expr": "(sum(rate(django_http_requests_latency_including_middlewares_seconds_bucket{le=\"1.0\", namespace=\"$Namespace\"}[5m])) - sum(rate(django_http_requests_latency_including_middlewares_seconds_bucket{le=\"0.5\", namespace=\"$Namespace\"}[5m])) > 0) / (sum(rate(django_http_requests_latency_including_middlewares_seconds_bucket{le=\"+Inf\", namespace=\"$Namespace\"}[5m]))) * 100",
                   "legendFormat": "500 - 1000 ms",
                   "range": true,
                   "refId": "B"
@@ -2477,7 +2741,7 @@ data:
                     "uid": "$datasource"
                   },
                   "editorMode": "code",
-                  "expr": "sum(rate(django_http_requests_latency_including_middlewares_seconds_bucket{le=\"2.5\", namespace=\"rbac-prod\"}[5m])) - sum(rate(django_http_requests_latency_including_middlewares_seconds_bucket{le=\"1.0\", namespace=\"rbac-prod\"}[5m])) > 0",
+                  "expr": "(sum(rate(django_http_requests_latency_including_middlewares_seconds_bucket{le=\"2.5\", namespace=\"$Namespace\"}[5m])) - sum(rate(django_http_requests_latency_including_middlewares_seconds_bucket{le=\"1.0\", namespace=\"$Namespace\"}[5m])) > 0) / (sum(rate(django_http_requests_latency_including_middlewares_seconds_bucket{le=\"+Inf\", namespace=\"$Namespace\"}[5m]))) * 100",
                   "legendFormat": "1000 - 2500 ms",
                   "range": true,
                   "refId": "E"
@@ -2487,61 +2751,1061 @@ data:
                     "uid": "$datasource"
                   },
                   "editorMode": "code",
-                  "expr": "sum(rate(django_http_requests_latency_including_middlewares_seconds_bucket{le=\"+Inf\", namespace=\"rbac-prod\"}[5m])) - sum(rate(django_http_requests_latency_including_middlewares_seconds_bucket{le=\"2.5\", namespace=\"rbac-prod\"}[5m])) > 0",
+                  "expr": "(sum(rate(django_http_requests_latency_including_middlewares_seconds_bucket{le=\"+Inf\", namespace=\"$Namespace\"}[5m])) - sum(rate(django_http_requests_latency_including_middlewares_seconds_bucket{le=\"2.5\", namespace=\"$Namespace\"}[5m])) > 0) / (sum(rate(django_http_requests_latency_including_middlewares_seconds_bucket{le=\"+Inf\", namespace=\"$Namespace\"}[5m]))) * 100",
                   "hide": false,
                   "legendFormat": "> 2500 ms",
                   "range": true,
                   "refId": "C"
                 }
               ],
-              "thresholds": [],
-              "timeRegions": [],
               "title": "Latency Distribution",
-              "tooltip": {
-                "shared": true,
-                "sort": 0,
-                "value_type": "individual"
+              "type": "timeseries"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "$datasource"
               },
-              "type": "graph",
-              "xaxis": {
-                "mode": "time",
-                "show": true,
-                "values": []
-              },
-              "yaxes": [
-                {
-                  "$$hashKey": "object:177",
-                  "format": "short",
-                  "logBase": 1,
-                  "max": "100",
-                  "min": "99",
-                  "show": true
+              "fieldConfig": {
+                "defaults": {
+                  "color": {
+                    "mode": "thresholds"
+                  },
+                  "mappings": [],
+                  "thresholds": {
+                    "mode": "absolute",
+                    "steps": [
+                      {
+                        "color": "green",
+                        "value": null
+                      },
+                      {
+                        "color": "red",
+                        "value": 0.5
+                      }
+                    ]
+                  }
                 },
+                "overrides": []
+              },
+              "gridPos": {
+                "h": 6,
+                "w": 7,
+                "x": 0,
+                "y": 23
+              },
+              "id": 53,
+              "options": {
+                "minVizHeight": 75,
+                "minVizWidth": 75,
+                "orientation": "auto",
+                "reduceOptions": {
+                  "calcs": [
+                    "lastNotNull"
+                  ],
+                  "fields": "",
+                  "values": false
+                },
+                "showThresholdLabels": false,
+                "showThresholdMarkers": true,
+                "sizing": "auto"
+              },
+              "pluginVersion": "10.4.1",
+              "targets": [
                 {
-                  "$$hashKey": "object:178",
-                  "format": "short",
-                  "logBase": 1,
-                  "show": false
+                  "datasource": {
+                    "type": "prometheus",
+                    "uid": "$datasource"
+                  },
+                  "editorMode": "code",
+                  "expr": "histogram_quantile(0.99, sum(rate(django_http_requests_latency_including_middlewares_seconds_bucket{namespace=\"$Namespace\"}[28d])) by (le))",
+                  "hide": false,
+                  "legendFormat": "__auto",
+                  "range": true,
+                  "refId": "C"
                 }
               ],
-              "yaxis": {
-                "align": false
-              }
+              "title": "Requests duration 99 % quantile [28d]",
+              "type": "gauge"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "$datasource"
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "color": {
+                    "mode": "palette-classic"
+                  },
+                  "custom": {
+                    "axisBorderShow": false,
+                    "axisCenteredZero": false,
+                    "axisColorMode": "text",
+                    "axisLabel": "",
+                    "axisPlacement": "auto",
+                    "barAlignment": 0,
+                    "drawStyle": "line",
+                    "fillOpacity": 0,
+                    "gradientMode": "none",
+                    "hideFrom": {
+                      "legend": false,
+                      "tooltip": false,
+                      "viz": false
+                    },
+                    "insertNulls": false,
+                    "lineInterpolation": "linear",
+                    "lineWidth": 1,
+                    "pointSize": 5,
+                    "scaleDistribution": {
+                      "type": "linear"
+                    },
+                    "showPoints": "auto",
+                    "spanNulls": false,
+                    "stacking": {
+                      "group": "A",
+                      "mode": "none"
+                    },
+                    "thresholdsStyle": {
+                      "mode": "off"
+                    }
+                  },
+                  "decimals": 3,
+                  "mappings": [],
+                  "min": 0,
+                  "thresholds": {
+                    "mode": "absolute",
+                    "steps": [
+                      {
+                        "color": "green",
+                        "value": null
+                      },
+                      {
+                        "color": "red",
+                        "value": 80
+                      }
+                    ]
+                  },
+                  "unit": "ms"
+                },
+                "overrides": []
+              },
+              "gridPos": {
+                "h": 6,
+                "w": 13,
+                "x": 7,
+                "y": 23
+              },
+              "id": 55,
+              "options": {
+                "legend": {
+                  "calcs": [],
+                  "displayMode": "list",
+                  "placement": "bottom",
+                  "showLegend": true
+                },
+                "tooltip": {
+                  "mode": "single",
+                  "sort": "none"
+                }
+              },
+              "pluginVersion": "9.3.8",
+              "targets": [
+                {
+                  "datasource": {
+                    "type": "prometheus",
+                    "uid": "$datasource"
+                  },
+                  "editorMode": "code",
+                  "expr": "histogram_quantile(0.99, sum(rate(django_http_requests_latency_including_middlewares_seconds_bucket{namespace=\"$Namespace\"}[5m])) by (le))",
+                  "legendFormat": "__auto",
+                  "range": true,
+                  "refId": "A"
+                }
+              ],
+              "title": "Requests duration 99 % quantile",
+              "type": "timeseries"
             }
           ],
-          "title": "RBAC SLOs",
+          "title": "RBAC Latency SLO",
+          "type": "row"
+        },
+        {
+          "collapsed": true,
+          "gridPos": {
+            "h": 1,
+            "w": 24,
+            "x": 0,
+            "y": 6
+          },
+          "id": 57,
+          "panels": [
+            {
+              "cards": {},
+              "color": {
+                "cardColor": "#b4ff00",
+                "colorScale": "sqrt",
+                "colorScheme": "interpolateRdYlGn",
+                "exponent": 0.5,
+                "mode": "spectrum"
+              },
+              "dataFormat": "tsbuckets",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "$datasource"
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "custom": {
+                    "hideFrom": {
+                      "legend": false,
+                      "tooltip": false,
+                      "viz": false
+                    },
+                    "scaleDistribution": {
+                      "type": "linear"
+                    }
+                  }
+                },
+                "overrides": []
+              },
+              "gridPos": {
+                "h": 9,
+                "w": 12,
+                "x": 0,
+                "y": 7
+              },
+              "heatmap": {},
+              "hideZeroBuckets": false,
+              "highlightCards": true,
+              "id": 59,
+              "interval": "",
+              "legend": {
+                "show": false
+              },
+              "maxDataPoints": 25,
+              "options": {
+                "calculate": false,
+                "calculation": {},
+                "cellGap": 2,
+                "cellValues": {},
+                "color": {
+                  "exponent": 0.5,
+                  "fill": "#b4ff00",
+                  "mode": "scheme",
+                  "reverse": false,
+                  "scale": "exponential",
+                  "scheme": "RdYlGn",
+                  "steps": 128
+                },
+                "exemplars": {
+                  "color": "rgba(255,0,255,0.7)"
+                },
+                "filterValues": {
+                  "le": 1e-9
+                },
+                "legend": {
+                  "show": false
+                },
+                "rowsFrame": {
+                  "layout": "auto"
+                },
+                "showValue": "never",
+                "tooltip": {
+                  "mode": "single",
+                  "showColorScale": false,
+                  "yHistogram": false
+                },
+                "yAxis": {
+                  "axisPlacement": "left",
+                  "reverse": false,
+                  "unit": "s"
+                }
+              },
+              "pluginVersion": "10.4.1",
+              "reverseYBuckets": false,
+              "targets": [
+                {
+                  "datasource": {
+                    "uid": "$datasource"
+                  },
+                  "editorMode": "code",
+                  "expr": "sum(increase(django_http_requests_latency_seconds_by_view_method_bucket{job=\"rbac-service\", view=~\"$Endpoint\"}[$__interval])) by (le)",
+                  "format": "heatmap",
+                  "interval": "",
+                  "legendFormat": "{{le}}",
+                  "range": true,
+                  "refId": "A"
+                }
+              ],
+              "title": "Endpoint <$Endpoint> Latency",
+              "tooltip": {
+                "show": true,
+                "showHistogram": false
+              },
+              "type": "heatmap",
+              "xAxis": {
+                "show": true
+              },
+              "yAxis": {
+                "format": "s",
+                "logBase": 1,
+                "show": true
+              },
+              "yBucketBound": "auto"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "$datasource"
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "color": {
+                    "mode": "palette-classic"
+                  },
+                  "custom": {
+                    "axisBorderShow": false,
+                    "axisCenteredZero": false,
+                    "axisColorMode": "text",
+                    "axisLabel": "",
+                    "axisPlacement": "auto",
+                    "barAlignment": 0,
+                    "drawStyle": "line",
+                    "fillOpacity": 32,
+                    "gradientMode": "hue",
+                    "hideFrom": {
+                      "legend": false,
+                      "tooltip": false,
+                      "viz": false
+                    },
+                    "insertNulls": false,
+                    "lineInterpolation": "linear",
+                    "lineStyle": {
+                      "fill": "solid"
+                    },
+                    "lineWidth": 1,
+                    "pointSize": 5,
+                    "scaleDistribution": {
+                      "type": "linear"
+                    },
+                    "showPoints": "auto",
+                    "spanNulls": false,
+                    "stacking": {
+                      "group": "A",
+                      "mode": "percent"
+                    },
+                    "thresholdsStyle": {
+                      "mode": "off"
+                    }
+                  },
+                  "links": [],
+                  "mappings": [],
+                  "thresholds": {
+                    "mode": "absolute",
+                    "steps": [
+                      {
+                        "color": "green",
+                        "value": null
+                      }
+                    ]
+                  },
+                  "unit": "percentunit"
+                },
+                "overrides": []
+              },
+              "gridPos": {
+                "h": 9,
+                "w": 12,
+                "x": 12,
+                "y": 7
+              },
+              "id": 61,
+              "options": {
+                "legend": {
+                  "calcs": [],
+                  "displayMode": "list",
+                  "placement": "bottom",
+                  "showLegend": true
+                },
+                "tooltip": {
+                  "mode": "single",
+                  "sort": "none"
+                }
+              },
+              "pluginVersion": "9.3.8",
+              "targets": [
+                {
+                  "datasource": {
+                    "type": "prometheus",
+                    "uid": "$datasource"
+                  },
+                  "editorMode": "code",
+                  "expr": "sum(rate(django_http_requests_latency_seconds_by_view_method_bucket{job=\"rbac-service\", view=~\"$Endpoint\", le=\"0.5\"}[6h])) > 0",
+                  "hide": false,
+                  "legendFormat": "< 500 ms",
+                  "range": true,
+                  "refId": "D"
+                },
+                {
+                  "datasource": {
+                    "type": "prometheus",
+                    "uid": "$datasource"
+                  },
+                  "editorMode": "code",
+                  "expr": "sum(rate(django_http_requests_latency_seconds_by_view_method_bucket{job=\"rbac-service\", view=~\"$Endpoint\", le=\"1.0\"}[6h])) - sum(rate(django_http_requests_latency_seconds_by_view_method_bucket{job=\"rbac-service\", view=~\"$Endpoint\", le=\"0.5\"}[6h])) > 0",
+                  "hide": false,
+                  "interval": "",
+                  "legendFormat": "500 - 1000 ms",
+                  "range": true,
+                  "refId": "E"
+                },
+                {
+                  "datasource": {
+                    "type": "prometheus",
+                    "uid": "$datasource"
+                  },
+                  "editorMode": "code",
+                  "expr": "sum(rate(django_http_requests_latency_seconds_by_view_method_bucket{job=\"rbac-service\", view=~\"$Endpoint\", le=\"2.5\"}[6h])) - sum(rate(django_http_requests_latency_seconds_by_view_method_bucket{job=\"rbac-service\", view=~\"$Endpoint\", le=\"1.0\"}[6h])) > 0",
+                  "hide": false,
+                  "interval": "",
+                  "legendFormat": "1000 - 2500 ms",
+                  "range": true,
+                  "refId": "A"
+                },
+                {
+                  "datasource": {
+                    "type": "prometheus",
+                    "uid": "$datasource"
+                  },
+                  "editorMode": "code",
+                  "expr": "sum(rate(django_http_requests_latency_seconds_by_view_method_bucket{job=\"rbac-service\", view=~\"$Endpoint\", le=\"5.0\"}[6h])) - sum(rate(django_http_requests_latency_seconds_by_view_method_bucket{job=\"rbac-service\", view=~\"$Endpoint\", le=\"2.5\"}[6h])) > 0",
+                  "hide": false,
+                  "interval": "",
+                  "legendFormat": "2500 - 5000 ms",
+                  "range": true,
+                  "refId": "C"
+                },
+                {
+                  "datasource": {
+                    "type": "prometheus",
+                    "uid": "$datasource"
+                  },
+                  "editorMode": "code",
+                  "expr": "sum(rate(django_http_requests_latency_seconds_by_view_method_bucket{job=\"rbac-service\", view=~\"$Endpoint\", le=\"+Inf\"}[6h])) - sum(rate(django_http_requests_latency_seconds_by_view_method_bucket{job=\"rbac-service\", view=~\"$Endpoint\", le=\"5.0\"}[6h])) > 0",
+                  "hide": false,
+                  "legendFormat": "> 5000 ms",
+                  "range": true,
+                  "refId": "B"
+                }
+              ],
+              "title": "Latency Distribution for <$Endpoint> endpoint",
+              "type": "timeseries"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "$datasource"
+              },
+              "description": "Alert: Request with duration under 500ms > 95%",
+              "fieldConfig": {
+                "defaults": {
+                  "color": {
+                    "mode": "palette-classic"
+                  },
+                  "custom": {
+                    "axisBorderShow": false,
+                    "axisCenteredZero": false,
+                    "axisColorMode": "text",
+                    "axisLabel": "",
+                    "axisPlacement": "auto",
+                    "barAlignment": 0,
+                    "drawStyle": "line",
+                    "fillOpacity": 10,
+                    "gradientMode": "none",
+                    "hideFrom": {
+                      "legend": false,
+                      "tooltip": false,
+                      "viz": false
+                    },
+                    "insertNulls": false,
+                    "lineInterpolation": "linear",
+                    "lineWidth": 1,
+                    "pointSize": 5,
+                    "scaleDistribution": {
+                      "type": "linear"
+                    },
+                    "showPoints": "never",
+                    "spanNulls": false,
+                    "stacking": {
+                      "group": "A",
+                      "mode": "none"
+                    },
+                    "thresholdsStyle": {
+                      "mode": "line"
+                    }
+                  },
+                  "links": [],
+                  "mappings": [],
+                  "thresholds": {
+                    "mode": "absolute",
+                    "steps": [
+                      {
+                        "color": "transparent",
+                        "value": null
+                      }
+                    ]
+                  },
+                  "unit": "percentunit"
+                },
+                "overrides": []
+              },
+              "gridPos": {
+                "h": 7,
+                "w": 12,
+                "x": 0,
+                "y": 16
+              },
+              "id": 63,
+              "options": {
+                "legend": {
+                  "calcs": [],
+                  "displayMode": "list",
+                  "placement": "bottom",
+                  "showLegend": true
+                },
+                "tooltip": {
+                  "mode": "multi",
+                  "sort": "none"
+                }
+              },
+              "pluginVersion": "9.3.8",
+              "targets": [
+                {
+                  "datasource": {
+                    "type": "prometheus",
+                    "uid": "$datasource"
+                  },
+                  "editorMode": "code",
+                  "expr": "sum(rate(django_http_requests_latency_seconds_by_view_method_bucket{job=\"rbac-service\", view=~\"$Endpoint\", le=\"0.5\"}[6h])) / sum(rate(django_http_requests_latency_seconds_by_view_method_bucket{job=\"rbac-service\", view=~\"$Endpoint\", le=\"+Inf\"}[6h]))",
+                  "hide": false,
+                  "legendFormat": "requests < 500 ms",
+                  "range": true,
+                  "refId": "B"
+                }
+              ],
+              "title": "Latency <$Endpoint> endpoint - requests < 500 ms",
+              "type": "timeseries"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "$datasource"
+              },
+              "description": "Alert: Request with duration under 500ms > 95%",
+              "fieldConfig": {
+                "defaults": {
+                  "color": {
+                    "mode": "palette-classic"
+                  },
+                  "custom": {
+                    "axisBorderShow": false,
+                    "axisCenteredZero": false,
+                    "axisColorMode": "text",
+                    "axisLabel": "",
+                    "axisPlacement": "auto",
+                    "barAlignment": 0,
+                    "drawStyle": "line",
+                    "fillOpacity": 10,
+                    "gradientMode": "none",
+                    "hideFrom": {
+                      "legend": false,
+                      "tooltip": false,
+                      "viz": false
+                    },
+                    "insertNulls": false,
+                    "lineInterpolation": "linear",
+                    "lineWidth": 1,
+                    "pointSize": 5,
+                    "scaleDistribution": {
+                      "type": "linear"
+                    },
+                    "showPoints": "never",
+                    "spanNulls": false,
+                    "stacking": {
+                      "group": "A",
+                      "mode": "none"
+                    },
+                    "thresholdsStyle": {
+                      "mode": "line"
+                    }
+                  },
+                  "links": [],
+                  "mappings": [],
+                  "thresholds": {
+                    "mode": "absolute",
+                    "steps": [
+                      {
+                        "color": "transparent",
+                        "value": null
+                      }
+                    ]
+                  },
+                  "unit": "percentunit"
+                },
+                "overrides": []
+              },
+              "gridPos": {
+                "h": 7,
+                "w": 12,
+                "x": 12,
+                "y": 16
+              },
+              "id": 65,
+              "options": {
+                "legend": {
+                  "calcs": [],
+                  "displayMode": "list",
+                  "placement": "bottom",
+                  "showLegend": true
+                },
+                "tooltip": {
+                  "mode": "multi",
+                  "sort": "none"
+                }
+              },
+              "pluginVersion": "9.3.8",
+              "targets": [
+                {
+                  "datasource": {
+                    "type": "prometheus",
+                    "uid": "$datasource"
+                  },
+                  "editorMode": "code",
+                  "expr": "sum(rate(django_http_requests_latency_seconds_by_view_method_bucket{job=\"rbac-service\", view=~\"$Endpoint\", le=\"1.0\"}[6h])) / sum(rate(django_http_requests_latency_seconds_by_view_method_bucket{job=\"rbac-service\", view=~\"$Endpoint\", le=\"+Inf\"}[6h]))",
+                  "hide": false,
+                  "legendFormat": "requests < 1000 ms",
+                  "range": true,
+                  "refId": "B"
+                }
+              ],
+              "title": "Latency $Endpoint  endpoint - requests < 1000 ms",
+              "type": "timeseries"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "$datasource"
+              },
+              "description": "Alert: Request with duration under 500ms > 95%",
+              "fieldConfig": {
+                "defaults": {
+                  "color": {
+                    "mode": "palette-classic"
+                  },
+                  "custom": {
+                    "axisBorderShow": false,
+                    "axisCenteredZero": false,
+                    "axisColorMode": "text",
+                    "axisLabel": "",
+                    "axisPlacement": "auto",
+                    "barAlignment": 0,
+                    "drawStyle": "line",
+                    "fillOpacity": 10,
+                    "gradientMode": "none",
+                    "hideFrom": {
+                      "legend": false,
+                      "tooltip": false,
+                      "viz": false
+                    },
+                    "insertNulls": false,
+                    "lineInterpolation": "linear",
+                    "lineWidth": 1,
+                    "pointSize": 5,
+                    "scaleDistribution": {
+                      "type": "linear"
+                    },
+                    "showPoints": "never",
+                    "spanNulls": false,
+                    "stacking": {
+                      "group": "A",
+                      "mode": "none"
+                    },
+                    "thresholdsStyle": {
+                      "mode": "line"
+                    }
+                  },
+                  "links": [],
+                  "mappings": [],
+                  "thresholds": {
+                    "mode": "absolute",
+                    "steps": [
+                      {
+                        "color": "transparent",
+                        "value": null
+                      }
+                    ]
+                  },
+                  "unit": "percentunit"
+                },
+                "overrides": []
+              },
+              "gridPos": {
+                "h": 7,
+                "w": 12,
+                "x": 0,
+                "y": 23
+              },
+              "id": 67,
+              "options": {
+                "legend": {
+                  "calcs": [],
+                  "displayMode": "list",
+                  "placement": "bottom",
+                  "showLegend": true
+                },
+                "tooltip": {
+                  "mode": "multi",
+                  "sort": "none"
+                }
+              },
+              "pluginVersion": "9.3.8",
+              "targets": [
+                {
+                  "datasource": {
+                    "type": "prometheus",
+                    "uid": "$datasource"
+                  },
+                  "editorMode": "code",
+                  "expr": "sum(rate(django_http_requests_latency_seconds_by_view_method_bucket{job=\"rbac-service\", view=~\"$Endpoint\", le=\"2.5\"}[6h])) / sum(rate(django_http_requests_latency_seconds_by_view_method_bucket{job=\"rbac-service\", view=~\"$Endpoint\", le=\"+Inf\"}[6h]))",
+                  "hide": false,
+                  "legendFormat": "requests < 2500 ms",
+                  "range": true,
+                  "refId": "B"
+                }
+              ],
+              "title": "Latency <$Endpoint> endpoint - requests < 2500 ms",
+              "type": "timeseries"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "$datasource"
+              },
+              "description": "Alert: Request with duration under 500ms > 95%",
+              "fieldConfig": {
+                "defaults": {
+                  "color": {
+                    "mode": "palette-classic"
+                  },
+                  "custom": {
+                    "axisBorderShow": false,
+                    "axisCenteredZero": false,
+                    "axisColorMode": "text",
+                    "axisLabel": "",
+                    "axisPlacement": "auto",
+                    "barAlignment": 0,
+                    "drawStyle": "line",
+                    "fillOpacity": 10,
+                    "gradientMode": "none",
+                    "hideFrom": {
+                      "legend": false,
+                      "tooltip": false,
+                      "viz": false
+                    },
+                    "insertNulls": false,
+                    "lineInterpolation": "linear",
+                    "lineWidth": 1,
+                    "pointSize": 5,
+                    "scaleDistribution": {
+                      "type": "linear"
+                    },
+                    "showPoints": "never",
+                    "spanNulls": false,
+                    "stacking": {
+                      "group": "A",
+                      "mode": "none"
+                    },
+                    "thresholdsStyle": {
+                      "mode": "line"
+                    }
+                  },
+                  "links": [],
+                  "mappings": [],
+                  "thresholds": {
+                    "mode": "absolute",
+                    "steps": [
+                      {
+                        "color": "transparent",
+                        "value": null
+                      }
+                    ]
+                  },
+                  "unit": "percentunit"
+                },
+                "overrides": []
+              },
+              "gridPos": {
+                "h": 7,
+                "w": 12,
+                "x": 12,
+                "y": 23
+              },
+              "id": 69,
+              "options": {
+                "legend": {
+                  "calcs": [],
+                  "displayMode": "list",
+                  "placement": "bottom",
+                  "showLegend": true
+                },
+                "tooltip": {
+                  "mode": "multi",
+                  "sort": "none"
+                }
+              },
+              "pluginVersion": "9.3.8",
+              "targets": [
+                {
+                  "datasource": {
+                    "type": "prometheus",
+                    "uid": "$datasource"
+                  },
+                  "editorMode": "code",
+                  "expr": "sum(rate(django_http_requests_latency_seconds_by_view_method_bucket{job=\"rbac-service\", view=~\"$Endpoint\", le=\"5.0\"}[6h])) / sum(rate(django_http_requests_latency_seconds_by_view_method_bucket{job=\"rbac-service\", view=~\"$Endpoint\", le=\"+Inf\"}[6h]))",
+                  "hide": false,
+                  "legendFormat": "requests < 5000 ms",
+                  "range": true,
+                  "refId": "B"
+                }
+              ],
+              "title": "Latency $Endpoint  endpoint - requests < 5000 ms",
+              "type": "timeseries"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "$datasource"
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "color": {
+                    "mode": "thresholds"
+                  },
+                  "mappings": [],
+                  "max": 1,
+                  "min": 0,
+                  "thresholds": {
+                    "mode": "absolute",
+                    "steps": [
+                      {
+                        "color": "red",
+                        "value": null
+                      },
+                      {
+                        "color": "green",
+                        "value": 0.99
+                      }
+                    ]
+                  },
+                  "unit": "percentunit"
+                },
+                "overrides": []
+              },
+              "gridPos": {
+                "h": 7,
+                "w": 12,
+                "x": 0,
+                "y": 30
+              },
+              "id": 71,
+              "options": {
+                "minVizHeight": 75,
+                "minVizWidth": 75,
+                "orientation": "auto",
+                "reduceOptions": {
+                  "calcs": [
+                    "lastNotNull"
+                  ],
+                  "fields": "",
+                  "values": false
+                },
+                "showThresholdLabels": false,
+                "showThresholdMarkers": true,
+                "sizing": "auto"
+              },
+              "pluginVersion": "10.4.1",
+              "targets": [
+                {
+                  "datasource": {
+                    "type": "prometheus",
+                    "uid": "$datasource"
+                  },
+                  "editorMode": "code",
+                  "expr": "sum(rate(django_http_requests_latency_seconds_by_view_method_bucket{job=\"rbac-service\", view=~\"$Endpoint\", le=\"0.5\"}[28d])) / sum(rate(django_http_requests_latency_seconds_by_view_method_bucket{job=\"rbac-service\", view=~\"$Endpoint\", le=\"+Inf\"}[28d]))",
+                  "hide": false,
+                  "legendFormat": "< 500 ms",
+                  "range": true,
+                  "refId": "A"
+                },
+                {
+                  "datasource": {
+                    "type": "prometheus",
+                    "uid": "$datasource"
+                  },
+                  "editorMode": "code",
+                  "expr": "sum(rate(django_http_requests_latency_seconds_by_view_method_bucket{job=\"rbac-service\", view=~\"$Endpoint\", le=\"1.0\"}[28d])) / sum(rate(django_http_requests_latency_seconds_by_view_method_bucket{job=\"rbac-service\", view=~\"$Endpoint\", le=\"+Inf\"}[28d]))",
+                  "hide": false,
+                  "legendFormat": "< 1000 ms",
+                  "range": true,
+                  "refId": "C"
+                },
+                {
+                  "datasource": {
+                    "type": "prometheus",
+                    "uid": "$datasource"
+                  },
+                  "editorMode": "code",
+                  "expr": "sum(rate(django_http_requests_latency_seconds_by_view_method_bucket{job=\"rbac-service\", view=~\"$Endpoint\", le=\"2.5\"}[28d])) / sum(rate(django_http_requests_latency_seconds_by_view_method_bucket{job=\"rbac-service\", view=~\"$Endpoint\", le=\"+Inf\"}[28d]))",
+                  "hide": false,
+                  "legendFormat": "< 2500 ms",
+                  "range": true,
+                  "refId": "D"
+                },
+                {
+                  "datasource": {
+                    "type": "prometheus",
+                    "uid": "$datasource"
+                  },
+                  "editorMode": "code",
+                  "expr": "sum(rate(django_http_requests_latency_seconds_by_view_method_bucket{job=\"rbac-service\", view=~\"$Endpoint\", le=\"5.0\"}[28d])) / sum(rate(django_http_requests_latency_seconds_by_view_method_bucket{job=\"rbac-service\", view=~\"$Endpoint\", le=\"+Inf\"}[28d]))",
+                  "hide": false,
+                  "legendFormat": "< 5000 ms",
+                  "range": true,
+                  "refId": "B"
+                }
+              ],
+              "title": "Latency Uptime [28d] for <$Endpoint> endpoint",
+              "type": "gauge"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "$datasource"
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "color": {
+                    "mode": "thresholds"
+                  },
+                  "mappings": [],
+                  "max": 1,
+                  "min": 0,
+                  "thresholds": {
+                    "mode": "absolute",
+                    "steps": [
+                      {
+                        "color": "red",
+                        "value": null
+                      },
+                      {
+                        "color": "green",
+                        "value": 0.99
+                      }
+                    ]
+                  },
+                  "unit": "percentunit"
+                },
+                "overrides": []
+              },
+              "gridPos": {
+                "h": 7,
+                "w": 12,
+                "x": 12,
+                "y": 30
+              },
+              "id": 73,
+              "options": {
+                "minVizHeight": 75,
+                "minVizWidth": 75,
+                "orientation": "auto",
+                "reduceOptions": {
+                  "calcs": [
+                    "lastNotNull"
+                  ],
+                  "fields": "",
+                  "values": false
+                },
+                "showThresholdLabels": false,
+                "showThresholdMarkers": true,
+                "sizing": "auto"
+              },
+              "pluginVersion": "10.4.1",
+              "targets": [
+                {
+                  "datasource": {
+                    "type": "prometheus",
+                    "uid": "$datasource"
+                  },
+                  "editorMode": "code",
+                  "expr": "sum(rate(django_http_requests_latency_including_middlewares_seconds_bucket{le=\"0.5\", namespace=\"$Namespace\"}[28d])) / sum(rate(django_http_requests_latency_including_middlewares_seconds_count{namespace=\"$Namespace\"}[28d]))",
+                  "hide": false,
+                  "legendFormat": "< 500 ms",
+                  "range": true,
+                  "refId": "A"
+                },
+                {
+                  "datasource": {
+                    "type": "prometheus",
+                    "uid": "$datasource"
+                  },
+                  "editorMode": "code",
+                  "expr": "sum(rate(django_http_requests_latency_including_middlewares_seconds_bucket{le=\"1.0\", namespace=\"$Namespace\"}[28d])) / sum(rate(django_http_requests_latency_including_middlewares_seconds_count{namespace=\"$Namespace\"}[28d]))",
+                  "hide": false,
+                  "legendFormat": "< 1000 ms",
+                  "range": true,
+                  "refId": "B"
+                },
+                {
+                  "datasource": {
+                    "type": "prometheus",
+                    "uid": "$datasource"
+                  },
+                  "editorMode": "code",
+                  "expr": "sum(rate(django_http_requests_latency_including_middlewares_seconds_bucket{le=\"2.5\", namespace=\"$Namespace\"}[28d])) / sum(rate(django_http_requests_latency_including_middlewares_seconds_count{namespace=\"$Namespace\"}[28d]))",
+                  "hide": false,
+                  "legendFormat": "< 2500 ms",
+                  "range": true,
+                  "refId": "C"
+                },
+                {
+                  "datasource": {
+                    "type": "prometheus",
+                    "uid": "$datasource"
+                  },
+                  "editorMode": "code",
+                  "expr": "sum(rate(django_http_requests_latency_including_middlewares_seconds_bucket{le=\"5.0\", namespace=\"$Namespace\"}[28d])) / sum(rate(django_http_requests_latency_including_middlewares_seconds_count{namespace=\"$Namespace\"}[28d]))",
+                  "hide": false,
+                  "legendFormat": "< 5000 ms",
+                  "range": true,
+                  "refId": "D"
+                }
+              ],
+              "title": "Latency Uptime [28d] for all endpoints",
+              "type": "gauge"
+            }
+          ],
+          "title": "Endpoints specific metrics (for <$Endpoint>): Please select a endpoint form list in the top of the page",
           "type": "row"
         }
       ],
-      "refresh": false,
-      "schemaVersion": 37,
-      "style": "dark",
+      "schemaVersion": 39,
       "tags": [],
       "templating": {
         "list": [
           {
             "current": {
-              "selected": true,
+              "selected": false,
               "text": "crcp01ue1-prometheus",
               "value": "crcp01ue1-prometheus"
             },
@@ -2611,7 +3875,7 @@ data:
         ]
       },
       "time": {
-        "from": "now-3h",
+        "from": "now-24h",
         "to": "now"
       },
       "timepicker": {
@@ -2642,7 +3906,7 @@ data:
       "timezone": "",
       "title": "Operations - Rbac w/CPU",
       "uid": "TjP_nMWMk",
-      "version": 5,
+      "version": 7,
       "weekStart": ""
     }
 kind: ConfigMap

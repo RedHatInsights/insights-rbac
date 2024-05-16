@@ -955,7 +955,7 @@ class ITServiceTests(IdentityRequest):
 
         # Set up the options for the function. The username is trimmed and set, to check that the "contains" condition
         # works as expected.
-        options = {"principal_username": sa_principals_should_be_in_group[0].username[:-10]}
+        options = {"principal_username": sa_principals_should_be_in_group[0].username[:-10].strip("service-account-")}
 
         # Call the function under test.
         result = self.it_service.get_service_accounts_group(group=group_a, user=user, options=options)

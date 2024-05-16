@@ -331,11 +331,18 @@ class ITService:
             group_service_account_principals = group_service_account_principals.order_by(order_by)
 
         # Check if we should filter the service accounts by the username that the user specified.
+        # In this case we want to ignore the prefix "service-account-" in the SA username and
+        # filter records only by SA client ID (uuid).
         principal_username = options.get("principal_username")
         if principal_username:
-            group_service_account_principals = group_service_account_principals.filter(
-                username__contains=principal_username
-            )
+            if principal_username.startswith("service-account-"):
+                group_service_account_principals = group_service_account_principals.filter(
+                    username__contains=principal_username
+                )
+            else:
+                group_service_account_principals = group_service_account_principals.filter(
+                    service_account_id__contains=principal_username
+                )
 
         # If we are in an ephemeral or test environment, we will take all the service accounts of the user that are
         # stored in the database and generate a mocked response for them, simulating that IT has the corresponding

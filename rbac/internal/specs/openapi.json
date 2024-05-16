@@ -982,6 +982,64 @@
           }
         }
       }
+    },
+    "/api/utils/role_migration/": {
+      "delete": {
+        "tags": [
+          "Role migration"
+        ],
+        "summary": "Migration of roles",
+        "description": "Start process of migration of roles.",
+        "operationId": "RoleMigration",
+        "parameters": [
+          {
+            "name": "exclude_apps",
+            "in": "query",
+            "required": false,
+            "description": "Defines the comma-separated names of the apps. If the permission of the role includes any of the app, it would be excluded from migration.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "orgs",
+            "in": "query",
+            "required": false,
+            "description": "Defines the comma-separated names of the org ids. Only these orgs with these id will be included in the migration.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Permission deleted"
+          },
+          "400": {
+            "description": "Bad Input"
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "servers": [

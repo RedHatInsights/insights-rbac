@@ -20,13 +20,23 @@ from __future__ import absolute_import, unicode_literals
 from celery import shared_task
 from django.core.management import call_command
 from management.health.healthcheck import redis_health
-from management.principal.cleaner import clean_tenants_principals
+from management.principal.cleaner import (
+    clean_principals_via_umb,
+    clean_tenants_principals,
+)
+from migration_tool.migrate import migrate_roles
 
 
 @shared_task
 def principal_cleanup():
     """Celery task to clean up principals no longer existing."""
     clean_tenants_principals()
+
+
+@shared_task
+def principal_cleanup_via_umb():
+    """Celery task to clean up principals no longer existing."""
+    clean_principals_via_umb()
 
 
 @shared_task
@@ -39,12 +49,6 @@ def run_migrations_in_worker():
 def run_seeds_in_worker(kwargs):
     """Celery task to run seeds."""
     call_command("seeds", **kwargs)
-
-
-@shared_task
-def run_reconcile_tenant_relations_in_worker(kwargs):
-    """Celery task to reconcile tenant relations."""
-    call_command("reconcile_tenant_relations", **kwargs)
 
 
 @shared_task
@@ -63,3 +67,9 @@ def run_ocm_performance_in_worker():
 def run_redis_cache_health():
     """Celery task to check health of redis cache."""
     redis_health()
+
+
+@shared_task
+def migrate_roles_in_worker(kwargs):
+    """Celery task to migrate roles from V1 to V2 spiceDB schema."""
+    migrate_roles(**kwargs)

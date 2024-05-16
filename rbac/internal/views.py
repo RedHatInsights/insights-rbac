@@ -28,13 +28,20 @@ from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from management.cache import TenantCache
 from management.models import Group, Permission, Role
-from management.principal.proxy import API_TOKEN_HEADER, CLIENT_ID_HEADER, USER_ENV_HEADER
+from management.principal.proxy import (
+    API_TOKEN_HEADER,
+    CLIENT_ID_HEADER,
+    USER_ENV_HEADER,
+)
 from management.principal.proxy import PrincipalProxy
-from management.principal.proxy import bop_request_status_count, bop_request_time_tracking
+from management.principal.proxy import (
+    bop_request_status_count,
+    bop_request_time_tracking,
+)
 from management.tasks import (
+    migrate_roles_in_worker,
     run_migrations_in_worker,
     run_ocm_performance_in_worker,
-    run_reconcile_tenant_relations_in_worker,
     run_seeds_in_worker,
     run_sync_schemas_in_worker,
 )
@@ -172,7 +179,10 @@ def migration_progress(request):
         migration_name = request.GET.get("migration_name")
         app_name = request.GET.get("app", "management")
         if not migration_name:
-            return HttpResponse("Please specify a migration name in the `?migration_name=` param.", status=400)
+            return HttpResponse(
+                "Please specify a migration name in the `?migration_name=` param.",
+                status=400,
+            )
         tenants_completed_count = 0
         incomplete_tenants = []
 
@@ -203,22 +213,6 @@ def migration_progress(request):
 
         return HttpResponse(json.dumps(payload), content_type="application/json")
     return HttpResponse('Invalid method, only "GET" is allowed.', status=405)
-
-
-def tenant_reconciliation(request):
-    """View method for checking/executing tenant reconciliation.
-
-    GET(read-only)|POST(updates enabled) /_private/api/utils/tenant_reconciliation/
-    """
-    args = {"readonly": True} if request.method == "GET" else {}
-    msg = "Running tenant reconciliation in a background worker."
-
-    if request.method in ["GET", "POST"]:
-        logger.info(msg)
-        run_reconcile_tenant_relations_in_worker.delay(args)
-        return HttpResponse(msg, status=202)
-
-    return HttpResponse('Invalid method, only "GET" and "POST" are allowed.', status=405)
 
 
 def sync_schemas(request):
@@ -294,7 +288,10 @@ def get_org_admin(request, org_or_account):
             response = requests.get(url, **kwargs)
             resp = {"status_code": response.status_code}
             data = response.json()
-            resp["data"] = {"userCount": data.get("userCount"), "users": data.get("users")}
+            resp["data"] = {
+                "userCount": data.get("userCount"),
+                "users": data.get("users"),
+            }
         except requests.exceptions.ConnectionError as conn:
             bop_request_status_count.labels(method="GET", status=500).inc()
             return HttpResponse(f"Unable to connect for URL {url} with error: {conn}", status=500)
@@ -371,7 +368,10 @@ def populate_tenant_account_id(request):
     if request.method == "POST":
         logger.info("Setting account_id on all Tenant objects.")
         populate_tenant_account_id_in_worker.delay()
-        return HttpResponse("Tenant objects account_id values being updated in background worker.", status=200)
+        return HttpResponse(
+            "Tenant objects account_id values being updated in background worker.",
+            status=200,
+        )
     return HttpResponse('Invalid method, only "POST" is allowed.', status=405)
 
 
@@ -471,6 +471,22 @@ def ocm_performance(request):
         run_ocm_performance_in_worker.delay()
         return HttpResponse("OCM performance tests are running in a background worker.", status=202)
     return HttpResponse('Invalid method, only "POST" is allowed.', status=405)
+
+
+def role_migration(request):
+    """View method for running role migrations from V1 to V2 spiceDB schema.
+
+    POST /_private/api/utils/role_migration/?exclude_apps=cost_management,rbac&orgs=id_1,id_2
+    """
+    if request.method != "POST":
+        return HttpResponse('Invalid method, only "POST" is allowed.', status=405)
+    logger.info("Running V1 Role migration.")
+    args = {
+        "exclude_apps": request.GET.get("exclude_apps", "").split(","),
+        "orgs": request.GET.get("orgs", "").split(","),
+    }
+    migrate_roles_in_worker.delay(args)
+    return HttpResponse("Role migration from V1 to V2 are running in a background worker.", status=202)
 
 
 class SentryDiagnosticError(Exception):

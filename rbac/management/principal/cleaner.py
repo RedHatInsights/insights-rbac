@@ -17,19 +17,29 @@
 
 """Handler for principal clean up."""
 import logging
+import os
+import ssl
+from collections import defaultdict
 
+import xmltodict
 from django.conf import settings
+from management.group.view import TYPE_SERVICE_ACCOUNT
 from management.principal.model import Principal
 from management.principal.proxy import PrincipalProxy
 from management.utils import account_id_for_tenant
 from rest_framework import status
+from stompest.config import StompConfig
+from stompest.protocol import StompSpec
+from stompest.sync import Stomp
 
 from api.models import Tenant
-from rbac.settings import PRINCIPAL_CLEANUP_DELETION_ENABLED
+
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 proxy = PrincipalProxy()  # pylint: disable=invalid-name
+CERT_LOC = "/opt/rbac/rbac/management/principal/umb_certs/cert.pem"
+KEY_LOC = "/opt/rbac/rbac/management/principal/umb_certs/key.pem"
 
 
 def clean_tenant_principals(tenant):
@@ -69,13 +79,11 @@ def clean_tenant_principals(tenant):
                 principal.username,
                 tenant_id,
             )
-            # we are temporarily disabling the delete
-            if PRINCIPAL_CLEANUP_DELETION_ENABLED:
-                principal.delete()
-                logger.info(
-                    "clean_tenant_principals: Username %s removed.",
-                    principal.username,
-                )
+            principal.delete()
+            logger.info(
+                "clean_tenant_principals: Username %s removed.",
+                principal.username,
+            )
         else:
             logger.warning(
                 "clean_tenant_principals: Unknown status %d when checking username %s"
@@ -84,9 +92,7 @@ def clean_tenant_principals(tenant):
                 principal.username,
                 tenant_id,
             )
-    removal_message = "clean_tenant_principals: Completed clean up of %d principals for tenant %s, %d eligible for removal: %s."  # noqa E501
-    if PRINCIPAL_CLEANUP_DELETION_ENABLED:
-        removal_message = "clean_tenant_principals: Completed clean up of %d principals for tenant %s, %d removed: %s."
+    removal_message = "clean_tenant_principals: Completed clean up of %d principals for tenant %s, %d removed: %s."
     logger.info(
         removal_message,
         len(principals),
@@ -106,3 +112,75 @@ def clean_tenants_principals():
         logger.info("clean_tenant_principals: Completed principal clean up for tenant %s.", tenant.tenant_name)
 
     logger.info("clean_tenant_principals: Principal cleanup complete for all tenants.")
+
+
+ssl_context = ssl.create_default_context()
+ssl_context.check_hostname = False
+# Cert verification of IT host is failing complains about self-signed cert
+# Since hot umb host it is within Red Hat network, we can trust the host
+ssl_context.verify_mode = ssl.CERT_NONE
+if os.path.isfile(CERT_LOC):
+    ssl_context.load_cert_chain(CERT_LOC, keyfile=KEY_LOC)
+
+CONFIG = StompConfig(f"ssl://{settings.UMB_HOST}:{settings.UMB_PORT}", sslContext=ssl_context)
+QUEUE = f"/queue/Consumer.{settings.SA_NAME}.users-subscription.VirtualTopic.canonical.user"
+UMB_CLIENT = Stomp(CONFIG)
+
+
+def is_umb_deactivate_msg(data_dict):
+    """Check if the message is a user deactivation message from UMB."""
+    if not data_dict.get("CanonicalMessage"):  # Skip if it is not CanonicalMessage
+        return False
+    # We only care about disabled user, operation == update and status == Inactive
+    operation = data_dict["CanonicalMessage"].get("Header", {}).get("Operation")
+    if operation != "update":
+        return False
+    status = data_dict["CanonicalMessage"].get("Payload", {}).get("Sync").get("User", {}).get("Status", {})
+    if status.get("@primary") != "true" or status.get("State") != "Inactive":
+        return False
+
+    return True
+
+
+def clean_principal_umb(data_dict):
+    """Delete the principal if it exists."""
+    user_principal_login = data_dict["CanonicalMessage"]["Payload"]["Sync"]["User"]["Person"]["Credentials"]["Login"]
+    # In case the user is under multiple account
+    principals = (
+        Principal.objects.filter(username=user_principal_login)
+        .exclude(cross_account=True)
+        .exclude(type=TYPE_SERVICE_ACCOUNT)
+    )
+    groups = defaultdict(list)
+    for principal in principals:
+        # Log the group info in case it is needed
+        for group in principal.group.all():
+            groups[principal.tenant.tenant_name].append(group.name)
+            # We have to trigger the removal in order to clear the cache, or the console will still show the cached
+            # number of members
+            group.principals.remove(principal)
+        principal.delete()
+    return user_principal_login, groups
+
+
+def clean_principals_via_umb():
+    """Check which principals are eligible for clean up via UMB."""
+    logger.info("clean_tenant_principals: Start principal clean up via umb.")
+    UMB_CLIENT.connect()
+    UMB_CLIENT.subscribe(QUEUE, {StompSpec.ACK_HEADER: StompSpec.ACK_CLIENT_INDIVIDUAL})
+    while UMB_CLIENT.canRead(2):  # Check if queue is empty, two sec timeout
+        frame = UMB_CLIENT.receiveFrame()
+        data_dict = xmltodict.parse(frame.body)
+        is_deactivate = is_umb_deactivate_msg(data_dict)
+        if not is_deactivate:
+            # Drop the message cause it is not useless for us
+            UMB_CLIENT.ack(frame)
+            continue
+        principal_name, groups = clean_principal_umb(data_dict)
+        if not groups:
+            logger.info(f"Principal {principal_name} was not under any groups.")
+        for tenant, group_names in groups.items():
+            logger.info(f"Principal {principal_name} was under tenant {tenant} in groups: {group_names}")
+        UMB_CLIENT.ack(frame)  # This will remove the message from the queue
+    UMB_CLIENT.disconnect()
+    logger.info("clean_tenant_principals: Principal clean up finished.")

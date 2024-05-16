@@ -38,7 +38,6 @@ from corsheaders.defaults import default_headers
 from dateutil.parser import parse as parse_dt
 from app_common_python import LoadedConfig, KafkaTopics
 
-from . import ECSCustom
 
 # Database
 # https://docs.djangoproject.com/en/2.0/ref/settings/#databases
@@ -466,5 +465,9 @@ IT_SERVICE_PROTOCOL_SCHEME = ENVIRONMENT.get_value("IT_SERVICE_PROTOCOL_SCHEME",
 IT_SERVICE_TIMEOUT_SECONDS = ENVIRONMENT.int("IT_SERVICE_TIMEOUT_SECONDS", default=10)
 IT_TOKEN_JKWS_CACHE_LIFETIME = ENVIRONMENT.int("IT_TOKEN_JKWS_CACHE_LIFETIME", default=28800)
 
-# Settings for enabling/disabling deletion in principal cleanup job
-PRINCIPAL_CLEANUP_DELETION_ENABLED = ENVIRONMENT.bool("PRINCIPAL_CLEANUP_DELETION_ENABLED", default=False)
+# Settings for enabling/disabling deletion in principal cleanup job via UMB
+PRINCIPAL_CLEANUP_DELETION_ENABLED_UMB = ENVIRONMENT.bool("PRINCIPAL_CLEANUP_DELETION_ENABLED_UMB", default=False)
+UMB_HOST = ENVIRONMENT.get_value("UMB_HOST", default="localhost")
+UMB_PORT = ENVIRONMENT.get_value("UMB_PORT", default="61612")
+# Service account name
+SA_NAME = ENVIRONMENT.get_value("SA_NAME", default="nonprod-hcc-rbac")
