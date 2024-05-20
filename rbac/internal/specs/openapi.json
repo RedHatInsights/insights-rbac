@@ -984,7 +984,7 @@
       }
     },
     "/api/utils/role_migration/": {
-      "delete": {
+      "post": {
         "tags": [
           "Role migration"
         ],
@@ -1012,14 +1012,11 @@
           }
         ],
         "responses": {
-          "204": {
-            "description": "Permission deleted"
+          "202": {
+            "description": "Role migration from V1 to V2 are running in a background worker."
           },
-          "400": {
-            "description": "Bad Input"
-          },
-          "404": {
-            "description": "Not Found",
+          "405": {
+            "description": "Invalid method, only 'POST' is allowed.",
             "content": {
               "application/json": {
                 "schema": {

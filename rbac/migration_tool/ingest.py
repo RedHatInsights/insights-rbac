@@ -25,11 +25,11 @@ def extract_info_into_v1_role(role: Role):
     """Extract the information from the role and returns a V1role object."""
     perm_res_defs: dict[Tuple[str, str], list[V1resourcedef]] = {}
     roles: dict[str, list[str]] = {}
+    role_id = f"{role.id}"
     for access in role.access.all():
         for resource_def in access.resourceDefinitions.all():
             attri_filter = resource_def.attributeFilter
             res_def = V1resourcedef(attri_filter["key"], attri_filter["operation"], attri_filter["value"])
-            role_id = f"{role.id}"
             if res_def.resource_id != "":
                 add_element(perm_res_defs, (role_id, access.permission.permission), res_def)
         extend_unique(roles, role_id, access.permission.permission)
