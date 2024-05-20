@@ -20,7 +20,7 @@ from uuid import uuid4
 
 from django.conf import settings
 from django.test.utils import override_settings
-from django.urls import reverse
+from django.urls import reverse, resolve
 from rest_framework import status
 from rest_framework.test import APIClient
 
@@ -208,6 +208,24 @@ class RoleViewsetTests(IdentityRequest):
             ]
             response = self.create_role(role_name, in_access_data=access_data)
             self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+            # test whether newly created role is added correctly within audit log database
+            al_url = "/api/v1/auditlogs/"
+            al_client = APIClient()
+            al_response = al_client.get(al_url, **self.headers)
+            retrieve_data = al_response.data.get("data")
+            al_list = retrieve_data
+            al_dict = al_list[0]
+
+            al_dict_principal_username = al_dict["principal_username"]
+            al_dict_description = al_dict["description"]
+            al_dict_resource = al_dict["resource_type"]
+            al_dict_action = al_dict["action"]
+
+            self.assertEqual(self.user_data["username"], al_dict_principal_username)
+            self.assertIsNotNone(al_dict_description)
+            self.assertEqual(al_dict_resource, "role")
+            self.assertEqual(al_dict_action, "create")
 
             # test that we can retrieve the role
             url = reverse("role-detail", kwargs={"uuid": response.data.get("uuid")})
