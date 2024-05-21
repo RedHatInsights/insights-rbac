@@ -1914,7 +1914,7 @@ data:
                 "yAxis": {
                   "axisPlacement": "left",
                   "reverse": false,
-                  "unit": "dtdurations"
+                  "unit": "dtdurationms"
                 }
               },
               "pluginVersion": "10.4.1",
@@ -3906,7 +3906,7 @@ data:
       "timezone": "",
       "title": "Operations - Rbac w/CPU",
       "uid": "TjP_nMWMk",
-      "version": 7,
+      "version": 8,
       "weekStart": ""
     }
 kind: ConfigMap
