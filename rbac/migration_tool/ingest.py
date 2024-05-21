@@ -15,10 +15,14 @@ You should have received a copy of the GNU Affero General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 
+import logging
 from typing import Tuple
 
 from management.role.model import Role
 from migration_tool.models import V1permission, V1resourcedef, V1role
+
+
+logger = logging.getLogger(__name__)
 
 
 def extract_info_into_v1_role(role: Role):
@@ -39,7 +43,13 @@ def extract_info_into_v1_role(role: Role):
         for perm in perm_list:
             perm_parts = perm.split(":")
             res_defs = [res_def for res_def in perm_res_defs.get((role_id, perm), [])]
-            v1_perm = V1permission(perm_parts[0], perm_parts[1], perm_parts[2], frozenset(res_defs))
+            try:
+                v1_perm = V1permission(perm_parts[0], perm_parts[1], perm_parts[2], frozenset(res_defs))
+            except Exception as e:
+                logger.info(perm_parts)
+                logger.info(res_defs)
+                logger.info(perm_res_defs)
+                raise e
             v1_perms.append(v1_perm)
         v1_role = V1role(role_id, frozenset(v1_perms), frozenset())  # we don't get groups from the sheet
         v1_roles.append(v1_role)
