@@ -1037,6 +1037,28 @@
           }
         }
       }
+    },
+    "/openapi.json": {
+      "get": {
+        "tags": [
+          "Other operations"
+        ],
+        "summary": "Get API document in JSON format",
+        "description": "Get document for Internal Integrations API for Role Based Access Control.",
+        "operationId": "openapi",
+        "responses": {
+          "200": {
+            "description": "The API document for Internal RBAC endpoints.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "servers": [
