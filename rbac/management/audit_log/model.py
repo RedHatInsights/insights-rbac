@@ -64,7 +64,7 @@ class AuditLog(TenantAwareModel):
     tenant = models.ForeignKey(Tenant, on_delete=models.SET_NULL, null=True)
 
     def get_resource_item(self, r_type, request, *args, **kwargs):
-        """Find related items (eg, name, id, etc...) to each resource time."""
+        """Find related information (eg, name, id, etc...) for each resource item."""
         if r_type == AuditLog.ROLE:
             role_items = []
             if request.data != {}:
