@@ -29,5 +29,5 @@ source $CICD_ROOT/deploy_ephemeral_env.sh
 # Run smoke tests with ClowdJobInvocation
 source $CICD_ROOT/cji_smoke_test.sh
 
-#Run the new image for the unit_tests and run the unit tests
+# Run the new image for the unit_tests and run the unit tests
 source $APP_ROOT/unit_test.sh
