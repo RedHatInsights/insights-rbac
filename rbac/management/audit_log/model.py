@@ -66,7 +66,6 @@ class AuditLog(TenantAwareModel):
     def get_resource_item(self, r_type, request, *args, **kwargs):
         """Find related information (eg, name, id, etc...) for each resource item."""
         if r_type == AuditLog.ROLE:
-            role_items = []
             if request.data != {}:
                 role_object = get_object_or_404(Role, name=request.data["name"])
             else:
@@ -74,12 +73,9 @@ class AuditLog(TenantAwareModel):
             # retrieve role id and name
             role_object_id = role_object.id
             role_object_name = "role: " + role_object.name
-            role_items.append(role_object_id)
-            role_items.append(role_object_name)
-            return role_items
+            return role_object_id, role_object_name
 
         elif r_type == AuditLog.GROUP:
-            group_items = []
             if request._data is not None:
                 group_object = get_object_or_404(Group, name=request.data["name"])
             else:
@@ -87,9 +83,7 @@ class AuditLog(TenantAwareModel):
                 group_object = get_object_or_404(Group, uuid=group_uuid)
             group_object_id = group_object.id
             group_object_name = "group: " + group_object.name
-            group_items.append(group_object_id)
-            group_items.append(group_object_name)
-            return group_items
+            return group_object_id, group_object_name
 
         elif r_type == AuditLog.PERMISSION:
             # TODO: update for permission related items
@@ -98,25 +92,21 @@ class AuditLog(TenantAwareModel):
         elif r_type == "principal":
             current_user = management.utils.get_principal_from_request(request)
             principal_object = get_object_or_404(Principal, username=current_user.username)
-            return [principal_object.id, principal_object.username]
+            return principal_object.id, principal_object.username
 
-        elif r_type == "tenant":
-            tenant_object = get_object_or_404(Tenant, org_id=request._user.org_id)
-            return tenant_object.id
+    def get_tenant_id(self, request):
+        """Retrieve tenant id from request."""
+        tenant_object = get_object_or_404(Tenant, org_id=request._user.org_id)
+        return tenant_object.id
 
     def log_create(self, request, resource):
         """Audit Log when a role or a group is created."""
-        principal_items = self.get_resource_item("principal", request)
-        self.principal_id = principal_items[0]
-        self.principal_username = principal_items[1]
-
-        create_resource_items = self.get_resource_item(resource, request)
-
+        self.principal_id, self.principal_username = self.get_resource_item("principal", request)
         self.resource_type = resource
 
-        self.resource_id = create_resource_items[0]
-        self.description = "Created " + create_resource_items[1]
+        self.resource_id, resource_name = self.get_resource_item(resource, request)
+        self.description = "Created " + resource_name
 
         self.action = AuditLog.CREATE
-        self.tenant_id = self.get_resource_item("tenant", request)
+        self.tenant_id = self.get_tenant_id(request)
         super(AuditLog, self).save()
