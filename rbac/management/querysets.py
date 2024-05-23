@@ -45,10 +45,9 @@ from rbac.env import ENVIRONMENT
 
 
 SCOPE_KEY = "scope"
-ACCOUNT_SCOPE = "account"
 ORG_ID_SCOPE = "org_id"
 PRINCIPAL_SCOPE = "principal"
-VALID_SCOPES = [ACCOUNT_SCOPE, ORG_ID_SCOPE, PRINCIPAL_SCOPE]
+VALID_SCOPES = [ORG_ID_SCOPE, PRINCIPAL_SCOPE]
 PRINCIPAL_QUERYSET_MAP = {
     Access.__name__: access_for_principal,
     Group.__name__: groups_for_principal,

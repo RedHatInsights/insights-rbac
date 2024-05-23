@@ -2699,7 +2699,7 @@ class GroupViewNonAdminTests(IdentityRequest):
             "permission."
         )
         self.invalid_value_for_scope_query_param = (
-            "scope query parameter value foo is invalid. [account, org_id, principal] are valid inputs."
+            "scope query parameter value foo is invalid. [org_id, principal] are valid inputs."
         )
         self.user_access_admin_role_err_message = (
             "Non org admin users are not allowed to add RBAC role with higher than 'read' permission into groups."

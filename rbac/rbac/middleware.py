@@ -294,7 +294,6 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
         query_string = ""
         is_admin = False
         is_system = False
-        account = None
         org_id = None
         username = None
         req_id = getattr(request, "req_id", None)
@@ -306,13 +305,11 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
             if username:
                 # rbac.api.models.User has these fields
                 is_admin = request.user.admin
-                account = request.user.account
                 org_id = request.user.org_id
                 is_system = request.user.system
             else:
                 # django.contrib.auth.models.AnonymousUser does not
                 is_admin = is_system = False
-                account = None
                 org_id = None
 
         # Todo: add some info back to logs
@@ -347,7 +344,6 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
             "path": request.path + query_string,
             "status": response.status_code,
             "request_id": req_id,
-            "account": account,
             "org_id": org_id,
             "username": username,
             "is_admin": is_admin,
