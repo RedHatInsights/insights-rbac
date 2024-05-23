@@ -2993,7 +2993,6 @@
         "schema": {
           "type": "string",
           "enum": [
-            "account",
             "org_id",
             "principal"
           ],

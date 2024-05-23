@@ -422,7 +422,6 @@ class GroupViewSet(
         user: User,
         group: Group,
         service_accounts: Iterable[dict],
-        account_name: str = "",
         org_id: str = "",
     ) -> Group:
         """Process the list of service accounts and add them to the group."""
@@ -595,7 +594,6 @@ class GroupViewSet(
         """
         validate_uuid(uuid, "group uuid validation")
         group = self.get_object()
-        account = self.request.user.account
         org_id = self.request.user.org_id
         if request.method == "POST":
             # Make sure that system groups are kept unmodified.
@@ -633,7 +631,6 @@ class GroupViewSet(
                         user=request.user,
                         group=group,
                         service_accounts=service_accounts,
-                        account_name=account,
                         org_id=org_id,
                     )
                 except InsufficientPrivilegesError as ipe:
@@ -854,7 +851,6 @@ class GroupViewSet(
                         user=request.user,
                         service_accounts=service_accounts,
                         group=group,
-                        account_name=account,
                         org_id=org_id,
                     )
                 except InsufficientPrivilegesError as ipe:
@@ -1080,7 +1076,7 @@ class GroupViewSet(
         return roles.exclude(uuid__in=roles_for_group)
 
     def remove_service_accounts(
-        self, user: User, group: Group, service_accounts: Iterable[str], account_name: str = "", org_id: str = ""
+        self, user: User, group: Group, service_accounts: Iterable[str], org_id: str = ""
     ) -> None:
         """Remove the given service accounts from the tenant."""
         # Log our intention.

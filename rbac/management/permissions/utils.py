@@ -19,9 +19,8 @@
 from rest_framework import permissions
 
 SCOPE_KEY = "scope"
-ACCOUNT_SCOPE = "account"
+ORG_ID_SCOPE = "org_id"
 PRINCIPAL_SCOPE = "principal"
-VALID_SCOPES = [ACCOUNT_SCOPE, PRINCIPAL_SCOPE]
 
 
 def is_scope_principal(request):
@@ -29,7 +28,7 @@ def is_scope_principal(request):
     if request.method not in permissions.SAFE_METHODS:
         return False
 
-    scope = request.query_params.get(SCOPE_KEY, ACCOUNT_SCOPE)
+    scope = request.query_params.get(SCOPE_KEY, ORG_ID_SCOPE)
     if scope != PRINCIPAL_SCOPE:
         return False
     return True
