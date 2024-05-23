@@ -55,10 +55,7 @@ class Policy(TenantAwareModel):
 def policy_changed_cache_handler(sender=None, instance=None, using=None, **kwargs):
     """Signal handler for Principal cache expiry on Policy deletion."""
     logger.info("Handling signal for deleted policy %s - invalidating associated user cache keys", instance)
-    if settings.AUTHENTICATE_WITH_ORG_ID:
-        cache = AccessCache(instance.tenant.org_id)
-    else:
-        cache = AccessCache(instance.tenant.tenant_name)
+    cache = AccessCache(instance.tenant.org_id)
     if instance.group:
         principals = instance.group.principals.all()
         if instance.group.platform_default:
@@ -71,10 +68,7 @@ def policy_to_roles_cache_handler(
     sender=None, instance=None, action=None, reverse=None, model=None, pk_set=None, using=None, **kwargs  # noqa: C901
 ):
     """Signal handler for Principal cache expiry on Policy/Role m2m change."""
-    if settings.AUTHENTICATE_WITH_ORG_ID:
-        cache = AccessCache(instance.tenant.org_id)
-    else:
-        cache = AccessCache(instance.tenant.tenant_name)
+    cache = AccessCache(instance.tenant.org_id)
     if action in ("post_add", "pre_remove"):
         logger.info("Handling signal for %s roles change - invalidating policy cache", instance)
         if isinstance(instance, Policy):

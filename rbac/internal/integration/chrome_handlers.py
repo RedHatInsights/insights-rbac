@@ -47,7 +47,5 @@ def build_chrome_message(event_type, uuid, org_id):
 
 def send_chrome_message(event_type, uuid, org_id):
     """Build and send chrome message."""
-    if not settings.AUTHENTICATE_WITH_ORG_ID:
-        return
     chrome_message = build_chrome_message(event_type, uuid, org_id)
     chrome_producer.send_kafka_message(chrome_topic, chrome_message)

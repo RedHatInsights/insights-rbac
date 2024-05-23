@@ -2994,9 +2994,10 @@
           "type": "string",
           "enum": [
             "account",
+            "org_id",
             "principal"
           ],
-          "default": "account"
+          "default": "org_id"
         }
       },
       "NameMatchCriteria": {
@@ -3692,6 +3693,7 @@
       "CrossAccountRequestIn": {
         "required": [
           "target_account",
+          "target_org",
           "start_date",
           "end_date",
           "roles"

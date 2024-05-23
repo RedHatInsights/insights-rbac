@@ -172,16 +172,8 @@ class InternalViewsetTests(IdentityRequest):
 
         response = self.client.get(f"/_private/api/tenant/unmodified/", **self.request.META)
         response_data = json.loads(response.content)
-        if settings.AUTHENTICATE_WITH_ORG_ID:
-            self.assertCountEqual(
-                response_data["unmodified_tenants"],
-                [self.tenant.org_id, unmodified_tenant_2.org_id],
-            )
-        else:
-            self.assertCountEqual(
-                response_data["unmodified_tenants"],
-                [self.tenant.tenant_name, unmodified_tenant_2.tenant_name],
-            )
+        self.assertCountEqual(response_data["unmodified_tenants"], [self.tenant.org_id, unmodified_tenant_2.org_id])
+
         self.assertEqual(response_data["unmodified_tenants_count"], 2)
         self.assertEqual(response_data["total_tenants_count"], 4)
 

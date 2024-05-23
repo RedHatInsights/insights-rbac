@@ -90,7 +90,6 @@ class PrincipalViewNonAdminTests(IdentityRequest):
         response = client.get(url, **self.headers)
 
         mock_request.assert_called_once_with(
-            account=self.customer["account_id"],
             limit=10,
             offset=0,
             options={
@@ -155,7 +154,6 @@ class PrincipalViewsetTests(IdentityRequest):
         response = client.get(url, **self.headers)
 
         mock_request.assert_called_once_with(
-            account=self.customer_data["account_id"],
             limit=10,
             offset=0,
             options={
@@ -251,7 +249,6 @@ class PrincipalViewsetTests(IdentityRequest):
         response = client.get(url, **self.headers)
 
         mock_request.assert_called_once_with(
-            account=self.customer_data["account_id"],
             limit=10,
             offset=0,
             options={
@@ -295,7 +292,6 @@ class PrincipalViewsetTests(IdentityRequest):
 
         mock_request.assert_called_once_with(
             ["test_user", "cross_account_user"],
-            account=ANY,
             org_id=ANY,
             limit=10,
             offset=30,
@@ -334,7 +330,6 @@ class PrincipalViewsetTests(IdentityRequest):
 
         mock_request.assert_called_once_with(
             ["test_user75"],
-            account=ANY,
             org_id=ANY,
             limit=10,
             offset=30,
@@ -369,7 +364,6 @@ class PrincipalViewsetTests(IdentityRequest):
         response = client.get(url, **self.headers)
 
         mock_request.assert_called_once_with(
-            account=self.customer_data["account_id"],
             input={"principalStartsWith": "test_us"},
             limit=10,
             offset=30,
@@ -405,7 +399,6 @@ class PrincipalViewsetTests(IdentityRequest):
         response = client.get(url, **self.headers)
 
         mock_request.assert_called_once_with(
-            account=self.customer_data["account_id"],
             input={"principalStartsWith": "test_us", "emailStartsWith": "test"},
             limit=10,
             offset=30,
@@ -476,7 +469,6 @@ class PrincipalViewsetTests(IdentityRequest):
 
         mock_request.assert_called_once_with(
             ["test_user"],
-            account=ANY,
             org_id=ANY,
             limit=10,
             offset=30,
@@ -494,10 +486,7 @@ class PrincipalViewsetTests(IdentityRequest):
             self.assertIn(keyname, response.data)
         self.assertIsInstance(response.data.get("data"), list)
         self.assertEqual(response.data.get("meta").get("count"), 1)
-        if settings.AUTHENTICATE_WITH_ORG_ID:
-            resp = proxy._process_data(response.data.get("data"), org_id="4321", org_id_filter=True, return_id=True)
-        else:
-            resp = proxy._process_data(response.data.get("data"), account="1234", account_filter=True, return_id=True)
+        resp = proxy._process_data(response.data.get("data"), org_id="4321", org_id_filter=True, return_id=True)
         self.assertEqual(len(resp), 1)
 
         self.assertEqual(resp[0]["username"], "test_user")
@@ -521,10 +510,7 @@ class PrincipalViewsetTests(IdentityRequest):
         for keyname in ["meta", "links", "data"]:
             self.assertIn(keyname, response.data)
         self.assertIsInstance(response.data.get("data"), list)
-        if settings.AUTHENTICATE_WITH_ORG_ID:
-            resp = proxy._process_data(response.data.get("data"), org_id="4321", org_id_filter=True)
-        else:
-            resp = proxy._process_data(response.data.get("data"), account="1234", account_filter=True)
+        resp = proxy._process_data(response.data.get("data"), org_id="4321", org_id_filter=True)
         self.assertEqual(len(resp), 0)
 
         self.assertNotEqual(resp, "test_user")
@@ -548,10 +534,8 @@ class PrincipalViewsetTests(IdentityRequest):
             self.assertIn(keyname, response.data)
         self.assertIsInstance(response.data.get("data"), list)
         self.assertEqual(response.data.get("meta").get("count"), 1)
-        if settings.AUTHENTICATE_WITH_ORG_ID:
-            resp = proxy._process_data(response.data.get("data"), org_id="4321", org_id_filter=False)
-        else:
-            resp = proxy._process_data(response.data.get("data"), account="1234", account_filter=False)
+        resp = proxy._process_data(response.data.get("data"), org_id="4321", org_id_filter=False)
+
         self.assertEqual(len(resp), 1)
 
         self.assertEqual(resp[0]["username"], "test_user")
@@ -574,14 +558,10 @@ class PrincipalViewsetTests(IdentityRequest):
             self.assertIn(keyname, response.data)
         self.assertIsInstance(response.data.get("data"), list)
         self.assertEqual(response.data.get("meta").get("count"), 1)
-        if settings.AUTHENTICATE_WITH_ORG_ID:
-            resp = proxy._process_data(response.data.get("data"), org_id="54322", org_id_filter=False)
-        else:
-            resp = proxy._process_data(response.data.get("data"), account="54321", account_filter=False)
+        resp = proxy._process_data(response.data.get("data"), org_id="54322", org_id_filter=False)
         self.assertEqual(len(resp), 1)
 
         mock_request.assert_called_once_with(
-            account=self.customer_data["account_id"],
             input={"primaryEmail": "test_user@example.com"},
             limit=10,
             offset=0,
@@ -617,7 +597,6 @@ class PrincipalViewsetTests(IdentityRequest):
         self.assertIsInstance(response.data.get("data"), list)
         self.assertEqual(response.data.get("meta").get("count"), "1")
         mock_request.assert_called_once_with(
-            account=self.customer_data["account_id"],
             limit=10,
             offset=0,
             options={
@@ -651,7 +630,6 @@ class PrincipalViewsetTests(IdentityRequest):
         self.assertIsInstance(response.data.get("data"), list)
         self.assertEqual(response.data.get("meta").get("count"), "1")
         mock_request.assert_called_once_with(
-            account=self.customer_data["account_id"],
             limit=10,
             offset=0,
             options={
@@ -685,7 +663,6 @@ class PrincipalViewsetTests(IdentityRequest):
         self.assertIsInstance(response.data.get("data"), list)
         self.assertEqual(response.data.get("meta").get("count"), "1")
         mock_request.assert_called_once_with(
-            account=self.customer_data["account_id"],
             limit=10,
             offset=0,
             options={
@@ -741,14 +718,10 @@ class PrincipalViewsetTests(IdentityRequest):
             self.assertIn(keyname, response.data)
         self.assertIsInstance(response.data.get("data"), list)
         self.assertEqual(response.data.get("meta").get("count"), 1)
-        if settings.AUTHENTICATE_WITH_ORG_ID:
-            resp = proxy._process_data(response.data.get("data"), org_id="54322", org_id_filter=False)
-        else:
-            resp = proxy._process_data(response.data.get("data"), account="54321", account_filter=False)
+        resp = proxy._process_data(response.data.get("data"), org_id="54322", org_id_filter=False)
         self.assertEqual(len(resp), 1)
 
         mock_request.assert_called_once_with(
-            account=self.customer_data["account_id"],
             input={"emailStartsWith": "test_use"},
             limit=10,
             offset=0,
@@ -798,7 +771,6 @@ class PrincipalViewsetTests(IdentityRequest):
         response = client.get(url, **self.headers)
 
         mock_request.assert_called_once_with(
-            account=self.customer_data["account_id"],
             limit=10,
             offset=0,
             options={

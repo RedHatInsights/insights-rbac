@@ -21,7 +21,6 @@ import logging
 
 import requests
 from core.utils import destructive_ok
-from django.conf import settings
 from django.db import transaction
 from django.db.migrations.recorder import MigrationRecorder
 from django.http import HttpResponse
@@ -89,10 +88,7 @@ def list_unmodified_tenants(request):
     to_return = []
     for tenant_obj in tenant_qs:
         if tenant_is_unmodified(tenant_name=tenant_obj.tenant_name, org_id=tenant_obj.org_id):
-            if settings.AUTHENTICATE_WITH_ORG_ID:
-                to_return.append(tenant_obj.org_id)
-            else:
-                to_return.append(tenant_obj.tenant_name)
+            to_return.append(tenant_obj.org_id)
     payload = {
         "unmodified_tenants": to_return,
         "unmodified_tenants_count": len(to_return),
@@ -191,17 +187,14 @@ def migration_progress(request):
         else:
             tenant_qs = Tenant.objects.exclude(tenant_name="public")
         tenant_count = tenant_qs.count()
-        for idx, tenant in enumerate(list(tenant_qs)):
+        for tenant in list(tenant_qs):
             migrations_have_run = MigrationRecorder.Migration.objects.filter(
                 name=migration_name, app=app_name
             ).exists()
             if migrations_have_run:
                 tenants_completed_count += 1
             else:
-                if settings.AUTHENTICATE_WITH_ORG_ID:
-                    incomplete_tenants.append(tenant.org_id)
-                else:
-                    incomplete_tenants.append(tenant.tenant_name)
+                incomplete_tenants.append(tenant.org_id)
         payload = {
             "migration_name": migration_name,
             "app_name": app_name,

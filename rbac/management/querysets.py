@@ -98,14 +98,9 @@ def _gather_group_querysets(request, args, kwargs):
     """Decide which groups to provide for request."""
     username = request.query_params.get("username")
 
-    if settings.AUTHENTICATE_WITH_ORG_ID:
-        scope = request.query_params.get(SCOPE_KEY, ORG_ID_SCOPE)
-        if scope != ORG_ID_SCOPE and not username:
-            return get_object_principal_queryset(request, scope, Group)
-    else:
-        scope = request.query_params.get(SCOPE_KEY, ACCOUNT_SCOPE)
-        if scope != ACCOUNT_SCOPE and not username:
-            return get_object_principal_queryset(request, scope, Group)
+    scope = request.query_params.get(SCOPE_KEY, ORG_ID_SCOPE)
+    if scope != ORG_ID_SCOPE and not username:
+        return get_object_principal_queryset(request, scope, Group)
 
     public_tenant = Tenant.objects.get(tenant_name="public")
     default_group_set = Group.platform_default_set().filter(
@@ -155,7 +150,7 @@ def annotate_roles_with_counts(queryset):
 
 def get_role_queryset(request) -> QuerySet:
     """Obtain the queryset for roles."""
-    scope = request.query_params.get(SCOPE_KEY, ACCOUNT_SCOPE)
+    scope = request.query_params.get(SCOPE_KEY, ORG_ID_SCOPE)
     public_tenant = Tenant.objects.get(tenant_name="public")
     base_query = annotate_roles_with_counts(Role.objects.prefetch_related("access")).filter(
         tenant__in=[request.tenant, public_tenant]
@@ -219,14 +214,9 @@ def get_role_queryset(request) -> QuerySet:
 
 def get_policy_queryset(request):
     """Obtain the queryset for policies."""
-    if settings.AUTHENTICATE_WITH_ORG_ID:
-        scope = request.query_params.get(SCOPE_KEY, ORG_ID_SCOPE)
-        if scope != ORG_ID_SCOPE:
-            return get_object_principal_queryset(request, scope, Policy)
-    else:
-        scope = request.query_params.get(SCOPE_KEY, ACCOUNT_SCOPE)
-        if scope != ACCOUNT_SCOPE:
-            return get_object_principal_queryset(request, scope, Policy)
+    scope = request.query_params.get(SCOPE_KEY, ORG_ID_SCOPE)
+    if scope != ORG_ID_SCOPE:
+        return get_object_principal_queryset(request, scope, Policy)
 
     if ENVIRONMENT.get_value("ALLOW_ANY", default=False, cast=bool):
         return filter_queryset_by_tenant(Policy.objects.all(), request.tenant)
