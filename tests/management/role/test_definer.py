@@ -41,10 +41,7 @@ class RoleDefinerTests(IdentityRequest):
 
             roles = Role.objects.filter(platform_default=True)
 
-            if settings.AUTHENTICATE_WITH_ORG_ID:
-                org_id = self.customer_data["org_id"]
-            else:
-                org_id = None
+            org_id = self.customer_data["org_id"]
 
             self.assertTrue(len(roles))
             self.assertFalse(Role.objects.get(name="User Access administrator").platform_default)
@@ -56,7 +53,6 @@ class RoleDefinerTests(IdentityRequest):
                     "application": "rbac",
                     "event_type": "rh-new-role-available",
                     "timestamp": ANY,
-                    "account_id": self.customer_data["account_id"],
                     "events": [
                         {
                             "metadata": {},
@@ -124,10 +120,7 @@ class RoleDefinerTests(IdentityRequest):
         platform_role_to_update.save()
         access.save()
 
-        if settings.AUTHENTICATE_WITH_ORG_ID:
-            org_id = self.customer_data["org_id"]
-        else:
-            org_id = None
+        org_id = self.customer_data["org_id"]
 
         with self.settings(NOTIFICATIONS_RH_ENABLED=True, NOTIFICATIONS_ENABLED=True):
             seed_roles()
@@ -145,7 +138,6 @@ class RoleDefinerTests(IdentityRequest):
                         "application": "rbac",
                         "event_type": "rh-non-platform-default-role-updated",
                         "timestamp": ANY,
-                        "account_id": self.customer_data["account_id"],
                         "events": [
                             {
                                 "metadata": {},
@@ -167,7 +159,6 @@ class RoleDefinerTests(IdentityRequest):
                         "application": "rbac",
                         "event_type": "rh-platform-default-role-updated",
                         "timestamp": ANY,
-                        "account_id": self.customer_data["account_id"],
                         "events": [
                             {
                                 "metadata": {},

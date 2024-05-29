@@ -234,10 +234,7 @@ class RoleViewsetTests(IdentityRequest):
             uuid = response.data.get("uuid")
             role = Role.objects.get(uuid=uuid)
 
-            if settings.AUTHENTICATE_WITH_ORG_ID:
-                org_id = self.customer_data["org_id"]
-            else:
-                org_id = None
+            org_id = self.customer_data["org_id"]
 
             self.assertIsNotNone(uuid)
             self.assertIsNotNone(response.data.get("name"))
@@ -258,7 +255,6 @@ class RoleViewsetTests(IdentityRequest):
                     "application": "rbac",
                     "event_type": "custom-role-created",
                     "timestamp": ANY,
-                    "account_id": self.customer_data["account_id"],
                     "events": [
                         {
                             "metadata": {},
@@ -1178,10 +1174,7 @@ class RoleViewsetTests(IdentityRequest):
             client = APIClient()
             response = client.put(url, test_data, format="json", **self.headers)
 
-            if settings.AUTHENTICATE_WITH_ORG_ID:
-                org_id = self.customer_data["org_id"]
-            else:
-                org_id = None
+            org_id = self.customer_data["org_id"]
 
             self.assertEqual(response.status_code, status.HTTP_200_OK)
 
@@ -1195,7 +1188,6 @@ class RoleViewsetTests(IdentityRequest):
                     "application": "rbac",
                     "event_type": "custom-role-updated",
                     "timestamp": ANY,
-                    "account_id": self.customer_data["account_id"],
                     "events": [
                         {
                             "metadata": {},
@@ -1332,10 +1324,7 @@ class RoleViewsetTests(IdentityRequest):
             client = APIClient()
             response = client.delete(url, **self.headers)
 
-            if settings.AUTHENTICATE_WITH_ORG_ID:
-                org_id = self.customer_data["org_id"]
-            else:
-                org_id = None
+            org_id = self.customer_data["org_id"]
 
             self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
 
@@ -1346,7 +1335,6 @@ class RoleViewsetTests(IdentityRequest):
                     "application": "rbac",
                     "event_type": "custom-role-deleted",
                     "timestamp": ANY,
-                    "account_id": self.customer_data["account_id"],
                     "events": [
                         {
                             "metadata": {},

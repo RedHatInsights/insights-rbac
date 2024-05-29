@@ -101,6 +101,7 @@ class CrossAccountRequestViewTests(IdentityRequest):
         )
         t.ready = True
         t.save()
+
         self.role_1 = Role.objects.create(name="role_1", system=True, tenant=public_tenant)
         self.role_2 = Role.objects.create(name="role_2", system=True, tenant=public_tenant)
         self.role_9 = Role.objects.create(name="role_9", system=True, tenant=public_tenant)
@@ -266,21 +267,21 @@ class CrossAccountRequestViewTests(IdentityRequest):
                 ]
             )
 
-    def test_list_requests_query_by_user_id_filter_by_account_success(self):
+    def test_list_requests_query_by_user_id_filter_by_org_id_success(self):
         """Test listing cross account request based on user id of identity."""
         client = APIClient()
         response = client.get(
-            f"{URL_LIST}?query_by=user_id&account={self.not_anemic_account}", **self.associate_not_anemic_request.META
+            f"{URL_LIST}?query_by=user_id&org_id={self.not_anemic_org_id}", **self.associate_not_anemic_request.META
         )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data["data"]), 1)
         self.assertEqual(response.data["data"][0].get("user_id"), "1111111")
-        self.assertEqual(response.data["data"][0].get("target_account"), self.not_anemic_account)
+        self.assertEqual(response.data["data"][0].get("target_org"), self.not_anemic_org_id)
         self.assertEqual(response.data["data"][0].get("status"), "approved")
 
         response = client.get(
-            f"{URL_LIST}?query_by=user_id&account={self.not_anemic_account},{self.another_account}",
+            f"{URL_LIST}?query_by=user_id&org_id={self.not_anemic_org_id},{self.another_org_id}",
             **self.associate_not_anemic_request.META,
         )
 
@@ -300,21 +301,21 @@ class CrossAccountRequestViewTests(IdentityRequest):
 
         client = APIClient()
         response = client.get(
-            f"{URL_LIST}?query_by=user_id&account=098765&approved_only=True", **self.associate_non_admin_request.META
+            f"{URL_LIST}?query_by=user_id&org_id=098765&approved_only=True", **self.associate_non_admin_request.META
         )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data["data"]), 0)
 
         response = client.get(
-            f"{URL_LIST}?query_by=user_id&account={self.another_account}&approved_only=True",
+            f"{URL_LIST}?query_by=user_id&org_id={self.another_org_id}&approved_only=True",
             **self.associate_non_admin_request.META,
         )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data["data"]), 1)
         self.assertEqual(response.data["data"][0].get("user_id"), "1111111")
-        self.assertEqual(response.data["data"][0].get("target_account"), self.another_account)
+        self.assertEqual(response.data["data"][0].get("target_org"), self.another_org_id)
         self.assertEqual(response.data["data"][0].get("status"), "approved")
 
     def test_list_requests_query_by_user_id_fail_if_not_associate(self):
@@ -417,7 +418,6 @@ class CrossAccountRequestViewTests(IdentityRequest):
                 "username": self.user_data["username"],
                 "request_id": response.data["request_id"],
             },
-            self.data4create["target_account"],
             self.data4create["target_org"],
         )
 
@@ -431,14 +431,9 @@ class CrossAccountRequestViewTests(IdentityRequest):
         )
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        if settings.AUTHENTICATE_WITH_ORG_ID:
-            self.assertEqual(
-                response.data.get("errors")[0].get("detail"), f"Org ID '{self.another_org_id}' does not exist."
-            )
-        else:
-            self.assertEqual(
-                response.data.get("errors")[0].get("detail"), f"Account '{self.another_account}' does not exist."
-            )
+        self.assertEqual(
+            response.data.get("errors")[0].get("detail"), f"Org ID '{self.another_org_id}' does not exist."
+        )
 
     def test_create_requests_towards_their_own_account_fail(self):
         """Test the creation of cross account request towards their own account fails."""
@@ -450,16 +445,10 @@ class CrossAccountRequestViewTests(IdentityRequest):
         )
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        if settings.AUTHENTICATE_WITH_ORG_ID:
-            self.assertEqual(
-                response.data.get("errors")[0].get("detail"),
-                "Creating a cross access request for your own org id is not allowed.",
-            )
-        else:
-            self.assertEqual(
-                response.data.get("errors")[0].get("detail"),
-                "Creating a cross access request for your own account is not allowed.",
-            )
+        self.assertEqual(
+            response.data.get("errors")[0].get("detail"),
+            "Creating a cross access request for your own org id is not allowed.",
+        )
 
     def test_create_requests_fail_for_none_associate(self):
         """Test the creation of cross account request fail for none red hat associate."""
@@ -582,8 +571,10 @@ class CrossAccountRequestViewTests(IdentityRequest):
 
     def test_update_request_fail_acct_for_requestor(self):
         """Test that updating the account of a CAR fails."""
-        self.data4create["target_account"] = "10001"
-        self.data4create["target_org"] = self.another_org_id
+        Tenant.objects.create(
+            tenant_name=f"acct{self.another_account}", account_id=self.another_account, org_id=self.another_org_id
+        )
+        self.data4create["target_org"] = "1000001"
 
         car_uuid = self.request_6.request_id
         url = reverse("cross-detail", kwargs={"pk": car_uuid})
@@ -592,7 +583,7 @@ class CrossAccountRequestViewTests(IdentityRequest):
         response = client.put(url, self.data4create, format="json", **self.associate_admin_request.META)
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertEqual(response.data.get("errors")[0].get("detail"), "Target account must stay the same.")
+        self.assertEqual(response.data.get("errors")[0].get("detail"), "Target org must stay the same.")
 
     def test_update_request_fail_org_for_requestor(self):
         """Test that updating the target org of a CAR fails."""
@@ -808,17 +799,10 @@ class CrossAccountRequestViewTests(IdentityRequest):
     def test_create_principal_on_approval(self):
         """Test that moving a car to approved creates a principal."""
         update_data = {"status": "approved"}
-        if settings.AUTHENTICATE_WITH_ORG_ID:
-            principal_name = get_cross_principal_name(self.request_2.target_org, self.request_2.user_id)
-            car_uuid = self.request_2.request_id
-            url = reverse("cross-detail", kwargs={"pk": str(car_uuid)})
-            tenant = Tenant.objects.get(org_id=self.request_2.target_org)
-        else:
-            tenant_name = create_tenant_name(self.request_2.target_account)
-            principal_name = get_cross_principal_name(self.request_2.target_account, self.request_2.user_id)
-            car_uuid = self.request_2.request_id
-            url = reverse("cross-detail", kwargs={"pk": str(car_uuid)})
-            tenant = Tenant.objects.get(tenant_name=tenant_name)
+        principal_name = get_cross_principal_name(self.request_2.target_org, self.request_2.user_id)
+        car_uuid = self.request_2.request_id
+        url = reverse("cross-detail", kwargs={"pk": str(car_uuid)})
+        tenant = Tenant.objects.get(org_id=self.request_2.target_org)
 
         client = APIClient()
         response = client.patch(url, update_data, format="json", **self.associate_admin_request.META)
@@ -830,8 +814,6 @@ class CrossAccountRequestViewTests(IdentityRequest):
         self.assertEqual(princ.username, principal_name)
         self.assertEqual(princ.tenant, tenant)
         self.assertTrue(princ.cross_account)
-        if not settings.AUTHENTICATE_WITH_ORG_ID:
-            self.assertTrue(princ.tenant.tenant_name, tenant_name)
 
     def test_cross_account_request_ordering_filter(self):
         """Test ordering filter for request id, created/start/end date."""

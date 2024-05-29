@@ -169,10 +169,7 @@ class GroupViewsetTests(IdentityRequest):
             group_name = "groupC"
             test_data = {"name": group_name}
 
-            if settings.AUTHENTICATE_WITH_ORG_ID:
-                org_id = self.customer_data["org_id"]
-            else:
-                org_id = None
+            org_id = self.customer_data["org_id"]
 
             # create a group
             url = reverse("group-list")
@@ -197,7 +194,6 @@ class GroupViewsetTests(IdentityRequest):
                     "application": "rbac",
                     "event_type": "group-created",
                     "timestamp": ANY,
-                    "account_id": self.customer_data["account_id"],
                     "events": [
                         {
                             "metadata": {},
@@ -651,10 +647,7 @@ class GroupViewsetTests(IdentityRequest):
             updated_name = self.group.name + "_update"
             test_data = {"name": updated_name}
 
-            if settings.AUTHENTICATE_WITH_ORG_ID:
-                org_id = self.customer_data["org_id"]
-            else:
-                org_id = None
+            org_id = self.customer_data["org_id"]
 
             url = reverse("group-detail", kwargs={"uuid": self.group.uuid})
             client = APIClient()
@@ -671,7 +664,6 @@ class GroupViewsetTests(IdentityRequest):
                     "application": "rbac",
                     "event_type": "group-updated",
                     "timestamp": ANY,
-                    "account_id": self.customer_data["account_id"],
                     "events": [
                         {
                             "metadata": {},
@@ -752,10 +744,7 @@ class GroupViewsetTests(IdentityRequest):
             response = client.delete(url, **self.headers)
             self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
 
-            if settings.AUTHENTICATE_WITH_ORG_ID:
-                org_id = self.customer_data["org_id"]
-            else:
-                org_id = None
+            org_id = self.customer_data["org_id"]
 
             # verify the group no longer exists
             response = client.get(url, **self.headers)
@@ -768,7 +757,6 @@ class GroupViewsetTests(IdentityRequest):
                     "application": "rbac",
                     "event_type": "group-deleted",
                     "timestamp": ANY,
-                    "account_id": self.customer_data["account_id"],
                     "events": [
                         {
                             "metadata": {},
@@ -899,10 +887,7 @@ class GroupViewsetTests(IdentityRequest):
                 username="cross_account_user", cross_account=True, tenant=self.tenant
             )
 
-            if settings.AUTHENTICATE_WITH_ORG_ID:
-                org_id = self.customer_data["org_id"]
-            else:
-                org_id = None
+            org_id = self.customer_data["org_id"]
 
             url = reverse("group-principals", kwargs={"uuid": test_group.uuid})
             client = APIClient()
@@ -925,7 +910,6 @@ class GroupViewsetTests(IdentityRequest):
                     "application": "rbac",
                     "event_type": "group-updated",
                     "timestamp": ANY,
-                    "account_id": self.customer_data["account_id"],
                     "events": [
                         {
                             "metadata": {},
@@ -1037,10 +1021,7 @@ class GroupViewsetTests(IdentityRequest):
             url = reverse("group-principals", kwargs={"uuid": self.group.uuid})
             client = APIClient()
 
-            if settings.AUTHENTICATE_WITH_ORG_ID:
-                org_id = self.customer_data["org_id"]
-            else:
-                org_id = None
+            org_id = self.customer_data["org_id"]
 
             url = "{}?usernames={}".format(url, "test_user")
             response = client.delete(url, format="json", **self.headers)
@@ -1053,7 +1034,6 @@ class GroupViewsetTests(IdentityRequest):
                     "application": "rbac",
                     "event_type": "group-updated",
                     "timestamp": ANY,
-                    "account_id": self.customer_data["account_id"],
                     "events": [
                         {
                             "metadata": {},
@@ -1449,18 +1429,11 @@ class GroupViewsetTests(IdentityRequest):
         response = client.get(url, **self.headers)
         principals = response.data.get("data")
 
-        if settings.AUTHENTICATE_WITH_ORG_ID:
-            mock_request.assert_called_with(
-                [],
-                options={"sort_order": None, "username_only": "false", "principal_type": None},
-                org_id=self.customer_data["org_id"],
-            )
-        else:
-            mock_request.assert_called_with(
-                [],
-                account=self.customer_data["account_id"],
-                options={"sort_order": None, "username_only": "false", "principal_type": None},
-            )
+        mock_request.assert_called_with(
+            [],
+            options={"sort_order": None, "username_only": "false", "principal_type": None},
+            org_id=self.customer_data["org_id"],
+        )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(principals), 0)
 
@@ -1476,18 +1449,11 @@ class GroupViewsetTests(IdentityRequest):
         response = client.get(url, **self.headers)
         principals = response.data.get("data")
 
-        if settings.AUTHENTICATE_WITH_ORG_ID:
-            mock_request.assert_called_with(
-                [self.principal.username],
-                options={"sort_order": None, "username_only": "false", "principal_type": None},
-                org_id=self.customer_data["org_id"],
-            )
-        else:
-            mock_request.assert_called_with(
-                [self.principal.username],
-                account=self.customer_data["account_id"],
-                options={"sort_order": None, "username_only": "false"},
-            )
+        mock_request.assert_called_with(
+            [self.principal.username],
+            options={"sort_order": None, "username_only": "false", "principal_type": None},
+            org_id=self.customer_data["org_id"],
+        )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(principals), 1)
 
@@ -1503,18 +1469,11 @@ class GroupViewsetTests(IdentityRequest):
         principals = response.data.get("data")
         expected_principals = sorted([self.principal.username, self.principalB.username])
 
-        if settings.AUTHENTICATE_WITH_ORG_ID:
-            mock_request.assert_called_with(
-                expected_principals,
-                options={"sort_order": "asc", "username_only": "false", "principal_type": None},
-                org_id=self.customer_data["org_id"],
-            )
-        else:
-            mock_request.assert_called_with(
-                expected_principals,
-                account=self.customer_data["account_id"],
-                options={"sort_order": "asc", "username_only": "false", "principal_type": None},
-            )
+        mock_request.assert_called_with(
+            expected_principals,
+            options={"sort_order": "asc", "username_only": "false", "principal_type": None},
+            org_id=self.customer_data["org_id"],
+        )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(principals), 1)
 
@@ -1568,10 +1527,7 @@ class GroupViewsetTests(IdentityRequest):
             client = APIClient()
             test_data = {"roles": [self.roleB.uuid, self.dummy_role_id]}
 
-            if settings.AUTHENTICATE_WITH_ORG_ID:
-                org_id = self.customer_data["org_id"]
-            else:
-                org_id = None
+            org_id = self.customer_data["org_id"]
 
             default_role = Role.objects.create(
                 name="default_role",
@@ -1607,7 +1563,6 @@ class GroupViewsetTests(IdentityRequest):
                         "application": "rbac",
                         "event_type": "platform-default-group-turned-into-custom",
                         "timestamp": ANY,
-                        "account_id": self.customer_data["account_id"],
                         "events": [
                             {
                                 "metadata": {},
@@ -1629,7 +1584,6 @@ class GroupViewsetTests(IdentityRequest):
                         "application": "rbac",
                         "event_type": "custom-default-access-updated",
                         "timestamp": ANY,
-                        "account_id": self.customer_data["account_id"],
                         "events": [
                             {
                                 "metadata": {},
@@ -1664,10 +1618,7 @@ class GroupViewsetTests(IdentityRequest):
             self.defGroup.policies.first().roles.add(default_role)
             self.assertTrue(self.defGroup.system)
 
-            if settings.AUTHENTICATE_WITH_ORG_ID:
-                org_id = self.customer_data["org_id"]
-            else:
-                org_id = None
+            org_id = self.customer_data["org_id"]
 
             url = reverse("group-roles", kwargs={"uuid": self.defGroup.uuid})
             client = APIClient()
@@ -1695,7 +1646,6 @@ class GroupViewsetTests(IdentityRequest):
                         "application": "rbac",
                         "event_type": "platform-default-group-turned-into-custom",
                         "timestamp": ANY,
-                        "account_id": self.customer_data["account_id"],
                         "events": [
                             {
                                 "metadata": {},
@@ -1717,7 +1667,6 @@ class GroupViewsetTests(IdentityRequest):
                         "application": "rbac",
                         "event_type": "custom-default-access-updated",
                         "timestamp": ANY,
-                        "account_id": self.customer_data["account_id"],
                         "events": [
                             {
                                 "metadata": {},
@@ -1799,10 +1748,7 @@ class GroupViewsetTests(IdentityRequest):
             client = APIClient()
             test_data = {"roles": [self.role.uuid, self.roleB.uuid]}
 
-            if settings.AUTHENTICATE_WITH_ORG_ID:
-                org_id = self.customer_data["org_id"]
-            else:
-                org_id = None
+            org_id = self.customer_data["org_id"]
 
             self.assertCountEqual([], list(groupC.roles()))
 
@@ -1819,7 +1765,6 @@ class GroupViewsetTests(IdentityRequest):
                         "application": "rbac",
                         "event_type": "group-updated",
                         "timestamp": ANY,
-                        "account_id": self.customer_data["account_id"],
                         "events": [
                             {
                                 "metadata": {},
@@ -1843,7 +1788,6 @@ class GroupViewsetTests(IdentityRequest):
                         "application": "rbac",
                         "event_type": "group-updated",
                         "timestamp": ANY,
-                        "account_id": self.customer_data["account_id"],
                         "events": [
                             {
                                 "metadata": {},
@@ -1925,10 +1869,7 @@ class GroupViewsetTests(IdentityRequest):
             client = APIClient()
             url = "{}?roles={},{}".format(url, self.role.uuid, self.roleB.uuid)
 
-            if settings.AUTHENTICATE_WITH_ORG_ID:
-                org_id = self.customer_data["org_id"]
-            else:
-                org_id = None
+            org_id = self.customer_data["org_id"]
 
             self.policy.roles.add(self.roleB)
             self.assertCountEqual([self.role, self.roleB], list(self.group.roles()))
@@ -1946,7 +1887,6 @@ class GroupViewsetTests(IdentityRequest):
                         "application": "rbac",
                         "event_type": "group-updated",
                         "timestamp": ANY,
-                        "account_id": self.customer_data["account_id"],
                         "events": [
                             {
                                 "metadata": {},
@@ -1970,7 +1910,6 @@ class GroupViewsetTests(IdentityRequest):
                         "application": "rbac",
                         "event_type": "group-updated",
                         "timestamp": ANY,
-                        "account_id": self.customer_data["account_id"],
                         "events": [
                             {
                                 "metadata": {},
@@ -2760,7 +2699,7 @@ class GroupViewNonAdminTests(IdentityRequest):
             "permission."
         )
         self.invalid_value_for_scope_query_param = (
-            "scope query parameter value foo is invalid. [account, org_id, principal] are valid inputs."
+            "scope query parameter value foo is invalid. [org_id, principal] are valid inputs."
         )
         self.user_access_admin_role_err_message = (
             "Non org admin users are not allowed to add RBAC role with higher than 'read' permission into groups."

@@ -29,7 +29,10 @@ def extract_info_into_v1_role(role: Role):
     for access in role.access.all():
         for resource_def in access.resourceDefinitions.all():
             attri_filter = resource_def.attributeFilter
-            res_def = V1resourcedef(attri_filter["key"], attri_filter["operation"], attri_filter["value"])
+            # Some malformed data in db
+            if attri_filter["operation"] == "in" and not isinstance(attri_filter["value"], list):
+                attri_filter["operation"] = "equal"
+            res_def = V1resourcedef(attri_filter["key"], attri_filter["operation"], str(attri_filter["value"]))
             if res_def.resource_id != "":
                 add_element(perm_res_defs, (role_id, access.permission.permission), res_def)
         extend_unique(roles, role_id, access.permission.permission)

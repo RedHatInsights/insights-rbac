@@ -131,12 +131,12 @@ def migrate_roles(exclude_apps: list = [], orgs: list = []):
         tenants = tenants.filter(org_id__in=orgs)
     total = tenants.count()
     for tenant in tenants.iterator():
-        logger.info(f"Migrating roles for tenant: {tenant.tenant_name}")
+        logger.info(f"Migrating roles for tenant: {tenant.org_id}")
         try:
             migrate_roles_for_tenant(tenant, exclude_apps)
         except Exception as e:
-            logger.error(f"Failed to migrate roles for tenant: {tenant.tenant_name}. Error: {e}")
+            logger.error(f"Failed to migrate roles for tenant: {tenant.org_id}. Error: {e}")
             raise e
         count += 1
-        logger.info(f"Finished migrating roles for tenant: {tenant.tenant_name}. {count} of {total} tenants completed")
+        logger.info(f"Finished migrating roles for tenant: {tenant.org_id}. {count} of {total} tenants completed")
     logger.info("Finished migrating roles for all tenants")
