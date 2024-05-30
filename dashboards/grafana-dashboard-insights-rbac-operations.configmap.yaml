@@ -2870,7 +2870,6 @@ data:
                       "mode": "off"
                     }
                   },
-                  "decimals": 3,
                   "mappings": [],
                   "min": 0,
                   "thresholds": {
@@ -2886,7 +2885,7 @@ data:
                       }
                     ]
                   },
-                  "unit": "ms"
+                  "unit": "s"
                 },
                 "overrides": []
               },
@@ -3906,7 +3905,7 @@ data:
       "timezone": "",
       "title": "Operations - Rbac w/CPU",
       "uid": "TjP_nMWMk",
-      "version": 8,
+      "version": 9,
       "weekStart": ""
     }
 kind: ConfigMap
