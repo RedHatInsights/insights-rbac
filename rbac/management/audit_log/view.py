@@ -27,6 +27,7 @@ class AuditLogViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
     """Audit Logs View.
 
     A viewset that provides default `list()` actions.
+
     """
 
     queryset = AuditLog.objects.all()
