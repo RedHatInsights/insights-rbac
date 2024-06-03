@@ -258,7 +258,7 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
                     if not (user.internal and user_info.get("email").endswith("@redhat.com")):
                         logger.error("Cross account request permission denied. Requester is not internal user.")
                         return HttpResponseUnauthorizedRequest()
-                    user.username = f"{user.account}-{user.user_id}"
+                    user.username = f"{user.org_id}-{user.user_id}"
         except (KeyError, TypeError, JSONDecodeError):
             request_psk = request.META.get(RH_RBAC_PSK)
             account = request.META.get(RH_RBAC_ACCOUNT)
