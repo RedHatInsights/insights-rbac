@@ -16,6 +16,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 
 import json
+import logging
 import uuid
 from typing import Callable, FrozenSet, Type
 
@@ -31,8 +32,10 @@ from migration_tool.models import (
     V2role,
     V2rolebinding,
 )
-from migration_tool.spicedb import cleanNameForV2SchemaCompatibility
+from migration_tool.models import cleanNameForV2SchemaCompatibility
 
+
+logger = logging.getLogger(__name__)
 
 Permissiongroupings = dict[V1resourcedef, list[str]]
 Perm_bound_resources = dict[str, list[V2boundresource]]
@@ -50,10 +53,14 @@ def add_system_role(system_roles, role: V2role):
     system_roles[frozenset(role.permissions)] = role
 
 
-def transform_string(input_str):
-    """Transform a string to be compatible with V2 schema."""
-    output_str = input_str.replace(":", "_").replace("*", "all")
-    return output_str
+def inventory_to_workspace(v2_perm):
+    """Convert inventory permissions to workspace permissions."""
+    if v2_perm == "inventory_groups_read":
+        return "workspace_read"
+    elif v2_perm == "inventory_groups_write":
+        return "workspace_write"
+    elif v2_perm == "inventory_groups_all":
+        return "workspace_all"
 
 
 class SystemRole:
@@ -72,16 +79,21 @@ class SystemRole:
     def set_system_roles(cls):
         """Set the system roles."""
         for role in Role.objects.filter(system=True):
+            # Skip roles such as OCM since they don't have permission
+            if role.external_role_id():
+                continue
             permission_list = list()
             for access in role.access.all():
-                permission_list.append(transform_string(access.permission.permission))
+                v2_perm = cleanNameForV2SchemaCompatibility(access.permission.permission)
+                v2_perm = inventory_to_workspace(v2_perm)
+                permission_list.append(v2_perm)
             add_system_role(cls.SYSTEM_ROLES, V2role(role.name, True, frozenset(permission_list)))
 
 
 skipped_apps = {"cost-management", "playbook-dispatcher", "approval", "catalog"}
 
 
-def all_roles_v1_to_v2_mapping(v1_role: V1role) -> FrozenSet[V2rolebinding]:
+def role_v1_to_v2_mapping(v1_role: V1role) -> FrozenSet[V2rolebinding]:
     """Convert a V1 role to a set of V2 role bindings."""
     perm_groupings: Permissiongroupings = {}
     # Group V2 permissions by target
@@ -89,7 +101,7 @@ def all_roles_v1_to_v2_mapping(v1_role: V1role) -> FrozenSet[V2rolebinding]:
         if not is_for_enabled_app(v1_perm):
             continue
         v2_perm = v1_perm_to_v2_perm(v1_perm)
-        if v1_perm.resourceDefs and len(v1_perm.resourceDefs) > 0:
+        if v1_perm.resourceDefs:
             for resource_def in v1_perm.resourceDefs:
                 resource_type = (
                     "workspace"
@@ -98,6 +110,10 @@ def all_roles_v1_to_v2_mapping(v1_role: V1role) -> FrozenSet[V2rolebinding]:
                 )
                 # will assume workspaces exist already
                 for resource_id in split_resourcedef_literal(resource_def):
+                    if resource_type == "workspace":
+                        if resource_id is None:
+                            resource_id = "org_migration_root/ungrouped"
+                        v2_perm = inventory_to_workspace(v2_perm)
                     add_element(
                         perm_groupings,
                         V2boundresource(resource_type, resource_id),
@@ -124,18 +140,6 @@ def all_roles_v1_to_v2_mapping(v1_role: V1role) -> FrozenSet[V2rolebinding]:
                 )
                 v2_role_bindings.append(v2_role_binding)
     return frozenset(v2_role_bindings)
-
-
-def convert_dispatcher_permission_to_v2(perm: V1permission):
-    """Convert a V1 playbook dispatcher permission to a V2 permission."""
-    if len(perm.resourceDefs) != 1:
-        print(
-            "Playbook dispatcher permission with unexpected number of resource definitions (should be 1): ",
-            perm,
-        )
-    (resourceDef,) = perm.resourceDefs
-
-    return f"playbook_dispatcher_{resourceDef.resource_id}_run_read"
 
 
 candidate_system_roles = {}
@@ -171,9 +175,9 @@ def extract_system_roles(perm_groupings, v1_role):
             else:
                 # Track leftovers and add a custom role
                 leftovers = permset - granted
-                print("No system role for: ")
-                print(resource, leftovers, v1_role.id)
-                print("\n")
+                logger.info(
+                    f"No system role for role: {v1_role.id}. Not matched permissions: {leftovers}. Resource: {resource}"
+                )
                 # Track possible missing system roles
                 # Get applications with unmatched permissions
                 apps = {}
@@ -222,7 +226,7 @@ def split_resourcedef_literal(resourceDef: V1resourcedef):
 
 def shared_system_role_replicated_role_bindings_v1_to_v2_mapping(v1_role: V1role) -> FrozenSet[V2rolebinding]:
     """Convert a V1 role to a set of V2 role bindings."""
-    return all_roles_v1_to_v2_mapping(v1_role)
+    return role_v1_to_v2_mapping(v1_role)
 
 
 def v1groups_to_v2groups(v1groups: FrozenSet[V1group]):

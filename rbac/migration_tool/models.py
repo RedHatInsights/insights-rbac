@@ -17,8 +17,6 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 from dataclasses import dataclass
 
-from migration_tool.spicedb import cleanNameForV2SchemaCompatibility
-
 
 @dataclass(frozen=True)
 class Relationship:
@@ -134,3 +132,10 @@ def split_v2_perm(perm: str):
         perm[(first_delimiter + 1) : last_delimiter],  # noqa: E203
         perm[(last_delimiter + 1) :],  # noqa: E203
     )
+
+
+# Translated from: https://gitlab.corp.redhat.com/ciam-authz/loadtesting-spicedb/-/blob/main/spicedb/
+# prbac-schema-generator/main.go?ref_type=heads#L286
+def cleanNameForV2SchemaCompatibility(name: str):
+    """Clean a name for compatibility with the v2 schema."""
+    return name.lower().replace("-", "_").replace(".", "_").replace(":", "_").replace(" ", "_").replace("*", "all")

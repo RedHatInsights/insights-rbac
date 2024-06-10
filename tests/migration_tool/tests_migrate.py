@@ -70,8 +70,7 @@ class MigrateTests(TestCase):
         """Test that we get the correct access for a principal."""
         kwargs = {"exclude_apps": ["app1"], "orgs": ["1234567"]}
         migrate_roles(**kwargs)
-        print(logger_mock.info.call_args_list)
         self.assertEqual(
             len(logger_mock.info.call_args_list),
-            11,
+            14,
         )
