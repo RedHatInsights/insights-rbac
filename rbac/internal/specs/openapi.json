@@ -651,6 +651,20 @@
             }
           },
           {
+            "name": "admin_only",
+            "in": "query",
+            "description": "Get only admin users within an account.",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "enum": [
+                true,
+                false
+              ],
+              "default": false
+            }
+          },
+          {
             "name": "uuid",
             "in": "path",
             "description": "ID of group from which to get principals",
@@ -699,6 +713,46 @@
                 false
               ]
             }
+          },
+          {
+            "in": "query",
+            "name": "principal_type",
+            "required": false,
+            "description": "Parameter for selecting the type of principal to be returned.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "service-account",
+                "user"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "service_account_client_ids",
+            "required": false,
+            "description": "By specifying a comma separated list of client IDs with this query parameter, RBAC will return an object with the specified client ID and it's matching boolean value to flag whether the client ID is present in the group or not. This query parameter cannot be used along with any other query parameter.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "service_account_description",
+            "required": false,
+            "description": "Parameter for filtering the service accounts by their description.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "service_account_name",
+            "required": false,
+            "description": "Parameter for filtering the service accounts by their name.",
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -707,7 +761,17 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PrincipalPagination"
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/PrincipalPagination"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ServiceAccountPagination"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ServiceAccountInGroupResponse"
+                    }
+                  ]
                 }
               }
             }
@@ -1426,6 +1490,108 @@
           "username": {
             "type": "string",
             "example": "smithj"
+          }
+        }
+      },
+            "ServiceAccount": {
+        "required": [
+          "clientID",
+          "username",
+          "type"
+        ],
+        "properties": {
+          "username": {
+            "type": "string",
+            "example": "service-account-fe593ba0-9c62-013c-1dc2-6aa2427b506a"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "service-account"
+            ]
+          },
+          "clientID": {
+            "type": "string",
+            "example": "fe593ba0-9c62-013c-1dc2-6aa2427b506a"
+          },
+          "name": {
+            "type": "string",
+            "example": "MyServiceAccount"
+          },
+          "description": {
+            "type": "string",
+            "example": "My new shiny Service Account"
+          },
+          "owner": {
+            "type": "string",
+            "example": "smithj"
+          },
+          "time_created": {
+            "type": "integer",
+            "example": 1706100532
+          }
+        }
+      },
+      "ServiceAccountIn": {
+        "required": [
+          "type",
+          "clientID"
+        ],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "service-account"
+            ]
+          },
+          "clientID": {
+            "type": "string",
+            "example": "fe593ba0-9c62-013c-1dc2-6aa2427b506a"
+          }
+        }
+      },
+      "ServiceAccountPagination": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ListPagination"
+          },
+          {
+            "type": "object",
+            "required": [
+              "data"
+            ],
+            "properties": {
+              "data": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ServiceAccount"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "ServiceAccountInGroupResponse": {
+        "properties": {
+          "meta": {
+            "$ref": "#/components/schemas/PaginationMeta"
+          },
+          "links": {
+            "description": "The links object for this particular response will be empty, since there is no pagination available for the query parameter",
+            "type": "object",
+            "example": {}
+          },
+          "data": {
+            "description": "Object which indicates whether the given service account UUIDs in the query parameter are present in the specified group or not",
+            "type": "object",
+            "additionalProperties": {
+              "description": "The response is a map of the form \"UUID\": (true|false)",
+              "type": "boolean"
+            },
+            "example": {
+              "dd946f24-cfda-11ee-acb6-7b2702ff4dc8": true,
+              "3e728bb0-b167-013c-c455-6aa2427b506c": false
+            }
           }
         }
       },
