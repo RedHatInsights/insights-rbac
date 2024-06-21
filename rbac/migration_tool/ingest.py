@@ -26,13 +26,16 @@ def extract_info_into_v1_role(role: Role):
     """Extract the information from the role and returns a V1role object."""
     perm_res_defs: dict[Tuple[str, str], list[V1resourcedef]] = {}
     perm_list: list[str] = []
-    role_id = f"{role.id}"
+    role_id = str(role.uuid)
     for access in role.access.all():
         for resource_def in access.resourceDefinitions.all():
             attri_filter = resource_def.attributeFilter
             # Some malformed data in db
-            if attri_filter["operation"] == "in" and not isinstance(attri_filter["value"], list):
-                attri_filter["operation"] = "equal"
+            if attri_filter["operation"] == "in":
+                if not isinstance(attri_filter["value"], list):
+                    attri_filter["operation"] = "equal"
+                elif attri_filter["value"] == [] or attri_filter["value"] == [None]:
+                    continue
             res_def = V1resourcedef(attri_filter["key"], attri_filter["operation"], json.dumps(attri_filter["value"]))
             if res_def.resource_id != "":
                 add_element(perm_res_defs, (role_id, access.permission.permission), res_def)

@@ -72,5 +72,5 @@ class MigrateTests(TestCase):
         migrate_roles(**kwargs)
         self.assertEqual(
             len(logger_mock.info.call_args_list),
-            14,
+            11,
         )
