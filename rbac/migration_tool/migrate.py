@@ -111,7 +111,7 @@ def migrate_role(role: Role):
     policies = role.policies.all()
     groups = frozenset(
         {
-            V1group(str(policy.group.uuid), frozenset(policy.group.principals.values_list("uuid", flat=True))),
+            V1group(str(policy.group.uuid), frozenset(policy.group.princials.values_list("uuid", flat=True))),
         }
         for policy in policies
     )
