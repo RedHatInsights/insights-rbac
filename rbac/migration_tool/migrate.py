@@ -48,9 +48,6 @@ def spicedb_relationships(v2_role_bindings: FrozenSet[V2rolebinding]):
         relationships.add(
             Relationship("rbac/v1role", v2_role_binding.originalRole.id, "binding", "role_binding", v2_role_binding.id)
         )
-        # Bind directly to resource for now
-        # relationships.add(
-        #    Relationship("workspace", "org_migration_root", "user_grant", "role_binding", v2_role_binding.id))
         for perm in v2_role_binding.role.permissions:
             relationships.add(Relationship("role", v2_role_binding.role.id, perm, "user", "*"))
         if not v2_role_binding.role.is_system:
@@ -59,8 +56,23 @@ def spicedb_relationships(v2_role_bindings: FrozenSet[V2rolebinding]):
                     "rbac/v1role", v2_role_binding.originalRole.id, "customrole", "role", v2_role_binding.role.id
                 )
             )
+        for group in v2_role_binding.groups:
+            # These might be duplicate but it is OK, spiceDB will handle duplication through touch
+            for user in group.users:
+                relationships.add(Relationship("group", group.id, "member", "user", user))
+            relationships.add(
+                Relationship(
+                    "role_binding",
+                    v2_role_binding.id,
+                    "member",
+                    "group",
+                    group.id,
+                )
+            )
+
         for bound_resource in v2_role_binding.resources:
             parent_relation = "parent" if bound_resource.resource_type == "workspace" else "workspace"
+            # TODO: create root workspace and replace it
             if not bound_resource.resource_type == "workspace" and bound_resource.resourceId == "org_migration_root":
                 relationships.add(
                     Relationship(
@@ -96,11 +108,12 @@ def migrate_role(role: Role):
     v1_role = extract_info_into_v1_role(role)
     # With the replicated role bindings algorithm, role bindings are scoped by group, so we need to add groups
     # TODO: replace the hard coded groups
+    policies = role.policies.all()
     groups = frozenset(
         {
-            V1group("a_team", frozenset({"user_1"})),
-            V1group("b_team", frozenset({"user_2"})),
+            V1group(str(policy.group.uuid), frozenset(policy.group.princials.values_list("uuid", flat=True))),
         }
+        for policy in policies
     )
     v1_role = dataclasses.replace(v1_role, groups=groups)
 

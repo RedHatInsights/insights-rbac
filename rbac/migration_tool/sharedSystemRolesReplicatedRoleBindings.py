@@ -61,6 +61,7 @@ def inventory_to_workspace(v2_perm):
         return "workspace_write"
     elif v2_perm == "inventory_groups_all":
         return "workspace_all"
+    return v2_perm
 
 
 class SystemRole:
@@ -87,7 +88,7 @@ class SystemRole:
                 v2_perm = cleanNameForV2SchemaCompatibility(access.permission.permission)
                 v2_perm = inventory_to_workspace(v2_perm)
                 permission_list.append(v2_perm)
-            add_system_role(cls.SYSTEM_ROLES, V2role(role.name, True, frozenset(permission_list)))
+            add_system_role(cls.SYSTEM_ROLES, V2role(str(role.uuid), True, frozenset(permission_list)))
 
 
 skipped_apps = {"cost-management", "playbook-dispatcher", "approval", "catalog"}
@@ -109,11 +110,11 @@ def role_v1_to_v2_mapping(v1_role: V1role) -> FrozenSet[V2rolebinding]:
                     else v1_attributefilter_resource_type_to_v2_resource_type(resource_def.resource_type)
                 )
                 # will assume workspaces exist already
+                # TODO: create ungrouped workspace and replace it
                 for resource_id in split_resourcedef_literal(resource_def):
                     if resource_type == "workspace":
                         if resource_id is None:
                             resource_id = "org_migration_root/ungrouped"
-                        v2_perm = inventory_to_workspace(v2_perm)
                     add_element(
                         perm_groupings,
                         V2boundresource(resource_type, resource_id),
@@ -133,11 +134,16 @@ def role_v1_to_v2_mapping(v1_role: V1role) -> FrozenSet[V2rolebinding]:
     v2_groups = v1groups_to_v2groups(v1_role.groups)
     for role, resources in resource_roles.items():
         for resource in resources:
-            for v2_group in v2_groups:
+            if v2_groups:
+                for v2_group in v2_groups:
+                    role_binding_id = str(uuid.uuid4())
+                    v2_role_binding = V2rolebinding(
+                        role_binding_id, v1_role, role, frozenset({resource}), frozenset({v2_group})
+                    )
+                    v2_role_bindings.append(v2_role_binding)
+            else:
                 role_binding_id = str(uuid.uuid4())
-                v2_role_binding = V2rolebinding(
-                    role_binding_id, v1_role, role, frozenset({resource}), frozenset({v2_group})
-                )
+                v2_role_binding = V2rolebinding(role_binding_id, v1_role, role, frozenset({resource}), v2_groups)
                 v2_role_bindings.append(v2_role_binding)
     return frozenset(v2_role_bindings)
 
