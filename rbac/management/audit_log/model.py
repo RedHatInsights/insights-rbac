@@ -16,13 +16,13 @@
 #
 
 """Model for audit logging."""
-from management.utils import get_principal_from_request
 from django.db import models
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from management.group.model import Group
 from management.principal.model import Principal
 from management.role.model import Role
+from management.utils import get_principal_from_request
 
 from api.models import Tenant, TenantAwareModel
 
