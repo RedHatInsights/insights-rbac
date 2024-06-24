@@ -44,6 +44,7 @@ from management.group.serializer import (
     GroupSerializer,
     RoleMinimumSerializer,
 )
+from management.models import AuditLog
 from management.notifications.notification_handlers import (
     group_obj_change_notification_handler,
     group_principal_change_notification_handler,
@@ -250,7 +251,12 @@ class GroupViewSet(
             }
         """
         validate_group_name(request.data.get("name"))
-        return super().create(request=request, args=args, kwargs=kwargs)
+        create_group = super().create(request=request, args=args, kwargs=kwargs)
+
+        if status.is_success(create_group.status_code):
+            auditlog = AuditLog()
+            auditlog.log_create(request, AuditLog.GROUP)
+            return create_group
 
     def list(self, request, *args, **kwargs):
         """Obtain the list of groups for the tenant.
