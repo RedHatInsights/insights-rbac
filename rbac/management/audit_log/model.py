@@ -22,7 +22,6 @@ from django.utils import timezone
 from management.group.model import Group
 from management.principal.model import Principal
 from management.role.model import Role
-from management.utils import get_principal_from_request
 
 from api.models import Tenant, TenantAwareModel
 
@@ -97,8 +96,7 @@ class AuditLog(TenantAwareModel):
             return None
 
         elif r_type == "principal":
-            current_user = get_principal_from_request(request)
-            principal_object = get_object_or_404(Principal, username=current_user.username, tenant=verify_tenant)
+            principal_object = get_object_or_404(Principal, username=request.user.username, tenant=verify_tenant)
             return principal_object.id, principal_object.username
 
     def log_create(self, request, resource):
