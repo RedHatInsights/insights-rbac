@@ -21,7 +21,7 @@ import uuid
 from django.test import TestCase
 
 from api.models import Tenant
-from management.models import Access, Permission, ResourceDefinition, Role
+from management.models import *
 from migration_tool.migrate import migrate_roles
 
 
@@ -53,6 +53,17 @@ class MigrateTests(TestCase):
             access=self.accessA2,
             tenant=self.tenant,
         )
+        self.groupA21 = Group.objects.create(name="groupA21", tenant=self.tenant)
+        self.principal1 = Principal.objects.create(username="principal1", tenant=self.tenant)
+        self.principal2 = Principal.objects.create(username="principal2", tenant=self.tenant)
+        self.groupA21.principals.add(self.principal1, self.principal2)
+        self.policyA21 = Policy.objects.create(name="System PolicyA21", group=self.groupA21, tenant=self.tenant)
+        self.policyA21.roles.add(self.roleA2)
+        self.policyA21.save()
+        self.groupA22 = Group.objects.create(name="groupA22", tenant=self.tenant)
+        self.policyA22 = Policy.objects.create(name="System PolicyA22", group=self.groupA22, tenant=self.tenant)
+        self.policyA22.roles.add(self.roleA2)
+        self.policyA22.save()
 
         # setup data for another tenant
         self.roleB = Role.objects.create(name="roleB", tenant=another_tenant)
@@ -72,5 +83,5 @@ class MigrateTests(TestCase):
         migrate_roles(**kwargs)
         self.assertEqual(
             len(logger_mock.info.call_args_list),
-            11,
+            18,
         )

@@ -26,11 +26,11 @@ logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 def on_complete(progress, tenant):
     """Explicitly close the connection for the thread."""
-    logger.info(f"Purging policy cache for tenant {tenant.tenant_name} [{progress}].")
+    logger.info(f"Purging policy cache for tenant {tenant.org_id} [{progress}].")
     cache = AccessCache(tenant.org_id)
     cache.delete_all_policies_for_tenant()
     connections.close_all()
-    logger.info(f"Finished purging policy cache for tenant {tenant.tenant_name} [{progress}].")
+    logger.info(f"Finished purging policy cache for tenant {tenant.org_id} [{progress}].")
 
 
 def role_seeding():
