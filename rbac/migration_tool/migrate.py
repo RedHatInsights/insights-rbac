@@ -109,13 +109,11 @@ def migrate_role(role: Role):
     # With the replicated role bindings algorithm, role bindings are scoped by group, so we need to add groups
     # TODO: replace the hard coded groups
     policies = role.policies.all()
-    groups = frozenset(
-        {
-            V1group(str(policy.group.uuid), frozenset(policy.group.principals.values_list("uuid", flat=True)))
-            for policy in policies
-        }
-    )
-    v1_role = dataclasses.replace(v1_role, groups=groups)
+    groups = set()
+    for policy in policies:
+        principals = [str(principal) for principal in policy.group.principals.values_list("uuid", flat=True)]
+        groups.add(V1group(str(policy.group.uuid), frozenset(principals)))
+    v1_role = dataclasses.replace(v1_role, groups=frozenset(groups))
 
     # This is where we wire in the implementation we're using into the Migrator
     v1_to_v2_mapping = shared_system_role_replicated_role_bindings_v1_to_v2_mapping
