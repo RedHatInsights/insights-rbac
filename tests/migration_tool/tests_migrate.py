@@ -56,6 +56,7 @@ class MigrateTests(TestCase):
         self.groupA21 = Group.objects.create(name="groupA21", tenant=self.tenant)
         self.principal1 = Principal.objects.create(username="principal1", tenant=self.tenant)
         self.principal2 = Principal.objects.create(username="principal2", tenant=self.tenant)
+        self.groupA21.principals.add(self.principal1, self.principal2)
         self.policyA21 = Policy.objects.create(name="System PolicyA21", group=self.groupA21, tenant=self.tenant)
         self.policyA21.roles.add(self.roleA2)
         self.policyA21.save()
@@ -82,5 +83,5 @@ class MigrateTests(TestCase):
         migrate_roles(**kwargs)
         self.assertEqual(
             len(logger_mock.info.call_args_list),
-            16,
+            18,
         )
