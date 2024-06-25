@@ -256,7 +256,8 @@ class GroupViewSet(
         if status.is_success(create_group.status_code):
             auditlog = AuditLog()
             auditlog.log_create(request, AuditLog.GROUP)
-            return create_group
+
+        return create_group
 
     def list(self, request, *args, **kwargs):
         """Obtain the list of groups for the tenant.
