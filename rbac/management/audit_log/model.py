@@ -82,7 +82,7 @@ class AuditLog(TenantAwareModel):
             return role_object_id, role_object_name
 
         elif r_type == AuditLog.GROUP:
-            if request._data is not None:
+            if request.data is not None:
                 group_object = get_object_or_404(Group, name=request.data["name"], tenant=verify_tenant)
             else:
                 group_uuid = kwargs["kwargs"]["uuid"]
