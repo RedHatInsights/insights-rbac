@@ -196,8 +196,18 @@ class AccessCache(BasicCache):
         with self.delete_handler(err_msg):
             logger.info("Deleting entire policy cache for tenant %s", self.tenant)
             keys = self.connection.keys(self.key_for("*"))
+            logger.info(f"Content of 'keys' variable: {keys}")
             if keys:
-                self.connection.delete(*keys)
+                try:
+                    self.connection.delete(*keys)
+                except Exception as e:
+                    logger.error(
+                        f"An exception occurred inside delete_all_policies_for_tenant() for tenant {self.tenant} "
+                        f"withing line 'if keys': {e}"
+                    )
+                    raise e
+            logger.info(f"End of 'with self.delete_handler' for tenant {self.tenant}")
+        logger.info(f"End of 'delete_all_policies_for_tenant' for tenant {self.tenant}")
 
     def save_policy(self, uuid, sub_key, policy):
         """Write the policy for a given user for a given sub_key (application_offset_limit) to Redis."""
