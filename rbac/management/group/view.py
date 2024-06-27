@@ -255,7 +255,7 @@ class GroupViewSet(
 
         if status.is_success(create_group.status_code):
             auditlog = AuditLog()
-            auditlog.log_create(request, AuditLog.GROUP)
+            auditlog.log_create(request, AuditLog.GROUP, kwargs=kwargs)
 
         return create_group
 

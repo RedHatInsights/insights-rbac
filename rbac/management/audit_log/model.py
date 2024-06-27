@@ -82,7 +82,7 @@ class AuditLog(TenantAwareModel):
             return role_object_id, role_object_name
 
         elif r_type == AuditLog.GROUP:
-            if request.data is not None:
+            if request.data != {}:
                 group_object = get_object_or_404(Group, name=request.data["name"], tenant=verify_tenant)
             else:
                 group_uuid = kwargs["kwargs"]["uuid"]
@@ -99,12 +99,12 @@ class AuditLog(TenantAwareModel):
             principal_object = get_object_or_404(Principal, username=request.user.username, tenant=verify_tenant)
             return principal_object.id, principal_object.username
 
-    def log_create(self, request, resource):
+    def log_create(self, request, resource, kwargs):
         """Audit Log when a role or a group is created."""
         self.principal_id, self.principal_username = self.get_resource_item("principal", request)
         self.resource_type = resource
 
-        self.resource_id, resource_name = self.get_resource_item(resource, request)
+        self.resource_id, resource_name = self.get_resource_item(resource, request, kwargs=kwargs)
         self.description = "Created " + resource_name
 
         self.action = AuditLog.CREATE
