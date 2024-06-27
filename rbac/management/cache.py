@@ -195,8 +195,20 @@ class AccessCache(BasicCache):
         err_msg = f"Error deleting all policies for tenant {self.tenant}"
         with self.delete_handler(err_msg):
             logger.info("Deleting entire policy cache for tenant %s", self.tenant)
-            keys = self.connection.keys(self.key_for("*"))
-            logger.info(f"Content of 'keys' variable: {keys}")
+            try:
+                key = self.key_for("*")
+                logger.info("value of key", key)
+            except Exception as e:
+                logger.error('error from key = self.key_for("*")', e)
+                raise e
+
+            try:
+                keys = self.connection.keys(key)
+                logger.info(f"Content of 'keys' variable: {keys}")
+            except Exception as e:
+                logger.error("error from keys = self.connection.keys(key)", e)
+                raise e
+
             if keys:
                 try:
                     self.connection.delete(*keys)
