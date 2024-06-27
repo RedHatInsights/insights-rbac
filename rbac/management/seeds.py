@@ -31,19 +31,17 @@ def on_complete(progress, tenant):
         cache = AccessCache(tenant.org_id)
     except Exception as e:
         logger.error(f"An exception occurred inside on_complete() for line 1: {e}")
-        raise e
 
     try:
         cache.delete_all_policies_for_tenant()
     except Exception as e:
         logger.error(f"An exception occurred inside on_complete() for line 2: {e}")
-        raise e
 
     try:
         connections.close_all()
     except Exception as e:
         logger.error(f"An exception occurred inside on_complete() for line 3: {e}")
-        raise e
+
     logger.info(f"Finished purging policy cache for tenant {tenant.org_id} [{progress}].")
 
 
@@ -92,4 +90,3 @@ def purge_cache():
                 executor.submit(on_complete, progress, tenant)
             except Exception as e:
                 logger.error(f"An exception occurred inside purge_cache() for {tenant}: {e}")
-                raise e
