@@ -197,17 +197,16 @@ class AccessCache(BasicCache):
             logger.info("Deleting entire policy cache for tenant %s", self.tenant)
             try:
                 key = self.key_for("*")
-                logger.info("value of key", key)
+                logger.info(f"value of key: {key}")
             except Exception as e:
-                logger.error('error from key = self.key_for("*")', e)
-                raise e
+                logger.error(f'error from key = self.key_for("*") with error message: {e}')
 
+            keys = []
             try:
                 keys = self.connection.keys(key)
                 logger.info(f"Content of 'keys' variable: {keys}")
             except Exception as e:
-                logger.error("error from keys = self.connection.keys(key)", e)
-                raise e
+                logger.error(f"error from keys = self.connection.keys(key): {e}")
 
             if keys:
                 try:
@@ -217,7 +216,7 @@ class AccessCache(BasicCache):
                         f"An exception occurred inside delete_all_policies_for_tenant() for tenant {self.tenant} "
                         f"withing line 'if keys': {e}"
                     )
-                    raise e
+
             logger.info(f"End of 'with self.delete_handler' for tenant {self.tenant}")
         logger.info(f"End of 'delete_all_policies_for_tenant' for tenant {self.tenant}")
 
