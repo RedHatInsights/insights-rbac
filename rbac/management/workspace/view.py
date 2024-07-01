@@ -16,8 +16,8 @@
 #
 
 """View for Workspace management."""
+from management.permissions import WorkspaceAccessPermission
 from rest_framework import mixins, viewsets
-from rest_framework.permissions import AllowAny
 
 from .model import Workspace
 from .serializer import WorkspaceSerializer
@@ -38,7 +38,7 @@ class WorkspaceViewSet(
 
     """
 
-    permission_classes = (AllowAny,)
+    permission_classes = (WorkspaceAccessPermission,)
     queryset = Workspace.objects.all()
     lookup_field = "uuid"
     serializer_class = WorkspaceSerializer
