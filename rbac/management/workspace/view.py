@@ -16,8 +16,9 @@
 #
 
 """View for Workspace management."""
+from django.utils.translation import gettext as _
 from management.permissions import WorkspaceAccessPermission
-from rest_framework import mixins, viewsets
+from rest_framework import mixins, serializers, viewsets
 
 from .model import Workspace
 from .serializer import WorkspaceSerializer
@@ -45,6 +46,8 @@ class WorkspaceViewSet(
 
     def create(self, request, *args, **kwargs):
         """Create a Workspace."""
+        self.validate_workspace(request)
+
         return super().create(request=request, args=args, kwargs=kwargs)
 
     def list(self, request, *args, **kwargs):
@@ -58,3 +61,19 @@ class WorkspaceViewSet(
     def destroy(self, request, *args, **kwargs):
         """Delete a workspace."""
         return super().destroy(request=request, args=args, kwargs=kwargs)
+
+    def update(self, request, *args, **kwargs):
+        """Update a workspace."""
+        self.validate_workspace(request)
+        return super().update(request=request, args=args, kwargs=kwargs)
+
+    def validate_workspace(self, request):
+        """Validate a workspace."""
+        name = request.data["name"]
+        tenant = request.tenant
+
+        if Workspace.objects.filter(name=name, tenant=tenant).exists():
+            key = "workspace"
+            message = "Workspace already exist in tenant"
+            error = {key: [_(message)]}
+            raise serializers.ValidationError(error)
