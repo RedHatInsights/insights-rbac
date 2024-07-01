@@ -36,7 +36,7 @@ class WorkspaceSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         """Create the workspace object in the database."""
         name = validated_data.pop("name")
-        description = validated_data.pop("description")
+        description = validated_data.pop("description", "")
         tenant = self.context["request"].tenant
 
         workspace = Workspace.objects.create(name=name, description=description, tenant=tenant)
