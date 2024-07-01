@@ -184,7 +184,7 @@
           }
         ],
         "responses": {
-          "201": {
+          "200": {
             "description": "A workspace object",
             "content": {
               "application/json": {

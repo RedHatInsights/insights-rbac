@@ -17,8 +17,10 @@
 
 """View for Workspace management."""
 from django.utils.translation import gettext as _
+from django_filters import rest_framework as filters
 from management.permissions import WorkspaceAccessPermission
 from rest_framework import mixins, serializers, viewsets
+from rest_framework.filters import OrderingFilter
 
 from .model import Workspace
 from .serializer import WorkspaceSerializer
@@ -40,9 +42,12 @@ class WorkspaceViewSet(
     """
 
     permission_classes = (WorkspaceAccessPermission,)
-    queryset = Workspace.objects.all()
+    queryset = Workspace.objects.annotate()
     lookup_field = "uuid"
     serializer_class = WorkspaceSerializer
+    ordering_fields = ("name",)
+    ordering = ("name",)
+    filter_backends = (filters.DjangoFilterBackend, OrderingFilter)
 
     def create(self, request, *args, **kwargs):
         """Create a Workspace."""
@@ -69,7 +74,10 @@ class WorkspaceViewSet(
 
     def validate_workspace(self, request):
         """Validate a workspace."""
-        name = request.data["name"]
+        name = request.data.get("name")
+        if name is None:  # validation regard name emptiness already exist
+            return
+
         tenant = request.tenant
 
         if Workspace.objects.filter(name=name, tenant=tenant).exists():
