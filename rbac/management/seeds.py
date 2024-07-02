@@ -27,21 +27,9 @@ logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 def on_complete(progress, tenant):
     """Explicitly close the connection for the thread."""
     logger.info(f"Purging policy cache for tenant {tenant.org_id} [{progress}].")
-    try:
-        cache = AccessCache(tenant.org_id)
-    except Exception as e:
-        logger.error(f"An exception occurred inside on_complete() for line 1: {e}")
-
-    try:
-        cache.delete_all_policies_for_tenant()
-    except Exception as e:
-        logger.error(f"An exception occurred inside on_complete() for line 2: {e}")
-
-    try:
-        connections.close_all()
-    except Exception as e:
-        logger.error(f"An exception occurred inside on_complete() for line 3: {e}")
-
+    cache = AccessCache(tenant.org_id)
+    cache.delete_all_policies_for_tenant()
+    connections.close_all()
     logger.info(f"Finished purging policy cache for tenant {tenant.org_id} [{progress}].")
 
 
@@ -86,7 +74,4 @@ def purge_cache():
         tenant_count = tenants.count()
         for idx, tenant in enumerate(list(tenants)):
             progress = f"[{idx + 1} of {tenant_count}]."
-            try:
-                executor.submit(on_complete, progress, tenant)
-            except Exception as e:
-                logger.error(f"An exception occurred inside purge_cache() for {tenant}: {e}")
+            executor.submit(on_complete, progress, tenant)
