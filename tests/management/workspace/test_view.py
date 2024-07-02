@@ -1,0 +1,340 @@
+#
+# Copyright 2024 Red Hat, Inc.
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+#
+"""Test the Audit Logs Model."""
+from django.db import transaction
+from django.test import TestCase
+from unittest.mock import Mock
+from django.urls import reverse
+from rest_framework import status
+from rest_framework.response import Response
+from rest_framework.test import APIClient
+
+from management.models import Workspace
+from tests.identity_request import IdentityRequest
+
+
+class WorkspaceViewTests(IdentityRequest):
+    """Test the Workspace Model."""
+
+    def setUp(self):
+        """Set up the audit log model tests."""
+        super().setUp()
+        self.init_workspace_attributes = {
+            "name": "Init Workspace",
+            "description": "Init Workspace - description",
+            "tenant_id": self.tenant.id,
+        }
+        self.init_workspace = Workspace.objects.create(**self.init_workspace_attributes)
+
+    def tearDown(self):
+        """Tear down group model tests."""
+        Workspace.objects.all().delete()
+
+    def test_create_workspace(self):
+        """Test for creating a workspace."""
+        workspace = {"name": "New Workspace"}
+
+        url = reverse("workspace-list")
+        client = APIClient()
+        response = client.post(url, workspace, format="json", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        data = response.data
+        self.assertEqual(data.get("name"), "New Workspace")
+        self.assertNotEquals(data.get("uuid"), "")
+        self.assertIsNotNone(data.get("uuid"))
+        self.assertNotEquals(data.get("created"), "")
+        self.assertNotEquals(data.get("modified"), "")
+        self.assertEquals(data.get("description"), "")
+
+        other_workspace = {"name": "Other Workspace", "description": "Other description"}
+
+        url = reverse("workspace-list")
+        client = APIClient()
+        response = client.post(url, other_workspace, format="json", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        data = response.data
+        self.assertEqual(data.get("name"), "Other Workspace")
+        self.assertNotEquals(data.get("uuid"), "")
+        self.assertIsNotNone(data.get("uuid"))
+        self.assertNotEquals(data.get("created"), "")
+        self.assertNotEquals(data.get("modified"), "")
+        self.assertEquals(data.get("description"), "Other description")
+
+    def test_create_workspace_empty_body(self):
+        """Test for creating a workspace."""
+        workspace = {}
+
+        url = reverse("workspace-list")
+        client = APIClient()
+        response = client.post(url, workspace, format="json", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        error = response.data.get("errors")[0]
+        self.assertIsNotNone(error.get("detail"))
+        self.assertEqual(error.get("detail"), "This field is required.")
+        self.assertEqual(error.get("source"), "name")
+        self.assertEqual(error.get("status"), "400")
+
+    def test_create_workspace_unauthorized(self):
+        """Test for creating a workspace."""
+        workspace = {}
+
+        request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
+
+        request = request_context["request"]
+        headers = request.META
+
+        url = reverse("workspace-list")
+        client = APIClient()
+        response = client.post(url, workspace, format="json", **headers)
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        error = response.data.get("errors")[0]
+
+        self.assertEqual(error.get("detail"), "You do not have permission to perform this action.")
+        self.assertEqual(error.get("source"), "detail")
+        self.assertEqual(error.get("status"), "403")
+
+    def test_duplicate_create_workspace(self):
+        """Test that creating a duplicate workspace is not allowed."""
+        name = self.init_workspace_attributes["name"]
+        test_data = {"name": name}
+
+        url = reverse("workspace-list")
+        client = APIClient()
+        response = client.post(url, test_data, format="json", **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+        error = response.data.get("errors")[0]
+        self.assertIsNotNone(error.get("detail"))
+        self.assertEqual(error.get("detail"), "Workspace already exist in tenant")
+        self.assertEqual(error.get("source"), "workspace")
+        self.assertEqual(error.get("status"), "400")
+
+    def test_update_workspace(self):
+        """Test for updating a workspace."""
+        workspace_data = {
+            "name": "New Workspace",
+            "description": "New Workspace - description",
+            "tenant_id": self.tenant.id,
+        }
+
+        workspace = Workspace.objects.create(**workspace_data)
+
+        url = reverse("workspace-detail", kwargs={"uuid": workspace.uuid})
+        client = APIClient()
+
+        workspace_data["name"] = "Updated name"
+        workspace_data["description"] = "Updated description"
+        response = client.put(url, workspace_data, format="json", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.data
+        self.assertEqual(data.get("name"), "Updated name")
+        self.assertNotEquals(data.get("uuid"), "")
+        self.assertIsNotNone(data.get("uuid"))
+        self.assertNotEquals(data.get("created"), "")
+        self.assertNotEquals(data.get("modified"), "")
+        self.assertEquals(data.get("description"), "Updated description")
+
+        update_workspace = Workspace.objects.filter(id=workspace.id).first()
+        self.assertEquals(update_workspace.name, "Updated name")
+        self.assertEquals(update_workspace.description, "Updated description")
+
+    def test_update_workspace_empty_body(self):
+        """Test for updating a workspace with empty body"""
+        workspace = {}
+
+        url = reverse("workspace-detail", kwargs={"uuid": self.init_workspace.uuid})
+        client = APIClient()
+        response = client.put(url, workspace, format="json", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        error = response.data.get("errors")[0]
+        self.assertIsNotNone(error.get("detail"))
+        self.assertEqual(error.get("detail"), "This field is required.")
+        self.assertEqual(error.get("source"), "name")
+        self.assertEqual(error.get("status"), "400")
+
+    def test_update_duplicate_workspace(self):
+        workspace_data = {
+            "name": "New Duplicate Workspace",
+            "description": "New Duplicate Workspace - description",
+            "tenant_id": self.tenant.id,
+        }
+
+        workspace = Workspace.objects.create(**workspace_data)
+
+        url = reverse("workspace-detail", kwargs={"uuid": workspace.uuid})
+        client = APIClient()
+
+        workspace_data["name"] = self.init_workspace.name
+        response = client.put(url, workspace_data, format="json", **self.headers)
+
+        error = response.data.get("errors")[0]
+        self.assertIsNotNone(error.get("detail"))
+        self.assertEqual(error.get("detail"), "Workspace already exist in tenant")
+        self.assertEqual(error.get("source"), "workspace")
+        self.assertEqual(error.get("status"), "400")
+
+    def test_update_workspace_unauthorized(self):
+        workspace = {}
+
+        request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
+
+        request = request_context["request"]
+        headers = request.META
+
+        url = reverse("workspace-detail", kwargs={"uuid": self.init_workspace.uuid})
+        client = APIClient()
+        response = client.put(url, workspace, format="json", **headers)
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        error = response.data.get("errors")[0]
+
+        self.assertEqual(error.get("detail"), "You do not have permission to perform this action.")
+        self.assertEqual(error.get("source"), "detail")
+        self.assertEqual(error.get("status"), "403")
+
+    def test_get_workspaces_pagination(self):
+        """
+        Test that getting the user based principals from a group returns successfully
+        according to the given limit and offset.
+        """
+        for i in range(3):
+            Workspace.objects.create(name=f"workspace_{i}", tenant=self.tenant)
+
+        url = reverse("workspace-list")
+        client = APIClient()
+        response = client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(int(response.data.get("meta").get("count")), 4)
+        self.assertEqual(int(response.data.get("meta").get("limit")), 10)
+        self.assertEqual(int(response.data.get("meta").get("offset")), 0)
+        self.assertEqual(len(response.data.get("data")), 4)
+
+        test_data = [
+            {"limit": 10, "offset": 3, "expected_data_count": 1},
+            {"limit": 10, "offset": 2, "expected_data_count": 2},
+            {"limit": 1, "offset": 0, "expected_data_count": 1},
+            {"limit": 2, "offset": 2, "expected_data_count": 2},
+        ]
+        for item in test_data:
+            limit = item["limit"]
+            offset = item["offset"]
+            expected_data_count = item["expected_data_count"]
+            url = f"{reverse('workspace-list')}?limit={limit}&offset={offset}"
+            client = APIClient()
+            response = client.get(url, **self.headers)
+
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            self.assertEqual(int(response.data.get("meta").get("count")), 4)
+            self.assertEqual(int(response.data.get("meta").get("limit")), limit)
+            self.assertEqual(int(response.data.get("meta").get("offset")), offset)
+            self.assertEqual(len(response.data.get("data")), expected_data_count)
+
+    def test_get_workspace(self):
+        url = reverse("workspace-detail", kwargs={"uuid": self.init_workspace.uuid})
+        client = APIClient()
+        response = client.get(url, None, format="json", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.data
+        self.assertEqual(data.get("name"), "Init Workspace")
+        self.assertEquals(data.get("description"), "Init Workspace - description")
+        self.assertNotEquals(data.get("uuid"), "")
+        self.assertIsNotNone(data.get("uuid"))
+        self.assertNotEquals(data.get("created"), "")
+        self.assertNotEquals(data.get("modified"), "")
+
+    def test_get_workspace_not_found(self):
+        url = reverse("workspace-detail", kwargs={"uuid": "XXXX"})
+        client = APIClient()
+        response = client.get(url, None, format="json", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        error = response.data.get("errors")[0]
+
+        self.assertEqual(error.get("detail"), "Not found.")
+        self.assertEqual(error.get("source"), "detail")
+        self.assertEqual(error.get("status"), "404")
+
+    def test_get_workspace_unauthorized(self):
+        request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
+
+        request = request_context["request"]
+        headers = request.META
+
+        url = reverse("workspace-detail", kwargs={"uuid": self.init_workspace.uuid})
+        client = APIClient()
+        response = client.get(url, None, format="json", **headers)
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        error = response.data.get("errors")[0]
+
+        self.assertEqual(error.get("detail"), "You do not have permission to perform this action.")
+        self.assertEqual(error.get("source"), "detail")
+        self.assertEqual(error.get("status"), "403")
+
+    def test_delete_workspace(self):
+        workspace_data = {
+            "name": "Workspace for delete",
+            "description": "Workspace for delete - description",
+            "tenant_id": self.tenant.id,
+        }
+
+        workspace = Workspace.objects.create(**workspace_data)
+
+        url = reverse("workspace-detail", kwargs={"uuid": workspace.uuid})
+        client = APIClient()
+        response = client.delete(url, None, format="json", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+        deleted_workspace = Workspace.objects.filter(id=workspace.id).first()
+        self.assertIsNone(deleted_workspace)
+
+    def test_delete_workspace_not_found(self):
+        url = reverse("workspace-detail", kwargs={"uuid": "XXXX"})
+        client = APIClient()
+        response = client.delete(url, None, format="json", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        error = response.data.get("errors")[0]
+
+        self.assertEqual(error.get("detail"), "Not found.")
+        self.assertEqual(error.get("source"), "detail")
+        self.assertEqual(error.get("status"), "404")
+
+    def test_delete_workspace_unauthorized(self):
+        request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
+
+        request = request_context["request"]
+        headers = request.META
+
+        url = reverse("workspace-detail", kwargs={"uuid": self.init_workspace.uuid})
+        client = APIClient()
+        response = client.delete(url, None, format="json", **headers)
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        error = response.data.get("errors")[0]
+
+        self.assertEqual(error.get("detail"), "You do not have permission to perform this action.")
+        self.assertEqual(error.get("source"), "detail")
+        self.assertEqual(error.get("status"), "403")

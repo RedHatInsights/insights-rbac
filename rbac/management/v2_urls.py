@@ -1,5 +1,4 @@
-#
-# Copyright 2019 Red Hat, Inc.
+# Copyright 2024 Red Hat, Inc.
 #
 #    This program is free software: you can redistribute it and/or modify
 #    it under the terms of the GNU Affero General Public License as
@@ -14,12 +13,19 @@
 #    You should have received a copy of the GNU Affero General Public License
 #    along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
-"""Permissions for import organization."""
-# flake8: noqa
-# pylint: disable=unused-import
-from management.permissions.admin_access import AdminAccessPermission
-from management.permissions.group_access import GroupAccessPermission
-from management.permissions.policy_access import PolicyAccessPermission
-from management.permissions.role_access import RoleAccessPermission
-from management.permissions.auditlog_access import AuditLogAccessPermission
-from management.permissions.workspace_access import WorkspaceAccessPermission
+"""Describes the urls and patterns for the management application."""
+from django.conf.urls import include
+from django.urls import re_path
+from management.views import (
+    WorkspaceViewSet,
+)
+from rest_framework.routers import DefaultRouter
+
+
+ROUTER = DefaultRouter()
+ROUTER.register(r"workspaces", WorkspaceViewSet)
+
+# pylint: disable=invalid-name
+urlpatterns = [
+    re_path(r"^", include(ROUTER.urls)),
+]
