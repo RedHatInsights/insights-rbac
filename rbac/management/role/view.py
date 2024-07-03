@@ -214,7 +214,7 @@ class RoleViewSet(
 
         if status.is_success(create_role.status_code):
             auditlog = AuditLog()
-            auditlog.log_create(request, AuditLog.ROLE)
+            auditlog.log_create(request, AuditLog.ROLE, kwargs=kwargs)
 
         return create_role
 
