@@ -53,8 +53,4 @@ class Command(BaseCommand):
             group_seeding()
             logger.info("*** Group seeding completed. ***\n")
 
-        try:
-            purge_cache()
-        except Exception as e:
-            logger.error(f"An exception occurred during purge cache: {e}")
-            raise e
+        purge_cache()
