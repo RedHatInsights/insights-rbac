@@ -95,13 +95,10 @@ class AuditLog(TenantAwareModel):
             # TODO: update for permission related items
             return None
 
-        elif r_type == "principal":
-            principal_object = get_object_or_404(Principal, username=request.user.username, tenant=verify_tenant)
-            return principal_object.id, principal_object.username
-
     def log_create(self, request, resource):
         """Audit Log when a role or a group is created."""
-        self.principal_id, self.principal_username = self.get_resource_item("principal", request)
+        self.principal_id = request.user.user_id
+        self.principal_username = request.user.username 
         self.resource_type = resource
 
         self.resource_id, resource_name = self.get_resource_item(resource, request)
