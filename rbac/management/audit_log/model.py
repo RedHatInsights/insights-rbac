@@ -98,7 +98,7 @@ class AuditLog(TenantAwareModel):
     def log_create(self, request, resource):
         """Audit Log when a role or a group is created."""
         self.principal_id = request.user.user_id
-        self.principal_username = request.user.username 
+        self.principal_username = request.user.username
         self.resource_type = resource
 
         self.resource_id, resource_name = self.get_resource_item(resource, request)
