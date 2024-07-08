@@ -1,0 +1,440 @@
+openapi: 3.0.0
+info:
+  title: Role Based Access Control for Kessel Project
+  version: v2
+tags:
+  - name: Workspaces
+paths:
+  /workspaces:
+    post:
+      tags:
+        - Workspaces
+      operationId: Workspaces_create
+      summary: Create workspace in tenant
+      description: Create workspace in tenant
+      parameters: []
+      responses:
+        '201':
+          description: The request has succeeded and a new resource has been created as a result.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Workspaces.Workspace'
+        '400':
+          description: The server could not understand the request due to invalid syntax.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Errors.ErrorResponse400'
+        '401':
+          description: Access is unauthorized.
+        '403':
+          description: Access is forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Errors.ErrorResponse403'
+        '500':
+          description: Server error
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Workspaces.WorkspaceForRead'
+    get:
+      tags:
+        - Workspaces
+      operationId: Workspaces_list
+      summary: List workspaces for tenant
+      description: By default, responses are sorted in ascending order by workspace name
+      parameters:
+        - $ref: '#/components/parameters/ListQueryParams.limit'
+        - $ref: '#/components/parameters/ListQueryParams.offset'
+        - $ref: '#/components/parameters/ListQueryParams.order_by'
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Workspaces.WorkspaceListResponse'
+        '401':
+          description: Access is unauthorized.
+        '403':
+          description: Access is forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Errors.ErrorResponse403'
+        '500':
+          description: Server error
+  /workspaces/{uuid}:
+    get:
+      tags:
+        - Workspaces
+      operationId: Workspaces_read
+      summary: Get a workspace in tenant
+      description: Get a workspace in tenant
+      parameters:
+        - name: uuid
+          in: path
+          required: true
+          description: Unique identification
+          schema:
+            $ref: '#/components/schemas/UUID'
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Workspaces.Workspace'
+        '401':
+          description: Access is unauthorized.
+        '403':
+          description: Access is forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Errors.ErrorResponse403'
+        '404':
+          description: The server cannot find the requested resource.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Errors.ErrorResponse404'
+        '500':
+          description: Server error
+    put:
+      tags:
+        - Workspaces
+      operationId: Workspaces_update
+      summary: Edit the workspace name or description
+      description: Edit a workspace
+      parameters:
+        - name: uuid
+          in: path
+          required: true
+          description: Unique identification
+          schema:
+            $ref: '#/components/schemas/UUID'
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Workspaces.Workspace'
+        '400':
+          description: The server could not understand the request due to invalid syntax.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - errors
+                properties:
+                  errors:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Workspaces.ErrorMessage400WorkspaceAlreadyExist'
+        '401':
+          description: Access is unauthorized.
+        '403':
+          description: Access is forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Errors.ErrorResponse403'
+        '500':
+          description: Server error
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Workspaces.WorkspaceForRead'
+    delete:
+      tags:
+        - Workspaces
+      operationId: Workspaces_delete
+      summary: Delete the workspace
+      description: Delete a workspace
+      parameters:
+        - name: uuid
+          in: path
+          required: true
+          description: Unique identification
+          schema:
+            $ref: '#/components/schemas/UUID'
+      responses:
+        '201':
+          description: Resource Deleted
+        '401':
+          description: Access is unauthorized.
+        '403':
+          description: Access is forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Errors.ErrorResponse403'
+        '500':
+          description: Server error
+  /{uuid}:
+    get:
+      operationId: DeleteResource_delete
+      parameters:
+        - name: uuid
+          in: path
+          required: true
+          description: Unique identification
+          schema:
+            $ref: '#/components/schemas/UUID'
+      responses:
+        '201':
+          description: Resource Deleted
+        '401':
+          description: Access is unauthorized.
+        '403':
+          description: Access is forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Errors.ErrorResponse403'
+        '500':
+          description: Server error
+components:
+  parameters:
+    ListQueryParams.limit:
+      name: limit
+      in: query
+      required: false
+      description: Parameter for selecting the amount of data returned.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 1000
+        default: 10
+    ListQueryParams.offset:
+      name: offset
+      in: query
+      required: false
+      schema:
+        type: integer
+        default: 0
+    ListQueryParams.order_by:
+      name: order_by
+      in: query
+      required: false
+      description: "Parameter for ordering by value. For inverse ordering, supply '-' before the param value, such as: ?order_by=-name"
+      schema:
+        $ref: '#/components/schemas/OrderByDefaultValues'
+  schemas:
+    Errors.ErrorCode:
+      type: string
+    Errors.ErrorMessage400:
+      type: object
+      properties:
+        detail:
+          type: string
+          default: 'JSON parse error - Expecting value: line 1 column 1 (char 0)'
+        status:
+          type: string
+          default: '404'
+        source:
+          type: string
+          default: detail
+    Errors.ErrorMessage403:
+      type: object
+      properties:
+        detail:
+          type: string
+          default: You do not have permission to perform this action.
+        status:
+          type: string
+          default: '403'
+        source:
+          type: string
+          default: detail
+    Errors.ErrorMessage404:
+      type: object
+      properties:
+        detail:
+          type: string
+          default: Not found.
+        status:
+          type: string
+          default: '404'
+    Errors.ErrorResponse400:
+      type: object
+      required:
+        - errors
+      properties:
+        errors:
+          type: array
+          items:
+            $ref: '#/components/schemas/Errors.ErrorMessage400'
+    Errors.ErrorResponse403:
+      type: object
+      required:
+        - errors
+      properties:
+        errors:
+          type: array
+          items:
+            $ref: '#/components/schemas/Errors.ErrorMessage403'
+    Errors.ErrorResponse404:
+      type: object
+      required:
+        - errors
+      properties:
+        errors:
+          type: array
+          items:
+            $ref: '#/components/schemas/Errors.ErrorMessage404'
+    Link:
+      type: object
+      required:
+        - first
+        - previous
+        - next
+        - last
+      properties:
+        first:
+          type: string
+          format: uri
+          default: /api/v2/(resources)/?offset=0&limit=10
+        previous:
+          type: string
+          format: uri
+          default: /api/v2/(resources)/?offset=20&limit=10
+        next:
+          type: string
+          format: uri
+          default: /api/v2/(resources)/?offset=40&limit=10
+        last:
+          type: string
+          format: uri
+          default: /api/v2/(resources)/?offset=90&limit=10
+    Meta:
+      type: object
+      required:
+        - count
+      properties:
+        count:
+          type: integer
+          format: int64
+          default: 30
+    OrderByDefaultValues:
+      type: string
+      enum:
+        - name
+        - modified
+    Timestamps:
+      type: object
+      required:
+        - created
+        - modified
+      properties:
+        created:
+          type: string
+          format: date-time
+          description: 2019-01-21T17:32:28Z
+        modified:
+          type: string
+          format: date-time
+          description: 2019-01-21T17:32:28Z
+    UUID:
+      type: string
+      format: uuid
+    Versions:
+      type: string
+      enum:
+        - v2
+    Workspaces.ErrorMessage400WorkspaceAlreadyExist:
+      type: object
+      properties:
+        detail:
+          type: string
+          default: Workspace already exist in tenant
+        status:
+          type: string
+          default: '400'
+        source:
+          type: string
+          default: workspace
+    Workspaces.Workspace:
+      type: object
+      required:
+        - uuid
+        - name
+        - created
+        - modified
+      properties:
+        uuid:
+          $ref: '#/components/schemas/UUID'
+        name:
+          type: string
+          description: Workspace A
+          default: Workspace A
+        description:
+          type: string
+          description: Description of Workspace A
+          default: Description of Workspace A
+        created:
+          type: string
+          format: date-time
+          description: 2019-01-21T17:32:28Z
+        modified:
+          type: string
+          format: date-time
+          description: 2019-01-21T17:32:28Z
+    Workspaces.WorkspaceForRead:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          description: Workspace A
+          default: Workspace A
+        description:
+          type: string
+          description: Description of Workspace A
+          default: Description of Workspace A
+    Workspaces.WorkspaceListResponse:
+      type: object
+      required:
+        - data
+        - links
+        - meta
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Workspaces.Workspace'
+        links:
+          $ref: '#/components/schemas/Link'
+        meta:
+          $ref: '#/components/schemas/Meta'
+servers:
+  - url: https://console.redhat.com/{basePath}
+    description: Production Server
+    variables:
+      basePath:
+        default: api/rbac/v2
+  - url: https://console.stage.redhat.com/{basePath}
+    description: Stage Server
+    variables:
+      basePath:
+        default: api/rbac/v2
+  - url: https://localhost:{port}/{basePath}
+    description: Development Server
+    variables:
+      basePath:
+        default: api/rbac/v2
+      port:
+        default: '8000'

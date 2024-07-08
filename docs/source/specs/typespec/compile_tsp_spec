@@ -1,0 +1,6 @@
+#!/bin/bash
+
+tsp install
+tsp compile main.tsp
+cp tsp-output/@typespec/openapi3/openapi.v2.yaml ../v2
+

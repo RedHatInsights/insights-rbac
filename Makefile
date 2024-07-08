@@ -320,4 +320,7 @@ ephemeral-reserve:
 ephemeral-release:
 	./scripts/ephemeral/ephemeral.sh release
 
+generate_v2_spec:
+	cd docs/source/specs/typespec/ && ./compile_tsp_spec
+
 .PHONY: docs
