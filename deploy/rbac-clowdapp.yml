@@ -209,6 +209,8 @@ objects:
             value: ${UMB_PORT}
           - name: SA_NAME
             value: ${SA_NAME}
+          - name: RELATION_API_SERVER
+            value: ${RELATION_API_SERVER}
 
     - name: scheduler-service
       minReplicas: ${{MIN_SCHEDULER_REPLICAS}}
@@ -874,3 +876,6 @@ parameters:
 - name: BONFIRE_DEPENDENCIES
   description: A comma separated list of non ClowdApp dependencies for bonfire to deploy
   value: "model-access-permissions-yml-stage,rbac-config-yml-stage"
+- name: RELATION_API_SERVER
+  description: The gRPC API server to use for the relation
+  value: "localhost:9000"
