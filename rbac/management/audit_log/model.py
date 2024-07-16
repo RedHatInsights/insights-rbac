@@ -68,7 +68,6 @@ class AuditLog(TenantAwareModel):
     def get_resource_item(self, r_type, request, *args, **kwargs):
         """Find related information (eg, name, id, etc...) for each resource item."""
         verify_tenant = self.get_tenant_id(request)
-
         if r_type == AuditLog.ROLE:
             if request.data != {}:
                 role_object = get_object_or_404(Role, name=request.data["name"], tenant=verify_tenant)
@@ -80,7 +79,7 @@ class AuditLog(TenantAwareModel):
             return role_object_id, role_object_name
 
         elif r_type == AuditLog.GROUP:
-            if request._data is not None:
+            if request.data != {}:
                 group_object = get_object_or_404(Group, name=request.data["name"], tenant=verify_tenant)
             else:
                 group_uuid = kwargs["kwargs"]["uuid"]
@@ -96,9 +95,10 @@ class AuditLog(TenantAwareModel):
     def log_create(self, request, resource):
         """Audit Log when a role or a group is created."""
         self.principal_username = request.user.username
+
         self.resource_type = resource
 
-        self.resource_id, resource_name = self.get_resource_item(resource, request)
+        self.resource_id, resource_name = self.get_resource_item(resource, request, kwargs=kwargs)
         self.description = "Created " + resource_name
 
         self.action = AuditLog.CREATE
