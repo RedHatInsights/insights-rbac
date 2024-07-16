@@ -85,7 +85,7 @@ class AuditLog(TenantAwareModel):
                 group_object = get_object_or_404(Group, name=request.data["name"], tenant=verify_tenant)
             else:
                 group_uuid = kwargs["kwargs"]["uuid"]
-                group_object = get_object_or_404(Group, uuid=group_uuid, tenant=verify_tenant)
+                group_object = get_object_or_404(Group, uuid=group_uuid)
             group_object_id = group_object.id
             group_object_name = "group: " + group_object.name
             return group_object_id, group_object_name
