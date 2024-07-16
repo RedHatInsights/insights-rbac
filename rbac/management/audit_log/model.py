@@ -92,7 +92,7 @@ class AuditLog(TenantAwareModel):
             # TODO: update for permission related items
             return None
 
-    def log_create(self, request, resource):
+    def log_create(self, request, resource, **kwargs):
         """Audit Log when a role or a group is created."""
         self.principal_username = request.user.username
 
