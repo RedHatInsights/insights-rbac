@@ -214,8 +214,9 @@ class RoleViewSet(
 
         if status.is_success(create_role.status_code):
             auditlog = AuditLog()
-            auditlog.log_create(request, AuditLog.ROLE)
-            return create_role
+            auditlog.log_create(request, AuditLog.ROLE, kwargs=kwargs)
+
+        return create_role
 
     def list(self, request, *args, **kwargs):
         """Obtain the list of roles for the tenant.
