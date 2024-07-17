@@ -157,6 +157,57 @@ class WorkspaceViewTests(IdentityRequest):
         self.assertEquals(update_workspace.name, "Updated name")
         self.assertEquals(update_workspace.description, "Updated description")
 
+    def test_partial_update_workspace_with_put_method(self):
+        """Test for updating a workspace."""
+        workspace_data = {
+            "name": "New Workspace",
+            "description": "New Workspace - description",
+            "tenant_id": self.tenant.id,
+        }
+
+        workspace = Workspace.objects.create(**workspace_data)
+
+        url = reverse("workspace-detail", kwargs={"uuid": workspace.uuid})
+        client = APIClient()
+
+        workspace_request_data = {"name": "New Workspace"}
+
+        response = client.put(url, workspace_request_data, format="json", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        error = response.data.get("errors")[0]
+        self.assertIsNotNone(error.get("detail"))
+        self.assertEqual(error.get("detail"), "Field 'description' is required.")
+        self.assertEqual(error.get("source"), "workspace")
+        self.assertEqual(error.get("status"), "400")
+
+    def test_partial_update_workspace(self):
+        """Test for updating a workspace."""
+        workspace_data = {
+            "name": "New Workspace",
+            "description": "New Workspace - description",
+            "tenant_id": self.tenant.id,
+        }
+
+        workspace = Workspace.objects.create(**workspace_data)
+
+        url = reverse("workspace-detail", kwargs={"uuid": workspace.uuid})
+        client = APIClient()
+
+        workspace_data["name"] = "Updated name"
+        response = client.patch(url, workspace_data, format="json", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.data
+        self.assertEqual(data.get("name"), "Updated name")
+        self.assertNotEquals(data.get("uuid"), "")
+        self.assertIsNotNone(data.get("uuid"))
+        self.assertNotEquals(data.get("created"), "")
+        self.assertNotEquals(data.get("modified"), "")
+
+        update_workspace = Workspace.objects.filter(id=workspace.id).first()
+        self.assertEquals(update_workspace.name, "Updated name")
+
     def test_update_workspace_empty_body(self):
         """Test for updating a workspace with empty body"""
         workspace = {}
