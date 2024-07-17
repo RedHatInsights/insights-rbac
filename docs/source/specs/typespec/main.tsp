@@ -114,6 +114,8 @@ namespace Problems {
     }
 
     alias Problem400AlreadyExists = ProblemDetails<Status = 400>;
+
+    alias CommonProblems = Problem401 | Problem403 | Problem500;
 }
 
 @route("/workspaces")
@@ -157,27 +159,19 @@ namespace Workspaces {
    
     @doc("Create workspace in tenant")
     @summary("Create workspace in tenant")
-    @post op create(@body body: CreateWorkspaceRequest): CreateWorkspaceResponse | 
-        Problems.Problem401 |
-        Problems.Problem403 |
-        Problems.Problem400 |
-        Problems.Problem500;
+    @post op create(@body body: CreateWorkspaceRequest): CreateWorkspaceResponse | Problems.CommonProblems | Problems.Problem400;
 
     model WorkspaceListResponse is ListResponse<Workspace>;
     @doc("By default, responses are sorted in ascending order by workspace name")
     @summary("List workspaces for tenant")
-    @get op list(...ListQueryParams): WorkspaceListResponse | Problems.Problem401 | Problems.Problem403 | Problems.Problem500;
+    @get op list(...ListQueryParams): WorkspaceListResponse | Problems.CommonProblems;
 
     @doc("Get a workspace in tenant")
     @summary("Get a workspace in tenant")
     @get op read(
         @doc("Unique identification")
         @path uuid: UUID;
-    ): GetWorkspaceResponse |
-        Problems.Problem401 |
-        Problems.Problem403 |
-        Problems.Problem404 |
-        Problems.Problem500;
+    ): GetWorkspaceResponse | Problems.CommonProblems | Problems.Problem404;
 
     @doc("Edit a workspace")
     @summary("Edit the workspace name or description")
@@ -185,19 +179,12 @@ namespace Workspaces {
         @doc("Unique identification")
         @path uuid: UUID;
         @body body: PutWorkspaceRequest
-    ): PutWorkspaceResponse |
-        Problems.Problem400AlreadyExists |
-        Problems.Problem401 |
-        Problems.Problem403 |
-        Problems.Problem500;
+    ): PutWorkspaceResponse | Problems.Problem400AlreadyExists | Problems.CommonProblems;
 
     @doc("Delete a workspace")
     @summary("Delete the workspace")
     @delete op delete(
         @doc("Unique identification")
         @path uuid: UUID;
-    ): DeleteWorkspaceResponse |
-    Problems.Problem401 |
-    Problems.Problem403 |
-    Problems.Problem500;
+    ): DeleteWorkspaceResponse | Problems.CommonProblems;
 }
