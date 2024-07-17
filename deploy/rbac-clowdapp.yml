@@ -42,6 +42,13 @@ objects:
             command:
               - sh
               - /opt/rbac/deploy/init-container-setup.sh
+            resources:
+              limits:
+                cpu: ${INIT_WORKER_CPU_LIMIT}
+                memory: ${INIT_WORKER_MEMORY_LIMIT}
+              requests:
+                cpu: ${INIT_WORKER_CPU_REQUEST}
+                memory: ${INIT_WORKER_MEMORY_REQUEST}
         command:
           - /bin/bash
           - '-c'
@@ -765,6 +772,22 @@ parameters:
   displayName: Memory Limit
   name: CELERY_WORKER_MEMORY_LIMIT
   value: 512Mi
+- description: Initial amount of CPU the init worker container will request.
+  displayName: RBAC worker init container CPU Resource Request
+  name: INIT_WORKER_CPU_REQUEST
+  value: 500m
+- description: Maximum amount of CPU the init worker container can use.
+  displayName: RBAC worker init container CPU Resource Limit
+  name: INIT_WORKER_CPU_LIMIT
+  value: 2000m
+- description: Initial amount of memory the init worker container will request.
+  displayName: RBAC worker init container Memory Resource Request
+  name: INIT_WORKER_MEMORY_REQUEST
+  value: 512Mi
+- description: Maximum amount of memory the init worker container can use.
+  displayName: RBAC worker init container Memory Resource Limit
+  name: INIT_WORKER_MEMORY_LIMIT
+  value: 3Gi
 - displayName: Django Debug
   name: DJANGO_DEBUG
   value: 'False'
