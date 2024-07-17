@@ -20,27 +20,6 @@ enum Versions{
     v2,
 }
 
-model Link {
-    @format("uri")
-    first: string = "/api/v2/(resources)/?offset=0&limit=10";
-    @format("uri")
-    previous: string = "/api/v2/(resources)/?offset=20&limit=10";
-    @format("uri")
-    next: string = "/api/v2/(resources)/?offset=40&limit=10";
-    @format("uri")
-    last: string = "/api/v2/(resources)/?offset=90&limit=10";
-}
-
-model Meta {
-    count: int64 = 30
-}
-
-model ListResponse<T> {
-    data: T[];
-    links: Link;
-    meta: Meta;
-}
-
 model Timestamps {
     @doc("2019-01-21T17:32:28Z")
     created: offsetDateTime;
@@ -48,30 +27,8 @@ model Timestamps {
     modified: offsetDateTime;
 }
 
-model ListQueryParams {
-    @doc("Parameter for selecting the amount of data returned.")
-    @maxValue(1000)
-    @minValue(1)
-    @query limit?: integer = 10,
-    @query offset?: integer = 0,
-    @doc("Parameter for ordering by value. For inverse ordering, supply '-' before the param value, such as: ?order_by=-name")
-    @query order_by?: OrderByDefaultValues;
-}
-
 @format("uuid")
 scalar UUID extends string;
-
-enum OrderByDefaultValues {
-    name,
-    modified
-}
-
-
-model OkResponseForModel<T>{
-    @statusCode
-    statusCode: 200,
-    ...T
-}
 
 namespace Problems {
     enum ProblemType {
@@ -160,11 +117,6 @@ namespace Workspaces {
     @doc("Create workspace in tenant")
     @summary("Create workspace in tenant")
     @post op create(@body body: CreateWorkspaceRequest): CreateWorkspaceResponse | Problems.CommonProblems | Problems.Problem400;
-
-    model WorkspaceListResponse is ListResponse<Workspace>;
-    @doc("By default, responses are sorted in ascending order by workspace name")
-    @summary("List workspaces for tenant")
-    @get op list(...ListQueryParams): WorkspaceListResponse | Problems.CommonProblems;
 
     @doc("Get a workspace in tenant")
     @summary("Get a workspace in tenant")
