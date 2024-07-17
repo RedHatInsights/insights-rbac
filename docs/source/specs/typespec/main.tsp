@@ -139,13 +139,6 @@ interface CreateResource<BodyType> {
     Problems.Problem500;
 }
 
-interface ListResource<T> {
-    list(...ListQueryParams): T[] |
-    Problems.Problem401 |
-    Problems.Problem403 |
-    Problems.Problem500;
-}
-
 interface ReadResource<T> {
     read(
         @doc("Unique identification")
@@ -203,10 +196,9 @@ namespace Workspaces {
     @post op create is CreateResourceAlias.create<Workspace>;
 
     model WorkspaceListResponse is ListResponse<Workspace>;
-    alias ListResourceAlias = ListResource<WorkspaceListResponse>;
     @doc("By default, responses are sorted in ascending order by workspace name")
     @summary("List workspaces for tenant")
-    @get op list is ListResourceAlias.list;
+    @get op list(...ListQueryParams): WorkspaceListResponse | Problems.Problem401 | Problems.Problem403 | Problems.Problem500;
 
     alias ReadResourceAlias = ReadResource<Workspace>;
     @doc("Get a workspace in tenant")
