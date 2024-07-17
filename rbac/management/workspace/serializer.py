@@ -24,20 +24,22 @@ from .model import Workspace
 class WorkspaceSerializer(serializers.ModelSerializer):
     """Serializer for the Workspace model."""
 
-    name = serializers.CharField(required=True, max_length=150)
-    uuid = serializers.UUIDField(read_only=True)
+    name = serializers.CharField(required=False, max_length=150)
+    uuid = serializers.UUIDField(read_only=True, required=False)
+    parent = serializers.UUIDField(allow_null=True, required=False)
 
     class Meta:
         """Metadata for the serializer."""
 
         model = Workspace
-        fields = ("name", "uuid", "description")
+        fields = ("name", "uuid", "parent", "description")
 
     def create(self, validated_data):
         """Create the workspace object in the database."""
         name = validated_data.pop("name")
         description = validated_data.pop("description", "")
         tenant = self.context["request"].tenant
+        parent = validated_data.pop("parent", "")
 
-        workspace = Workspace.objects.create(name=name, description=description, tenant=tenant)
+        workspace = Workspace.objects.create(name=name, description=description, parent=parent, tenant=tenant)
         return workspace

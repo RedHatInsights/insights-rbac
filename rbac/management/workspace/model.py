@@ -29,6 +29,7 @@ class Workspace(TenantAwareModel):
 
     name = models.CharField(max_length=100)
     uuid = models.UUIDField(default=uuid4, editable=False, unique=True, null=False)
+    parent = models.UUIDField(null=True, blank=True, editable=True)
     description = models.TextField(null=True)
     created = models.DateTimeField(default=timezone.now)
     modified = AutoDateTimeField(default=timezone.now)
@@ -36,5 +37,8 @@ class Workspace(TenantAwareModel):
     class Meta:
         ordering = ["name", "modified"]
         constraints = [
-            models.UniqueConstraint(fields=["name", "tenant"], name="unique workspace name per tenant"),
+            models.UniqueConstraint(
+                fields=["name", "tenant", "parent"],
+                name="The combination of 'name', 'tenant', and 'parent' must be unique.",
+            ),
         ]

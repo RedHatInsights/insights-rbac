@@ -46,12 +46,19 @@ class WorkspaceViewTests(IdentityRequest):
 
     def test_create_workspace(self):
         """Test for creating a workspace."""
-        workspace = {"name": "New Workspace"}
+        workspace_data = {
+            "name": "New Workspace",
+            "description": "New Workspace - description",
+            "tenant_id": self.tenant.id,
+            "parent": "cbe9822d-cadb-447d-bc80-8bef773c36ea",
+        }
+
+        parent_workspace = Workspace.objects.create(**workspace_data)
+        workspace = {"name": "New Workspace", "description": "Workspace", "parent": parent_workspace.uuid}
 
         url = reverse("workspace-list")
         client = APIClient()
         response = client.post(url, workspace, format="json", **self.headers)
-
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         data = response.data
         self.assertEqual(data.get("name"), "New Workspace")
@@ -59,22 +66,7 @@ class WorkspaceViewTests(IdentityRequest):
         self.assertIsNotNone(data.get("uuid"))
         self.assertNotEquals(data.get("created"), "")
         self.assertNotEquals(data.get("modified"), "")
-        self.assertEquals(data.get("description"), "")
-
-        other_workspace = {"name": "Other Workspace", "description": "Other description"}
-
-        url = reverse("workspace-list")
-        client = APIClient()
-        response = client.post(url, other_workspace, format="json", **self.headers)
-
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        data = response.data
-        self.assertEqual(data.get("name"), "Other Workspace")
-        self.assertNotEquals(data.get("uuid"), "")
-        self.assertIsNotNone(data.get("uuid"))
-        self.assertNotEquals(data.get("created"), "")
-        self.assertNotEquals(data.get("modified"), "")
-        self.assertEquals(data.get("description"), "Other description")
+        self.assertEquals(data.get("description"), "Workspace")
 
     def test_create_workspace_empty_body(self):
         """Test for creating a workspace."""
@@ -87,8 +79,8 @@ class WorkspaceViewTests(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         error = response.data.get("errors")[0]
         self.assertIsNotNone(error.get("detail"))
-        self.assertEqual(error.get("detail"), "This field is required.")
-        self.assertEqual(error.get("source"), "name")
+        self.assertEqual(error.get("detail"), "Field 'name' is required.")
+        self.assertEqual(error.get("source"), "workspace")
         self.assertEqual(error.get("status"), "400")
 
     def test_create_workspace_unauthorized(self):
@@ -142,6 +134,7 @@ class WorkspaceViewTests(IdentityRequest):
 
         workspace_data["name"] = "Updated name"
         workspace_data["description"] = "Updated description"
+        workspace_data["parent"] = "cbe9822d-cadb-447d-bc80-8bef773c36ea"
         response = client.put(url, workspace_data, format="json", **self.headers)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -163,6 +156,7 @@ class WorkspaceViewTests(IdentityRequest):
             "name": "New Workspace",
             "description": "New Workspace - description",
             "tenant_id": self.tenant.id,
+            "parent": "cbe9822d-cadb-447d-bc80-8bef773c36ea",
         }
 
         workspace = Workspace.objects.create(**workspace_data)
@@ -181,8 +175,43 @@ class WorkspaceViewTests(IdentityRequest):
         self.assertEqual(error.get("source"), "workspace")
         self.assertEqual(error.get("status"), "400")
 
-    def test_partial_update_workspace(self):
+    def test_update_workspace_same_parent(self):
         """Test for updating a workspace."""
+        parent_workspace_data = {
+            "name": "New Workspace",
+            "description": "New Workspace - description",
+            "tenant_id": self.tenant.id,
+            "parent": "cbe9822d-cadb-447d-bc80-8bef773c36ea",
+        }
+
+        parent_workspace = Workspace.objects.create(**parent_workspace_data)
+
+        workspace_data = {
+            "name": "New Workspace",
+            "description": "New Workspace - description",
+            "tenant_id": self.tenant.id,
+            "parent": parent_workspace.uuid,
+        }
+
+        workspace = Workspace.objects.create(**workspace_data)
+
+        url = reverse("workspace-detail", kwargs={"uuid": workspace.uuid})
+        client = APIClient()
+
+        workspace_request_data = {"name": "New Workspace", "parent": workspace.uuid, "description": "XX"}
+
+        response = client.put(url, workspace_request_data, format="json", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        error = response.data.get("errors")[0]
+        self.assertIsNotNone(error.get("detail"))
+        self.assertEqual(error.get("detail"), "Parent and UUID can't be same")
+        self.assertEqual(error.get("source"), "workspace")
+        self.assertEqual(error.get("status"), "400")
+
+    def test_update_workspace_parent_doesnt_exist(self):
+        """Test for updating a workspace."""
+
         workspace_data = {
             "name": "New Workspace",
             "description": "New Workspace - description",
@@ -194,9 +223,38 @@ class WorkspaceViewTests(IdentityRequest):
         url = reverse("workspace-detail", kwargs={"uuid": workspace.uuid})
         client = APIClient()
 
-        workspace_data["name"] = "Updated name"
-        response = client.patch(url, workspace_data, format="json", **self.headers)
+        parent = "cbe9822d-cadb-447d-bc80-8bef773c36ea"
+        workspace_request_data = {
+            "name": "New Workspace",
+            "parent": parent,
+            "description": "XX",
+        }
 
+        response = client.put(url, workspace_request_data, format="json", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        error = response.data.get("errors")[0]
+        self.assertIsNotNone(error.get("detail"))
+        self.assertEqual(error.get("detail"), f"Parent workspace '{parent}' doesn't exist in tenant")
+        self.assertEqual(error.get("source"), "workspace")
+        self.assertEqual(error.get("status"), "400")
+
+    def test_partial_update_workspace(self):
+        """Test for updating a workspace."""
+        workspace_data = {
+            "name": "New Workspace",
+            "description": "New Workspace - description",
+            "tenant_id": self.tenant.id,
+            "parent": None,
+        }
+
+        workspace = Workspace.objects.create(**workspace_data)
+
+        url = reverse("workspace-detail", kwargs={"uuid": workspace.uuid})
+        client = APIClient()
+
+        workspace_data = {"name": "Updated name"}
+        response = client.patch(url, workspace_data, format="json", **self.headers)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         data = response.data
         self.assertEqual(data.get("name"), "Updated name")
@@ -219,8 +277,8 @@ class WorkspaceViewTests(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         error = response.data.get("errors")[0]
         self.assertIsNotNone(error.get("detail"))
-        self.assertEqual(error.get("detail"), "This field is required.")
-        self.assertEqual(error.get("source"), "name")
+        self.assertEqual(error.get("detail"), "Field 'name' is required")
+        self.assertEqual(error.get("source"), "workspace")
         self.assertEqual(error.get("status"), "400")
 
     def test_update_duplicate_workspace(self):

@@ -20,14 +20,15 @@ import json
 from django.utils.translation import gettext as _
 from django_filters import rest_framework as filters
 from management.permissions import WorkspaceAccessPermission
+from management.utils import validate_uuid
 from rest_framework import mixins, serializers, viewsets
 from rest_framework.filters import OrderingFilter
 
 from .model import Workspace
 from .serializer import WorkspaceSerializer
 
-VALID_PATCH_FIELDS = ["name", "description"]
-REQUIRED_PATCH_FIELDS = ["name", "description"]
+VALID_PATCH_FIELDS = ["name", "description", "parent"]
+REQUIRED_PUT_FIELDS = ["name", "description", "parent"]
 
 
 class WorkspaceViewSet(
@@ -68,41 +69,59 @@ class WorkspaceViewSet(
     def update(self, request, *args, **kwargs):
         """Update a workspace."""
         self.validate_workspace(request)
+        self.update_validation(request)
         return super().update(request=request, args=args, kwargs=kwargs)
 
     def partial_update(self, request, *args, **kwargs):
         """Patch a workspace."""
-        kwargs["partial"] = True
-
         payload = json.loads(request.body or "{}")
         for field in payload:
             if field not in VALID_PATCH_FIELDS:
                 message = f"Field '{field}' is not supported. Please use one or more of: {VALID_PATCH_FIELDS}."
                 error = {"workspace": [_(message)]}
                 raise serializers.ValidationError(error)
+
+        self.update_validation(request)
+
         return super().update(request=request, args=args, kwargs=kwargs)
+
+    def update_validation(self, request):
+        """Validate a workspace for update."""
+        instance = self.get_object()
+        parent = request.data.get("parent")
+        if str(instance.uuid) == parent:
+            message = "Parent and UUID can't be same"
+            error = {"workspace": [_(message)]}
+            raise serializers.ValidationError(error)
 
     def validate_workspace(self, request):
         """Validate a workspace."""
-        for field in REQUIRED_PATCH_FIELDS:
-            if request.data.get(field) is None:
+        for field in REQUIRED_PUT_FIELDS:
+            if field not in request.data:
                 message = f"Field '{field}' is required."
                 error = {"workspace": [_(message)]}
                 raise serializers.ValidationError(error)
 
         name = request.data.get("name")
-        if name is None:
-            return
+        tenant = request.tenant
+        parent = request.data.get("parent")
+        if parent is None:
+            message = "Field 'parent' can't be null."
+            error = {"workspace": [_(message)]}
+            raise serializers.ValidationError(error)
+        validate_uuid(parent)
 
-        description = request.data.get("description")
-        if description is None:
-            message = "Field 'description' is required"
+        if not Workspace.objects.filter(uuid=parent, tenant=tenant).exists():
+            message = f"Parent workspace '{parent}' doesn't exist in tenant"
             error = {"workspace": [message]}
             raise serializers.ValidationError(error)
 
-        tenant = request.tenant
+        if Workspace.objects.filter(name=name, tenant=tenant, parent=parent).exists():
+            parent_text = parent if parent is not None else "root"
+            message = (
+                f"The workspace '{name}' already exists in this tenant within the hierarchy at the level "
+                f"associated with parent id: {parent_text}."
+            )
 
-        if Workspace.objects.filter(name=name, tenant=tenant).exists():
-            message = "Workspace already exist in tenant"
             error = {"workspace": [message]}
             raise serializers.ValidationError(error)
