@@ -29,15 +29,13 @@ from .serializer import WorkspaceSerializer
 class WorkspaceViewSet(
     mixins.CreateModelMixin,
     mixins.DestroyModelMixin,
-    mixins.ListModelMixin,
     mixins.RetrieveModelMixin,
     mixins.UpdateModelMixin,
     viewsets.GenericViewSet,
 ):
     """Workspace View.
 
-    A viewset that provides default `create()`, `destroy`, `retrieve()`,
-    and `list()` actions.
+    A viewset that provides default `create()`, `destroy` and `retrieve()`.
 
     """
 
@@ -54,10 +52,6 @@ class WorkspaceViewSet(
         self.validate_workspace(request)
 
         return super().create(request=request, args=args, kwargs=kwargs)
-
-    def list(self, request, *args, **kwargs):
-        """Obtain the list of workspace for the tenant."""
-        return super().list(request=request, args=args, kwargs=kwargs)
 
     def retrieve(self, request, *args, **kwargs):
         """Get a workspace."""

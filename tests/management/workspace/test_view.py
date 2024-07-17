@@ -212,44 +212,6 @@ class WorkspaceViewTests(IdentityRequest):
         self.assertEqual(error.get("source"), "detail")
         self.assertEqual(error.get("status"), "403")
 
-    def test_get_workspaces_pagination(self):
-        """
-        Test that getting the user based principals from a group returns successfully
-        according to the given limit and offset.
-        """
-        for i in range(3):
-            Workspace.objects.create(name=f"workspace_{i}", tenant=self.tenant)
-
-        url = reverse("workspace-list")
-        client = APIClient()
-        response = client.get(url, **self.headers)
-
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(int(response.data.get("meta").get("count")), 4)
-        self.assertEqual(int(response.data.get("meta").get("limit")), 10)
-        self.assertEqual(int(response.data.get("meta").get("offset")), 0)
-        self.assertEqual(len(response.data.get("data")), 4)
-
-        test_data = [
-            {"limit": 10, "offset": 3, "expected_data_count": 1},
-            {"limit": 10, "offset": 2, "expected_data_count": 2},
-            {"limit": 1, "offset": 0, "expected_data_count": 1},
-            {"limit": 2, "offset": 2, "expected_data_count": 2},
-        ]
-        for item in test_data:
-            limit = item["limit"]
-            offset = item["offset"]
-            expected_data_count = item["expected_data_count"]
-            url = f"{reverse('workspace-list')}?limit={limit}&offset={offset}"
-            client = APIClient()
-            response = client.get(url, **self.headers)
-
-            self.assertEqual(response.status_code, status.HTTP_200_OK)
-            self.assertEqual(int(response.data.get("meta").get("count")), 4)
-            self.assertEqual(int(response.data.get("meta").get("limit")), limit)
-            self.assertEqual(int(response.data.get("meta").get("offset")), offset)
-            self.assertEqual(len(response.data.get("data")), expected_data_count)
-
     def test_get_workspace(self):
         url = reverse("workspace-detail", kwargs={"uuid": self.init_workspace.uuid})
         client = APIClient()
