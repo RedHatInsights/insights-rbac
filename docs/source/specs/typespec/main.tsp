@@ -136,7 +136,7 @@ interface CreateResource<BodyType> {
     Problems.Problem401 |
     Problems.Problem403 |
     Problems.Problem400 |
-    Problems.ProblemDetails<Status = 500>;
+    Problems.Problem500;
 }
 
 interface ListResource<T> {
@@ -192,6 +192,7 @@ namespace Workspaces {
 
     model Workspace {
         @key uuid: UUID;
+        parent?: UUID;
         ...WorkspaceForRead;
         ...Timestamps;
     }
