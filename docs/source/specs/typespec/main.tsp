@@ -73,21 +73,6 @@ model OkResponseForModel<T>{
     ...T
 }
 
-
-model CreatedResponseForModel<T>{
-    @statusCode
-    statusCode: 201,
-    ...T
-}
-
-/**
- * Resource Deleted
- */
-model NoContentResponseResourceDeleted{
-    @statusCode
-    statusCode: 201,
-}
-
 namespace Problems {
     enum ProblemType {
         InsufficientPermission:"http://project-kessel.github.io",
@@ -131,52 +116,11 @@ namespace Problems {
     alias Problem400AlreadyExists = ProblemDetails<Status = 400>;
 }
 
-interface CreateResource<BodyType> {
-    create<ModelType>(@body body: BodyType): CreatedResponseForModel<ModelType> | 
-    Problems.Problem401 |
-    Problems.Problem403 |
-    Problems.Problem400 |
-    Problems.Problem500;
-}
-
-interface ReadResource<T> {
-    read(
-        @doc("Unique identification")
-        @path uuid: UUID;
-    ): T |
-    Problems.Problem401 |
-    Problems.Problem403 |
-    Problems.Problem404 |
-    Problems.Problem500
-}
-
-interface UpdateResource<B, R> {
-    update(
-        @doc("Unique identification")
-        @path uuid: UUID;
-        @body body: B
-    ): OkResponseForModel<R> |
-    Problems.Problem400AlreadyExists |
-    Problems.Problem401 |
-    Problems.Problem403 |
-    Problems.Problem500;
-}
-
-interface DeleteResource {
-    delete(
-        @doc("Unique identification")
-        @path uuid: UUID;
-    ): NoContentResponseResourceDeleted |
-    Problems.Problem401 |
-    Problems.Problem403 |
-    Problems.Problem500;
-}
-
 @route("/workspaces")
 @tag("Workspaces")
 @doc("Operations about workspaces")
 namespace Workspaces {
-    model WorkspaceForRead {
+    model BasicWorkspace {
         @doc("Workspace A")
         name: string = "Workspace A";
         @doc("Description of Workspace A")
@@ -186,31 +130,74 @@ namespace Workspaces {
     model Workspace {
         @key uuid: UUID;
         parent?: UUID;
-        ...WorkspaceForRead;
+        ...BasicWorkspace;
         ...Timestamps;
     }
 
-    alias CreateResourceAlias = CreateResource<WorkspaceForRead>;
+    alias CreateWorkspaceRequest = BasicWorkspace;
+
+    model CreateWorkspaceResponse extends BasicWorkspace{
+        @statusCode _: 201;
+    }
+
+    model GetWorkspaceResponse extends BasicWorkspace{
+        @statusCode _: 200;
+    }
+    
+    alias PutWorkspaceRequest = BasicWorkspace;
+
+    model PutWorkspaceResponse extends BasicWorkspace{
+        @statusCode _: 200;
+    }
+
+    model DeleteWorkspaceResponse{
+        @statusCode
+        statusCode: 201,
+    }
+   
     @doc("Create workspace in tenant")
     @summary("Create workspace in tenant")
-    @post op create is CreateResourceAlias.create<Workspace>;
+    @post op create(@body body: CreateWorkspaceRequest): CreateWorkspaceResponse | 
+        Problems.Problem401 |
+        Problems.Problem403 |
+        Problems.Problem400 |
+        Problems.Problem500;
 
     model WorkspaceListResponse is ListResponse<Workspace>;
     @doc("By default, responses are sorted in ascending order by workspace name")
     @summary("List workspaces for tenant")
     @get op list(...ListQueryParams): WorkspaceListResponse | Problems.Problem401 | Problems.Problem403 | Problems.Problem500;
 
-    alias ReadResourceAlias = ReadResource<Workspace>;
     @doc("Get a workspace in tenant")
     @summary("Get a workspace in tenant")
-    @get op read is ReadResourceAlias.read;
+    @get op read(
+        @doc("Unique identification")
+        @path uuid: UUID;
+    ): GetWorkspaceResponse |
+        Problems.Problem401 |
+        Problems.Problem403 |
+        Problems.Problem404 |
+        Problems.Problem500;
 
-    alias UpdateResourceAlias = UpdateResource<WorkspaceForRead, Workspace>;
     @doc("Edit a workspace")
     @summary("Edit the workspace name or description")
-    @put op update is UpdateResourceAlias.update;
+    @put op   update(
+        @doc("Unique identification")
+        @path uuid: UUID;
+        @body body: PutWorkspaceRequest
+    ): PutWorkspaceResponse |
+        Problems.Problem400AlreadyExists |
+        Problems.Problem401 |
+        Problems.Problem403 |
+        Problems.Problem500;
 
     @doc("Delete a workspace")
     @summary("Delete the workspace")
-    @delete op delete is DeleteResource.delete;
+    @delete op delete(
+        @doc("Unique identification")
+        @path uuid: UUID;
+    ): DeleteWorkspaceResponse |
+    Problems.Problem401 |
+    Problems.Problem403 |
+    Problems.Problem500;
 }
