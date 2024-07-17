@@ -19,6 +19,7 @@ import dataclasses
 import logging
 from typing import FrozenSet
 
+from kessel.relations.v1beta1 import common_pb2
 from management.role.model import Role
 from migration_tool.migrator import Migrator
 from migration_tool.models import V1group, V2rolebinding
@@ -26,7 +27,6 @@ from migration_tool.sharedSystemRolesReplicatedRoleBindings import (
     shared_system_role_replicated_role_bindings_v1_to_v2_mapping,
 )
 from migration_tool.utils import create_relationship, write_relationships
-from relations.v0 import common_pb2
 
 from api.models import Tenant
 from .ingest import extract_info_into_v1_role
