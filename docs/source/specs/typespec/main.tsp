@@ -108,11 +108,27 @@ namespace Workspaces {
     model GetWorkspaceResponse extends BasicWorkspace{
         @statusCode _: 200;
     }
-    
-    alias PutWorkspaceRequest = BasicWorkspace;
+
+    model PutWorkspaceRequest {
+        @doc("Workspace A")
+        name: string = "Workspace A";
+        @doc("Description of Workspace A")
+        description: string = "Description of Workspace A";
+    }
+
+    model PatchWorkspaceRequest {
+        @doc("Workspace A")
+        name?: string = "Workspace A";
+        @doc("Description of Workspace A")
+        description?: string = "Description of Workspace A";
+    }
 
     model PutWorkspaceResponse extends BasicWorkspace{
-        @statusCode _: 200;
+        @statusCode _: 201;
+    }
+
+    model PatchWorkspaceResponse extends BasicWorkspace{
+        @statusCode _: 204;
     }
 
     model DeleteWorkspaceResponse{
@@ -133,11 +149,17 @@ namespace Workspaces {
 
     @doc("Edit a workspace")
     @summary("Edit the workspace name or description")
-    @put op   update(
+    @put op update(
         @doc("Unique identification")
         @path uuid: UUID;
         @body body: PutWorkspaceRequest
     ): PutWorkspaceResponse | Problems.CommonProblems | Problems.Problem400AlreadyExists ;
+
+    @patch op patch(
+        @doc("Unique identification")
+        @path uuid: UUID;
+        @body body: PutWorkspaceRequest
+    ): PatchWorkspaceResponse | Problems.CommonProblems | Problems.Problem400AlreadyExists ;
 
     @doc("Delete a workspace")
     @summary("Delete the workspace")
