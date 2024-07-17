@@ -88,83 +88,62 @@ model NoContentResponseResourceDeleted{
     statusCode: 201,
 }
 
-namespace Errors {
-    @error
-    model ErrorMessage400 {
-        detail?: string = "JSON parse error - Expecting value: line 1 column 1 (char 0)",
-        status?: string = "404",
-        source?: string = "detail"
+namespace Problems {
+    enum ProblemType {
+        InsufficientPermission:"http://project-kessel.github.io",
     }
 
     @error
-    model ErrorMessage403 {
-        detail?: string = "You do not have permission to perform this action.",
-        status?: string = "403",
-        source?: string = "detail"
+    model ProblemDetails<Status extends valueof int16> {
+        @header("content-type") contentType: "application/problem+json";
+        type?: ProblemType;
+    
+        @statusCode _: typeof Status;
+        status?: typeof Status;
+        
+        title?: string;
+        detail?: string;
+
+        @format("uri")
+        instance?: string;
     }
+  
+    @error
+    model Problem403 extends ProblemDetails<Status = 403>{
+        type: ProblemType.InsufficientPermission,
+        title: "You do not have permission to perform this action.";
+    }
+
+    alias Problem401 = ProblemDetails<Status = 401>;
 
     @error
-    model ErrorMessage404 {
-        detail?: string = "Not found.",
-        status?: string = "404",
+    model Problem404 extends ProblemDetails<Status = 404>{
+        detail: "Not found"
     }
+    
+    alias Problem500 = ProblemDetails<Status = 500>;
 
     @error
-    model ErrorBasicResponse<STATUS>{
-        @statusCode 
-        statusCode: STATUS;
+    model Problem400 extends ProblemDetails<Status = 400>{
+        detail: "JSON parse error - Expecting value: line 1 column 1 (char 0)",
     }
 
-    @error
-    model ErrorResponse400{
-        @statusCode
-        statusCode: 400,
-        errors: ErrorMessage400[]
-    }
-
-    @error
-    model ErrorResponse400AlreadyExist<T>{
-        @statusCode
-        statusCode: 400,
-        errors: T[]
-    }
-
-    @error
-    model ErrorResponse403{
-        @statusCode 
-        statusCode: 403,
-        errors: ErrorMessage403[]
-    }
-
-    @error
-    model ErrorResponse404{
-        @statusCode 
-        statusCode: 404,
-        errors: ErrorMessage404[]
-    }
-
-    @error
-    model ErrorResponse401{
-        @statusCode 
-        statusCode: 401,
-    }
-
-    scalar ErrorCode extends string;
+    alias Problem400AlreadyExists = ProblemDetails<Status = 400>;
 }
 
 interface CreateResource<BodyType> {
     create<ModelType>(@body body: BodyType): CreatedResponseForModel<ModelType> | 
-    Errors.ErrorResponse401 |
-    Errors.ErrorResponse403 |
-    Errors.ErrorResponse400 |
-    Errors.ErrorBasicResponse<500>;
+    Problems.Problem401 |
+    Problems.Problem403 |
+    Problems.Problem400 |
+    Problems.ProblemDetails<Status = 500>;
 }
 
 interface ListResource<T> {
     list(...ListQueryParams): T[] |
-    Errors.ErrorResponse401 |
-    Errors.ErrorResponse403 |
-    Errors.ErrorBasicResponse<500>;
+    Problems.Problem401 |
+    Problems.Problem403 |
+    Problems.Problem500;
 }
 
 interface ReadResource<T> {
@@ -172,22 +151,22 @@ interface ReadResource<T> {
         @doc("Unique identification")
         @path uuid: UUID;
     ): T |
-    Errors.ErrorResponse401 |
-    Errors.ErrorResponse403 |
-    Errors.ErrorResponse404 |
-    Errors.ErrorBasicResponse<500>;
+    Problems.Problem401 |
+    Problems.Problem403 |
+    Problems.Problem404 |
+    Problems.Problem500
 }
 
-interface UpdateResource<B, R, E> {
+interface UpdateResource<B, R> {
     update(
         @doc("Unique identification")
         @path uuid: UUID;
         @body body: B
     ): OkResponseForModel<R> |
-    Errors.ErrorResponse400AlreadyExist<E> |
-    Errors.ErrorResponse401 |
-    Errors.ErrorResponse403 |
-    Errors.ErrorBasicResponse<500>;
+    Problems.Problem400AlreadyExists |
+    Problems.Problem401 |
+    Problems.Problem403 |
+    Problems.Problem500;
 }
 
 interface DeleteResource {
@@ -195,9 +174,9 @@ interface DeleteResource {
         @doc("Unique identification")
         @path uuid: UUID;
     ): NoContentResponseResourceDeleted |
-    Errors.ErrorResponse401 |
-    Errors.ErrorResponse403 |
-    Errors.ErrorBasicResponse<500>;
+    Problems.Problem401 |
+    Problems.Problem403 |
+    Problems.Problem500;
 }
 
 @route("/workspaces")
@@ -217,13 +196,6 @@ namespace Workspaces {
         ...Timestamps;
     }
 
-    @error
-    model ErrorMessage400WorkspaceAlreadyExist {
-        detail?: string = "Workspace already exist in tenant",
-        status?: string = "400",
-        source?: string = "workspace",
-    }
-
     alias CreateResourceAlias = CreateResource<WorkspaceForRead>;
     @doc("Create workspace in tenant")
     @summary("Create workspace in tenant")
@@ -240,7 +212,7 @@ namespace Workspaces {
     @summary("Get a workspace in tenant")
     @get op read is ReadResourceAlias.read;
 
-    alias UpdateResourceAlias = UpdateResource<WorkspaceForRead, Workspace, ErrorMessage400WorkspaceAlreadyExist>;
+    alias UpdateResourceAlias = UpdateResource<WorkspaceForRead, Workspace>;
     @doc("Edit a workspace")
     @summary("Edit the workspace name or description")
     @put op update is UpdateResourceAlias.update;

@@ -25,17 +25,53 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Errors.ErrorResponse400'
+                $ref: '#/components/schemas/Problems.Problem400'
         '401':
           description: Access is unauthorized.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  type:
+                    $ref: '#/components/schemas/Problems.ProblemType'
+                  status:
+                    type: number
+                    enum:
+                      - 401
+                  title:
+                    type: string
+                  detail:
+                    type: string
+                  instance:
+                    type: string
+                    format: uri
         '403':
           description: Access is forbidden
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Errors.ErrorResponse403'
+                $ref: '#/components/schemas/Problems.Problem403'
         '500':
           description: Server error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  type:
+                    $ref: '#/components/schemas/Problems.ProblemType'
+                  status:
+                    type: number
+                    enum:
+                      - 500
+                  title:
+                    type: string
+                  detail:
+                    type: string
+                  instance:
+                    type: string
+                    format: uri
       requestBody:
         required: true
         content:
@@ -63,14 +99,50 @@ paths:
                   $ref: '#/components/schemas/Workspaces.WorkspaceListResponse'
         '401':
           description: Access is unauthorized.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  type:
+                    $ref: '#/components/schemas/Problems.ProblemType'
+                  status:
+                    type: number
+                    enum:
+                      - 401
+                  title:
+                    type: string
+                  detail:
+                    type: string
+                  instance:
+                    type: string
+                    format: uri
         '403':
           description: Access is forbidden
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Errors.ErrorResponse403'
+                $ref: '#/components/schemas/Problems.Problem403'
         '500':
           description: Server error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  type:
+                    $ref: '#/components/schemas/Problems.ProblemType'
+                  status:
+                    type: number
+                    enum:
+                      - 500
+                  title:
+                    type: string
+                  detail:
+                    type: string
+                  instance:
+                    type: string
+                    format: uri
   /workspaces/{uuid}:
     get:
       tags:
@@ -94,20 +166,56 @@ paths:
                 $ref: '#/components/schemas/Workspaces.Workspace'
         '401':
           description: Access is unauthorized.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  type:
+                    $ref: '#/components/schemas/Problems.ProblemType'
+                  status:
+                    type: number
+                    enum:
+                      - 401
+                  title:
+                    type: string
+                  detail:
+                    type: string
+                  instance:
+                    type: string
+                    format: uri
         '403':
           description: Access is forbidden
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Errors.ErrorResponse403'
+                $ref: '#/components/schemas/Problems.Problem403'
         '404':
           description: The server cannot find the requested resource.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Errors.ErrorResponse404'
+                $ref: '#/components/schemas/Problems.Problem404'
         '500':
           description: Server error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  type:
+                    $ref: '#/components/schemas/Problems.ProblemType'
+                  status:
+                    type: number
+                    enum:
+                      - 500
+                  title:
+                    type: string
+                  detail:
+                    type: string
+                  instance:
+                    type: string
+                    format: uri
     put:
       tags:
         - Workspaces
@@ -134,23 +242,66 @@ paths:
             application/json:
               schema:
                 type: object
-                required:
-                  - errors
                 properties:
-                  errors:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/Workspaces.ErrorMessage400WorkspaceAlreadyExist'
+                  type:
+                    $ref: '#/components/schemas/Problems.ProblemType'
+                  status:
+                    type: number
+                    enum:
+                      - 400
+                  title:
+                    type: string
+                  detail:
+                    type: string
+                  instance:
+                    type: string
+                    format: uri
         '401':
           description: Access is unauthorized.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  type:
+                    $ref: '#/components/schemas/Problems.ProblemType'
+                  status:
+                    type: number
+                    enum:
+                      - 401
+                  title:
+                    type: string
+                  detail:
+                    type: string
+                  instance:
+                    type: string
+                    format: uri
         '403':
           description: Access is forbidden
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Errors.ErrorResponse403'
+                $ref: '#/components/schemas/Problems.Problem403'
         '500':
           description: Server error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  type:
+                    $ref: '#/components/schemas/Problems.ProblemType'
+                  status:
+                    type: number
+                    enum:
+                      - 500
+                  title:
+                    type: string
+                  detail:
+                    type: string
+                  instance:
+                    type: string
+                    format: uri
       requestBody:
         required: true
         content:
@@ -175,14 +326,50 @@ paths:
           description: Resource Deleted
         '401':
           description: Access is unauthorized.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  type:
+                    $ref: '#/components/schemas/Problems.ProblemType'
+                  status:
+                    type: number
+                    enum:
+                      - 401
+                  title:
+                    type: string
+                  detail:
+                    type: string
+                  instance:
+                    type: string
+                    format: uri
         '403':
           description: Access is forbidden
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Errors.ErrorResponse403'
+                $ref: '#/components/schemas/Problems.Problem403'
         '500':
           description: Server error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  type:
+                    $ref: '#/components/schemas/Problems.ProblemType'
+                  status:
+                    type: number
+                    enum:
+                      - 500
+                  title:
+                    type: string
+                  detail:
+                    type: string
+                  instance:
+                    type: string
+                    format: uri
   /{uuid}:
     get:
       operationId: DeleteResource_delete
@@ -198,14 +385,50 @@ paths:
           description: Resource Deleted
         '401':
           description: Access is unauthorized.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  type:
+                    $ref: '#/components/schemas/Problems.ProblemType'
+                  status:
+                    type: number
+                    enum:
+                      - 401
+                  title:
+                    type: string
+                  detail:
+                    type: string
+                  instance:
+                    type: string
+                    format: uri
         '403':
           description: Access is forbidden
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Errors.ErrorResponse403'
+                $ref: '#/components/schemas/Problems.Problem403'
         '500':
           description: Server error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  type:
+                    $ref: '#/components/schemas/Problems.ProblemType'
+                  status:
+                    type: number
+                    enum:
+                      - 500
+                  title:
+                    type: string
+                  detail:
+                    type: string
+                  instance:
+                    type: string
+                    format: uri
 components:
   parameters:
     ListQueryParams.limit:
@@ -233,68 +456,6 @@ components:
       schema:
         $ref: '#/components/schemas/OrderByDefaultValues'
   schemas:
-    Errors.ErrorCode:
-      type: string
-    Errors.ErrorMessage400:
-      type: object
-      properties:
-        detail:
-          type: string
-          default: 'JSON parse error - Expecting value: line 1 column 1 (char 0)'
-        status:
-          type: string
-          default: '404'
-        source:
-          type: string
-          default: detail
-    Errors.ErrorMessage403:
-      type: object
-      properties:
-        detail:
-          type: string
-          default: You do not have permission to perform this action.
-        status:
-          type: string
-          default: '403'
-        source:
-          type: string
-          default: detail
-    Errors.ErrorMessage404:
-      type: object
-      properties:
-        detail:
-          type: string
-          default: Not found.
-        status:
-          type: string
-          default: '404'
-    Errors.ErrorResponse400:
-      type: object
-      required:
-        - errors
-      properties:
-        errors:
-          type: array
-          items:
-            $ref: '#/components/schemas/Errors.ErrorMessage400'
-    Errors.ErrorResponse403:
-      type: object
-      required:
-        - errors
-      properties:
-        errors:
-          type: array
-          items:
-            $ref: '#/components/schemas/Errors.ErrorMessage403'
-    Errors.ErrorResponse404:
-      type: object
-      required:
-        - errors
-      properties:
-        errors:
-          type: array
-          items:
-            $ref: '#/components/schemas/Errors.ErrorMessage404'
     Link:
       type: object
       required:
@@ -333,6 +494,90 @@ components:
       enum:
         - name
         - modified
+    Problems.Problem400:
+      type: object
+      required:
+        - detail
+      properties:
+        detail:
+          type: string
+          enum:
+            - 'JSON parse error - Expecting value: line 1 column 1 (char 0)'
+      allOf:
+        - type: object
+          properties:
+            type:
+              $ref: '#/components/schemas/Problems.ProblemType'
+            status:
+              type: number
+              enum:
+                - 400
+            title:
+              type: string
+            detail:
+              type: string
+            instance:
+              type: string
+              format: uri
+    Problems.Problem403:
+      type: object
+      required:
+        - type
+        - title
+      properties:
+        type:
+          type: string
+          enum:
+            - http://project-kessel.github.io
+        title:
+          type: string
+          enum:
+            - You do not have permission to perform this action.
+      allOf:
+        - type: object
+          properties:
+            type:
+              $ref: '#/components/schemas/Problems.ProblemType'
+            status:
+              type: number
+              enum:
+                - 403
+            title:
+              type: string
+            detail:
+              type: string
+            instance:
+              type: string
+              format: uri
+    Problems.Problem404:
+      type: object
+      required:
+        - detail
+      properties:
+        detail:
+          type: string
+          enum:
+            - Not found
+      allOf:
+        - type: object
+          properties:
+            type:
+              $ref: '#/components/schemas/Problems.ProblemType'
+            status:
+              type: number
+              enum:
+                - 404
+            title:
+              type: string
+            detail:
+              type: string
+            instance:
+              type: string
+              format: uri
+    Problems.ProblemType:
+      type: string
+      enum:
+        - http://project-kessel.github.io
     Timestamps:
       type: object
       required:
@@ -354,18 +599,6 @@ components:
       type: string
       enum:
         - v2
-    Workspaces.ErrorMessage400WorkspaceAlreadyExist:
-      type: object
-      properties:
-        detail:
-          type: string
-          default: Workspace already exist in tenant
-        status:
-          type: string
-          default: '400'
-        source:
-          type: string
-          default: workspace
     Workspaces.Workspace:
       type: object
       required:
