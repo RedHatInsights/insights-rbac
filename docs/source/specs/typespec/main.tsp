@@ -71,14 +71,20 @@ namespace Problems {
     }
 
     alias Problem400AlreadyExists = ProblemDetails<Status = 400>;
-
+    
     alias CommonProblems = Problem401 | Problem403 | Problem500;
+
+    namespace Workspace {
+        model Problem422WorkspaceNotEmpty extends Problems.ProblemDetails<Status = 422>{
+            title: "Unable to delete due to workspace dependencies",
+        }
+    }
 }
 
 @route("/workspaces")
 @tag("Workspaces")
 @doc("Operations about workspaces")
-namespace Workspaces {
+namespace Workspaces {    
     model BasicWorkspace {
         @doc("Workspace A")
         name: string = "Workspace A";
@@ -131,12 +137,12 @@ namespace Workspaces {
         @doc("Unique identification")
         @path uuid: UUID;
         @body body: PutWorkspaceRequest
-    ): PutWorkspaceResponse | Problems.Problem400AlreadyExists | Problems.CommonProblems;
+    ): PutWorkspaceResponse | Problems.CommonProblems | Problems.Problem400AlreadyExists ;
 
     @doc("Delete a workspace")
     @summary("Delete the workspace")
     @delete op delete(
         @doc("Unique identification")
         @path uuid: UUID;
-    ): DeleteWorkspaceResponse | Problems.CommonProblems;
+    ): DeleteWorkspaceResponse | Problems.CommonProblems | Problems.Workspace.Problem422WorkspaceNotEmpty;
 }
