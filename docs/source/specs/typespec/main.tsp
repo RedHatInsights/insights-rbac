@@ -75,7 +75,7 @@ namespace Problems {
     alias CommonProblems = Problem401 | Problem403 | Problem500;
 
     namespace Workspace {
-        model Problem422WorkspaceNotEmpty extends Problems.ProblemDetails<Status = 422>{
+        model Problem400WorkspaceNotEmpty extends Problems.ProblemDetails<Status = 400>{
             title: "Unable to delete due to workspace dependencies",
         }
     }
@@ -166,5 +166,5 @@ namespace Workspaces {
     @delete op delete(
         @doc("Unique identification")
         @path uuid: UUID;
-    ): DeleteWorkspaceResponse | Problems.CommonProblems | Problems.Workspace.Problem422WorkspaceNotEmpty;
+    ): DeleteWorkspaceResponse | Problems.CommonProblems | Problems.Workspace.Problem400WorkspaceNotEmpty;
 }

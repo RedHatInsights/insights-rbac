@@ -363,7 +363,7 @@ def v2response_error_from_errors(errors, exc=None, context=None):
         "detail": detail,
     }
 
-    if context.get("request").method in ["PUT", "PATCH"]:
+    if context.get("request").method in ["PUT", "PATCH", "DELETE"]:
         response["instance"] = context.get("request").path
 
     return response

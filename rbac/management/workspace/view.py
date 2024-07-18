@@ -64,6 +64,11 @@ class WorkspaceViewSet(
 
     def destroy(self, request, *args, **kwargs):
         """Delete a workspace."""
+        instance = self.get_object()
+        if Workspace.objects.filter(parent=instance.uuid, tenant=instance.tenant).exists():
+            message = "Unable to delete due to workspace dependencies"
+            error = {"workspace": [_(message)]}
+            raise serializers.ValidationError(error)
         return super().destroy(request=request, args=args, kwargs=kwargs)
 
     def update(self, request, *args, **kwargs):

@@ -349,6 +349,12 @@ paths:
       responses:
         '201':
           description: The request has succeeded and a new resource has been created as a result.
+        '400':
+          description: The server could not understand the request due to invalid syntax.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problems.Workspace.Problem400WorkspaceNotEmpty'
         '401':
           description: Access is unauthorized.
           content:
@@ -375,12 +381,6 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problems.Problem403'
-        '422':
-          description: Client error
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/Problems.Workspace.Problem422WorkspaceNotEmpty'
         '500':
           description: Server error
           content:
@@ -487,7 +487,7 @@ components:
       type: string
       enum:
         - http://project-kessel.github.io
-    Problems.Workspace.Problem422WorkspaceNotEmpty:
+    Problems.Workspace.Problem400WorkspaceNotEmpty:
       type: object
       required:
         - title
@@ -504,7 +504,7 @@ components:
             status:
               type: number
               enum:
-                - 422
+                - 400
             title:
               type: string
             detail:
