@@ -28,6 +28,7 @@ from management.principal.model import Principal
 from management.principal.proxy import PrincipalProxy
 from rest_framework import status
 from stompest.config import StompConfig
+from stompest.error import StompConnectionError
 from stompest.protocol import StompSpec
 from stompest.sync import Stomp
 
@@ -158,14 +159,20 @@ def clean_principal_umb(data_dict):
 def clean_principals_via_umb():
     """Check which principals are eligible for clean up via UMB."""
     logger.info("clean_tenant_principals: Start principal clean up via umb.")
-    UMB_CLIENT.connect()
+    try:
+        UMB_CLIENT.connect()
+    except StompConnectionError as e:
+        # Skip if already connected
+        if not str(e).startswith("Already connected"):
+            raise e
+
     UMB_CLIENT.subscribe(QUEUE, {StompSpec.ACK_HEADER: StompSpec.ACK_CLIENT_INDIVIDUAL})
     while UMB_CLIENT.canRead(2):  # Check if queue is empty, two sec timeout
         frame = UMB_CLIENT.receiveFrame()
         data_dict = xmltodict.parse(frame.body)
         is_deactivate = is_umb_deactivate_msg(data_dict)
         if not is_deactivate:
-            # Drop the message cause it is not useless for us
+            # Drop the message cause it is useless for us
             UMB_CLIENT.ack(frame)
             continue
         principal_name, groups = clean_principal_umb(data_dict)
