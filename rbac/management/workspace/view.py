@@ -56,7 +56,6 @@ class WorkspaceViewSet(
     def create(self, request, *args, **kwargs):
         """Create a Workspace."""
         self.validate_workspace(request)
-
         return super().create(request=request, args=args, kwargs=kwargs)
 
     def retrieve(self, request, *args, **kwargs):

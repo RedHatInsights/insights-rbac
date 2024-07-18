@@ -77,11 +77,12 @@ class WorkspaceViewTests(IdentityRequest):
         response = client.post(url, workspace, format="json", **self.headers)
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        error = response.data.get("errors")[0]
-        self.assertIsNotNone(error.get("detail"))
-        self.assertEqual(error.get("detail"), "Field 'name' is required.")
-        self.assertEqual(error.get("source"), "workspace")
-        self.assertEqual(error.get("status"), "400")
+        status_code = response.data.get("status")
+        detail = response.data.get("detail")
+        self.assertIsNotNone(detail)
+        self.assertEqual(detail, "Field 'name' is required.")
+
+        self.assertEqual(status_code, 400)
 
     def test_create_workspace_unauthorized(self):
         """Test for creating a workspace."""
@@ -97,11 +98,10 @@ class WorkspaceViewTests(IdentityRequest):
         response = client.post(url, workspace, format="json", **headers)
 
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
-        error = response.data.get("errors")[0]
-
-        self.assertEqual(error.get("detail"), "You do not have permission to perform this action.")
-        self.assertEqual(error.get("source"), "detail")
-        self.assertEqual(error.get("status"), "403")
+        status_code = response.data.get("status")
+        detail = response.data.get("detail")
+        self.assertEqual(detail, "You do not have permission to perform this action.")
+        self.assertEqual(status_code, 403)
 
     def test_duplicate_create_workspace(self):
         """Test that creating a duplicate workspace is not allowed."""
@@ -121,15 +121,15 @@ class WorkspaceViewTests(IdentityRequest):
         response = client.post(url, test_data, format="json", **self.headers)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
-        error = response.data.get("errors")[0]
-        self.assertIsNotNone(error.get("detail"))
+        status_code = response.data.get("status")
+        detail = response.data.get("detail")
+        self.assertIsNotNone(detail)
         message = (
             f"The workspace 'New Workspace' already exists in this tenant within the hierarchy at the level "
             f"associated with parent id: {self.init_workspace.uuid}."
         )
-        self.assertEqual(error.get("detail"), message)
-        self.assertEqual(error.get("source"), "workspace")
-        self.assertEqual(error.get("status"), "400")
+        self.assertEqual(detail, message)
+        self.assertEqual(status_code, 400)
 
     def test_update_workspace(self):
         """Test for updating a workspace."""
@@ -181,11 +181,13 @@ class WorkspaceViewTests(IdentityRequest):
         response = client.put(url, workspace_request_data, format="json", **self.headers)
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        error = response.data.get("errors")[0]
-        self.assertIsNotNone(error.get("detail"))
-        self.assertEqual(error.get("detail"), "Field 'description' is required.")
-        self.assertEqual(error.get("source"), "workspace")
-        self.assertEqual(error.get("status"), "400")
+        status_code = response.data.get("status")
+        detail = response.data.get("detail")
+        instance = response.data.get("instance")
+        self.assertIsNotNone(detail)
+        self.assertEqual(detail, "Field 'description' is required.")
+        self.assertEqual(status_code, 400)
+        self.assertEqual(instance, url)
 
     def test_update_workspace_same_parent(self):
         """Test for updating a workspace."""
@@ -215,11 +217,11 @@ class WorkspaceViewTests(IdentityRequest):
         response = client.put(url, workspace_request_data, format="json", **self.headers)
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        error = response.data.get("errors")[0]
-        self.assertIsNotNone(error.get("detail"))
-        self.assertEqual(error.get("detail"), "Parent and UUID can't be same")
-        self.assertEqual(error.get("source"), "workspace")
-        self.assertEqual(error.get("status"), "400")
+        status_code = response.data.get("status")
+        detail = response.data.get("detail")
+        self.assertIsNotNone(detail)
+        self.assertEqual(detail, "Parent and UUID can't be same")
+        self.assertEqual(status_code, 400)
 
     def test_update_workspace_parent_doesnt_exist(self):
         """Test for updating a workspace."""
@@ -245,11 +247,13 @@ class WorkspaceViewTests(IdentityRequest):
         response = client.put(url, workspace_request_data, format="json", **self.headers)
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        error = response.data.get("errors")[0]
-        self.assertIsNotNone(error.get("detail"))
-        self.assertEqual(error.get("detail"), f"Parent workspace '{parent}' doesn't exist in tenant")
-        self.assertEqual(error.get("source"), "workspace")
-        self.assertEqual(error.get("status"), "400")
+        status_code = response.data.get("status")
+        detail = response.data.get("detail")
+        instance = response.data.get("instance")
+        self.assertIsNotNone(detail)
+        self.assertEqual(detail, f"Parent workspace '{parent}' doesn't exist in tenant")
+        self.assertEqual(status_code, 400)
+        self.assertEqual(instance, url)
 
     def test_partial_update_workspace(self):
         """Test for updating a workspace."""
@@ -287,11 +291,13 @@ class WorkspaceViewTests(IdentityRequest):
         response = client.put(url, workspace, format="json", **self.headers)
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        error = response.data.get("errors")[0]
-        self.assertIsNotNone(error.get("detail"))
-        self.assertEqual(error.get("detail"), "Field 'name' is required.")
-        self.assertEqual(error.get("source"), "workspace")
-        self.assertEqual(error.get("status"), "400")
+        status_code = response.data.get("status")
+        detail = response.data.get("detail")
+        instance = response.data.get("instance")
+        self.assertIsNotNone(detail)
+        self.assertEqual(detail, "Field 'name' is required.")
+        self.assertEqual(status_code, 400)
+        self.assertEqual(instance, url)
 
     def test_update_duplicate_workspace(self):
         workspace_data = {
@@ -323,15 +329,15 @@ class WorkspaceViewTests(IdentityRequest):
 
         response = client.put(url, workspace_data_for_put, format="json", **self.headers)
 
-        error = response.data.get("errors")[0]
-        self.assertIsNotNone(error.get("detail"))
+        status_code = response.data.get("status")
+        detail = response.data.get("detail")
+        self.assertIsNotNone(detail)
         message = (
             f"The workspace 'New Duplicate Workspace' already exists in this tenant within the hierarchy at the level "
             f"associated with parent id: {self.init_workspace.uuid}."
         )
-        self.assertEqual(error.get("detail"), message)
-        self.assertEqual(error.get("source"), "workspace")
-        self.assertEqual(error.get("status"), "400")
+        self.assertEqual(detail, message)
+        self.assertEqual(status_code, 400)
 
     def test_update_workspace_unauthorized(self):
         workspace = {}
@@ -346,11 +352,11 @@ class WorkspaceViewTests(IdentityRequest):
         response = client.put(url, workspace, format="json", **headers)
 
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
-        error = response.data.get("errors")[0]
+        status_code = response.data.get("status")
+        detail = response.data.get("detail")
 
-        self.assertEqual(error.get("detail"), "You do not have permission to perform this action.")
-        self.assertEqual(error.get("source"), "detail")
-        self.assertEqual(error.get("status"), "403")
+        self.assertEqual(detail, "You do not have permission to perform this action.")
+        self.assertEqual(status_code, 403)
 
     def test_get_workspace(self):
         url = reverse("workspace-detail", kwargs={"uuid": self.init_workspace.uuid})
@@ -372,11 +378,11 @@ class WorkspaceViewTests(IdentityRequest):
         response = client.get(url, None, format="json", **self.headers)
 
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
-        error = response.data.get("errors")[0]
+        status_code = response.data.get("status")
+        detail = response.data.get("detail")
 
-        self.assertEqual(error.get("detail"), "Not found.")
-        self.assertEqual(error.get("source"), "detail")
-        self.assertEqual(error.get("status"), "404")
+        self.assertEqual(detail, "Not found.")
+        self.assertEqual(status_code, 404)
 
     def test_get_workspace_unauthorized(self):
         request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
@@ -389,11 +395,11 @@ class WorkspaceViewTests(IdentityRequest):
         response = client.get(url, None, format="json", **headers)
 
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
-        error = response.data.get("errors")[0]
+        status_code = response.data.get("status")
+        detail = response.data.get("detail")
 
-        self.assertEqual(error.get("detail"), "You do not have permission to perform this action.")
-        self.assertEqual(error.get("source"), "detail")
-        self.assertEqual(error.get("status"), "403")
+        self.assertEqual(detail, "You do not have permission to perform this action.")
+        self.assertEqual(status_code, 403)
 
     def test_delete_workspace(self):
         workspace_data = {
@@ -418,11 +424,10 @@ class WorkspaceViewTests(IdentityRequest):
         response = client.delete(url, None, format="json", **self.headers)
 
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
-        error = response.data.get("errors")[0]
-
-        self.assertEqual(error.get("detail"), "Not found.")
-        self.assertEqual(error.get("source"), "detail")
-        self.assertEqual(error.get("status"), "404")
+        status_code = response.data.get("status")
+        detail = response.data.get("detail")
+        self.assertEqual(detail, "Not found.")
+        self.assertEqual(status_code, 404)
 
     def test_delete_workspace_unauthorized(self):
         request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
@@ -435,8 +440,7 @@ class WorkspaceViewTests(IdentityRequest):
         response = client.delete(url, None, format="json", **headers)
 
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
-        error = response.data.get("errors")[0]
-
-        self.assertEqual(error.get("detail"), "You do not have permission to perform this action.")
-        self.assertEqual(error.get("source"), "detail")
-        self.assertEqual(error.get("status"), "403")
+        status_code = response.data.get("status")
+        detail = response.data.get("detail")
+        self.assertEqual(detail, "You do not have permission to perform this action.")
+        self.assertEqual(status_code, 403)

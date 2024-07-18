@@ -337,3 +337,33 @@ def get_admin_from_proxy(username, request):
 
     is_org_admin = bop_resp.get("data")[index]["is_org_admin"]
     return is_org_admin
+
+
+def api_path_prefix():
+    """Get api path prefix."""
+    path_prefix = os.getenv("API_PATH_PREFIX", "api/")
+    if path_prefix != "":
+        if path_prefix.startswith("/"):
+            path_prefix = path_prefix[1:]
+        if not path_prefix.endswith("/"):
+            path_prefix = path_prefix + "/"
+    return path_prefix
+
+
+def v2response_error_from_errors(errors, exc=None, context=None):
+    """Convert v1 error format to v2."""
+    detail = ""
+    status_code = 0
+    if errors and any(isinstance(error, dict) and "detail" in error for error in errors):
+        detail = str(errors[0]["detail"])
+        status_code = int(errors[0]["status"])
+
+    response = {
+        "status": status_code,
+        "detail": detail,
+    }
+
+    if context.get("request").method in ["PUT", "PATCH"]:
+        response["instance"] = context.get("request").path
+
+    return response
