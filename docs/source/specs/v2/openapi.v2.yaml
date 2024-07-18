@@ -14,22 +14,22 @@ paths:
       description: Create workspace in tenant
       parameters: []
       responses:
-        '201':
-          description: The request has succeeded and a new resource has been created as a result.
+        '204':
+          description: 'There is no content to send for this request, but the headers may be useful. '
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Workspaces.Workspace'
+                $ref: '#/components/schemas/Workspaces.CreateWorkspaceResponse'
         '400':
           description: The server could not understand the request due to invalid syntax.
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problems.Problem400'
         '401':
           description: Access is unauthorized.
           content:
-            application/json:
+            application/problem+json:
               schema:
                 type: object
                 properties:
@@ -49,13 +49,13 @@ paths:
         '403':
           description: Access is forbidden
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problems.Problem403'
         '500':
           description: Server error
           content:
-            application/json:
+            application/problem+json:
               schema:
                 type: object
                 properties:
@@ -77,72 +77,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/Workspaces.WorkspaceForRead'
-    get:
-      tags:
-        - Workspaces
-      operationId: Workspaces_list
-      summary: List workspaces for tenant
-      description: By default, responses are sorted in ascending order by workspace name
-      parameters:
-        - $ref: '#/components/parameters/ListQueryParams.limit'
-        - $ref: '#/components/parameters/ListQueryParams.offset'
-        - $ref: '#/components/parameters/ListQueryParams.order_by'
-      responses:
-        '200':
-          description: The request has succeeded.
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/Workspaces.WorkspaceListResponse'
-        '401':
-          description: Access is unauthorized.
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  type:
-                    $ref: '#/components/schemas/Problems.ProblemType'
-                  status:
-                    type: number
-                    enum:
-                      - 401
-                  title:
-                    type: string
-                  detail:
-                    type: string
-                  instance:
-                    type: string
-                    format: uri
-        '403':
-          description: Access is forbidden
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Problems.Problem403'
-        '500':
-          description: Server error
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  type:
-                    $ref: '#/components/schemas/Problems.ProblemType'
-                  status:
-                    type: number
-                    enum:
-                      - 500
-                  title:
-                    type: string
-                  detail:
-                    type: string
-                  instance:
-                    type: string
-                    format: uri
+              $ref: '#/components/schemas/Workspaces.BasicWorkspace'
   /workspaces/{uuid}:
     get:
       tags:
@@ -163,11 +98,11 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Workspaces.Workspace'
+                $ref: '#/components/schemas/Workspaces.GetWorkspaceResponse'
         '401':
           description: Access is unauthorized.
           content:
-            application/json:
+            application/problem+json:
               schema:
                 type: object
                 properties:
@@ -187,19 +122,19 @@ paths:
         '403':
           description: Access is forbidden
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problems.Problem403'
         '404':
           description: The server cannot find the requested resource.
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problems.Problem404'
         '500':
           description: Server error
           content:
-            application/json:
+            application/problem+json:
               schema:
                 type: object
                 properties:
@@ -230,16 +165,16 @@ paths:
           schema:
             $ref: '#/components/schemas/UUID'
       responses:
-        '200':
-          description: The request has succeeded.
+        '201':
+          description: The request has succeeded and a new resource has been created as a result.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Workspaces.Workspace'
+                $ref: '#/components/schemas/Workspaces.PutWorkspaceResponse'
         '400':
           description: The server could not understand the request due to invalid syntax.
           content:
-            application/json:
+            application/problem+json:
               schema:
                 type: object
                 properties:
@@ -259,7 +194,7 @@ paths:
         '401':
           description: Access is unauthorized.
           content:
-            application/json:
+            application/problem+json:
               schema:
                 type: object
                 properties:
@@ -279,13 +214,13 @@ paths:
         '403':
           description: Access is forbidden
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problems.Problem403'
         '500':
           description: Server error
           content:
-            application/json:
+            application/problem+json:
               schema:
                 type: object
                 properties:
@@ -307,13 +242,11 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/Workspaces.WorkspaceForRead'
-    delete:
+              $ref: '#/components/schemas/Workspaces.PutWorkspaceRequest'
+    patch:
       tags:
         - Workspaces
-      operationId: Workspaces_delete
-      summary: Delete the workspace
-      description: Delete a workspace
+      operationId: Workspaces_patch
       parameters:
         - name: uuid
           in: path
@@ -322,12 +255,36 @@ paths:
           schema:
             $ref: '#/components/schemas/UUID'
       responses:
-        '201':
-          description: Resource Deleted
+        '204':
+          description: 'There is no content to send for this request, but the headers may be useful. '
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Workspaces.PatchWorkspaceResponse'
+        '400':
+          description: The server could not understand the request due to invalid syntax.
+          content:
+            application/problem+json:
+              schema:
+                type: object
+                properties:
+                  type:
+                    $ref: '#/components/schemas/Problems.ProblemType'
+                  status:
+                    type: number
+                    enum:
+                      - 400
+                  title:
+                    type: string
+                  detail:
+                    type: string
+                  instance:
+                    type: string
+                    format: uri
         '401':
           description: Access is unauthorized.
           content:
-            application/json:
+            application/problem+json:
               schema:
                 type: object
                 properties:
@@ -347,13 +304,13 @@ paths:
         '403':
           description: Access is forbidden
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problems.Problem403'
         '500':
           description: Server error
           content:
-            application/json:
+            application/problem+json:
               schema:
                 type: object
                 properties:
@@ -370,9 +327,18 @@ paths:
                   instance:
                     type: string
                     format: uri
-  /{uuid}:
-    get:
-      operationId: DeleteResource_delete
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Workspaces.PutWorkspaceRequestUpdate'
+    delete:
+      tags:
+        - Workspaces
+      operationId: Workspaces_delete
+      summary: Delete the workspace
+      description: Delete a workspace
       parameters:
         - name: uuid
           in: path
@@ -382,11 +348,11 @@ paths:
             $ref: '#/components/schemas/UUID'
       responses:
         '201':
-          description: Resource Deleted
+          description: The request has succeeded and a new resource has been created as a result.
         '401':
           description: Access is unauthorized.
           content:
-            application/json:
+            application/problem+json:
               schema:
                 type: object
                 properties:
@@ -406,13 +372,19 @@ paths:
         '403':
           description: Access is forbidden
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problems.Problem403'
+        '422':
+          description: Client error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problems.Workspace.Problem422WorkspaceNotEmpty'
         '500':
           description: Server error
           content:
-            application/json:
+            application/problem+json:
               schema:
                 type: object
                 properties:
@@ -430,70 +402,7 @@ paths:
                     type: string
                     format: uri
 components:
-  parameters:
-    ListQueryParams.limit:
-      name: limit
-      in: query
-      required: false
-      description: Parameter for selecting the amount of data returned.
-      schema:
-        type: integer
-        minimum: 1
-        maximum: 1000
-        default: 10
-    ListQueryParams.offset:
-      name: offset
-      in: query
-      required: false
-      schema:
-        type: integer
-        default: 0
-    ListQueryParams.order_by:
-      name: order_by
-      in: query
-      required: false
-      description: "Parameter for ordering by value. For inverse ordering, supply '-' before the param value, such as: ?order_by=-name"
-      schema:
-        $ref: '#/components/schemas/OrderByDefaultValues'
   schemas:
-    Link:
-      type: object
-      required:
-        - first
-        - previous
-        - next
-        - last
-      properties:
-        first:
-          type: string
-          format: uri
-          default: /api/v2/(resources)/?offset=0&limit=10
-        previous:
-          type: string
-          format: uri
-          default: /api/v2/(resources)/?offset=20&limit=10
-        next:
-          type: string
-          format: uri
-          default: /api/v2/(resources)/?offset=40&limit=10
-        last:
-          type: string
-          format: uri
-          default: /api/v2/(resources)/?offset=90&limit=10
-    Meta:
-      type: object
-      required:
-        - count
-      properties:
-        count:
-          type: integer
-          format: int64
-          default: 30
-    OrderByDefaultValues:
-      type: string
-      enum:
-        - name
-        - modified
     Problems.Problem400:
       type: object
       required:
@@ -578,6 +487,31 @@ components:
       type: string
       enum:
         - http://project-kessel.github.io
+    Problems.Workspace.Problem422WorkspaceNotEmpty:
+      type: object
+      required:
+        - title
+      properties:
+        title:
+          type: string
+          enum:
+            - Unable to delete due to workspace dependencies
+      allOf:
+        - type: object
+          properties:
+            type:
+              $ref: '#/components/schemas/Problems.ProblemType'
+            status:
+              type: number
+              enum:
+                - 422
+            title:
+              type: string
+            detail:
+              type: string
+            instance:
+              type: string
+              format: uri
     Timestamps:
       type: object
       required:
@@ -599,6 +533,71 @@ components:
       type: string
       enum:
         - v2
+    Workspaces.BasicWorkspace:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          description: Workspace A
+          default: Workspace A
+        description:
+          type: string
+          description: Description of Workspace A
+          default: Description of Workspace A
+    Workspaces.CreateWorkspaceResponse:
+      type: object
+      allOf:
+        - $ref: '#/components/schemas/Workspaces.BasicWorkspace'
+    Workspaces.GetWorkspaceResponse:
+      type: object
+      allOf:
+        - $ref: '#/components/schemas/Workspaces.BasicWorkspace'
+    Workspaces.PatchWorkspaceRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          description: Workspace A
+          default: Workspace A
+        description:
+          type: string
+          description: Description of Workspace A
+          default: Description of Workspace A
+    Workspaces.PatchWorkspaceResponse:
+      type: object
+      allOf:
+        - $ref: '#/components/schemas/Workspaces.BasicWorkspace'
+    Workspaces.PutWorkspaceRequest:
+      type: object
+      required:
+        - name
+        - description
+      properties:
+        name:
+          type: string
+          description: Workspace A
+          default: Workspace A
+        description:
+          type: string
+          description: Description of Workspace A
+          default: Description of Workspace A
+    Workspaces.PutWorkspaceRequestUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+          description: Workspace A
+          default: Workspace A
+        description:
+          type: string
+          description: Description of Workspace A
+          default: Description of Workspace A
+    Workspaces.PutWorkspaceResponse:
+      type: object
+      allOf:
+        - $ref: '#/components/schemas/Workspaces.BasicWorkspace'
     Workspaces.Workspace:
       type: object
       required:
@@ -608,6 +607,8 @@ components:
         - modified
       properties:
         uuid:
+          $ref: '#/components/schemas/UUID'
+        parent:
           $ref: '#/components/schemas/UUID'
         name:
           type: string
@@ -625,34 +626,6 @@ components:
           type: string
           format: date-time
           description: 2019-01-21T17:32:28Z
-    Workspaces.WorkspaceForRead:
-      type: object
-      required:
-        - name
-      properties:
-        name:
-          type: string
-          description: Workspace A
-          default: Workspace A
-        description:
-          type: string
-          description: Description of Workspace A
-          default: Description of Workspace A
-    Workspaces.WorkspaceListResponse:
-      type: object
-      required:
-        - data
-        - links
-        - meta
-      properties:
-        data:
-          type: array
-          items:
-            $ref: '#/components/schemas/Workspaces.Workspace'
-        links:
-          $ref: '#/components/schemas/Link'
-        meta:
-          $ref: '#/components/schemas/Meta'
 servers:
   - url: https://console.redhat.com/{basePath}
     description: Production Server
