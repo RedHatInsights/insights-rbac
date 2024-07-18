@@ -29,6 +29,7 @@ from .serializer import WorkspaceSerializer
 
 VALID_PATCH_FIELDS = ["name", "description", "parent"]
 REQUIRED_PUT_FIELDS = ["name", "description", "parent"]
+REQUIRED_CREATE_FIELDS = ["name", "parent"]
 
 
 class WorkspaceViewSet(
@@ -68,7 +69,7 @@ class WorkspaceViewSet(
 
     def update(self, request, *args, **kwargs):
         """Update a workspace."""
-        self.validate_workspace(request)
+        self.validate_workspace(request, "put")
         self.update_validation(request)
         return super().update(request=request, args=args, kwargs=kwargs)
 
@@ -94,13 +95,20 @@ class WorkspaceViewSet(
             error = {"workspace": [_(message)]}
             raise serializers.ValidationError(error)
 
-    def validate_workspace(self, request):
-        """Validate a workspace."""
-        for field in REQUIRED_PUT_FIELDS:
+    def validate_required_fields(self, request, required_fields):
+        """Validate required fields for workspace."""
+        for field in required_fields:
             if field not in request.data:
                 message = f"Field '{field}' is required."
                 error = {"workspace": [_(message)]}
                 raise serializers.ValidationError(error)
+
+    def validate_workspace(self, request, action="create"):
+        """Validate a workspace."""
+        if action == "create":
+            self.validate_required_fields(request, REQUIRED_CREATE_FIELDS)
+        else:
+            self.validate_required_fields(request, REQUIRED_PUT_FIELDS)
 
         name = request.data.get("name")
         tenant = request.tenant
@@ -116,7 +124,12 @@ class WorkspaceViewSet(
             error = {"workspace": [message]}
             raise serializers.ValidationError(error)
 
-        if Workspace.objects.filter(name=name, tenant=tenant, parent=parent).exists():
+        name_was_changed = True
+        if action != "create":
+            instance = self.get_object()
+            name_was_changed = instance.name != name
+
+        if Workspace.objects.filter(name=name, tenant=tenant, parent=parent).exists() and name_was_changed:
             parent_text = parent if parent is not None else "root"
             message = (
                 f"The workspace '{name}' already exists in this tenant within the hierarchy at the level "
