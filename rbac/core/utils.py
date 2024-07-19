@@ -22,7 +22,12 @@ import pytz
 from django.conf import settings
 
 
-def destructive_ok():
+def destructive_ok(operation_type):
     """Determine if it's ok to run destructive operations."""
     now = datetime.datetime.utcnow().replace(tzinfo=pytz.UTC)
-    return now < settings.INTERNAL_DESTRUCTIVE_API_OK_UNTIL
+    if operation_type == "api":
+        return now < settings.INTERNAL_DESTRUCTIVE_API_OK_UNTIL
+    if operation_type == "seeding":
+        return False
+
+    return False

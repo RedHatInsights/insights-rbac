@@ -33,9 +33,9 @@ class CoreUtilsTests(TestCase):
     @override_settings(INTERNAL_DESTRUCTIVE_API_OK_UNTIL=valid_destructive_time())
     def test_destructive_ok_true(self):
         """Test that it's true when within date range."""
-        self.assertEqual(destructive_ok(), True)
+        self.assertEqual(destructive_ok("api"), True)
 
     @override_settings(INTERNAL_DESTRUCTIVE_API_OK_UNTIL=invalid_destructive_time())
     def test_destructive_ok_false(self):
         """Test that it's false when not within date range."""
-        self.assertEqual(destructive_ok(), False)
+        self.assertEqual(destructive_ok("api"), False)
