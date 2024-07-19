@@ -39,3 +39,13 @@ class CoreUtilsTests(TestCase):
     def test_destructive_ok_false(self):
         """Test that it's false when not within date range."""
         self.assertEqual(destructive_ok("api"), False)
+
+    @override_settings(DESTRUCTIVE_SEEDING_OK_UNTIL=valid_destructive_time())
+    def test_destructive_ok_true(self):
+        """Test that it's true when within date range."""
+        self.assertEqual(destructive_ok("seeding"), True)
+
+    @override_settings(DESTRUCTIVE_SEEDING_OK_UNTIL=invalid_destructive_time())
+    def test_destructive_ok_false(self):
+        """Test that it's false when not within date range."""
+        self.assertEqual(destructive_ok("seeding"), False)

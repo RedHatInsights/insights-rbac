@@ -355,6 +355,15 @@ ROLE_SEEDING_ENABLED = ENVIRONMENT.bool("ROLE_SEEDING_ENABLED", default=True)
 GROUP_SEEDING_ENABLED = ENVIRONMENT.bool("GROUP_SEEDING_ENABLED", default=True)
 MAX_SEED_THREADS = ENVIRONMENT.int("MAX_SEED_THREADS", default=None)
 
+try:
+    DESTRUCTIVE_SEEDING_OK_UNTIL = parse_dt(
+        os.environ.get("RBAC_DESTRUCTIVE_SEEDING_ENABLED_UNTIL", "not-a-real-time")
+    )
+    if DESTRUCTIVE_SEEDING_OK_UNTIL.tzinfo is None:
+        DESTRUCTIVE_SEEDING_OK_UNTIL = DESTRUCTIVE_SEEDING_OK_UNTIL.replace(tzinfo=pytz.UTC)
+except ValueError as e:
+    DESTRUCTIVE_SEEDING_OK_UNTIL = datetime.datetime(1970, 1, 1, tzinfo=pytz.UTC)
+
 # disable log messages less than CRITICAL when running unit tests.
 if len(sys.argv) > 1 and sys.argv[1] == "test":
     logging.disable(logging.CRITICAL)

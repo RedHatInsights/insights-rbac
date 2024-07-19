@@ -28,6 +28,6 @@ def destructive_ok(operation_type):
     if operation_type == "api":
         return now < settings.INTERNAL_DESTRUCTIVE_API_OK_UNTIL
     if operation_type == "seeding":
-        return False
+        return now < settings.DESTRUCTIVE_SEEDING_OK_UNTIL
 
     return False

@@ -410,7 +410,7 @@ class InternalViewsetTests(IdentityRequest):
     @override_settings(INTERNAL_DESTRUCTIVE_API_OK_UNTIL=valid_destructive_time())
     def test_delete_selective_roles(self):
         """Test that we can delete selective roles when allowed and no roles."""
-        # No name speicified
+        # No name specified
         response = self.client.delete(f"/_private/api/utils/role/", **self.request.META)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
