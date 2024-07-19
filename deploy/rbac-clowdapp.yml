@@ -726,8 +726,7 @@ parameters:
 - description: Application allow list for role creation in RBAC
   name: ROLE_CREATE_ALLOW_LIST
   value: cost-management,remediations,inventory,drift,policies,advisor,catalog,approval,vulnerability,compliance,automation-analytics,notifications,patch,integrations,ros,staleness,config-manager,idmsvc
-- description: Timestamp expiration allowance on destructive actions through the internal
-    RBAC API
+- description: Timestamp expiration allowance on destructive actions through the internal RBAC API
   name: RBAC_DESTRUCTIVE_ENABLED_UNTIL
   value: ''
 - description: Image tag
