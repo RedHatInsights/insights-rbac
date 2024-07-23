@@ -6,10 +6,10 @@ import grpc
 from django.conf import settings
 from google.rpc import error_details_pb2
 from grpc_status import rpc_status
+from kessel.relations.v1beta1 import common_pb2
+from kessel.relations.v1beta1 import relation_tuples_pb2
+from kessel.relations.v1beta1 import relation_tuples_pb2_grpc
 from protoc_gen_validate.validator import ValidationFailed, validate_all
-from relations.v0 import common_pb2
-from relations.v0 import relation_tuples_pb2
-from relations.v0 import relation_tuples_pb2_grpc
 
 
 logger = logging.getLogger(__name__)
