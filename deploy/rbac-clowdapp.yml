@@ -455,8 +455,10 @@ objects:
             value: ${BYPASS_BOP_VERIFICATION}
           - name: ROLE_CREATE_ALLOW_LIST
             value: ${ROLE_CREATE_ALLOW_LIST}
-          - name: RBAC_DESTRUCTIVE_ENABLED_UNTIL
-            value: ${RBAC_DESTRUCTIVE_ENABLED_UNTIL}
+          - name: RBAC_DESTRUCTIVE_API_ENABLED_UNTIL
+            value: ${RBAC_DESTRUCTIVE_API_ENABLED_UNTIL}
+          - name: RBAC_DESTRUCTIVE_SEEDING_ENABLED_UNTIL
+            value: ${RBAC_DESTRUCTIVE_SEEDING_ENABLED_UNTIL}
           - name: CLOWDER_ENABLED
             value: ${CLOWDER_ENABLED}
           - name: APP_NAMESPACE
@@ -727,7 +729,10 @@ parameters:
   name: ROLE_CREATE_ALLOW_LIST
   value: cost-management,remediations,inventory,drift,policies,advisor,catalog,approval,vulnerability,compliance,automation-analytics,notifications,patch,integrations,ros,staleness,config-manager,idmsvc
 - description: Timestamp expiration allowance on destructive actions through the internal RBAC API
-  name: RBAC_DESTRUCTIVE_ENABLED_UNTIL
+  name: RBAC_DESTRUCTIVE_API_ENABLED_UNTIL
+  value: ''
+- description: Timestamp expiration allowance on destructive actions through the seeding job
+  name: RBAC_DESTRUCTIVE_SEEDING_ENABLED_UNTIL
   value: ''
 - description: Image tag
   name: IMAGE_TAG

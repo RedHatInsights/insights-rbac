@@ -137,7 +137,7 @@ def tenant_view(request, org_id):
     """
     logger.info(f"Tenant view: {request.method} {request.user.username}")
     if request.method == "DELETE":
-        if not destructive_ok():
+        if not destructive_ok("api"):
             return HttpResponse("Destructive operations disallowed.", status=400)
 
         tenant_obj = get_object_or_404(Tenant, org_id=org_id)
@@ -391,7 +391,7 @@ def invalid_default_admin_groups(request):
         }
         return HttpResponse(json.dumps(payload), content_type="application/json")
     if request.method == "DELETE":
-        if not destructive_ok():
+        if not destructive_ok("api"):
             return HttpResponse("Destructive operations disallowed.", status=400)
         invalid_default_admin_groups_list.delete()
         return HttpResponse(status=204)
@@ -405,7 +405,7 @@ def role_removal(request):
     """
     logger.info(f"Role removal: {request.method} {request.user.username}")
     if request.method == "DELETE":
-        if not destructive_ok():
+        if not destructive_ok("api"):
             return HttpResponse("Destructive operations disallowed.", status=400)
 
         role_name = request.GET.get("name")
@@ -433,7 +433,7 @@ def permission_removal(request):
     """
     logger.info(f"Permission removal: {request.method} {request.user.username}")
     if request.method == "DELETE":
-        if not destructive_ok():
+        if not destructive_ok("api"):
             return HttpResponse("Destructive operations disallowed.", status=400)
 
         permission = request.GET.get("permission")
