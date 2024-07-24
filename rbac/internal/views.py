@@ -25,6 +25,7 @@ from django.db import transaction
 from django.db.migrations.recorder import MigrationRecorder
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
+from django.utils.html import escape
 from management.cache import TenantCache
 from management.models import Group, Permission, Role
 from management.principal.proxy import (
@@ -414,13 +415,14 @@ def role_removal(request):
                 'Invalid request, must supply the "name" query parameter.',
                 status=400,
             )
+        role_name = escape(role_name)
         # Add tenant public to prevent deletion of custom roles
         role_obj = get_object_or_404(Role, name=role_name, tenant=Tenant.objects.get(tenant_name="public"))
         with transaction.atomic():
             try:
-                logger.warning(f"Deleting role {role_name}. Requested by {request.user.username}")
+                logger.warning(f"Deleting role '{role_name}'. Requested by '{request.user.username}'")
                 role_obj.delete()
-                return HttpResponse(status=204)
+                return HttpResponse(f"Role '{role_name}' deleted.", status=204)
             except Exception:
                 return HttpResponse("Role cannot be deleted.", status=400)
     return HttpResponse('Invalid method, only "DELETE" is allowed.', status=405)
@@ -443,12 +445,13 @@ def permission_removal(request):
                 status=400,
             )
 
+        permission = escape(permission)
         permission_obj = get_object_or_404(Permission, permission=permission)
         with transaction.atomic():
             try:
-                logger.warning(f"Deleting permission {permission}. Requested by {request.user.username}")
+                logger.warning(f"Deleting permission '{permission}'. Requested by '{request.user.username}'")
                 permission_obj.delete()
-                return HttpResponse(status=204)
+                return HttpResponse(f"Permission '{permission}' deleted.", status=204)
             except Exception:
                 return HttpResponse("Permission cannot be deleted.", status=400)
     return HttpResponse('Invalid method, only "DELETE" is allowed.', status=405)
