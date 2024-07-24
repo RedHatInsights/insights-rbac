@@ -418,9 +418,9 @@ def role_removal(request):
         role_obj = get_object_or_404(Role, name=role_name, tenant=Tenant.objects.get(tenant_name="public"))
         with transaction.atomic():
             try:
-                logger.warning(f"Deleting role {role_name}. Requested by {request.user.username}")
+                logger.warning(f"Deleting role '{role_name}'. Requested by '{request.user.username}'")
                 role_obj.delete()
-                return HttpResponse(status=204)
+                return HttpResponse(f"Role '{role_name}' deleted.", status=204)
             except Exception:
                 return HttpResponse("Role cannot be deleted.", status=400)
     return HttpResponse('Invalid method, only "DELETE" is allowed.', status=405)
@@ -446,9 +446,9 @@ def permission_removal(request):
         permission_obj = get_object_or_404(Permission, permission=permission)
         with transaction.atomic():
             try:
-                logger.warning(f"Deleting permission {permission}. Requested by {request.user.username}")
+                logger.warning(f"Deleting permission '{permission}'. Requested by '{request.user.username}'")
                 permission_obj.delete()
-                return HttpResponse(status=204)
+                return HttpResponse(f"Permission '{permission}' deleted.", status=204)
             except Exception:
                 return HttpResponse("Permission cannot be deleted.", status=400)
     return HttpResponse('Invalid method, only "DELETE" is allowed.', status=405)
