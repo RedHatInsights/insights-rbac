@@ -125,7 +125,7 @@ namespace Workspaces {
     }
 
     model PutWorkspaceResponse extends BasicWorkspace{
-        @statusCode _: 201;
+        @statusCode _: 200;
     }
 
     model PatchWorkspaceResponse extends BasicWorkspace{
