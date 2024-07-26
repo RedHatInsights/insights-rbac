@@ -24,7 +24,7 @@ from .model import Workspace
 class WorkspaceSerializer(serializers.ModelSerializer):
     """Serializer for the Workspace model."""
 
-    name = serializers.CharField(required=False, max_length=100)
+    name = serializers.CharField(required=False, max_length=255)
     uuid = serializers.UUIDField(read_only=True, required=False)
     parent = serializers.UUIDField(allow_null=True, required=False)
 

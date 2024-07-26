@@ -19,7 +19,7 @@ class Migration(migrations.Migration):
             name="Workspace",
             fields=[
                 ("id", models.AutoField(auto_created=True, primary_key=True, serialize=False, verbose_name="ID")),
-                ("name", models.CharField(max_length=100)),
+                ("name", models.CharField(max_length=255)),
                 ("uuid", models.UUIDField(default=uuid.uuid4, editable=False, unique=True)),
                 ("parent", models.UUIDField(blank=True, editable=False, null=True)),
                 ("description", models.TextField(null=True)),

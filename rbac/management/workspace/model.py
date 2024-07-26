@@ -27,7 +27,7 @@ from api.models import TenantAwareModel
 class Workspace(TenantAwareModel):
     """A workspace."""
 
-    name = models.CharField(max_length=100)
+    name = models.CharField(max_length=255)
     uuid = models.UUIDField(default=uuid4, editable=False, unique=True, null=False)
     parent = models.UUIDField(null=True, blank=True, editable=True)
     description = models.TextField(null=True)
