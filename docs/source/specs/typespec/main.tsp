@@ -32,7 +32,7 @@ scalar UUID extends string;
 
 namespace Problems {
     enum ProblemType {
-        InsufficientPermission:"http://project-kessel.github.io",
+        InsufficientPermission:"http://project-kessel.org/problems/insufficient-permission",
     }
 
     @error
