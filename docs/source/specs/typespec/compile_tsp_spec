@@ -1,6 +1,12 @@
 #!/bin/bash
 
-tsp install
+#npm install -g @typespec/compiler
+#npm install @typespec/http
+#npm install @typespec/rest
+#npm install @typespec/openapi3
+#npm install @typespec/versioning
+#npm install @typespec/json-schema
+#tsp install
 tsp compile main.tsp
 cp tsp-output/@typespec/openapi3/openapi.v2.yaml ../v2
 
