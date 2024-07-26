@@ -103,7 +103,7 @@ namespace Workspaces {
     alias CreateWorkspaceRequest = BasicWorkspace;
 
     model CreateWorkspaceResponse extends BasicWorkspace{
-        @statusCode _: 204;
+        @statusCode _: 201;
     }
 
     model GetWorkspaceResponse extends BasicWorkspace{
