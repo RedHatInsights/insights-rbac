@@ -26,6 +26,7 @@ class WorkspaceSerializer(serializers.ModelSerializer):
 
     name = serializers.CharField(required=False, max_length=255)
     uuid = serializers.UUIDField(read_only=True, required=False)
+    description = serializers.CharField(allow_null=True, required=False, max_length=255)
     parent = serializers.UUIDField(allow_null=True, required=False)
 
     class Meta:

@@ -22,7 +22,7 @@ class Migration(migrations.Migration):
                 ("name", models.CharField(max_length=255)),
                 ("uuid", models.UUIDField(default=uuid.uuid4, editable=False, unique=True)),
                 ("parent", models.UUIDField(blank=True, editable=False, null=True)),
-                ("description", models.TextField(null=True)),
+                ("description", models.CharField(max_length=255, blank=True, editable=False, null=True)),
                 ("created", models.DateTimeField(default=django.utils.timezone.now)),
                 ("modified", management.rbac_fields.AutoDateTimeField(default=django.utils.timezone.now)),
                 ("tenant", models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, to="api.tenant")),
