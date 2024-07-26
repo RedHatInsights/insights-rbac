@@ -67,7 +67,8 @@ namespace Problems {
 
     @error
     model Problem400 extends ProblemDetails<Status = 400>{
-        detail: "JSON parse error - Expecting value: line 1 column 1 (char 0)",
+        @example("JSON parse error - Expecting value: line 1 column 1 (char 0)")
+        detail: string = "The request payload contains invalid syntax.",
     }
 
     alias Problem400AlreadyExists = ProblemDetails<Status = 400>;
