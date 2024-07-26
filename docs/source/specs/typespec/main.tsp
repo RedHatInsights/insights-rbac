@@ -106,11 +106,11 @@ namespace Workspaces {
         @statusCode _: 201;
     }
 
-    model GetWorkspaceResponse extends BasicWorkspace{
+    model ReadWorkspaceResponse extends BasicWorkspace{
         @statusCode _: 200;
     }
 
-    model PutWorkspaceRequest {
+    model UpdateWorkspaceRequest {
         @doc("Workspace A")
         name: string = "Workspace A";
         @doc("Description of Workspace A")
@@ -124,7 +124,7 @@ namespace Workspaces {
         description?: string = "Description of Workspace A";
     }
 
-    model PutWorkspaceResponse extends BasicWorkspace{
+    model UpdateWorkspaceResponse extends BasicWorkspace{
         @statusCode _: 200;
     }
 
@@ -146,20 +146,20 @@ namespace Workspaces {
     @get op read(
         @doc("Unique identification")
         @path uuid: UUID;
-    ): GetWorkspaceResponse | Problems.CommonProblems | Problems.Problem404;
+    ): ReadWorkspaceResponse | Problems.CommonProblems | Problems.Problem404;
 
     @doc("Edit a workspace")
     @summary("Edit the workspace name or description")
     @put op update(
         @doc("Unique identification")
         @path uuid: UUID;
-        @body body: PutWorkspaceRequest
-    ): PutWorkspaceResponse | Problems.CommonProblems | Problems.Problem400AlreadyExists ;
+        @body body: UpdateWorkspaceRequest
+    ): UpdateWorkspaceResponse | Problems.CommonProblems | Problems.Problem400AlreadyExists ;
 
     @patch op patch(
         @doc("Unique identification")
         @path uuid: UUID;
-        @body body: PutWorkspaceRequest
+        @body body: PatchWorkspaceRequest
     ): PatchWorkspaceResponse | Problems.CommonProblems | Problems.Problem400AlreadyExists ;
 
     @doc("Delete a workspace")
