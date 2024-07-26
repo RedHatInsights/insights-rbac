@@ -60,15 +60,18 @@ namespace Problems {
 
     @error
     model Problem404 extends ProblemDetails<Status = 404>{
-        detail: "Not found"
+        title: "Resource was not found",
+        @example("Not found")
+        detail: string
     }
     
     alias Problem500 = ProblemDetails<Status = 500>;
 
     @error
     model Problem400 extends ProblemDetails<Status = 400>{
+        title: "The request payload contains invalid syntax.",
         @example("JSON parse error - Expecting value: line 1 column 1 (char 0)")
-        detail: string = "The request payload contains invalid syntax.",
+        detail: string
     }
 
     alias Problem400AlreadyExists = ProblemDetails<Status = 400>;
