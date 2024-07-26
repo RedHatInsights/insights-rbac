@@ -114,7 +114,7 @@ namespace Workspaces {
         @doc("Workspace A")
         name: string = "Workspace A";
         @doc("Description of Workspace A")
-        description: string = "Description of Workspace A";
+        description?: string = "Description of Workspace A";
     }
 
     model PatchWorkspaceRequest {
