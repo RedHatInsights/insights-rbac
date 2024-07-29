@@ -22,6 +22,7 @@ from django.db import IntegrityError
 from management.authorization.invalid_token import InvalidTokenError
 from management.authorization.missing_authorization import MissingAuthorizationError
 from management.authorization.unable_meet_prerequisites import UnableMeetPrerequisitesError
+from management.utils import api_path_prefix, v2response_error_from_errors
 from rest_framework import status
 from rest_framework.views import Response, exception_handler
 
@@ -61,6 +62,12 @@ def _generate_errors_from_dict(data, **kwargs):
     return errors
 
 
+def _v2_generate_error_data_payload_response(detail: str, context, http_status_code: int) -> dict:
+    """Generate the payload for the "data" parameter of the response."""
+    data = _generate_error_data_payload_response(detail=detail, context=context, http_status_code=http_status_code)
+    return v2response_error_from_errors(data["errors"])
+
+
 def _generate_error_data_payload_response(detail: str, context, http_status_code: int) -> dict:
     """Generate the payload for the "data" parameter of the response."""
     data = {
@@ -78,6 +85,75 @@ def _generate_error_data_payload_response(detail: str, context, http_status_code
         data["errors"][0]["source"] = view.basename
 
     return data
+
+
+def custom_exception_handler_v2(exc, context):
+    """Create custom response for v2 exceptions."""
+    response = exception_handler(exc, context)
+    response.content_type = "application/problem+json"
+
+    # Now add the HTTP status code to the response.
+    if response is not None:
+        errors = []
+        data = copy.deepcopy(response.data)
+        if isinstance(data, dict):
+            errors += _generate_errors_from_dict(data, **{"status_code": str(response.status_code)})
+        elif isinstance(data, list):
+            errors += _generate_errors_from_list(data, **{"status_code": str(response.status_code)})
+        error_response = v2response_error_from_errors(errors=errors, exc=exc, context=context)
+        response.data = error_response
+    elif isinstance(exc, IntegrityError):
+        source_view = context.get("view")
+        response = Response(
+            v2response_error_from_errors(
+                {
+                    "errors": [
+                        {"detail": str(exc), "source": f"{source_view.basename}", "status": "400"},
+                    ],
+                }
+            ),  # noqa: E231
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    elif isinstance(exc, InvalidTokenError):
+        response = Response(
+            data=_v2_generate_error_data_payload_response(
+                detail="Invalid token provided.", context=context, http_status_code=status.HTTP_401_UNAUTHORIZED
+            ),
+            content_type="application/json",
+            status=status.HTTP_401_UNAUTHORIZED,
+        )
+    elif isinstance(exc, MissingAuthorizationError):
+        response = Response(
+            data=_v2_generate_error_data_payload_response(
+                detail="A Bearer token in an authorization header is required when performing service account"
+                " operations.",
+                context=context,
+                http_status_code=status.HTTP_401_UNAUTHORIZED,
+            ),
+            content_type="application/json",
+            status=status.HTTP_401_UNAUTHORIZED,
+        )
+    elif isinstance(exc, UnableMeetPrerequisitesError):
+        response = Response(
+            data=_v2_generate_error_data_payload_response(
+                detail="Unable to validate the provided token.",
+                context=context,
+                http_status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            ),
+            content_type="application/json",
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+    return response
+
+
+def exception_version_handler(exc, context):
+    """Select handler according to version."""
+    request = context.get("request")
+    if f"{api_path_prefix()}v2/" in request.path:
+        return custom_exception_handler_v2(exc, context)
+    else:
+        return custom_exception_handler(exc, context)
 
 
 def custom_exception_handler(exc, context):

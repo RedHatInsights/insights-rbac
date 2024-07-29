@@ -37,6 +37,7 @@ if API_PATH_PREFIX != "":
 urlpatterns = [
     re_path(r"^{}v1/".format(API_PATH_PREFIX), include("api.urls")),
     re_path(r"^{}v1/".format(API_PATH_PREFIX), include("management.urls")),
+    re_path(r"^{}v2/".format(API_PATH_PREFIX), include("management.v2_urls")),
     re_path(r"^_private/", include("internal.urls")),
     path("", include("django_prometheus.urls")),
 ]

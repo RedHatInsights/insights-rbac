@@ -1,0 +1,19 @@
+{
+  "name": "Role Based Access Control",
+  "version": "0.1.0",
+  "type": "module",
+  "peerDependencies": {
+    "@typespec/compiler": "latest"
+  },
+  "devDependencies": {
+    "@typespec/compiler": "latest"
+  },
+  "private": true,
+  "dependencies": {
+    "@typespec/http": "^0.58.0",
+    "@typespec/json-schema": "^0.58.0",
+    "@typespec/openapi3": "^0.58.0",
+    "@typespec/rest": "^0.58.0",
+    "@typespec/versioning": "^0.58.0"
+  }
+}

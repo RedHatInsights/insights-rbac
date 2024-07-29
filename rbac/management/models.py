@@ -23,3 +23,4 @@ from management.group.model import Group
 from management.role.model import Access, ExtRoleRelation, ExtTenant, ResourceDefinition, Role
 from management.policy.model import Policy
 from management.audit_log.model import AuditLog
+from management.workspace.model import Workspace
