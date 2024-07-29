@@ -29,7 +29,7 @@ from .serializer import WorkspaceSerializer
 
 VALID_PATCH_FIELDS = ["name", "description", "parent"]
 REQUIRED_PUT_FIELDS = ["name", "description", "parent"]
-REQUIRED_CREATE_FIELDS = ["name", "parent"]
+REQUIRED_CREATE_FIELDS = ["name"]
 
 
 class WorkspaceViewSet(
@@ -109,36 +109,18 @@ class WorkspaceViewSet(
 
     def validate_workspace(self, request, action="create"):
         """Validate a workspace."""
+        parent = request.data.get("parent")
+        tenant = request.tenant
         if action == "create":
             self.validate_required_fields(request, REQUIRED_CREATE_FIELDS)
         else:
             self.validate_required_fields(request, REQUIRED_PUT_FIELDS)
-
-        name = request.data.get("name")
-        tenant = request.tenant
-        parent = request.data.get("parent")
-        if parent is None:
-            message = "Field 'parent' can't be null."
-            error = {"workspace": [_(message)]}
-            raise serializers.ValidationError(error)
-        validate_uuid(parent)
-
-        if not Workspace.objects.filter(uuid=parent, tenant=tenant).exists():
-            message = f"Parent workspace '{parent}' doesn't exist in tenant"
-            error = {"workspace": [message]}
-            raise serializers.ValidationError(error)
-
-        name_was_changed = True
-        if action != "create":
-            instance = self.get_object()
-            name_was_changed = instance.name != name
-
-        if Workspace.objects.filter(name=name, tenant=tenant, parent=parent).exists() and name_was_changed:
-            parent_text = parent if parent is not None else "root"
-            message = (
-                f"The workspace '{name}' already exists in this tenant within the hierarchy at the level "
-                f"associated with parent id: {parent_text}."
-            )
-
-            error = {"workspace": [message]}
-            raise serializers.ValidationError(error)
+            if parent is None:
+                message = "Field 'parent' can't be null."
+                error = {"workspace": [_(message)]}
+                raise serializers.ValidationError(error)
+            validate_uuid(parent)
+            if not Workspace.objects.filter(uuid=parent, tenant=tenant).exists():
+                message = f"Parent workspace '{parent}' doesn't exist in tenant"
+                error = {"workspace": [message]}
+                raise serializers.ValidationError(error)
