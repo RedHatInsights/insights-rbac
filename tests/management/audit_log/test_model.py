@@ -30,7 +30,6 @@ class AuditLogModelTests(IdentityRequest):
         super().setUp()
 
         self.audit_log = AuditLog.objects.create(
-            principal_id="1",
             principal_username="test_user",
             resource_type=AuditLog.ROLE,
             resource_id="1",
@@ -45,7 +44,6 @@ class AuditLogModelTests(IdentityRequest):
 
     def test_audit_log_creation(self):
         """Test whether log was created through model."""
-        self.assertEqual(self.audit_log.principal_id, "1")
         self.assertEqual(self.audit_log.principal_username, "test_user")
         self.assertEqual(self.audit_log.resource_type, "role")
         self.assertEqual(self.audit_log.resource_id, "1")

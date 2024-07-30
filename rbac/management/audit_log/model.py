@@ -20,7 +20,6 @@ from django.db import models
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from management.group.model import Group
-from management.principal.model import Principal
 from management.role.model import Role
 
 from api.models import Tenant, TenantAwareModel
@@ -54,7 +53,6 @@ class AuditLog(TenantAwareModel):
     )
 
     created = models.DateTimeField(default=timezone.now)
-    principal = models.ForeignKey(Principal, on_delete=models.SET_NULL, null=True)
     principal_username = models.TextField(max_length=255, null=False)
     description = models.TextField(max_length=255, null=False)
     resource_type = models.CharField(max_length=32, choices=RESOURCE_CHOICES)
@@ -94,9 +92,8 @@ class AuditLog(TenantAwareModel):
             # TODO: update for permission related items
             return None
 
-    def log_create(self, request, resource, kwargs):
+    def log_create(self, request, resource, **kwargs):
         """Audit Log when a role or a group is created."""
-        self.principal_id = None
         self.principal_username = request.user.username
 
         self.resource_type = resource
