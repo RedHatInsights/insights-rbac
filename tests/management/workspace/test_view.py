@@ -68,6 +68,22 @@ class WorkspaceViewTests(IdentityRequest):
         self.assertNotEquals(data.get("modified"), "")
         self.assertEquals(data.get("description"), "Workspace")
 
+    def test_create_workspace_without_parent(self):
+        """Test for creating a workspace."""
+        workspace = {"name": "New Workspace", "description": "Workspace"}
+
+        url = reverse("workspace-list")
+        client = APIClient()
+        response = client.post(url, workspace, format="json", **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        data = response.data
+        self.assertEqual(data.get("name"), "New Workspace")
+        self.assertNotEquals(data.get("uuid"), "")
+        self.assertIsNotNone(data.get("uuid"))
+        self.assertNotEquals(data.get("created"), "")
+        self.assertNotEquals(data.get("modified"), "")
+        self.assertEquals(data.get("description"), "Workspace")
+
     def test_create_workspace_empty_body(self):
         """Test for creating a workspace."""
         workspace = {}
@@ -104,7 +120,7 @@ class WorkspaceViewTests(IdentityRequest):
         self.assertEqual(status_code, 403)
 
     def test_duplicate_create_workspace(self):
-        """Test that creating a duplicate workspace is not allowed."""
+        """Test that creating a duplicate workspace is allowed."""
         workspace_data = {
             "name": "New Workspace",
             "description": "New Workspace - description",
@@ -119,17 +135,7 @@ class WorkspaceViewTests(IdentityRequest):
         url = reverse("workspace-list")
         client = APIClient()
         response = client.post(url, test_data, format="json", **self.headers)
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-
-        status_code = response.data.get("status")
-        detail = response.data.get("detail")
-        self.assertIsNotNone(detail)
-        message = (
-            f"The workspace 'New Workspace' already exists in this tenant within the hierarchy at the level "
-            f"associated with parent id: {self.init_workspace.uuid}."
-        )
-        self.assertEqual(detail, message)
-        self.assertEqual(status_code, 400)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
 
     def test_update_workspace(self):
         """Test for updating a workspace."""
@@ -328,16 +334,7 @@ class WorkspaceViewTests(IdentityRequest):
         }
 
         response = client.put(url, workspace_data_for_put, format="json", **self.headers)
-
-        status_code = response.data.get("status")
-        detail = response.data.get("detail")
-        self.assertIsNotNone(detail)
-        message = (
-            f"The workspace 'New Duplicate Workspace' already exists in this tenant within the hierarchy at the level "
-            f"associated with parent id: {self.init_workspace.uuid}."
-        )
-        self.assertEqual(detail, message)
-        self.assertEqual(status_code, 400)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
 
     def test_update_workspace_unauthorized(self):
         workspace = {}

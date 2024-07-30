@@ -36,9 +36,3 @@ class Workspace(TenantAwareModel):
 
     class Meta:
         ordering = ["name", "modified"]
-        constraints = [
-            models.UniqueConstraint(
-                fields=["name", "tenant", "parent"],
-                name="The combination of 'name', 'tenant', and 'parent' must be unique.",
-            ),
-        ]

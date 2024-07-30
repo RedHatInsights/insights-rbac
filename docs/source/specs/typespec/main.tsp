@@ -132,12 +132,12 @@ namespace Workspaces {
     }
 
     model PatchWorkspaceResponse extends BasicWorkspace{
-        @statusCode _: 204;
+        @statusCode _: 200;
     }
 
     model DeleteWorkspaceResponse{
         @statusCode
-        statusCode: 201,
+        statusCode: 204,
     }
    
     @doc("Create workspace in tenant")
