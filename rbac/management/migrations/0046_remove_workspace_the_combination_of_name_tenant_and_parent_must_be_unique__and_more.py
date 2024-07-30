@@ -6,7 +6,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("management", "0044_workspace"),
+        ("management", "0045_remove_auditlog_principal"),
     ]
 
     operations = [
