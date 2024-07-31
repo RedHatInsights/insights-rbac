@@ -22,3 +22,4 @@ from management.permissions.group_access import GroupAccessPermission
 from management.permissions.policy_access import PolicyAccessPermission
 from management.permissions.role_access import RoleAccessPermission
 from management.permissions.auditlog_access import AuditLogAccessPermission
+from management.permissions.workspace_access import WorkspaceAccessPermission

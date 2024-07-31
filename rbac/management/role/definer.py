@@ -137,7 +137,7 @@ def seed_roles():
     # Find roles in DB but not in config
     roles_to_delete = Role.objects.filter(system=True).exclude(id__in=current_role_ids)
     logger.info(f"The following '{roles_to_delete.count()}' roles(s) eligible for removal: {roles_to_delete.values()}")
-    if destructive_ok():
+    if destructive_ok("seeding"):
         logger.info(f"Removing the following role(s): {roles_to_delete.values()}")
         # Actually remove roles no longer in config
         with transaction.atomic():
@@ -202,7 +202,7 @@ def seed_permissions():
     logger.info(
         f"The following '{perms_to_delete.count()}' permission(s) eligible for removal: {perms_to_delete.values()}"
     )
-    if destructive_ok():
+    if destructive_ok("seeding"):
         logger.info(f"Removing the following permissions(s): {perms_to_delete.values()}")
         # Actually remove perms no longer in DB
         with transaction.atomic():

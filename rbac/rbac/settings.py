@@ -194,7 +194,7 @@ STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
 INTERNAL_IPS = ["127.0.0.1"]
 
 DEFAULT_PAGINATION_CLASS = "api.common.pagination.StandardResultsSetPagination"
-DEFAULT_EXCEPTION_HANDLER = "api.common.exception_handler.custom_exception_handler"
+DEFAULT_EXCEPTION_HANDLER = "api.common.exception_handler.exception_version_handler"
 
 # django rest_framework settings
 REST_FRAMEWORK = {
@@ -355,6 +355,15 @@ ROLE_SEEDING_ENABLED = ENVIRONMENT.bool("ROLE_SEEDING_ENABLED", default=True)
 GROUP_SEEDING_ENABLED = ENVIRONMENT.bool("GROUP_SEEDING_ENABLED", default=True)
 MAX_SEED_THREADS = ENVIRONMENT.int("MAX_SEED_THREADS", default=None)
 
+try:
+    DESTRUCTIVE_SEEDING_OK_UNTIL = parse_dt(
+        os.environ.get("RBAC_DESTRUCTIVE_SEEDING_ENABLED_UNTIL", "not-a-real-time")
+    )
+    if DESTRUCTIVE_SEEDING_OK_UNTIL.tzinfo is None:
+        DESTRUCTIVE_SEEDING_OK_UNTIL = DESTRUCTIVE_SEEDING_OK_UNTIL.replace(tzinfo=pytz.UTC)
+except ValueError as e:
+    DESTRUCTIVE_SEEDING_OK_UNTIL = datetime.datetime(1970, 1, 1, tzinfo=pytz.UTC)
+
 # disable log messages less than CRITICAL when running unit tests.
 if len(sys.argv) > 1 and sys.argv[1] == "test":
     logging.disable(logging.CRITICAL)
@@ -367,14 +376,13 @@ if ENVIRONMENT.bool("LOG_DATABASE_QUERIES", default=False):
 INTERNAL_API_PATH_PREFIXES = ["/_private/"]
 
 try:
-    INTERNAL_DESTRUCTIVE_API_OK_UNTIL = parse_dt(os.environ.get("RBAC_DESTRUCTIVE_ENABLED_UNTIL", "not-a-real-time"))
+    INTERNAL_DESTRUCTIVE_API_OK_UNTIL = parse_dt(
+        os.environ.get("RBAC_DESTRUCTIVE_API_ENABLED_UNTIL", "not-a-real-time")
+    )
     if INTERNAL_DESTRUCTIVE_API_OK_UNTIL.tzinfo is None:
         INTERNAL_DESTRUCTIVE_API_OK_UNTIL = INTERNAL_DESTRUCTIVE_API_OK_UNTIL.replace(tzinfo=pytz.UTC)
 except ValueError as e:
     INTERNAL_DESTRUCTIVE_API_OK_UNTIL = datetime.datetime(1970, 1, 1, tzinfo=pytz.UTC)
-
-
-AUTHENTICATE_WITH_ORG_ID = ENVIRONMENT.bool("AUTHENTICATE_WITH_ORG_ID", default=False)
 
 KAFKA_ENABLED = ENVIRONMENT.get_value("KAFKA_ENABLED", default=False)
 MOCK_KAFKA = ENVIRONMENT.get_value("MOCK_KAFKA", default=False)
@@ -471,3 +479,5 @@ UMB_HOST = ENVIRONMENT.get_value("UMB_HOST", default="localhost")
 UMB_PORT = ENVIRONMENT.get_value("UMB_PORT", default="61612")
 # Service account name
 SA_NAME = ENVIRONMENT.get_value("SA_NAME", default="nonprod-hcc-rbac")
+
+RELATION_API_SERVER = ENVIRONMENT.get_value("RELATION_API_SERVER", default="localhost:9000")

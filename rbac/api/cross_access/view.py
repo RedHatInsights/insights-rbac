@@ -16,7 +16,6 @@
 #
 
 """View for cross access request."""
-from django.conf import settings
 from django.db.models import Q
 from django.utils import timezone
 from django_filters import rest_framework as filters
@@ -34,18 +33,13 @@ from api.cross_access.access_control import CrossAccountRequestAccessPermission
 from api.cross_access.serializer import CrossAccountRequestDetailSerializer, CrossAccountRequestSerializer
 from api.cross_access.util import create_cross_principal
 from api.models import CrossAccountRequest, Tenant
-from api.serializers import create_tenant_name
 
 QUERY_BY_KEY = "query_by"
-ACCOUNT = "target_account"
 ORG_ID = "target_org"
 USER_ID = "user_id"
-if settings.AUTHENTICATE_WITH_ORG_ID:
-    PARAMS_FOR_CREATION = ["target_org", "start_date", "end_date", "roles"]
-    VALID_QUERY_BY_KEY = [ORG_ID, USER_ID]
-else:
-    PARAMS_FOR_CREATION = ["target_org", "target_account", "start_date", "end_date", "roles"]
-    VALID_QUERY_BY_KEY = [ACCOUNT, USER_ID]
+PARAMS_FOR_CREATION = ["target_org", "start_date", "end_date", "roles"]
+VALID_QUERY_BY_KEY = [ORG_ID, USER_ID]
+
 VALID_PATCH_FIELDS = ["start_date", "end_date", "roles", "status"]
 
 PROXY = PrincipalProxy()
@@ -86,7 +80,7 @@ class CrossAccountRequestFilter(filters.FilterSet):
 
     class Meta:
         model = CrossAccountRequest
-        fields = ["account", "approved_only", "status"]
+        fields = ["account", "org_id", "approved_only", "status"]
 
 
 class CrossAccountRequestViewSet(
@@ -112,12 +106,8 @@ class CrossAccountRequestViewSet(
         if self.request.method in ["PATCH", "PUT"]:
             return CrossAccountRequest.objects.all()
 
-        if settings.AUTHENTICATE_WITH_ORG_ID:
-            if validate_and_get_key(self.request.query_params, QUERY_BY_KEY, VALID_QUERY_BY_KEY, ORG_ID) == ORG_ID:
-                return CrossAccountRequest.objects.filter(target_org=self.request.user.org_id)
-        else:
-            if validate_and_get_key(self.request.query_params, QUERY_BY_KEY, VALID_QUERY_BY_KEY, ACCOUNT) == ACCOUNT:
-                return CrossAccountRequest.objects.filter(target_account=self.request.user.account)
+        if validate_and_get_key(self.request.query_params, QUERY_BY_KEY, VALID_QUERY_BY_KEY, ORG_ID) == ORG_ID:
+            return CrossAccountRequest.objects.filter(target_org=self.request.user.org_id)
 
         return CrossAccountRequest.objects.filter(user_id=self.request.user.user_id)
 
@@ -144,12 +134,8 @@ class CrossAccountRequestViewSet(
 
         result = super().list(request=request, args=args, kwargs=kwargs)
         # The approver's view requires requester's info such as first name, last name, email address.
-        if settings.AUTHENTICATE_WITH_ORG_ID:
-            if validate_and_get_key(self.request.query_params, QUERY_BY_KEY, VALID_QUERY_BY_KEY, ORG_ID) == ORG_ID:
-                return self.replace_user_id_with_info(result)
-        else:
-            if validate_and_get_key(self.request.query_params, QUERY_BY_KEY, VALID_QUERY_BY_KEY, ACCOUNT) == ACCOUNT:
-                return self.replace_user_id_with_info(result)
+        if validate_and_get_key(self.request.query_params, QUERY_BY_KEY, VALID_QUERY_BY_KEY, ORG_ID) == ORG_ID:
+            return self.replace_user_id_with_info(result)
         return result
 
     def partial_update(self, request, *args, **kwargs):
@@ -175,10 +161,8 @@ class CrossAccountRequestViewSet(
 
         current = self.get_object()
         self.check_update_permission(request, current)
-        if settings.AUTHENTICATE_WITH_ORG_ID:
-            request.data["target_org"] = current.target_org
-        else:
-            request.data["target_account"] = current.target_account
+
+        request.data["target_org"] = current.target_org
 
         self.validate_and_format_input(request.data)
 
@@ -188,36 +172,20 @@ class CrossAccountRequestViewSet(
         """Retrieve cross account requests by request_id."""
         result = super().retrieve(request=request, args=args, kwargs=kwargs)
 
-        if settings.AUTHENTICATE_WITH_ORG_ID:
-            if validate_and_get_key(self.request.query_params, QUERY_BY_KEY, VALID_QUERY_BY_KEY, ORG_ID) == ORG_ID:
-                user_id = result.data.pop("user_id")
-                principal = PROXY.request_filtered_principals(
-                    [user_id], account=None, org_id=None, options={"query_by": "user_id", "return_id": True}
-                ).get("data")[0]
+        if validate_and_get_key(self.request.query_params, QUERY_BY_KEY, VALID_QUERY_BY_KEY, ORG_ID) == ORG_ID:
+            user_id = result.data.pop("user_id")
+            principal = PROXY.request_filtered_principals(
+                [user_id], org_id=None, options={"query_by": "user_id", "return_id": True}
+            ).get("data")[0]
 
-                # Replace the user_id with user's info
-                result.data.update(
-                    {
-                        "first_name": principal["first_name"],
-                        "last_name": principal["last_name"],
-                        "email": principal["email"],
-                    }
-                )
-        else:
-            if validate_and_get_key(self.request.query_params, QUERY_BY_KEY, VALID_QUERY_BY_KEY, ACCOUNT) == ACCOUNT:
-                user_id = result.data.pop("user_id")
-                principal = PROXY.request_filtered_principals(
-                    [user_id], account=None, org_id=None, options={"query_by": "user_id", "return_id": True}
-                ).get("data")[0]
-
-                # Replace the user_id with user's info
-                result.data.update(
-                    {
-                        "first_name": principal["first_name"],
-                        "last_name": principal["last_name"],
-                        "email": principal["email"],
-                    }
-                )
+            # Replace the user_id with user's info
+            result.data.update(
+                {
+                    "first_name": principal["first_name"],
+                    "last_name": principal["last_name"],
+                    "email": principal["email"],
+                }
+            )
         return result
 
     def replace_user_id_with_info(self, result):
@@ -225,7 +193,7 @@ class CrossAccountRequestViewSet(
         # Get principals through user_ids from BOP
         user_ids = [element["user_id"] for element in result.data["data"]]
         bop_resp = PROXY.request_filtered_principals(
-            user_ids, account=None, org_id=None, options={"query_by": "user_id", "return_id": True}
+            user_ids, org_id=None, options={"query_by": "user_id", "return_id": True}
         )
 
         # Make a mapping: user_id => principal
@@ -257,30 +225,16 @@ class CrossAccountRequestViewSet(
             if not request_data.__contains__(field):
                 self.throw_validation_error("cross-account-request", f"Field {field} must be specified.")
 
-        if settings.AUTHENTICATE_WITH_ORG_ID:
-            target_org = request_data.get("target_org")
-            if target_org == self.request.user.org_id:
-                self.throw_validation_error(
-                    "cross-account-request", "Creating a cross access request for your own org id is not allowed."
-                )
+        target_org = request_data.get("target_org")
+        if target_org == self.request.user.org_id:
+            self.throw_validation_error(
+                "cross-account-request", "Creating a cross access request for your own org id is not allowed."
+            )
 
-            try:
-                Tenant.objects.get(org_id=target_org)
-            except Tenant.DoesNotExist:
-                raise self.throw_validation_error("cross-account-request", f"Org ID '{target_org}' does not exist.")
-        else:
-            target_account = request_data.get("target_account")
-            if target_account == self.request.user.account:
-                self.throw_validation_error(
-                    "cross-account-request", "Creating a cross access request for your own account is not allowed."
-                )
-            try:
-                tenant_name = create_tenant_name(target_account)
-                Tenant.objects.get(tenant_name=tenant_name)
-            except Tenant.DoesNotExist:
-                raise self.throw_validation_error(
-                    "cross-account-request", f"Account '{target_account}' does not exist."
-                )
+        try:
+            Tenant.objects.get(org_id=target_org)
+        except Tenant.DoesNotExist:
+            raise self.throw_validation_error("cross-account-request", f"Org ID '{target_org}' does not exist.")
 
         request_data["roles"] = self.format_roles(request_data.get("roles"))
         request_data["user_id"] = self.request.user.user_id
@@ -309,15 +263,13 @@ class CrossAccountRequestViewSet(
         """Update the status of a cross-account-request."""
         car.status = status
         if status == "approved":
-            create_cross_principal(car.user_id, target_account=car.target_account, target_org=car.target_org)
+            create_cross_principal(car.user_id, target_org=car.target_org)
 
         car.save()
 
     def check_patch_permission(self, request, update_obj):
         """Check if user has right to patch cross access request."""
-        if (settings.AUTHENTICATE_WITH_ORG_ID and request.user.org_id == update_obj.target_org) or (
-            not settings.AUTHENTICATE_WITH_ORG_ID and request.user.account == update_obj.target_account
-        ):
+        if request.user.org_id == update_obj.target_org:
             """For approvers updating requests coming to them, only org admins
             may update status from pending/approved/denied to approved/denied.
             """

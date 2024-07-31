@@ -263,10 +263,7 @@ class TenantCacheTest(TestCase):
     def test_tenant_cache_functions_success(self, redis_health_check, redis_connection):
         tenant_name = self.tenant.tenant_name
         tenant_org_id = self.tenant.org_id
-        if settings.AUTHENTICATE_WITH_ORG_ID:
-            key = f"rbac::tenant::tenant={tenant_org_id}"
-        else:
-            key = f"rbac::tenant::tenant={tenant_name}"
+        key = f"rbac::tenant::tenant={tenant_org_id}"
         dump_content = pickle.dumps(self.tenant)
 
         # Save tenant to cache
@@ -277,19 +274,13 @@ class TenantCacheTest(TestCase):
         redis_connection.get.return_value = dump_content
         redis_health_check.return_value = True
         # Get tenant from cache
-        if settings.AUTHENTICATE_WITH_ORG_ID:
-            tenant = tenant_cache.get_tenant(tenant_org_id)
-        else:
-            tenant = tenant_cache.get_tenant(tenant_name)
+        tenant = tenant_cache.get_tenant(tenant_org_id)
         redis_health_check.assert_called_once()
         redis_connection.get.assert_called_once_with(key)
         self.assertEqual(tenant, self.tenant)
 
         # Delete tenant from cache
-        if settings.AUTHENTICATE_WITH_ORG_ID:
-            tenant_cache.delete_tenant(tenant_org_id)
-        else:
-            tenant_cache.delete_tenant(tenant_name)
+        tenant_cache.delete_tenant(tenant_org_id)
         redis_connection.delete.assert_called_once_with(key)
 
     @patch("management.cache.TenantCache.connection")
@@ -297,10 +288,7 @@ class TenantCacheTest(TestCase):
     def test_tenant_cache_functions_failure(self, redis_health_check, redis_connection):
         tenant_name = self.tenant.tenant_name
         tenant_org_id = self.tenant.org_id
-        if settings.AUTHENTICATE_WITH_ORG_ID:
-            key = f"rbac::tenant::tenant={tenant_org_id}"
-        else:
-            key = f"rbac::tenant::tenant={tenant_name}"
+        key = f"rbac::tenant::tenant={tenant_org_id}"
         dump_content = pickle.dumps(self.tenant)
 
         # Save tenant to cache
@@ -311,9 +299,6 @@ class TenantCacheTest(TestCase):
         redis_connection.get.return_value = dump_content
         redis_health_check.return_value = False
         # Get tenant from cache (should fail because redis_health_check failed)
-        if settings.AUTHENTICATE_WITH_ORG_ID:
-            tenant = tenant_cache.get_tenant(tenant_org_id)
-        else:
-            tenant = tenant_cache.get_tenant(tenant_name)
+        tenant = tenant_cache.get_tenant(tenant_org_id)
         redis_health_check.assert_called_once()
         self.assertNotEqual(tenant, self.tenant)

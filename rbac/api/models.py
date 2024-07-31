@@ -15,7 +15,6 @@
 #    along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """API models for import organization."""
-from django.conf import settings
 from django.db import models
 from django.db.models import Q
 
@@ -46,10 +45,7 @@ class Tenant(models.Model):
 
     def __str__(self):
         """Get string representation of Tenant."""
-        if settings.AUTHENTICATE_WITH_ORG_ID:
-            return f"Tenant ({self.org_id})"
-        else:
-            return f"Tenant ({self.tenant_name})"
+        return f"Tenant ({self.org_id})"
 
 
 class TenantAwareModel(models.Model):

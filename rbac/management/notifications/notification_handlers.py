@@ -24,7 +24,6 @@ from uuid import uuid4
 
 from core.kafka import RBACProducer
 from django.conf import settings
-from management.utils import account_id_for_tenant
 
 from api.models import Tenant
 
@@ -37,21 +36,19 @@ with open(os.path.join(settings.BASE_DIR, "management", "notifications", "messag
     message_template = json.load(template)
 
 
-def build_notifications_message(event_type, payload, account_id=None, org_id=None):
+def build_notifications_message(event_type, payload, org_id=None):
     """Create message based on template."""
     message = message_template
-    if settings.AUTHENTICATE_WITH_ORG_ID:
-        message["org_id"] = org_id
+    message["org_id"] = org_id
     message["event_type"] = event_type
     message["timestamp"] = datetime.now().isoformat()
-    message["account_id"] = account_id
     message["events"][0]["payload"] = payload
     return message
 
 
-def notify(event_type, payload, account_id=None, org_id=None):
+def notify(event_type, payload, org_id=None):
     """Actually send notifications message."""
-    noto_message = build_notifications_message(event_type, payload, account_id, org_id)
+    noto_message = build_notifications_message(event_type, payload, org_id)
     noto_headers = [("rh-message-id", str(uuid4()).encode("utf-8"))]
     noto_producer.send_kafka_message(noto_topic, noto_message, noto_headers)
 
@@ -62,12 +59,7 @@ def notify_all(event_type, payload):
     # https://docs.djangoproject.com/en/4.0/ref/models/querysets/#django.db.models.query.QuerySet.iterator
     for tenant in Tenant.objects.exclude(tenant_name="public").iterator():
         # Tenant name pattern is acct12345
-        account_id = account_id_for_tenant(tenant)
-        if settings.AUTHENTICATE_WITH_ORG_ID:
-            org_id = tenant.org_id
-        else:
-            org_id = None
-        notify(event_type, payload, account_id, org_id)
+        notify(event_type, payload, tenant.org_id)
 
 
 def handle_system_role_change_notification(role_obj, operation):
@@ -100,11 +92,7 @@ def role_obj_change_notification_handler(role_obj, operation, user=None):
         handle_system_role_change_notification(role_obj, operation)
         return
 
-    account_id = user.account
-    if settings.AUTHENTICATE_WITH_ORG_ID:
-        org_id = user.org_id
-    else:
-        org_id = None
+    org_id = user.org_id
     payload = payload_builder(user.username, role_obj)
     # Role created
     if operation == "created":
@@ -116,18 +104,14 @@ def role_obj_change_notification_handler(role_obj, operation, user=None):
     elif operation == "updated":
         event_type = "custom-role-updated"
 
-    notify(event_type, payload, account_id, org_id)
+    notify(event_type, payload, org_id)
 
 
 def group_obj_change_notification_handler(user, group_obj, operation):
     """Signal handler for sending notification message when Group object changes."""
     if not settings.NOTIFICATIONS_ENABLED:
         return
-    account_id = user.account
-    if settings.AUTHENTICATE_WITH_ORG_ID:
-        org_id = user.org_id
-    else:
-        org_id = None
+    org_id = user.org_id
     payload = payload_builder(user.username, group_obj)
     # Group created
     if operation == "created":
@@ -140,7 +124,7 @@ def group_obj_change_notification_handler(user, group_obj, operation):
     # Group updated
     else:
         event_type = "group-updated"
-    notify(event_type, payload, account_id, org_id)
+    notify(event_type, payload, org_id)
 
 
 def handle_platform_group_role_change_notification(group_obj, role_obj, operation):
@@ -171,11 +155,7 @@ def group_role_change_notification_handler(user, group_obj, role_obj, operation)
         return
 
     # Handle custom group
-    account_id = user.account
-    if settings.AUTHENTICATE_WITH_ORG_ID:
-        org_id = user.org_id
-    else:
-        org_id = None
+    org_id = user.org_id
     payload = payload_builder(user.username, group_obj, operation, ("role", role_obj))
 
     if group_obj.platform_default:
@@ -183,7 +163,7 @@ def group_role_change_notification_handler(user, group_obj, role_obj, operation)
     else:
         event_type = "group-updated"
 
-    notify(event_type, payload, account_id, org_id)
+    notify(event_type, payload, org_id)
 
 
 def group_principal_change_notification_handler(user, group_obj, principal, operation):
@@ -191,31 +171,23 @@ def group_principal_change_notification_handler(user, group_obj, principal, oper
     if not settings.NOTIFICATIONS_ENABLED:
         return
 
-    account_id = user.account
-    if settings.AUTHENTICATE_WITH_ORG_ID:
-        org_id = user.org_id
-    else:
-        org_id = None
+    org_id = user.org_id
     payload = payload_builder(user.username, group_obj, operation, ("principal", principal))
 
     event_type = "group-updated"
-    notify(event_type, payload, account_id, org_id)
+    notify(event_type, payload, org_id)
 
 
 def group_flag_change_notification_handler(user, group_obj):
     """Signal handler for sending notification message when flag of group changes."""
     if not settings.NOTIFICATIONS_ENABLED:
         return
-    account_id = user.account
-    if settings.AUTHENTICATE_WITH_ORG_ID:
-        org_id = user.org_id
-    else:
-        org_id = None
+    org_id = user.org_id
     payload = payload_builder(user.username, group_obj)
 
     event_type = "platform-default-group-turned-into-custom"
 
-    notify(event_type, payload, account_id, org_id)
+    notify(event_type, payload, org_id)
 
 
 def payload_builder(username, resource_obj, operation=None, extra_info=None):
@@ -240,14 +212,11 @@ def cross_account_access_handler(cross_request, request_user):
     if not settings.NOTIFICATIONS_ENABLED:
         return
 
-    account_id = cross_request.target_account
-    if settings.AUTHENTICATE_WITH_ORG_ID:
-        org_id = cross_request.target_org
-    else:
-        org_id = None
+    org_id = cross_request.target_org
+
     payload = {
         "username": request_user.username,
         "request_id": str(cross_request.request_id),
     }
 
-    notify(EVENT_TYPE_RH_TAM_REQUEST_CREATED, payload, account_id, org_id)
+    notify(EVENT_TYPE_RH_TAM_REQUEST_CREATED, payload, org_id)

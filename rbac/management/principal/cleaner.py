@@ -26,9 +26,9 @@ from django.conf import settings
 from management.group.view import TYPE_SERVICE_ACCOUNT
 from management.principal.model import Principal
 from management.principal.proxy import PrincipalProxy
-from management.utils import account_id_for_tenant
 from rest_framework import status
 from stompest.config import StompConfig
+from stompest.error import StompConnectionError
 from stompest.protocol import StompSpec
 from stompest.sync import Stomp
 
@@ -46,10 +46,7 @@ def clean_tenant_principals(tenant):
     """Check if all the principals in the tenant exist, remove non-existent principals."""
     removed_principals = []
     principals = list(Principal.objects.filter(type="user").filter(tenant=tenant))
-    if settings.AUTHENTICATE_WITH_ORG_ID:
-        tenant_id = tenant.org_id
-    else:
-        tenant_id = tenant.tenant_name
+    tenant_id = tenant.org_id
     logger.info(
         "clean_tenant_principals: Running clean up on %d principals for tenant %s.", len(principals), tenant_id
     )
@@ -57,12 +54,8 @@ def clean_tenant_principals(tenant):
         if principal.cross_account:
             continue
         logger.debug("clean_tenant_principals: Checking for username %s for tenant %s.", principal.username, tenant_id)
-        account = account_id_for_tenant(tenant)
         org_id = tenant.org_id
-        if settings.AUTHENTICATE_WITH_ORG_ID:
-            resp = proxy.request_filtered_principals([principal.username], org_id=org_id)
-        else:
-            resp = proxy.request_filtered_principals([principal.username], account=account)
+        resp = proxy.request_filtered_principals([principal.username], org_id=org_id)
         status_code = resp.get("status_code")
         data = resp.get("data")
         logger.info("clean_tenant_principals: Response code: %s Data: %s", str(status_code), str(data))
@@ -166,14 +159,20 @@ def clean_principal_umb(data_dict):
 def clean_principals_via_umb():
     """Check which principals are eligible for clean up via UMB."""
     logger.info("clean_tenant_principals: Start principal clean up via umb.")
-    UMB_CLIENT.connect()
+    try:
+        UMB_CLIENT.connect()
+    except StompConnectionError as e:
+        # Skip if already connected
+        if not str(e).startswith("Already connected"):
+            raise e
+
     UMB_CLIENT.subscribe(QUEUE, {StompSpec.ACK_HEADER: StompSpec.ACK_CLIENT_INDIVIDUAL})
     while UMB_CLIENT.canRead(2):  # Check if queue is empty, two sec timeout
         frame = UMB_CLIENT.receiveFrame()
         data_dict = xmltodict.parse(frame.body)
         is_deactivate = is_umb_deactivate_msg(data_dict)
         if not is_deactivate:
-            # Drop the message cause it is not useless for us
+            # Drop the message cause it is useless for us
             UMB_CLIENT.ack(frame)
             continue
         principal_name, groups = clean_principal_umb(data_dict)

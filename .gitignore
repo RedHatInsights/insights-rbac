@@ -132,3 +132,5 @@ docs/source/specs/output-dir/
 # dev for ephemeral
 dev/*
 /scripts/ephemeral/config.yaml
+docs/source/specs/typespec/node_modules/
+docs/source/specs/typespec/tsp-output/

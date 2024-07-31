@@ -21,20 +21,27 @@ import logging
 
 import requests
 from core.utils import destructive_ok
-from django.conf import settings
 from django.db import transaction
 from django.db.migrations.recorder import MigrationRecorder
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
+from django.utils.html import escape
 from management.cache import TenantCache
 from management.models import Group, Permission, Role
-from management.principal.proxy import API_TOKEN_HEADER, CLIENT_ID_HEADER, USER_ENV_HEADER
+from management.principal.proxy import (
+    API_TOKEN_HEADER,
+    CLIENT_ID_HEADER,
+    USER_ENV_HEADER,
+)
 from management.principal.proxy import PrincipalProxy
-from management.principal.proxy import bop_request_status_count, bop_request_time_tracking
+from management.principal.proxy import (
+    bop_request_status_count,
+    bop_request_time_tracking,
+)
 from management.tasks import (
+    migrate_roles_in_worker,
     run_migrations_in_worker,
     run_ocm_performance_in_worker,
-    run_reconcile_tenant_relations_in_worker,
     run_seeds_in_worker,
     run_sync_schemas_in_worker,
 )
@@ -82,10 +89,7 @@ def list_unmodified_tenants(request):
     to_return = []
     for tenant_obj in tenant_qs:
         if tenant_is_unmodified(tenant_name=tenant_obj.tenant_name, org_id=tenant_obj.org_id):
-            if settings.AUTHENTICATE_WITH_ORG_ID:
-                to_return.append(tenant_obj.org_id)
-            else:
-                to_return.append(tenant_obj.tenant_name)
+            to_return.append(tenant_obj.org_id)
     payload = {
         "unmodified_tenants": to_return,
         "unmodified_tenants_count": len(to_return),
@@ -134,7 +138,7 @@ def tenant_view(request, org_id):
     """
     logger.info(f"Tenant view: {request.method} {request.user.username}")
     if request.method == "DELETE":
-        if not destructive_ok():
+        if not destructive_ok("api"):
             return HttpResponse("Destructive operations disallowed.", status=400)
 
         tenant_obj = get_object_or_404(Tenant, org_id=org_id)
@@ -172,7 +176,10 @@ def migration_progress(request):
         migration_name = request.GET.get("migration_name")
         app_name = request.GET.get("app", "management")
         if not migration_name:
-            return HttpResponse("Please specify a migration name in the `?migration_name=` param.", status=400)
+            return HttpResponse(
+                "Please specify a migration name in the `?migration_name=` param.",
+                status=400,
+            )
         tenants_completed_count = 0
         incomplete_tenants = []
 
@@ -181,17 +188,14 @@ def migration_progress(request):
         else:
             tenant_qs = Tenant.objects.exclude(tenant_name="public")
         tenant_count = tenant_qs.count()
-        for idx, tenant in enumerate(list(tenant_qs)):
+        for tenant in list(tenant_qs):
             migrations_have_run = MigrationRecorder.Migration.objects.filter(
                 name=migration_name, app=app_name
             ).exists()
             if migrations_have_run:
                 tenants_completed_count += 1
             else:
-                if settings.AUTHENTICATE_WITH_ORG_ID:
-                    incomplete_tenants.append(tenant.org_id)
-                else:
-                    incomplete_tenants.append(tenant.tenant_name)
+                incomplete_tenants.append(tenant.org_id)
         payload = {
             "migration_name": migration_name,
             "app_name": app_name,
@@ -203,22 +207,6 @@ def migration_progress(request):
 
         return HttpResponse(json.dumps(payload), content_type="application/json")
     return HttpResponse('Invalid method, only "GET" is allowed.', status=405)
-
-
-def tenant_reconciliation(request):
-    """View method for checking/executing tenant reconciliation.
-
-    GET(read-only)|POST(updates enabled) /_private/api/utils/tenant_reconciliation/
-    """
-    args = {"readonly": True} if request.method == "GET" else {}
-    msg = "Running tenant reconciliation in a background worker."
-
-    if request.method in ["GET", "POST"]:
-        logger.info(msg)
-        run_reconcile_tenant_relations_in_worker.delay(args)
-        return HttpResponse(msg, status=202)
-
-    return HttpResponse('Invalid method, only "GET" and "POST" are allowed.', status=405)
 
 
 def sync_schemas(request):
@@ -294,7 +282,10 @@ def get_org_admin(request, org_or_account):
             response = requests.get(url, **kwargs)
             resp = {"status_code": response.status_code}
             data = response.json()
-            resp["data"] = {"userCount": data.get("userCount"), "users": data.get("users")}
+            resp["data"] = {
+                "userCount": data.get("userCount"),
+                "users": data.get("users"),
+            }
         except requests.exceptions.ConnectionError as conn:
             bop_request_status_count.labels(method="GET", status=500).inc()
             return HttpResponse(f"Unable to connect for URL {url} with error: {conn}", status=500)
@@ -371,7 +362,10 @@ def populate_tenant_account_id(request):
     if request.method == "POST":
         logger.info("Setting account_id on all Tenant objects.")
         populate_tenant_account_id_in_worker.delay()
-        return HttpResponse("Tenant objects account_id values being updated in background worker.", status=200)
+        return HttpResponse(
+            "Tenant objects account_id values being updated in background worker.",
+            status=200,
+        )
     return HttpResponse('Invalid method, only "POST" is allowed.', status=405)
 
 
@@ -398,7 +392,7 @@ def invalid_default_admin_groups(request):
         }
         return HttpResponse(json.dumps(payload), content_type="application/json")
     if request.method == "DELETE":
-        if not destructive_ok():
+        if not destructive_ok("api"):
             return HttpResponse("Destructive operations disallowed.", status=400)
         invalid_default_admin_groups_list.delete()
         return HttpResponse(status=204)
@@ -412,7 +406,7 @@ def role_removal(request):
     """
     logger.info(f"Role removal: {request.method} {request.user.username}")
     if request.method == "DELETE":
-        if not destructive_ok():
+        if not destructive_ok("api"):
             return HttpResponse("Destructive operations disallowed.", status=400)
 
         role_name = request.GET.get("name")
@@ -421,13 +415,14 @@ def role_removal(request):
                 'Invalid request, must supply the "name" query parameter.',
                 status=400,
             )
+        role_name = escape(role_name)
         # Add tenant public to prevent deletion of custom roles
         role_obj = get_object_or_404(Role, name=role_name, tenant=Tenant.objects.get(tenant_name="public"))
         with transaction.atomic():
             try:
-                logger.warning(f"Deleting role {role_name}. Requested by {request.user.username}")
+                logger.warning(f"Deleting role '{role_name}'. Requested by '{request.user.username}'")
                 role_obj.delete()
-                return HttpResponse(status=204)
+                return HttpResponse(f"Role '{role_name}' deleted.", status=204)
             except Exception:
                 return HttpResponse("Role cannot be deleted.", status=400)
     return HttpResponse('Invalid method, only "DELETE" is allowed.', status=405)
@@ -440,7 +435,7 @@ def permission_removal(request):
     """
     logger.info(f"Permission removal: {request.method} {request.user.username}")
     if request.method == "DELETE":
-        if not destructive_ok():
+        if not destructive_ok("api"):
             return HttpResponse("Destructive operations disallowed.", status=400)
 
         permission = request.GET.get("permission")
@@ -450,12 +445,13 @@ def permission_removal(request):
                 status=400,
             )
 
+        permission = escape(permission)
         permission_obj = get_object_or_404(Permission, permission=permission)
         with transaction.atomic():
             try:
-                logger.warning(f"Deleting permission {permission}. Requested by {request.user.username}")
+                logger.warning(f"Deleting permission '{permission}'. Requested by '{request.user.username}'")
                 permission_obj.delete()
-                return HttpResponse(status=204)
+                return HttpResponse(f"Permission '{permission}' deleted.", status=204)
             except Exception:
                 return HttpResponse("Permission cannot be deleted.", status=400)
     return HttpResponse('Invalid method, only "DELETE" is allowed.', status=405)
@@ -471,6 +467,32 @@ def ocm_performance(request):
         run_ocm_performance_in_worker.delay()
         return HttpResponse("OCM performance tests are running in a background worker.", status=202)
     return HttpResponse('Invalid method, only "POST" is allowed.', status=405)
+
+
+def get_param_list(request, param_name):
+    """Get a list of params from a request."""
+    params = request.GET.get(param_name, [])
+    if params:
+        params = params.split(",")
+    return params
+
+
+def role_migration(request):
+    """View method for running role migrations from V1 to V2 spiceDB schema.
+
+    POST /_private/api/utils/role_migration/?exclude_apps=cost_management,rbac&orgs=id_1,id_2&write_db=True
+    """
+    if request.method != "POST":
+        return HttpResponse('Invalid method, only "POST" is allowed.', status=405)
+    logger.info("Running V1 Role migration.")
+
+    args = {
+        "exclude_apps": get_param_list(request, "exclude_apps"),
+        "orgs": get_param_list(request, "orgs"),
+        "write_db": request.GET.get("write_db", "False") == "True",
+    }
+    migrate_roles_in_worker.delay(args)
+    return HttpResponse("Role migration from V1 to V2 are running in a background worker.", status=202)
 
 
 class SentryDiagnosticError(Exception):

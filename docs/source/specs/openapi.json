@@ -2054,7 +2054,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/RoleWithAccess"
+                "$ref": "#/components/schemas/RolePut"
               }
             }
           },
@@ -2993,10 +2993,10 @@
         "schema": {
           "type": "string",
           "enum": [
-            "account",
+            "org_id",
             "principal"
           ],
-          "default": "account"
+          "default": "org_id"
         }
       },
       "NameMatchCriteria": {
@@ -3692,6 +3692,7 @@
       "CrossAccountRequestIn": {
         "required": [
           "target_account",
+          "target_org",
           "start_date",
           "end_date",
           "roles"
@@ -3717,7 +3718,7 @@
             "type": "array",
             "items": {
               "type": "string",
-              "example": "Role Name"
+              "example": "Role Display Name"
             }
           }
         }
@@ -3741,7 +3742,7 @@
             "type": "array",
             "items": {
               "type": "string",
-              "example": "Role Name"
+              "example": "Role Display Name"
             }
           }
         }
@@ -3760,7 +3761,7 @@
             "type": "array",
             "items": {
               "type": "string",
-              "example": "Role Name"
+              "example": "Role Display Name"
             }
           },
           "status": {
@@ -4220,6 +4221,28 @@
             "example": "A description of RoleA"
           }
         }
+      },
+      "RolePut": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/RolePatch"
+          },
+          {
+            "type": "object",
+            "required": [
+              "access"
+            ],
+            "properties": {
+              "access": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Access"
+                },
+                "description": "List of access permissions. This array can be empty."
+              }
+            }
+          }
+        ]
       },
       "RoleWithAccess": {
         "allOf": [

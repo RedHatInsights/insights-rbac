@@ -37,7 +37,6 @@ from management.models import Access, Group, Permission, Principal, Policy, Reso
 
 
 class EnvironmentVarGuard(collections.abc.MutableMapping):
-
     """Class to help protect the environment variable properly.  Can be used as
     a context manager."""
 
@@ -80,7 +79,7 @@ class EnvironmentVarGuard(collections.abc.MutableMapping):
         return self
 
     def __exit__(self, *ignore_exc):
-        for (k, v) in self._changed.items():
+        for k, v in self._changed.items():
             if v is None:
                 if k in self._environ:
                     del self._environ[k]
@@ -113,10 +112,7 @@ class RbacTenantMiddlewareTest(IdentityRequest):
         mock_request = self.request
         middleware = IdentityHeaderMiddleware(get_response=IdentityHeaderMiddleware.get_tenant)
         result = middleware.get_tenant(Tenant, "localhost", mock_request)
-        if settings.AUTHENTICATE_WITH_ORG_ID:
-            self.assertEqual(result.org_id, mock_request.user.org_id)
-        else:
-            self.assertEqual(result.tenant_name, create_tenant_name(mock_request.user.account))
+        self.assertEqual(result.org_id, mock_request.user.org_id)
 
     def test_get_tenant_with_no_user(self):
         """Test that a 401 is returned."""
@@ -217,10 +213,7 @@ class IdentityHeaderMiddlewareTest(IdentityRequest):
         middleware.process_request(mock_request)
         self.assertTrue(hasattr(mock_request, "user"))
         self.assertEqual(mock_request.user.username, self.user_data["username"])
-        if settings.AUTHENTICATE_WITH_ORG_ID:
-            tenant = Tenant.objects.get(org_id=self.org_id)
-        else:
-            tenant = Tenant.objects.get(tenant_name=self.tenant_name)
+        tenant = Tenant.objects.get(org_id=self.org_id)
         self.assertIsNotNone(tenant)
 
     def test_process_no_customer(self):
@@ -234,12 +227,8 @@ class IdentityHeaderMiddlewareTest(IdentityRequest):
         middleware = IdentityHeaderMiddleware(get_response=IdentityHeaderMiddleware.process_request)
         middleware.process_request(mock_request)
         self.assertTrue(hasattr(mock_request, "user"))
-        if settings.AUTHENTICATE_WITH_ORG_ID:
-            with self.assertRaises(Tenant.DoesNotExist):
-                Tenant.objects.get(org_id=self.org_id)
-        else:
-            with self.assertRaises(Tenant.DoesNotExist):
-                Tenant.objects.get(tenant_name=self.tenant_name)
+        with self.assertRaises(Tenant.DoesNotExist):
+            Tenant.objects.get(org_id=self.org_id)
 
     def test_race_condition_customer(self):
         """Test case where another request may create the tenant in a race condition."""
@@ -387,10 +376,7 @@ class ServiceToService(IdentityRequest):
         t.save()
         url = reverse("group-list")
         client = APIClient()
-        if settings.AUTHENTICATE_WITH_ORG_ID:
-            self.service_headers["HTTP_X_RH_RBAC_ORG_ID"] = "1212"
-        else:
-            self.service_headers["HTTP_X_RH_RBAC_ACCOUNT"] = "1212"
+        self.service_headers["HTTP_X_RH_RBAC_ORG_ID"] = "1212"
         response = client.get(url, **self.service_headers)
 
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)

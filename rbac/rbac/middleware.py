@@ -97,36 +97,20 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
 
     def get_tenant(self, model, hostname, request):
         """Override the tenant selection logic."""
-        if settings.AUTHENTICATE_WITH_ORG_ID:
-            tenant_name = create_tenant_name(request.user.account)
-            tenant = TENANTS.get_tenant(request.user.org_id)
-            if tenant is None:
-                if request.user.system:
-                    try:
-                        tenant = Tenant.objects.get(org_id=request.user.org_id)
-                    except Tenant.DoesNotExist:
-                        raise Http404()
-                else:
-                    tenant, created = Tenant.objects.get_or_create(
-                        org_id=request.user.org_id,
-                        defaults={"ready": True, "account_id": request.user.account, "tenant_name": tenant_name},
-                    )
-                TENANTS.save_tenant(tenant)
-        else:
-            tenant_name = create_tenant_name(request.user.account)
-            tenant = TENANTS.get_tenant(tenant_name)
-            if tenant is None:
-                if request.user.system:
-                    try:
-                        tenant = Tenant.objects.get(tenant_name=tenant_name)
-                    except Tenant.DoesNotExist:
-                        raise Http404()
-                else:
-                    tenant, created = Tenant.objects.get_or_create(
-                        tenant_name=tenant_name,
-                        defaults={"ready": True, "account_id": request.user.account, "org_id": request.user.org_id},
-                    )
-                TENANTS.save_tenant(tenant)
+        tenant_name = create_tenant_name(request.user.account)
+        tenant = TENANTS.get_tenant(request.user.org_id)
+        if tenant is None:
+            if request.user.system:
+                try:
+                    tenant = Tenant.objects.get(org_id=request.user.org_id)
+                except Tenant.DoesNotExist:
+                    raise Http404()
+            else:
+                tenant, _ = Tenant.objects.get_or_create(
+                    org_id=request.user.org_id,
+                    defaults={"ready": True, "account_id": request.user.account, "tenant_name": tenant_name},
+                )
+            TENANTS.save_tenant(tenant)
         return tenant
 
     @staticmethod  # noqa: C901
@@ -258,25 +242,14 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
                 }
                 return HttpResponse(json.dumps(payload), content_type="application/json", status=400)
 
-            if settings.AUTHENTICATE_WITH_ORG_ID:
-                if self.should_load_user_permissions(request, user):
-                    try:
-                        tenant = Tenant.objects.filter(org_id=user.org_id).get()
-                    except Tenant.DoesNotExist:
-                        request.user = user
-                        tenant = self.get_tenant(model=None, hostname=None, request=request)
+            if self.should_load_user_permissions(request, user):
+                try:
+                    tenant = Tenant.objects.filter(org_id=user.org_id).get()
+                except Tenant.DoesNotExist:
+                    request.user = user
+                    tenant = self.get_tenant(model=None, hostname=None, request=request)
 
-                    user.access = IdentityHeaderMiddleware._get_access_for_user(user.username, tenant)
-            else:
-                if self.should_load_user_permissions(request, user):
-                    try:
-                        tenant_name = create_tenant_name(user.account)
-                        tenant = Tenant.objects.filter(tenant_name=tenant_name).get()
-                    except Tenant.DoesNotExist:
-                        request.user = user
-                        tenant = self.get_tenant(model=None, hostname=None, request=request)
-
-                    user.access = IdentityHeaderMiddleware._get_access_for_user(user.username, tenant)
+                user.access = IdentityHeaderMiddleware._get_access_for_user(user.username, tenant)
             # Cross account request check
             internal = json_rh_auth.get("identity", {}).get("internal", {})
             if internal != {}:
@@ -285,16 +258,13 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
                     if not (user.internal and user_info.get("email").endswith("@redhat.com")):
                         logger.error("Cross account request permission denied. Requester is not internal user.")
                         return HttpResponseUnauthorizedRequest()
-                    user.username = f"{user.account}-{user.user_id}"
+                    user.username = f"{user.org_id}-{user.user_id}"
         except (KeyError, TypeError, JSONDecodeError):
             request_psk = request.META.get(RH_RBAC_PSK)
             account = request.META.get(RH_RBAC_ACCOUNT)
             org_id = request.META.get(RH_RBAC_ORG_ID)
             client_id = request.META.get(RH_RBAC_CLIENT_ID)
-            if settings.AUTHENTICATE_WITH_ORG_ID:
-                has_system_auth_headers = request_psk and org_id and client_id
-            else:
-                has_system_auth_headers = request_psk and account and client_id
+            has_system_auth_headers = request_psk and org_id and client_id
 
             if has_system_auth_headers and validate_psk(request_psk, client_id):
                 user.username = client_id
@@ -324,7 +294,6 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
         query_string = ""
         is_admin = False
         is_system = False
-        account = None
         org_id = None
         username = None
         req_id = getattr(request, "req_id", None)
@@ -336,13 +305,11 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
             if username:
                 # rbac.api.models.User has these fields
                 is_admin = request.user.admin
-                account = request.user.account
                 org_id = request.user.org_id
                 is_system = request.user.system
             else:
                 # django.contrib.auth.models.AnonymousUser does not
                 is_admin = is_system = False
-                account = None
                 org_id = None
 
         # Todo: add some info back to logs
@@ -377,7 +344,6 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
             "path": request.path + query_string,
             "status": response.status_code,
             "request_id": req_id,
-            "account": account,
             "org_id": org_id,
             "username": username,
             "is_admin": is_admin,

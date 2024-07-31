@@ -1,5 +1,3 @@
-version: '3.9'
-
 services:
   rbac-server:
       container_name: rbac_server
@@ -24,7 +22,6 @@ services:
         - DJANGO_READ_DOT_ENV_FILE=True
         - DEVELOPMENT=${DEVELOPMENT-False}
         - DJANGO_DEBUG=${DJANGO_DEBUG-True}
-        - AUTHENTICATE_WITH_ORG_ID=True
         - REDIS_HOST=${REDIS_HOST-rbac_redis}
         - PRINCIPAL_PROXY_SERVICE_PROTOCOL=${PRINCIPAL_PROXY_SERVICE_PROTOCOL-https}
         - PRINCIPAL_PROXY_SERVICE_PORT=${PRINCIPAL_PROXY_SERVICE_PORT-443}
@@ -36,14 +33,13 @@ services:
         - PRINCIPAL_PROXY_SERVICE_PATH=${PRINCIPAL_PROXY_SERVICE_PATH}
         - PRINCIPAL_PROXY_SERVICE_SOURCE_CERT=${PRINCIPAL_PROXY_SERVICE_SOURCE_CERT-False}
         - PRINCIPAL_PROXY_SERVICE_SSL_VERIFY=${PRINCIPAL_PROXY_SERVICE_SSL_VERIFY-False}
-        - RBAC_DESTRUCTIVE_ENABLED_UNTIL=${RBAC_DESTRUCTIVE_ENABLED_UNTIL}
+        - RBAC_DESTRUCTIVE_API_ENABLED_UNTIL=${RBAC_DESTRUCTIVE_API_ENABLED_UNTIL}
+        - RBAC_DESTRUCTIVE_SEEDING_ENABLED_UNTIL=${RBAC_DESTRUCTIVE_SEEDING_ENABLED_UNTIL}
       privileged: true
       ports:
           - 9080:8080
       volumes:
         - '.:/rbac/'
-      links:
-        - db
       depends_on:
         db:
           condition: service_healthy
@@ -65,8 +61,6 @@ services:
       working_dir: /opt/rbac/rbac
       entrypoint: ['celery', '--broker=redis://redis:6379/0', '-A', 'rbac.celery', 'worker', '--loglevel=INFO']
       privileged: true
-      links:
-          - redis
       depends_on:
         redis:
           condition: service_healthy
@@ -84,8 +78,6 @@ services:
       working_dir: /opt/rbac/rbac
       entrypoint: ['celery', '--broker=redis://redis:6379/0', '-A', 'rbac.celery', 'beat', '--loglevel=INFO']
       privileged: true
-      links:
-          - redis
       depends_on:
         redis:
           condition: service_healthy
@@ -113,10 +105,11 @@ services:
     - POSTGRES_DB=postgres
     - POSTGRES_USER=postgres
     - POSTGRES_PASSWORD=postgres
+    - PGDATA=/var/lib/postgresql/data/pgdata
     ports:
       - "15432:5432"
     volumes:
-      - ./pg_data:/var/lib/postgresql/data:z
+      - pg_data:/var/lib/postgresql/data
     healthcheck:
       test: [ "CMD-SHELL", "pg_isready -U postgres" ]
       interval: 5s
@@ -130,6 +123,9 @@ services:
     depends_on:
       rbac-server:
         condition: service_healthy
+
+volumes:
+  pg_data:
 
 networks:
   default:

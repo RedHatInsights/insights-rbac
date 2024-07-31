@@ -111,7 +111,7 @@ class PrincipalProxyTest(TestCase):
     def test_request_principals(self, mock_request):
         """Test the call to request principals."""
         proxy = PrincipalProxy()
-        result = proxy.request_principals(account="1234", limit=20, offset=10)
+        result = proxy.request_principals(org_id="1234", limit=20, offset=10)
         expected = {"status_code": status.HTTP_200_OK, "data": []}
         self.assertEqual(expected, result)
 
@@ -122,14 +122,14 @@ class PrincipalProxyTest(TestCase):
     def test_request_filtered_principals(self, mock_request):
         """Test the call to request filtered principals."""
         proxy = PrincipalProxy()
-        result = proxy.request_filtered_principals(principals=["test_user"], account="1234")
+        result = proxy.request_filtered_principals(principals=["test_user"], org_id="1234")
         expected = {"status_code": status.HTTP_200_OK, "data": []}
         self.assertEqual(expected, result)
 
     def test_request_filtered_principals_empty(self):
         """Test the call to request filtered principals."""
         proxy = PrincipalProxy()
-        result = proxy.request_filtered_principals(principals=[], account="1234")
+        result = proxy.request_filtered_principals(principals=[], org_id="1234")
         expected = {"status_code": status.HTTP_200_OK, "data": []}
         self.assertEqual(expected, result)
 

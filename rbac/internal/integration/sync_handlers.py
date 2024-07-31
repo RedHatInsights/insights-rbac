@@ -33,19 +33,16 @@ with open(os.path.join(settings.BASE_DIR, "internal", "integration", "message_te
     message_template = json.load(template)
 
 
-def build_sync_message(event_type, payload, account_id=None, org_id=None):
+def build_sync_message(event_type, payload):
     """Create message based on template."""
     message = message_template
-    if settings.AUTHENTICATE_WITH_ORG_ID:
-        message["org_id"] = org_id
     message["event_type"] = event_type
     message["timestamp"] = datetime.now().isoformat()
-    message["account_id"] = account_id
     message["events"][0]["payload"] = payload
     return message
 
 
-def send_sync_message(event_type, payload, account_id=None, org_id=None):
+def send_sync_message(event_type, payload):
     """Build and send external service sync message."""
-    sync_message = build_sync_message(event_type, payload, account_id, org_id)
+    sync_message = build_sync_message(event_type, payload)
     sync_producer.send_kafka_message(sync_topic, sync_message)

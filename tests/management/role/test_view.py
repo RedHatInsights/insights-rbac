@@ -20,7 +20,7 @@ from uuid import uuid4
 
 from django.conf import settings
 from django.test.utils import override_settings
-from django.urls import reverse
+from django.urls import reverse, resolve
 from rest_framework import status
 from rest_framework.test import APIClient
 
@@ -209,6 +209,24 @@ class RoleViewsetTests(IdentityRequest):
             response = self.create_role(role_name, in_access_data=access_data)
             self.assertEqual(response.status_code, status.HTTP_201_CREATED)
 
+            # test whether newly created role is added correctly within audit log database
+            al_url = "/api/v1/auditlogs/"
+            al_client = APIClient()
+            al_response = al_client.get(al_url, **self.headers)
+            retrieve_data = al_response.data.get("data")
+            al_list = retrieve_data
+            al_dict = al_list[0]
+
+            al_dict_principal_username = al_dict["principal_username"]
+            al_dict_description = al_dict["description"]
+            al_dict_resource = al_dict["resource_type"]
+            al_dict_action = al_dict["action"]
+
+            self.assertEqual(self.user_data["username"], al_dict_principal_username)
+            self.assertIsNotNone(al_dict_description)
+            self.assertEqual(al_dict_resource, "role")
+            self.assertEqual(al_dict_action, "create")
+
             # test that we can retrieve the role
             url = reverse("role-detail", kwargs={"uuid": response.data.get("uuid")})
             client = APIClient()
@@ -216,10 +234,7 @@ class RoleViewsetTests(IdentityRequest):
             uuid = response.data.get("uuid")
             role = Role.objects.get(uuid=uuid)
 
-            if settings.AUTHENTICATE_WITH_ORG_ID:
-                org_id = self.customer_data["org_id"]
-            else:
-                org_id = None
+            org_id = self.customer_data["org_id"]
 
             self.assertIsNotNone(uuid)
             self.assertIsNotNone(response.data.get("name"))
@@ -240,7 +255,6 @@ class RoleViewsetTests(IdentityRequest):
                     "application": "rbac",
                     "event_type": "custom-role-created",
                     "timestamp": ANY,
-                    "account_id": self.customer_data["account_id"],
                     "events": [
                         {
                             "metadata": {},
@@ -1160,10 +1174,7 @@ class RoleViewsetTests(IdentityRequest):
             client = APIClient()
             response = client.put(url, test_data, format="json", **self.headers)
 
-            if settings.AUTHENTICATE_WITH_ORG_ID:
-                org_id = self.customer_data["org_id"]
-            else:
-                org_id = None
+            org_id = self.customer_data["org_id"]
 
             self.assertEqual(response.status_code, status.HTTP_200_OK)
 
@@ -1177,7 +1188,6 @@ class RoleViewsetTests(IdentityRequest):
                     "application": "rbac",
                     "event_type": "custom-role-updated",
                     "timestamp": ANY,
-                    "account_id": self.customer_data["account_id"],
                     "events": [
                         {
                             "metadata": {},
@@ -1314,10 +1324,7 @@ class RoleViewsetTests(IdentityRequest):
             client = APIClient()
             response = client.delete(url, **self.headers)
 
-            if settings.AUTHENTICATE_WITH_ORG_ID:
-                org_id = self.customer_data["org_id"]
-            else:
-                org_id = None
+            org_id = self.customer_data["org_id"]
 
             self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
 
@@ -1328,7 +1335,6 @@ class RoleViewsetTests(IdentityRequest):
                     "application": "rbac",
                     "event_type": "custom-role-deleted",
                     "timestamp": ANY,
-                    "account_id": self.customer_data["account_id"],
                     "events": [
                         {
                             "metadata": {},

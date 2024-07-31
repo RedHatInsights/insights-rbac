@@ -152,6 +152,22 @@ Change the 'x-rh-rbac-client-id', 'x-rh-rbac-psk' and 'x-rh-rbac-account' header
 
 You can also send a request *with* the identity header explicitly in the curl command along with the service-to-service headers to verify that the identity header will take precedence.
 
+Generating v2 openAPI specification
+^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+
+
+OpenAPI v2 specification is located in `docs/source/specs/v2/openapi.v2.yaml`.
+This OpenAPI v2 specification is generated from TypeSpec file which is located in `docs/source/specs/typespec/main.tsp`
+
+Command to generate OpenAPI v2 specification from TypeSpec file:
+
+NOTE: TypeSpec is required, you can install it here: https://typespec.io/docs
+Please install TypeSpec in `docs/source/specs/typespec/`
+
+  $ make generate_v2_spec
+
+
 Testing and Linting
 -------------------
 
