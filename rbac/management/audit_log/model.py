@@ -69,21 +69,13 @@ class AuditLog(TenantAwareModel):
         """Find related information (eg, name, id, etc...) for each resource item."""
         verify_tenant = self.get_tenant_id(request)
         if r_type == AuditLog.ROLE:
-            if request.data != {}:
-                role_object = get_object_or_404(Role, name=request.data["name"], tenant=verify_tenant)
-            else:
-                role_object = kwargs["kwargs"]
-            # retrieve role id and name
+            role_object = get_object_or_404(Role, name=request.data["name"], tenant=verify_tenant)
             role_object_id = role_object.id
             role_object_name = "role: " + role_object.name
             return role_object_id, role_object_name
 
         elif r_type == AuditLog.GROUP:
-            if request.data != {}:
-                group_object = get_object_or_404(Group, name=request.data["name"], tenant=verify_tenant)
-            else:
-                group_uuid = kwargs["kwargs"]["uuid"]
-                group_object = get_object_or_404(Group, uuid=group_uuid)
+            group_object = get_object_or_404(Group, name=request.data["name"], tenant=verify_tenant)
             group_object_id = group_object.id
             group_object_name = "group: " + group_object.name
             return group_object_id, group_object_name
@@ -92,15 +84,29 @@ class AuditLog(TenantAwareModel):
             # TODO: update for permission related items
             return None
 
-    def log_create(self, request, resource, **kwargs):
+    def log_create(self, request, resource):
         """Audit Log when a role or a group is created."""
         self.principal_username = request.user.username
 
         self.resource_type = resource
 
-        self.resource_id, resource_name = self.get_resource_item(resource, request, kwargs=kwargs)
+        self.resource_id, resource_name = self.get_resource_item(resource, request)
         self.description = "Created " + resource_name
 
         self.action = AuditLog.CREATE
+        self.tenant_id = self.get_tenant_id(request)
+        super(AuditLog, self).save()
+
+    def log_delete(self, request, resource, object):
+        """Audit Log when a role or a group is deleted."""
+        self.principal_username = request.user.username
+
+        self.resource_type = resource
+        self.resource_id = object.id
+        resource_name = self.resource_type + ": " + object.name
+
+        self.description = "Deleted " + resource_name
+
+        self.action = AuditLog.DELETE
         self.tenant_id = self.get_tenant_id(request)
         super(AuditLog, self).save()

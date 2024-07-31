@@ -214,7 +214,7 @@ class RoleViewSet(
 
         if status.is_success(create_role.status_code):
             auditlog = AuditLog()
-            auditlog.log_create(request, AuditLog.ROLE, kwargs=kwargs)
+            auditlog.log_create(request, AuditLog.ROLE)
 
         return create_role
 
@@ -332,6 +332,9 @@ class RoleViewSet(
             response = super().destroy(request=request, args=args, kwargs=kwargs)
         if response.status_code == status.HTTP_204_NO_CONTENT:
             role_obj_change_notification_handler(role, "deleted", request.user)
+
+            auditlog = AuditLog()
+            auditlog.log_delete(request, AuditLog.ROLE, role)
         return response
 
     def partial_update(self, request, *args, **kwargs):
