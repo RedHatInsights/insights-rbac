@@ -140,7 +140,7 @@ class GroupViewsetTests(IdentityRequest):
         self.service_accounts = []
         for uuid in self.sa_client_ids:
             principal = Principal(
-                username="service_account-" + uuid,
+                username="service-account-" + uuid,
                 tenant=self.tenant,
                 type="service-account",
                 service_account_id=uuid,
