@@ -683,7 +683,10 @@ class ITServiceTests(IdentityRequest):
 
     @mock.patch("management.principal.it_service.ITService.request_service_accounts")
     def test_is_service_account_valid_multiple_results_from_it(self, request_service_accounts: mock.Mock):
-        """Test that the function under retunrs False when IT returns multiple service accounts for a single client ID."""
+        """
+        Test that the function under test returns False
+        when IT returns multiple service accounts for a single client ID.
+        """
         request_service_accounts.return_value = [{}, {}]
         user = User()
         user.bearer_token = "mocked-bt"
@@ -1221,7 +1224,9 @@ class ITServiceTests(IdentityRequest):
             )
 
     def test_generate_service_accounts_report_in_group_mixed_results(self):
-        """Test that the function under test is able to correctly flag the sevice accounts when there are mixed results"""
+        """
+        Test that the function under test is able to correctly flag the service accounts when there are mixed results
+        """
         # Create a group and associate principals to it.
         group = Group(name="it-service-group", platform_default=False, system=False, tenant=self.tenant)
         group.save()
