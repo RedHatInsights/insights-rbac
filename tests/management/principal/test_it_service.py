@@ -935,6 +935,36 @@ class ITServiceTests(IdentityRequest):
             created_database_sa_principals=sa_principals_should_be_in_group, function_result=result
         )
 
+    def test_get_service_accounts_group_username_only(self):
+        """
+        Test the function returns the list of service account usernames with query
+        parameter username_only='true'.
+        """
+        group_a, _ = self._create_two_rbac_groups_with_service_accounts()
+        expected_usernames = [sa.username for sa in group_a.principals.all()]
+
+        user = User()
+        user.account = self.tenant.account_id
+        user.org_id = self.tenant.org_id
+
+        # Call the function under test.
+        options = {"username_only": "true"}
+        result = self.it_service.get_service_accounts_group(group=group_a, user=user, options=options)
+
+        self.assertEqual(
+            2,
+            len(result),
+            "only two service accounts were added to the group, and a different number of them is present",
+        )
+
+        for item in result:
+            self.assertIn(
+                item["username"],
+                expected_usernames,
+                f'the service account with username \'{item["username"]}\' is not present in the list of expected '
+                f"usernames '{expected_usernames}'",
+            )
+
     @mock.patch("management.principal.it_service.ITService.request_service_accounts")
     def test_get_service_accounts_group_filter_by_username(self, request_service_accounts: mock.Mock):
         """Test the function under test returns the filtered service accounts by username from the given group"""
