@@ -3065,7 +3065,7 @@ class GroupViewNonAdminTests(IdentityRequest):
 
         # Generate the URL for removing the principals from the regular group.
         group_principals_url = reverse("group-principals", kwargs={"uuid": regular_group.uuid})
-        group_principals_url = f"{group_principals_url}?service-accounts={service_account_principal_to_delete.username}&usernames={user_principal_to_remove.username}"
+        group_principals_url = f"{group_principals_url}?service-accounts={service_account_principal_to_delete.service_account_id}&usernames={user_principal_to_remove.username}"
         api_client = APIClient()
 
         # Make sure that before calling the endpoint the group has the two principals.
@@ -3355,7 +3355,7 @@ class GroupViewNonAdminTests(IdentityRequest):
 
         # Generate the URL for removing the principals from the regular group.
         group_principals_url = reverse("group-principals", kwargs={"uuid": regular_group.uuid})
-        group_principals_url = f"{group_principals_url}?service-accounts={service_account_principal_to_delete.username}&usernames={user_principal_to_remove.username}"
+        group_principals_url = f"{group_principals_url}?service-accounts={service_account_principal_to_delete.service_account_id}&usernames={user_principal_to_remove.username}"
         api_client = APIClient()
 
         # Make sure that before calling the endpoint the group has the two principals.
@@ -4090,7 +4090,7 @@ class GroupViewNonAdminTests(IdentityRequest):
 
         url = (
             reverse("group-principals", kwargs={"uuid": test_group.uuid})
-            + f"?service-accounts={sa_principal.username}"
+            + f"?service-accounts={sa_principal.service_account_id}"
         )
         client = APIClient()
 
@@ -4160,7 +4160,7 @@ class GroupViewNonAdminTests(IdentityRequest):
 
         url = (
             reverse("group-principals", kwargs={"uuid": test_group.uuid})
-            + f"?service-accounts={sa_principal.username}"
+            + f"?service-accounts={sa_principal.service_account_id}"
         )
         client = APIClient()
 
@@ -4252,7 +4252,7 @@ class GroupViewNonAdminTests(IdentityRequest):
 
         url = (
             reverse("group-principals", kwargs={"uuid": test_group.uuid})
-            + f"?service-accounts={sa_principal.username}"
+            + f"?service-accounts={sa_principal.service_account_id}"
         )
         client = APIClient()
 
