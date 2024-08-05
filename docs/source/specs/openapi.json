@@ -3305,7 +3305,7 @@
       },
       "ServiceAccount": {
         "required": [
-          "clientID",
+          "clientId",
           "username",
           "type"
         ],
@@ -3320,7 +3320,7 @@
               "service-account"
             ]
           },
-          "clientID": {
+          "clientId": {
             "type": "string",
             "example": "fe593ba0-9c62-013c-1dc2-6aa2427b506a"
           },
@@ -3345,7 +3345,7 @@
       "ServiceAccountIn": {
         "required": [
           "type",
-          "clientID"
+          "clientId"
         ],
         "properties": {
           "type": {
@@ -3354,7 +3354,7 @@
               "service-account"
             ]
           },
-          "clientID": {
+          "clientId": {
             "type": "string",
             "example": "fe593ba0-9c62-013c-1dc2-6aa2427b506a"
           }
