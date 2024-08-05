@@ -24,7 +24,7 @@ from management.principal.cleaner import (
     clean_principals_via_umb,
     clean_tenants_principals,
 )
-from migration_tool.migrate import migrate_roles
+from migration_tool.migrate import migrate_data
 
 
 @shared_task
@@ -70,6 +70,6 @@ def run_redis_cache_health():
 
 
 @shared_task
-def migrate_roles_in_worker(kwargs):
-    """Celery task to migrate roles from V1 to V2 spiceDB schema."""
-    migrate_roles(**kwargs)
+def migrate_data_in_worker(kwargs):
+    """Celery task to migrate data from V1 to V2 spiceDB schema."""
+    migrate_data(**kwargs)
