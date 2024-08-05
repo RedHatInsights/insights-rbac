@@ -74,6 +74,7 @@ SERVICE_ACCOUNTS_KEY = "service-accounts"
 ROLES_KEY = "roles"
 EXCLUDE_KEY = "exclude"
 ORDERING_PARAM = "order_by"
+NAME_KEY = "name"
 PRINCIPAL_TYPE_KEY = "principal_type"
 PRINCIPAL_USERNAME_KEY = "principal_username"
 VALID_ROLE_ORDER_FIELDS = list(RoleViewSet.ordering_fields)
@@ -1066,10 +1067,8 @@ class GroupViewSet(
         roles = group.roles_with_access() if exclude == "false" else self.obtain_roles_with_exclusion(request, group)
         filtered_roles = self.filtered_roles(roles, request)
         annotated_roles = filtered_roles.annotate(policyCount=Count("policies", distinct=True))
-        # add default order by name
-        order_field = "name"
-        if ORDERING_PARAM in request.query_params:
-            order_field = request.query_params.get(ORDERING_PARAM)
+
+        order_field = request.query_params.get(ORDERING_PARAM, NAME_KEY)
         ordered_roles = self.order_queryset(annotated_roles, VALID_ROLE_ORDER_FIELDS, order_field)
         return [RoleMinimumSerializer(role).data for role in ordered_roles]
 
