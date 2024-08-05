@@ -166,7 +166,7 @@ class ITServiceTests(IdentityRequest):
         # Make it easier to find the service accounts by their client ID.
         result_sas_by_client_id: dict[str[dict, str]] = {}
         for sa in function_result:
-            result_sas_by_client_id[sa["clientID"]] = sa
+            result_sas_by_client_id[sa["clientId"]] = sa
 
         # Assert that the only service accounts in the result are the ones from the tenant associated to the user
         # that was passed to the function under test.
@@ -180,7 +180,7 @@ class ITServiceTests(IdentityRequest):
 
             self.assertEqual(
                 sa_principal.service_account_id,
-                sa["clientID"],
+                sa["clientId"],
                 "the mocked service account's client ID should be the service account principal's ID",
             )
 
@@ -221,9 +221,9 @@ class ITServiceTests(IdentityRequest):
         # Rearrange RBAC's service accounts by client ID for an easier search later on.
         rbac_service_accounts_by_cid: dict[str, dict[str, str]] = {}
         for rbac_sa in rbac_service_accounts:
-            rbac_sa_cid = rbac_sa.get("clientID")
+            rbac_sa_cid = rbac_sa.get("clientId")
             if not rbac_sa_cid:
-                self.fail(f'the transformed service account does not have the "clientID" property: {rbac_sa}')
+                self.fail(f'the transformed service account does not have the "clientId" property: {rbac_sa}')
 
             rbac_service_accounts_by_cid[rbac_sa_cid] = rbac_sa
 
@@ -241,9 +241,9 @@ class ITServiceTests(IdentityRequest):
                 )
 
             # Assert that the client IDs are the same.
-            rbac_sa_client_id = rbac_sa.get("clientID")
+            rbac_sa_client_id = rbac_sa.get("clientId")
             if not rbac_sa_client_id:
-                self.fail(f'the transformed RBAC service account does not contain the "clientID" property: {rbac_sa}')
+                self.fail(f'the transformed RBAC service account does not contain the "clientId" property: {rbac_sa}')
 
             self.assertEqual(rbac_sa_client_id, client_id, "the client IDs for the RBAC and IT models do not match")
 
@@ -593,7 +593,7 @@ class ITServiceTests(IdentityRequest):
         user.bearer_token = "mocked-bt"
 
         expected_client_id = str(uuid.uuid4())
-        request_service_accounts.return_value = [{"clientID": expected_client_id}]
+        request_service_accounts.return_value = [{"clientId": expected_client_id}]
 
         self.assertEqual(
             True,
@@ -602,9 +602,9 @@ class ITServiceTests(IdentityRequest):
         )
 
         request_service_accounts.return_value = [
-            {"clientID": str(uuid.uuid4())},
-            {"clientID": str(uuid.uuid4())},
-            {"clientID": expected_client_id},
+            {"clientId": str(uuid.uuid4())},
+            {"clientId": str(uuid.uuid4())},
+            {"clientId": expected_client_id},
         ]
 
         self.assertEqual(
@@ -629,9 +629,9 @@ class ITServiceTests(IdentityRequest):
         )
 
         request_service_accounts.return_value = [
-            {"clientID": str(uuid.uuid4())},
-            {"clientID": str(uuid.uuid4())},
-            {"clientID": str(uuid.uuid4())},
+            {"clientId": str(uuid.uuid4())},
+            {"clientId": str(uuid.uuid4())},
+            {"clientId": str(uuid.uuid4())},
         ]
 
         self.assertEqual(
@@ -657,7 +657,7 @@ class ITServiceTests(IdentityRequest):
     def test_is_service_account_valid_one_matching_result_from_it(self, request_service_accounts: mock.Mock):
         """Test that the function under test positively validates the given service account if IT responds with that service account."""
         client_id = "client-id-123"
-        request_service_accounts.return_value = [{"clientID": client_id}]
+        request_service_accounts.return_value = [{"clientId": client_id}]
         user = User()
         user.bearer_token = "mocked-bt"
 
@@ -671,7 +671,7 @@ class ITServiceTests(IdentityRequest):
     def test_is_service_account_valid_not_matching_result_from_it(self, request_service_accounts: mock.Mock):
         """Test that the function under test does not validate the given service account if IT does not return a response with a proper service account."""
         client_id = "client-id-123"
-        request_service_accounts.return_value = [{"clientID": "different-client-id"}]
+        request_service_accounts.return_value = [{"clientId": "different-client-id"}]
         user = User()
         user.bearer_token = "mocked-bt"
 
@@ -1426,11 +1426,11 @@ class ITServiceTests(IdentityRequest):
         result = self.it_service._transform_incoming_payload(service_account_from_it_service=it_service_account)
 
         # Assert that the transformation was correct.
-        result_client_id = result["clientID"]
+        result_client_id = result["clientId"]
         if not result_client_id:
-            self.fail('the "clientID" field is not present in the resulting model')
+            self.fail('the "clientId" field is not present in the resulting model')
 
-        self.assertEqual(client_id, result_client_id, 'the "clientID" field was not correctly transformed')
+        self.assertEqual(client_id, result_client_id, 'the "clientId" field was not correctly transformed')
 
         result_name = result["name"]
         if not result_name:
@@ -1474,9 +1474,9 @@ class ITServiceTests(IdentityRequest):
         expected_first_username = f"{sa_client_id}-username"
         expected_second_username = f"{sa_two_client_id}-username"
         it_service_accounts = [
-            {"clientID": sa_client_id, "username": expected_first_username, "made_up_key": "made_up_value"},
-            {"clientID": sa_two_client_id, "username": expected_second_username, "made_up_key": "made_up_value"},
-            {"clientID": str(uuid.uuid4()), "username": "should-not-be-picked", "made_up_key": "made_up_value"},
+            {"clientId": sa_client_id, "username": expected_first_username, "made_up_key": "made_up_value"},
+            {"clientId": sa_two_client_id, "username": expected_second_username, "made_up_key": "made_up_value"},
+            {"clientId": str(uuid.uuid4()), "username": "should-not-be-picked", "made_up_key": "made_up_value"},
         ]
 
         # Call the function under test.

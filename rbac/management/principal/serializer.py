@@ -39,14 +39,14 @@ class PrincipalInputSerializer(serializers.Serializer):
     """Serializer for the Principal model."""
 
     username = serializers.CharField(required=False, max_length=150)
-    clientID = serializers.UUIDField(required=False, source="service_account_id")
+    clientId = serializers.UUIDField(required=False, source="service_account_id")
     type = serializers.CharField(required=False)
 
     def validate(self, data: OrderedDict):
         """
         Assert that the correct fields are specified.
 
-        Assert that when the specified type is 'service-account', the corresponding 'clientID' field
+        Assert that when the specified type is 'service-account', the corresponding 'clientId' field
         has been specified.
         """
         # If the "type" has not been specified, we assume it is a user principal.
@@ -57,7 +57,7 @@ class PrincipalInputSerializer(serializers.Serializer):
             return data
         elif data["type"] == "service-account":
             if "service_account_id" not in data:
-                raise ValidationError(code="missing", message="the clientID field is required for service accounts")
+                raise ValidationError(code="missing", message="the clientId field is required for service accounts")
 
             return data
         else:
@@ -68,13 +68,13 @@ class PrincipalInputSerializer(serializers.Serializer):
     class Meta:
         """Metadata for the serializer."""
 
-        fields = ("username", "clientID", "type")
+        fields = ("username", "clientId", "type")
 
 
 class ServiceAccountSerializer(serializers.Serializer):
     """Serializer for Service Account."""
 
-    clientID = serializers.UUIDField()
+    clientId = serializers.UUIDField()
     name = serializers.CharField()
     description = serializers.CharField(allow_null=True, required=False)
     owner = serializers.CharField()

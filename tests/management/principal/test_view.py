@@ -816,7 +816,7 @@ class PrincipalViewsetTests(IdentityRequest):
 
         mock_request.return_value = [
             {
-                "clientID": sa_client_id,
+                "clientId": sa_client_id,
                 "name": "service_account_name",
                 "description": "Service Account description",
                 "owner": "jsmith",
@@ -838,9 +838,9 @@ class PrincipalViewsetTests(IdentityRequest):
         sa = response.data.get("data")[0]
         self.assertCountEqual(
             list(sa.keys()),
-            ["clientID", "name", "description", "owner", "time_created", "type", "username"],
+            ["clientId", "name", "description", "owner", "time_created", "type", "username"],
         )
-        self.assertEqual(sa.get("clientID"), sa_client_id)
+        self.assertEqual(sa.get("clientId"), sa_client_id)
         self.assertEqual(sa.get("name"), "service_account_name")
         self.assertEqual(sa.get("description"), "Service Account description")
         self.assertEqual(sa.get("owner"), "jsmith")
@@ -855,7 +855,7 @@ class PrincipalViewsetTests(IdentityRequest):
         sa_client_id = "026f5290-a3d3-013c-b93f-6aa2427b506c"
         mock_request.return_value = [
             {
-                "clientID": sa_client_id,
+                "clientId": sa_client_id,
                 "name": "service_account_name",
                 "description": "Service Account description",
                 "owner": "jsmith",
@@ -897,7 +897,7 @@ class PrincipalViewsetTests(IdentityRequest):
         for uuid in sa_client_ids:
             mocked_values.append(
                 {
-                    "clientID": uuid,
+                    "clientId": uuid,
                     "name": f"service_account_name_{uuid.split('-')[0]}",
                     "description": f"Service Account description {uuid.split('-')[0]}",
                     "owner": "jsmith",
