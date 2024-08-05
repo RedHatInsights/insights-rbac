@@ -22,7 +22,7 @@ from django.test import TestCase
 
 from api.models import Tenant
 from management.models import *
-from migration_tool.migrate import migrate_roles
+from migration_tool.migrate import migrate_data
 
 
 class MigrateTests(TestCase):
@@ -80,8 +80,8 @@ class MigrateTests(TestCase):
     def test_migration_of_roles(self, logger_mock):
         """Test that we get the correct access for a principal."""
         kwargs = {"exclude_apps": ["app1"], "orgs": ["1234567"]}
-        migrate_roles(**kwargs)
+        migrate_data(**kwargs)
         self.assertEqual(
             len(logger_mock.info.call_args_list),
-            20,
+            26,
         )

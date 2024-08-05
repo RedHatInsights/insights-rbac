@@ -1,4 +1,5 @@
 """Utilities for working with the relation API server."""
+
 import json
 import logging
 
@@ -39,7 +40,7 @@ class GRPCError:
 
 def validate_and_create_obj_ref(obj_name, obj_id):
     """Validate and create a resource."""
-    object_type = common_pb2.ObjectType(name=obj_name)
+    object_type = common_pb2.ObjectType(name=obj_name, namespace="rbac")
     try:
         validate_all(object_type)
     except ValidationFailed as err:

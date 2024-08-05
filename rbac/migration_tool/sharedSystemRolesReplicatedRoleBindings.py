@@ -21,6 +21,7 @@ import uuid
 from typing import Callable, FrozenSet, Type
 
 from management.role.model import Role
+from management.workspace.model import Workspace
 from migration_tool.ingest import add_element
 from migration_tool.models import (
     V1group,
@@ -94,7 +95,7 @@ class SystemRole:
 skipped_apps = {"cost-management", "playbook-dispatcher", "approval", "catalog"}
 
 
-def role_v1_to_v2_mapping(v1_role: V1role) -> FrozenSet[V2rolebinding]:
+def role_v1_to_v2_mapping(v1_role: V1role, root_workspace: str, default_workspace: str) -> FrozenSet[V2rolebinding]:
     """Convert a V1 role to a set of V2 role bindings."""
     perm_groupings: Permissiongroupings = {}
     # Group V2 permissions by target
@@ -109,12 +110,10 @@ def role_v1_to_v2_mapping(v1_role: V1role) -> FrozenSet[V2rolebinding]:
                     if v1_perm.app == "inventory"
                     else v1_attributefilter_resource_type_to_v2_resource_type(resource_def.resource_type)
                 )
-                # will assume workspaces exist already
-                # TODO: create ungrouped workspace and replace it
                 for resource_id in split_resourcedef_literal(resource_def):
                     if resource_type == "workspace":
                         if resource_id is None:
-                            resource_id = "org_migration_root/ungrouped"
+                            resource_id = default_workspace
                     add_element(
                         perm_groupings,
                         V2boundresource(resource_type, resource_id),
@@ -123,7 +122,7 @@ def role_v1_to_v2_mapping(v1_role: V1role) -> FrozenSet[V2rolebinding]:
         else:
             add_element(
                 perm_groupings,
-                V2boundresource("workspace", "org_migration_root"),
+                V2boundresource("workspace", root_workspace),
                 v2_perm,
             )
     # Project permission sets to system roles
@@ -230,9 +229,11 @@ def split_resourcedef_literal(resourceDef: V1resourcedef):
         return [resourceDef.resource_id]
 
 
-def shared_system_role_replicated_role_bindings_v1_to_v2_mapping(v1_role: V1role) -> FrozenSet[V2rolebinding]:
+def shared_system_role_replicated_role_bindings_v1_to_v2_mapping(
+    v1_role: V1role, root_workspace: Workspace, default_workspace: Workspace
+) -> FrozenSet[V2rolebinding]:
     """Convert a V1 role to a set of V2 role bindings."""
-    return role_v1_to_v2_mapping(v1_role)
+    return role_v1_to_v2_mapping(v1_role, root_workspace, default_workspace)
 
 
 def v1groups_to_v2groups(v1groups: FrozenSet[V1group]):
