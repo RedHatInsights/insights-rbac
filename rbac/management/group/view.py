@@ -1089,7 +1089,7 @@ class GroupViewSet(
         request_id = getattr(self.request, "req_id", None)
         logger.info(
             f"[Request_id: {request_id}] remove_service_accounts({service_accounts}),"
-            "Group:{group.name},OrgId:{org_id},Acct:{account_name}"
+            f"Group:{group.name},OrgId:{org_id},Acct:{user.account}"
         )
 
         # Fetch the tenant from the database.
