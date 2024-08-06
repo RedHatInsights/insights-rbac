@@ -2720,7 +2720,7 @@ class GroupViewNonAdminTests(IdentityRequest):
             "permission."
         )
         self.invalid_value_for_scope_query_param = (
-            "scope query parameter value foo is invalid. [org_id, principal] are valid inputs."
+            "scope query parameter value 'foo' is invalid. ['org_id', 'principal'] are valid inputs."
         )
         self.user_access_admin_role_err_message = (
             "Non org admin users are not allowed to add RBAC role with higher than 'read' permission into groups."
@@ -4771,7 +4771,7 @@ class GroupViewNonAdminTests(IdentityRequest):
 
         # Adding the 'scope' param doesn't affect the response because the 'scope' param is ignored
         # when query contains the 'username' param
-        for scope in ("org_id", "principal", "foo"):
+        for scope in ("org_id", "principal"):
             url_with_scope = url + f"&scope={scope}"
             response = client.get(url_with_scope, format="json", **self.headers_user_based_principal)
             self.assertEqual(response.status_code, status.HTTP_200_OK)

@@ -20,12 +20,12 @@ from django.utils.translation import gettext as _
 from management.group.model import Group
 from management.notifications.notification_handlers import role_obj_change_notification_handler
 from management.serializer_override_mixin import SerializerCreateOverrideMixin
-from management.utils import filter_queryset_by_tenant, get_principal
+from management.utils import filter_queryset_by_tenant, get_principal, validate_and_get_key
 from rest_framework import serializers
 
 from api.models import Tenant
 from .model import Access, Permission, ResourceDefinition, Role
-from ..querysets import PRINCIPAL_SCOPE
+from ..querysets import ORG_ID_SCOPE, PRINCIPAL_SCOPE, SCOPE_KEY, VALID_SCOPES
 
 ALLOWED_OPERATIONS = ["in", "equal"]
 FILTER_FIELDS = {"key", "value", "operation"}
@@ -329,7 +329,7 @@ def obtain_applications(obj):
 
 def obtain_groups_in(obj, request):
     """Shared function to get the groups the roles is in."""
-    scope_param = request.query_params.get("scope")
+    scope_param = validate_and_get_key(request.query_params, SCOPE_KEY, VALID_SCOPES, ORG_ID_SCOPE)
     username_param = request.query_params.get("username")
     policy_ids = list(obj.policies.values_list("id", flat=True))
 
