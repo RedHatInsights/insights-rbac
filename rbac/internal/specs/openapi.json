@@ -490,6 +490,15 @@
                 "modified"
               ]
             }
+          },
+          {
+            "name": "system",
+            "in": "query",
+            "required": false,
+            "description": "Parameter for filtering resource by system flag.",
+            "schema": {
+              "type": "boolean"
+            }
           }
         ],
         "responses": {
