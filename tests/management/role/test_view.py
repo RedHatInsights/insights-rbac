@@ -1327,6 +1327,23 @@ class RoleViewsetTests(IdentityRequest):
             org_id = self.customer_data["org_id"]
 
             self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+            # test whether correctly added to audit logs
+            al_url = "/api/v1/auditlogs/"
+            al_client = APIClient()
+            al_response = al_client.get(al_url, **self.headers)
+            retrieve_data = al_response.data.get("data")
+            al_list = retrieve_data
+            al_dict = al_list[1]
+
+            al_dict_principal_username = al_dict["principal_username"]
+            al_dict_description = al_dict["description"]
+            al_dict_resource = al_dict["resource_type"]
+            al_dict_action = al_dict["action"]
+
+            self.assertEqual(self.user_data["username"], al_dict_principal_username)
+            self.assertIsNotNone(al_dict_description)
+            self.assertEqual(al_dict_resource, "role")
+            self.assertEqual(al_dict_action, "delete")
 
             send_kafka_message.assert_called_with(
                 settings.NOTIFICATIONS_TOPIC,

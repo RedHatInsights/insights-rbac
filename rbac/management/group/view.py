@@ -256,7 +256,7 @@ class GroupViewSet(
 
         if status.is_success(create_group.status_code):
             auditlog = AuditLog()
-            auditlog.log_create(request, AuditLog.GROUP, kwargs=kwargs)
+            auditlog.log_create(request, AuditLog.GROUP)
 
         return create_group
 
@@ -368,6 +368,9 @@ class GroupViewSet(
         response = super().destroy(request=request, args=args, kwargs=kwargs)
         if response.status_code == status.HTTP_204_NO_CONTENT:
             group_obj_change_notification_handler(request.user, group, "deleted")
+
+            auditlog = AuditLog()
+            auditlog.log_delete(request, AuditLog.GROUP, group)
         return response
 
     def update(self, request, *args, **kwargs):
