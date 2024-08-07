@@ -74,6 +74,7 @@ SERVICE_ACCOUNTS_KEY = "service-accounts"
 ROLES_KEY = "roles"
 EXCLUDE_KEY = "exclude"
 ORDERING_PARAM = "order_by"
+NAME_KEY = "name"
 PRINCIPAL_TYPE_KEY = "principal_type"
 PRINCIPAL_USERNAME_KEY = "principal_username"
 VALID_ROLE_ORDER_FIELDS = list(RoleViewSet.ordering_fields)
@@ -81,7 +82,7 @@ ROLE_DISCRIMINATOR_KEY = "role_discriminator"
 SERVICE_ACCOUNT_CLIENT_IDS_KEY = "service_account_client_ids"
 SERVICE_ACCOUNT_DESCRIPTION_KEY = "service_account_description"
 SERVICE_ACCOUNT_NAME_KEY = "service_account_name"
-SERVICE_ACCOUNT_USERNAME_FORMAT = "service-account-{clientID}"
+SERVICE_ACCOUNT_USERNAME_FORMAT = "service-account-{clientId}"
 TYPE_SERVICE_ACCOUNT = "service-account"
 VALID_EXCLUDE_VALUES = ["true", "false"]
 VALID_GROUP_ROLE_FILTERS = ["role_name", "role_description", "role_display_name", "role_system"]
@@ -444,14 +445,14 @@ class GroupViewSet(
             # Organize them by their client ID.
             it_service_accounts_by_client_ids: dict[str, dict] = {}
             for it_sa in it_service_accounts:
-                it_service_accounts_by_client_ids[it_sa["clientID"]] = it_sa
+                it_service_accounts_by_client_ids[it_sa["clientId"]] = it_sa
 
             # Make sure that the service accounts the user specified are visible by them.
             it_sa_client_ids = it_service_accounts_by_client_ids.keys()
             invalid_service_accounts: set = set()
             for specified_sa in service_accounts:
-                if specified_sa["clientID"] not in it_sa_client_ids:
-                    invalid_service_accounts.add(specified_sa["clientID"])
+                if specified_sa["clientId"] not in it_sa_client_ids:
+                    invalid_service_accounts.add(specified_sa["clientId"])
 
             # If we have any invalid service accounts, notify the user.
             if len(invalid_service_accounts) > 0:
@@ -463,15 +464,15 @@ class GroupViewSet(
         # Fetch the service account from our database to add it to the group. If it doesn't exist, we create
         # it.
         for specified_sa in service_accounts:
-            client_id = specified_sa["clientID"]
+            client_id = specified_sa["clientId"]
             try:
                 principal = Principal.objects.get(
-                    username__iexact=SERVICE_ACCOUNT_USERNAME_FORMAT.format(clientID=client_id),
+                    username__iexact=SERVICE_ACCOUNT_USERNAME_FORMAT.format(clientId=client_id),
                     tenant=tenant,
                 )
             except Principal.DoesNotExist:
                 principal = Principal.objects.create(
-                    username=SERVICE_ACCOUNT_USERNAME_FORMAT.format(clientID=client_id),
+                    username=SERVICE_ACCOUNT_USERNAME_FORMAT.format(clientId=client_id),
                     service_account_id=client_id,
                     type=TYPE_SERVICE_ACCOUNT,
                     tenant=tenant,
@@ -483,7 +484,7 @@ class GroupViewSet(
             group_principal_change_notification_handler(
                 self.request.user,
                 group,
-                SERVICE_ACCOUNT_USERNAME_FORMAT.format(clientID=client_id),
+                SERVICE_ACCOUNT_USERNAME_FORMAT.format(clientId=client_id),
                 "added",
             )
 
@@ -1069,10 +1070,8 @@ class GroupViewSet(
         roles = group.roles_with_access() if exclude == "false" else self.obtain_roles_with_exclusion(request, group)
         filtered_roles = self.filtered_roles(roles, request)
         annotated_roles = filtered_roles.annotate(policyCount=Count("policies", distinct=True))
-        # add default order by name
-        order_field = "name"
-        if ORDERING_PARAM in request.query_params:
-            order_field = request.query_params.get(ORDERING_PARAM)
+
+        order_field = request.query_params.get(ORDERING_PARAM, NAME_KEY)
         ordered_roles = self.order_queryset(annotated_roles, VALID_ROLE_ORDER_FIELDS, order_field)
         return [RoleMinimumSerializer(role).data for role in ordered_roles]
 
@@ -1093,7 +1092,7 @@ class GroupViewSet(
         request_id = getattr(self.request, "req_id", None)
         logger.info(
             f"[Request_id: {request_id}] remove_service_accounts({service_accounts}),"
-            "Group:{group.name},OrgId:{org_id},Acct:{account_name}"
+            f"Group:{group.name},OrgId:{org_id},Acct:{user.account}"
         )
 
         # Fetch the tenant from the database.

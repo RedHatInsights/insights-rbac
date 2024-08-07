@@ -36,6 +36,7 @@ from management.utils import (
     policies_for_principal,
     queryset_by_id,
     roles_for_principal,
+    validate_and_get_key,
 )
 from rest_framework import permissions, serializers
 from rest_framework.request import Request
@@ -97,7 +98,7 @@ def _gather_group_querysets(request, args, kwargs):
     """Decide which groups to provide for request."""
     username = request.query_params.get("username")
 
-    scope = request.query_params.get(SCOPE_KEY, ORG_ID_SCOPE)
+    scope = validate_and_get_key(request.query_params, SCOPE_KEY, VALID_SCOPES, ORG_ID_SCOPE)
     if scope != ORG_ID_SCOPE and not username:
         return get_object_principal_queryset(request, scope, Group)
 
@@ -149,7 +150,7 @@ def annotate_roles_with_counts(queryset):
 
 def get_role_queryset(request) -> QuerySet:
     """Obtain the queryset for roles."""
-    scope = request.query_params.get(SCOPE_KEY, ORG_ID_SCOPE)
+    scope = validate_and_get_key(request.query_params, SCOPE_KEY, VALID_SCOPES, ORG_ID_SCOPE)
     public_tenant = Tenant.objects.get(tenant_name="public")
     base_query = annotate_roles_with_counts(Role.objects.prefetch_related("access")).filter(
         tenant__in=[request.tenant, public_tenant]
@@ -213,7 +214,7 @@ def get_role_queryset(request) -> QuerySet:
 
 def get_policy_queryset(request):
     """Obtain the queryset for policies."""
-    scope = request.query_params.get(SCOPE_KEY, ORG_ID_SCOPE)
+    scope = validate_and_get_key(request.query_params, SCOPE_KEY, VALID_SCOPES, ORG_ID_SCOPE)
     if scope != ORG_ID_SCOPE:
         return get_object_principal_queryset(request, scope, Policy)
 

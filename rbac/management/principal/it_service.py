@@ -222,7 +222,7 @@ class ITService:
             service_accounts: list[dict] = self.request_service_accounts(bearer_token=user.bearer_token)
 
             for sa in service_accounts:
-                if client_id == sa.get("clientID"):
+                if client_id == sa.get("clientId"):
                     return True
 
             return False
@@ -451,7 +451,7 @@ class ITService:
         created_at = service_account_from_it_service.get("createdAt")
 
         if client_id:
-            service_account["clientID"] = client_id
+            service_account["clientId"] = client_id
 
         if name:
             service_account["name"] = name
@@ -484,7 +484,7 @@ class ITService:
 
         for it_service_account in it_service_accounts:
             try:
-                sa_principal = service_account_principals[it_service_account["clientID"]]
+                sa_principal = service_account_principals[it_service_account["clientId"]]
 
                 if username_only and username_only == "true":
                     service_accounts.append({"username": sa_principal.username})  # type: ignore

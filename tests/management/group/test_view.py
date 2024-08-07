@@ -392,7 +392,7 @@ class GroupViewsetTests(IdentityRequest):
         "management.principal.it_service.ITService.request_service_accounts",
         return_value=[
             {
-                "clientID": "b7a82f30-bcef-013c-2452-6aa2427b506c",
+                "clientId": "b7a82f30-bcef-013c-2452-6aa2427b506c",
                 "name": f"service_account_name",
                 "description": f"Service Account description",
                 "owner": "jsmith",
@@ -2123,7 +2123,7 @@ class GroupViewsetTests(IdentityRequest):
         for uuid in self.sa_client_ids:
             mocked_values.append(
                 {
-                    "clientID": uuid,
+                    "clientId": uuid,
                     "name": f"service_account_name_{uuid.split('-')[0]}",
                     "description": f"Service Account description {uuid.split('-')[0]}",
                     "owner": "jsmith",
@@ -2147,11 +2147,11 @@ class GroupViewsetTests(IdentityRequest):
         sa = response.data.get("data")[0]
         self.assertCountEqual(
             list(sa.keys()),
-            ["clientID", "name", "description", "owner", "time_created", "type", "username"],
+            ["clientId", "name", "description", "owner", "time_created", "type", "username"],
         )
 
         for mock_sa in mocked_values:
-            if mock_sa["clientID"] == sa.get("clientID"):
+            if mock_sa["clientId"] == sa.get("clientId"):
                 self.assertEqual(sa.get("name"), mock_sa["name"])
                 self.assertEqual(sa.get("description"), mock_sa["description"])
                 self.assertEqual(sa.get("owner"), mock_sa["owner"])
@@ -2165,7 +2165,7 @@ class GroupViewsetTests(IdentityRequest):
         uuid = self.sa_client_ids[0]
         mock_request.return_value = [
             {
-                "clientID": uuid,
+                "clientId": uuid,
                 "name": f"service_account_name_{uuid.split('-')[0]}",
                 "description": f"Service Account description {uuid.split('-')[0]}",
                 "owner": "jsmith",
@@ -2192,7 +2192,7 @@ class GroupViewsetTests(IdentityRequest):
         for uuid in self.sa_client_ids:
             mocked_values.append(
                 {
-                    "clientID": uuid,
+                    "clientId": uuid,
                     "name": f"service_account_name_{uuid.split('-')[0]}",
                     "description": f"Service Account description {uuid.split('-')[0]}",
                     "owner": "jsmith",
@@ -2238,7 +2238,7 @@ class GroupViewsetTests(IdentityRequest):
         for uuid in self.sa_client_ids:
             mocked_values.append(
                 {
-                    "clientID": uuid,
+                    "clientId": uuid,
                     "name": f"service_account_name_{uuid.split('-')[0]}",
                     "description": f"Service Account description {uuid.split('-')[0]}",
                     "owner": "jsmith",
@@ -2595,7 +2595,7 @@ class GroupViewsetTests(IdentityRequest):
         for uuid in [uuid1, uuid2]:
             mocked_values.append(
                 {
-                    "clientID": uuid,
+                    "clientId": uuid,
                     "name": f"service_account_name_{uuid.split('-')[0]}",
                     "description": f"Service Account description {uuid.split('-')[0]}",
                     "owner": "jsmith",
@@ -2633,7 +2633,7 @@ class GroupViewsetTests(IdentityRequest):
         self.assertEqual(len(response.data.get("data")), 1)
 
         sa = response.data.get("data")[0]
-        self.assertEqual(sa.get("clientID"), uuid2)
+        self.assertEqual(sa.get("clientId"), uuid2)
         self.assertEqual(sa.get("username"), "service-account-" + uuid2)
 
         # Test that 0 SA is returned for SA with "r" in username
@@ -2738,7 +2738,7 @@ class GroupViewNonAdminTests(IdentityRequest):
             "permission."
         )
         self.invalid_value_for_scope_query_param = (
-            "scope query parameter value foo is invalid. [org_id, principal] are valid inputs."
+            "scope query parameter value 'foo' is invalid. ['org_id', 'principal'] are valid inputs."
         )
         self.user_access_admin_role_err_message = (
             "Non org admin users are not allowed to add RBAC role with higher than 'read' permission into groups."
@@ -2908,7 +2908,7 @@ class GroupViewNonAdminTests(IdentityRequest):
         # Create the test data to add a service account and a regular user to the group.
         test_data = {
             "principals": [
-                {"clientID": new_sa_principal.service_account_id, "type": "service-account"},
+                {"clientId": new_sa_principal.service_account_id, "type": "service-account"},
                 {"username": new_principal.username},
             ]
         }
@@ -3202,7 +3202,7 @@ class GroupViewNonAdminTests(IdentityRequest):
         # Create the test data to add a service account and a regular user to the group.
         test_data = {
             "principals": [
-                {"clientID": new_sa_principal.service_account_id, "type": "service-account"},
+                {"clientId": new_sa_principal.service_account_id, "type": "service-account"},
                 {"username": new_principal.username},
             ]
         }
@@ -3736,7 +3736,7 @@ class GroupViewNonAdminTests(IdentityRequest):
         sa_uuid = sa_principal.service_account_id
         mocked_values = [
             {
-                "clientID": sa_uuid,
+                "clientId": sa_uuid,
                 "name": f"Service Account name",
                 "description": f"Service Account description",
                 "owner": "jsmith",
@@ -3816,7 +3816,7 @@ class GroupViewNonAdminTests(IdentityRequest):
         sa_uuid = sa_principal.service_account_id
         mocked_values = [
             {
-                "clientID": sa_uuid,
+                "clientId": sa_uuid,
                 "name": f"Service Account name",
                 "description": f"Service Account description",
                 "owner": "jsmith",
@@ -3830,7 +3830,7 @@ class GroupViewNonAdminTests(IdentityRequest):
         url = reverse("group-principals", kwargs={"uuid": test_group.uuid})
         client = APIClient()
 
-        request_body = {"principals": [{"clientID": sa_uuid, "type": "service-account"}]}
+        request_body = {"principals": [{"clientId": sa_uuid, "type": "service-account"}]}
 
         response = client.post(url, request_body, format="json", **self.headers_user_based_principal)
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
@@ -3906,7 +3906,7 @@ class GroupViewNonAdminTests(IdentityRequest):
         sa_uuid = sa_principal.service_account_id
         mocked_values = [
             {
-                "clientID": sa_uuid,
+                "clientId": sa_uuid,
                 "name": f"Service Account name",
                 "description": f"Service Account description",
                 "owner": "jsmith",
@@ -3920,7 +3920,7 @@ class GroupViewNonAdminTests(IdentityRequest):
         url = reverse("group-principals", kwargs={"uuid": test_group.uuid})
         client = APIClient()
 
-        request_body = {"principals": [{"clientID": sa_uuid, "type": "service-account"}]}
+        request_body = {"principals": [{"clientId": sa_uuid, "type": "service-account"}]}
 
         response = client.post(url, request_body, format="json", **self.headers_user_based_principal)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -4013,7 +4013,7 @@ class GroupViewNonAdminTests(IdentityRequest):
         sa_uuid = sa_principal.service_account_id
         mocked_values = [
             {
-                "clientID": sa_uuid,
+                "clientId": sa_uuid,
                 "name": f"Service Account name",
                 "description": f"Service Account description",
                 "owner": "jsmith",
@@ -4027,7 +4027,7 @@ class GroupViewNonAdminTests(IdentityRequest):
         url = reverse("group-principals", kwargs={"uuid": test_group.uuid})
         client = APIClient()
 
-        request_body = {"principals": [{"clientID": sa_uuid, "type": "service-account"}]}
+        request_body = {"principals": [{"clientId": sa_uuid, "type": "service-account"}]}
 
         response = client.post(url, request_body, format="json", **self.headers_user_based_principal)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
@@ -4789,7 +4789,7 @@ class GroupViewNonAdminTests(IdentityRequest):
 
         # Adding the 'scope' param doesn't affect the response because the 'scope' param is ignored
         # when query contains the 'username' param
-        for scope in ("org_id", "principal", "foo"):
+        for scope in ("org_id", "principal"):
             url_with_scope = url + f"&scope={scope}"
             response = client.get(url_with_scope, format="json", **self.headers_user_based_principal)
             self.assertEqual(response.status_code, status.HTTP_200_OK)
