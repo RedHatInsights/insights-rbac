@@ -232,13 +232,10 @@ def get_policy_queryset(request):
 
 
 def get_access_queryset(request: Request) -> QuerySet:
-    """Obtain the queryset for policies."""
-    required_parameters = [APPLICATION_KEY]
-    have_parameters = all(param in request.query_params for param in required_parameters)
-
-    if not have_parameters:
+    """Obtain the queryset for access."""
+    if APPLICATION_KEY not in request.query_params:
         key = "detail"
-        message = "Query parameters [{}] are required.".format(", ".join(required_parameters))
+        message = f"Query parameter '{APPLICATION_KEY}' is required."
         raise serializers.ValidationError({key: _(message)})
 
     app = request.query_params.get(APPLICATION_KEY)
