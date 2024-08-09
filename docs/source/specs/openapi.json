@@ -1378,7 +1378,7 @@
           {
             "name": "service-accounts",
             "in": "query",
-            "description": "A comma separated list of usernames for service accounts to remove from the group",
+            "description": "A comma separated list of client IDs for service accounts to remove from the group",
             "schema": {
               "type": "string"
             }
