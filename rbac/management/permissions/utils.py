@@ -29,6 +29,4 @@ def is_scope_principal(request):
         return False
 
     scope = request.query_params.get(SCOPE_KEY, ORG_ID_SCOPE)
-    if scope != PRINCIPAL_SCOPE:
-        return False
-    return True
+    return scope == PRINCIPAL_SCOPE
