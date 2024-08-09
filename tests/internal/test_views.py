@@ -456,11 +456,11 @@ class InternalViewsetTests(IdentityRequest):
         )
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
 
-    @patch("management.tasks.migrate_roles_in_worker.delay")
-    def test_run_migrations_of_roles(self, migration_mock):
-        """Test that we can trigger migrations of roles to migrate from V1 to V2."""
+    @patch("management.tasks.migrate_data_in_worker.delay")
+    def test_run_migrations_of_data(self, migration_mock):
+        """Test that we can trigger migrations of data to migrate from V1 to V2."""
         response = self.client.post(
-            f"/_private/api/utils/role_migration/?exclude_apps=rbac,costmanagement&orgs=acct00001,acct00002",
+            f"/_private/api/utils/data_migration/?exclude_apps=rbac,costmanagement&orgs=acct00001,acct00002",
             **self.request.META,
         )
         migration_mock.assert_called_once_with(
@@ -469,18 +469,18 @@ class InternalViewsetTests(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_202_ACCEPTED)
         self.assertEqual(
             response.content.decode(),
-            "Role migration from V1 to V2 are running in a background worker.",
+            "Data migration from V1 to V2 are running in a background worker.",
         )
 
         # Without params
         migration_mock.reset_mock()
         response = self.client.post(
-            f"/_private/api/utils/role_migration/",
+            f"/_private/api/utils/data_migration/",
             **self.request.META,
         )
         migration_mock.assert_called_once_with({"exclude_apps": [], "orgs": [], "write_db": False})
         self.assertEqual(response.status_code, status.HTTP_202_ACCEPTED)
         self.assertEqual(
             response.content.decode(),
-            "Role migration from V1 to V2 are running in a background worker.",
+            "Data migration from V1 to V2 are running in a background worker.",
         )

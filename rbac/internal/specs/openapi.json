@@ -1056,13 +1056,13 @@
         }
       }
     },
-    "/api/utils/role_migration/": {
+    "/api/utils/data_migration/": {
       "post": {
         "tags": [
-          "Role migration"
+          "V2 data migration"
         ],
-        "summary": "Migration of roles",
-        "description": "Start process of migration of roles.",
+        "summary": "Migration of v1 resources",
+        "description": "Start process of migration of v1 resources.",
         "operationId": "RoleMigration",
         "parameters": [
           {
@@ -1086,7 +1086,7 @@
         ],
         "responses": {
           "202": {
-            "description": "Role migration from V1 to V2 are running in a background worker."
+            "description": "Data migration from V1 to V2 are running in a background worker."
           },
           "405": {
             "description": "Invalid method, only 'POST' is allowed.",
