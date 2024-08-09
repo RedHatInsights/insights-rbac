@@ -1100,19 +1100,19 @@ class GroupViewSet(
 
         # Get the group's service accounts that match the service accounts that the user specified.
         valid_service_accounts = Principal.objects.filter(
-            group=group, tenant=tenant, type="service-account", username__in=service_accounts
+            group=group, tenant=tenant, type="service-account", service_account_id__in=service_accounts
         )
 
-        # Collect the usernames the user specified.
-        valid_usernames = valid_service_accounts.values_list("username", flat=True)
+        # Collect the service account IDs the user specified.
+        valid_service_account_ids = valid_service_accounts.values_list("service_account_id", flat=True)
 
         # If there is a difference in the sets, then we know that the user specified service accounts
         # that did not exist in the database.
-        usernames_diff = set(service_accounts).difference(valid_usernames)
-        if usernames_diff:
-            logger.info(f"Service accounts {usernames_diff} not found for org id {org_id}.")
+        service_account_ids_diff = set(service_accounts).difference(valid_service_account_ids)
+        if service_account_ids_diff:
+            logger.info(f"Service accounts {service_account_ids_diff} not found for org id {org_id}.")
 
-            raise ValueError(f"Service account(s) {usernames_diff} not found in the group '{group.name}'")
+            raise ValueError(f"Service account(s) {service_account_ids_diff} not found in the group '{group.name}'")
 
         # Remove service accounts from the group.
         with transaction.atomic():
@@ -1120,7 +1120,8 @@ class GroupViewSet(
                 group.principals.remove(service_account)
 
         logger.info(
-            f"[Request_id:{request_id}] {valid_usernames} removed from group {group.name} for org id {org_id}."
+            f"[Request_id:{request_id}] {valid_service_account_ids} "
+            f"removed from group {group.name} for org id {org_id}."
         )
         for username in service_accounts:
             group_principal_change_notification_handler(self.request.user, group, username, "removed")
