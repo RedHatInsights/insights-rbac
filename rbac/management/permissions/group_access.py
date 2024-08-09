@@ -38,11 +38,12 @@ class GroupAccessPermission(permissions.BasePermission):
             group_read = request.user.access.get("group", {}).get("read", [])
             if group_read:
                 return True
-            username = request.query_params.get("username")
-            if username:
-                return username == request.user.username
-            if not username and is_scope_principal(request):
-                return True
+            if view.basename == "group" and view.action == "list":
+                username = request.query_params.get("username")
+                if username:
+                    return username == request.user.username
+                if not username and is_scope_principal(request):
+                    return True
         else:
             group_write = request.user.access.get("group", {}).get("write", [])
 

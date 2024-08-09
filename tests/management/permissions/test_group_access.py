@@ -115,8 +115,12 @@ class GroupAccessPermissionTest(TestCase):
         identity_header = {"decoded": {"identity": {"user": {"username": "test_user"}}}}
         user = Mock(spec=User, admin=False, access=access, username="test_user")
         req = Mock(user=user, method="GET", query_params={"username": "test_user"})
+
         accessPerm = GroupAccessPermission()
-        result = accessPerm.has_permission(request=req, view=self.mocked_view)
+        mocked_view = Mock()
+        mocked_view.basename = "group"
+        mocked_view.action = "list"
+        result = accessPerm.has_permission(request=req, view=mocked_view)
         self.assertTrue(result)
 
     def test_no_perm_not_admin_get_others_groups(self):
