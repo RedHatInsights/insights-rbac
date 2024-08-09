@@ -683,7 +683,10 @@ class ITServiceTests(IdentityRequest):
 
     @mock.patch("management.principal.it_service.ITService.request_service_accounts")
     def test_is_service_account_valid_multiple_results_from_it(self, request_service_accounts: mock.Mock):
-        """Test that the function under retunrs False when IT returns multiple service accounts for a single client ID."""
+        """
+        Test that the function under test returns False
+        when IT returns multiple service accounts for a single client ID.
+        """
         request_service_accounts.return_value = [{}, {}]
         user = User()
         user.bearer_token = "mocked-bt"
@@ -934,6 +937,36 @@ class ITServiceTests(IdentityRequest):
         self._assert_created_sa_and_result_are_same(
             created_database_sa_principals=sa_principals_should_be_in_group, function_result=result
         )
+
+    def test_get_service_accounts_group_username_only(self):
+        """
+        Test the function returns the list of service account usernames with query
+        parameter username_only='true'.
+        """
+        group_a, _ = self._create_two_rbac_groups_with_service_accounts()
+        expected_usernames = [sa.username for sa in group_a.principals.all()]
+
+        user = User()
+        user.account = self.tenant.account_id
+        user.org_id = self.tenant.org_id
+
+        # Call the function under test.
+        options = {"username_only": "true"}
+        result = self.it_service.get_service_accounts_group(group=group_a, user=user, options=options)
+
+        self.assertEqual(
+            2,
+            len(result),
+            "only two service accounts were added to the group, and a different number of them is present",
+        )
+
+        for item in result:
+            self.assertIn(
+                item["username"],
+                expected_usernames,
+                f'the service account with username \'{item["username"]}\' is not present in the list of expected '
+                f"usernames '{expected_usernames}'",
+            )
 
     @mock.patch("management.principal.it_service.ITService.request_service_accounts")
     def test_get_service_accounts_group_filter_by_username(self, request_service_accounts: mock.Mock):
@@ -1191,7 +1224,9 @@ class ITServiceTests(IdentityRequest):
             )
 
     def test_generate_service_accounts_report_in_group_mixed_results(self):
-        """Test that the function under test is able to correctly flag the sevice accounts when there are mixed results"""
+        """
+        Test that the function under test is able to correctly flag the service accounts when there are mixed results
+        """
         # Create a group and associate principals to it.
         group = Group(name="it-service-group", platform_default=False, system=False, tenant=self.tenant)
         group.save()

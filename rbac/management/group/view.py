@@ -787,13 +787,14 @@ class GroupViewSet(
                 # Get the "principal username" parameter.
                 options[PRINCIPAL_USERNAME_KEY] = request.query_params.get(PRINCIPAL_USERNAME_KEY)
 
+                # Validate the token only if username_only is false (default value)
+                if username_only == "false":
+                    token_validator = ITSSOTokenValidator()
+                    request.user.bearer_token = token_validator.validate_token(
+                        request=request,
+                        additional_scopes_to_validate=set[ScopeClaims]([ScopeClaims.SERVICE_ACCOUNTS_CLAIM]),
+                    )
                 # Fetch the group's service accounts.
-                token_validator = ITSSOTokenValidator()
-                request.user.bearer_token = token_validator.validate_token(
-                    request=request,
-                    additional_scopes_to_validate=set[ScopeClaims]([ScopeClaims.SERVICE_ACCOUNTS_CLAIM]),
-                )
-
                 it_service = ITService()
                 try:
                     service_accounts = it_service.get_service_accounts_group(
@@ -812,6 +813,11 @@ class GroupViewSet(
                             ]
                         },
                     )
+
+                if username_only == "true":
+                    resp = Response(status=200, data=service_accounts)
+                    page = self.paginate_queryset(resp.data)
+                    return self.get_paginated_response(page)
 
                 # Prettify the output payload and return it.
                 page = self.paginate_queryset(service_accounts)
