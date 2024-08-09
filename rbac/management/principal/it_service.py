@@ -312,9 +312,12 @@ class ITService:
 
     def get_service_accounts_group(self, group: Group, user: User, options: dict[str, Any] = {}) -> list[dict]:
         """Get the service accounts for the given group."""
-        # We might want to bypass calls to the IT service on ephemeral or test environments.
+        username_only: str = options.get("username_only", "false")
+        # We might want to bypass calls to the IT service
+        #        - on ephemeral or test environments
+        #        - when query param username_only == 'true'
         it_service_accounts: list[dict[str, Union[str, int]]] = []
-        if not settings.IT_BYPASS_IT_CALLS:
+        if not settings.IT_BYPASS_IT_CALLS and username_only == "false":
             it_service_accounts = self.request_service_accounts(bearer_token=user.bearer_token)
 
         # Fetch the service accounts from the group.
@@ -357,11 +360,15 @@ class ITService:
         for sap in group_service_account_principals:
             sap_dict[sap.service_account_id] = sap
 
-        # Filter the incoming service accounts. Also, transform them to the payload we will
-        # be returning.
-        service_accounts: list[dict] = self._merge_principals_it_service_accounts(
-            service_account_principals=sap_dict, it_service_accounts=it_service_accounts, options=options
-        )
+        service_accounts: list[dict] = []
+        if username_only == "true":
+            # Grab the service account usernames
+            service_accounts = [{"username": sa.username} for sa in group_service_account_principals]
+        else:
+            # Filter the incoming service accounts. Also, transform them to the payload we will be returning.
+            service_accounts = self._merge_principals_it_service_accounts(
+                service_account_principals=sap_dict, it_service_accounts=it_service_accounts, options=options
+            )
 
         # If either the description or name filters were specified, we need to only keep the service accounts that
         # match that criteria.

@@ -140,7 +140,7 @@ class GroupViewsetTests(IdentityRequest):
         self.service_accounts = []
         for uuid in self.sa_client_ids:
             principal = Principal(
-                username="service_account-" + uuid,
+                username="service-account-" + uuid,
                 tenant=self.tenant,
                 type="service-account",
                 service_account_id=uuid,
@@ -2157,6 +2157,28 @@ class GroupViewsetTests(IdentityRequest):
                 self.assertEqual(sa.get("owner"), mock_sa["owner"])
                 self.assertEqual(sa.get("type"), "service-account")
                 self.assertEqual(sa.get("username"), mock_sa["username"])
+
+    def test_get_group_service_account_username_only_success(self):
+        """
+        Test that getting the service account usernames from a group returns successfully
+        with 'username_only' query parameter.
+        """
+        # We expected only usernames from RBAC database
+        expected_usernames = [f"service-account-{sa}" for sa in self.sa_client_ids]
+
+        sa_type_param = "principal_type=service-account"
+        username_only_param = "username_only=true"
+        url = f"{reverse('group-principals', kwargs={'uuid': self.group.uuid})}?{sa_type_param}&{username_only_param}"
+        client = APIClient()
+        response = client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIsInstance(response.data.get("data"), list)
+        self.assertEqual(int(response.data.get("meta").get("count")), 3)
+        self.assertEqual(len(response.data.get("data")), 3)
+
+        for sa in response.data.get("data"):
+            self.assertIn(sa["username"], expected_usernames)
 
     @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
     @patch("management.principal.it_service.ITService.request_service_accounts")
