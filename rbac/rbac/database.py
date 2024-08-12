@@ -56,6 +56,7 @@ def config():
             }
         }
 
+    print(db_options)
     db_obj.update(db_options)
 
     return db_obj

@@ -185,6 +185,7 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
         if is_no_auth(request):
             return
         user = User()
+        print("here")
         try:
             _, json_rh_auth = extract_header(request, self.header)
             user.account = json_rh_auth.get("identity", {}).get("account_number")
@@ -193,6 +194,7 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
             ).get("org_id")
 
             user_info = json_rh_auth.get("identity", {}).get("user")
+            print(json_rh_auth)
             if user_info:
                 user.username = user_info["username"]
                 user.admin = user_info.get("is_org_admin")
@@ -218,8 +220,10 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
             # If we did not get the user information or service account information from the "x-rh-identity" header,
             # then the request is directly unauthorized.
             if not user_info and not service_account:
+
                 logger.debug("x-rh-identity does not contain user_info or service_account keys: %s", json_rh_auth)
                 return HttpResponseUnauthorizedRequest()
+
 
             # The service accounts must provide their client IDs for us to keep processing the request.
             if user.is_service_account and (not user.client_id or user.client_id.isspace()):

@@ -91,6 +91,28 @@ def stringify_spicedb_relationship(rel: common_pb2.Relationship):
     )
 
 
+def migrate_role_return(role: Role):
+    """Migrate a role from v1 to v2."""
+    v1_role = extract_info_into_v1_role(role)
+    # With the replicated role bindings algorithm, role bindings are scoped by group, so we need to add groups
+    # TODO: replace the hard coded groups
+    policies = role.policies.all()
+    groups = set()
+    for policy in policies:
+        principals = [str(principal) for principal in policy.group.principals.values_list("uuid", flat=True)]
+        groups.add(V1group(str(policy.group.uuid), frozenset(principals)))
+    v1_role = dataclasses.replace(v1_role, groups=frozenset(groups))
+
+    # This is where we wire in the implementation we're using into the Migrator
+    v1_to_v2_mapping = shared_system_role_replicated_role_bindings_v1_to_v2_mapping
+    permissioned_role_migrator = Migrator(v1_to_v2_mapping)
+    v2_roles = [v2_role for v2_role in permissioned_role_migrator.migrate_v1_roles(v1_role)]
+    relationships = spicedb_relationships(frozenset(v2_roles))
+    for rel in relationships:
+        logger.info(stringify_spicedb_relationship(rel))
+    return relationships
+
+
 def migrate_role(role: Role, write_db: bool):
     """Migrate a role from v1 to v2."""
     v1_role = extract_info_into_v1_role(role)

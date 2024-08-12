@@ -29,7 +29,7 @@ from django.http import Http404
 from django.utils.translation import gettext as _
 from django_filters import rest_framework as filters
 from management.filters import CommonFilters
-from management.models import AuditLog, Permission
+from management.models import AuditLog, Permission, OutboxEvent
 from management.notifications.notification_handlers import role_obj_change_notification_handler
 from management.permissions import RoleAccessPermission
 from management.querysets import get_role_queryset
@@ -38,6 +38,12 @@ from management.utils import validate_uuid
 from rest_framework import mixins, serializers, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.filters import OrderingFilter
+from kessel.relations.v1beta1 import replication_tuples_event_pb2
+#from kessel.relations.v1beta1 import common_pb2
+from migration_tool.migrate import migrate_role_return
+from kessel.relations.v1beta1 import relation_tuples_pb2
+
+from uuid import uuid4
 
 from .model import Role
 from .serializer import RoleSerializer
@@ -407,9 +413,91 @@ class RoleViewSet(
                 ]
             }
         """
+
         validate_uuid(kwargs.get("uuid"), "role uuid validation")
         self.validate_role(request)
-        return super().update(request=request, args=args, kwargs=kwargs)
+
+        ### STEPS
+
+        # RBAC API
+        # 1. Find relations to delete
+        # 2. Update to role by request
+        # 3. Find relations to add
+        # 4. Convert Relationship[] to RelationTupleFilter
+        # 5. Build replication tuple event with relations to add and delete
+        # 6. Serialized and put into outbox table - this emits event via debezium
+        # 7. Delete outbox_event or mark as processed
+
+        # Listener (code will not be here - this is just for demonstration)
+        # 1. Fetch and deserialize payload from outbox table
+        # 2. Build request to add relations and write to spice db
+        # 2a. Write to SpiceDB
+        # 3. Build request to remove relations and write to spice db
+        # 3a. Write to SpiceDB
+
+        role = Role.objects.get(uuid=kwargs.get("uuid"))
+
+        relations = migrate_role_return(role)
+        relations_to_delete = []
+        for relation in relations:
+            if relation.resource.type.name == "role" and relation.subject.subject.type.name == "user":
+                relations_to_delete.append(relation)
+            if relation.relation == "user_grant" and relation.subject.subject.type.name == "role_binding":
+                relations_to_delete.append(relation)
+
+        # 2. Update to role by request
+
+        update_response = super().update(request=request, args=args, kwargs=kwargs)
+
+        role = Role.objects.get(uuid=update_response.data["uuid"])
+
+        # 3. Find relations to add
+        relations = migrate_role_return(role)
+        relations_to_add = []
+        for relation in relations:
+            if relation.resource.type.name == "role" and relation.subject.subject.type.name == "user":
+                relations_to_add.append(relation)
+            if relation.relation == "user_grant" and relation.subject.subject.type.name == "role_binding":
+                relations_to_add.append(relation)
+
+        # 4. Convert Relationship[] to RelationTupleFilter, now skipped
+        # ...
+
+        # 5. Build replication tuple event with relations to add and delete
+        relation_event = replication_tuples_event_pb2.ReplicationTuplesEvent(InsertionTuples=relations_to_add, DeletionTuples=None)
+
+        payload = relation_event.SerializeToString()
+
+        # 6. Serialized and put into outbox table - this emits event via debezium
+        outbox_event = OutboxEvent.objects.create(id=update_response.data["uuid"], payload=payload, aggregate_id=str(uuid4()), aggregate_type="kafka_topic")
+        # 7. Delete outbox_event record or mark as processed
+
+        # Listener (code will not be here - this is just for demonstration)
+
+        # 1. Fetch and deserialize payload from outbox table
+        relation_event = replication_tuples_event_pb2.ReplicationTuplesEvent()
+        relation_event.ParseFromString(outbox_event.payload)
+
+        # 2. Build request to add relations and write to spice db
+        add_request = relation_tuples_pb2.CreateTuplesRequest(
+            upsert=True,
+            tuples=relation_event.InsertionTuples,
+        )
+
+        # 2a. Write to SpiceDB
+        # ...
+
+        # 3. Build request to remove relations and write to spice db
+        delete_request = relation_tuples_pb2.DeleteTuplesRequest(
+            filter=relation_event.DeletionTuples,
+        )
+
+        # 3a. Write to SpiceDB
+        # ...
+
+        print(add_request)
+        print(delete_request)
+        return update_response
 
     @action(detail=True, methods=["get"])
     def access(self, request, uuid=None):

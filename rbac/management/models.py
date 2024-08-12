@@ -24,3 +24,4 @@ from management.role.model import Access, ExtRoleRelation, ExtTenant, ResourceDe
 from management.policy.model import Policy
 from management.audit_log.model import AuditLog
 from management.workspace.model import Workspace
+from management.outbox_event.model import OutboxEvent
