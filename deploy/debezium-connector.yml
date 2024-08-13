@@ -1,0 +1,48 @@
+apiVersion: v1
+kind: Template
+metadata:
+  name: kafka-connectors
+objects:
+- apiVersion: kafka.strimzi.io/v1beta2
+  kind: KafkaConnector
+  metadata:
+    name: ${CONNECTOR_NAME}
+    labels:
+      strimzi.io/cluster: ${KAFKA_CONNECT_INSTANCE}
+  spec:
+    class: io.debezium.connector.postgresql.PostgresConnector
+    tasksMax: ${MAX_TASKS}
+    config:
+      database.hostname: ${DB_HOSTNAME}
+      database.port: ${DB_PORT}
+      database.user: ${DB_USER}
+      database.password: ${DB_PASSWORD}
+      topic.prefix: ${TOPIC_PREFIX}
+      table.include.list: ${TABLE_LIST}
+      transforms: outbox
+      transforms.outbox.type: io.debezium.transforms.outbox.EventRouter
+parameters:
+- name: DB_HOSTNAME
+  required: true
+  description: URI for the target postgres database
+- name: DB_PORT
+  value: 5432
+  description: Port on which the target postgres database is listening for connections
+- name: DB_USER
+  value: databasejoe
+  description: Username the connector should use to connect to the target postgres database
+- name: DB_PASSWORD
+  value: 1
+  description: Password for the above user on the target postgres database
+- name: KAFKA_CONNECT_INSTANCE
+  value: platform-kafka-connect
+  description: Name of the target Kafka Connect instance for Connector
+- name: CONNECTOR_NAME
+  value: platform-connector
+  description: Unique name for this Connector resource
+- name: MAX_TASKS
+  value: 1
+  description: How many tasks the Kafka Connect instance can create to process this Connector's work
+- name: TABLE_LIST
+  value: inventory*
+  description: The list of tables from which the connector captures change events. 
