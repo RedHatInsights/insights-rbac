@@ -19,6 +19,7 @@ import dataclasses
 import logging
 from typing import FrozenSet
 
+from django.conf import settings
 from kessel.relations.v1beta1 import common_pb2
 from management.role.model import Role
 from management.workspace.model import Workspace
@@ -117,6 +118,8 @@ def migrate_workspace(tenant: Tenant, write_db: bool):
     relationships = [
         create_relationship("workspace", tenant.org_id, "workspace", str(root_workspace.uuid), "parent"),
     ]
+    # Include realm for tenant
+    relationships.append(create_relationship("tenant", str(tenant.org_id), "realm", settings.ENV_NAME, "realm"))
     if write_db:
         write_relationships(relationships)
     return str(root_workspace.uuid), tenant.org_id
