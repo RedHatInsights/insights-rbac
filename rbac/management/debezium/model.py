@@ -14,14 +14,13 @@
 #    You should have received a copy of the GNU Affero General Public License
 #    along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
-"""API models for import organization."""
-# flake8: noqa
-# pylint: disable=unused-import
-from management.permission.model import Permission
-from management.principal.model import Principal
-from management.group.model import Group
-from management.role.model import Access, ExtRoleRelation, ExtTenant, ResourceDefinition, Role
-from management.policy.model import Policy
-from management.audit_log.model import AuditLog
-from management.workspace.model import Workspace
-from management.debezium.model import Outbox
+"""Debezium model for outbox messages."""
+from django.db import models
+from uuid import uuid4
+
+class Outbox(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid4, editable=False)
+    aggregatetype = models.CharField(max_length=255)
+    aggregateid = models.CharField(max_length=255)
+    event_type = models.CharField(max_length=255, db_column='type')
+    payload = models.BinaryField()
