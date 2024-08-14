@@ -110,3 +110,17 @@ class AuditLog(TenantAwareModel):
         self.action = AuditLog.DELETE
         self.tenant_id = self.get_tenant_id(request)
         super(AuditLog, self).save()
+
+    def log_edit(self, request, resource, object):
+        """Audit Log when a role or a group is edit."""
+        self.principal_username = request.user.username
+
+        self.resource_type = resource
+        self.resource_id = object.id
+        resource_name = object.name
+
+        self.description = "Edited " + resource_name
+
+        self.action = AuditLog.EDIT
+        self.tenant_id = self.get_tenant_id(request)
+        super(AuditLog, self).save()
