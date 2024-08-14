@@ -16,7 +16,6 @@
 #
 """Test the utils module."""
 from unittest.mock import Mock, call, patch
-import uuid
 
 from django.test import TestCase
 
@@ -81,7 +80,8 @@ class MigrateTests(TestCase):
         """Test that we get the correct access for a principal."""
         kwargs = {"exclude_apps": ["app1"], "orgs": ["1234567"]}
         migrate_data(**kwargs)
+        self.assertEqual(V2Role.objects.count(), 1)
         self.assertEqual(
             len(logger_mock.info.call_args_list),
-            26,
+            22,
         )

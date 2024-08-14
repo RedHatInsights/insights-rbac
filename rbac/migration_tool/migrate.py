@@ -21,10 +21,10 @@ from typing import FrozenSet
 
 from django.conf import settings
 from kessel.relations.v1beta1 import common_pb2
-from management.role.model import Role
+from management.role.model import BindingMapping, Role, V2Role
 from management.workspace.model import Workspace
 from migration_tool.models import V1group, V2rolebinding
-from migration_tool.sharedSystemRolesReplicatedRoleBindings import role_v1_to_v2_mapping
+from migration_tool.sharedSystemRolesReplicatedRoleBindings import v1_role_to_v2_mapping
 from migration_tool.utils import create_relationship, write_relationships
 
 from api.models import Tenant
@@ -41,22 +41,16 @@ def spicedb_relationships(v2_role_bindings: FrozenSet[V2rolebinding], root_works
         relationships.append(
             create_relationship("role_binding", v2_role_binding.id, "role", v2_role_binding.role.id, "granted")
         )
-        relationships.append(
-            create_relationship(
-                "v1role", v2_role_binding.originalRole.id, "role_binding", v2_role_binding.id, "binding"
-            )
-        )
+        v2_role_data = v2_role_binding.role
+        v1_role = Role.objects.get(uuid=v2_role_binding.originalRole.id)
+        v2_role, _ = V2Role.objects.get_or_create(id=v2_role_data.id, is_system=v2_role_data.is_system)
+        v2_role.v1_roles.add(v1_role)
+        BindingMapping.objects.create(id=v2_role_binding.id, v1_role=v1_role)
         for perm in v2_role_binding.role.permissions:
             relationships.append(create_relationship("role", v2_role_binding.role.id, "user", "*", perm))
-        if not v2_role_binding.role.is_system:
-            relationships.append(
-                create_relationship(
-                    "v1role", v2_role_binding.originalRole.id, "role", v2_role_binding.role.id, "customrole"
-                )
-            )
         for group in v2_role_binding.groups:
             # These might be duplicate but it is OK, spiceDB will handle duplication through touch
-            relationships.append(create_relationship("role_binding", v2_role_binding.id, "group", group.id, "member"))
+            relationships.append(create_relationship("role_binding", v2_role_binding.id, "group", group.id, "subject"))
 
         for bound_resource in v2_role_binding.resources:
             parent_relation = "parent" if bound_resource.resource_type == "workspace" else "workspace"
@@ -103,7 +97,7 @@ def migrate_role(role: Role, write_db: bool, root_workspace: str, default_worksp
     v1_role = dataclasses.replace(v1_role, groups=frozenset(groups))
 
     # This is where we wire in the implementation we're using into the Migrator
-    v2_roles = [v2_role for v2_role in role_v1_to_v2_mapping(v1_role, root_workspace, default_workspace)]
+    v2_roles = [v2_role for v2_role in v1_role_to_v2_mapping(v1_role, root_workspace, default_workspace)]
     relationships = spicedb_relationships(frozenset(v2_roles), root_workspace)
     for rel in relationships:
         logger.info(stringify_spicedb_relationship(rel))

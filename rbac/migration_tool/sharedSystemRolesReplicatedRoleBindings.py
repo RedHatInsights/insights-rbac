@@ -95,7 +95,7 @@ class SystemRole:
 skipped_apps = {"cost-management", "playbook-dispatcher", "approval", "catalog"}
 
 
-def role_v1_to_v2_mapping(v1_role: V1role, root_workspace: str, default_workspace: str) -> FrozenSet[V2rolebinding]:
+def v1_role_to_v2_mapping(v1_role: V1role, root_workspace: str, default_workspace: str) -> FrozenSet[V2rolebinding]:
     """Convert a V1 role to a set of V2 role bindings."""
     perm_groupings: Permissiongroupings = {}
     # Group V2 permissions by target
@@ -233,7 +233,7 @@ def shared_system_role_replicated_role_bindings_v1_to_v2_mapping(
     v1_role: V1role, root_workspace: Workspace, default_workspace: Workspace
 ) -> FrozenSet[V2rolebinding]:
     """Convert a V1 role to a set of V2 role bindings."""
-    return role_v1_to_v2_mapping(v1_role, root_workspace, default_workspace)
+    return v1_role_to_v2_mapping(v1_role, root_workspace, default_workspace)
 
 
 def v1groups_to_v2groups(v1groups: FrozenSet[V1group]):
