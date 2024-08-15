@@ -161,12 +161,12 @@ def clean_principals_via_umb():
     logger.info("clean_tenant_principals: Start principal clean up via umb.")
     try:
         UMB_CLIENT.connect()
+        UMB_CLIENT.subscribe(QUEUE, {StompSpec.ACK_HEADER: StompSpec.ACK_CLIENT_INDIVIDUAL})
     except StompConnectionError as e:
-        # Skip if already connected
-        if not str(e).startswith("Already connected"):
+        # Skip if already connected/subscribed
+        if not str(e).startswith(("Already connected", "Already subscribed")):
             raise e
 
-    UMB_CLIENT.subscribe(QUEUE, {StompSpec.ACK_HEADER: StompSpec.ACK_CLIENT_INDIVIDUAL})
     while UMB_CLIENT.canRead(2):  # Check if queue is empty, two sec timeout
         frame = UMB_CLIENT.receiveFrame()
         data_dict = xmltodict.parse(frame.body)
