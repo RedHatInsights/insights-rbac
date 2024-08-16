@@ -81,3 +81,19 @@ def write_relationships(relationships):
                 f"error code {error.code}, reason {error.reason}"
                 f"relationships: {relationships}"
             )
+
+
+def stringify_spicedb_relationship(rel: common_pb2.Relationship):
+    """Stringify a relationship for logging."""
+    return (
+        f"{rel.resource.type.name}:{rel.resource.id}#{rel.relation}@{rel.subject.subject.type.name}:"
+        f"{rel.subject.subject.id}"
+    )
+
+
+def output_relationships(relationships: list, write_db: bool):
+    """Output relationships to the console and optionally write them to the database."""
+    for rel in relationships:
+        logger.info(stringify_spicedb_relationship(rel))
+    if write_db:
+        write_relationships(relationships)

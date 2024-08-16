@@ -226,7 +226,7 @@ def split_resourcedef_literal(resourceDef: V1resourcedef):
                 ","
             )  # If not JSON, assume comma-separated? Cost Management openshift assets are like this.
     else:
-        return [resourceDef.resource_id]
+        return [json.loads(resourceDef.resource_id)]
 
 
 def shared_system_role_replicated_role_bindings_v1_to_v2_mapping(

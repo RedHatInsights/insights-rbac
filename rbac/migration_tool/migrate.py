@@ -20,12 +20,11 @@ import logging
 from typing import FrozenSet
 
 from django.conf import settings
-from kessel.relations.v1beta1 import common_pb2
 from management.role.model import BindingMapping, Role, V2Role
 from management.workspace.model import Workspace
 from migration_tool.models import V1group, V2rolebinding
 from migration_tool.sharedSystemRolesReplicatedRoleBindings import v1_role_to_v2_mapping
-from migration_tool.utils import create_relationship, write_relationships
+from migration_tool.utils import create_relationship, output_relationships
 
 from api.models import Tenant
 from .ingest import extract_info_into_v1_role
@@ -77,14 +76,6 @@ def spicedb_relationships(v2_role_bindings: FrozenSet[V2rolebinding], root_works
     return relationships
 
 
-def stringify_spicedb_relationship(rel: common_pb2.Relationship):
-    """Stringify a relationship for logging."""
-    return (
-        f"{rel.resource.type.name}:{rel.resource.id}#{rel.relation}@{rel.subject.subject.type.name}:"
-        f"{rel.subject.subject.id}"
-    )
-
-
 def migrate_role(role: Role, write_db: bool, root_workspace: str, default_workspace: str):
     """Migrate a role from v1 to v2."""
     v1_role = extract_info_into_v1_role(role)
@@ -99,10 +90,7 @@ def migrate_role(role: Role, write_db: bool, root_workspace: str, default_worksp
     # This is where we wire in the implementation we're using into the Migrator
     v2_roles = [v2_role for v2_role in v1_role_to_v2_mapping(v1_role, root_workspace, default_workspace)]
     relationships = spicedb_relationships(frozenset(v2_roles), root_workspace)
-    for rel in relationships:
-        logger.info(stringify_spicedb_relationship(rel))
-    if write_db:
-        write_relationships(relationships)
+    output_relationships(relationships, write_db)
 
 
 def migrate_workspace(tenant: Tenant, write_db: bool):
@@ -111,11 +99,11 @@ def migrate_workspace(tenant: Tenant, write_db: bool):
     # Org id represents the default workspace for now
     relationships = [
         create_relationship("workspace", tenant.org_id, "workspace", str(root_workspace.uuid), "parent"),
+        create_relationship("workspace", str(root_workspace.uuid), "tenant", tenant.org_id, "parent"),
     ]
     # Include realm for tenant
     relationships.append(create_relationship("tenant", str(tenant.org_id), "realm", settings.ENV_NAME, "realm"))
-    if write_db:
-        write_relationships(relationships)
+    output_relationships(relationships, write_db)
     return str(root_workspace.uuid), tenant.org_id
 
 
@@ -125,8 +113,7 @@ def migrate_users(tenant: Tenant, write_db: bool):
         create_relationship("tenant", str(tenant.org_id), "user", str(principal.uuid), "member")
         for principal in tenant.principal_set.all()
     ]
-    if write_db:
-        write_relationships(relationships)
+    output_relationships(relationships, write_db)
 
 
 def migrate_users_for_groups(tenant: Tenant, write_db: bool):
@@ -139,8 +126,7 @@ def migrate_users_for_groups(tenant: Tenant, write_db: bool):
         )
         for user in user_set:
             relationships.append(create_relationship("group", str(group.uuid), "user", str(user.uuid), "member"))
-    if write_db:
-        write_relationships(relationships)
+    output_relationships(relationships, write_db)
 
 
 def migrate_data_for_tenant(tenant: Tenant, app_list: list, write_db: bool):
