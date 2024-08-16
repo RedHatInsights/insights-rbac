@@ -92,7 +92,7 @@ class SystemRole:
             add_system_role(cls.SYSTEM_ROLES, V2role(str(role.uuid), True, frozenset(permission_list)))
 
 
-skipped_apps = {"cost-management", "playbook-dispatcher", "approval", "catalog"}
+skipped_apps = {"cost-management", "playbook-dispatcher", "approval"}
 
 
 def v1_role_to_v2_mapping(v1_role: V1role, root_workspace: str, default_workspace: str) -> FrozenSet[V2rolebinding]:
