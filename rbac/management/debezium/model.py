@@ -23,4 +23,4 @@ class Outbox(models.Model):
     aggregatetype = models.CharField(max_length=255)
     aggregateid = models.CharField(max_length=255)
     event_type = models.CharField(max_length=255, db_column='type')
-    payload = models.BinaryField()
+    payload = models.JSONField()
