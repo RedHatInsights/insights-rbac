@@ -85,18 +85,19 @@ class AuditLog(TenantAwareModel):
             return None
 
     def find_edited_field(self, resource, resource_name, request, object):
-        description = resource_name + ": "+"\n "
-        if resource == AuditLog.ROLE: 
-            if request.data.get("display_name") != object.display_name:
-                description = description + "Edited display name \n"
+        """Add additional information when group/role is edited."""
+        description = resource_name + ": " + "\n "
         if request.data.get("name") != object.name:
-            description = description + "Edited name \n"        
+            description = description + "Edited name \n"
         if request.data.get("description") != object.description:
             description = description + "Edited description"
-    
-        description = description + "edited permissions/resources/other"
+        if resource == AuditLog.ROLE:
+            if request.data.get("display_name") != object.display_name:
+                description = description + "Edited display name \n"
+            if request.data.get("access"):
+                description = description + "edited access (permissions/resources)"
         return description
-    
+
     def log_create(self, request, resource):
         """Audit Log when a role or a group is created."""
         self.principal_username = request.user.username
