@@ -17,8 +17,10 @@
 
 """View for role management."""
 import json
+import logging
 import os
 import re
+import traceback
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
@@ -26,6 +28,7 @@ from django.db import transaction
 from django.db.models import Q
 from django.db.models.aggregates import Count
 from django.http import Http404
+from django.shortcuts import get_object_or_404
 from django.utils.translation import gettext as _
 from django_filters import rest_framework as filters
 from management.filters import CommonFilters
@@ -33,11 +36,13 @@ from management.models import AuditLog, Permission
 from management.notifications.notification_handlers import role_obj_change_notification_handler
 from management.permissions import RoleAccessPermission
 from management.querysets import get_role_queryset
+from management.role.relation_api_dual_write_handler import DualWriteException, RelationApiDualWriteHandler
 from management.role.serializer import AccessSerializer, RoleDynamicSerializer, RolePatchSerializer
 from management.utils import validate_uuid
 from rest_framework import mixins, serializers, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.filters import OrderingFilter
+from rest_framework.response import Response
 
 from .model import Role
 from .serializer import RoleSerializer
@@ -65,6 +70,8 @@ VALID_PATCH_FIELDS = ["name", "display_name", "description"]
 
 if TESTING_APP:
     settings.ROLE_CREATE_ALLOW_LIST.append(TESTING_APP)
+
+logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 
 class RoleFilter(CommonFilters):
@@ -209,12 +216,20 @@ class RoleViewSet(
             }
         """
         self.validate_role(request)
+        try:
+            with transaction.atomic():
+                create_role = super().create(request=request, args=args, kwargs=kwargs)
 
-        create_role = super().create(request=request, args=args, kwargs=kwargs)
+                if status.is_success(create_role.status_code):
+                    auditlog = AuditLog()
+                    auditlog.log_create(request, AuditLog.ROLE)
 
-        if status.is_success(create_role.status_code):
-            auditlog = AuditLog()
-            auditlog.log_create(request, AuditLog.ROLE)
+                    role = get_object_or_404(Role, uuid=create_role.data["uuid"])
+                    dual_write_handler = RelationApiDualWriteHandler(role)
+                    dual_write_handler.generate_relations_and_mappings_for_role()
+                    dual_write_handler.save_replication_event_to_outbox()
+        except DualWriteException as e:
+            return self.dual_write_exception_response(e)
 
         return create_role
 
@@ -327,9 +342,17 @@ class RoleViewSet(
             message = "System roles cannot be deleted."
             error = {key: [_(message)]}
             raise serializers.ValidationError(error)
-        with transaction.atomic():
-            self.delete_policies_if_no_role_attached(role)
-            response = super().destroy(request=request, args=args, kwargs=kwargs)
+        try:
+            with transaction.atomic():
+                self.delete_policies_if_no_role_attached(role)
+                dual_write_handler = RelationApiDualWriteHandler(role)
+                dual_write_handler.generate_relations_from_current_state_of_role()
+                response = super().destroy(request=request, args=args, kwargs=kwargs)
+                dual_write_handler.delete_mappings()
+                dual_write_handler.save_replication_event_to_outbox()
+        except DualWriteException as e:
+            return self.dual_write_exception_response(e)
+
         if response.status_code == status.HTTP_204_NO_CONTENT:
             role_obj_change_notification_handler(role, "deleted", request.user)
 
@@ -371,7 +394,7 @@ class RoleViewSet(
         @apiParam (Path) {String} id Role unique identifier
 
         @apiParam (Request Body) {String} name Role name
-        @apiParam (Request Body) {Array} access Access definition
+        @apiParam (Request Body) {ArRray} access Access definition
         @apiParamExample {json} Request Body:
             {
                 "name": "RoleA",
@@ -418,14 +441,44 @@ class RoleViewSet(
         validate_uuid(kwargs.get("uuid"), "role uuid validation")
         self.validate_role(request)
 
-        role = self.get_object()
-        update_role = super().update(request=request, args=args, kwargs=kwargs)
+        update_role = self.update_with_relation_api_replication(request=request, args=args, kwargs=kwargs)
 
         if status.is_success(update_role.status_code):
             auditlog = AuditLog()
+            role = self.get_object()
             auditlog.log_edit(request, AuditLog.ROLE, role)
 
         return update_role
+
+    def update_with_relation_api_replication(self, request, *args, **kwargs):
+        """Update a role with replicating data into Relation API."""
+        try:
+            role = self.get_object()
+            dual_write_handler = RelationApiDualWriteHandler(role)
+            dual_write_handler.generate_relations_from_current_state_of_role()
+            with transaction.atomic():
+                response = super().update(request=request, args=args, kwargs=kwargs)
+                dual_write_handler.generate_replication_event_to_outbox(self.get_object())
+        except DualWriteException as e:
+            return self.dual_write_exception_response(e)
+
+        return response
+
+    def dual_write_exception_response(self, e):
+        """Dual write exception response."""
+        logging.error(traceback.format_exc())
+        return Response(
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            data={
+                "errors": [
+                    {
+                        "detail": "Dual Write Exception:" + str(e),
+                        "source": "role",
+                        "status": str(status.HTTP_500_INTERNAL_SERVER_ERROR),
+                    }
+                ]
+            },
+        )
 
     @action(detail=True, methods=["get"])
     def access(self, request, uuid=None):

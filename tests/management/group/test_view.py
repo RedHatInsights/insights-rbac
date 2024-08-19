@@ -2707,7 +2707,7 @@ class GroupViewNonAdminTests(IdentityRequest):
         self.headers = request.META
         self.access_data = {
             "permission": "app:*:*",
-            "resourceDefinitions": [{"attributeFilter": {"key": "key1", "operation": "equal", "value": "value1"}}],
+            "resourceDefinitions": [{"attributeFilter": {"key": "key1.id", "operation": "equal", "value": "value1"}}],
         }
 
         self.principal = Principal(username=self.user_data["username"], tenant=self.tenant)

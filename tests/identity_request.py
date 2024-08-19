@@ -16,6 +16,7 @@
 #
 """Test Case extension to collect common test data."""
 import uuid
+import os
 
 from base64 import b64encode
 from json import dumps as json_dumps
@@ -37,6 +38,7 @@ class IdentityRequest(TestCase):
     def setUpClass(cls):
         """Set up each test class."""
         super().setUpClass()
+        os.environ["REPLICATION_TO_RELATION_ENABLED"] = "True"
         cls.customer_data = cls._create_customer_data()
         cls.user_data = cls._create_user_data()
         cls.request_context = cls._create_request_context(cls.customer_data, cls.user_data)
