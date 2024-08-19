@@ -65,7 +65,7 @@ class GroupDefinerTests(IdentityRequest):
         group = Group.objects.get(platform_default=True)
         self.assertEqual(group.system, False)
         self.assertEqual(group.tenant, self.public_tenant)
-        group.roles().get(name="Ansible Automation Access Local Test")
+        group.roles().get(name="Approval Administrator Local Test")
 
     @patch("core.kafka.RBACProducer.send_kafka_message")
     def test_default_group_seeding_reassign_roles(self, send_kafka_message):

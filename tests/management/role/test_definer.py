@@ -221,7 +221,7 @@ class RoleDefinerTests(IdentityRequest):
 
     def test_try_seed_permissions_update_description(self):
         """Test permission seeding update description, skip string configs."""
-        permission_string = "approval_local_test:templates:read"
+        permission_string = "approval:templates:read"
         self.assertFalse(len(Permission.objects.all()))
         Permission.objects.create(permission=permission_string, tenant=self.public_tenant)
 
@@ -239,4 +239,4 @@ class RoleDefinerTests(IdentityRequest):
         self.assertEqual(len(permission), 1)
         self.assertEqual(permission.first().description, "Approval local test templates read.")
         # Previous string verb still works
-        self.assertEqual(Permission.objects.filter(permission="catalog_local_test:approval_requests:read").count(), 1)
+        self.assertEqual(Permission.objects.filter(permission="inventory:*:*").count(), 1)

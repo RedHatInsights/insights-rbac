@@ -1,4 +1,5 @@
 """Gunicorn configuration file."""
+
 import multiprocessing
 import os
 
