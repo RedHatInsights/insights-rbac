@@ -32,18 +32,26 @@ from .ingest import extract_info_into_v1_role
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 
-def spicedb_relationships(v2_role_bindings: FrozenSet[V2rolebinding], root_workspace: str):
+def spicedb_relationships(
+    v2_role_bindings: FrozenSet[V2rolebinding], root_workspace: str, v1_role, create_binding_to_db=True
+):
     """Generate a set of relationships for the given set of v2 role bindings."""
     relationships = list()
     for v2_role_binding in v2_role_bindings:
         relationships.append(
             create_relationship("role_binding", v2_role_binding.id, "role", v2_role_binding.role.id, "granted")
         )
-        v2_role_data = v2_role_binding.role
-        v1_role = Role.objects.get(uuid=v2_role_binding.originalRole.id)
-        v2_role, _ = V2Role.objects.get_or_create(id=v2_role_data.id, is_system=v2_role_data.is_system)
-        v2_role.v1_roles.add(v1_role)
-        BindingMapping.objects.create(id=v2_role_binding.id, v1_role=v1_role)
+        if create_binding_to_db:
+            v2_role_data = v2_role_binding.role
+            v2_role, _ = V2Role.objects.get_or_create(id=v2_role_data.id, is_system=v2_role_data.is_system)
+            v2_role.v1_roles.add(v1_role)
+            BindingMapping.objects.create(
+                id=v2_role_binding.id,
+                v1_role=v1_role,
+                v2_role=v2_role,
+                permissions=list(v2_role_binding.role.permissions),
+            )
+
         for perm in v2_role_binding.role.permissions:
             relationships.append(create_relationship("role", v2_role_binding.role.id, "user", "*", perm))
         for group in v2_role_binding.groups:
@@ -52,6 +60,7 @@ def spicedb_relationships(v2_role_bindings: FrozenSet[V2rolebinding], root_works
 
         for bound_resource in v2_role_binding.resources:
             parent_relation = "parent" if bound_resource.resource_type == "workspace" else "workspace"
+
             if not (bound_resource.resource_type == "workspace" and bound_resource.resourceId == root_workspace):
                 relationships.append(
                     create_relationship(
@@ -75,7 +84,15 @@ def spicedb_relationships(v2_role_bindings: FrozenSet[V2rolebinding], root_works
     return relationships
 
 
-def migrate_role(role: Role, write_db: bool, root_workspace: str, default_workspace: str):
+def migrate_role(
+    role: Role,
+    write_db: bool,
+    root_workspace: str,
+    default_workspace: str,
+    use_binding_from_db=False,
+    use_mapping_from_db=False,
+    create_binding_to_db=True,
+):
     """Migrate a role from v1 to v2."""
     v1_role = extract_info_into_v1_role(role)
     # With the replicated role bindings algorithm, role bindings are scoped by group, so we need to add groups
@@ -87,9 +104,15 @@ def migrate_role(role: Role, write_db: bool, root_workspace: str, default_worksp
     v1_role = dataclasses.replace(v1_role, groups=frozenset(groups))
 
     # This is where we wire in the implementation we're using into the Migrator
-    v2_roles = [v2_role for v2_role in v1_role_to_v2_mapping(v1_role, root_workspace, default_workspace)]
-    relationships = spicedb_relationships(frozenset(v2_roles), root_workspace)
+    v2_roles = [
+        v2_role
+        for v2_role in v1_role_to_v2_mapping(
+            v1_role, role.id, root_workspace, default_workspace, use_binding_from_db, use_mapping_from_db
+        )
+    ]
+    relationships = spicedb_relationships(frozenset(v2_roles), root_workspace, role, create_binding_to_db)
     output_relationships(relationships, write_db)
+    return relationships
 
 
 def migrate_workspace(tenant: Tenant, write_db: bool):

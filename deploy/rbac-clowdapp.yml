@@ -220,7 +220,8 @@ objects:
             value: ${SA_NAME}
           - name: RELATION_API_SERVER
             value: ${RELATION_API_SERVER}
-
+          - name: REPLICATION_TO_RELATION_ENABLED
+            value: ${REPLICATION_TO_RELATION_ENABLED}
     - name: scheduler-service
       minReplicas: ${{MIN_SCHEDULER_REPLICAS}}
       metadata:
@@ -457,6 +458,8 @@ objects:
             value: ${GROUP_SEEDING_ENABLED}
           - name: BYPASS_BOP_VERIFICATION
             value: ${BYPASS_BOP_VERIFICATION}
+          - name: REPLICATION_TO_RELATION_ENABLED
+            value: ${REPLICATION_TO_RELATION_ENABLED}
           - name: ROLE_CREATE_ALLOW_LIST
             value: ${ROLE_CREATE_ALLOW_LIST}
           - name: RBAC_DESTRUCTIVE_API_ENABLED_UNTIL
@@ -910,3 +913,6 @@ parameters:
 - name: RELATION_API_SERVER
   description: The gRPC API server to use for the relation
   value: "localhost:9000"
+- name: REPLICATION_TO_RELATION_ENABLED
+  description: Enable replication to Relation API
+  value: "False"

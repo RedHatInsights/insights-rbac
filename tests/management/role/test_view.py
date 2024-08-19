@@ -35,12 +35,66 @@ from management.models import (
     ResourceDefinition,
     ExtRoleRelation,
     ExtTenant,
+    RoleMapping,
+    Workspace,
+    BindingMapping,
 )
+
 from tests.core.test_kafka import copy_call_args
 from tests.identity_request import IdentityRequest
-from unittest.mock import ANY, patch
+from unittest.mock import ANY, patch, call
 
 URL = reverse("role-list")
+
+
+def replication_event_for_v1_role(v1_role_uuid, root_workspace_uuid):
+    """Create a replication event for a v1 role."""
+    return {
+        "relations_to_add": relation_api_tuples_for_v1_role(v1_role_uuid, root_workspace_uuid),
+        "relations_to_remove": [],
+    }
+
+
+def relation_api_tuples_for_v1_role(v1_role_uuid, root_workspace_uuid):
+    """Create a relation API tuple for a v1 role."""
+    role_id = Role.objects.get(uuid=v1_role_uuid).id
+    role_binding = BindingMapping.objects.filter(v1_role=role_id)
+
+    relations = []
+    for binding in role_binding:
+        relation_tuple = relation_api_tuple(
+            "role_binding", str(binding.id), "granted", "role", str(binding.v2_role.id)
+        )
+        relations.append(relation_tuple)
+
+        for permission in binding.permissions:
+            relation_tuple = relation_api_tuple("role", str(binding.v2_role.id), permission, "user", "*")
+            relations.append(relation_tuple)
+        if "app_all_read" in binding.permissions:
+            relation_tuple = relation_api_tuple(
+                "workspace", root_workspace_uuid, "user_grant", "role_binding", str(binding.id)
+            )
+            relations.append(relation_tuple)
+        else:
+            relation_tuple = relation_api_tuple("keya/id", "valueA", "workspace", "workspace", root_workspace_uuid)
+            relations.append(relation_tuple)
+
+            relation_tuple = relation_api_tuple("keya/id", "valueA", "user_grant", "role_binding", str(binding.id))
+            relations.append(relation_tuple)
+    return relations
+
+
+def relation_api_tuple(resource_type, resource_id, relation, subject_type, subject_id):
+    return {
+        "resource": relation_api_resource(resource_type, resource_id),
+        "relation": relation,
+        "subject": relation_api_resource(subject_type, subject_id),
+    }
+
+
+def relation_api_resource(type_resource, id_resource):
+    """Helper function for creating a relation resource in json."""
+    return {"type": type_resource, "id": id_resource}
 
 
 class RoleViewsetTests(IdentityRequest):
@@ -49,7 +103,6 @@ class RoleViewsetTests(IdentityRequest):
     def setUp(self):
         """Set up the role viewset tests."""
         super().setUp()
-
         sys_role_config = {"name": "system_role", "display_name": "system_display", "system": True}
 
         def_role_config = {"name": "default_role", "display_name": "default_display", "platform_default": True}
@@ -133,6 +186,7 @@ class RoleViewsetTests(IdentityRequest):
 
         self.access3 = Access.objects.create(permission=self.permission2, role=self.sysRole, tenant=self.tenant)
         Permission.objects.create(permission="cost-management:*:*", tenant=self.tenant)
+        self.root_workspace = Workspace.objects.create(name="root", description="Root workspace", tenant=self.tenant)
 
     def tearDown(self):
         """Tear down role viewset tests."""
@@ -144,7 +198,8 @@ class RoleViewsetTests(IdentityRequest):
         Access.objects.all().delete()
         ExtTenant.objects.all().delete()
         ExtRoleRelation.objects.all().delete()
-
+        RoleMapping.objects.all().delete()
+        Workspace.objects.all().delete()
         # we need to delete old test_tenant's that may exist in cache
         test_tenant_org_id = "100001"
         cached_tenants = TenantCache()
@@ -155,7 +210,9 @@ class RoleViewsetTests(IdentityRequest):
         access_data = [
             {
                 "permission": "app:*:*",
-                "resourceDefinitions": [{"attributeFilter": {"key": "key1", "operation": "equal", "value": "value1"}}],
+                "resourceDefinitions": [
+                    {"attributeFilter": {"key": "key1.id", "operation": "equal", "value": "value1"}}
+                ],
             },
             {"permission": "app:*:read", "resourceDefinitions": []},
         ]
@@ -201,7 +258,7 @@ class RoleViewsetTests(IdentityRequest):
                 {
                     "permission": "app:*:*",
                     "resourceDefinitions": [
-                        {"attributeFilter": {"key": "keyA", "operation": "equal", "value": "valueA"}}
+                        {"attributeFilter": {"key": "keyA.id", "operation": "equal", "value": "valueA"}}
                     ],
                 },
                 {"permission": "app:*:read", "resourceDefinitions": []},
@@ -270,20 +327,34 @@ class RoleViewsetTests(IdentityRequest):
                 ANY,
             )
 
-    def test_create_role_with_display_success(self):
+    @patch("management.role.relation_api_dual_write_handler.RelationApiDualWriteHandler.save_replication_event")
+    def test_create_role_with_display_success(self, mock_method):
         """Test that we can create a role."""
         role_name = "roleD"
         role_display = "display name for roleD"
         access_data = [
             {
                 "permission": "app:*:*",
-                "resourceDefinitions": [{"attributeFilter": {"key": "keyA", "operation": "equal", "value": "valueA"}}],
+                "resourceDefinitions": [
+                    {"attributeFilter": {"key": "keyA.id", "operation": "equal", "value": "valueA"}}
+                ],
             },
             {"permission": "app:*:read", "resourceDefinitions": []},
         ]
         response = self.create_role(role_name, role_display=role_display, in_access_data=access_data)
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
 
+        role_id = Role.objects.get(uuid=response.data.get("uuid")).id
+        role_mapping = RoleMapping.objects.filter(v1_role=role_id)
+        role_binding = BindingMapping.objects.filter(v1_role=role_id)
+
+        self.assertEqual(len(role_binding), 2)
+        self.assertEqual(len(role_mapping), 2)
+
+        replication_event = replication_event_for_v1_role(response.data.get("uuid"), str(self.root_workspace.uuid))
+
+        mock_method.assert_called_once()
+        mock_method.assert_called_with(replication_event)
         # test that we can retrieve the role
         url = reverse("role-detail", kwargs={"uuid": response.data.get("uuid")})
         client = APIClient()
@@ -303,7 +374,9 @@ class RoleViewsetTests(IdentityRequest):
         access_data = [
             {
                 "permission": self.permission.permission,
-                "resourceDefinitions": [{"attributeFilter": {"key": "keyA", "operation": "equal", "value": "valueA"}}],
+                "resourceDefinitions": [
+                    {"attributeFilter": {"key": "keyA.id", "operation": "equal", "value": "valueA"}}
+                ],
             }
         ]
         response = self.create_role(role_name, in_access_data=access_data)
@@ -340,7 +413,9 @@ class RoleViewsetTests(IdentityRequest):
         access_data = [
             {
                 "permission": "cost-management:*:*",
-                "resourceDefinitions": [{"attributeFilter": {"key": "keyA", "operation": "equal", "value": "valueA"}}],
+                "resourceDefinitions": [
+                    {"attributeFilter": {"key": "keyA.id", "operation": "equal", "value": "valueA"}}
+                ],
             }
         ]
         response = self.create_role(role_name, in_access_data=access_data)
@@ -363,7 +438,9 @@ class RoleViewsetTests(IdentityRequest):
         access_data = [
             {
                 "permission": "someApp:*:*",
-                "resourceDefinitions": [{"attributeFilter": {"key": "keyA", "operation": "equal", "value": "valueA"}}],
+                "resourceDefinitions": [
+                    {"attributeFilter": {"key": "keyA.id", "operation": "equal", "value": "valueA"}}
+                ],
             }
         ]
         response = self.create_role(role_name, in_access_data=access_data)
@@ -375,7 +452,7 @@ class RoleViewsetTests(IdentityRequest):
         access_data = [
             {
                 "permission": "cost-management:*:*",
-                "resourceDefinitions": {"attributeFilter": {"key": "keyA", "operation": "in", "foo": "valueA"}},
+                "resourceDefinitions": {"attributeFilter": {"key": "keyA.id", "operation": "in", "foo": "valueA"}},
             }
         ]
         response = self.create_role(role_name, in_access_data=access_data)
@@ -388,7 +465,7 @@ class RoleViewsetTests(IdentityRequest):
         access_data = [
             {
                 "permission": "cost-management:*:*",
-                "resourceDefinitions": [{"attributeFilter": {"key": "keyA", "operation": "in", "foo": "valueA"}}],
+                "resourceDefinitions": [{"attributeFilter": {"key": "keyA.id", "operation": "in", "foo": "valueA"}}],
             }
         ]
         response = self.create_role(role_name, in_access_data=access_data)
@@ -400,7 +477,9 @@ class RoleViewsetTests(IdentityRequest):
         access_data = [
             {
                 "permission": "cost-management:*:*",
-                "resourceDefinitions": [{"attributeFilter": {"key": "keyA", "operation": "boop", "value": "valueA"}}],
+                "resourceDefinitions": [
+                    {"attributeFilter": {"key": "keyA.id", "operation": "boop", "value": "valueA"}}
+                ],
             }
         ]
         response = self.create_role(role_name, in_access_data=access_data)
@@ -413,7 +492,9 @@ class RoleViewsetTests(IdentityRequest):
         access_data = [
             {
                 "permission": permission,
-                "resourceDefinitions": [{"attributeFilter": {"key": "keyA", "operation": "equal", "value": "valueA"}}],
+                "resourceDefinitions": [
+                    {"attributeFilter": {"key": "keyA.id", "operation": "equal", "value": "valueA"}}
+                ],
             }
         ]
         response = self.create_role(role_name, in_access_data=access_data)
@@ -1130,7 +1211,6 @@ class RoleViewsetTests(IdentityRequest):
         al_response = al_client.get(al_url, **self.headers)
         retrieve_data = al_response.data.get("data")
         al_list = retrieve_data
-        print(al_list)
         al_dict = al_list[1]
 
         al_dict_principal_username = al_dict["principal_username"]
@@ -1260,7 +1340,9 @@ class RoleViewsetTests(IdentityRequest):
         access_data = [
             {
                 "permission": "cost-management:*:*",
-                "resourceDefinitions": [{"attributeFilter": {"key": "keyA", "operation": "equal", "value": "valueA"}}],
+                "resourceDefinitions": [
+                    {"attributeFilter": {"key": "keyA.id", "operation": "equal", "value": "valueA"}}
+                ],
             }
         ]
         response = self.create_role(role_name, in_access_data=access_data)
@@ -1276,6 +1358,45 @@ class RoleViewsetTests(IdentityRequest):
         response = client.put(url, test_data, format="json", **self.headers)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
+    @patch("management.role.relation_api_dual_write_handler.RelationApiDualWriteHandler.save_replication_event")
+    def test_update_role(self, mock_method):
+        """Test that updating a role with an invalid permission returns an error."""
+        # Set up
+        role_name = "test_update_role"
+        access_data = [
+            {
+                "permission": "app:*:*",
+                "resourceDefinitions": [
+                    {"attributeFilter": {"key": "keyA.id", "operation": "equal", "value": "valueA"}}
+                ],
+            },
+            {"permission": "app:*:read", "resourceDefinitions": []},
+        ]
+
+        new_access_data = [
+            {
+                "permission": "app:*:*",
+                "resourceDefinitions": [
+                    {"attributeFilter": {"key": "keyA.id", "operation": "equal", "value": "valueA"}}
+                ],
+            },
+            {"permission": "app:*:read", "resourceDefinitions": []},
+        ]
+        response = self.create_role(role_name, in_access_data=access_data)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        role_uuid = response.data.get("uuid")
+        test_data = response.data
+        test_data["access"] = new_access_data
+        url = reverse("role-detail", kwargs={"uuid": role_uuid})
+        client = APIClient()
+        current_relations = relation_api_tuples_for_v1_role(role_uuid, str(self.root_workspace.uuid))
+
+        response = client.put(url, test_data, format="json", **self.headers)
+        replication_event = replication_event_for_v1_role(response.data.get("uuid"), str(self.root_workspace.uuid))
+        replication_event["relations_to_remove"] = current_relations
+        mock_method.assert_called_with(replication_event)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
     def test_update_role_invalid_resource_defs_structure(self):
         """Test that updating a role with an invalid resource definitions returns an error."""
         # Set up
@@ -1283,7 +1404,9 @@ class RoleViewsetTests(IdentityRequest):
         access_data = [
             {
                 "permission": "cost-management:*:*",
-                "resourceDefinitions": [{"attributeFilter": {"key": "keyA", "operation": "equal", "value": "valueA"}}],
+                "resourceDefinitions": [
+                    {"attributeFilter": {"key": "keyA.id", "operation": "equal", "value": "valueA"}}
+                ],
             }
         ]
         response = self.create_role(role_name, in_access_data=access_data)
@@ -1291,7 +1414,7 @@ class RoleViewsetTests(IdentityRequest):
         role_uuid = response.data.get("uuid")
         test_data = response.data
         test_data.get("access")[0]["resourceDefinitions"] = {
-            "attributeFilter": {"key": "keyA", "operation": "equal", "value": "valueA"}
+            "attributeFilter": {"key": "keyA.id", "operation": "equal", "value": "valueA"}
         }
 
         # Test update failure
@@ -1307,7 +1430,9 @@ class RoleViewsetTests(IdentityRequest):
         access_data = [
             {
                 "permission": "cost-management:*:*",
-                "resourceDefinitions": [{"attributeFilter": {"key": "keyA", "operation": "equal", "value": "valueA"}}],
+                "resourceDefinitions": [
+                    {"attributeFilter": {"key": "keyA.id", "operation": "equal", "value": "valueA"}}
+                ],
             }
         ]
         response = self.create_role(role_name, in_access_data=access_data)
@@ -1333,7 +1458,9 @@ class RoleViewsetTests(IdentityRequest):
         access_data = [
             {
                 "permission": "cost-management:*:*",
-                "resourceDefinitions": [{"attributeFilter": {"key": "keyA", "operation": "equal", "value": "valueA"}}],
+                "resourceDefinitions": [
+                    {"attributeFilter": {"key": "keyA.id", "operation": "equal", "value": "valueA"}}
+                ],
             }
         ]
         response = self.create_role(role_name, in_access_data=access_data)
@@ -1349,6 +1476,31 @@ class RoleViewsetTests(IdentityRequest):
         response = client.put(url, test_data, format="json", **self.headers)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(response.data.get("errors")[0].get("detail"), f"Permission does not exist: {permission}")
+
+    @patch("management.role.relation_api_dual_write_handler.RelationApiDualWriteHandler.save_replication_event")
+    def test_delete_role(self, mock_method):
+        """Test that we can delete an existing role."""
+        role_name = "roleA"
+        access_data = [
+            {
+                "permission": "app:*:*",
+                "resourceDefinitions": [
+                    {"attributeFilter": {"key": "keyA.id", "operation": "equal", "value": "valueA"}}
+                ],
+            },
+            {"permission": "app:*:read", "resourceDefinitions": []},
+        ]
+        response = self.create_role(role_name, in_access_data=access_data)
+
+        role_uuid = response.data.get("uuid")
+        url = reverse("role-detail", kwargs={"uuid": role_uuid})
+        client = APIClient()
+        replication_event = {"relations_to_add": [], "relations_to_remove": []}
+        current_relations = relation_api_tuples_for_v1_role(role_uuid, str(self.root_workspace.uuid))
+        replication_event["relations_to_remove"] = current_relations
+        response = client.delete(url, **self.headers)
+        mock_method.assert_called_with(replication_event)
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
 
     @patch("core.kafka.RBACProducer.send_kafka_message")
     def test_delete_role_success(self, send_kafka_message):
@@ -1422,13 +1574,16 @@ class RoleViewsetTests(IdentityRequest):
 
     def test_update_admin_default_role(self):
         """Test that admin default roles are protected from deletion"""
+
         url = reverse("role-detail", kwargs={"uuid": self.adminRole.uuid})
         client = APIClient()
         access_data = [
             {
                 "admin_default": True,
                 "permission": "app:*:*",
-                "resourceDefinitions": [{"attributeFilter": {"key": "key1", "operation": "equal", "value": "value1"}}],
+                "resourceDefinitions": [
+                    {"attributeFilter": {"key": "key1.id", "operation": "equal", "value": "value1"}}
+                ],
             },
             {"permission": "app:*:read", "resourceDefinitions": []},
         ]
