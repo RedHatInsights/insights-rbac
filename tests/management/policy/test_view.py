@@ -23,7 +23,8 @@ from rest_framework import status
 from rest_framework.test import APIClient
 
 from api.models import User
-from management.models import Group, Principal, Policy, Role, Permission
+from management.models import Group, Principal, Policy, Role, Permission, Workspace
+
 from tests.identity_request import IdentityRequest
 
 
@@ -46,6 +47,7 @@ class PolicyViewsetTests(IdentityRequest):
         self.group.principals.add(self.principal)
         self.group.save()
         Permission.objects.create(permission="app:*:*", tenant=self.tenant)
+        Workspace.objects.create(name="root", description="Root workspace", tenant=self.tenant)
 
     def tearDown(self):
         """Tear down policy viewset tests."""
@@ -53,12 +55,13 @@ class PolicyViewsetTests(IdentityRequest):
         Principal.objects.all().delete()
         Role.objects.all().delete()
         Policy.objects.all().delete()
+        Workspace.objects.all().delete()
 
     def create_role(self, role_name, in_access_data=None):
         """Create a role."""
         access_data = {
             "permission": "app:*:*",
-            "resourceDefinitions": [{"attributeFilter": {"key": "key1", "operation": "equal", "value": "value1"}}],
+            "resourceDefinitions": [{"attributeFilter": {"key": "key1.id", "operation": "equal", "value": "value1"}}],
         }
         if in_access_data:
             access_data = in_access_data

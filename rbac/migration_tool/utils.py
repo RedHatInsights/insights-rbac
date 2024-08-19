@@ -45,7 +45,6 @@ def validate_and_create_obj_ref(obj_name, obj_id):
         validate_all(object_type)
     except ValidationFailed as err:
         logger.error(err)
-
     obj_ref = common_pb2.ObjectReference(type=object_type, id=obj_id)
     try:
         validate_all(obj_ref)
@@ -89,6 +88,15 @@ def stringify_spicedb_relationship(rel: common_pb2.Relationship):
         f"{rel.resource.type.name}:{rel.resource.id}#{rel.relation}@{rel.subject.subject.type.name}:"
         f"{rel.subject.subject.id}"
     )
+
+
+def relationship_to_json(rel):
+    """Convert a relationship to a JSON object."""
+    return {
+        "resource": {"type": rel.resource.type.name, "id": rel.resource.id},
+        "relation": rel.relation,
+        "subject": {"type": rel.subject.subject.type.name, "id": rel.subject.subject.id},
+    }
 
 
 def output_relationships(relationships: list, write_db: bool):

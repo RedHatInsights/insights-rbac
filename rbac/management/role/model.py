@@ -20,6 +20,7 @@ import logging
 from uuid import uuid4
 
 from django.conf import settings
+from django.contrib.postgres.fields import ArrayField
 from django.db import models
 from django.db.models import signals
 from django.utils import timezone
@@ -138,6 +139,8 @@ class BindingMapping(models.Model):
 
     id = models.UUIDField(default=uuid4, primary_key=True)
     v1_role = models.ForeignKey(Role, on_delete=models.CASCADE)
+    v2_role = models.ForeignKey(V2Role, on_delete=models.CASCADE)
+    permissions = ArrayField(models.CharField(max_length=200), blank=True, null=True)
 
 
 def role_related_obj_change_cache_handler(sender=None, instance=None, using=None, **kwargs):

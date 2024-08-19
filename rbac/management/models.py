@@ -20,7 +20,16 @@
 from management.permission.model import Permission
 from management.principal.model import Principal
 from management.group.model import Group
-from management.role.model import Access, ExtRoleRelation, ExtTenant, ResourceDefinition, Role, V2Role, BindingMapping
+from management.role.model import (
+    Access,
+    ExtRoleRelation,
+    ExtTenant,
+    ResourceDefinition,
+    Role,
+    V2Role,
+    RoleMapping,
+    BindingMapping,
+)
 from management.policy.model import Policy
 from management.audit_log.model import AuditLog
 from management.workspace.model import Workspace

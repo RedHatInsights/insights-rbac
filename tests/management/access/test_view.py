@@ -26,7 +26,7 @@ from rest_framework.test import APIClient
 from api.models import Tenant, User
 from datetime import timedelta
 from management.cache import TenantCache
-from management.models import Group, Permission, Principal, Policy, Role, Access
+from management.models import Group, Permission, Principal, Policy, Role, Access, Workspace
 from tests.identity_request import IdentityRequest
 
 
@@ -46,7 +46,7 @@ class AccessViewTests(IdentityRequest):
 
         self.access_data = {
             "permission": "app:*:*",
-            "resourceDefinitions": [{"attributeFilter": {"key": "key1", "operation": "equal", "value": "value1"}}],
+            "resourceDefinitions": [{"attributeFilter": {"key": "key1.id", "operation": "equal", "value": "value1"}}],
         }
 
         test_tenant_org_id = "100001"
@@ -85,6 +85,8 @@ class AccessViewTests(IdentityRequest):
         self.group.save()
         self.permission = Permission.objects.create(permission="app:*:*", tenant=self.tenant)
         Permission.objects.create(permission="app:foo:bar", tenant=self.tenant)
+        Workspace.objects.create(name="root", description="Root workspace", tenant=self.tenant)
+        Workspace.objects.create(name="root", description="Root workspace", tenant=self.test_tenant)
 
     def tearDown(self):
         """Tear down access view tests."""
@@ -92,6 +94,7 @@ class AccessViewTests(IdentityRequest):
         Principal.objects.all().delete()
         Role.objects.all().delete()
         Policy.objects.all().delete()
+        Workspace.objects.all().delete()
 
     def create_role(self, role_name, headers, in_access_data=None):
         """Create a role."""
@@ -276,7 +279,7 @@ class AccessViewTests(IdentityRequest):
         policy_name = "policyA"
         access_data = {
             "permission": "app:test_foo:test_bar",
-            "resourceDefinitions": [{"attributeFilter": {"key": "keyA", "operation": "equal", "value": "valueA"}}],
+            "resourceDefinitions": [{"attributeFilter": {"key": "keyA.id", "operation": "equal", "value": "valueA"}}],
         }
         response = self.create_role(role_name, self.test_headers, access_data)
         role_uuid = response.data.get("uuid")
@@ -317,7 +320,7 @@ class AccessViewTests(IdentityRequest):
         policy_name = "policyA"
         access_data = {
             "permission": "app:test_foo:test_bar",
-            "resourceDefinitions": [{"attributeFilter": {"key": "keyA", "operation": "equal", "value": "valueA"}}],
+            "resourceDefinitions": [{"attributeFilter": {"key": "keyA.id", "operation": "equal", "value": "valueA"}}],
         }
         response = self.create_role(role_name, self.test_headers, access_data)
         role_uuid = response.data.get("uuid")
@@ -356,7 +359,7 @@ class AccessViewTests(IdentityRequest):
         policy_name = "policyA"
         access_data = {
             "permission": "app:test_foo:test_bar",
-            "resourceDefinitions": [{"attributeFilter": {"key": "keyA", "operation": "equal", "value": "valueA"}}],
+            "resourceDefinitions": [{"attributeFilter": {"key": "keyA.id", "operation": "equal", "value": "valueA"}}],
         }
         response = self.create_role(role_name, self.test_headers, access_data)
         role_uuid = response.data.get("uuid")
@@ -397,7 +400,7 @@ class AccessViewTests(IdentityRequest):
         policy_name = "policyA"
         access_data = {
             "permission": "app:test_foo:test_bar",
-            "resourceDefinitions": [{"attributeFilter": {"key": "keyA", "operation": "equal", "value": "valueA"}}],
+            "resourceDefinitions": [{"attributeFilter": {"key": "keyA.id", "operation": "equal", "value": "valueA"}}],
         }
         response = self.create_role(role_name, self.test_headers, access_data)
         role_uuid = response.data.get("uuid")
@@ -570,7 +573,7 @@ class AccessViewTests(IdentityRequest):
         policy_name = "policyA"
         access_data = {
             "permission": "app:test_foo:test_bar",
-            "resourceDefinitions": [{"attributeFilter": {"key": "keyA", "operation": "equal", "value": "valueA"}}],
+            "resourceDefinitions": [{"attributeFilter": {"key": "keyA.id", "operation": "equal", "value": "valueA"}}],
         }
         response = self.create_role(role_name, self.test_headers, access_data)
         role_uuid = response.data.get("uuid")
