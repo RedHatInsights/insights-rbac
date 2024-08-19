@@ -1,4 +1,5 @@
 """Utilities for working with the relation API server."""
+
 import json
 import logging
 
@@ -39,7 +40,7 @@ class GRPCError:
 
 def validate_and_create_obj_ref(obj_name, obj_id):
     """Validate and create a resource."""
-    object_type = common_pb2.ObjectType(name=obj_name)
+    object_type = common_pb2.ObjectType(name=obj_name, namespace="rbac")
     try:
         validate_all(object_type)
     except ValidationFailed as err:
@@ -80,3 +81,19 @@ def write_relationships(relationships):
                 f"error code {error.code}, reason {error.reason}"
                 f"relationships: {relationships}"
             )
+
+
+def stringify_spicedb_relationship(rel: common_pb2.Relationship):
+    """Stringify a relationship for logging."""
+    return (
+        f"{rel.resource.type.name}:{rel.resource.id}#{rel.relation}@{rel.subject.subject.type.name}:"
+        f"{rel.subject.subject.id}"
+    )
+
+
+def output_relationships(relationships: list, write_db: bool):
+    """Output relationships to the console and optionally write them to the database."""
+    for rel in relationships:
+        logger.info(stringify_spicedb_relationship(rel))
+    if write_db:
+        write_relationships(relationships)
