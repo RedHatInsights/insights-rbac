@@ -402,7 +402,13 @@ class GroupViewSet(
         if not request.user.admin:
             self.protect_group_with_user_access_admin_role(group.roles_with_access(), "update_group")
 
-        return super().update(request=request, args=args, kwargs=kwargs)
+        update_group = super().update(request=request, args=args, kwargs=kwargs)
+
+        if status.is_success(update_group.status_code):
+            auditlog = AuditLog()
+            auditlog.log_edit(request, AuditLog.GROUP, group)
+
+        return update_group
 
     def add_principals(self, group, principals, org_id=None):
         """Process list of principals and add them to the group."""

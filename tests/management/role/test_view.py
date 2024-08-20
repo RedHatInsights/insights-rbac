@@ -1124,6 +1124,25 @@ class RoleViewsetTests(IdentityRequest):
         self.assertEqual(updated_name, response.data.get("display_name"))
         self.assertEqual(updated_description, response.data.get("description"))
 
+        # test whether newly edited (PATCH) role is added correctly within audit log database
+        al_url = "/api/v1/auditlogs/"
+        al_client = APIClient()
+        al_response = al_client.get(al_url, **self.headers)
+        retrieve_data = al_response.data.get("data")
+        al_list = retrieve_data
+        print(al_list)
+        al_dict = al_list[1]
+
+        al_dict_principal_username = al_dict["principal_username"]
+        al_dict_description = al_dict["description"]
+        al_dict_resource = al_dict["resource_type"]
+        al_dict_action = al_dict["action"]
+
+        self.assertEqual(self.user_data["username"], al_dict_principal_username)
+        self.assertIsNotNone(al_dict_description)
+        self.assertEqual(al_dict_resource, "role")
+        self.assertEqual(al_dict_action, "edit")
+
     def test_patch_role_failure(self):
         """Test that we return a 400 with invalid fields in the patch."""
         role_name = "role"
@@ -1181,6 +1200,25 @@ class RoleViewsetTests(IdentityRequest):
             self.assertIsNotNone(response.data.get("uuid"))
             self.assertEqual(updated_name, response.data.get("name"))
             self.assertEqual("cost-management:*:*", response.data.get("access")[0]["permission"])
+
+            # test whether newly updatecd (post) role is added correctly within audit log database
+            al_url = "/api/v1/auditlogs/"
+            al_client = APIClient()
+            al_response = al_client.get(al_url, **self.headers)
+            retrieve_data = al_response.data.get("data")
+            al_list = retrieve_data
+            al_dict = al_list[1]
+
+            al_dict_principal_username = al_dict["principal_username"]
+            al_dict_description = al_dict["description"]
+            al_dict_resource = al_dict["resource_type"]
+            al_dict_action = al_dict["action"]
+
+            self.assertEqual(self.user_data["username"], al_dict_principal_username)
+            self.assertIsNotNone(al_dict_description)
+            self.assertEqual(al_dict_resource, "role")
+            self.assertEqual(al_dict_action, "edit")
+
             kafka_mock.assert_called_with(
                 settings.NOTIFICATIONS_TOPIC,
                 {
