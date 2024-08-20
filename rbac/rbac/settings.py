@@ -481,3 +481,4 @@ UMB_PORT = ENVIRONMENT.get_value("UMB_PORT", default="61612")
 SA_NAME = ENVIRONMENT.get_value("SA_NAME", default="nonprod-hcc-rbac")
 
 RELATION_API_SERVER = ENVIRONMENT.get_value("RELATION_API_SERVER", default="localhost:9000")
+ENV_NAME = ENVIRONMENT.get_value("ENV_NAME", default="stage")

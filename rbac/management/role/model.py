@@ -30,6 +30,7 @@ from management.rbac_fields import AutoDateTimeField
 
 from api.models import TenantAwareModel
 
+
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 
@@ -115,6 +116,28 @@ class ExtRoleRelation(models.Model):
         constraints = [
             models.UniqueConstraint(fields=["ext_tenant", "ext_id"], name="unique external id per external tenant")
         ]
+
+
+class V2Role(models.Model):
+    """V2 role definition."""
+
+    id = models.UUIDField(default=uuid4, primary_key=True)
+    is_system = models.BooleanField(default=False)
+    v1_roles = models.ManyToManyField(Role, through="RoleMapping")
+
+
+class RoleMapping(models.Model):
+    """V2 role mapping definition."""
+
+    v1_role = models.ForeignKey(Role, on_delete=models.CASCADE)
+    v2_role = models.ForeignKey(V2Role, on_delete=models.CASCADE)
+
+
+class BindingMapping(models.Model):
+    """V2 role binding definition."""
+
+    id = models.UUIDField(default=uuid4, primary_key=True)
+    v1_role = models.ForeignKey(Role, on_delete=models.CASCADE)
 
 
 def role_related_obj_change_cache_handler(sender=None, instance=None, using=None, **kwargs):
