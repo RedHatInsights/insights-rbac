@@ -21,7 +21,7 @@ paths:
               - $ref: '#/components/schemas/Workspaces.DepthEnum'
               - type: integer
                 format: uint16
-            default: 0
+            default: 1
       responses:
         '200':
           description: The request has succeeded.
@@ -633,7 +633,7 @@ components:
       type: number
       enum:
         - -1
-        - 0
+        - 1
     Workspaces.PatchWorkspaceRequest:
       type: object
       properties:
