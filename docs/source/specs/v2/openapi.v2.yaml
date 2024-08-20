@@ -30,7 +30,7 @@ paths:
               schema:
                 type: array
                 items:
-                  $ref: '#/components/schemas/Workspaces.BasicWorkspace'
+                  $ref: '#/components/schemas/Workspaces.Workspace'
         '401':
           description: Access is unauthorized.
           content:

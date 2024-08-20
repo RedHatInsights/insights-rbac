@@ -151,7 +151,7 @@ namespace Workspaces {
     @summary("List workspaces in a tenant")
     @get op list(
         @query depth?: Depth = DepthEnum.Current
-    ): BasicWorkspace[] | Problems.CommonProblems;
+    ): Workspace[] | Problems.CommonProblems;
 
     @doc("Create workspace in tenant")
     @summary("Create workspace in tenant")
