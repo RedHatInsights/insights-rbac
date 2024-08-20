@@ -14,13 +14,18 @@
 #    You should have received a copy of the GNU Affero General Public License
 #    along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
+
 """Debezium model for outbox messages."""
-from django.db import models
 from uuid import uuid4
 
+from django.db import models
+
+
 class Outbox(models.Model):
+    """Outbox Table for Debezium."""
+
     id = models.UUIDField(primary_key=True, default=uuid4, editable=False)
     aggregatetype = models.CharField(max_length=255)
     aggregateid = models.CharField(max_length=255)
-    event_type = models.CharField(max_length=255, db_column='type')
+    event_type = models.CharField(max_length=255, db_column="type")
     payload = models.JSONField()
