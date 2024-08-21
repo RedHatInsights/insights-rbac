@@ -126,6 +126,8 @@ objects:
                 key: django-secret-key
                 name: ${NAME}-secret
                 optional: false
+          - name: ENV_NAME
+            value: ${ENV_NAME}
           - name: PRINCIPAL_PROXY_SERVICE_PROTOCOL
             valueFrom:
               secretKeyRef:
@@ -445,6 +447,8 @@ objects:
             value: ${DJANGO_LOG_DIRECTORY}
           - name: DJANGO_LOGGING_FILE
             value: ${DJANGO_LOGGING_FILE}
+          - name: ENV_NAME
+            value: ${ENV_NAME}
           - name: PERMISSION_SEEDING_ENABLED
             value: ${PERMISSION_SEEDING_ENABLED}
           - name: ROLE_SEEDING_ENABLED

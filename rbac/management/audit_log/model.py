@@ -84,6 +84,20 @@ class AuditLog(TenantAwareModel):
             # TODO: update for permission related items
             return None
 
+    def find_edited_field(self, resource, resource_name, request, object):
+        """Add additional information when group/role is edited."""
+        description = resource_name + ": " + "\n "
+        if request.data.get("name") != object.name:
+            description = description + "Edited name \n"
+        if request.data.get("description") != object.description:
+            description = description + "Edited description"
+        if resource == AuditLog.ROLE:
+            if request.data.get("display_name") != object.display_name:
+                description = description + "Edited display name \n"
+            if request.data.get("access"):
+                description = description + "edited access (permissions/resources)"
+        return description
+
     def log_create(self, request, resource):
         """Audit Log when a role or a group is created."""
         self.principal_username = request.user.username
@@ -108,5 +122,19 @@ class AuditLog(TenantAwareModel):
         self.description = "Deleted " + resource_name
 
         self.action = AuditLog.DELETE
+        self.tenant_id = self.get_tenant_id(request)
+        super(AuditLog, self).save()
+
+    def log_edit(self, request, resource, object):
+        """Audit Log when a role or a group is edit."""
+        self.principal_username = request.user.username
+
+        self.resource_type = resource
+        self.resource_id = object.id
+        resource_name = resource + " " + object.name
+
+        more_information = self.find_edited_field(resource, resource_name, request, object)
+        self.description = more_information
+        self.action = AuditLog.EDIT
         self.tenant_id = self.get_tenant_id(request)
         super(AuditLog, self).save()

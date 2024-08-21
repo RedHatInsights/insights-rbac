@@ -115,6 +115,14 @@ To run the local dev Django on a specific port use::
 
     make PORT=8111 serve
 
+Migrating Relations
+^^^^^^^^^^^^^^^^^^^
+
+To run the migrator tool to convert RBAC data into [Kessel relations](https://github.com/project-kessel/relations-api), use ::
+
+    DJANGO_READ_DOT_ENV_FILE=True ./rbac/manage.py migrate_relations [--org-list ORG_LIST [ORG_LIST ...]] [--exclude-apps EXCLUDE_APPS [EXCLUDE_APPS ...]] [--write-to-db]
+
+
 Making Requests
 ---------------
 

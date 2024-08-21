@@ -16,13 +16,13 @@
 #
 """Test the utils module."""
 from unittest.mock import Mock, call, patch
-import uuid
 
 from django.test import TestCase
 
 from api.models import Tenant
 from management.models import *
-from migration_tool.migrate import migrate_roles
+from migration_tool.migrate import migrate_data
+from management.workspace.model import Workspace
 
 
 class MigrateTests(TestCase):
@@ -32,42 +32,54 @@ class MigrateTests(TestCase):
         """Set up the utils tests."""
         super().setUp()
         public_tenant = Tenant.objects.create(tenant_name="public")
-        permission1 = Permission.objects.create(permission="app1:*:*", tenant=public_tenant)
-        permission2 = Permission.objects.create(permission="app2:resource2:*", tenant=public_tenant)
+        # This would be skipped
+        permission1 = Permission.objects.create(permission="app1:hosts:read", tenant=public_tenant)
+        permission2 = Permission.objects.create(permission="inventory:hosts:write", tenant=public_tenant)
+        # Two organization
         self.tenant = Tenant.objects.create(org_id="1234567", tenant_name="tenant")
         another_tenant = Tenant.objects.create(org_id="7654321")
 
-        # setup data
-        self.roleA1 = Role.objects.create(name="roleA1", tenant=self.tenant)
-        self.accessA11 = Access.objects.create(permission=permission1, role=self.roleA1, tenant=self.tenant)
-        self.accessA12 = Access.objects.create(permission=permission2, role=self.roleA1, tenant=self.tenant)
+        # setup data for organization 1234567
+        self.aws_account_id_1 = "123456"
+        self.aws_account_id_2 = "654321"
+        # This role will be skipped because it contains permission with skipping application
+        self.role_a1 = Role.objects.create(name="role_a1", tenant=self.tenant)
+        self.access_a11 = Access.objects.create(permission=permission1, role=self.role_a1, tenant=self.tenant)
+        self.access_a12 = Access.objects.create(permission=permission2, role=self.role_a1, tenant=self.tenant)
 
-        self.roleA2 = Role.objects.create(name="roleA2", tenant=self.tenant)
-        self.accessA2 = Access.objects.create(permission=permission2, role=self.roleA2, tenant=self.tenant)
-        self.resourceDef = ResourceDefinition.objects.create(
+        self.role_a2 = Role.objects.create(name="role_a2", tenant=self.tenant)
+        self.access_a2 = Access.objects.create(permission=permission2, role=self.role_a2, tenant=self.tenant)
+        self.resourceDef_a2 = ResourceDefinition.objects.create(
             attributeFilter={
-                "key": "aws.account",
+                "key": "cost-management.aws.account",
                 "operation": "equal",
-                "value": "admin",
+                "value": self.aws_account_id_1,
             },
-            access=self.accessA2,
+            access=self.access_a2,
             tenant=self.tenant,
         )
-        self.groupA21 = Group.objects.create(name="groupA21", tenant=self.tenant)
+        self.role_a3 = Role.objects.create(name="role_a3", tenant=self.tenant)
+        self.access_a3 = Access.objects.create(permission=permission2, role=self.role_a3, tenant=self.tenant)
+        self.resourceDef_a3 = ResourceDefinition.objects.create(
+            attributeFilter={
+                "key": "aws.account",
+                "operation": "in",
+                "value": [self.aws_account_id_1, self.aws_account_id_2],
+            },
+            access=self.access_a3,
+            tenant=self.tenant,
+        )
+        self.group_a2 = Group.objects.create(name="group_a2", tenant=self.tenant)
         self.principal1 = Principal.objects.create(username="principal1", tenant=self.tenant)
         self.principal2 = Principal.objects.create(username="principal2", tenant=self.tenant)
-        self.groupA21.principals.add(self.principal1, self.principal2)
-        self.policyA21 = Policy.objects.create(name="System PolicyA21", group=self.groupA21, tenant=self.tenant)
-        self.policyA21.roles.add(self.roleA2)
-        self.policyA21.save()
-        self.groupA22 = Group.objects.create(name="groupA22", tenant=self.tenant)
-        self.policyA22 = Policy.objects.create(name="System PolicyA22", group=self.groupA22, tenant=self.tenant)
-        self.policyA22.roles.add(self.roleA2)
-        self.policyA22.save()
+        self.group_a2.principals.add(self.principal1, self.principal2)
+        self.policy_a2 = Policy.objects.create(name="System Policy_a2", group=self.group_a2, tenant=self.tenant)
+        self.policy_a2.roles.add(self.role_a2)
+        self.policy_a2.save()
 
-        # setup data for another tenant
-        self.roleB = Role.objects.create(name="roleB", tenant=another_tenant)
-        self.accessB = Access.objects.create(permission=permission2, role=self.roleB, tenant=another_tenant)
+        # setup data for another tenant 7654321
+        self.role_b = Role.objects.create(name="role_b", tenant=another_tenant)
+        self.access_b = Access.objects.create(permission=permission2, role=self.role_b, tenant=another_tenant)
         self.system_role = Role.objects.create(name="system_role", system=True, tenant=public_tenant)
         Access.objects.bulk_create(
             [
@@ -76,12 +88,66 @@ class MigrateTests(TestCase):
             ]
         )
 
-    @patch("migration_tool.migrate.logger")
-    def test_migration_of_roles(self, logger_mock):
+    @patch("migration_tool.utils.logger")
+    def test_migration_of_data(self, logger_mock):
         """Test that we get the correct access for a principal."""
         kwargs = {"exclude_apps": ["app1"], "orgs": ["1234567"]}
-        migrate_roles(**kwargs)
-        self.assertEqual(
-            len(logger_mock.info.call_args_list),
-            20,
-        )
+        migrate_data(**kwargs)
+        self.assertEqual(V2Role.objects.count(), 3)
+        self.assertEqual(BindingMapping.objects.count(), 3)
+
+        org_id = self.tenant.org_id
+        root_workspace = Workspace.objects.get(name="root", tenant=self.tenant)
+        v2_role_a2 = self.role_a2.v2role_set.first()
+        rolebinding_a2 = self.role_a2.bindingmapping_set.first()
+
+        v2_role_a31 = self.role_a3.v2role_set.first()
+        v2_role_a32 = self.role_a3.v2role_set.last()
+        rolebinding_a31 = self.role_a3.bindingmapping_set.first()
+        rolebinding_a32 = self.role_a3.bindingmapping_set.last()
+        workspace_1 = "123456"
+        workspace_2 = "654321"
+        # Switch these two if rolebinding order is not the same as v2 roles
+        if (
+            call(f"role_binding:{rolebinding_a31.id}#granted@role:{v2_role_a31.id}")
+            not in logger_mock.info.call_args_list
+        ):
+            rolebinding_a31, rolebinding_a32 = rolebinding_a32, rolebinding_a31
+        # Switch these two if binding is not in correct order
+        if (
+            call(f"workspace:{self.aws_account_id_1}#user_grant@role_binding:{rolebinding_a31.id}")
+            not in logger_mock.info.call_args_list
+        ):
+            workspace_1, workspace_2 = workspace_2, workspace_1
+
+        tuples = [
+            # Org relationships of self.tenant
+            # the other org is not included since it is not specified in the orgs parameter
+            ## Workspaces root and default
+            call(f"workspace:{org_id}#parent@workspace:{root_workspace.uuid}"),
+            call(f"workspace:{root_workspace.uuid}#parent@tenant:{org_id}"),
+            ## Realm
+            call(f"tenant:{org_id}#realm@realm:stage"),
+            ## Users to tenant
+            call(f"tenant:{org_id}#member@user:{self.principal1.uuid}"),
+            call(f"tenant:{org_id}#member@user:{self.principal2.uuid}"),
+            ## Group member
+            call(f"group:{self.group_a2.uuid}#member@user:{self.principal1.uuid}"),
+            call(f"group:{self.group_a2.uuid}#member@user:{self.principal2.uuid}"),
+            ## Role binding to role_a2
+            call(f"role_binding:{rolebinding_a2.id}#granted@role:{v2_role_a2.id}"),
+            call(f"role:{v2_role_a2.id}#inventory_hosts_write@user:*"),
+            call(f"role_binding:{rolebinding_a2.id}#subject@group:{self.group_a2.uuid}"),
+            call(f"workspace:{self.aws_account_id_1}#parent@workspace:{root_workspace.uuid}"),
+            call(f"workspace:{self.aws_account_id_1}#user_grant@role_binding:{rolebinding_a2.id}"),
+            ## Role binding to role_a3
+            call(f"role_binding:{rolebinding_a31.id}#granted@role:{v2_role_a31.id}"),
+            call(f"role:{v2_role_a31.id}#inventory_hosts_write@user:*"),
+            call(f"workspace:{workspace_1}#parent@workspace:{root_workspace.uuid}"),
+            call(f"workspace:{workspace_1}#user_grant@role_binding:{rolebinding_a31.id}"),
+            call(f"role_binding:{rolebinding_a32.id}#granted@role:{v2_role_a32.id}"),
+            call(f"role:{v2_role_a32.id}#inventory_hosts_write@user:*"),
+            call(f"workspace:{workspace_2}#parent@workspace:{root_workspace.uuid}"),
+            call(f"workspace:{workspace_2}#user_grant@role_binding:{rolebinding_a32.id}"),
+        ]
+        logger_mock.info.assert_has_calls(tuples, any_order=True)

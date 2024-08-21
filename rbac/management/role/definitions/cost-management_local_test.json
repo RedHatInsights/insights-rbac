@@ -9,11 +9,11 @@
         }]
     }, {
         "name": "Cost Price List Administrator Local Test",
-        "description": "A cost management role that grants read and write permissions on price list rates, just for testing locally.",
+        "description": "A cost management role that grants read and write permissions on cost models, just for testing locally.",
         "system": true,
         "version": 2,
         "access": [{
-            "permission": "cost-management:rate:*"
+            "permission": "cost-management:cost_model:*"
         }]
     }, {
         "name": "Cost Cloud Viewer Local Test",

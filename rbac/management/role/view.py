@@ -347,7 +347,15 @@ class RoleViewSet(
                 message = f"Field '{field}' is not supported. Please use one or more of: {VALID_PATCH_FIELDS}."
                 error = {key: [_(message)]}
                 raise serializers.ValidationError(error)
-        return super().update(request=request, args=args, kwargs=kwargs)
+
+        role = self.get_object()
+        partial_update_role = super().update(request=request, args=args, kwargs=kwargs)
+
+        if status.is_success(partial_update_role.status_code):
+            auditlog = AuditLog()
+            auditlog.log_edit(request, AuditLog.ROLE, role)
+
+        return partial_update_role
 
     def update(self, request, *args, **kwargs):
         """Update a role.
@@ -409,7 +417,15 @@ class RoleViewSet(
         """
         validate_uuid(kwargs.get("uuid"), "role uuid validation")
         self.validate_role(request)
-        return super().update(request=request, args=args, kwargs=kwargs)
+
+        role = self.get_object()
+        update_role = super().update(request=request, args=args, kwargs=kwargs)
+
+        if status.is_success(update_role.status_code):
+            auditlog = AuditLog()
+            auditlog.log_edit(request, AuditLog.ROLE, role)
+
+        return update_role
 
     @action(detail=True, methods=["get"])
     def access(self, request, uuid=None):

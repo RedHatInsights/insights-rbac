@@ -39,7 +39,7 @@ from management.principal.proxy import (
     bop_request_time_tracking,
 )
 from management.tasks import (
-    migrate_roles_in_worker,
+    migrate_data_in_worker,
     run_migrations_in_worker,
     run_ocm_performance_in_worker,
     run_seeds_in_worker,
@@ -477,22 +477,22 @@ def get_param_list(request, param_name):
     return params
 
 
-def role_migration(request):
-    """View method for running role migrations from V1 to V2 spiceDB schema.
+def data_migration(request):
+    """View method for running migrations from V1 to V2 spiceDB schema.
 
-    POST /_private/api/utils/role_migration/?exclude_apps=cost_management,rbac&orgs=id_1,id_2&write_db=True
+    POST /_private/api/utils/data_migration/?exclude_apps=cost_management,rbac&orgs=id_1,id_2&write_db=True
     """
     if request.method != "POST":
         return HttpResponse('Invalid method, only "POST" is allowed.', status=405)
-    logger.info("Running V1 Role migration.")
+    logger.info("Running V1 data migration.")
 
     args = {
         "exclude_apps": get_param_list(request, "exclude_apps"),
         "orgs": get_param_list(request, "orgs"),
         "write_db": request.GET.get("write_db", "False") == "True",
     }
-    migrate_roles_in_worker.delay(args)
-    return HttpResponse("Role migration from V1 to V2 are running in a background worker.", status=202)
+    migrate_data_in_worker.delay(args)
+    return HttpResponse("Data migration from V1 to V2 are running in a background worker.", status=202)
 
 
 class SentryDiagnosticError(Exception):

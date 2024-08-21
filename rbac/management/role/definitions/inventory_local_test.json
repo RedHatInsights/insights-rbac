@@ -15,6 +15,23 @@
             "permission": "inventory:hosts:read"
           }
         ]
+      },
+      {
+        "name": "Inventory Groups Administrator",
+        "display_name": "Workspace Administrator",
+        "description": "Be able to read and edit Workspace data.",
+        "system": true,
+        "platform_default": false,
+        "admin_default": true,
+        "version": 4,
+        "access": [
+          {
+            "permission": "inventory:groups:write"
+          },
+          {
+            "permission": "inventory:groups:read"
+          }
+        ]
       }
     ]
   }
