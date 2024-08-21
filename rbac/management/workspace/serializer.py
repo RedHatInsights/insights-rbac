@@ -17,7 +17,6 @@
 
 """Serializer for workspace management."""
 from rest_framework import serializers
-
 from .model import Workspace
 
 
@@ -27,20 +26,23 @@ class WorkspaceSerializer(serializers.ModelSerializer):
     name = serializers.CharField(required=False, max_length=255)
     uuid = serializers.UUIDField(read_only=True, required=False)
     description = serializers.CharField(allow_null=True, required=False, max_length=255)
-    parent = serializers.UUIDField(allow_null=True, required=False)
+    parent_id = serializers.UUIDField(allow_null=True, required=False)
 
     class Meta:
         """Metadata for the serializer."""
 
         model = Workspace
-        fields = ("name", "uuid", "parent", "description")
+        fields = ("name", "uuid", "parent_id", "description")
 
     def create(self, validated_data):
         """Create the workspace object in the database."""
-        name = validated_data.pop("name")
-        description = validated_data.pop("description", "")
-        tenant = self.context["request"].tenant
-        parent = validated_data.pop("parent", None)
+        parent_id = validated_data.get("parent_id")
+        validated_data["tenant"] = self.context["request"].tenant
+        if parent_id:
+            try:
+                Workspace.objects.get(uuid=parent_id)
+            except Exception:
+                raise serializers.ValidationError("Parent workspace does not exist.")
 
-        workspace = Workspace.objects.create(name=name, description=description, parent=parent, tenant=tenant)
+        workspace = Workspace.objects.create(**validated_data)
         return workspace
