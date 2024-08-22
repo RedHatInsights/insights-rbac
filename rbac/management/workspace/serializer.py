@@ -27,12 +27,13 @@ class WorkspaceSerializer(serializers.ModelSerializer):
     uuid = serializers.UUIDField(read_only=True, required=False)
     description = serializers.CharField(allow_null=True, required=False, max_length=255)
     parent_id = serializers.UUIDField(allow_null=True, required=False)
+    child_ids = serializers.SerializerMethodField()
 
     class Meta:
         """Metadata for the serializer."""
 
         model = Workspace
-        fields = ("name", "uuid", "parent_id", "description")
+        fields = ("name", "uuid", "parent_id", "description", "child_ids")
 
     def create(self, validated_data):
         """Create the workspace object in the database."""
@@ -40,3 +41,6 @@ class WorkspaceSerializer(serializers.ModelSerializer):
 
         workspace = Workspace.objects.create(**validated_data)
         return workspace
+
+    def get_child_ids(self, obj):
+        return [child.uuid for child in obj.children.all()]

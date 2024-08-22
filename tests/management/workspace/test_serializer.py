@@ -40,14 +40,28 @@ class WorkspaceSerializerTest(TestCase):
         Workspace.objects.update(parent=None)
         Workspace.objects.all().delete()
 
-    def test_get_workspace_detail(self):
-        """Return GET /workspace/<uuid>/ serializer response"""
+    def test_get_workspace_detail_child(self):
+        """Return GET /workspace/<uuid>/ serializer response for child"""
         serializer = WorkspaceSerializer(self.child)
         expected_data = {
             "uuid": str(self.child.uuid),
             "name": self.child.name,
             "description": self.child.description,
             "parent_id": str(self.parent.uuid),
+            "child_ids": [],
+        }
+
+        self.assertDictEqual(serializer.data, expected_data)
+
+    def test_get_workspace_detail_parent(self):
+        """Return GET /workspace/<uuid>/ serializer response for parent"""
+        serializer = WorkspaceSerializer(self.parent)
+        expected_data = {
+            "uuid": str(self.parent.uuid),
+            "name": self.parent.name,
+            "description": self.parent.description,
+            "parent_id": None,
+            "child_ids": [self.child.uuid],
         }
 
         self.assertDictEqual(serializer.data, expected_data)
