@@ -36,13 +36,7 @@ class WorkspaceSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         """Create the workspace object in the database."""
-        parent_id = validated_data.get("parent_id")
         validated_data["tenant"] = self.context["request"].tenant
-        if parent_id:
-            try:
-                Workspace.objects.get(uuid=parent_id)
-            except Exception:
-                raise serializers.ValidationError("Parent workspace does not exist.")
 
         workspace = Workspace.objects.create(**validated_data)
         return workspace
