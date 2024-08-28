@@ -5,7 +5,7 @@ info:
 tags:
   - name: Workspaces
 paths:
-  /workspaces:
+  /workspaces/:
     post:
       tags:
         - Workspaces
@@ -78,7 +78,7 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/Workspaces.BasicWorkspace'
-  /workspaces/{uuid}:
+  /workspaces/{uuid}/:
     get:
       tags:
         - Workspaces
@@ -256,7 +256,7 @@ paths:
             $ref: '#/components/schemas/UUID'
       responses:
         '200':
-          description: 'There is no content to send for this request, but the headers may be useful. '
+          description: The request has succeeded.
           content:
             application/json:
               schema:
@@ -348,7 +348,7 @@ paths:
             $ref: '#/components/schemas/UUID'
       responses:
         '204':
-          description: The request has succeeded and the resource has been deleted.
+          description: 'There is no content to send for this request, but the headers may be useful. '
         '400':
           description: The server could not understand the request due to invalid syntax.
           content:
