@@ -119,30 +119,6 @@ class ExtRoleRelation(models.Model):
         ]
 
 
-class V2Role(models.Model):
-    """V2 role definition."""
-
-    id = models.UUIDField(default=uuid4, primary_key=True)
-    is_system = models.BooleanField(default=False)
-    v1_roles = models.ManyToManyField(Role, through="RoleMapping")
-
-
-class RoleMapping(models.Model):
-    """V2 role mapping definition."""
-
-    v1_role = models.ForeignKey(Role, on_delete=models.CASCADE)
-    v2_role = models.ForeignKey(V2Role, on_delete=models.CASCADE)
-
-
-class BindingMapping(models.Model):
-    """V2 role binding definition."""
-
-    id = models.UUIDField(default=uuid4, primary_key=True)
-    v1_role = models.ForeignKey(Role, on_delete=models.CASCADE)
-    v2_role = models.ForeignKey(V2Role, on_delete=models.CASCADE)
-    permissions = ArrayField(models.CharField(max_length=200), blank=True, null=True)
-
-
 def role_related_obj_change_cache_handler(sender=None, instance=None, using=None, **kwargs):
     """Signal handler for invalidating Principal cache on Role object change."""
     logger.info(
