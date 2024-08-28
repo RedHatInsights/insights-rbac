@@ -18,7 +18,7 @@
 """Class to handle Dual Write API related operations."""
 import logging
 
-from management.models import Workspace
+from management.models import Outbox, Workspace
 from migration_tool.migrate import migrate_role
 from migration_tool.utils import relationship_to_json
 
@@ -36,7 +36,7 @@ class DualWriteException(Exception):
 class RelationApiDualWriteHandler:
     """Class to handle Dual Write API related operations."""
 
-    def __init__(self, role):
+    def __init__(self, role, event_type):
         """Initialize RelationApiDualWriteHandler."""
         if not self.replication_enabled():
             return
@@ -49,6 +49,7 @@ class RelationApiDualWriteHandler:
             self.root_workspace = Workspace.objects.get(
                 name="root", description="Root workspace", tenant_id=self.tenant_id
             )
+            self.event_type = event_type
         except Exception as e:
             raise DualWriteException(e)
 
@@ -73,7 +74,6 @@ class RelationApiDualWriteHandler:
         """Delete and generated relations with mapping for a role."""
         if not self.replication_enabled():
             return []
-        self.delete_mappings()
         return self.generate_relations_and_mappings_for_role()
 
     def generate_relations_and_mappings_for_role(self):
@@ -141,4 +141,8 @@ class RelationApiDualWriteHandler:
         logger.info(
             "[Dual Write] Replication event: %s for role(%s): '%s'", replication_event, self.role.uuid, self.role.name
         )
-        # TODO: serialize and store event in to outbox table
+        # https://debezium.io/documentation/reference/stable/transformations/outbox-event-router.html#basic-outbox-table
+        outbox_record = Outbox.objects.create(
+            aggregatetype="Role", aggregateid=self.role.uuid, event_type=self.event_type, payload=replication_event
+        )
+        outbox_record.delete()

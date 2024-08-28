@@ -225,7 +225,7 @@ class RoleViewSet(
                     auditlog.log_create(request, AuditLog.ROLE)
 
                     role = get_object_or_404(Role, uuid=create_role.data["uuid"])
-                    dual_write_handler = RelationApiDualWriteHandler(role)
+                    dual_write_handler = RelationApiDualWriteHandler(role, "CREATE")
                     dual_write_handler.generate_relations_and_mappings_for_role()
                     dual_write_handler.save_replication_event_to_outbox()
         except DualWriteException as e:
@@ -345,7 +345,7 @@ class RoleViewSet(
         try:
             with transaction.atomic():
                 self.delete_policies_if_no_role_attached(role)
-                dual_write_handler = RelationApiDualWriteHandler(role)
+                dual_write_handler = RelationApiDualWriteHandler(role, "DELETE")
                 dual_write_handler.generate_relations_from_current_state_of_role()
                 response = super().destroy(request=request, args=args, kwargs=kwargs)
                 dual_write_handler.save_replication_event_to_outbox()
@@ -453,7 +453,7 @@ class RoleViewSet(
         """Update a role with replicating data into Relation API."""
         try:
             role = self.get_object()
-            dual_write_handler = RelationApiDualWriteHandler(role)
+            dual_write_handler = RelationApiDualWriteHandler(role, "UPDATE")
             dual_write_handler.generate_relations_from_current_state_of_role()
             with transaction.atomic():
                 response = super().update(request=request, args=args, kwargs=kwargs)
