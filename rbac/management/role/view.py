@@ -348,7 +348,6 @@ class RoleViewSet(
                 dual_write_handler = RelationApiDualWriteHandler(role)
                 dual_write_handler.generate_relations_from_current_state_of_role()
                 response = super().destroy(request=request, args=args, kwargs=kwargs)
-                dual_write_handler.delete_mappings()
                 dual_write_handler.save_replication_event_to_outbox()
         except DualWriteException as e:
             return self.dual_write_exception_response(e)
