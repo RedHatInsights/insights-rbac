@@ -118,6 +118,16 @@ class ExtRoleRelation(models.Model):
             models.UniqueConstraint(fields=["ext_tenant", "ext_id"], name="unique external id per external tenant")
         ]
 
+class BindingMapping(models.Model):
+    """V2 role binding definition."""
+    mappings = models.JSONField(default=dict)
+    # One-to-one relationship with Role
+    role = models.OneToOneField(
+        Role,
+        on_delete=models.CASCADE,
+        related_name='binding_mapping'
+    )
+
 
 def role_related_obj_change_cache_handler(sender=None, instance=None, using=None, **kwargs):
     """Signal handler for invalidating Principal cache on Role object change."""
