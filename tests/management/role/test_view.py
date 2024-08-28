@@ -51,9 +51,7 @@ URL = reverse("role-list")
 def normalize_and_sort(json_obj):
     for key, value in json_obj.items():
         if isinstance(value, list):
-            sorted_list = sorted(
-                [json.dumps(item, sort_keys=True, cls=DjangoJSONEncoder) for item in value]
-            )
+            sorted_list = sorted([json.dumps(item, sort_keys=True, cls=DjangoJSONEncoder) for item in value])
 
             json_obj[key] = [json.loads(item) for item in sorted_list]
     return json_obj
@@ -90,7 +88,9 @@ def relation_api_tuples_for_v1_role(v1_role_uuid, root_workspace_uuid):
             relation_tuple = relation_api_tuple("keya/id", "valueA", "workspace", "workspace", root_workspace_uuid)
             relations.append(relation_tuple)
 
-            relation_tuple = relation_api_tuple("keya/id", "valueA", "user_grant", "role_binding", str(role_binding_uuid))
+            relation_tuple = relation_api_tuple(
+                "keya/id", "valueA", "user_grant", "role_binding", str(role_binding_uuid)
+            )
             relations.append(relation_tuple)
     return relations
 
