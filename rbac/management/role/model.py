@@ -123,11 +123,7 @@ class BindingMapping(models.Model):
 
     mappings = models.JSONField(default=dict)
     # One-to-one relationship with Role
-    role = models.OneToOneField(
-        Role,
-        on_delete=models.CASCADE,
-        related_name="binding_mapping"
-    )
+    role = models.OneToOneField(Role, on_delete=models.CASCADE, related_name="binding_mapping")
 
 
 def role_related_obj_change_cache_handler(sender=None, instance=None, using=None, **kwargs):
