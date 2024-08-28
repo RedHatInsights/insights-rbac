@@ -43,16 +43,19 @@ def spicedb_relationships(
             create_relationship("role_binding", v2_role_binding.id, "role", v2_role_binding.role.id, "granted")
         )
 
-        #if create_binding_to_db:
-        #    v2_role_data = v2_role_binding.role
-        #    v2_role, _ = V2Role.objects.get_or_create(id=v2_role_data.id, is_system=v2_role_data.is_system)
-        #    v2_role.v1_roles.add(v1_role)
-        #    BindingMapping.objects.create(
-        #        id=v2_role_binding.id,
-        #        v1_role=v1_role,
-        #        v2_role=v2_role,
-        #        permissions=list(v2_role_binding.role.permissions),
-        #    )
+        if create_binding_to_db:
+            v2_role_data = v2_role_binding.role
+
+            binding_mapping, _ = BindingMapping.objects.get_or_create(role=v1_role)
+            if not binding_mapping.mappings:
+                binding_mapping.mappings = {}
+
+            binding_mapping.mappings[v2_role_binding.id] = {
+                "v2_role_uuid": str(v2_role_data.id),
+                "permissions": list(v2_role_binding.role.permissions),
+            }
+
+            binding_mapping.save()
 
         for perm in v2_role_binding.role.permissions:
             relationships.append(create_relationship("role", v2_role_binding.role.id, "user", "*", perm))
