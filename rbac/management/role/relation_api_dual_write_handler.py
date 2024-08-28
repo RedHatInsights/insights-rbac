@@ -92,18 +92,6 @@ class RelationApiDualWriteHandler:
         """Get current roles relations."""
         return self.current_role_relations
 
-    def delete_mappings(self):
-        """Delete mappings for a role."""
-        if not self.replication_enabled():
-            return
-        try:
-            logger.info("[Dual Write] Delete mappings for role(%s): '%s'", self.role.uuid, self.role.name)
-            #v2_roles_ids = BindingMapping.objects.filter(v1_role=self.role.id).values("v2_role_id")
-            # this deletes also records in BindingMapping table and role binding
-            # V2Role.objects.filter(id__in=v2_roles_ids).delete()
-        except Exception as e:
-            raise DualWriteException(e)
-
     def set_role(self, role):
         """Set a role."""
         self.role = role
