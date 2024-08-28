@@ -1,0 +1,12 @@
+{
+	"name": "debezium-test",
+	"connector.class": "io.debezium.connector.postgresql.PostgresConnector",
+	"database.hostname": "rbac_db",
+	"database.port": 5432,
+	"database.user": "postgres",
+	"database.password": "postgres",
+	"database.dbname": "postgres",
+	"plugin.name": "pgoutput",
+	"topic.prefix": "debezium-test",
+	"table.include.list": "public.outbox"
+}
