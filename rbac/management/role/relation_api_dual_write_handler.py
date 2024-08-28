@@ -65,7 +65,9 @@ class RelationApiDualWriteHandler:
             logger.info(
                 "[Dual Write] Generate relations from current state of role(%s): '%s'", self.role.uuid, self.role.name
             )
-            relations = migrate_role(self.role, False, str(self.root_workspace.uuid), self.org_id, True, True, False)
+            relations = migrate_role(
+                self.role, False, str(self.root_workspace.uuid), self.org_id, True, True, True, False
+            )
             self.current_role_relations = relations
         except Exception as e:
             raise DualWriteException(e)
@@ -82,7 +84,7 @@ class RelationApiDualWriteHandler:
             return []
         try:
             logger.info("[Dual Write] Generate new relations from role(%s): '%s'", self.role.uuid, self.role.name)
-            relations = migrate_role(self.role, False, str(self.root_workspace.uuid), self.org_id)
+            relations = migrate_role(self.role, False, str(self.root_workspace.uuid), self.org_id, True)
             self.role_relations = relations
             return relations
         except Exception as e:
