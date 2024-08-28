@@ -26,9 +26,7 @@ from management.role.model import (
     ExtTenant,
     ResourceDefinition,
     Role,
-    V2Role,
-    RoleMapping,
-    BindingMapping,
+    #BindingMapping,
 )
 from management.policy.model import Policy
 from management.audit_log.model import AuditLog

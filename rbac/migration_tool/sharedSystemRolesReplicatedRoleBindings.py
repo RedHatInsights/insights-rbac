@@ -20,7 +20,7 @@ import logging
 import uuid
 from typing import Callable, FrozenSet, Type
 
-from management.models import BindingMapping
+#from management.models import BindingMapping
 from management.role.model import Role
 from management.workspace.model import Workspace
 from migration_tool.ingest import add_element
@@ -141,27 +141,28 @@ def v1_role_to_v2_mapping(
         for resource in resources:
             if v2_groups:
                 for v2_group in v2_groups:
-                    if use_binding_from_db:
-                        binding_mapping = BindingMapping.objects.filter(
-                            v1_role=v1_role_db_id, v2_role_id=role.id
-                        ).first()
-                        if binding_mapping is None:
-                            raise Exception("V2 role bindings not found in db")
-                        role_binding_id = str(binding_mapping.id)
-                    else:
-                        role_binding_id = str(uuid.uuid4())
+                    #if use_binding_from_db:
+                    #    binding_mapping = BindingMapping.objects.filter(
+                    #        v1_role=v1_role_db_id, v2_role_id=role.id
+                    #    ).first()
+                    #    if binding_mapping is None:
+                    #        raise Exception("V2 role bindings not found in db")
+                    #    role_binding_id = str(binding_mapping.id)
+                    #else:
+                    #
+                    role_binding_id = str(uuid.uuid4())
                     v2_role_binding = V2rolebinding(
                         role_binding_id, v1_role, role, frozenset({resource}), frozenset({v2_group})
                     )
                     v2_role_bindings.append(v2_role_binding)
             else:
-                if use_binding_from_db:
-                    binding_mapping = BindingMapping.objects.filter(v1_role=v1_role_db_id, v2_role_id=role.id).first()
-                    if binding_mapping is None:
-                        raise Exception("V2 role bindings not found in db")
-                    role_binding_id = str(binding_mapping.id)
-                else:
-                    role_binding_id = str(uuid.uuid4())
+                #if use_binding_from_db:
+                #    binding_mapping = BindingMapping.objects.filter(v1_role=v1_role_db_id, v2_role_id=role.id).first()
+                #    if binding_mapping is None:
+                #        raise Exception("V2 role bindings not found in db")
+                #    role_binding_id = str(binding_mapping.id)
+                #else:
+                role_binding_id = str(uuid.uuid4())
                 v2_role_binding = V2rolebinding(role_binding_id, v1_role, role, frozenset({resource}), v2_groups)
                 v2_role_bindings.append(v2_role_binding)
     return frozenset(v2_role_bindings)
@@ -225,13 +226,13 @@ def extract_system_roles(perm_groupings, v1_role, db_role_id, use_mapping_from_d
                     else:
                         candidate_system_roles[candidate] = {v1_role.id}
                 # Add a custom role
-                if use_mapping_from_db:
-                    binding_mapping = BindingMapping.objects.filter(
-                        v1_role=db_role_id, permissions__contains=permissions
-                    ).first()
-                    v2_uuid = str(binding_mapping.v2_role_id)
-                else:
-                    v2_uuid = uuid.uuid4()
+                #if use_mapping_from_db:
+                    #binding_mapping = BindingMapping.objects.filter(
+                    #    v1_role=db_role_id, permissions__contains=permissions
+                    #).first()
+                    #v2_uuid = str(binding_mapping.v2_role_id)
+                #else:
+                v2_uuid = uuid.uuid4()
 
                 add_element(resource_roles, V2role(str(v2_uuid), False, frozenset(permissions)), resource)
                 global custom_roles_created

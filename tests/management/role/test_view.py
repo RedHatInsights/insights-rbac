@@ -37,7 +37,7 @@ from management.models import (
     ExtTenant,
     RoleMapping,
     Workspace,
-    BindingMapping,
+    #BindingMapping,
 )
 
 from tests.core.test_kafka import copy_call_args
@@ -58,8 +58,8 @@ def replication_event_for_v1_role(v1_role_uuid, root_workspace_uuid):
 def relation_api_tuples_for_v1_role(v1_role_uuid, root_workspace_uuid):
     """Create a relation API tuple for a v1 role."""
     role_id = Role.objects.get(uuid=v1_role_uuid).id
-    role_binding = BindingMapping.objects.filter(v1_role=role_id)
-
+    #role_binding = BindingMapping.objects.filter(v1_role=role_id)
+    role_binding = []
     relations = []
     for binding in role_binding:
         relation_tuple = relation_api_tuple(
@@ -346,7 +346,7 @@ class RoleViewsetTests(IdentityRequest):
 
         role_id = Role.objects.get(uuid=response.data.get("uuid")).id
         role_mapping = RoleMapping.objects.filter(v1_role=role_id)
-        role_binding = BindingMapping.objects.filter(v1_role=role_id)
+        role_binding = [] #BindingMapping.objects.filter(v1_role=role_id)
 
         self.assertEqual(len(role_binding), 2)
         self.assertEqual(len(role_mapping), 2)

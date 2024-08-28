@@ -18,7 +18,7 @@
 """Class to handle Dual Write API related operations."""
 import logging
 
-from management.models import BindingMapping, V2Role, Workspace
+from management.models import Workspace
 from migration_tool.migrate import migrate_role
 from migration_tool.utils import relationship_to_json
 
@@ -98,9 +98,9 @@ class RelationApiDualWriteHandler:
             return
         try:
             logger.info("[Dual Write] Delete mappings for role(%s): '%s'", self.role.uuid, self.role.name)
-            v2_roles_ids = BindingMapping.objects.filter(v1_role=self.role.id).values("v2_role_id")
+            #v2_roles_ids = BindingMapping.objects.filter(v1_role=self.role.id).values("v2_role_id")
             # this deletes also records in BindingMapping table and role binding
-            V2Role.objects.filter(id__in=v2_roles_ids).delete()
+            # V2Role.objects.filter(id__in=v2_roles_ids).delete()
         except Exception as e:
             raise DualWriteException(e)
 
