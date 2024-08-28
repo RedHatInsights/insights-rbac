@@ -92,10 +92,6 @@ class RelationApiDualWriteHandler:
         """Get current roles relations."""
         return self.current_role_relations
 
-    def set_role(self, role):
-        """Set a role."""
-        self.role = role
-
     def build_replication_event(self):
         """Build replication event."""
         if not self.replication_enabled():
@@ -116,7 +112,7 @@ class RelationApiDualWriteHandler:
         """Generate replication event to outbox table."""
         if not self.replication_enabled():
             return
-        self.set_role(role)
+        self.role = role
         self.regenerate_relations_and_mappings_for_role()
         return self.save_replication_event_to_outbox()
 

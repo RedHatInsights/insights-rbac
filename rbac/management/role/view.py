@@ -393,7 +393,7 @@ class RoleViewSet(
         @apiParam (Path) {String} id Role unique identifier
 
         @apiParam (Request Body) {String} name Role name
-        @apiParam (Request Body) {ArRray} access Access definition
+        @apiParam (Request Body) {Array} access Access definition
         @apiParamExample {json} Request Body:
             {
                 "name": "RoleA",
