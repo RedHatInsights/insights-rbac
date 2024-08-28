@@ -102,7 +102,7 @@ class MigrateTests(TestCase):
         mappings_a2 = role_binding.mappings
         first_key = list(mappings_a2.keys())[0]
 
-        v2_role_a2 = mappings_a2[first_key]["v2_role_uuid"] #self.role_a2.v2role_set.first()
+        v2_role_a2 = mappings_a2[first_key]["v2_role_uuid"]
         rolebinding_a2 = first_key
 
         role_binding_a3 = BindingMapping.objects.filter(role=self.role_a3).first()
@@ -120,10 +120,7 @@ class MigrateTests(TestCase):
         workspace_1 = "123456"
         workspace_2 = "654321"
         # Switch these two if rolebinding order is not the same as v2 roles
-        if (
-            call(f"role_binding:{rolebinding_a31}#granted@role:{v2_role_a31}")
-            not in logger_mock.info.call_args_list
-        ):
+        if call(f"role_binding:{rolebinding_a31}#granted@role:{v2_role_a31}") not in logger_mock.info.call_args_list:
             rolebinding_a31, rolebinding_a32 = rolebinding_a32, rolebinding_a31
         # Switch these two if binding is not in correct order
         if (

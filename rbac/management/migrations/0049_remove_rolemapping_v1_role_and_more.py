@@ -6,29 +6,29 @@ from django.db import migrations
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('management', '0048_outbox'),
+        ("management", "0048_outbox"),
     ]
 
     operations = [
         migrations.RemoveField(
-            model_name='rolemapping',
-            name='v1_role',
+            model_name="rolemapping",
+            name="v1_role",
         ),
         migrations.RemoveField(
-            model_name='rolemapping',
-            name='v2_role',
+            model_name="rolemapping",
+            name="v2_role",
         ),
         migrations.RemoveField(
-            model_name='v2role',
-            name='v1_roles',
+            model_name="v2role",
+            name="v1_roles",
         ),
         migrations.DeleteModel(
-            name='BindingMapping',
+            name="BindingMapping",
         ),
         migrations.DeleteModel(
-            name='RoleMapping',
+            name="RoleMapping",
         ),
         migrations.DeleteModel(
-            name='V2Role',
+            name="V2Role",
         ),
     ]
