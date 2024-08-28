@@ -20,7 +20,6 @@ import logging
 from uuid import uuid4
 
 from django.conf import settings
-from django.contrib.postgres.fields import ArrayField
 from django.db import models
 from django.db.models import signals
 from django.utils import timezone
@@ -118,14 +117,16 @@ class ExtRoleRelation(models.Model):
             models.UniqueConstraint(fields=["ext_tenant", "ext_id"], name="unique external id per external tenant")
         ]
 
+
 class BindingMapping(models.Model):
-    """V2 role binding definition."""
+    """V2 binding Mapping definition."""
+
     mappings = models.JSONField(default=dict)
     # One-to-one relationship with Role
     role = models.OneToOneField(
         Role,
         on_delete=models.CASCADE,
-        related_name='binding_mapping'
+        related_name="binding_mapping"
     )
 
 

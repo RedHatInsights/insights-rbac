@@ -93,29 +93,38 @@ class MigrateTests(TestCase):
         """Test that we get the correct access for a principal."""
         kwargs = {"exclude_apps": ["app1"], "orgs": ["1234567"]}
         migrate_data(**kwargs)
-        #self.assertEqual(V2Role.objects.count(), 3)
-        #self.assertEqual(BindingMapping.objects.count(), 3)
 
         org_id = self.tenant.org_id
         root_workspace_id = f"root-workspace-{self.tenant.org_id}"
-        v2_role_a2 = self.role_a2.v2role_set.first()
-        rolebinding_a2 = self.role_a2.bindingmapping_set.first()
 
-        v2_role_a31 = self.role_a3.v2role_set.first()
-        v2_role_a32 = self.role_a3.v2role_set.last()
-        rolebinding_a31 = self.role_a3.bindingmapping_set.first()
-        rolebinding_a32 = self.role_a3.bindingmapping_set.last()
+        role_binding = BindingMapping.objects.filter(role=self.role_a2).first()
+
+        mappings_a2 = role_binding.mappings
+        first_key = list(mappings_a2.keys())[0]
+
+        v2_role_a2 = mappings_a2[first_key]["v2_role_uuid"]  # self.role_a2.v2role_set.first()
+        rolebinding_a2 = first_key
+
+        role_binding_a3 = BindingMapping.objects.filter(role=self.role_a3).first()
+        mappings_a3 = role_binding_a3.mappings
+        first_key = list(mappings_a3.keys())[0]
+        v2_role_a31_value = mappings_a3[first_key]["v2_role_uuid"]
+        v2_role_a31 = v2_role_a31_value
+
+        last_key = list(mappings_a3.keys())[-1]
+        v2_role_a32 = mappings_a3[last_key]["v2_role_uuid"]
+
+        rolebinding_a31 = first_key
+        rolebinding_a32 = last_key
+
         workspace_1 = "123456"
         workspace_2 = "654321"
         # Switch these two if rolebinding order is not the same as v2 roles
-        if (
-            call(f"role_binding:{rolebinding_a31.id}#granted@role:{v2_role_a31.id}")
-            not in logger_mock.info.call_args_list
-        ):
+        if call(f"role_binding:{rolebinding_a31}#granted@role:{v2_role_a31}") not in logger_mock.info.call_args_list:
             rolebinding_a31, rolebinding_a32 = rolebinding_a32, rolebinding_a31
         # Switch these two if binding is not in correct order
         if (
-            call(f"workspace:{self.aws_account_id_1}#user_grant@role_binding:{rolebinding_a31.id}")
+            call(f"workspace:{self.aws_account_id_1}#user_grant@role_binding:{rolebinding_a31}")
             not in logger_mock.info.call_args_list
         ):
             workspace_1, workspace_2 = workspace_2, workspace_1
@@ -135,19 +144,19 @@ class MigrateTests(TestCase):
             call(f"group:{self.group_a2.uuid}#member@user:{self.principal1.uuid}"),
             call(f"group:{self.group_a2.uuid}#member@user:{self.principal2.uuid}"),
             ## Role binding to role_a2
-            call(f"role_binding:{rolebinding_a2.id}#granted@role:{v2_role_a2.id}"),
-            call(f"role:{v2_role_a2.id}#inventory_hosts_write@user:*"),
-            call(f"role_binding:{rolebinding_a2.id}#subject@group:{self.group_a2.uuid}"),
+            call(f"role_binding:{rolebinding_a2}#granted@role:{v2_role_a2}"),
+            call(f"role:{v2_role_a2}#inventory_hosts_write@user:*"),
+            call(f"role_binding:{rolebinding_a2}#subject@group:{self.group_a2.uuid}"),
             call(f"workspace:{self.aws_account_id_1}#parent@workspace:{root_workspace_id}"),
-            call(f"workspace:{self.aws_account_id_1}#user_grant@role_binding:{rolebinding_a2.id}"),
+            call(f"workspace:{self.aws_account_id_1}#user_grant@role_binding:{rolebinding_a2}"),
             ## Role binding to role_a3
-            call(f"role_binding:{rolebinding_a31.id}#granted@role:{v2_role_a31.id}"),
-            call(f"role:{v2_role_a31.id}#inventory_hosts_write@user:*"),
+            call(f"role_binding:{rolebinding_a31}#granted@role:{v2_role_a31}"),
+            call(f"role:{v2_role_a31}#inventory_hosts_write@user:*"),
             call(f"workspace:{workspace_1}#parent@workspace:{root_workspace_id}"),
-            call(f"workspace:{workspace_1}#user_grant@role_binding:{rolebinding_a31.id}"),
-            call(f"role_binding:{rolebinding_a32.id}#granted@role:{v2_role_a32.id}"),
-            call(f"role:{v2_role_a32.id}#inventory_hosts_write@user:*"),
+            call(f"workspace:{workspace_1}#user_grant@role_binding:{rolebinding_a31}"),
+            call(f"role_binding:{rolebinding_a32}#granted@role:{v2_role_a32}"),
+            call(f"role:{v2_role_a32}#inventory_hosts_write@user:*"),
             call(f"workspace:{workspace_2}#parent@workspace:{root_workspace_id}"),
-            call(f"workspace:{workspace_2}#user_grant@role_binding:{rolebinding_a32.id}"),
+            call(f"workspace:{workspace_2}#user_grant@role_binding:{rolebinding_a32}"),
         ]
         logger_mock.info.assert_has_calls(tuples, any_order=True)
