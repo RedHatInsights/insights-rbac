@@ -34,10 +34,16 @@ logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 
 def spicedb_relationships(
-    v2_role_bindings: FrozenSet[V2rolebinding], root_workspace: str, v1_role, create_binding_to_db=True
+    v2_role_bindings: FrozenSet[V2rolebinding],
+    root_workspace: str,
+    v1_role,
+    in_transaction=False,
+    create_binding_to_db=True,
 ):
     """Generate a set of relationships for the given set of v2 role bindings."""
     relationships = list()
+    binding_mappings = {}
+
     for v2_role_binding in v2_role_bindings:
         relationships.append(
             create_relationship("role_binding", v2_role_binding.id, "role", v2_role_binding.role.id, "granted")
@@ -46,16 +52,13 @@ def spicedb_relationships(
         if create_binding_to_db:
             v2_role_data = v2_role_binding.role
 
-            binding_mapping, _ = BindingMapping.objects.select_for_update().get_or_create(role=v1_role)
-            if not binding_mapping.mappings:
-                binding_mapping.mappings = {}
+            if binding_mappings.get(v2_role_binding.id) is None:
+                binding_mappings[v2_role_binding.id] = {}
 
-            binding_mapping.mappings[v2_role_binding.id] = {
+            binding_mappings[v2_role_binding.id] = {
                 "v2_role_uuid": str(v2_role_data.id),
                 "permissions": list(v2_role_binding.role.permissions),
             }
-
-            binding_mapping.save()
 
         for perm in v2_role_binding.role.permissions:
             relationships.append(create_relationship("role", v2_role_binding.role.id, "user", "*", perm))
@@ -86,6 +89,14 @@ def spicedb_relationships(
                 )
             )
 
+    if create_binding_to_db:
+        if in_transaction:
+            binding_mapping, _ = BindingMapping.objects.select_for_update().get_or_create(role_id=v1_role)
+        else:
+            binding_mapping, _ = BindingMapping.objects.get_or_create(role=v1_role)
+        binding_mapping.mappings = binding_mappings
+        binding_mapping.save()
+
     return relationships
 
 
@@ -94,6 +105,7 @@ def migrate_role(
     write_db: bool,
     root_workspace: str,
     default_workspace: str,
+    in_transaction=False,
     use_binding_from_db=False,
     use_mapping_from_db=False,
     create_binding_to_db=True,
@@ -115,7 +127,9 @@ def migrate_role(
             v1_role, role.id, root_workspace, default_workspace, use_binding_from_db, use_mapping_from_db
         )
     ]
-    relationships = spicedb_relationships(frozenset(v2_roles), root_workspace, role, create_binding_to_db)
+    relationships = spicedb_relationships(
+        frozenset(v2_roles), root_workspace, role, in_transaction, create_binding_to_db
+    )
     output_relationships(relationships, write_db)
     return relationships
 
