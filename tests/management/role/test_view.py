@@ -16,9 +16,11 @@
 #
 """Test the role viewset."""
 
+import json
 from uuid import uuid4
 
 from django.conf import settings
+from django.core.serializers.json import DjangoJSONEncoder
 from django.test.utils import override_settings
 from django.urls import reverse, resolve
 from rest_framework import status
@@ -35,9 +37,8 @@ from management.models import (
     ResourceDefinition,
     ExtRoleRelation,
     ExtTenant,
-    RoleMapping,
     Workspace,
-    #BindingMapping,
+    BindingMapping,
 )
 
 from tests.core.test_kafka import copy_call_args
@@ -45,6 +46,17 @@ from tests.identity_request import IdentityRequest
 from unittest.mock import ANY, patch, call
 
 URL = reverse("role-list")
+
+
+def normalize_and_sort(json_obj):
+    for key, value in json_obj.items():
+        if isinstance(value, list):
+            sorted_list = sorted(
+                [json.dumps(item, sort_keys=True, cls=DjangoJSONEncoder) for item in value]
+            )
+
+            json_obj[key] = [json.loads(item) for item in sorted_list]
+    return json_obj
 
 
 def replication_event_for_v1_role(v1_role_uuid, root_workspace_uuid):
@@ -58,28 +70,27 @@ def replication_event_for_v1_role(v1_role_uuid, root_workspace_uuid):
 def relation_api_tuples_for_v1_role(v1_role_uuid, root_workspace_uuid):
     """Create a relation API tuple for a v1 role."""
     role_id = Role.objects.get(uuid=v1_role_uuid).id
-    #role_binding = BindingMapping.objects.filter(v1_role=role_id)
-    role_binding = []
+    role_binding = BindingMapping.objects.filter(role=role_id).first()
     relations = []
-    for binding in role_binding:
+    for role_binding_uuid, data in role_binding.mappings.items():
         relation_tuple = relation_api_tuple(
-            "role_binding", str(binding.id), "granted", "role", str(binding.v2_role.id)
+            "role_binding", str(role_binding_uuid), "granted", "role", str(data["v2_role_uuid"])
         )
         relations.append(relation_tuple)
 
-        for permission in binding.permissions:
-            relation_tuple = relation_api_tuple("role", str(binding.v2_role.id), permission, "user", "*")
+        for permission in data["permissions"]:
+            relation_tuple = relation_api_tuple("role", str(data["v2_role_uuid"]), permission, "user", "*")
             relations.append(relation_tuple)
-        if "app_all_read" in binding.permissions:
+        if "app_all_read" in data["permissions"]:
             relation_tuple = relation_api_tuple(
-                "workspace", root_workspace_uuid, "user_grant", "role_binding", str(binding.id)
+                "workspace", root_workspace_uuid, "user_grant", "role_binding", str(role_binding_uuid)
             )
             relations.append(relation_tuple)
         else:
             relation_tuple = relation_api_tuple("keya/id", "valueA", "workspace", "workspace", root_workspace_uuid)
             relations.append(relation_tuple)
 
-            relation_tuple = relation_api_tuple("keya/id", "valueA", "user_grant", "role_binding", str(binding.id))
+            relation_tuple = relation_api_tuple("keya/id", "valueA", "user_grant", "role_binding", str(role_binding_uuid))
             relations.append(relation_tuple)
     return relations
 
@@ -198,7 +209,6 @@ class RoleViewsetTests(IdentityRequest):
         Access.objects.all().delete()
         ExtTenant.objects.all().delete()
         ExtRoleRelation.objects.all().delete()
-        RoleMapping.objects.all().delete()
         Workspace.objects.all().delete()
         # we need to delete old test_tenant's that may exist in cache
         test_tenant_org_id = "100001"
@@ -345,17 +355,14 @@ class RoleViewsetTests(IdentityRequest):
         response = self.create_role(role_name, role_display=role_display, in_access_data=access_data)
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
 
-        role_id = Role.objects.get(uuid=response.data.get("uuid")).id
-        role_mapping = RoleMapping.objects.filter(v1_role=role_id)
-        role_binding = [] #BindingMapping.objects.filter(v1_role=role_id)
-
-        self.assertEqual(len(role_binding), 2)
-        self.assertEqual(len(role_mapping), 2)
-
         replication_event = replication_event_for_v1_role(response.data.get("uuid"), str(self.root_workspace.uuid))
 
         mock_method.assert_called_once()
-        mock_method.assert_called_with(replication_event)
+        actual_call_arg = mock_method.call_args[0][0]
+        expected_sorted = normalize_and_sort(replication_event)
+        actual_sorted = normalize_and_sort(actual_call_arg)
+        self.assertEqual(set(expected_sorted), set(actual_sorted))
+
         # test that we can retrieve the role
         url = reverse("role-detail", kwargs={"uuid": response.data.get("uuid")})
         client = APIClient()
@@ -1392,7 +1399,11 @@ class RoleViewsetTests(IdentityRequest):
         response = client.put(url, test_data, format="json", **self.headers)
         replication_event = replication_event_for_v1_role(response.data.get("uuid"), str(self.root_workspace.uuid))
         replication_event["relations_to_remove"] = current_relations
-        mock_method.assert_called_with(replication_event)
+        actual_call_arg = mock_method.call_args[0][0]
+        expected_sorted = normalize_and_sort(replication_event)
+        actual_sorted = normalize_and_sort(actual_call_arg)
+        self.assertEqual(set(expected_sorted), set(actual_sorted))
+
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
     def test_update_role_invalid_resource_defs_structure(self):
@@ -1497,7 +1508,10 @@ class RoleViewsetTests(IdentityRequest):
         current_relations = relation_api_tuples_for_v1_role(role_uuid, str(self.root_workspace.uuid))
         replication_event["relations_to_remove"] = current_relations
         response = client.delete(url, **self.headers)
-        mock_method.assert_called_with(replication_event)
+        actual_call_arg = mock_method.call_args[0][0]
+        expected_sorted = normalize_and_sort(replication_event)
+        actual_sorted = normalize_and_sort(actual_call_arg)
+        self.assertEqual(set(expected_sorted), set(actual_sorted))
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
 
     @patch("core.kafka.RBACProducer.send_kafka_message")

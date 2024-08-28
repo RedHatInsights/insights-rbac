@@ -46,7 +46,7 @@ def spicedb_relationships(
         if create_binding_to_db:
             v2_role_data = v2_role_binding.role
 
-            binding_mapping, _ = BindingMapping.objects.get_or_create(role=v1_role)
+            binding_mapping, _ = BindingMapping.objects.select_for_update().get_or_create(role=v1_role)
             if not binding_mapping.mappings:
                 binding_mapping.mappings = {}
 
