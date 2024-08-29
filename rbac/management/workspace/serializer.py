@@ -17,6 +17,7 @@
 
 """Serializer for workspace management."""
 from rest_framework import serializers
+
 from .model import Workspace
 
 
@@ -43,4 +44,5 @@ class WorkspaceSerializer(serializers.ModelSerializer):
         return workspace
 
     def get_child_ids(self, obj):
+        """Return uuids for all children."""
         return [child.uuid for child in obj.children.all()]
