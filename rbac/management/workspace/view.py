@@ -65,6 +65,7 @@ class WorkspaceViewSet(
         return super().retrieve(request=request, args=args, kwargs=kwargs)
 
     def get_queryset_for_depth(self, queryset, current_depth, max_depth):
+        """Get queryset for depth recursively."""
         if current_depth >= max_depth:
             return queryset
         descendents = Workspace.objects.filter(parent__in=queryset)
@@ -86,6 +87,7 @@ class WorkspaceViewSet(
         return self.get_paginated_response(page)
 
     def validate_depth(self, request):
+        """Validate the depth param."""
         depth = request.query_params.get(DEPTH_KEY)
         if depth:
             err_message = f"{depth} is not a valid depth value. Use -1 for all, or specify a positive integer value."
