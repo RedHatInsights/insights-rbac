@@ -137,6 +137,7 @@ services:
     ]
     depends_on:
       - zookeeper
+    mem_limit: 500m
     ports:
       - "9092:9092"
       - "9094:9094"
@@ -149,6 +150,7 @@ services:
       KAFKA_INTER_BROKER_LISTENER_NAME: "INTERNAL"      
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
       KAFKA_CREATE_TOPICS: "storage-topic:1:1:compact,global-id-topic:1:1:compact,input-topic:1:1:compact,logx-topic:1:1:compact,dbx-topic:1:1:compact"
+      KAFKA_HEAP_OPTS: "-Xmx500M -Xms500M"
 
   kafka_connect:
     container_name: rbac_kafka_connect
@@ -158,6 +160,7 @@ services:
     ]
     depends_on:
       - kafka
+    mem_limit: 500m
     ports:
       - "8083:8083"
     volumes:
