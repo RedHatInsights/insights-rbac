@@ -142,17 +142,10 @@ def v1_role_to_v2_mapping(
             if v2_groups:
                 for v2_group in v2_groups:
                     if use_binding_from_db:
-                        binding_mapping = BindingMapping.objects.filter(role_id=v1_role_db_id).first()
+                        binding_mapping = BindingMapping.objects.get(role_id=v1_role_db_id)
                         if binding_mapping is None:
-                            raise Exception("V2 role bindings not found in db")
-
-                        role_binding_id = None
-                        for role_binding_uuid, data in binding_mapping.mappings.items():
-                            if data["v2_role_uuid"] == role.id:
-                                role_binding_id = str(role_binding_uuid)
-
-                        if role_binding_id is None:
-                            raise Exception("role_binding_id not found in mappings")
+                            raise Exception(f"binding_mapping not found in db for role {v1_role_db_id}")
+                        role_binding_id = binding_mapping.find_role_binding_by_v2_role(role.id)
                     else:
                         role_binding_id = str(uuid.uuid4())
                     v2_role_binding = V2rolebinding(
@@ -161,14 +154,10 @@ def v1_role_to_v2_mapping(
                     v2_role_bindings.append(v2_role_binding)
             else:
                 if use_binding_from_db:
-                    binding_mapping = BindingMapping.objects.filter(role_id=v1_role_db_id).first()
-                    role_binding_id = None
-                    for role_binding_uuid, data in binding_mapping.mappings.items():
-                        if data["v2_role_uuid"] == role.id:
-                            role_binding_id = str(role_binding_uuid)
-
-                    if role_binding_id is None:
-                        raise Exception("role_binding_id not found in mappings")
+                    binding_mapping = BindingMapping.objects.get(role_id=v1_role_db_id)
+                    if binding_mapping is None:
+                        raise Exception(f"binding_mapping not found in db for role {v1_role_db_id}")
+                    role_binding_id = binding_mapping.find_role_binding_by_v2_role(role.id)
                 else:
                     role_binding_id = str(uuid.uuid4())
                 v2_role_binding = V2rolebinding(role_binding_id, v1_role, role, frozenset({resource}), v2_groups)
@@ -235,17 +224,11 @@ def extract_system_roles(perm_groupings, v1_role, db_role_id, use_mapping_from_d
                         candidate_system_roles[candidate] = {v1_role.id}
                 # Add a custom role
                 if use_mapping_from_db:
-                    binding_mapping = BindingMapping.objects.filter(role_id=db_role_id).first()
+                    binding_mapping = BindingMapping.objects.get(role_id=db_role_id)
                     if binding_mapping is None:
                         raise Exception("V2 role bindings not found in db")
 
-                    v2_uuid = None
-                    for v1_role_uuid, data in binding_mapping.mappings.items():
-                        if set(data["permissions"]) == set(permissions):
-                            v2_uuid = data["v2_role_uuid"]
-
-                    if v2_uuid is None:
-                        raise Exception("v2_uuid not found in mappings")
+                    v2_uuid = binding_mapping.find_v2_role_by_permission(permissions)
                 else:
                     v2_uuid = uuid.uuid4()
 
