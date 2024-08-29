@@ -91,7 +91,7 @@ def spicedb_relationships(
 
     if create_binding_to_db:
         if in_transaction:
-            binding_mapping, _ = BindingMapping.objects.select_for_update().get_or_create(role_id=v1_role)
+            binding_mapping, _ = BindingMapping.objects.select_for_update().get_or_create(role=v1_role)
         else:
             binding_mapping, _ = BindingMapping.objects.get_or_create(role=v1_role)
         binding_mapping.mappings = binding_mappings
