@@ -36,9 +36,6 @@ IT_PATH_GET_SERVICE_ACCOUNTS = "/service_accounts/v1"
 SERVICE_ACCOUNT_DESCRIPTION_KEY = "service_account_description"
 SERVICE_ACCOUNT_NAME_KEY = "service_account_name"
 
-# The principal type constant.
-TYPE_SERVICE_ACCOUNT = "service-account"
-
 
 class TokenValidatorTests(IdentityRequest):
     def setUp(self) -> None:
