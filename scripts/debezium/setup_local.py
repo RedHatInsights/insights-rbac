@@ -30,7 +30,9 @@ def setup_db_for_debezium():
         cur = conn.cursor()
         cur.execute("ALTER SYSTEM SET wal_level = logical;")
         conn.commit()
-        cur.execute("CREATE TABLE management_outbox (name varchar(80), test int);")
+        cur.execute(
+            "CREATE TABLE management_outbox (id uuid, aggregatetype varchar(255), aggregateid varchar(255), type varchar(255), payload jsonb);"
+        )
         conn.commit()
     except psycopg2.errors.DuplicateTable as e:
         print(e)
