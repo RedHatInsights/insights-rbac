@@ -125,6 +125,28 @@ class BindingMapping(models.Model):
     # One-to-one relationship with Role
     role = models.OneToOneField(Role, on_delete=models.CASCADE, related_name="binding_mapping")
 
+    def find_role_binding_by_v2_role(self, v2_role_id):
+        """Find role binding by v2 role id."""
+        role_binding_id = None
+        for role_binding_uuid, data in self.mappings.items():
+            if data["v2_role_uuid"] == v2_role_id:
+                role_binding_id = str(role_binding_uuid)
+
+        if role_binding_id is None:
+            raise Exception(f"role_binding_id not found in mappings for v2 role {v2_role_id} ")
+        return role_binding_id
+
+    def find_v2_role_by_permission(self, permissions):
+        """Find v2 role by permissions."""
+        v2_uuid = None
+        for v1_role_uuid, data in self.mappings.items():
+            if set(data["permissions"]) == set(permissions):
+                v2_uuid = data["v2_role_uuid"]
+
+        if v2_uuid is None:
+            raise Exception(f"v2_uuid not found in mappings for v1 role {self.role.uuid}")
+        return v2_uuid
+
 
 def role_related_obj_change_cache_handler(sender=None, instance=None, using=None, **kwargs):
     """Signal handler for invalidating Principal cache on Role object change."""
