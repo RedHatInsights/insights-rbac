@@ -395,15 +395,22 @@ def validate_role_update(instance, validated_data):
 
 def update_role(role_name, update_data, tenant, clear_access=True):
     """Update role attribute."""
-    role, created = Role.objects.update_or_create(
-        name=role_name,
-        tenant=tenant,
-        defaults={
-            "name": update_data.get("updated_name"),
-            "display_name": update_data.get("updated_display_name"),
-            "description": update_data.get("updated_description"),
-        },
-    )
+    role = Role.objects.get(name=role_name, tenant=tenant)
+
+    update_fields = []
+
+    if "updated_name" in update_data:
+        role.name = update_data["updated_name"]
+        update_fields.append("name")
+    if "updated_display_name" in update_data:
+        role.display_name = update_data["updated_display_name"]
+        update_fields.append("display_name")
+    if "updated_description" in update_data:
+        role.description = update_data["updated_description"]
+        update_fields.append("description")
+
+    role.save(update_fields=update_fields)
+
     if clear_access:
         role.access.all().delete()
 

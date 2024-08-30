@@ -223,11 +223,6 @@ class RoleViewSet(
                 if status.is_success(create_role.status_code):
                     auditlog = AuditLog()
                     auditlog.log_create(request, AuditLog.ROLE)
-
-                    role = get_object_or_404(Role, uuid=create_role.data["uuid"])
-                    dual_write_handler = RelationApiDualWriteHandler(role, "CREATE")
-                    dual_write_handler.generate_relations_and_mappings_for_role()
-                    dual_write_handler.save_replication_event_to_outbox()
         except DualWriteException as e:
             return self.dual_write_exception_response(e)
 
@@ -345,10 +340,7 @@ class RoleViewSet(
         try:
             with transaction.atomic():
                 self.delete_policies_if_no_role_attached(role)
-                dual_write_handler = RelationApiDualWriteHandler(role, "DELETE")
-                dual_write_handler.generate_relations_from_current_state_of_role()
                 response = super().destroy(request=request, args=args, kwargs=kwargs)
-                dual_write_handler.save_replication_event_to_outbox()
         except DualWriteException as e:
             return self.dual_write_exception_response(e)
 
@@ -440,28 +432,69 @@ class RoleViewSet(
         validate_uuid(kwargs.get("uuid"), "role uuid validation")
         self.validate_role(request)
 
-        update_role = self.update_with_relation_api_replication(request=request, args=args, kwargs=kwargs)
-
-        if status.is_success(update_role.status_code):
-            auditlog = AuditLog()
-            role = self.get_object()
-            auditlog.log_edit(request, AuditLog.ROLE, role)
-
-        return update_role
-
-    def update_with_relation_api_replication(self, request, *args, **kwargs):
-        """Update a role with replicating data into Relation API."""
         try:
-            role = self.get_object()
-            dual_write_handler = RelationApiDualWriteHandler(role, "UPDATE")
-            dual_write_handler.generate_relations_from_current_state_of_role()
-            with transaction.atomic():
-                response = super().update(request=request, args=args, kwargs=kwargs)
-                dual_write_handler.generate_replication_event_to_outbox(self.get_object())
+            update_role = super().update(request=request, args=args, kwargs=kwargs)
+
+            if status.is_success(update_role.status_code):
+                auditlog = AuditLog()
+                role = self.get_object()
+                auditlog.log_edit(request, AuditLog.ROLE, role)
+
+            return update_role
         except DualWriteException as e:
             return self.dual_write_exception_response(e)
 
-        return response
+    def perform_create(self, serializer):
+        with transaction.atomic():
+            role = serializer.save()
+            dual_write_handler = RelationApiDualWriteHandler(role, "CREATE")
+            dual_write_handler.generate_relations_and_mappings_for_role()
+            dual_write_handler.save_replication_event_to_outbox()
+
+    def perform_update(self, serializer):
+        role_name = serializer.instance.name
+        tenant = serializer.context["request"].tenant
+
+        with transaction.atomic():
+            # Lock the row so we can generate mappings based on current state across multiple rows
+            # (access and policy)
+            # We don't replace `instance` because `instance` was retrieved with different queryset
+
+            # There is still a race condition here however it doesn't really matter.
+            # Another transaction can commit a role update before this lock happens,
+            # but after serializer.instance is already retrieved.
+            # After this lock, though, we retrieve the latest mappings.
+            # In READ COMMITTED, this we now see tx2 changes and so the next outbox event
+            # will be correct.
+            # In REPEATABLE READ, the later lock on the mappings table will cause the transaction
+            # to abort due to concurrent update.
+
+            Role.objects.select_for_update().get(name=role_name, tenant=tenant)
+
+            dual_write_handler = RelationApiDualWriteHandler(serializer.instance, "UPDATE")
+            dual_write_handler.get_relations_from_current_state_of_role()
+
+            instance = serializer.save()
+
+            dual_write_handler.generate_replication_event_to_outbox(instance)
+
+    def perform_destroy(self, instance):
+        role_name = instance.name
+        tenant_id = instance.tenant_id
+
+        with transaction.atomic():
+            # Lock the row so we can generate mappings based on current state across multiple rows
+            # (access and policy)
+            # We don't replace `instance` because `instance` was retrieved with different queryset
+            # See additional commentary in perform_update.
+            # Note the atomic block and lock is still necessary for delete 
+            # to ensure that the removed mappings are based on the latest state 
+            # and that we don't add mappings after the delete has happened.
+            Role.objects.select_for_update().get(name=role_name, tenant_id=tenant_id)
+            dual_write_handler = RelationApiDualWriteHandler(instance, "DELETE")
+            dual_write_handler.get_relations_from_current_state_of_role()
+            super().perform_destroy(instance)
+            dual_write_handler.save_replication_event_to_outbox()
 
     def dual_write_exception_response(self, e):
         """Dual write exception response."""

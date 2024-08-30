@@ -57,7 +57,7 @@ class RelationApiDualWriteHandler:
         """Check whether replication enabled."""
         return ENVIRONMENT.get_value("REPLICATION_TO_RELATION_ENABLED", default=False, cast=bool)
 
-    def generate_relations_from_current_state_of_role(self):
+    def get_relations_from_current_state_of_role(self):
         """Generate relations from current state of role and UUIDs for v2 role and role binding from database."""
         if not self.replication_enabled():
             return
