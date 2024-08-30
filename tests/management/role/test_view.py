@@ -176,13 +176,14 @@ class RoleViewsetTests(IdentityRequest):
         response = client.post(url, test_data, format="json", **self.headers)
         return response
 
-    def create_policy(self, policy_name, group_uuid, role_uuids):
-        """Create a policy to link a group to roles."""
-        test_data = {"name": policy_name, "group": group_uuid, "roles": role_uuids}
-        url = reverse("policy-list")
-        client = APIClient()
-        response = client.post(url, test_data, format="json", **self.headers)
-        return response
+    def create_policy(self, policy_name, group, roles):
+        """Create a policy."""
+        # create a policy
+        policy = Policy.objects.create(name=policy_name, tenant=self.tenant, system=True)
+        for role in Role.objects.filter(uuid__in=roles):
+            policy.roles.add(role)
+        policy.group = Group.objects.get(uuid=group)
+        policy.save()
 
     def add_principal_to_group(self, group_uuid, username):
         """Add principal to existing group."""
@@ -692,8 +693,7 @@ class RoleViewsetTests(IdentityRequest):
 
         # create a policy to link the role and group
         custom_policy_name = "NewPolicyForJohn"
-        custom_policy = self.create_policy(custom_policy_name, custom_group_uuid, [custom_role_uuid])
-        self.assertEqual(custom_policy.status_code, status.HTTP_201_CREATED)
+        self.create_policy(custom_policy_name, custom_group_uuid, [custom_role_uuid])
 
         # create a principal
         john = Principal(username="john", tenant=self.tenant)
@@ -789,8 +789,7 @@ class RoleViewsetTests(IdentityRequest):
 
         # create a policy to link the role and group
         custom_policy_name = "NewPolicyForMary"
-        custom_policy = self.create_policy(custom_policy_name, custom_group_uuid, [custom_role_uuid])
-        self.assertEqual(custom_policy.status_code, status.HTTP_201_CREATED)
+        self.create_policy(custom_policy_name, custom_group_uuid, [custom_role_uuid])
 
         # create a principal
         mary = Principal(username="mary", tenant=self.tenant)
@@ -891,8 +890,7 @@ class RoleViewsetTests(IdentityRequest):
 
         # create a policy to link the 2
         policy_name = "groupsInPolicy"
-        created_policy = self.create_policy(policy_name, group_uuid, [role_uuid])
-        self.assertEqual(created_policy.status_code, status.HTTP_201_CREATED)
+        self.create_policy(policy_name, group_uuid, [role_uuid])
 
         # add user principal to the created group
         principal_response = self.add_principal_to_group(group_uuid, self.principal.username)
