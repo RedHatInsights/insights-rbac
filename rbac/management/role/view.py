@@ -138,8 +138,38 @@ class RoleViewSet(
     ordering = ("name",)
 
     def get_queryset(self):
-        """Obtain queryset for requesting user based on access."""
-        return get_role_queryset(self.request)
+        """Obtain queryset for requesting user based on access and action."""
+
+        if self.action not in ["update", "partial_update", "destroy"]:
+            return get_role_queryset(self.request)
+        else:
+            # Update queryset differs from normal role queryset in a few ways:
+            # - Remove counts; those are not returned in updates
+            #   and they prevent us from being able to lock the result
+            #   (postgres does not allow select for update with 'group by')
+            # - No scope checks since these are not relevant to updates
+            # - We also lock the role and its associated Relations bindings.
+            # - We don't bother including system roles because they are not updated this way
+
+            # This lock is necessary to ensure the mapping is always based on the current role
+            # state which requires we prevent concurrent modifications to
+            # policy, access, and the mappings themselves.
+            # Because this does not lock policy and access,
+            # either the role or the mappings must always be locked for those edits also.
+            # However in those cases the mapping should be updated as well,
+            # and so this shouldn't be an issue.
+
+            # It is important that the lock is here.
+            # Because we reuse this Role object when reading and
+            # determining current relations to remove,
+            # this lock prevents any accidental and non-obvious race conditions from occuring.
+            # (such as if this was innocently changed to select related access or policy rows)
+            # Getting the mapping here (which is necessary to lock it) also saves us
+            # redundant queries later.
+
+            return (Role.objects.filter(tenant=self.request.tenant)
+                    .select_related("mappings")
+                    .select_for_update())
 
     def get_serializer_class(self):
         """Get serializer class based on route."""
@@ -331,24 +361,13 @@ class RoleViewSet(
             HTTP/1.1 204 NO CONTENT
         """
         validate_uuid(kwargs.get("uuid"), "role uuid validation")
-        role = self.get_object()
-        if role.system or role.platform_default:
-            key = "role"
-            message = "System roles cannot be deleted."
-            error = {key: [_(message)]}
-            raise serializers.ValidationError(error)
+
         try:
             with transaction.atomic():
-                self.delete_policies_if_no_role_attached(role)
                 response = super().destroy(request=request, args=args, kwargs=kwargs)
         except DualWriteException as e:
             return self.dual_write_exception_response(e)
 
-        if response.status_code == status.HTTP_204_NO_CONTENT:
-            role_obj_change_notification_handler(role, "deleted", request.user)
-
-            auditlog = AuditLog()
-            auditlog.log_delete(request, AuditLog.ROLE, role)
         return response
 
     def partial_update(self, request, *args, **kwargs):
@@ -362,14 +381,7 @@ class RoleViewSet(
                 error = {key: [_(message)]}
                 raise serializers.ValidationError(error)
 
-        role = self.get_object()
-        partial_update_role = super().update(request=request, args=args, kwargs=kwargs)
-
-        if status.is_success(partial_update_role.status_code):
-            auditlog = AuditLog()
-            auditlog.log_edit(request, AuditLog.ROLE, role)
-
-        return partial_update_role
+        return super().update(request=request, args=args, kwargs=kwargs)
 
     def update(self, request, *args, **kwargs):
         """Update a role.
@@ -433,68 +445,52 @@ class RoleViewSet(
         self.validate_role(request)
 
         try:
-            update_role = super().update(request=request, args=args, kwargs=kwargs)
-
-            if status.is_success(update_role.status_code):
-                auditlog = AuditLog()
-                role = self.get_object()
-                auditlog.log_edit(request, AuditLog.ROLE, role)
-
-            return update_role
+            with transaction.atomic():
+                return super().update(request=request, args=args, kwargs=kwargs)
         except DualWriteException as e:
             return self.dual_write_exception_response(e)
 
     def perform_create(self, serializer):
-        with transaction.atomic():
-            role = serializer.save()
-            dual_write_handler = RelationApiDualWriteHandler(role, "CREATE")
-            dual_write_handler.generate_relations_and_mappings_for_role()
-            dual_write_handler.save_replication_event_to_outbox()
+        role = serializer.save()
+        dual_write_handler = RelationApiDualWriteHandler(role, "CREATE")
+        dual_write_handler.generate_replication_event_to_outbox(role)
+        role_obj_change_notification_handler(role, "created", self.request.user)
 
     def perform_update(self, serializer):
-        role_name = serializer.instance.name
-        tenant = serializer.context["request"].tenant
-
-        with transaction.atomic():
-            # Lock the row so we can generate mappings based on current state across multiple rows
-            # (access and policy)
-            # We don't replace `instance` because `instance` was retrieved with different queryset
-
-            # There is still a race condition here however it doesn't really matter.
-            # Another transaction can commit a role update before this lock happens,
-            # but after serializer.instance is already retrieved.
-            # After this lock, though, we retrieve the latest mappings.
-            # In READ COMMITTED, this we now see tx2 changes and so the next outbox event
-            # will be correct.
-            # In REPEATABLE READ, the later lock on the mappings table will cause the transaction
-            # to abort due to concurrent update.
-
-            Role.objects.select_for_update().get(name=role_name, tenant=tenant)
-
+        if self.action != "partial_update":
             dual_write_handler = RelationApiDualWriteHandler(serializer.instance, "UPDATE")
-            dual_write_handler.get_relations_from_current_state_of_role()
+            dual_write_handler.load_relations_from_current_state_of_role()
 
-            instance = serializer.save()
+        role = serializer.save()
 
-            dual_write_handler.generate_replication_event_to_outbox(instance)
+        if self.action != "partial_update":
+            dual_write_handler.generate_replication_event_to_outbox(role)
+            role_obj_change_notification_handler(role, "updated", self.request.user)
 
-    def perform_destroy(self, instance):
-        role_name = instance.name
-        tenant_id = instance.tenant_id
+        auditlog = AuditLog()
+        auditlog.log_edit(self.request, AuditLog.ROLE, role)
 
-        with transaction.atomic():
-            # Lock the row so we can generate mappings based on current state across multiple rows
-            # (access and policy)
-            # We don't replace `instance` because `instance` was retrieved with different queryset
-            # See additional commentary in perform_update.
-            # Note the atomic block and lock is still necessary for delete 
-            # to ensure that the removed mappings are based on the latest state 
-            # and that we don't add mappings after the delete has happened.
-            Role.objects.select_for_update().get(name=role_name, tenant_id=tenant_id)
-            dual_write_handler = RelationApiDualWriteHandler(instance, "DELETE")
-            dual_write_handler.get_relations_from_current_state_of_role()
-            super().perform_destroy(instance)
-            dual_write_handler.save_replication_event_to_outbox()
+    def perform_destroy(self, instance: Role):
+        if instance.system or instance.platform_default:
+            key = "role"
+            message = "System roles cannot be deleted."
+            error = {key: [_(message)]}
+            raise serializers.ValidationError(error)
+
+        dual_write_handler = RelationApiDualWriteHandler(instance, "DELETE")
+        dual_write_handler.load_relations_from_current_state_of_role()
+
+        instance.delete()
+
+        # These needs to come after destroy so that dual write handler sees the current policies.
+        self.delete_policies_if_no_role_attached(instance)
+
+        dual_write_handler.save_replication_event_to_outbox()
+        role_obj_change_notification_handler(instance, "deleted", self.request.user)
+
+        # Audit in perform_destroy because it needs access to deleted instance
+        auditlog = AuditLog()
+        auditlog.log_delete(self.request, AuditLog.ROLE, instance)
 
     def dual_write_exception_response(self, e):
         """Dual write exception response."""

@@ -68,7 +68,7 @@ def inventory_to_workspace(v2_perm):
 class SystemRole:
     """A system role."""
 
-    SYSTEM_ROLES = {}
+    SYSTEM_ROLES: dict[frozenset[str], V2role] = {}
 
     @classmethod
     def get_system_roles(cls):
@@ -97,13 +97,14 @@ skipped_apps = {"cost-management", "playbook-dispatcher", "approval"}
 
 def v1_role_to_v2_mapping(
     v1_role: V1role,
-    v1_role_db_id,
     root_workspace: str,
     default_workspace: str,
-    use_binding_from_db=False,
-    use_mapping_from_db=False,
+    binding_mapping: BindingMapping | None,
+    # use_binding_from_db=False,
+    # use_mapping_from_db=False,
 ) -> FrozenSet[V2rolebinding]:
     """Convert a V1 role to a set of V2 role bindings."""
+
     perm_groupings: Permissiongroupings = {}
     # Group V2 permissions by target
     for v1_perm in v1_role.permissions:
@@ -133,7 +134,7 @@ def v1_role_to_v2_mapping(
                 v2_perm,
             )
     # Project permission sets to system roles
-    resource_roles = extract_system_roles(perm_groupings, v1_role, v1_role_db_id, use_mapping_from_db)
+    resource_roles = extract_system_roles(perm_groupings, v1_role, binding_mapping)
     # Construct rolebindings
     v2_role_bindings = []
     v2_groups = v1groups_to_v2groups(v1_role.groups)
@@ -141,10 +142,7 @@ def v1_role_to_v2_mapping(
         for resource in resources:
             if v2_groups:
                 for v2_group in v2_groups:
-                    if use_binding_from_db:
-                        binding_mapping = BindingMapping.objects.get(role_id=v1_role_db_id)
-                        if binding_mapping is None:
-                            raise Exception(f"binding_mapping not found in db for role {v1_role_db_id}")
+                    if binding_mapping:
                         role_binding_id = binding_mapping.find_role_binding_by_v2_role(role.id)
                     else:
                         role_binding_id = str(uuid.uuid4())
@@ -153,10 +151,7 @@ def v1_role_to_v2_mapping(
                     )
                     v2_role_bindings.append(v2_role_binding)
             else:
-                if use_binding_from_db:
-                    binding_mapping = BindingMapping.objects.get(role_id=v1_role_db_id)
-                    if binding_mapping is None:
-                        raise Exception(f"binding_mapping not found in db for role {v1_role_db_id}")
+                if binding_mapping:
                     role_binding_id = binding_mapping.find_role_binding_by_v2_role(role.id)
                 else:
                     role_binding_id = str(uuid.uuid4())
@@ -165,14 +160,16 @@ def v1_role_to_v2_mapping(
     return frozenset(v2_role_bindings)
 
 
-candidate_system_roles = {}
 custom_roles_created = 0
 
 
-def extract_system_roles(perm_groupings, v1_role, db_role_id, use_mapping_from_db=False):
+def extract_system_roles(perm_groupings: dict[V1resourcedef, list[str]], v1_role: V1role, binding_mapping: BindingMapping | None):
     """Extract system roles from a set of permissions."""
-    resource_roles = {}
+
+    candidate_system_roles = {}
+    resource_roles: dict[V2role, list[V1resourcedef]] = {}
     system_roles = SystemRole.get_system_roles()
+
     for resource, permissions in perm_groupings.items():
         system_role = system_roles.get(frozenset(permissions))
         if system_role is not None:
@@ -223,11 +220,7 @@ def extract_system_roles(perm_groupings, v1_role, db_role_id, use_mapping_from_d
                     else:
                         candidate_system_roles[candidate] = {v1_role.id}
                 # Add a custom role
-                if use_mapping_from_db:
-                    binding_mapping = BindingMapping.objects.get(role_id=db_role_id)
-                    if binding_mapping is None:
-                        raise Exception("V2 role bindings not found in db")
-
+                if binding_mapping:
                     v2_uuid = binding_mapping.find_v2_role_by_permission(permissions)
                 else:
                     v2_uuid = uuid.uuid4()

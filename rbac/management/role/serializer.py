@@ -139,7 +139,6 @@ class RoleSerializer(serializers.ModelSerializer):
         role = Role.objects.create(name=name, description=description, display_name=display_name, tenant=tenant)
         create_access_for_role(role, access_list, tenant)
 
-        role_obj_change_notification_handler(role, "created", self.context["request"].user)
         return role
 
     def update(self, instance, validated_data):
@@ -153,7 +152,6 @@ class RoleSerializer(serializers.ModelSerializer):
 
         create_access_for_role(instance, access_list, tenant)
 
-        role_obj_change_notification_handler(instance, "updated", self.context["request"].user)
         return instance
 
     def get_external_role_id(self, obj):
