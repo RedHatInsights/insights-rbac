@@ -124,6 +124,9 @@ class RelationApiDualWriteHandler:
 
             self.role_relations = relations
 
+            if self.binding_mapping is None:
+                self.binding_mapping = BindingMapping.objects.create(role=self.role)
+
             self.binding_mapping.mappings = mappings
             self.binding_mapping.save()
 
