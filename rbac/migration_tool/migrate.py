@@ -100,10 +100,6 @@ def migrate_role(
     write_relationships: bool,
     root_workspace: str,
     default_workspace: str,
-    # in_transaction=False,
-    # use_binding_from_db=False,
-    # use_mapping_from_db=False,
-    # create_binding_to_db=True,
     current_bindings: BindingMapping | None = None,
 ) -> tuple[list[common_pb2.Relationship], BindingMappings]:
     """Migrate a role from v1 to v2."""
