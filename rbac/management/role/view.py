@@ -168,6 +168,12 @@ class RoleViewSet(
             # Getting the mapping here (which is necessary to lock it) also saves us
             # redundant queries later.
 
+            # NOTE: If we want to try REPEATABLE READ isolation instead of READ COMMITTED,
+            # this should work with that as well.
+            # You would be able to remove `select_for_update` here,
+            # and instead rely on REPEATABLE READ's lost update detection to abort the tx.
+            # Nothing else should need to change.
+
             return (Role.objects.filter(tenant=self.request.tenant)
                     .select_related("mappings")
                     .select_for_update())
