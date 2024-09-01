@@ -140,7 +140,8 @@ class RoleViewSet(
     def get_queryset(self):
         """Obtain queryset for requesting user based on access and action."""
 
-        if self.action not in ["update", "partial_update", "destroy"]:
+        # NOTE: partial_update intentionally omitted because it does not update access or policy.
+        if self.action not in ["update", "destroy"]:
             return get_role_queryset(self.request)
         else:
             # Update queryset differs from normal role queryset in a few ways:
