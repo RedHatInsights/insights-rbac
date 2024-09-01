@@ -100,8 +100,6 @@ def v1_role_to_v2_mapping(
     root_workspace: str,
     default_workspace: str,
     binding_mapping: BindingMapping | None,
-    # use_binding_from_db=False,
-    # use_mapping_from_db=False,
 ) -> FrozenSet[V2rolebinding]:
     """Convert a V1 role to a set of V2 role bindings."""
 
