@@ -483,7 +483,7 @@ class RoleViewSet(
 
         instance.delete()
 
-        # These needs to come after destroy so that dual write handler sees the current policies.
+        # This needs to come after destroy so that dual write handler sees the current policies.
         self.delete_policies_if_no_role_attached(instance)
 
         dual_write_handler.save_replication_event_to_outbox()
