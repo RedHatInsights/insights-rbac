@@ -43,6 +43,7 @@ from rest_framework.decorators import action
 from rest_framework.filters import OrderingFilter
 from rest_framework.response import Response
 
+from rbac.env import ENVIRONMENT
 from .model import Role
 from .serializer import RoleSerializer
 
@@ -172,14 +173,20 @@ class RoleViewSet(
             # and instead rely on REPEATABLE READ's lost update detection to abort the tx.
             # Nothing else should need to change.
 
-            # TODO: May be redundant with RolePermissions check
-            access = user_has_perm(self.request, "role")
-            if access == "None":
-                return Role.objects.none()
-
-            return (
+            base_query = (
                 Role.objects.filter(tenant=self.request.tenant).select_related("binding_mapping").select_for_update()
             )
+
+            # TODO: May be redundant with RolePermissions check but copied from querysets.py for safety
+            if ENVIRONMENT.get_value("ALLOW_ANY", default=False, cast=bool):
+                return base_query
+            if self.request.user.admin:
+                return base_query
+            access = user_has_perm(self.request, "role")
+            if access == "All":
+                return base_query
+            if access == "None":
+                return Role.objects.none()
 
     def get_serializer_class(self):
         """Get serializer class based on route."""
@@ -502,10 +509,15 @@ class RoleViewSet(
         dual_write_handler = RelationApiDualWriteHandler(instance, "DELETE")
         dual_write_handler.load_relations_from_current_state_of_role()
 
+        policies_to_delete = self._get_policies_with_only_this_role(instance)
+
+        print(policies_to_delete)
+
         instance.delete()
 
         # This needs to come after destroy so that dual write handler sees the current policies.
-        self.delete_policies_if_no_role_attached(instance)
+        for policy in policies_to_delete:
+            policy.delete()
 
         dual_write_handler.save_replication_event_to_outbox()
         role_obj_change_notification_handler(instance, "deleted", self.request.user)
@@ -604,9 +616,5 @@ class RoleViewSet(
                         error = {key: [_(message)]}
                         raise serializers.ValidationError(error)
 
-    def delete_policies_if_no_role_attached(self, role):
-        """Delete policy if there is no role attached to it."""
-        policies = role.policies.all()
-        for policy in policies:
-            if policy.roles.count() == 1:
-                policy.delete()
+    def _get_policies_with_only_this_role(self, role):
+        return [policy for policy in role.policies.all() if policy.roles.count() == 1]
