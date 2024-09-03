@@ -171,7 +171,7 @@ class RoleViewSet(
             # You would be able to remove `select_for_update` here,
             # and instead rely on REPEATABLE READ's lost update detection to abort the tx.
             # Nothing else should need to change.
-            
+
             # TODO: May be redundant with RolePermissions check
             access = user_has_perm(self.request, "role")
             if access == "None":
