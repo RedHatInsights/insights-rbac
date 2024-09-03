@@ -509,15 +509,8 @@ class RoleViewSet(
         dual_write_handler = RelationApiDualWriteHandler(instance, "DELETE")
         dual_write_handler.load_relations_from_current_state_of_role()
 
-        policies_to_delete = self._get_policies_with_only_this_role(instance)
-
-        print(policies_to_delete)
-
+        self.delete_policies_if_no_role_attached(instance)
         instance.delete()
-
-        # This needs to come after destroy so that dual write handler sees the current policies.
-        for policy in policies_to_delete:
-            policy.delete()
 
         dual_write_handler.save_replication_event_to_outbox()
         role_obj_change_notification_handler(instance, "deleted", self.request.user)
@@ -616,5 +609,9 @@ class RoleViewSet(
                         error = {key: [_(message)]}
                         raise serializers.ValidationError(error)
 
-    def _get_policies_with_only_this_role(self, role):
-        return [policy for policy in role.policies.all() if policy.roles.count() == 1]
+    def delete_policies_if_no_role_attached(self, role):
+        """Delete policy if there is no role attached to it."""
+        policies = role.policies.all()
+        for policy in policies:
+            if policy.roles.count() == 1:
+                policy.delete()
