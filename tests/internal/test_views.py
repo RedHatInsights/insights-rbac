@@ -482,7 +482,7 @@ class InternalViewsetTests(IdentityRequest):
             f"/_private/api/utils/data_migration/",
             **self.request.META,
         )
-        migration_mock.assert_calledonce_with({"exclude_apps": [], "orgs": [], "write_relationships": False})
+        migration_mock.assert_called_once_with({"exclude_apps": [], "orgs": [], "write_relationships": False})
         self.assertEqual(response.status_code, status.HTTP_202_ACCEPTED)
         self.assertEqual(
             response.content.decode(),
