@@ -668,9 +668,6 @@ components:
           $ref: '#/components/schemas/UUID'
         parent_id:
           $ref: '#/components/schemas/UUID'
-        child_ids:
-          type: array
-          items: {}
         name:
           type: string
           description: Workspace A

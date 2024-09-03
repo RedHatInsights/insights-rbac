@@ -48,7 +48,6 @@ class WorkspaceSerializerTest(TestCase):
             "name": self.child.name,
             "description": self.child.description,
             "parent_id": str(self.parent.uuid),
-            "child_ids": [],
         }
 
         self.assertDictEqual(serializer.data, expected_data)
@@ -61,7 +60,6 @@ class WorkspaceSerializerTest(TestCase):
             "name": self.parent.name,
             "description": self.parent.description,
             "parent_id": None,
-            "child_ids": [self.child.uuid],
         }
 
         self.assertDictEqual(serializer.data, expected_data)
