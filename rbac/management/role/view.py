@@ -148,24 +148,20 @@ class RoleViewSet(
             #   and they prevent us from being able to lock the result
             #   (postgres does not allow select for update with 'group by')
             # - No scope checks since these are not relevant to updates
-            # - We also lock the role and its associated Relations mappings.
+            # - We also lock the role
             # - We don't bother including system roles because they are not updated this way
 
             # This lock is necessary to ensure the mapping is always based on the current role
             # state which requires we prevent concurrent modifications to
             # policy, access, and the mappings themselves.
-            # Because this does not lock policy and access,
-            # either the role or the mappings must always be locked for those edits also.
-            # However in those cases the mapping should be updated as well,
-            # and so this shouldn't be an issue.
+            # Because this does not lock binding_mapping, policy, and access,
+            # the role must always be locked for those edits also.
 
             # It is important that the lock is here.
             # Because we reuse this Role object when reading and
             # determining current relations to remove,
             # this lock prevents any accidental and non-obvious race conditions from occuring.
             # (such as if this was innocently changed to select related access or policy rows)
-            # Getting the mapping here (which is necessary to lock it) also saves us
-            # redundant queries later.
 
             # NOTE: If we want to try REPEATABLE READ isolation instead of READ COMMITTED,
             # this should work with that as well.
@@ -173,20 +169,24 @@ class RoleViewSet(
             # and instead rely on REPEATABLE READ's lost update detection to abort the tx.
             # Nothing else should need to change.
 
-            base_query = (
-                Role.objects.filter(tenant=self.request.tenant).select_related("binding_mapping").select_for_update()
-            )
+            base_query = Role.objects.filter(tenant=self.request.tenant).select_for_update()
 
             # TODO: May be redundant with RolePermissions check but copied from querysets.py for safety
             if ENVIRONMENT.get_value("ALLOW_ANY", default=False, cast=bool):
                 return base_query
+
             if self.request.user.admin:
                 return base_query
+
             access = user_has_perm(self.request, "role")
+
             if access == "All":
                 return base_query
+
             if access == "None":
                 return Role.objects.none()
+
+            return base_query.filter(uuid__in=access)
 
     def get_serializer_class(self):
         """Get serializer class based on route."""
