@@ -34,7 +34,7 @@ from management.filters import CommonFilters
 from management.models import AuditLog, Permission
 from management.notifications.notification_handlers import role_obj_change_notification_handler
 from management.permissions import RoleAccessPermission
-from management.querysets import get_role_queryset
+from management.querysets import get_role_queryset, user_has_perm
 from management.role.relation_api_dual_write_handler import DualWriteException, RelationApiDualWriteHandler
 from management.role.serializer import AccessSerializer, RoleDynamicSerializer, RolePatchSerializer
 from management.utils import validate_uuid
@@ -171,6 +171,11 @@ class RoleViewSet(
             # You would be able to remove `select_for_update` here,
             # and instead rely on REPEATABLE READ's lost update detection to abort the tx.
             # Nothing else should need to change.
+            
+            # TODO: May be redundant with RolePermissions check
+            access = user_has_perm(self.request, "role")
+            if access == "None":
+                return Role.objects.none()
 
             return (
                 Role.objects.filter(tenant=self.request.tenant).select_related("binding_mapping").select_for_update()
