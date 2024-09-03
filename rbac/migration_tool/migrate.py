@@ -17,7 +17,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 import dataclasses
 import logging
-from typing import FrozenSet, Any
+from typing import Any, FrozenSet, Optional
 
 from django.conf import settings
 from kessel.relations.v1beta1 import common_pb2
@@ -41,7 +41,6 @@ def get_kessel_relation_tuples(
     root_workspace: str,
 ) -> tuple[list[common_pb2.Relationship], BindingMappings]:
     """Generate a set of relationships and BindingMappings for the given set of v2 role bindings."""
-
     relationships: list[common_pb2.Relationship] = list()
 
     # Dictionary of v2 role binding ID to v2 role UUID and its permissions
@@ -100,10 +99,9 @@ def migrate_role(
     write_relationships: bool,
     root_workspace: str,
     default_workspace: str,
-    current_bindings: BindingMapping | None = None,
+    current_bindings: Optional[BindingMapping] = None,
 ) -> tuple[list[common_pb2.Relationship], BindingMappings]:
     """Migrate a role from v1 to v2."""
-
     v1_role = extract_info_into_v1_role(role)
     # With the replicated role bindings algorithm, role bindings are scoped by group, so we need to add groups
     policies = role.policies.all()
@@ -115,10 +113,7 @@ def migrate_role(
 
     # This is where we wire in the implementation we're using into the Migrator
     v2_roles = [
-        v2_role
-        for v2_role in v1_role_to_v2_mapping(
-            v1_role, root_workspace, default_workspace, current_bindings
-        )
+        v2_role for v2_role in v1_role_to_v2_mapping(v1_role, root_workspace, default_workspace, current_bindings)
     ]
     relationships, mappings = get_kessel_relation_tuples(frozenset(v2_roles), root_workspace)
     output_relationships(relationships, write_relationships)

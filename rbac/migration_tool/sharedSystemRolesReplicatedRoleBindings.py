@@ -18,11 +18,10 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 import json
 import logging
 import uuid
-from typing import Callable, FrozenSet, Type
+from typing import Callable, FrozenSet, Optional, Type
 
 from management.models import BindingMapping
 from management.role.model import Role
-from management.workspace.model import Workspace
 from migration_tool.ingest import add_element
 from migration_tool.models import (
     V1group,
@@ -99,10 +98,9 @@ def v1_role_to_v2_mapping(
     v1_role: V1role,
     root_workspace: str,
     default_workspace: str,
-    binding_mapping: BindingMapping | None,
+    binding_mapping: Optional[BindingMapping],
 ) -> FrozenSet[V2rolebinding]:
     """Convert a V1 role to a set of V2 role bindings."""
-
     perm_groupings: Permissiongroupings = {}
     # Group V2 permissions by target
     for v1_perm in v1_role.permissions:
@@ -161,9 +159,10 @@ def v1_role_to_v2_mapping(
 custom_roles_created = 0
 
 
-def extract_system_roles(perm_groupings: dict[V1resourcedef, list[str]], v1_role: V1role, binding_mapping: BindingMapping | None):
+def extract_system_roles(
+    perm_groupings: dict[V1resourcedef, list[str]], v1_role: V1role, binding_mapping: Optional[BindingMapping]
+):
     """Extract system roles from a set of permissions."""
-
     candidate_system_roles = {}
     resource_roles: dict[V2role, list[V1resourcedef]] = {}
     system_roles = SystemRole.get_system_roles()
@@ -245,20 +244,6 @@ def split_resourcedef_literal(resourceDef: V1resourcedef):
             )  # If not JSON, assume comma-separated? Cost Management openshift assets are like this.
     else:
         return [json.loads(resourceDef.resource_id)]
-
-
-def shared_system_role_replicated_role_bindings_v1_to_v2_mapping(
-    v1_role: V1role,
-    v1_role_db_id,
-    root_workspace: Workspace,
-    default_workspace: Workspace,
-    use_binding_from_db=False,
-    use_mapping_from_db=False,
-) -> FrozenSet[V2rolebinding]:
-    """Convert a V1 role to a set of V2 role bindings."""
-    return v1_role_to_v2_mapping(
-        v1_role, v1_role_db_id, root_workspace, default_workspace, use_binding_from_db, use_mapping_from_db
-    )
 
 
 def v1groups_to_v2groups(v1groups: FrozenSet[V1group]):

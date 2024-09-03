@@ -18,7 +18,6 @@
 """Serializer for role management."""
 from django.utils.translation import gettext as _
 from management.group.model import Group
-from management.notifications.notification_handlers import role_obj_change_notification_handler
 from management.serializer_override_mixin import SerializerCreateOverrideMixin
 from management.utils import filter_queryset_by_tenant, get_principal, validate_and_get_key
 from rest_framework import serializers

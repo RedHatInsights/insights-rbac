@@ -19,11 +19,11 @@
 import logging
 
 from management.models import Outbox, Workspace
+from management.role.model import BindingMapping
 from migration_tool.migrate import migrate_role
 from migration_tool.utils import relationship_to_json
 
 from rbac.env import ENVIRONMENT
-from rbac.management.role.model import BindingMapping
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
@@ -120,14 +120,13 @@ class RelationApiDualWriteHandler:
                 write_relationships=False,
                 root_workspace=str(self.root_workspace.uuid),
                 default_workspace=self.org_id,
-                current_bindings=self.binding_mapping)
+                current_bindings=self.binding_mapping,
+            )
 
             self.role_relations = relations
 
             if self.binding_mapping is None:
-                self.binding_mapping = BindingMapping.objects.create(
-                    role=self.role,
-                    mappings=mappings)
+                self.binding_mapping = BindingMapping.objects.create(role=self.role, mappings=mappings)
             else:
                 self.binding_mapping.mappings = mappings
                 self.binding_mapping.save(force_update=True)

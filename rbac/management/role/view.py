@@ -28,7 +28,6 @@ from django.db import transaction
 from django.db.models import Q
 from django.db.models.aggregates import Count
 from django.http import Http404
-from django.shortcuts import get_object_or_404
 from django.utils.translation import gettext as _
 from django_filters import rest_framework as filters
 from management.filters import CommonFilters
@@ -139,7 +138,6 @@ class RoleViewSet(
 
     def get_queryset(self):
         """Obtain queryset for requesting user based on access and action."""
-
         # NOTE: partial_update intentionally omitted because it does not update access or policy.
         if self.action not in ["update", "destroy"]:
             return get_role_queryset(self.request)
@@ -149,7 +147,7 @@ class RoleViewSet(
             #   and they prevent us from being able to lock the result
             #   (postgres does not allow select for update with 'group by')
             # - No scope checks since these are not relevant to updates
-            # - We also lock the role and its associated Relations bindings.
+            # - We also lock the role and its associated Relations mappings.
             # - We don't bother including system roles because they are not updated this way
 
             # This lock is necessary to ensure the mapping is always based on the current role
@@ -174,9 +172,9 @@ class RoleViewSet(
             # and instead rely on REPEATABLE READ's lost update detection to abort the tx.
             # Nothing else should need to change.
 
-            return (Role.objects.filter(tenant=self.request.tenant)
-                    .select_related("mappings")
-                    .select_for_update())
+            return (
+                Role.objects.filter(tenant=self.request.tenant).select_related("binding_mapping").select_for_update()
+            )
 
     def get_serializer_class(self):
         """Get serializer class based on route."""
@@ -255,15 +253,9 @@ class RoleViewSet(
         self.validate_role(request)
         try:
             with transaction.atomic():
-                create_role = super().create(request=request, args=args, kwargs=kwargs)
-
-                if status.is_success(create_role.status_code):
-                    auditlog = AuditLog()
-                    auditlog.log_create(request, AuditLog.ROLE)
+                return super().create(request=request, args=args, kwargs=kwargs)
         except DualWriteException as e:
             return self.dual_write_exception_response(e)
-
-        return create_role
 
     def list(self, request, *args, **kwargs):
         """Obtain the list of roles for the tenant.
@@ -371,11 +363,9 @@ class RoleViewSet(
 
         try:
             with transaction.atomic():
-                response = super().destroy(request=request, args=args, kwargs=kwargs)
+                return super().destroy(request=request, args=args, kwargs=kwargs)
         except DualWriteException as e:
             return self.dual_write_exception_response(e)
-
-        return response
 
     def partial_update(self, request, *args, **kwargs):
         """Patch a role."""
@@ -458,12 +448,27 @@ class RoleViewSet(
             return self.dual_write_exception_response(e)
 
     def perform_create(self, serializer):
+        """
+        Create the role and publish outbox, notification, and audit events.
+
+        Assumes concurrent updates are prevented (e.g. with atomic block and locks).
+        """
         role = serializer.save()
+
         dual_write_handler = RelationApiDualWriteHandler(role, "CREATE")
         dual_write_handler.generate_replication_event_to_outbox(role)
+
         role_obj_change_notification_handler(role, "created", self.request.user)
 
+        auditlog = AuditLog()
+        auditlog.log_create(self.request, AuditLog.ROLE)
+
     def perform_update(self, serializer):
+        """
+        Update the role and publish outbox, notification, and audit events.
+
+        Assumes concurrent updates are prevented (e.g. with atomic block and locks).
+        """
         if self.action != "partial_update":
             dual_write_handler = RelationApiDualWriteHandler(serializer.instance, "UPDATE")
             dual_write_handler.load_relations_from_current_state_of_role()
@@ -478,6 +483,11 @@ class RoleViewSet(
         auditlog.log_edit(self.request, AuditLog.ROLE, role)
 
     def perform_destroy(self, instance: Role):
+        """
+        Delete the role and publish outbox, notification, and audit events.
+
+        Assumes concurrent updates are prevented (e.g. with atomic block and locks).
+        """
         if instance.system or instance.platform_default:
             key = "role"
             message = "System roles cannot be deleted."
