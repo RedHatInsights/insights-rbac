@@ -59,4 +59,6 @@ parameters:
 - name: PAYLOAD_NAME
   value: payload
   description: Specify the field that contains the message payload in the outbox table
-
+- TOPIC_PREFIX:
+  value: "rbac"
+  description: Prefix for the debezium connector topic
