@@ -14,11 +14,11 @@ objects:
     tasksMax: ${MAX_TASKS}
     config:
       database.server.name: ${DB_SERVERNAME}
-      database.dbname: ${DB_NAME}
-      database.hostname: ${DB_HOSTNAME}
-      database.port: ${DB_PORT}
-      database.user: ${DB_USER}
-      database.password: ${DB_PASSWORD}
+      database.dbname: ${secrets:rbac-stage/rbac-clowder-db:db.name}
+      database.hostname: ${secrets:rbac-stage/rbac-clowder-db:db.host}
+      database.port: ${secrets:rbac-stage/rbac-clowder-db:db.port}
+      database.user: ${secrets:rbac-stage/rbac-clowder-db:db.user}
+      database.password: ${secrets:rbac-stage/rbac-clowder-db:db.password}
       topic.prefix: ${TOPIC_PREFIX}
       table.whitelist: ${TABLE_LIST}
       transforms: outbox
