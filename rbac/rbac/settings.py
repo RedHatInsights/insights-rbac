@@ -375,7 +375,7 @@ except ValueError as e:
     DESTRUCTIVE_SEEDING_OK_UNTIL = datetime.datetime(1970, 1, 1, tzinfo=pytz.UTC)
 
 # disable log messages less than CRITICAL when running unit tests.
-if len(sys.argv) > 1 and sys.argv[1] == "test":
+if len(sys.argv) > 1 and sys.argv[1] == "test" and not ENVIRONMENT.bool("LOG_TEST_OUTPUT", default=False):
     logging.disable(logging.CRITICAL)
 
 # Optionally log all DB queries
