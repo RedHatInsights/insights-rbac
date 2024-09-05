@@ -30,7 +30,6 @@ from .serializer import WorkspaceSerializer
 VALID_PATCH_FIELDS = ["name", "description", "parent"]
 REQUIRED_PUT_FIELDS = ["name", "description", "parent"]
 REQUIRED_CREATE_FIELDS = ["name"]
-DEPTH_KEY = "depth"
 
 
 class WorkspaceViewSet(
@@ -63,44 +62,6 @@ class WorkspaceViewSet(
     def retrieve(self, request, *args, **kwargs):
         """Get a workspace."""
         return super().retrieve(request=request, args=args, kwargs=kwargs)
-
-    def get_queryset_for_depth(self, queryset, current_depth, max_depth):
-        """Get queryset for depth recursively."""
-        if current_depth >= max_depth:
-            return queryset
-        descendents = Workspace.objects.filter(parent__in=queryset)
-        if not descendents.exists():
-            return queryset
-        queryset = descendents | queryset
-        return self.get_queryset_for_depth(queryset, current_depth + 1, max_depth)
-
-    def list(self, request, *args, **kwargs):
-        """Return workspaces."""
-        depth = self.validate_depth(request)
-        queryset = self.get_queryset()
-        if depth != -1:
-            queryset = queryset.filter(parent__isnull=True)
-            queryset = self.get_queryset_for_depth(queryset, current_depth=1, max_depth=depth)
-
-        serializer = self.get_serializer(queryset, many=True)
-        page = self.paginate_queryset(serializer.data)
-        return self.get_paginated_response(page)
-
-    def validate_depth(self, request):
-        """Validate the depth param."""
-        depth = request.query_params.get(DEPTH_KEY)
-        if depth:
-            err_message = f"{depth} is not a valid depth value. Use -1 for all, or specify a positive integer value."
-            try:
-                depth_int = int(depth)
-                if depth_int > 0 or depth_int == -1:
-                    return depth_int
-                else:
-                    raise serializers.ValidationError({"depth": _(err_message)})
-            except ValueError:
-                raise serializers.ValidationError({"depth": _(err_message)})
-
-        return -1
 
     def destroy(self, request, *args, **kwargs):
         """Delete a workspace."""
