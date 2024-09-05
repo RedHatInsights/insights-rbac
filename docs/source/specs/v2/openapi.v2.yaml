@@ -12,16 +12,7 @@ paths:
       operationId: Workspaces_list
       summary: List workspaces in a tenant
       description: List workspaces in a tenant
-      parameters:
-        - name: depth
-          in: query
-          required: false
-          schema:
-            anyOf:
-              - $ref: '#/components/schemas/Workspaces.DepthEnum'
-              - type: integer
-                format: uint16
-            default: 1
+      parameters: []
       responses:
         '200':
           description: The request has succeeded.
@@ -629,11 +620,6 @@ components:
       type: object
       allOf:
         - $ref: '#/components/schemas/Workspaces.BasicWorkspace'
-    Workspaces.DepthEnum:
-      type: number
-      enum:
-        - -1
-        - 1
     Workspaces.PatchWorkspaceRequest:
       type: object
       properties:

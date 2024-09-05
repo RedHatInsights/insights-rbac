@@ -140,18 +140,9 @@ namespace Workspaces {
         statusCode: 204,
     }
 
-    enum DepthEnum {
-        All: -1,
-        Current: 1,
-    }
-
-    alias Depth = DepthEnum | uint16;
-
     @doc("List workspaces in a tenant")
     @summary("List workspaces in a tenant")
-    @get op list(
-        @query depth?: Depth = DepthEnum.Current
-    ): Workspace[] | Problems.CommonProblems;
+    @get op list(): Workspace[] | Problems.CommonProblems;
 
     @doc("Create workspace in tenant")
     @summary("Create workspace in tenant")
