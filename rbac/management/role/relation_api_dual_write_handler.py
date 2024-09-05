@@ -72,14 +72,7 @@ class RelationApiDualWriteHandler:
                 "[Dual Write] Generate relations from current state of role(%s): '%s'", self.role.uuid, self.role.name
             )
 
-            try:
-                self.binding_mapping = self.role.binding_mapping
-            except BindingMapping.DoesNotExist:
-                logger.warning(
-                    "[Dual Write] Binding mapping not found for role(%s): '%s'. Creating new binding mapping.",
-                    self.role.uuid,
-                    self.role.name,
-                )
+            self.binding_mapping = self.role.binding_mapping
 
             relations, _ = migrate_role(
                 self.role,
@@ -90,6 +83,14 @@ class RelationApiDualWriteHandler:
             )
 
             self.current_role_relations = relations
+        except BindingMapping.DoesNotExist:
+            logger.warning(
+                "[Dual Write] Binding mapping not found for role(%s): '%s'. "
+                "Assuming no current relations exist. "
+                "If this is NOT the case, relations are inconsistent!",
+                self.role.uuid,
+                self.role.name,
+            )
         except Exception as e:
             raise DualWriteException(e)
 
