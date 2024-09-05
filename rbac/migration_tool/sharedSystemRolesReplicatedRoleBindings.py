@@ -20,6 +20,8 @@ import logging
 import uuid
 from typing import Callable, FrozenSet, Optional, Type
 
+from django.conf import settings
+
 from management.models import BindingMapping
 from management.role.model import Role
 from migration_tool.ingest import add_element
@@ -89,9 +91,6 @@ class SystemRole:
                 v2_perm = inventory_to_workspace(v2_perm)
                 permission_list.append(v2_perm)
             add_system_role(cls.SYSTEM_ROLES, V2role(str(role.uuid), True, frozenset(permission_list)))
-
-
-skipped_apps = {"cost-management", "playbook-dispatcher", "approval"}
 
 
 def v1_role_to_v2_mapping(
@@ -229,8 +228,8 @@ def extract_system_roles(
 
 
 def is_for_enabled_app(perm: V1permission):
-    """Return true if the permission is for an app that is no longer in use."""
-    return perm.app not in skipped_apps
+    """Return true if the permission is for an app that should migrate."""
+    return perm.app not in settings.DUAL_WRITE_APP_DENY_LIST
 
 
 def split_resourcedef_literal(resourceDef: V1resourcedef):
