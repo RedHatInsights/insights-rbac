@@ -17,10 +17,11 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 import dataclasses
 import logging
-from typing import FrozenSet
+from typing import Any, FrozenSet, Optional
 
 from django.conf import settings
-from management.role.model import BindingMapping, Role, V2Role
+from kessel.relations.v1beta1 import common_pb2
+from management.role.model import BindingMapping, Role
 from management.workspace.model import Workspace
 from migration_tool.models import V1group, V2rolebinding
 from migration_tool.sharedSystemRolesReplicatedRoleBindings import v1_role_to_v2_mapping
@@ -32,33 +33,34 @@ from .ingest import extract_info_into_v1_role
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
+BindingMappings = dict[str, dict[str, Any]]
 
-def spicedb_relationships(
+
+def get_kessel_relation_tuples(
     v2_role_bindings: FrozenSet[V2rolebinding],
     root_workspace: str,
-    v1_role,
-    in_transaction=False,
-    create_binding_to_db=True,
-):
-    """Generate a set of relationships for the given set of v2 role bindings."""
-    relationships = list()
-    binding_mappings = {}
+) -> tuple[list[common_pb2.Relationship], BindingMappings]:
+    """Generate a set of relationships and BindingMappings for the given set of v2 role bindings."""
+    relationships: list[common_pb2.Relationship] = list()
+
+    # Dictionary of v2 role binding ID to v2 role UUID and its permissions
+    # for the given v1 role.
+    binding_mappings: BindingMappings = {}
 
     for v2_role_binding in v2_role_bindings:
         relationships.append(
             create_relationship("role_binding", v2_role_binding.id, "role", v2_role_binding.role.id, "granted")
         )
 
-        if create_binding_to_db:
-            v2_role_data = v2_role_binding.role
+        v2_role_data = v2_role_binding.role
 
-            if binding_mappings.get(v2_role_binding.id) is None:
-                binding_mappings[v2_role_binding.id] = {}
+        if binding_mappings.get(v2_role_binding.id) is None:
+            binding_mappings[v2_role_binding.id] = {}
 
-            binding_mappings[v2_role_binding.id] = {
-                "v2_role_uuid": str(v2_role_data.id),
-                "permissions": list(v2_role_binding.role.permissions),
-            }
+        binding_mappings[v2_role_binding.id] = {
+            "v2_role_uuid": str(v2_role_data.id),
+            "permissions": list(v2_role_binding.role.permissions),
+        }
 
         for perm in v2_role_binding.role.permissions:
             relationships.append(create_relationship("role", v2_role_binding.role.id, "user", "*", perm))
@@ -89,27 +91,16 @@ def spicedb_relationships(
                 )
             )
 
-    if create_binding_to_db:
-        if in_transaction:
-            binding_mapping, _ = BindingMapping.objects.select_for_update().get_or_create(role=v1_role)
-        else:
-            binding_mapping, _ = BindingMapping.objects.get_or_create(role=v1_role)
-        binding_mapping.mappings = binding_mappings
-        binding_mapping.save()
-
-    return relationships
+    return relationships, binding_mappings
 
 
 def migrate_role(
     role: Role,
-    write_db: bool,
+    write_relationships: bool,
     root_workspace: str,
     default_workspace: str,
-    in_transaction=False,
-    use_binding_from_db=False,
-    use_mapping_from_db=False,
-    create_binding_to_db=True,
-):
+    current_bindings: Optional[BindingMapping] = None,
+) -> tuple[list[common_pb2.Relationship], BindingMappings]:
     """Migrate a role from v1 to v2."""
     v1_role = extract_info_into_v1_role(role)
     # With the replicated role bindings algorithm, role bindings are scoped by group, so we need to add groups
@@ -122,19 +113,14 @@ def migrate_role(
 
     # This is where we wire in the implementation we're using into the Migrator
     v2_roles = [
-        v2_role
-        for v2_role in v1_role_to_v2_mapping(
-            v1_role, role.id, root_workspace, default_workspace, use_binding_from_db, use_mapping_from_db
-        )
+        v2_role for v2_role in v1_role_to_v2_mapping(v1_role, root_workspace, default_workspace, current_bindings)
     ]
-    relationships = spicedb_relationships(
-        frozenset(v2_roles), root_workspace, role, in_transaction, create_binding_to_db
-    )
-    output_relationships(relationships, write_db)
-    return relationships
+    relationships, mappings = get_kessel_relation_tuples(frozenset(v2_roles), root_workspace)
+    output_relationships(relationships, write_relationships)
+    return relationships, mappings
 
 
-def migrate_workspace(tenant: Tenant, write_db: bool):
+def migrate_workspace(tenant: Tenant, write_relationships: bool):
     """Migrate a workspace from v1 to v2."""
     root_workspace = f"root-workspace-{tenant.org_id}"
     # Org id represents the default workspace for now
@@ -144,20 +130,20 @@ def migrate_workspace(tenant: Tenant, write_db: bool):
     ]
     # Include realm for tenant
     relationships.append(create_relationship("tenant", str(tenant.org_id), "realm", settings.ENV_NAME, "realm"))
-    output_relationships(relationships, write_db)
+    output_relationships(relationships, write_relationships)
     return root_workspace, tenant.org_id
 
 
-def migrate_users(tenant: Tenant, write_db: bool):
+def migrate_users(tenant: Tenant, write_relationships: bool):
     """Write users relationship to tenant."""
     relationships = [
         create_relationship("tenant", str(tenant.org_id), "user", str(principal.uuid), "member")
         for principal in tenant.principal_set.all()
     ]
-    output_relationships(relationships, write_db)
+    output_relationships(relationships, write_relationships)
 
 
-def migrate_users_for_groups(tenant: Tenant, write_db: bool):
+def migrate_users_for_groups(tenant: Tenant, write_relationships: bool):
     """Write users relationship to groups."""
     relationships = []
     for group in tenant.group_set.all():
@@ -167,21 +153,21 @@ def migrate_users_for_groups(tenant: Tenant, write_db: bool):
         )
         for user in user_set:
             relationships.append(create_relationship("group", str(group.uuid), "user", str(user.uuid), "member"))
-    output_relationships(relationships, write_db)
+    output_relationships(relationships, write_relationships)
 
 
-def migrate_data_for_tenant(tenant: Tenant, app_list: list, write_db: bool):
+def migrate_data_for_tenant(tenant: Tenant, app_list: list, write_relationships: bool):
     """Migrate all data for a given tenant."""
     logger.info("Creating workspace.")
-    root_workspace, default_workspace = migrate_workspace(tenant, write_db)
+    root_workspace, default_workspace = migrate_workspace(tenant, write_relationships)
     logger.info("Workspace migrated.")
 
     logger.info("Relating users to tenant.")
-    migrate_users(tenant, write_db)
+    migrate_users(tenant, write_relationships)
     logger.info("Finished relationship between users and tenant.")
 
     logger.info("Migrating relations of group and user.")
-    migrate_users_for_groups(tenant, write_db)
+    migrate_users_for_groups(tenant, write_relationships)
     logger.info("Finished migrating relations of group and user.")
 
     roles = tenant.role_set.all()
@@ -190,12 +176,22 @@ def migrate_data_for_tenant(tenant: Tenant, app_list: list, write_db: bool):
 
     for role in roles:
         logger.info(f"Migrating role: {role.name} with UUID {role.uuid}.")
-        migrate_role(role, write_db, root_workspace, default_workspace)
+
+        _, mappings = migrate_role(role, write_relationships, root_workspace, default_workspace)
+
+        # Insert is forced with `create` in order to prevent this from
+        # accidentally running concurrently with dual-writes.
+        # If migration should be rerun, then the bindings table should be dropped.
+        # If changing this to update_or_create,
+        # always ensure writes are paused before running.
+        # Thus must always be the case, but `create` will at least start failing you if you forget.
+        BindingMapping.objects.create(role=role, mappings=mappings)
+
         logger.info(f"Migration completed for role: {role.name} with UUID {role.uuid}.")
     logger.info(f"Migrated {roles.count()} roles for tenant: {tenant.org_id}")
 
 
-def migrate_data(exclude_apps: list = [], orgs: list = [], write_db: bool = False):
+def migrate_data(exclude_apps: list = [], orgs: list = [], write_relationships: bool = False):
     """Migrate all data for all tenants."""
     count = 0
     tenants = Tenant.objects.exclude(tenant_name="public")
@@ -205,7 +201,7 @@ def migrate_data(exclude_apps: list = [], orgs: list = [], write_db: bool = Fals
     for tenant in tenants.iterator():
         logger.info(f"Migrating data for tenant: {tenant.org_id}")
         try:
-            migrate_data_for_tenant(tenant, exclude_apps, write_db)
+            migrate_data_for_tenant(tenant, exclude_apps, write_relationships)
         except Exception as e:
             logger.error(f"Failed to migrate data for tenant: {tenant.org_id}. Error: {e}")
             raise e

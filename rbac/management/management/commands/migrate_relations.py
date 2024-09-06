@@ -25,7 +25,7 @@ class Command(BaseCommand):
         kwargs = {
             "exclude_apps": options["exclude_apps"],
             "orgs": options["org_list"],
-            "write_db": options["write_to_db"],
+            "write_relationships": options["write_relationships"],
         }
         migrate_data(**kwargs)
         logger.info("*** Migration completed. ***\n")
