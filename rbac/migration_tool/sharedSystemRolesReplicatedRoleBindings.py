@@ -21,7 +21,6 @@ import uuid
 from typing import Callable, FrozenSet, Optional, Type
 
 from django.conf import settings
-
 from management.models import BindingMapping
 from management.role.model import Role
 from migration_tool.ingest import add_element
