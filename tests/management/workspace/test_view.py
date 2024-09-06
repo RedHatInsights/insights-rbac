@@ -455,5 +455,5 @@ class WorkspaceViewTests(IdentityRequest):
         self.assertEqual(payload.get("meta").get("count"), Workspace.objects.count())
         for keyname in ["meta", "links", "data"]:
             self.assertIn(keyname, payload)
-        for keyname in ["name", "uuid", "parent", "description"]:
+        for keyname in ["name", "uuid", "parent_id", "description"]:
             self.assertIn(keyname, payload.get("data")[0])
