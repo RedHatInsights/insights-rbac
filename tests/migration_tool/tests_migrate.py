@@ -97,7 +97,7 @@ class MigrateTests(TestCase):
         self.assertEqual(BindingMapping.objects.count(), 3)
 
         org_id = self.tenant.org_id
-        root_workspace = Workspace.objects.get(name="root", tenant=self.tenant)
+        root_workspace_id = f"root-workspace-{self.tenant.org_id}"
         v2_role_a2 = self.role_a2.v2role_set.first()
         rolebinding_a2 = self.role_a2.bindingmapping_set.first()
 
@@ -124,8 +124,8 @@ class MigrateTests(TestCase):
             # Org relationships of self.tenant
             # the other org is not included since it is not specified in the orgs parameter
             ## Workspaces root and default
-            call(f"workspace:{org_id}#parent@workspace:{root_workspace.uuid}"),
-            call(f"workspace:{root_workspace.uuid}#parent@tenant:{org_id}"),
+            call(f"workspace:{org_id}#parent@workspace:{root_workspace_id}"),
+            call(f"workspace:{root_workspace_id}#parent@tenant:{org_id}"),
             ## Realm
             call(f"tenant:{org_id}#realm@realm:stage"),
             ## Users to tenant
@@ -138,16 +138,16 @@ class MigrateTests(TestCase):
             call(f"role_binding:{rolebinding_a2.id}#granted@role:{v2_role_a2.id}"),
             call(f"role:{v2_role_a2.id}#inventory_hosts_write@user:*"),
             call(f"role_binding:{rolebinding_a2.id}#subject@group:{self.group_a2.uuid}"),
-            call(f"workspace:{self.aws_account_id_1}#parent@workspace:{root_workspace.uuid}"),
+            call(f"workspace:{self.aws_account_id_1}#parent@workspace:{root_workspace_id}"),
             call(f"workspace:{self.aws_account_id_1}#user_grant@role_binding:{rolebinding_a2.id}"),
             ## Role binding to role_a3
             call(f"role_binding:{rolebinding_a31.id}#granted@role:{v2_role_a31.id}"),
             call(f"role:{v2_role_a31.id}#inventory_hosts_write@user:*"),
-            call(f"workspace:{workspace_1}#parent@workspace:{root_workspace.uuid}"),
+            call(f"workspace:{workspace_1}#parent@workspace:{root_workspace_id}"),
             call(f"workspace:{workspace_1}#user_grant@role_binding:{rolebinding_a31.id}"),
             call(f"role_binding:{rolebinding_a32.id}#granted@role:{v2_role_a32.id}"),
             call(f"role:{v2_role_a32.id}#inventory_hosts_write@user:*"),
-            call(f"workspace:{workspace_2}#parent@workspace:{root_workspace.uuid}"),
+            call(f"workspace:{workspace_2}#parent@workspace:{root_workspace_id}"),
             call(f"workspace:{workspace_2}#user_grant@role_binding:{rolebinding_a32.id}"),
         ]
         logger_mock.info.assert_has_calls(tuples, any_order=True)
