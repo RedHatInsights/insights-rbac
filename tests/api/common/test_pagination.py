@@ -34,6 +34,15 @@ class PaginationTest(TestCase):
         result = StandardResultsSetPagination.link_rewrite(request, link)
         self.assertEqual(expected, result)
 
+    def test_link_rewrite_rbac_prefix(self):
+        """Test the link rewrite for RBAC prefix."""
+        request = Mock()
+        request.META = {PATH_INFO: "/api/rbac/v1/roles/"}
+        link = "http://localhost:8000/api/rbac/v1/roles/?limit=10&offset=0"
+        expected = "/api/rbac/v1/roles/?limit=10&offset=0"
+        result = StandardResultsSetPagination.link_rewrite(request, link)
+        self.assertEqual(expected, result)
+
     def test_link_rewrite_err(self):
         """Test the link rewrite."""
         request = Mock()
