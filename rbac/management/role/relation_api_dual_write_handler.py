@@ -19,6 +19,7 @@
 import logging
 
 from management.models import Outbox, Workspace
+from management.role.model import BindingMapping
 from migration_tool.migrate import migrate_role
 from migration_tool.utils import relationship_to_json
 
@@ -44,6 +45,7 @@ class RelationApiDualWriteHandler:
             self.role_relations = []
             self.current_role_relations = []
             self.role = role
+            self.binding_mapping = None
             self.tenant_id = role.tenant_id
             self.org_id = role.tenant.org_id
             self.root_workspace = Workspace.objects.get(
@@ -57,7 +59,11 @@ class RelationApiDualWriteHandler:
         """Check whether replication enabled."""
         return ENVIRONMENT.get_value("REPLICATION_TO_RELATION_ENABLED", default=False, cast=bool)
 
-    def generate_relations_from_current_state_of_role(self):
+    def get_current_role_relations(self):
+        """Get current roles relations."""
+        return self.current_role_relations
+
+    def load_relations_from_current_state_of_role(self):
         """Generate relations from current state of role and UUIDs for v2 role and role binding from database."""
         if not self.replication_enabled():
             return
@@ -65,36 +71,76 @@ class RelationApiDualWriteHandler:
             logger.info(
                 "[Dual Write] Generate relations from current state of role(%s): '%s'", self.role.uuid, self.role.name
             )
-            relations = migrate_role(
-                self.role, False, str(self.root_workspace.uuid), self.org_id, True, True, True, False
+
+            self.binding_mapping = self.role.binding_mapping
+
+            relations, _ = migrate_role(
+                self.role,
+                write_relationships=False,
+                root_workspace=str(self.root_workspace.uuid),
+                default_workspace=self.org_id,
+                current_bindings=self.binding_mapping,
             )
+
             self.current_role_relations = relations
+        except BindingMapping.DoesNotExist:
+            logger.warning(
+                "[Dual Write] Binding mapping not found for role(%s): '%s'. "
+                "Assuming no current relations exist. "
+                "If this is NOT the case, relations are inconsistent!",
+                self.role.uuid,
+                self.role.name,
+            )
         except Exception as e:
             raise DualWriteException(e)
 
-    def regenerate_relations_and_mappings_for_role(self):
-        """Delete and generated relations with mapping for a role."""
+    def generate_replication_event_to_outbox(self, role):
+        """Generate replication event to outbox table."""
         if not self.replication_enabled():
-            return []
-        return self.generate_relations_and_mappings_for_role()
+            return
+        self.role = role
+        self._generate_relations_and_mappings_for_role()
+        return self.save_replication_event_to_outbox()
 
-    def generate_relations_and_mappings_for_role(self):
+    def save_replication_event_to_outbox(self):
+        """Generate and store replication event to outbox table."""
+        if not self.replication_enabled():
+            return {}
+        try:
+            replication_event = self._build_replication_event()
+            self._save_replication_event(replication_event)
+        except Exception as e:
+            raise DualWriteException(e)
+        return replication_event
+
+    def _generate_relations_and_mappings_for_role(self):
         """Generate relations and mappings for a role with new UUIDs for v2 role and role bindings."""
         if not self.replication_enabled():
             return []
         try:
             logger.info("[Dual Write] Generate new relations from role(%s): '%s'", self.role.uuid, self.role.name)
-            relations = migrate_role(self.role, False, str(self.root_workspace.uuid), self.org_id, True)
+
+            relations, mappings = migrate_role(
+                self.role,
+                write_relationships=False,
+                root_workspace=str(self.root_workspace.uuid),
+                default_workspace=self.org_id,
+                current_bindings=self.binding_mapping,
+            )
+
             self.role_relations = relations
+
+            if self.binding_mapping is None:
+                self.binding_mapping = BindingMapping.objects.create(role=self.role, mappings=mappings)
+            else:
+                self.binding_mapping.mappings = mappings
+                self.binding_mapping.save(force_update=True)
+
             return relations
         except Exception as e:
             raise DualWriteException(e)
 
-    def get_current_role_relations(self):
-        """Get current roles relations."""
-        return self.current_role_relations
-
-    def build_replication_event(self):
+    def _build_replication_event(self):
         """Build replication event."""
         if not self.replication_enabled():
             return {}
@@ -110,26 +156,7 @@ class RelationApiDualWriteHandler:
         replication_event = {"relations_to_add": relations_to_add, "relations_to_remove": relations_to_remove}
         return replication_event
 
-    def generate_replication_event_to_outbox(self, role):
-        """Generate replication event to outbox table."""
-        if not self.replication_enabled():
-            return
-        self.role = role
-        self.regenerate_relations_and_mappings_for_role()
-        return self.save_replication_event_to_outbox()
-
-    def save_replication_event_to_outbox(self):
-        """Generate and store replication event to outbox table."""
-        if not self.replication_enabled():
-            return {}
-        try:
-            replication_event = self.build_replication_event()
-            self.save_replication_event(replication_event)
-        except Exception as e:
-            raise DualWriteException(e)
-        return replication_event
-
-    def save_replication_event(self, replication_event):
+    def _save_replication_event(self, replication_event):
         """Save replication event."""
         if not self.replication_enabled():
             return
