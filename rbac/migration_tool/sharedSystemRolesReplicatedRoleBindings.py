@@ -39,7 +39,7 @@ from migration_tool.models import (
 
 logger = logging.getLogger(__name__)
 
-Permissiongroupings = dict[V1resourcedef, list[str]]
+Permissiongroupings = dict[V2boundresource, list[str]]
 Perm_bound_resources = dict[str, list[V2boundresource]]
 
 group_perms_for_rolebinding_fn = Type[
@@ -93,7 +93,7 @@ class SystemRole:
             add_system_role(cls.SYSTEM_ROLES, V2role(str(role.uuid), True, frozenset(permission_list)))
 
 
-def v1_role_to_v2_mapping(
+def v1_role_to_v2_bindings(
     v1_role: V1role,
     root_workspace: str,
     default_workspace: str,
@@ -101,7 +101,7 @@ def v1_role_to_v2_mapping(
 ) -> FrozenSet[V2rolebinding]:
     """Convert a V1 role to a set of V2 role bindings."""
     perm_groupings: Permissiongroupings = {}
-    # Group V2 permissions by target
+    # Group V2 permissions by target resource
     for v1_perm in v1_role.permissions:
         if not is_for_enabled_app(v1_perm):
             continue
@@ -128,9 +128,9 @@ def v1_role_to_v2_mapping(
                 V2boundresource("workspace", root_workspace),
                 v2_perm,
             )
-    # Project permission sets to system roles
-    resource_roles = extract_system_roles(perm_groupings, v1_role, binding_mapping)
-    # Construct rolebindings
+    # Project permission sets to roles per set of resources
+    resource_roles = permission_groupings_to_v2_role_and_resource(perm_groupings, v1_role, binding_mapping)
+    # Construct rolebindings for each resource
     v2_role_bindings = []
     v2_groups = v1groups_to_v2groups(v1_role.groups)
     for role, resources in resource_roles.items():
@@ -158,12 +158,16 @@ def v1_role_to_v2_mapping(
 custom_roles_created = 0
 
 
-def extract_system_roles(
-    perm_groupings: dict[V1resourcedef, list[str]], v1_role: V1role, binding_mapping: Optional[BindingMapping]
-):
-    """Extract system roles from a set of permissions."""
+def permission_groupings_to_v2_role_and_resource(
+    perm_groupings: Permissiongroupings, v1_role: V1role, binding_mapping: Optional[BindingMapping]
+) -> dict[V2role, list[V2boundresource]]:
+    """
+    Determine V2 roles and resources they apply to from a set of V1 resources and permissions.
+
+    Prefers to reuse system roles where possible.
+    """
     candidate_system_roles = {}
-    resource_roles: dict[V2role, list[V1resourcedef]] = {}
+    resource_roles: dict[V2role, list[V2boundresource]] = {}
     system_roles = SystemRole.get_system_roles()
 
     for resource, permissions in perm_groupings.items():

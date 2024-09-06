@@ -24,11 +24,11 @@ from kessel.relations.v1beta1 import common_pb2
 from management.role.model import BindingMapping, Role
 from management.workspace.model import Workspace
 from migration_tool.models import V1group, V2rolebinding
-from migration_tool.sharedSystemRolesReplicatedRoleBindings import v1_role_to_v2_mapping
+from migration_tool.sharedSystemRolesReplicatedRoleBindings import v1_role_to_v2_bindings
 from migration_tool.utils import create_relationship, output_relationships
 
 from api.models import Tenant
-from .ingest import extract_info_into_v1_role
+from .ingest import aggregate_v1_role
 
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
@@ -99,23 +99,20 @@ def migrate_role(
     write_relationships: bool,
     root_workspace: str,
     default_workspace: str,
-    current_bindings: Optional[BindingMapping] = None,
+    current_mapping: Optional[BindingMapping] = None,
 ) -> tuple[list[common_pb2.Relationship], BindingMappings]:
-    """Migrate a role from v1 to v2."""
-    v1_role = extract_info_into_v1_role(role)
-    # With the replicated role bindings algorithm, role bindings are scoped by group, so we need to add groups
-    policies = role.policies.all()
-    groups = set()
-    for policy in policies:
-        principals = [str(principal) for principal in policy.group.principals.values_list("uuid", flat=True)]
-        groups.add(V1group(str(policy.group.uuid), frozenset(principals)))
-    v1_role = dataclasses.replace(v1_role, groups=frozenset(groups))
+    """
+    Migrate a role from v1 to v2, returning the tuples and mappings.
 
+    The mappings are returned so that we can reconstitute the corresponding tuples for a given role.
+    This is needed so we can remove those tuples when the role changes if needed.
+    """
+    v1_role = aggregate_v1_role(role)
     # This is where we wire in the implementation we're using into the Migrator
-    v2_roles = [
-        v2_role for v2_role in v1_role_to_v2_mapping(v1_role, root_workspace, default_workspace, current_bindings)
+    v2_role_bindings = [
+        binding for binding in v1_role_to_v2_bindings(v1_role, root_workspace, default_workspace, current_mapping)
     ]
-    relationships, mappings = get_kessel_relation_tuples(frozenset(v2_roles), root_workspace)
+    relationships, mappings = get_kessel_relation_tuples(frozenset(v2_role_bindings), root_workspace)
     output_relationships(relationships, write_relationships)
     return relationships, mappings
 

@@ -19,14 +19,20 @@ import json
 from typing import Tuple
 
 from management.role.model import Role
-from migration_tool.models import V1permission, V1resourcedef, V1role
+from migration_tool.models import V1group, V1permission, V1resourcedef, V1role
 
 
-def extract_info_into_v1_role(role: Role):
-    """Extract the information from the role and returns a V1role object."""
+def aggregate_v1_role(role: Role) -> V1role:
+    """
+    Aggregate the role's access and policy as a consolidated V1role object.
+
+    This maps the RBAC model to preloaded, navigable objects with the key data broken down.
+    """
     perm_res_defs: dict[Tuple[str, str], list[V1resourcedef]] = {}
     perm_list: list[str] = []
     role_id = str(role.uuid)
+
+    # Determine v1 permissions
     for access in role.access.all():
         for resource_def in access.resourceDefinitions.all():
             attri_filter = resource_def.attributeFilter
@@ -47,7 +53,16 @@ def extract_info_into_v1_role(role: Role):
         res_defs = [res_def for res_def in perm_res_defs.get((role_id, perm), [])]
         v1_perm = V1permission(perm_parts[0], perm_parts[1], perm_parts[2], frozenset(res_defs))
         v1_perms.append(v1_perm)
-    return V1role(role_id, frozenset(v1_perms), frozenset())  # we don't get groups from the sheet
+
+    # With the replicated role bindings algorithm, role bindings are scoped by group, so we need to add groups
+    # TODO: We don't need to care about principals here – see RHCLOUD-35039
+    # Maybe not even groups? See RHCLOUD-34786
+    groups = set()
+    for policy in role.policies.all():
+        principals = [str(principal) for principal in policy.group.principals.values_list("uuid", flat=True)]
+        groups.add(V1group(str(policy.group.uuid), frozenset(principals)))
+
+    return V1role(role_id, frozenset(v1_perms), frozenset(groups))  # we don't get groups from the sheet
 
 
 def add_element(dict, key, value):
