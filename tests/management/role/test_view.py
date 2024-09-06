@@ -357,7 +357,7 @@ class RoleViewsetTests(IdentityRequest):
         actual_call_arg = mock_method.call_args[0][0]
         expected_sorted = normalize_and_sort(replication_event)
         actual_sorted = normalize_and_sort(actual_call_arg)
-        self.assertEqual(set(expected_sorted), set(actual_sorted))
+        self.assertEqual(expected_sorted, actual_sorted)
 
         # test that we can retrieve the role
         url = reverse("role-detail", kwargs={"uuid": response.data.get("uuid")})
@@ -1510,7 +1510,7 @@ class RoleViewsetTests(IdentityRequest):
         actual_call_arg = mock_method.call_args[0][0]
         expected_sorted = normalize_and_sort(replication_event)
         actual_sorted = normalize_and_sort(actual_call_arg)
-        self.assertEqual(set(expected_sorted), set(actual_sorted))
+        self.assertEqual(expected_sorted, actual_sorted)
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
 
     @patch("core.kafka.RBACProducer.send_kafka_message")
