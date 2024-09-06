@@ -85,9 +85,6 @@ def relation_api_tuples_for_v1_role(v1_role_uuid, root_workspace_uuid):
             )
             relations.append(relation_tuple)
         else:
-            relation_tuple = relation_api_tuple("keya/id", "valueA", "workspace", "workspace", root_workspace_uuid)
-            relations.append(relation_tuple)
-
             relation_tuple = relation_api_tuple(
                 "keya/id", "valueA", "user_grant", "role_binding", str(role_binding_uuid)
             )
@@ -1404,7 +1401,7 @@ class RoleViewsetTests(IdentityRequest):
         actual_call_arg = mock_method.call_args[0][0]
         expected_sorted = normalize_and_sort(replication_event)
         actual_sorted = normalize_and_sort(actual_call_arg)
-        self.assertEqual(set(expected_sorted), set(actual_sorted))
+        self.assertEqual(expected_sorted, actual_sorted)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
