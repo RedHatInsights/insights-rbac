@@ -15,7 +15,6 @@ You should have received a copy of the GNU Affero General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 
-import dataclasses
 import logging
 from typing import Any, FrozenSet, Optional
 
@@ -23,7 +22,7 @@ from django.conf import settings
 from kessel.relations.v1beta1 import common_pb2
 from management.role.model import BindingMapping, Role
 from management.workspace.model import Workspace
-from migration_tool.models import V1group, V2rolebinding
+from migration_tool.models import V2rolebinding
 from migration_tool.sharedSystemRolesReplicatedRoleBindings import v1_role_to_v2_bindings
 from migration_tool.utils import create_relationship, output_relationships
 
