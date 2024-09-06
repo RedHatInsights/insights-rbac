@@ -441,3 +441,18 @@ class WorkspaceViewTests(IdentityRequest):
         detail = response.data.get("detail")
         self.assertEqual(detail, "You do not have permission to perform this action.")
         self.assertEqual(status_code, 403)
+
+    def test_get_workspace_list(self):
+        """Test for listing workspaces."""
+        url = reverse("workspace-list")
+        client = APIClient()
+        response = client.get(url, None, format="json", **self.headers)
+
+        payload = response.data
+        self.assertIsInstance(payload.get("data"), list)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(payload.get("meta").get("count"), Workspace.objects.count())
+        for keyname in ["meta", "links", "data"]:
+            self.assertIn(keyname, payload)
+        for keyname in ["name", "uuid", "parent", "description"]:
+            self.assertIn(keyname, payload.get("data")[0])

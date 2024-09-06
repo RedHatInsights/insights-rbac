@@ -140,6 +140,10 @@ namespace Workspaces {
         statusCode: 204,
     }
 
+    @doc("List workspaces in a tenant")
+    @summary("List workspaces in a tenant")
+    @get op list(): Workspace[] | Problems.CommonProblems;
+
     @doc("Create workspace in tenant")
     @summary("Create workspace in tenant")
     @post op create(@body body: CreateWorkspaceRequest): CreateWorkspaceResponse | Problems.CommonProblems | Problems.Problem400;

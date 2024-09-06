@@ -37,6 +37,7 @@ class WorkspaceViewSet(
     mixins.DestroyModelMixin,
     mixins.RetrieveModelMixin,
     mixins.UpdateModelMixin,
+    mixins.ListModelMixin,
     viewsets.GenericViewSet,
 ):
     """Workspace View.
