@@ -17,8 +17,8 @@
 
 """Common pagination class."""
 import logging
-from urllib.parse import urlparse
 import re
+from urllib.parse import urlparse
 
 from rest_framework.pagination import LimitOffsetPagination
 from rest_framework.response import Response
