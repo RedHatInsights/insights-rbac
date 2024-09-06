@@ -98,7 +98,7 @@ namespace Workspaces {
 
     model Workspace {
         @key uuid: UUID;
-        parent?: UUID;
+        parent_id?: UUID;
         ...BasicWorkspace;
         ...Timestamps;
     }

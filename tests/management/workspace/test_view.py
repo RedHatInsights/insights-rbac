@@ -42,6 +42,7 @@ class WorkspaceViewTests(IdentityRequest):
 
     def tearDown(self):
         """Tear down group model tests."""
+        Workspace.objects.update(parent=None)
         Workspace.objects.all().delete()
 
     def test_create_workspace(self):
@@ -50,11 +51,11 @@ class WorkspaceViewTests(IdentityRequest):
             "name": "New Workspace",
             "description": "New Workspace - description",
             "tenant_id": self.tenant.id,
-            "parent": "cbe9822d-cadb-447d-bc80-8bef773c36ea",
+            "parent_id": "cbe9822d-cadb-447d-bc80-8bef773c36ea",
         }
 
         parent_workspace = Workspace.objects.create(**workspace_data)
-        workspace = {"name": "New Workspace", "description": "Workspace", "parent": parent_workspace.uuid}
+        workspace = {"name": "New Workspace", "description": "Workspace", "parent_id": parent_workspace.uuid}
 
         url = reverse("workspace-list")
         client = APIClient()
@@ -125,12 +126,12 @@ class WorkspaceViewTests(IdentityRequest):
             "name": "New Workspace",
             "description": "New Workspace - description",
             "tenant_id": self.tenant.id,
-            "parent": self.init_workspace.uuid,
+            "parent_id": self.init_workspace.uuid,
         }
 
         Workspace.objects.create(**workspace_data)
 
-        test_data = {"name": "New Workspace", "parent": self.init_workspace.uuid}
+        test_data = {"name": "New Workspace", "parent_id": self.init_workspace.uuid}
 
         url = reverse("workspace-list")
         client = APIClient()
@@ -143,7 +144,7 @@ class WorkspaceViewTests(IdentityRequest):
             "name": "New Workspace",
             "description": "New Workspace - description",
             "tenant_id": self.tenant.id,
-            "parent": self.init_workspace.uuid,
+            "parent_id": self.init_workspace.uuid,
         }
 
         workspace = Workspace.objects.create(**workspace_data)
@@ -153,7 +154,7 @@ class WorkspaceViewTests(IdentityRequest):
 
         workspace_data["name"] = "Updated name"
         workspace_data["description"] = "Updated description"
-        workspace_data["parent"] = workspace.parent
+        workspace_data["parent_id"] = workspace.parent_id
         response = client.put(url, workspace_data, format="json", **self.headers)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         data = response.data
@@ -174,7 +175,7 @@ class WorkspaceViewTests(IdentityRequest):
             "name": "New Workspace",
             "description": "New Workspace - description",
             "tenant_id": self.tenant.id,
-            "parent": "cbe9822d-cadb-447d-bc80-8bef773c36ea",
+            "parent_id": "cbe9822d-cadb-447d-bc80-8bef773c36ea",
         }
 
         workspace = Workspace.objects.create(**workspace_data)
@@ -201,7 +202,7 @@ class WorkspaceViewTests(IdentityRequest):
             "name": "New Workspace",
             "description": "New Workspace - description",
             "tenant_id": self.tenant.id,
-            "parent": "cbe9822d-cadb-447d-bc80-8bef773c36ea",
+            "parent_id": "cbe9822d-cadb-447d-bc80-8bef773c36ea",
         }
 
         parent_workspace = Workspace.objects.create(**parent_workspace_data)
@@ -210,7 +211,7 @@ class WorkspaceViewTests(IdentityRequest):
             "name": "New Workspace",
             "description": "New Workspace - description",
             "tenant_id": self.tenant.id,
-            "parent": parent_workspace.uuid,
+            "parent_id": parent_workspace.uuid,
         }
 
         workspace = Workspace.objects.create(**workspace_data)
@@ -218,7 +219,7 @@ class WorkspaceViewTests(IdentityRequest):
         url = reverse("workspace-detail", kwargs={"uuid": workspace.uuid})
         client = APIClient()
 
-        workspace_request_data = {"name": "New Workspace", "parent": workspace.uuid, "description": "XX"}
+        workspace_request_data = {"name": "New Workspace", "parent_id": workspace.uuid, "description": "XX"}
 
         response = client.put(url, workspace_request_data, format="json", **self.headers)
 
@@ -226,7 +227,7 @@ class WorkspaceViewTests(IdentityRequest):
         status_code = response.data.get("status")
         detail = response.data.get("detail")
         self.assertIsNotNone(detail)
-        self.assertEqual(detail, "Parent and UUID can't be same")
+        self.assertEqual(detail, "Parent ID and UUID can't be same")
         self.assertEqual(status_code, 400)
 
     def test_update_workspace_parent_doesnt_exist(self):
@@ -246,7 +247,7 @@ class WorkspaceViewTests(IdentityRequest):
         parent = "cbe9822d-cadb-447d-bc80-8bef773c36ea"
         workspace_request_data = {
             "name": "New Workspace",
-            "parent": parent,
+            "parent_id": parent,
             "description": "XX",
         }
 
@@ -267,7 +268,7 @@ class WorkspaceViewTests(IdentityRequest):
             "name": "New Workspace",
             "description": "New Workspace - description",
             "tenant_id": self.tenant.id,
-            "parent": None,
+            "parent_id": None,
         }
 
         workspace = Workspace.objects.create(**workspace_data)
@@ -310,7 +311,7 @@ class WorkspaceViewTests(IdentityRequest):
             "name": "New Duplicate Workspace",
             "description": "New Duplicate Workspace - description",
             "tenant_id": self.tenant.id,
-            "parent": self.init_workspace.uuid,
+            "parent_id": self.init_workspace.uuid,
         }
 
         Workspace.objects.create(**workspace_data)
@@ -319,7 +320,7 @@ class WorkspaceViewTests(IdentityRequest):
             "name": "New Duplicate Workspace for Update",
             "description": "New Duplicate Workspace - description",
             "tenant_id": self.tenant.id,
-            "parent": self.init_workspace.uuid,
+            "parent_id": self.init_workspace.uuid,
         }
 
         workspace_for_update = Workspace.objects.create(**workspace_data_for_update)
@@ -330,7 +331,7 @@ class WorkspaceViewTests(IdentityRequest):
         workspace_data_for_put = {
             "name": "New Duplicate Workspace",
             "description": "New Duplicate Workspace - description",
-            "parent": self.init_workspace.uuid,
+            "parent_id": self.init_workspace.uuid,
         }
 
         response = client.put(url, workspace_data_for_put, format="json", **self.headers)
@@ -454,5 +455,5 @@ class WorkspaceViewTests(IdentityRequest):
         self.assertEqual(payload.get("meta").get("count"), Workspace.objects.count())
         for keyname in ["meta", "links", "data"]:
             self.assertIn(keyname, payload)
-        for keyname in ["name", "uuid", "parent", "description"]:
+        for keyname in ["name", "uuid", "parent_id", "description"]:
             self.assertIn(keyname, payload.get("data")[0])

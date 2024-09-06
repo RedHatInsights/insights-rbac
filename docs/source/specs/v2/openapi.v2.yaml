@@ -666,7 +666,7 @@ components:
       properties:
         uuid:
           $ref: '#/components/schemas/UUID'
-        parent:
+        parent_id:
           $ref: '#/components/schemas/UUID'
         name:
           type: string
