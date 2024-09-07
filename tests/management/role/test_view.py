@@ -57,15 +57,15 @@ def normalize_and_sort(json_obj):
     return json_obj
 
 
-def replication_event_for_v1_role(v1_role_uuid, root_workspace_uuid):
+def replication_event_for_v1_role(v1_role_uuid, default_workspace_uuid):
     """Create a replication event for a v1 role."""
     return {
-        "relations_to_add": relation_api_tuples_for_v1_role(v1_role_uuid, root_workspace_uuid),
+        "relations_to_add": relation_api_tuples_for_v1_role(v1_role_uuid, default_workspace_uuid),
         "relations_to_remove": [],
     }
 
 
-def relation_api_tuples_for_v1_role(v1_role_uuid, root_workspace_uuid):
+def relation_api_tuples_for_v1_role(v1_role_uuid, default_workspace_uuid):
     """Create a relation API tuple for a v1 role."""
     role_id = Role.objects.get(uuid=v1_role_uuid).id
     role_binding = BindingMapping.objects.filter(role=role_id).first()
@@ -81,7 +81,7 @@ def relation_api_tuples_for_v1_role(v1_role_uuid, root_workspace_uuid):
             relations.append(relation_tuple)
         if "app_all_read" in data["permissions"]:
             relation_tuple = relation_api_tuple(
-                "workspace", root_workspace_uuid, "user_grant", "role_binding", str(role_binding_uuid)
+                "workspace", default_workspace_uuid, "user_grant", "role_binding", str(role_binding_uuid)
             )
             relations.append(relation_tuple)
         else:
@@ -396,7 +396,7 @@ class RoleViewsetTests(IdentityRequest):
         response = self.create_role(role_name, role_display=role_display, in_access_data=access_data)
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
 
-        replication_event = replication_event_for_v1_role(response.data.get("uuid"), str(self.root_workspace.uuid))
+        replication_event = replication_event_for_v1_role(response.data.get("uuid"), str(self.tenant.org_id))
 
         mock_method.assert_called_once()
         actual_call_arg = mock_method.call_args[0][0]
@@ -1438,10 +1438,10 @@ class RoleViewsetTests(IdentityRequest):
         test_data["access"] = new_access_data
         url = reverse("role-detail", kwargs={"uuid": role_uuid})
         client = APIClient()
-        current_relations = relation_api_tuples_for_v1_role(role_uuid, str(self.root_workspace.uuid))
+        current_relations = relation_api_tuples_for_v1_role(role_uuid, str(self.tenant.org_id))
 
         response = client.put(url, test_data, format="json", **self.headers)
-        replication_event = replication_event_for_v1_role(response.data.get("uuid"), str(self.root_workspace.uuid))
+        replication_event = replication_event_for_v1_role(response.data.get("uuid"), str(self.tenant.org_id))
         replication_event["relations_to_remove"] = current_relations
         actual_call_arg = mock_method.call_args[0][0]
         expected_sorted = normalize_and_sort(replication_event)
@@ -1549,7 +1549,7 @@ class RoleViewsetTests(IdentityRequest):
         url = reverse("role-detail", kwargs={"uuid": role_uuid})
         client = APIClient()
         replication_event = {"relations_to_add": [], "relations_to_remove": []}
-        current_relations = relation_api_tuples_for_v1_role(role_uuid, str(self.root_workspace.uuid))
+        current_relations = relation_api_tuples_for_v1_role(role_uuid, str(self.tenant.org_id))
         replication_event["relations_to_remove"] = current_relations
         response = client.delete(url, **self.headers)
         actual_call_arg = mock_method.call_args[0][0]

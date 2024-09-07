@@ -147,16 +147,16 @@ class MigrateTests(TestCase):
             call(f"role_binding:{rolebinding_a2}#granted@role:{v2_role_a2}"),
             call(f"role:{v2_role_a2}#inventory_hosts_write@user:*"),
             call(f"role_binding:{rolebinding_a2}#subject@group:{self.group_a2.uuid}"),
-            call(f"workspace:{self.aws_account_id_1}#parent@workspace:{root_workspace.uuid}"),
+            call(f"workspace:{self.aws_account_id_1}#parent@workspace:{org_id}"),
             call(f"workspace:{self.aws_account_id_1}#user_grant@role_binding:{rolebinding_a2}"),
             ## Role binding to role_a3
             call(f"role_binding:{rolebinding_a31}#granted@role:{v2_role_a31}"),
             call(f"role:{v2_role_a31}#inventory_hosts_write@user:*"),
-            call(f"workspace:{workspace_1}#parent@workspace:{root_workspace.uuid}"),
+            call(f"workspace:{workspace_1}#parent@workspace:{org_id}"),
             call(f"workspace:{workspace_1}#user_grant@role_binding:{rolebinding_a31}"),
             call(f"role_binding:{rolebinding_a32}#granted@role:{v2_role_a32}"),
             call(f"role:{v2_role_a32}#inventory_hosts_write@user:*"),
-            call(f"workspace:{workspace_2}#parent@workspace:{root_workspace.uuid}"),
+            call(f"workspace:{workspace_2}#parent@workspace:{org_id}"),
             call(f"workspace:{workspace_2}#user_grant@role_binding:{rolebinding_a32}"),
         ]
         logger_mock.info.assert_has_calls(tuples, any_order=True)
