@@ -62,7 +62,7 @@ def aggregate_v1_role(role: Role) -> V1role:
         principals = [str(principal) for principal in policy.group.principals.values_list("uuid", flat=True)]
         groups.add(V1group(str(policy.group.uuid), frozenset(principals)))
 
-    return V1role(role_id, frozenset(v1_perms), frozenset(groups))  # we don't get groups from the sheet
+    return V1role(role_id, frozenset(v1_perms), frozenset(groups))
 
 
 def add_element(dict, key, value):
