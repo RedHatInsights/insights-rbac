@@ -232,7 +232,7 @@ def permission_groupings_to_v2_role_and_resource(
 
 def is_for_enabled_app(perm: V1permission):
     """Return true if the permission is for an app that should migrate."""
-    return perm.app not in settings.DUAL_WRITE_APP_DENY_LIST
+    return perm.app not in settings.V2_MIGRATION_APP_EXCLUDE_LIST
 
 
 def split_resourcedef_literal(resourceDef: V1resourcedef):
