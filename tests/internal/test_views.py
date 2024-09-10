@@ -476,15 +476,32 @@ class InternalViewsetTests(IdentityRequest):
             "Data migration from V1 to V2 are running in a background worker.",
         )
 
-        # Without params
-        migration_mock.reset_mock()
-        response = self.client.post(
-            f"/_private/api/utils/data_migration/",
-            **self.request.META,
-        )
-        migration_mock.assert_called_once_with({"exclude_apps": [], "orgs": [], "write_relationships": False})
-        self.assertEqual(response.status_code, status.HTTP_202_ACCEPTED)
-        self.assertEqual(
-            response.content.decode(),
-            "Data migration from V1 to V2 are running in a background worker.",
-        )
+        # Without params uses global default
+        with self.settings(V2_MIGRATION_APP_EXCLUDE_LIST=["fooapp"]):
+            migration_mock.reset_mock()
+            response = self.client.post(
+                f"/_private/api/utils/data_migration/",
+                **self.request.META,
+            )
+            migration_mock.assert_called_once_with(
+                {"exclude_apps": ["fooapp"], "orgs": [], "write_relationships": False}
+            )
+            self.assertEqual(response.status_code, status.HTTP_202_ACCEPTED)
+            self.assertEqual(
+                response.content.decode(),
+                "Data migration from V1 to V2 are running in a background worker.",
+            )
+
+        # Without params uses none if on global default
+        with self.settings(V2_MIGRATION_APP_EXCLUDE_LIST=[]):
+            migration_mock.reset_mock()
+            response = self.client.post(
+                f"/_private/api/utils/data_migration/",
+                **self.request.META,
+            )
+            migration_mock.assert_called_once_with({"exclude_apps": [], "orgs": [], "write_relationships": False})
+            self.assertEqual(response.status_code, status.HTTP_202_ACCEPTED)
+            self.assertEqual(
+                response.content.decode(),
+                "Data migration from V1 to V2 are running in a background worker.",
+            )
