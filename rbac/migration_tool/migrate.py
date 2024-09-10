@@ -160,7 +160,7 @@ def migrate_users_for_groups(tenant: Tenant, write_relationships: bool):
     output_relationships(relationships, write_relationships)
 
 
-def migrate_data_for_tenant(tenant: Tenant, app_list: list, write_relationships: bool):
+def migrate_data_for_tenant(tenant: Tenant, exclude_apps: list, write_relationships: bool):
     """Migrate all data for a given tenant."""
     logger.info("Creating workspace.")
     root_workspace, default_workspace = migrate_workspace(tenant, write_relationships)
@@ -175,8 +175,8 @@ def migrate_data_for_tenant(tenant: Tenant, app_list: list, write_relationships:
     logger.info("Finished migrating relations of group and user.")
 
     roles = tenant.role_set.all()
-    if app_list:
-        roles = roles.exclude(access__permission__application__in=app_list)
+    if exclude_apps:
+        roles = roles.exclude(access__permission__application__in=exclude_apps)
 
     for role in roles:
         logger.info(f"Migrating role: {role.name} with UUID {role.uuid}.")
