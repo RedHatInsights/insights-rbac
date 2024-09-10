@@ -21,8 +21,8 @@ from celery import shared_task
 from django.core.management import call_command
 from management.health.healthcheck import redis_health
 from management.principal.cleaner import (
-    clean_principals_via_umb,
     clean_tenants_principals,
+    process_principal_events_from_umb,
 )
 from migration_tool.migrate import migrate_data
 
@@ -36,7 +36,7 @@ def principal_cleanup():
 @shared_task
 def principal_cleanup_via_umb():
     """Celery task to clean up principals no longer existing."""
-    clean_principals_via_umb()
+    process_principal_events_from_umb()
 
 
 @shared_task
