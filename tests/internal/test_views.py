@@ -492,7 +492,7 @@ class InternalViewsetTests(IdentityRequest):
                 "Data migration from V1 to V2 are running in a background worker.",
             )
 
-        # Without params uses none if on global default
+        # Without params uses none if no global default
         with self.settings(V2_MIGRATION_APP_EXCLUDE_LIST=[]):
             migration_mock.reset_mock()
             response = self.client.post(
