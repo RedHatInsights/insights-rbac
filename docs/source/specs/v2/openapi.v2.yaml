@@ -19,9 +19,7 @@ paths:
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/Workspaces.Workspace'
+                $ref: '#/components/schemas/Workspaces.WorkspaceListResponse'
         '401':
           description: Access is unauthorized.
           content:
@@ -620,6 +618,53 @@ components:
       type: object
       allOf:
         - $ref: '#/components/schemas/Workspaces.BasicWorkspace'
+    Workspaces.PaginationLinks:
+      type: object
+      required:
+        - first
+        - next
+        - previous
+        - last
+      properties:
+        first:
+          type: string
+          example: /api/rbac/v2/(resource)/?limit=10&offset=0
+          description: The first link in pagination
+        next:
+          type: string
+          example: /api/rbac/v2/(resource)/?limit=10&offset=10
+          description: The next link in pagination
+        previous:
+          type: string
+          example: /api/rbac/v2/(resource)/?limit=10&offset=0
+          description: The previous link in pagination
+        last:
+          type: string
+          example: /api/rbac/v2/(resource)/?limit=10&offset=20
+          description: The last link in pagination
+    Workspaces.PaginationMeta:
+      type: object
+      required:
+        - count
+        - limit
+        - offset
+      properties:
+        count:
+          type: integer
+          format: int64
+          example: 10
+          description: Total count of returned objects
+        limit:
+          type: integer
+          format: int64
+          example: 10
+          description: Limit of returned objects
+          default: 10
+        offset:
+          type: integer
+          format: int64
+          example: 10
+          description: Offset of returned objects
     Workspaces.PatchWorkspaceRequest:
       type: object
       properties:
@@ -684,6 +729,26 @@ components:
           type: string
           format: date-time
           description: 2019-01-21T17:32:28Z
+    Workspaces.WorkspaceListResponse:
+      type: object
+      required:
+        - meta
+        - links
+        - data
+      properties:
+        meta:
+          allOf:
+            - $ref: '#/components/schemas/Workspaces.PaginationMeta'
+          description: Pagination metadata
+        links:
+          allOf:
+            - $ref: '#/components/schemas/Workspaces.PaginationLinks'
+          description: Pagination links
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Workspaces.Workspace'
+          description: List of workspaces
 servers:
   - url: https://console.redhat.com/{basePath}
     description: Production Server
