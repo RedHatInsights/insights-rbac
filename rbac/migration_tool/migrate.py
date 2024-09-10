@@ -37,7 +37,7 @@ BindingMappings = dict[str, dict[str, Any]]
 
 def get_kessel_relation_tuples(
     v2_role_bindings: FrozenSet[V2rolebinding],
-    root_workspace: str,
+    default_workspace: str,
 ) -> tuple[list[common_pb2.Relationship], BindingMappings]:
     """Generate a set of relationships and BindingMappings for the given set of v2 role bindings."""
     relationships: list[common_pb2.Relationship] = list()
@@ -73,7 +73,7 @@ def get_kessel_relation_tuples(
             # All other resource-resource or resource-workspace relations
             # which may be implied or necessary are intentionally ignored.
             # These should come from the apps that own the resource.
-            if bound_resource.resource_type == "workspace" and not bound_resource.resourceId == root_workspace:
+            if bound_resource.resource_type == "workspace" and not bound_resource.resourceId == default_workspace:
                 # This is not strictly necessary here and the relation may be a duplicate.
                 # Once we have more Workspace API / Inventory Group migration progress,
                 # this block can and probably should be removed.
@@ -83,7 +83,7 @@ def get_kessel_relation_tuples(
                         bound_resource.resource_type,
                         bound_resource.resourceId,
                         "workspace",
-                        root_workspace,
+                        default_workspace,
                         "parent",
                     )
                 )
@@ -104,7 +104,6 @@ def get_kessel_relation_tuples(
 def migrate_role(
     role: Role,
     write_relationships: bool,
-    root_workspace: str,
     default_workspace: str,
     current_mapping: Optional[BindingMapping] = None,
 ) -> tuple[list[common_pb2.Relationship], BindingMappings]:
@@ -116,10 +115,8 @@ def migrate_role(
     """
     v1_role = aggregate_v1_role(role)
     # This is where we wire in the implementation we're using into the Migrator
-    v2_role_bindings = [
-        binding for binding in v1_role_to_v2_bindings(v1_role, root_workspace, default_workspace, current_mapping)
-    ]
-    relationships, mappings = get_kessel_relation_tuples(frozenset(v2_role_bindings), root_workspace)
+    v2_role_bindings = [binding for binding in v1_role_to_v2_bindings(v1_role, default_workspace, current_mapping)]
+    relationships, mappings = get_kessel_relation_tuples(frozenset(v2_role_bindings), default_workspace)
     output_relationships(relationships, write_relationships)
     return relationships, mappings
 
@@ -163,7 +160,7 @@ def migrate_users_for_groups(tenant: Tenant, write_relationships: bool):
 def migrate_data_for_tenant(tenant: Tenant, exclude_apps: list, write_relationships: bool):
     """Migrate all data for a given tenant."""
     logger.info("Creating workspace.")
-    root_workspace, default_workspace = migrate_workspace(tenant, write_relationships)
+    _, default_workspace = migrate_workspace(tenant, write_relationships)
     logger.info("Workspace migrated.")
 
     logger.info("Relating users to tenant.")
@@ -181,7 +178,7 @@ def migrate_data_for_tenant(tenant: Tenant, exclude_apps: list, write_relationsh
     for role in roles:
         logger.info(f"Migrating role: {role.name} with UUID {role.uuid}.")
 
-        _, mappings = migrate_role(role, write_relationships, root_workspace, default_workspace)
+        _, mappings = migrate_role(role, write_relationships, default_workspace)
 
         # Insert is forced with `create` in order to prevent this from
         # accidentally running concurrently with dual-writes.

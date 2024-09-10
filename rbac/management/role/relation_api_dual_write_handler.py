@@ -18,7 +18,7 @@
 """Class to handle Dual Write API related operations."""
 import logging
 
-from management.models import Outbox, Workspace
+from management.models import Outbox
 from management.role.model import BindingMapping
 from migration_tool.migrate import migrate_role
 from migration_tool.utils import relationship_to_json
@@ -48,9 +48,6 @@ class RelationApiDualWriteHandler:
             self.binding_mapping = None
             self.tenant_id = role.tenant_id
             self.org_id = role.tenant.org_id
-            self.root_workspace = Workspace.objects.get(
-                name="root", description="Root workspace", tenant_id=self.tenant_id
-            )
             self.event_type = event_type
         except Exception as e:
             raise DualWriteException(e)
@@ -77,7 +74,6 @@ class RelationApiDualWriteHandler:
             relations, _ = migrate_role(
                 self.role,
                 write_relationships=False,
-                root_workspace=str(self.root_workspace.uuid),
                 default_workspace=self.org_id,
                 current_mapping=self.binding_mapping,
             )
@@ -123,7 +119,6 @@ class RelationApiDualWriteHandler:
             relations, mappings = migrate_role(
                 self.role,
                 write_relationships=False,
-                root_workspace=str(self.root_workspace.uuid),
                 default_workspace=self.org_id,
                 current_mapping=self.binding_mapping,
             )
