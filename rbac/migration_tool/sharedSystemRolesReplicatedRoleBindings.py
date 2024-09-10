@@ -106,7 +106,7 @@ def v1_role_to_v2_bindings(
             continue
         v2_perm = v1_perm_to_v2_perm(v1_perm)
         if v1_perm.resourceDefs:
-            if not is_resource_enabled(v1_perm):
+            if not is_for_enabled_resource(v1_perm):
                 continue
             for resource_def in v1_perm.resourceDefs:
                 resource_type = (
@@ -237,7 +237,7 @@ def is_for_enabled_app(perm: V1permission):
     return perm.app not in settings.V2_MIGRATION_APP_EXCLUDE_LIST
 
 
-def is_resource_enabled(perm: V1permission):
+def is_for_enabled_resource(perm: V1permission):
     """
     Return true if the resource is for an app that should migrate.
 
