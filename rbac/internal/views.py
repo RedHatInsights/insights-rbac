@@ -19,6 +19,7 @@
 import json
 import logging
 
+from django.conf import settings
 import requests
 from core.utils import destructive_ok
 from django.db import transaction
@@ -469,12 +470,13 @@ def ocm_performance(request):
     return HttpResponse('Invalid method, only "POST" is allowed.', status=405)
 
 
-def get_param_list(request, param_name):
+def get_param_list(request, param_name, default: list = []):
     """Get a list of params from a request."""
     params = request.GET.get(param_name, [])
     if params:
-        params = params.split(",")
-    return params
+        return params.split(",")
+    else:
+        return default
 
 
 def data_migration(request):
@@ -487,7 +489,7 @@ def data_migration(request):
     logger.info("Running V1 data migration.")
 
     args = {
-        "exclude_apps": get_param_list(request, "exclude_apps"),
+        "exclude_apps": get_param_list(request, "exclude_apps", default=settings.V2_MIGRATION_APP_EXCLUDE_LIST),
         "orgs": get_param_list(request, "orgs"),
         "write_relationships": request.GET.get("write_relationships", "False") == "True",
     }

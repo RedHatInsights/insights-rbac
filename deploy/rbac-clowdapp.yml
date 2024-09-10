@@ -462,6 +462,10 @@ objects:
             value: ${REPLICATION_TO_RELATION_ENABLED}
           - name: ROLE_CREATE_ALLOW_LIST
             value: ${ROLE_CREATE_ALLOW_LIST}
+          - name: V2_MIGRATION_APP_EXCLUDE_LIST
+            value: ${V2_MIGRATION_APP_EXCLUDE_LIST}
+          - name: V2_MIGRATION_RESOURCE_APP_EXCLUDE_LIST
+            value: ${V2_MIGRATION_RESOURCE_APP_EXCLUDE_LIST}
           - name: RBAC_DESTRUCTIVE_API_ENABLED_UNTIL
             value: ${RBAC_DESTRUCTIVE_API_ENABLED_UNTIL}
           - name: RBAC_DESTRUCTIVE_SEEDING_ENABLED_UNTIL
@@ -735,6 +739,12 @@ parameters:
 - description: Application allow list for role creation in RBAC
   name: ROLE_CREATE_ALLOW_LIST
   value: cost-management,remediations,inventory,drift,policies,advisor,vulnerability,compliance,automation-analytics,notifications,patch,integrations,ros,staleness,config-manager,idmsvc
+- description: Application exclude list for v2 migration (all permissions)
+  name: V2_MIGRATION_APP_EXCLUDE_LIST
+  value: approval
+- description: Application exclude list for v2 migration (resource definitions only)
+  name: V2_MIGRATION_RESOURCE_APP_EXCLUDE_LIST
+  value: cost-management,playbook-dispatcher
 - description: Timestamp expiration allowance on destructive actions through the internal RBAC API
   name: RBAC_DESTRUCTIVE_API_ENABLED_UNTIL
   value: ''
