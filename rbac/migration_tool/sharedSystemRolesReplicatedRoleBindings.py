@@ -94,7 +94,6 @@ class SystemRole:
 
 def v1_role_to_v2_bindings(
     v1_role: V1role,
-    root_workspace: str,
     default_workspace: str,
     binding_mapping: Optional[BindingMapping],
 ) -> FrozenSet[V2rolebinding]:
@@ -126,13 +125,13 @@ def v1_role_to_v2_bindings(
         else:
             add_element(
                 perm_groupings,
-                V2boundresource("workspace", root_workspace),
+                V2boundresource("workspace", default_workspace),
                 v2_perm,
             )
     # Project permission sets to roles per set of resources
     resource_roles = permission_groupings_to_v2_role_and_resource(perm_groupings, v1_role, binding_mapping)
     # Construct rolebindings for each resource
-    v2_role_bindings = []
+    v2_role_bindings: list[V2rolebinding] = []
     v2_groups = v1groups_to_v2groups(v1_role.groups)
     for role, resources in resource_roles.items():
         for resource in resources:
