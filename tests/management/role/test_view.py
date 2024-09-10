@@ -105,6 +105,14 @@ def relation_api_resource(type_resource, id_resource):
     return {"type": type_resource, "id": id_resource}
 
 
+def find_in_list(list, predicate):
+    """Find an item in a list."""
+    for item in list:
+        if predicate(item):
+            return item
+    return None
+
+
 class RoleViewsetTests(IdentityRequest):
     """Test the role viewset."""
 
@@ -333,6 +341,43 @@ class RoleViewsetTests(IdentityRequest):
                 },
                 ANY,
             )
+
+    @override_settings(V2_MIGRATION_RESOURCE_APP_EXCLUDE_LIST=["app"])
+    @patch("management.role.relation_api_dual_write_handler.RelationApiDualWriteHandler._save_replication_event")
+    def test_role_replication_exluded_resource(self, mock_method):
+        """Test that excluded resources do not replicate via dual write."""
+        # Set up
+        role_name = "test_update_role"
+        access_data = [
+            {
+                "permission": "app:*:*",
+                "resourceDefinitions": [
+                    {"attributeFilter": {"key": "keyA.id", "operation": "equal", "value": "valueA"}}
+                ],
+            },
+            {"permission": "app:*:read", "resourceDefinitions": []},
+        ]
+
+        response = self.create_role(role_name, in_access_data=access_data)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+        actual_call_arg = mock_method.call_args[0][0]
+        actual_sorted = normalize_and_sort(actual_call_arg)
+        to_add = actual_sorted["relations_to_add"]
+
+        self.assertEqual([], actual_sorted["relations_to_remove"])
+        self.assertEqual(3, len(to_add), "too many relations (should not add relations for excluded resource)")
+
+        role_binding = find_in_list(to_add, lambda r: r["resource"]["type"] == "role_binding")["resource"]["id"]
+        workspace = find_in_list(to_add, lambda r: r["resource"]["type"] == "workspace")
+
+        self.assertEquals(
+            role_binding, workspace["subject"]["id"], "expected binding to workspace (not to excluded resource)"
+        )
+
+        role = find_in_list(to_add, lambda r: r["resource"]["type"] == "role")
+
+        self.assertEquals(role["relation"], "app_all_read", "expected workspace permission")
 
     @patch("management.role.relation_api_dual_write_handler.RelationApiDualWriteHandler._save_replication_event")
     def test_create_role_with_display_success(self, mock_method):

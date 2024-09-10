@@ -106,6 +106,8 @@ def v1_role_to_v2_bindings(
             continue
         v2_perm = v1_perm_to_v2_perm(v1_perm)
         if v1_perm.resourceDefs:
+            if not is_resource_enabled(v1_perm):
+                continue
             for resource_def in v1_perm.resourceDefs:
                 resource_type = (
                     "workspace"
@@ -233,6 +235,20 @@ def permission_groupings_to_v2_role_and_resource(
 def is_for_enabled_app(perm: V1permission):
     """Return true if the permission is for an app that should migrate."""
     return perm.app not in settings.V2_MIGRATION_APP_EXCLUDE_LIST
+
+
+def is_resource_enabled(perm: V1permission):
+    """
+    Return true if the resource is for an app that should migrate.
+
+    This setting is used when the permission is valid for V2 but the resource model is not yet finalized.
+    It excludes role bindings for those specific resources, and only migrates those which are bound
+    at the workspace level.
+
+    Once the resource model is finalized, we should no longer exclude that app, and should instead update
+    the migration code to account for migrating those resources in whatever form they should migrate.
+    """
+    return perm.app not in settings.V2_MIGRATION_RESOURCE_APP_EXCLUDE_LIST
 
 
 def split_resourcedef_literal(resourceDef: V1resourcedef):
