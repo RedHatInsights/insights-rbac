@@ -15,7 +15,6 @@ You should have received a copy of the GNU Affero General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 
-import dataclasses
 import logging
 from typing import Any, FrozenSet, Optional
 
@@ -23,12 +22,12 @@ from django.conf import settings
 from kessel.relations.v1beta1 import common_pb2
 from management.role.model import BindingMapping, Role
 from management.workspace.model import Workspace
-from migration_tool.models import V1group, V2rolebinding
-from migration_tool.sharedSystemRolesReplicatedRoleBindings import v1_role_to_v2_mapping
+from migration_tool.models import V2rolebinding
+from migration_tool.sharedSystemRolesReplicatedRoleBindings import v1_role_to_v2_bindings
 from migration_tool.utils import create_relationship, output_relationships
 
 from api.models import Tenant
-from .ingest import extract_info_into_v1_role
+from .ingest import aggregate_v1_role
 
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
@@ -69,18 +68,26 @@ def get_kessel_relation_tuples(
             relationships.append(create_relationship("role_binding", v2_role_binding.id, "group", group.id, "subject"))
 
         for bound_resource in v2_role_binding.resources:
-            parent_relation = "parent" if bound_resource.resource_type == "workspace" else "workspace"
-
-            if not (bound_resource.resource_type == "workspace" and bound_resource.resourceId == root_workspace):
+            # Is this a workspace binding, but not to the root workspace?
+            # If so, ensure this workspace is a child of the root workspace.
+            # All other resource-resource or resource-workspace relations
+            # which may be implied or necessary are intentionally ignored.
+            # These should come from the apps that own the resource.
+            if bound_resource.resource_type == "workspace" and not bound_resource.resourceId == root_workspace:
+                # This is not strictly necessary here and the relation may be a duplicate.
+                # Once we have more Workspace API / Inventory Group migration progress,
+                # this block can and probably should be removed.
+                # One of those APIs will add it themselves.
                 relationships.append(
                     create_relationship(
                         bound_resource.resource_type,
                         bound_resource.resourceId,
                         "workspace",
                         root_workspace,
-                        parent_relation,
+                        "parent",
                     )
                 )
+
             relationships.append(
                 create_relationship(
                     bound_resource.resource_type,
@@ -99,23 +106,20 @@ def migrate_role(
     write_relationships: bool,
     root_workspace: str,
     default_workspace: str,
-    current_bindings: Optional[BindingMapping] = None,
+    current_mapping: Optional[BindingMapping] = None,
 ) -> tuple[list[common_pb2.Relationship], BindingMappings]:
-    """Migrate a role from v1 to v2."""
-    v1_role = extract_info_into_v1_role(role)
-    # With the replicated role bindings algorithm, role bindings are scoped by group, so we need to add groups
-    policies = role.policies.all()
-    groups = set()
-    for policy in policies:
-        principals = [str(principal) for principal in policy.group.principals.values_list("uuid", flat=True)]
-        groups.add(V1group(str(policy.group.uuid), frozenset(principals)))
-    v1_role = dataclasses.replace(v1_role, groups=frozenset(groups))
+    """
+    Migrate a role from v1 to v2, returning the tuples and mappings.
 
+    The mappings are returned so that we can reconstitute the corresponding tuples for a given role.
+    This is needed so we can remove those tuples when the role changes if needed.
+    """
+    v1_role = aggregate_v1_role(role)
     # This is where we wire in the implementation we're using into the Migrator
-    v2_roles = [
-        v2_role for v2_role in v1_role_to_v2_mapping(v1_role, root_workspace, default_workspace, current_bindings)
+    v2_role_bindings = [
+        binding for binding in v1_role_to_v2_bindings(v1_role, root_workspace, default_workspace, current_mapping)
     ]
-    relationships, mappings = get_kessel_relation_tuples(frozenset(v2_roles), root_workspace)
+    relationships, mappings = get_kessel_relation_tuples(frozenset(v2_role_bindings), root_workspace)
     output_relationships(relationships, write_relationships)
     return relationships, mappings
 
@@ -156,7 +160,7 @@ def migrate_users_for_groups(tenant: Tenant, write_relationships: bool):
     output_relationships(relationships, write_relationships)
 
 
-def migrate_data_for_tenant(tenant: Tenant, app_list: list, write_relationships: bool):
+def migrate_data_for_tenant(tenant: Tenant, exclude_apps: list, write_relationships: bool):
     """Migrate all data for a given tenant."""
     logger.info("Creating workspace.")
     root_workspace, default_workspace = migrate_workspace(tenant, write_relationships)
@@ -171,8 +175,8 @@ def migrate_data_for_tenant(tenant: Tenant, app_list: list, write_relationships:
     logger.info("Finished migrating relations of group and user.")
 
     roles = tenant.role_set.all()
-    if app_list:
-        roles = roles.exclude(access__permission__application__in=app_list)
+    if exclude_apps:
+        roles = roles.exclude(access__permission__application__in=exclude_apps)
 
     for role in roles:
         logger.info(f"Migrating role: {role.name} with UUID {role.uuid}.")
