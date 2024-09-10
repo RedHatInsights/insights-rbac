@@ -6,7 +6,7 @@ from django.db import migrations
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("management", "0048_outbox"),
+        ("management", "0049_alter_workspace_parent"),
     ]
 
     operations = [
