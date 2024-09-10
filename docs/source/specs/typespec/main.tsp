@@ -172,12 +172,16 @@ namespace Workspaces {
         last: string;
     }
 
-    model WorkspaceListResponse {
+    model Pagination {
         @doc("Pagination metadata")
         meta: PaginationMeta;
 
         @doc("Pagination links")
         links: PaginationLinks;
+    }
+
+    model WorkspaceListResponse {
+        ...Pagination;
 
         @doc("List of workspaces")
         data: Workspace[];

@@ -618,6 +618,20 @@ components:
       type: object
       allOf:
         - $ref: '#/components/schemas/Workspaces.BasicWorkspace'
+    Workspaces.Pagination:
+      type: object
+      required:
+        - meta
+        - links
+      properties:
+        meta:
+          allOf:
+            - $ref: '#/components/schemas/Workspaces.PaginationMeta'
+          description: Pagination metadata
+        links:
+          allOf:
+            - $ref: '#/components/schemas/Workspaces.PaginationLinks'
+          description: Pagination links
     Workspaces.PaginationLinks:
       type: object
       required:
