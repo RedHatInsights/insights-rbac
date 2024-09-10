@@ -79,7 +79,7 @@ class RelationApiDualWriteHandler:
                 write_relationships=False,
                 root_workspace=str(self.root_workspace.uuid),
                 default_workspace=self.org_id,
-                current_bindings=self.binding_mapping,
+                current_mapping=self.binding_mapping,
             )
 
             self.current_role_relations = relations
@@ -125,7 +125,7 @@ class RelationApiDualWriteHandler:
                 write_relationships=False,
                 root_workspace=str(self.root_workspace.uuid),
                 default_workspace=self.org_id,
-                current_bindings=self.binding_mapping,
+                current_mapping=self.binding_mapping,
             )
 
             self.role_relations = relations

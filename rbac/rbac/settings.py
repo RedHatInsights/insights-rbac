@@ -346,6 +346,12 @@ CELERY_BROKER_URL = ENVIRONMENT.get_value("CELERY_BROKER_URL", default=DEFAULT_R
 
 ROLE_CREATE_ALLOW_LIST = ENVIRONMENT.get_value("ROLE_CREATE_ALLOW_LIST", default="").split(",")
 
+# Dual write migration configuration
+V2_MIGRATION_APP_EXCLUDE_LIST = ENVIRONMENT.get_value("V2_MIGRATION_APP_EXCLUDE_LIST", default="").split(",")
+V2_MIGRATION_RESOURCE_APP_EXCLUDE_LIST = ENVIRONMENT.get_value(
+    "V2_MIGRATION_RESOURCE_APP_EXCLUDE_LIST", default=""
+).split(",")
+
 # Migration Setup
 TENANT_PARALLEL_MIGRATION_MAX_PROCESSES = ENVIRONMENT.int("TENANT_PARALLEL_MIGRATION_MAX_PROCESSES", default=2)
 TENANT_PARALLEL_MIGRATION_CHUNKS = ENVIRONMENT.int("TENANT_PARALLEL_MIGRATION_CHUNKS", default=2)
@@ -366,7 +372,7 @@ except ValueError as e:
     DESTRUCTIVE_SEEDING_OK_UNTIL = datetime.datetime(1970, 1, 1, tzinfo=pytz.UTC)
 
 # disable log messages less than CRITICAL when running unit tests.
-if len(sys.argv) > 1 and sys.argv[1] == "test":
+if len(sys.argv) > 1 and sys.argv[1] == "test" and not ENVIRONMENT.bool("LOG_TEST_OUTPUT", default=False):
     logging.disable(logging.CRITICAL)
 
 # Optionally log all DB queries
