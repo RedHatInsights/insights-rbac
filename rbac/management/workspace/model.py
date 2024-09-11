@@ -40,6 +40,7 @@ class Workspace(TenantAwareModel):
         ordering = ["name", "modified"]
 
     def ancestors(self):
+        """Return a list of ancestors for a Workspace instance."""
         ancestors = []
         parent = self.parent
 

@@ -64,4 +64,5 @@ class WorkspaceWithAncestrySerializer(WorkspaceSerializer):
         fields = WorkspaceSerializer.Meta.fields + ("ancestry",)
 
     def get_ancestry(self, obj):
+        """Serialize the workspace's ancestors."""
         return WorkspaceSerializer(obj.ancestors(), many=True).data
