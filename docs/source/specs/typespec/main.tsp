@@ -103,13 +103,17 @@ namespace Workspaces {
         ...Timestamps;
     }
 
+    model WorkspaceWithAncestry extends Workspace {
+        ancestry: Workspace[];
+    }
+
     alias CreateWorkspaceRequest = BasicWorkspace;
 
     model CreateWorkspaceResponse extends BasicWorkspace{
         @statusCode _: 201;
     }
 
-    model ReadWorkspaceResponse extends BasicWorkspace{
+    model ReadWorkspaceResponse extends WorkspaceWithAncestry{
         @statusCode _: 200;
     }
 

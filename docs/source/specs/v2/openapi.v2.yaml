@@ -703,7 +703,7 @@ components:
     Workspaces.ReadWorkspaceResponse:
       type: object
       allOf:
-        - $ref: '#/components/schemas/Workspaces.BasicWorkspace'
+        - $ref: '#/components/schemas/Workspaces.WorkspaceWithAncestry'
     Workspaces.UpdateWorkspaceRequest:
       type: object
       required:
@@ -769,6 +769,17 @@ components:
           items:
             $ref: '#/components/schemas/Workspaces.Workspace'
           description: List of workspaces
+    Workspaces.WorkspaceWithAncestry:
+      type: object
+      required:
+        - ancestry
+      properties:
+        ancestry:
+          type: array
+          items:
+            $ref: '#/components/schemas/Workspaces.Workspace'
+      allOf:
+        - $ref: '#/components/schemas/Workspaces.Workspace'
 servers:
   - url: https://console.redhat.com/{basePath}
     description: Production Server
