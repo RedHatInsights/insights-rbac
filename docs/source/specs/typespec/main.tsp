@@ -140,9 +140,60 @@ namespace Workspaces {
         statusCode: 204,
     }
 
+    model PaginationMeta {
+        @doc("Total count of objects")
+        @example(10)
+        count: int64;
+
+        @doc("Limit of returned objects")
+        @example(10)
+        limit: int64 = 10;
+
+        @doc("Offset of returned objects")
+        @example(10)
+        offset: int64;
+    }
+
+    model PaginationLinks {
+        @doc("The first link in pagination")
+        @example("/api/rbac/v2/(resource)/?limit=10&offset=0")
+        @format("uri")
+        first: string;
+
+        @doc("The next link in pagination")
+        @example("/api/rbac/v2/(resource)/?limit=10&offset=10")
+        @format("uri")
+        next: string;
+
+        @doc("The previous link in pagination")
+        @example("/api/rbac/v2/(resource)/?limit=10&offset=0")
+        @format("uri")
+        previous: string;
+
+        @doc("The last link in pagination")
+        @example("/api/rbac/v2/(resource)/?limit=10&offset=20")
+        @format("uri")
+        last: string;
+    }
+
+    model Pagination {
+        @doc("Pagination metadata")
+        meta: PaginationMeta;
+
+        @doc("Pagination links")
+        links: PaginationLinks;
+    }
+
+    model WorkspaceListResponse {
+        ...Pagination;
+
+        @doc("List of workspaces")
+        data: Workspace[];
+    }
+
     @doc("List workspaces in a tenant")
     @summary("List workspaces in a tenant")
-    @get op list(): Workspace[] | Problems.CommonProblems;
+    @get op list(): WorkspaceListResponse | Problems.CommonProblems;
 
     @doc("Create workspace in tenant")
     @summary("Create workspace in tenant")
