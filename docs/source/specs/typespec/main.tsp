@@ -22,9 +22,9 @@ enum Versions{
 
 model Timestamps {
     @doc("2019-01-21T17:32:28Z")
-    created: offsetDateTime;
+    created?: offsetDateTime;
     @doc("2019-01-21T17:32:28Z")
-    modified: offsetDateTime;
+    modified?: offsetDateTime;
 }
 
 @format("uuid")
@@ -163,12 +163,12 @@ namespace Workspaces {
         @doc("The next link in pagination")
         @example("/api/rbac/v2/(resource)/?limit=10&offset=10")
         @format("uri")
-        next: string;
+        next?: string;
 
         @doc("The previous link in pagination")
         @example("/api/rbac/v2/(resource)/?limit=10&offset=0")
         @format("uri")
-        previous: string;
+        previous?: string;
 
         @doc("The last link in pagination")
         @example("/api/rbac/v2/(resource)/?limit=10&offset=20")
