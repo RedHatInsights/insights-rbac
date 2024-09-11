@@ -141,7 +141,7 @@ namespace Workspaces {
     }
 
     model PaginationMeta {
-        @doc("Total count of returned objects")
+        @doc("Total count of objects")
         @example(10)
         count: int64;
 
@@ -157,18 +157,22 @@ namespace Workspaces {
     model PaginationLinks {
         @doc("The first link in pagination")
         @example("/api/rbac/v2/(resource)/?limit=10&offset=0")
+        @format("uri")
         first: string;
 
         @doc("The next link in pagination")
         @example("/api/rbac/v2/(resource)/?limit=10&offset=10")
+        @format("uri")
         next: string;
 
         @doc("The previous link in pagination")
         @example("/api/rbac/v2/(resource)/?limit=10&offset=0")
+        @format("uri")
         previous: string;
 
         @doc("The last link in pagination")
         @example("/api/rbac/v2/(resource)/?limit=10&offset=20")
+        @format("uri")
         last: string;
     }
 

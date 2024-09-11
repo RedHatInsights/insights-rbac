@@ -643,18 +643,22 @@ components:
         first:
           type: string
           example: /api/rbac/v2/(resource)/?limit=10&offset=0
+          format: uri
           description: The first link in pagination
         next:
           type: string
           example: /api/rbac/v2/(resource)/?limit=10&offset=10
+          format: uri
           description: The next link in pagination
         previous:
           type: string
           example: /api/rbac/v2/(resource)/?limit=10&offset=0
+          format: uri
           description: The previous link in pagination
         last:
           type: string
           example: /api/rbac/v2/(resource)/?limit=10&offset=20
+          format: uri
           description: The last link in pagination
     Workspaces.PaginationMeta:
       type: object
@@ -667,7 +671,7 @@ components:
           type: integer
           format: int64
           example: 10
-          description: Total count of returned objects
+          description: Total count of objects
         limit:
           type: integer
           format: int64
