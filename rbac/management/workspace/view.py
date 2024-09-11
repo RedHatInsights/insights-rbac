@@ -26,7 +26,7 @@ from rest_framework import serializers
 from rest_framework.filters import OrderingFilter
 
 from .model import Workspace
-from .serializer import WorkspaceSerializer
+from .serializer import WorkspaceSerializer, WorkspaceWithAncestrySerializer
 
 VALID_PATCH_FIELDS = ["name", "description", "parent_id"]
 REQUIRED_PUT_FIELDS = ["name", "description", "parent_id"]
@@ -47,6 +47,12 @@ class WorkspaceViewSet(BaseV2ViewSet):
     ordering_fields = ("name",)
     ordering = ("name",)
     filter_backends = (filters.DjangoFilterBackend, OrderingFilter)
+
+    def get_serializer_class(self):
+        """Get serializer class based on route."""
+        if self.action == "retrieve":
+            return WorkspaceWithAncestrySerializer
+        return super().get_serializer_class()
 
     def create(self, request, *args, **kwargs):
         """Create a Workspace."""

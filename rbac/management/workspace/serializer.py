@@ -50,3 +50,18 @@ class WorkspaceSerializer(serializers.ModelSerializer):
 
         workspace = Workspace.objects.create(**validated_data)
         return workspace
+
+
+class WorkspaceWithAncestrySerializer(WorkspaceSerializer):
+    """Serializer for the Workspace model with ancestry."""
+
+    ancestry = serializers.SerializerMethodField()
+
+    class Meta:
+        """Metadata for the serializer."""
+
+        model = Workspace
+        fields = WorkspaceSerializer.Meta.fields + ("ancestry",)
+
+    def get_ancestry(self, obj):
+        return WorkspaceSerializer(obj.ancestors(), many=True).data
