@@ -21,7 +21,6 @@ from management.views import (
     AuditLogViewSet,
     GroupViewSet,
     PermissionViewSet,
-    PolicyViewSet,
     PrincipalView,
     RoleViewSet,
 )
@@ -31,7 +30,6 @@ from rest_framework.routers import DefaultRouter
 ROUTER = DefaultRouter()
 ROUTER.register(r"groups", GroupViewSet)
 ROUTER.register(r"roles", RoleViewSet)
-ROUTER.register(r"policies", PolicyViewSet)
 ROUTER.register(r"permissions", PermissionViewSet)
 ROUTER.register(r"auditlogs", AuditLogViewSet)
 

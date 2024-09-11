@@ -107,15 +107,14 @@ class AccessViewTests(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         return response
 
-    def create_policy(self, policy_name, group, roles, headers, status=status.HTTP_201_CREATED):
+    def create_policy(self, policy_name, group, roles, tenant):
         """Create a policy."""
         # create a policy
-        test_data = {"name": policy_name, "group": group, "roles": roles}
-        url = reverse("policy-list")
-        client = APIClient()
-        response = client.post(url, test_data, format="json", **headers)
-        self.assertEqual(response.status_code, status)
-        return response
+        policy = Policy.objects.create(name=policy_name, tenant=tenant, system=True)
+        for role in Role.objects.filter(uuid__in=roles):
+            policy.roles.add(role)
+        policy.group = Group.objects.get(uuid=group)
+        policy.save()
 
     def create_platform_default_resource(self):
         """Setup default group and role."""
@@ -144,7 +143,7 @@ class AccessViewTests(IdentityRequest):
         role = Role.objects.get(uuid=role_uuid)
         access = Access.objects.create(role=role, permission=self.permission, tenant=self.tenant)
         policy_name = "policyA"
-        response = self.create_policy(policy_name, self.group.uuid, [role_uuid], headers=self.headers)
+        self.create_policy(policy_name, self.group.uuid, [role_uuid], tenant=self.tenant)
         # Create platform default group, and add roles to it.
         self.create_platform_default_resource()
 
@@ -173,7 +172,7 @@ class AccessViewTests(IdentityRequest):
         role = Role.objects.get(uuid=role_uuid)
         access = Access.objects.create(role=role, permission=self.permission, tenant=self.tenant)
         policy_name = "policyA"
-        response = self.create_policy(policy_name, self.group.uuid, [role_uuid], headers=self.headers)
+        self.create_policy(policy_name, self.group.uuid, [role_uuid], tenant=self.tenant)
         # Create platform default group, and add roles to it.
         self.create_platform_default_resource()
 
@@ -183,8 +182,7 @@ class AccessViewTests(IdentityRequest):
         role_b_uuid = response.data.get("uuid")
         Role.objects.get(uuid=role_b_uuid)
         policy_name = "policyB"
-        response = self.create_policy(policy_name, self.group.uuid, [role_b_uuid], headers=self.headers)
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.create_policy(policy_name, self.group.uuid, [role_b_uuid], tenant=self.tenant)
 
         # Test that we can retrieve the principal access
         url = "{}?application={}".format(reverse("access"), "app")
@@ -195,7 +193,9 @@ class AccessViewTests(IdentityRequest):
         self.assertIsInstance(response.data.get("data"), list)
         self.assertEqual(len(response.data.get("data")), 2)
         self.assertEqual(response.data.get("meta").get("limit"), 2)
-        self.assertEqual(self.access_data, response.data.get("data")[1])
+        for access_data in response.data.get("data"):
+            if access_data.get("resourceDefinitions"):
+                self.assertEqual(self.access_data, access_data)
 
         self.assertEqual(Access.objects.filter(permission__id=self.permission.id).count(), 3)
 
@@ -282,7 +282,7 @@ class AccessViewTests(IdentityRequest):
         role_uuid = response.data.get("uuid")
         role = Role.objects.get(uuid=role_uuid)
         access = Access.objects.create(role=role, permission=self.test_permission, tenant=self.test_tenant)
-        self.create_policy(policy_name, self.test_group.uuid, [role_uuid], self.test_headers)
+        self.create_policy(policy_name, self.test_group.uuid, [role_uuid], self.test_tenant)
 
         url = "{}?application=&username={}".format(reverse("access"), self.test_principal.username)
         client = APIClient()
@@ -323,7 +323,7 @@ class AccessViewTests(IdentityRequest):
         role_uuid = response.data.get("uuid")
         role = Role.objects.get(uuid=role_uuid)
         access = Access.objects.create(role=role, permission=self.test_permission, tenant=self.test_tenant)
-        self.create_policy(policy_name, self.test_group.uuid, [role_uuid], self.test_headers)
+        self.create_policy(policy_name, self.test_group.uuid, [role_uuid], self.test_tenant)
 
         url = "{}?application={}&username={}".format(reverse("access"), "app,app2", "test_user")
         client = APIClient()
@@ -362,7 +362,7 @@ class AccessViewTests(IdentityRequest):
         role_uuid = response.data.get("uuid")
         role = Role.objects.get(uuid=role_uuid)
         access = Access.objects.create(role=role, permission=self.test_permission, tenant=self.test_tenant)
-        self.create_policy(policy_name, self.test_group.uuid, [role_uuid], self.test_headers)
+        self.create_policy(policy_name, self.test_group.uuid, [role_uuid], self.test_tenant)
 
         url = "{}?application={}&username={}".format(reverse("access"), "ap", self.test_principal.username)
         client = APIClient()
@@ -403,7 +403,7 @@ class AccessViewTests(IdentityRequest):
         role_uuid = response.data.get("uuid")
         role = Role.objects.get(uuid=role_uuid)
         access = Access.objects.create(role=role, permission=self.test_permission, tenant=self.test_tenant)
-        self.create_policy(policy_name, self.test_group.uuid, [role_uuid], self.test_headers)
+        self.create_policy(policy_name, self.test_group.uuid, [role_uuid], self.test_tenant)
 
         url = "{}?application={}&username={}".format(reverse("access"), "appfoo", self.test_principal.username)
         client = APIClient()
@@ -442,9 +442,7 @@ class AccessViewTests(IdentityRequest):
         role_uuid = response.data.get("uuid")
         test_role = self.create_role_and_permission("Test Role one", "test:assigned:permission1")
         policy_name = "policyA"
-        response = self.create_policy(
-            policy_name, self.test_group.uuid, [role_uuid, test_role.uuid], self.test_headers
-        )
+        response = self.create_policy(policy_name, self.test_group.uuid, [role_uuid, test_role.uuid], self.test_tenant)
 
         tenant_name = self.test_tenant.tenant_name
         principal_id = self.test_principal.uuid
@@ -576,7 +574,7 @@ class AccessViewTests(IdentityRequest):
         role_uuid = response.data.get("uuid")
         role = Role.objects.get(uuid=role_uuid)
         access = Access.objects.create(role=role, permission=self.test_permission, tenant=self.test_tenant)
-        self.create_policy(policy_name, self.test_group.uuid, [role_uuid], self.test_headers)
+        self.create_policy(policy_name, self.test_group.uuid, [role_uuid], self.test_tenant)
 
         url = "{}?application={}&username={}".format(reverse("access"), "test_foo", self.test_principal.username)
         client = APIClient()
@@ -612,7 +610,7 @@ class AccessViewTests(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         role_uuid = response.data.get("uuid")
         policy_name = "policyA"
-        response = self.create_policy(policy_name, self.test_group.uuid, [role_uuid], self.test_headers)
+        response = self.create_policy(policy_name, self.test_group.uuid, [role_uuid], self.test_tenant)
 
         # test that we can retrieve the principal access
         url = "{}?application={}&username={}&limit=1".format(reverse("access"), "app", self.test_principal.username)
@@ -672,9 +670,7 @@ class AccessViewTests(IdentityRequest):
         role_uuid = response.data.get("uuid")
         test_role = self.create_role_and_permission("Test Role one", "test:assigned:permission1")
         policy_name = "policyA"
-        response = self.create_policy(
-            policy_name, self.test_group.uuid, [role_uuid, test_role.uuid], self.test_headers
-        )
+        response = self.create_policy(policy_name, self.test_group.uuid, [role_uuid, test_role.uuid], self.test_tenant)
 
         tenant_name = self.test_tenant.tenant_name
         principal_id = self.test_principal.uuid
