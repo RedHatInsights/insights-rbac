@@ -38,3 +38,13 @@ class Workspace(TenantAwareModel):
 
     class Meta:
         ordering = ["name", "modified"]
+
+    def ancestors(self):
+        ancestors = []
+        parent = self.parent
+
+        while parent is not None:
+            ancestors.append(parent)
+            parent = parent.parent
+
+        return ancestors
