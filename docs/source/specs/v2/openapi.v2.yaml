@@ -582,6 +582,9 @@ components:
               format: uri
     Timestamps:
       type: object
+      required:
+        - created
+        - modified
       properties:
         created:
           type: string
@@ -719,6 +722,8 @@ components:
       required:
         - uuid
         - name
+        - created
+        - modified
       properties:
         uuid:
           $ref: '#/components/schemas/UUID'

@@ -22,9 +22,9 @@ enum Versions{
 
 model Timestamps {
     @doc("2019-01-21T17:32:28Z")
-    created?: offsetDateTime;
+    created: offsetDateTime;
     @doc("2019-01-21T17:32:28Z")
-    modified?: offsetDateTime;
+    modified: offsetDateTime;
 }
 
 @format("uuid")
