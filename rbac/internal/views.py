@@ -16,12 +16,13 @@
 #
 
 """View for internal tenant management."""
+
 import json
 import logging
 
-from django.conf import settings
 import requests
 from core.utils import destructive_ok
+from django.conf import settings
 from django.db import transaction
 from django.db.migrations.recorder import MigrationRecorder
 from django.http import HttpResponse
