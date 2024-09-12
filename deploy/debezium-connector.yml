@@ -11,7 +11,7 @@ objects:
       strimzi.io/cluster: ${KAFKA_CONNECT_INSTANCE}
   spec:
     class: io.debezium.connector.postgresql.PostgresConnector
-    tasksMax: ${MAX_TASKS}
+    tasksMax: ${{MAX_TASKS}}
     config:
       database.server.name: ${DB_SERVERNAME}
       database.dbname: ${DB_NAME}
