@@ -40,6 +40,9 @@ class WorkspaceSerializerTest(TestCase):
         Workspace.objects.update(parent=None)
         Workspace.objects.all().delete()
 
+    def _format_timestamps(self, timestamp):
+        return timestamp.isoformat(timespec="microseconds").replace("+00:00", "Z")
+
     def test_get_workspace_detail_child(self):
         """Return GET /workspace/<uuid>/ serializer response for child"""
         serializer = WorkspaceSerializer(self.child)
@@ -48,6 +51,8 @@ class WorkspaceSerializerTest(TestCase):
             "name": self.child.name,
             "description": self.child.description,
             "parent_id": str(self.parent.uuid),
+            "created": self._format_timestamps(self.child.created),
+            "modified": self._format_timestamps(self.child.modified),
         }
 
         self.assertDictEqual(serializer.data, expected_data)
@@ -60,6 +65,8 @@ class WorkspaceSerializerTest(TestCase):
             "name": self.parent.name,
             "description": self.parent.description,
             "parent_id": None,
+            "created": self._format_timestamps(self.parent.created),
+            "modified": self._format_timestamps(self.parent.modified),
         }
 
         self.assertDictEqual(serializer.data, expected_data)
