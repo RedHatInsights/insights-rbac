@@ -636,6 +636,8 @@ components:
       type: object
       required:
         - first
+        - next
+        - previous
         - last
       properties:
         first:
@@ -645,11 +647,13 @@ components:
           description: The first link in pagination
         next:
           type: string
+          nullable: true
           example: /api/rbac/v2/(resource)/?limit=10&offset=10
           format: uri
           description: The next link in pagination
         previous:
           type: string
+          nullable: true
           example: /api/rbac/v2/(resource)/?limit=10&offset=0
           format: uri
           description: The previous link in pagination
