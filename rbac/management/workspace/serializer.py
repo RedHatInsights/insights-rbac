@@ -28,12 +28,21 @@ class WorkspaceSerializer(serializers.ModelSerializer):
     uuid = serializers.UUIDField(read_only=True, required=False)
     description = serializers.CharField(allow_null=True, required=False, max_length=255)
     parent_id = serializers.UUIDField(allow_null=True, required=False)
+    created = serializers.DateTimeField(read_only=True)
+    modified = serializers.DateTimeField(read_only=True)
 
     class Meta:
         """Metadata for the serializer."""
 
         model = Workspace
-        fields = ("name", "uuid", "parent_id", "description")
+        fields = (
+            "name",
+            "uuid",
+            "parent_id",
+            "description",
+            "created",
+            "modified",
+        )
 
     def create(self, validated_data):
         """Create the workspace object in the database."""
