@@ -343,7 +343,7 @@ class RoleViewsetTests(IdentityRequest):
             )
 
     @override_settings(V2_MIGRATION_RESOURCE_APP_EXCLUDE_LIST=["app"])
-    @patch("management.role.relation_api_dual_write_handler.RelationApiDualWriteHandler._save_replication_event")
+    @patch("management.role.relation_api_dual_write_handler.OutboxReplicater._save_replication_event")
     def test_role_replication_exluded_resource(self, mock_method):
         """Test that excluded resources do not replicate via dual write."""
         # Set up
@@ -379,7 +379,7 @@ class RoleViewsetTests(IdentityRequest):
 
         self.assertEquals(role["relation"], "app_all_read", "expected workspace permission")
 
-    @patch("management.role.relation_api_dual_write_handler.RelationApiDualWriteHandler._save_replication_event")
+    @patch("management.role.relation_api_dual_write_handler.OutboxReplicater._save_replication_event")
     def test_create_role_with_display_success(self, mock_method):
         """Test that we can create a role."""
         role_name = "roleD"
@@ -1407,7 +1407,7 @@ class RoleViewsetTests(IdentityRequest):
         response = client.put(url, test_data, format="json", **self.headers)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
-    @patch("management.role.relation_api_dual_write_handler.RelationApiDualWriteHandler._save_replication_event")
+    @patch("management.role.relation_api_dual_write_handler.OutboxReplicater._save_replication_event")
     def test_update_role(self, mock_method):
         """Test that updating a role with an invalid permission returns an error."""
         # Set up
@@ -1530,7 +1530,7 @@ class RoleViewsetTests(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(response.data.get("errors")[0].get("detail"), f"Permission does not exist: {permission}")
 
-    @patch("management.role.relation_api_dual_write_handler.RelationApiDualWriteHandler._save_replication_event")
+    @patch("management.role.relation_api_dual_write_handler.OutboxReplicater._save_replication_event")
     def test_delete_role(self, mock_method):
         """Test that we can delete an existing role."""
         role_name = "roleA"

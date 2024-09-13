@@ -17,7 +17,10 @@
 
 """Class to handle Dual Write API related operations."""
 import logging
+from abc import ABC, abstractmethod
+from typing import Optional
 
+from kessel.relations.v1beta1 import common_pb2
 from management.models import Outbox
 from management.role.model import BindingMapping
 from migration_tool.migrate import migrate_role
@@ -34,16 +37,99 @@ class DualWriteException(Exception):
     pass
 
 
+class ReplicationEvent:
+    """What tuples changes to replicate."""
+
+    type: str
+    partition_key: str
+    add: list[common_pb2.Relationship]
+    remove: list[common_pb2.Relationship]
+
+    def __init__(
+        self,
+        type: str,
+        partition_key: str,
+        add: list[common_pb2.Relationship] = [],
+        remove: list[common_pb2.Relationship] = [],
+    ):
+        """Initialize ReplicationEvent."""
+        self.partition_key = partition_key
+        self.type = type
+        self.add = add
+        self.remove = remove
+
+
+class RelationReplicator(ABC):
+    """Type responsible for replicating relations to Kessel Relations."""
+
+    @abstractmethod
+    def replicate(self, event: ReplicationEvent):
+        """Replicate the given event to Kessel Relations."""
+        pass
+
+
+class OutboxReplicater(RelationReplicator):
+    """Replicates relations via the outbox table."""
+
+    def __init__(self, role):
+        """Initialize OutboxReplicater."""
+        self.role = role
+
+    def replicate(self, event: ReplicationEvent):
+        """Replicate the given event to Kessel Relations via the Outbox."""
+        payload = self._build_replication_event(event.add, event.remove)
+        self._save_replication_event(payload, event.type, event.partition_key)
+
+    def _build_replication_event(self, relations_to_add, relations_to_remove):
+        """Build replication event."""
+        logger.info("[Dual Write] Build Replication event for role(%s): '%s'", self.role.uuid, self.role.name)
+        add_json = []
+        for relation in relations_to_add:
+            add_json.append(relationship_to_json(relation))
+
+        remove_json = []
+        for relation in relations_to_remove:
+            remove_json.append(relationship_to_json(relation))
+
+        replication_event = {"relations_to_add": add_json, "relations_to_remove": remove_json}
+        return replication_event
+
+    def _save_replication_event(self, payload, event_type, aggregateid):
+        """Save replication event."""
+        logger.info(
+            "[Dual Write] Save replication event into outbox table for role(%s): '%s'", self.role.uuid, self.role.name
+        )
+        logger.info("[Dual Write] Replication event: %s for role(%s): '%s'", payload, self.role.uuid, self.role.name)
+        # https://debezium.io/documentation/reference/stable/transformations/outbox-event-router.html#basic-outbox-table
+        outbox_record = Outbox.objects.create(
+            aggregatetype="RelationReplicationEvent",
+            aggregateid=aggregateid,
+            event_type=event_type,
+            payload=payload,
+        )
+        outbox_record.delete()
+
+
+class NoopReplicator(RelationReplicator):
+    """Noop replicator."""
+
+    def replicate(self, event: ReplicationEvent):
+        """Noop."""
+        pass
+
+
 class RelationApiDualWriteHandler:
     """Class to handle Dual Write API related operations."""
 
-    def __init__(self, role, event_type):
+    def __init__(self, role, event_type, replicator: Optional[RelationReplicator] = None):
         """Initialize RelationApiDualWriteHandler."""
         if not self.replication_enabled():
+            self._replicator = NoopReplicator()
             return
         try:
-            self.role_relations = []
-            self.current_role_relations = []
+            self._replicator = replicator if replicator else OutboxReplicater(role)
+            self.role_relations: list[common_pb2.Relationship] = []
+            self.current_role_relations: list[common_pb2.Relationship] = []
             self.role = role
             self.binding_mapping = None
             self.tenant_id = role.tenant_id
@@ -96,18 +182,25 @@ class RelationApiDualWriteHandler:
             return
         self.role = role
         self._generate_relations_and_mappings_for_role()
-        return self.save_replication_event_to_outbox()
+        self.save_replication_event_to_outbox()
 
     def save_replication_event_to_outbox(self):
         """Generate and store replication event to outbox table."""
         if not self.replication_enabled():
             return {}
         try:
-            replication_event = self._build_replication_event()
-            self._save_replication_event(replication_event)
+            self._replicator.replicate(
+                ReplicationEvent(
+                    type=self.event_type,
+                    # TODO: need to think about partitioning
+                    # Maybe resource id
+                    partition_key="rbactodo",
+                    remove=self.current_role_relations,
+                    add=self.role_relations,
+                ),
+            )
         except Exception as e:
             raise DualWriteException(e)
-        return replication_event
 
     def _generate_relations_and_mappings_for_role(self):
         """Generate relations and mappings for a role with new UUIDs for v2 role and role bindings."""
@@ -134,35 +227,3 @@ class RelationApiDualWriteHandler:
             return relations
         except Exception as e:
             raise DualWriteException(e)
-
-    def _build_replication_event(self):
-        """Build replication event."""
-        if not self.replication_enabled():
-            return {}
-        logger.info("[Dual Write] Build Replication event for role(%s): '%s'", self.role.uuid, self.role.name)
-        relations_to_add = []
-        for relation in self.role_relations:
-            relations_to_add.append(relationship_to_json(relation))
-
-        relations_to_remove = []
-        for relation in self.current_role_relations:
-            relations_to_remove.append(relationship_to_json(relation))
-
-        replication_event = {"relations_to_add": relations_to_add, "relations_to_remove": relations_to_remove}
-        return replication_event
-
-    def _save_replication_event(self, replication_event):
-        """Save replication event."""
-        if not self.replication_enabled():
-            return
-        logger.info(
-            "[Dual Write] Save replication event into outbox table for role(%s): '%s'", self.role.uuid, self.role.name
-        )
-        logger.info(
-            "[Dual Write] Replication event: %s for role(%s): '%s'", replication_event, self.role.uuid, self.role.name
-        )
-        # https://debezium.io/documentation/reference/stable/transformations/outbox-event-router.html#basic-outbox-table
-        outbox_record = Outbox.objects.create(
-            aggregatetype="Role", aggregateid=self.role.uuid, event_type=self.event_type, payload=replication_event
-        )
-        outbox_record.delete()
