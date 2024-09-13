@@ -163,12 +163,12 @@ namespace Workspaces {
         @doc("The next link in pagination")
         @example("/api/rbac/v2/(resource)/?limit=10&offset=10")
         @format("uri")
-        next: string;
+        next: string | null;
 
         @doc("The previous link in pagination")
         @example("/api/rbac/v2/(resource)/?limit=10&offset=0")
         @format("uri")
-        previous: string;
+        previous: string | null;
 
         @doc("The last link in pagination")
         @example("/api/rbac/v2/(resource)/?limit=10&offset=20")

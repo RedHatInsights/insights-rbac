@@ -7,8 +7,6 @@ tags:
 paths:
   /workspaces/:
     get:
-      tags:
-        - Workspaces
       operationId: Workspaces_list
       summary: List workspaces in a tenant
       description: List workspaces in a tenant
@@ -66,9 +64,9 @@ paths:
                   instance:
                     type: string
                     format: uri
-    post:
       tags:
         - Workspaces
+    post:
       operationId: Workspaces_create
       summary: Create workspace in tenant
       description: Create workspace in tenant
@@ -132,6 +130,8 @@ paths:
                   instance:
                     type: string
                     format: uri
+      tags:
+        - Workspaces
       requestBody:
         required: true
         content:
@@ -140,8 +140,6 @@ paths:
               $ref: '#/components/schemas/Workspaces.BasicWorkspace'
   /workspaces/{uuid}/:
     get:
-      tags:
-        - Workspaces
       operationId: Workspaces_read
       summary: Get a workspace in tenant
       description: Get a workspace in tenant
@@ -211,9 +209,9 @@ paths:
                   instance:
                     type: string
                     format: uri
-    put:
       tags:
         - Workspaces
+    put:
       operationId: Workspaces_update
       summary: Edit the workspace name or description
       description: Edit a workspace
@@ -297,6 +295,8 @@ paths:
                   instance:
                     type: string
                     format: uri
+      tags:
+        - Workspaces
       requestBody:
         required: true
         content:
@@ -304,8 +304,6 @@ paths:
             schema:
               $ref: '#/components/schemas/Workspaces.UpdateWorkspaceRequest'
     patch:
-      tags:
-        - Workspaces
       operationId: Workspaces_patch
       parameters:
         - name: uuid
@@ -387,6 +385,8 @@ paths:
                   instance:
                     type: string
                     format: uri
+      tags:
+        - Workspaces
       requestBody:
         required: true
         content:
@@ -394,8 +394,6 @@ paths:
             schema:
               $ref: '#/components/schemas/Workspaces.PatchWorkspaceRequest'
     delete:
-      tags:
-        - Workspaces
       operationId: Workspaces_delete
       summary: Delete the workspace
       description: Delete a workspace
@@ -461,6 +459,8 @@ paths:
                   instance:
                     type: string
                     format: uri
+      tags:
+        - Workspaces
 components:
   schemas:
     Problems.Problem400:
@@ -647,11 +647,13 @@ components:
           description: The first link in pagination
         next:
           type: string
+          nullable: true
           example: /api/rbac/v2/(resource)/?limit=10&offset=10
           format: uri
           description: The next link in pagination
         previous:
           type: string
+          nullable: true
           example: /api/rbac/v2/(resource)/?limit=10&offset=0
           format: uri
           description: The previous link in pagination
