@@ -16,6 +16,7 @@
 #
 
 """Class to handle Dual Write API related operations."""
+from enum import Enum
 import logging
 from abc import ABC, abstractmethod
 from typing import Optional
@@ -37,17 +38,30 @@ class DualWriteException(Exception):
     pass
 
 
+class ReplicationEventType(str, Enum):
+    """Replication event type."""
+
+    CREATE_CUSTOM_ROLE = "create_custom_role"
+    UPDATE_CUSTOM_ROLE = "update_custom_role"
+    DELETE_CUSTOM_ROLE = "delete_custom_role"
+    ASSIGN_ROLE = "assign_role"
+    UNASSIGN_ROLE = "unassign_role"
+    CREATE_GROUP = "create_group"
+    UPDATE_GROUP = "update_group"
+    DELETE_GROUP = "delete_group"
+
+
 class ReplicationEvent:
     """What tuples changes to replicate."""
 
-    type: str
+    type: ReplicationEventType
     partition_key: str
     add: list[common_pb2.Relationship]
     remove: list[common_pb2.Relationship]
 
     def __init__(
         self,
-        type: str,
+        type: ReplicationEventType,
         partition_key: str,
         add: list[common_pb2.Relationship] = [],
         remove: list[common_pb2.Relationship] = [],
@@ -121,7 +135,7 @@ class NoopReplicator(RelationReplicator):
 class RelationApiDualWriteHandler:
     """Class to handle Dual Write API related operations."""
 
-    def __init__(self, role, event_type, replicator: Optional[RelationReplicator] = None):
+    def __init__(self, role, event_type: ReplicationEventType, replicator: Optional[RelationReplicator] = None):
         """Initialize RelationApiDualWriteHandler."""
         if not self.replication_enabled():
             self._replicator = NoopReplicator()
