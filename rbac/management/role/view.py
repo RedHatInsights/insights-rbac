@@ -472,7 +472,7 @@ class RoleViewSet(
         role = serializer.save()
 
         dual_write_handler = RelationApiDualWriteHandler(role, ReplicationEventType.CREATE_CUSTOM_ROLE)
-        dual_write_handler.generate_replication_event_to_outbox(role)
+        dual_write_handler.replicate_new_or_updated_role(role)
 
         role_obj_change_notification_handler(role, "created", self.request.user)
 
@@ -494,7 +494,7 @@ class RoleViewSet(
         role = serializer.save()
 
         if self.action != "partial_update":
-            dual_write_handler.generate_replication_event_to_outbox(role)
+            dual_write_handler.replicate_new_or_updated_role(role)
             role_obj_change_notification_handler(role, "updated", self.request.user)
 
         auditlog = AuditLog()
@@ -518,7 +518,7 @@ class RoleViewSet(
         self.delete_policies_if_no_role_attached(instance)
         instance.delete()
 
-        dual_write_handler.save_replication_event_to_outbox()
+        dual_write_handler.replicate_deleted_role()
         role_obj_change_notification_handler(instance, "deleted", self.request.user)
 
         # Audit in perform_destroy because it needs access to deleted instance

@@ -16,18 +16,18 @@
 #
 
 """Class to handle Dual Write API related operations."""
-from enum import Enum
 import logging
 from abc import ABC, abstractmethod
+from enum import Enum
 from typing import Optional
 
+from django.conf import settings
 from kessel.relations.v1beta1 import common_pb2
 from management.models import Outbox
 from management.role.model import BindingMapping
 from migration_tool.migrate import migrate_role
 from migration_tool.utils import relationship_to_json
 
-from rbac.env import ENVIRONMENT
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
@@ -135,6 +135,7 @@ class NoopReplicator(RelationReplicator):
 class RelationApiDualWriteHandler:
     """Class to handle Dual Write API related operations."""
 
+    # TODO: add resource as parameter
     def __init__(self, role, event_type: ReplicationEventType, replicator: Optional[RelationReplicator] = None):
         """Initialize RelationApiDualWriteHandler."""
         if not self.replication_enabled():
@@ -154,7 +155,7 @@ class RelationApiDualWriteHandler:
 
     def replication_enabled(self):
         """Check whether replication enabled."""
-        return ENVIRONMENT.get_value("REPLICATION_TO_RELATION_ENABLED", default=False, cast=bool)
+        return settings.REPLICATION_TO_RELATION_ENABLED is True
 
     def get_current_role_relations(self):
         """Get current roles relations."""
@@ -190,15 +191,15 @@ class RelationApiDualWriteHandler:
         except Exception as e:
             raise DualWriteException(e)
 
-    def generate_replication_event_to_outbox(self, role):
+    def replicate_new_or_updated_role(self, role):
         """Generate replication event to outbox table."""
         if not self.replication_enabled():
             return
         self.role = role
         self._generate_relations_and_mappings_for_role()
-        self.save_replication_event_to_outbox()
+        self.replicate_deleted_role()
 
-    def save_replication_event_to_outbox(self):
+    def replicate_deleted_role(self):
         """Generate and store replication event to outbox table."""
         if not self.replication_enabled():
             return {}
