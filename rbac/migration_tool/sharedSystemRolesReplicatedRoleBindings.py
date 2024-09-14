@@ -120,6 +120,8 @@ def v1_role_to_v2_bindings(
                         V2boundresource(resource_type, resource_id),
                         v2_perm,
                     )
+        elif default_workspace is None:
+            logger.info(f"Cannot create role binding for role; no resource to bind to: {v1_role.id}")
         else:
             add_element(
                 perm_groupings,
