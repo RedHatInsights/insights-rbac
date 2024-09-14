@@ -26,9 +26,9 @@ T = TypeVar("T", bound=Hashable)
 class InMemoryTuples:
     """In-memory store for relation tuples."""
 
-    def __init__(self):
+    def __init__(self, tuples=None):
         """Initialize the store."""
-        self._tuples: Set[RelationTuple] = set()
+        self._tuples: Set[RelationTuple] = set(tuples) if tuples is not None else set()
 
     def _relationship_key(self, relationship: Relationship):
         return RelationTuple(
@@ -154,7 +154,7 @@ class InMemoryTuples:
                 else:
                     i += 1
 
-            if require_full_match and remaining_predicates or not success:
+            if require_full_match and remaining_tuples or not success:
                 unmatched_groups[key] = group_tuples
                 continue
 
@@ -165,19 +165,22 @@ class InMemoryTuples:
     def __str__(self):
         return str(self._tuples)
 
+    def __repr__(self):
+        return f"InMemoryTuples({repr(self._tuples)})"
+
 
 class TuplePredicate:
     """A predicate that can be used to filter relation tuples."""
 
-    def __init__(self, func, description):
+    def __init__(self, func, repr):
         self.func = func
-        self.description = description
+        self.repr = repr
 
     def __call__(self, *args, **kwargs):
         return self.func(*args, **kwargs)
 
-    def __str__(self):
-        return self.description
+    def __repr__(self):
+        return self.repr
 
 
 def all_of(*predicates: Callable[[RelationTuple], bool]) -> Callable[[RelationTuple], bool]:
@@ -186,16 +189,19 @@ def all_of(*predicates: Callable[[RelationTuple], bool]) -> Callable[[RelationTu
     def predicate(rel: RelationTuple) -> bool:
         return all(p(rel) for p in predicates)
 
-    return TuplePredicate(predicate, f"All of: [{', '.join([str(p) for p in predicates])}]")
+    return TuplePredicate(predicate, f"all_of({', '.join([str(p) for p in predicates])})")
 
 
 def one_of(*predicates: Callable[[RelationTuple], bool]) -> Callable[[RelationTuple], bool]:
     """Return a predicate that is true if any of the given predicates are true."""
 
+    if len(predicates) == 1:
+        return predicates[0]
+
     def predicate(rel: RelationTuple) -> bool:
         return any(p(rel) for p in predicates)
 
-    return TuplePredicate(predicate, f"One of: [{', '.join([str(p) for p in predicates])}]")
+    return TuplePredicate(predicate, f"one_of({', '.join([str(p) for p in predicates])})")
 
 
 def resource_type(namespace: str, name: str) -> Callable[[RelationTuple], bool]:
@@ -204,7 +210,7 @@ def resource_type(namespace: str, name: str) -> Callable[[RelationTuple], bool]:
     def predicate(rel: RelationTuple) -> bool:
         return rel.resource_type_namespace == namespace and rel.resource_type_name == name
 
-    return TuplePredicate(predicate, f"Resource type: {namespace}/{name}")
+    return TuplePredicate(predicate, f'resource_type("{namespace}", "{name}")')
 
 
 def resource_id(id: str) -> Callable[[RelationTuple], bool]:
@@ -213,7 +219,7 @@ def resource_id(id: str) -> Callable[[RelationTuple], bool]:
     def predicate(rel: RelationTuple) -> bool:
         return rel.resource_id == id
 
-    return TuplePredicate(predicate, f"Resource ID: {id}")
+    return TuplePredicate(predicate, f'resource_id("{id}")')
 
 
 def resource(namespace: str, name: str, id: str) -> Callable[[RelationTuple], bool]:
@@ -227,7 +233,7 @@ def relation(relation: str) -> Callable[[RelationTuple], bool]:
     def predicate(rel: RelationTuple) -> bool:
         return rel.relation == relation
 
-    return TuplePredicate(predicate, f"Relation: {relation}")
+    return TuplePredicate(predicate, f'relation("{relation}")')
 
 
 def subject_type(namespace: str, name: str, relation: str = "") -> Callable[[RelationTuple], bool]:
@@ -240,7 +246,7 @@ def subject_type(namespace: str, name: str, relation: str = "") -> Callable[[Rel
             and rel.subject_relation == relation
         )
 
-    return TuplePredicate(predicate, f"Subject type: {namespace}/{name}")
+    return TuplePredicate(predicate, f'subject_type("{namespace}", "{name}")')
 
 
 def subject_id(id: str) -> Callable[[RelationTuple], bool]:
@@ -249,7 +255,7 @@ def subject_id(id: str) -> Callable[[RelationTuple], bool]:
     def predicate(rel: RelationTuple) -> bool:
         return rel.subject_id == id
 
-    return TuplePredicate(predicate, f"Subject ID: {id}")
+    return TuplePredicate(predicate, f'subject_id("{id}")')
 
 
 def subject(namespace: str, name: str, id: str, relation: str = "") -> Callable[[RelationTuple], bool]:
