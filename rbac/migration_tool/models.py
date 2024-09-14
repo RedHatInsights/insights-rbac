@@ -16,6 +16,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 
 from dataclasses import dataclass
+from typing import Tuple
 
 
 @dataclass(frozen=True)
@@ -89,7 +90,7 @@ class V2group:
 class V2boundresource:
     """V2 bound resource definition."""
 
-    resource_type: str
+    resource_type: Tuple[str, str]
     resourceId: str
 
 

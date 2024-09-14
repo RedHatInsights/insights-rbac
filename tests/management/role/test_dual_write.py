@@ -88,12 +88,19 @@ class DualWriteTestCase(TestCase):
             [
                 all_of(resource_type("rbac", "role"), relation(permission.replace(":", "_")))
                 for permission in permissions
-            ]
+            ],
+            group_by=lambda perm: (perm.resource_type_namespace, perm.resource_type_name, perm.resource_id),
+            require_full_match=True,
         )
         self.assertNotEqual(
             len(perm_tuples), 0, f"No matching role found for permissions: {permissions} in tuples: \n{self._tuples}"
         )
-        return perm_tuples[0].resource_id
+        # Collect all perm tuples resource ids into a set and ensure there is only one
+        self.assertEqual(len(perm_tuples), 1, f"Multiple roles matched: {perm_tuples}")
+
+        # Get the first key in the perm_tuple dict
+        key = list(perm_tuples.keys())[0]
+        return key[0]
 
 
 class DualWriteSystemRolesTestCase(TestCase):
@@ -144,9 +151,10 @@ class DualWriteCustomRolesTestCase(DualWriteTestCase):
         group = self.given_group("group_a2", ["principal1", "principal2"])
         self.given_policy(group, roles=[role])
 
-        self.expect_1_v2_role_like(["app1:hosts:read", "inventory:hosts:write"])
-        # self.expect_1_role_binding(resource=default_workspace(), v2_role=id, groups=["group_a2"])
-        # self.expect_1_role_binding(resource=workspace("2"), v2_role=id, groups=["group_a2"])
+        id = self.expect_1_v2_role_like(["app1:hosts:read", "inventory:hosts:write"])
+        # TODO: assert group once group replication is implemented
+        # self.expect_1_role_binding(resource=self.default_workspace(), v2_roles=[id], groups=[])
+        # self.expect_1_role_binding(resource=self.workspace("2"), v2_role=[id], groups=[])
 
 
 class RbacFixture:

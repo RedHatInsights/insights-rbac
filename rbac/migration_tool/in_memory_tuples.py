@@ -1,8 +1,7 @@
 """This module contains the in-memory representation of a tuple store."""
 
-from collections import namedtuple
-from typing import Callable, Iterable, List, Set
-
+from typing import Callable, Hashable, Iterable, List, Set, TypeVar
+from collections import namedtuple, defaultdict
 
 from kessel.relations.v1beta1.common_pb2 import Relationship
 from management.role.relation_api_dual_write_handler import RelationReplicator
@@ -21,6 +20,8 @@ RelationTuple = namedtuple(
         "subject_relation",
     ],
 )
+
+T = TypeVar("T", bound=Hashable)
 
 
 class InMemoryTuples:
@@ -54,38 +55,80 @@ class InMemoryTuples:
 
     def write(self, add: Iterable[Relationship], remove: Iterable[Relationship]):
         """Add / remove tuples."""
-        for relationship in add:
-            self.add(relationship)
-        for relationship in remove:
-            self.remove(relationship)
+        for tuple in add:
+            self.add(tuple)
+        for tuple in remove:
+            self.remove(tuple)
 
-    def find_like(self, predicates: List[Callable[[RelationTuple], bool]]) -> List[RelationTuple]:
+    def find_like(
+        self,
+        predicates: List[Callable[[RelationTuple], bool]],
+        group_by: Callable[[RelationTuple], T],
+        require_full_match: bool = False,
+    ) -> dict[T, List[RelationTuple]]:
         """
-        Find the set of tuples matching given predicates.
+        Find groups of tuples matching given predicates, grouped by a key.
 
-        For each predicate in the list, this method finds exactly one relationship
-        that matches it, ensuring that no relationship is used for more than one
-        predicate. If any predicate does not have a matching relationship, it returns None.
+        Groups the tuples using the provided `group_by` function and tests the
+        predicates against each group independently.
+
+        For each group, this method attempts to find tuples that match all the
+        predicates, ensuring that no tuple is used for more than one predicate
+        within the group.
+
+        If `require_full_match` is True, the method also ensures that all tuples
+        in the group are matched by the predicates (i.e., no unmatched tuples
+        remain in the group). If any group does not meet the criteria, it is
+        excluded from the results.
+
+        Args:
+            predicates: A list of predicates (functions) that each accept a
+                RelationTuple and return a bool indicating a match.
+            group_by: A function that takes a RelationTuple and returns a key
+                to group by (e.g., a resource ID).
+            require_full_match: If True, only groups where all tuples are matched
+                by the predicates are included in the results.
 
         Returns:
-            A list of matching RelationshipTuples if all predicates are satisfied.
-            An empty list if any predicate fails to find a match.
+            A list of lists, where each inner list contains the matching
+            RelationTuples for a group that satisfies the criteria. Returns an
+            empty list if no groups satisfy the criteria.
         """
-        remaining_tuples = set(self._tuples)
-        matching_tuples = []
+        # Group the tuples by the specified key
+        grouped_tuples: dict[T, List[RelationTuple]] = defaultdict(list)
+        for rel in self._tuples:
+            key = group_by(rel)
+            grouped_tuples[key].append(rel)
 
-        for predicate in predicates:
-            found = False
-            for rel in remaining_tuples:
-                if predicate(rel):
-                    matching_tuples.append(rel)
-                    remaining_tuples.remove(rel)
-                    found = True
-                    break  # Move to next predicate
-            if not found:
-                return []
+        matching_groups: dict[T, List[RelationTuple]] = {}
 
-        return matching_tuples
+        # Iterate over each group
+        for key, group_tuples in grouped_tuples.items():
+            remaining_tuples = set(group_tuples)
+            matching_tuples = []
+            success = True
+
+            # Attempt to match all predicates within the group
+            for predicate in predicates:
+                found = False
+                for rel in remaining_tuples:
+                    if predicate(rel):
+                        matching_tuples.append(rel)
+                        remaining_tuples.remove(rel)
+                        found = True
+                        break  # Move to next predicate
+                if not found:
+                    success = False
+                    break  # Predicate not satisfied in this group
+
+            if success:
+                if require_full_match and remaining_tuples:
+                    # Unmatched tuples remain in the group; skip this group
+                    continue  # Skip to the next group
+                else:
+                    matching_groups[key] = matching_tuples
+
+        return matching_groups
 
     def __str__(self):
         return str(self._tuples)
