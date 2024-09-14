@@ -33,6 +33,7 @@ from migration_tool.in_memory_tuples import (
     resource_id,
     resource_type,
     subject,
+    subject_type,
 )
 
 
@@ -49,11 +50,10 @@ class DualWriteTestCase(TestCase):
     "Given" methods are treated like distinct transactions, which each replicate tuples via dual write.
     """
 
-    _tuples = InMemoryTuples()
-
     def setUp(self):
         """Set up the dual write tests."""
         super().setUp()
+        self.tuples = InMemoryTuples()
         self.fixture = RbacFixture()
         self.tenant = self.fixture.new_tenant(name="tenant", org_id="1234567")
 
@@ -64,16 +64,19 @@ class DualWriteTestCase(TestCase):
 
     def dual_write_handler(self, role: Role, event_type: ReplicationEventType) -> RelationApiDualWriteHandler:
         """Create a RelationApiDualWriteHandler for the given role and event type."""
-        return RelationApiDualWriteHandler(role, event_type, replicator=InMemoryRelationReplicator(self._tuples))
+        return RelationApiDualWriteHandler(role, event_type, replicator=InMemoryRelationReplicator(self.tuples))
 
-    def given_v1_system_role(self, id: str, permissions: list[str]) -> Role:
+    def given_v1_system_role(self, name: str, permissions: list[str]) -> Role:
         """Create a new system role with the given ID and permissions."""
-        return self.fixture.new_system_role(name=id, permissions=permissions)
+        role = self.fixture.new_system_role(name=name, permissions=permissions)
+        dual_write = self.dual_write_handler(role, ReplicationEventType.CREATE_SYSTEM_ROLE)
+        dual_write.replicate_new_or_updated_role(role)
+        return role
 
-    def given_v1_role(self, id: str, default: list[str], **kwargs: list[str]) -> Role:
+    def given_v1_role(self, name: str, default: list[str], **kwargs: list[str]) -> Role:
         """Create a new custom role with the given ID and workspace permissions."""
         role = self.fixture.new_custom_role(
-            name=id,
+            name=name,
             tenant=self.tenant,
             resource_access=[
                 (default, {}),
@@ -99,12 +102,12 @@ class DualWriteTestCase(TestCase):
 
     def expect_1_v2_role_with_permissions(self, permissions: list[str]) -> str:
         """Assert there is a role matching the given permissions and return its ID."""
-        roles, unmatched = self._tuples.find_group_with_tuples(
+        roles, unmatched = self.tuples.find_group_with_tuples(
             [
                 all_of(resource_type("rbac", "role"), relation(permission.replace(":", "_")))
                 for permission in permissions
             ],
-            group_by=lambda perm: (perm.resource_type_namespace, perm.resource_type_name, perm.resource_id),
+            group_by=lambda t: (t.resource_type_namespace, t.resource_type_name, t.resource_id),
             group_filter=lambda group: group[0] == "rbac" and group[1] == "role",
             require_full_match=True,
         )
@@ -113,23 +116,37 @@ class DualWriteTestCase(TestCase):
         self.assertEqual(
             num_roles,
             1,
-            f"Expected exactly 1 role with permissions {permissions}, but got {len(roles)}.\n"
+            f"Expected exactly 1 role with permissions {permissions}, but got {num_roles}.\n"
             f"Matched roles: {roles}.\n"
             f"Unmatched roles: {unmatched}",
         )
         _, _, id = next(iter(roles.keys()))
         return id
 
+    def expect_num_role_bindings(self, num: int):
+        """Assert there are [num] role bindings."""
+        role_bindings = self.tuples.find_tuples_grouped(
+            subject_type("rbac", "role_binding"),
+            group_by=lambda t: (t.resource_type_namespace, t.resource_type_name, t.resource_id),
+        )
+        num_role_bindings = len(role_bindings)
+        self.assertEqual(
+            num_role_bindings,
+            num,
+            f"Expected exactly {num} role bindings, but got {num_role_bindings}.\n" f"Role bindings: {role_bindings}",
+        )
+
     def expect_1_role_binding_to_workspace(self, workspace: str, for_v2_roles: list[str], for_groups: list[str]):
         """Assert there is a role binding with the given roles and groups."""
         # Find all bindings for the given workspace
-        resources = self._tuples.find_tuples_grouped(
+        resources = self.tuples.find_tuples_grouped(
             all_of(resource("rbac", "workspace", workspace), relation("user_grant")),
-            group_by=lambda perm: (perm.resource_type_namespace, perm.resource_type_name, perm.resource_id),
+            group_by=lambda t: (t.resource_type_namespace, t.resource_type_name, t.resource_id),
         )
 
-        # Now find role bindings against the given workspace
-        role_bindings, unmatched = self._tuples.find_group_with_tuples(
+        # Now of those bound to the workspace, find bindings that bind the given roles and groups
+        # (we expect only 1)
+        role_bindings, unmatched = self.tuples.find_group_with_tuples(
             [
                 all_of(
                     resource_type("rbac", "role_binding"),
@@ -164,52 +181,36 @@ class DualWriteTestCase(TestCase):
         )
 
 
-class DualWriteSystemRolesTestCase(TestCase):
+class DualWriteSystemRolesTestCase(DualWriteTestCase):
     """Test dual write logic when there is no prior state for access binding."""
-
-    def setUp(self):
-        """Set up the dual write tests."""
-        super().setUp()
-
-        self.fixture = RbacFixture()
-
-        # Set up system role
-        self.system_role = self.fixture.new_system_role(
-            name="system_role", permissions=["app1:hosts:read", "inventory:hosts:write"]
-        )
-
-        # Set up group
-        self.tenant = self.fixture.new_tenant(name="tenant", org_id="1234567")
-        self.group_a2 = self.fixture.new_group(name="group_a2", users=["principal1", "principal2"], tenant=self.tenant)
 
     def test_system_role_grants_access_to_default_workspace(self):
         """Test the dual write."""
-        handler = RelationApiDualWriteHandler(self.system_role, ReplicationEventType.ASSIGN_ROLE)
-        handler.load_relations_from_current_state_of_role()
+        role = self.given_v1_system_role("r1", ["app1:hosts:read", "inventory:hosts:write"])
+        group = self.given_group("g1", ["u1", "u2"])
 
-        self.fixture.add_role_to_group(self.system_role, self.group_a2, self.tenant)
-        new = Role.objects.get(uuid=self.system_role.uuid)
+        self.expect_num_role_bindings(0)
 
-        handler.replicate_new_or_updated_role(new)
+        self.given_policy(group, roles=[role])
+
+        id = self.expect_1_v2_role_with_permissions(["app1:hosts:read", "inventory:hosts:write"])
+        self.expect_1_role_binding_to_workspace(self.default_workspace(), for_v2_roles=[id], for_groups=[group.id])
+        self.expect_num_role_bindings(1)
 
 
 class DualWriteCustomRolesTestCase(DualWriteTestCase):
     """Test dual write logic when we are working with custom roles."""
 
-    def setUp(self):
-        """Set up the dual write tests."""
-        super().setUp()
-
     def test_dual_write(self):
         """Test the dual write."""
 
         role = self.given_v1_role(
-            "1",
+            "r1",
             default=["app1:hosts:read", "inventory:hosts:write"],
             ws_2=["app1:hosts:read", "inventory:hosts:write"],
         )
 
-        group = self.given_group("group_a2", ["principal1", "principal2"])
+        group = self.given_group("g1", ["u1", "u2"])
         self.given_policy(group, roles=[role])
 
         id = self.expect_1_v2_role_with_permissions(["app1:hosts:read", "inventory:hosts:write"])
