@@ -238,6 +238,7 @@ class RbacFixture:
             Access(
                 permission=Permission.objects.get_or_create(permission=permission, tenant=self.public_tenant)[0],
                 role=role,
+                tenant=self.public_tenant,
             )
             for permission in permissions
         ]
