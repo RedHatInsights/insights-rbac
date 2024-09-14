@@ -84,23 +84,26 @@ class DualWriteTestCase(TestCase):
 
     def expect_1_v2_role_like(self, permissions: list[str]) -> str:
         """Assert there is a role matching the given permissions and return its ID."""
-        perm_tuples = self._tuples.find_like(
+        roles, unmatched = self._tuples.find_like(
             [
                 all_of(resource_type("rbac", "role"), relation(permission.replace(":", "_")))
                 for permission in permissions
             ],
             group_by=lambda perm: (perm.resource_type_namespace, perm.resource_type_name, perm.resource_id),
+            group_filter=lambda group: group[0] == "rbac" and group[1] == "role",
             require_full_match=True,
         )
-        self.assertNotEqual(
-            len(perm_tuples), 0, f"No matching role found for permissions: {permissions} in tuples: \n{self._tuples}"
-        )
-        # Collect all perm tuples resource ids into a set and ensure there is only one
-        self.assertEqual(len(perm_tuples), 1, f"Multiple roles matched: {perm_tuples}")
 
-        # Get the first key in the perm_tuple dict
-        key = list(perm_tuples.keys())[0]
-        return key[0]
+        num_roles = len(roles)
+        self.assertEqual(
+            num_roles,
+            1,
+            f"Expected exactly 1 role with permissions {permissions}, but got {len(roles)}.\n"
+            f"Matched roles: {roles}.\n"
+            f"Unmatched roles: {unmatched}",
+        )
+        _, _, id = next(iter(roles.keys()))
+        return id
 
 
 class DualWriteSystemRolesTestCase(TestCase):

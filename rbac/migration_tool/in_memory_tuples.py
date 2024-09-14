@@ -1,25 +1,24 @@
 """This module contains the in-memory representation of a tuple store."""
 
-from typing import Callable, Hashable, Iterable, List, Set, TypeVar
+from typing import Callable, Hashable, Iterable, List, NamedTuple, Set, Tuple, TypeVar
 from collections import namedtuple, defaultdict
 
 from kessel.relations.v1beta1.common_pb2 import Relationship
 from management.role.relation_api_dual_write_handler import RelationReplicator
 
 
-RelationTuple = namedtuple(
-    "RelationTuple",
-    [
-        "resource_type_namespace",
-        "resource_type_name",
-        "resource_id",
-        "relation",
-        "subject_type_namespace",
-        "subject_type_name",
-        "subject_id",
-        "subject_relation",
-    ],
-)
+class RelationTuple(NamedTuple):
+    """Simple representation of a relation tuple."""
+
+    resource_type_namespace: str
+    resource_type_name: str
+    resource_id: str
+    relation: str
+    subject_type_namespace: str
+    subject_type_name: str
+    subject_id: str
+    subject_relation: str
+
 
 T = TypeVar("T", bound=Hashable)
 
@@ -65,7 +64,8 @@ class InMemoryTuples:
         predicates: List[Callable[[RelationTuple], bool]],
         group_by: Callable[[RelationTuple], T],
         require_full_match: bool = False,
-    ) -> dict[T, List[RelationTuple]]:
+        group_filter: Callable[[T], bool] = lambda _: True,
+    ) -> Tuple[dict[T, List[RelationTuple]], dict[T, List[RelationTuple]]]:
         """
         Find groups of tuples matching given predicates, grouped by a key.
 
@@ -88,19 +88,24 @@ class InMemoryTuples:
                 to group by (e.g., a resource ID).
             require_full_match: If True, only groups where all tuples are matched
                 by the predicates are included in the results.
+            group_filter: A predicate that filters the groups to include in the
+                results. Useful when you only want to test a subset of tuples e.g.
+                a specific resource type.
 
         Returns:
-            A list of lists, where each inner list contains the matching
-            RelationTuples for a group that satisfies the criteria. Returns an
-            empty list if no groups satisfy the criteria.
+            A tuple containing two dictionaries:
+            - The first dictionary contains the groups that matched all predicates.
+            - The second dictionary contains the groups that did not match all predicates.
         """
         # Group the tuples by the specified key
         grouped_tuples: dict[T, List[RelationTuple]] = defaultdict(list)
         for rel in self._tuples:
             key = group_by(rel)
-            grouped_tuples[key].append(rel)
+            if group_filter(key):
+                grouped_tuples[key].append(rel)
 
         matching_groups: dict[T, List[RelationTuple]] = {}
+        unmatched_groups: dict[T, List[RelationTuple]] = {}
 
         # Iterate over each group
         for key, group_tuples in grouped_tuples.items():
@@ -124,11 +129,12 @@ class InMemoryTuples:
             if success:
                 if require_full_match and remaining_tuples:
                     # Unmatched tuples remain in the group; skip this group
+                    unmatched_groups[key] = group_tuples
                     continue  # Skip to the next group
                 else:
                     matching_groups[key] = matching_tuples
 
-        return matching_groups
+        return matching_groups, unmatched_groups
 
     def __str__(self):
         return str(self._tuples)
