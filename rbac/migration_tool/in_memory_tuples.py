@@ -1,6 +1,6 @@
 """This module contains the in-memory representation of a tuple store."""
 
-from typing import Callable, Hashable, Iterable, List, NamedTuple, Set, Tuple, TypeVar
+from typing import Callable, Hashable, Iterable, List, NamedTuple, Optional, Set, Tuple, TypeVar
 from collections import namedtuple, defaultdict
 
 from kessel.relations.v1beta1.common_pb2 import Relationship
@@ -59,12 +59,28 @@ class InMemoryTuples:
         for tuple in remove:
             self.remove(tuple)
 
-    def find_like(
+    def find_tuples(self, predicate: Callable[[RelationTuple], bool]) -> List[RelationTuple]:
+        """Find tuples matching the given predicate."""
+        return [rel for rel in self._tuples if predicate(rel)]
+
+    def find_tuples_grouped(
+        self, predicate: Callable[[RelationTuple], bool], group_by: Callable[[RelationTuple], T]
+    ) -> dict[T, List[RelationTuple]]:
+        """Filter tuples and group them by a key."""
+        grouped_tuples: dict[T, List[RelationTuple]] = defaultdict(list)
+        for rel in self._tuples:
+            if predicate(rel):
+                key = group_by(rel)
+                grouped_tuples[key].append(rel)
+        return grouped_tuples
+
+    def find_group_with_tuples(
         self,
         predicates: List[Callable[[RelationTuple], bool]],
         group_by: Callable[[RelationTuple], T],
-        require_full_match: bool = False,
         group_filter: Callable[[T], bool] = lambda _: True,
+        require_full_match: bool = False,
+        match_once: bool = True,
     ) -> Tuple[dict[T, List[RelationTuple]], dict[T, List[RelationTuple]]]:
         """
         Find groups of tuples matching given predicates, grouped by a key.
@@ -87,10 +103,14 @@ class InMemoryTuples:
             group_by: A function that takes a RelationTuple and returns a key
                 to group by (e.g., a resource ID).
             require_full_match: If True, only groups where all tuples are matched
-                by the predicates are included in the results.
+                by the predicates (i.e. there are no remaining unmatched tuples)
+                are included in the results.
             group_filter: A predicate that filters the groups to include in the
                 results. Useful when you only want to test a subset of tuples e.g.
                 a specific resource type.
+            match_once: If True, each predicate is only used once in the matching process.
+                Otherwise, each tuple in the group will be tested by each predicate until
+                one predicate matches the tuple.
 
         Returns:
             A tuple containing two dictionaries:
@@ -110,11 +130,15 @@ class InMemoryTuples:
         # Iterate over each group
         for key, group_tuples in grouped_tuples.items():
             remaining_tuples = set(group_tuples)
+            remaining_predicates = list(predicates) if match_once else predicates
+            i = 0
             matching_tuples = []
             success = True
 
             # Attempt to match all predicates within the group
-            for predicate in predicates:
+            # Using each predicate only once if requested
+            while remaining_predicates and i < len(remaining_predicates):
+                predicate = remaining_predicates[i]
                 found = False
                 for rel in remaining_tuples:
                     if predicate(rel):
@@ -125,19 +149,35 @@ class InMemoryTuples:
                 if not found:
                     success = False
                     break  # Predicate not satisfied in this group
-
-            if success:
-                if require_full_match and remaining_tuples:
-                    # Unmatched tuples remain in the group; skip this group
-                    unmatched_groups[key] = group_tuples
-                    continue  # Skip to the next group
+                if match_once:
+                    remaining_predicates.pop(i)
                 else:
-                    matching_groups[key] = matching_tuples
+                    i += 1
+
+            if require_full_match and remaining_predicates or not success:
+                unmatched_groups[key] = group_tuples
+                continue
+
+            matching_groups[key] = matching_tuples
 
         return matching_groups, unmatched_groups
 
     def __str__(self):
         return str(self._tuples)
+
+
+class TuplePredicate:
+    """A predicate that can be used to filter relation tuples."""
+
+    def __init__(self, func, description):
+        self.func = func
+        self.description = description
+
+    def __call__(self, *args, **kwargs):
+        return self.func(*args, **kwargs)
+
+    def __str__(self):
+        return self.description
 
 
 def all_of(*predicates: Callable[[RelationTuple], bool]) -> Callable[[RelationTuple], bool]:
@@ -146,7 +186,16 @@ def all_of(*predicates: Callable[[RelationTuple], bool]) -> Callable[[RelationTu
     def predicate(rel: RelationTuple) -> bool:
         return all(p(rel) for p in predicates)
 
-    return predicate
+    return TuplePredicate(predicate, f"All of: [{', '.join([str(p) for p in predicates])}]")
+
+
+def one_of(*predicates: Callable[[RelationTuple], bool]) -> Callable[[RelationTuple], bool]:
+    """Return a predicate that is true if any of the given predicates are true."""
+
+    def predicate(rel: RelationTuple) -> bool:
+        return any(p(rel) for p in predicates)
+
+    return TuplePredicate(predicate, f"One of: [{', '.join([str(p) for p in predicates])}]")
 
 
 def resource_type(namespace: str, name: str) -> Callable[[RelationTuple], bool]:
@@ -155,7 +204,21 @@ def resource_type(namespace: str, name: str) -> Callable[[RelationTuple], bool]:
     def predicate(rel: RelationTuple) -> bool:
         return rel.resource_type_namespace == namespace and rel.resource_type_name == name
 
-    return predicate
+    return TuplePredicate(predicate, f"Resource type: {namespace}/{name}")
+
+
+def resource_id(id: str) -> Callable[[RelationTuple], bool]:
+    """Return a predicate that is true if the resource ID matches the given ID."""
+
+    def predicate(rel: RelationTuple) -> bool:
+        return rel.resource_id == id
+
+    return TuplePredicate(predicate, f"Resource ID: {id}")
+
+
+def resource(namespace: str, name: str, id: str) -> Callable[[RelationTuple], bool]:
+    """Return a predicate that is true if the resource matches the given namespace and name."""
+    return all_of(resource_type(namespace, name), resource_id(id))
 
 
 def relation(relation: str) -> Callable[[RelationTuple], bool]:
@@ -164,7 +227,34 @@ def relation(relation: str) -> Callable[[RelationTuple], bool]:
     def predicate(rel: RelationTuple) -> bool:
         return rel.relation == relation
 
-    return predicate
+    return TuplePredicate(predicate, f"Relation: {relation}")
+
+
+def subject_type(namespace: str, name: str, relation: str = "") -> Callable[[RelationTuple], bool]:
+    """Return a predicate that is true if the subject type matches the given namespace and name."""
+
+    def predicate(rel: RelationTuple) -> bool:
+        return (
+            rel.subject_type_namespace == namespace
+            and rel.subject_type_name == name
+            and rel.subject_relation == relation
+        )
+
+    return TuplePredicate(predicate, f"Subject type: {namespace}/{name}")
+
+
+def subject_id(id: str) -> Callable[[RelationTuple], bool]:
+    """Return a predicate that is true if the subject ID matches the given ID."""
+
+    def predicate(rel: RelationTuple) -> bool:
+        return rel.subject_id == id
+
+    return TuplePredicate(predicate, f"Subject ID: {id}")
+
+
+def subject(namespace: str, name: str, id: str, relation: str = "") -> Callable[[RelationTuple], bool]:
+    """Return a predicate that is true if the subject matches the given namespace and name."""
+    return all_of(subject_type(namespace, name, relation), subject_id(id))
 
 
 class InMemoryRelationReplicator(RelationReplicator):

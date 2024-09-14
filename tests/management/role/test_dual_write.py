@@ -27,8 +27,12 @@ from migration_tool.in_memory_tuples import (
     InMemoryRelationReplicator,
     InMemoryTuples,
     all_of,
+    one_of,
     relation,
+    resource,
+    resource_id,
     resource_type,
+    subject,
 )
 
 
@@ -37,7 +41,13 @@ from api.models import Tenant
 
 @override_settings(REPLICATION_TO_RELATION_ENABLED=True)
 class DualWriteTestCase(TestCase):
-    """Base TestCase for testing dual write logic."""
+    """
+    Base TestCase for testing dual write logic.
+
+    Use "given" methods to set up state like users would. Use "expect" methods to assert the state of the system.
+
+    "Given" methods are treated like distinct transactions, which each replicate tuples via dual write.
+    """
 
     _tuples = InMemoryTuples()
 
@@ -46,6 +56,11 @@ class DualWriteTestCase(TestCase):
         super().setUp()
         self.fixture = RbacFixture()
         self.tenant = self.fixture.new_tenant(name="tenant", org_id="1234567")
+
+    def default_workspace(self) -> str:
+        """Return the default workspace ID."""
+        assert self.tenant.org_id is not None, "Tenant org_id should not be None"
+        return self.tenant.org_id
 
     def dual_write_handler(self, role: Role, event_type: ReplicationEventType) -> RelationApiDualWriteHandler:
         """Create a RelationApiDualWriteHandler for the given role and event type."""
@@ -82,9 +97,9 @@ class DualWriteTestCase(TestCase):
         # TODO: replicate role assignment
         return self.fixture.add_role_to_group(roles[0], group, self.tenant)
 
-    def expect_1_v2_role_like(self, permissions: list[str]) -> str:
+    def expect_1_v2_role_with_permissions(self, permissions: list[str]) -> str:
         """Assert there is a role matching the given permissions and return its ID."""
-        roles, unmatched = self._tuples.find_like(
+        roles, unmatched = self._tuples.find_group_with_tuples(
             [
                 all_of(resource_type("rbac", "role"), relation(permission.replace(":", "_")))
                 for permission in permissions
@@ -104,6 +119,49 @@ class DualWriteTestCase(TestCase):
         )
         _, _, id = next(iter(roles.keys()))
         return id
+
+    def expect_1_role_binding_to_workspace(self, workspace: str, for_v2_roles: list[str], for_groups: list[str]):
+        """Assert there is a role binding with the given roles and groups."""
+        # Find all bindings for the given workspace
+        resources = self._tuples.find_tuples_grouped(
+            all_of(resource("rbac", "workspace", workspace), relation("user_grant")),
+            group_by=lambda perm: (perm.resource_type_namespace, perm.resource_type_name, perm.resource_id),
+        )
+
+        # Now find role bindings against the given workspace
+        role_bindings, unmatched = self._tuples.find_group_with_tuples(
+            [
+                all_of(
+                    resource_type("rbac", "role_binding"),
+                    one_of(*[resource_id(t.subject_id) for _, tuples in resources.items() for t in tuples]),
+                    relation("granted"),
+                    subject("rbac", "role", role_id),
+                )
+                for role_id in for_v2_roles
+            ]
+            + [
+                all_of(
+                    resource_type("rbac", "role_binding"),
+                    relation("subject"),
+                    subject("rbac", "group", group_id),
+                )
+                for group_id in for_groups
+            ],
+            group_by=lambda perm: (perm.resource_type_namespace, perm.resource_type_name, perm.resource_id),
+            group_filter=lambda group: group[0] == "rbac" and group[1] == "role_binding",
+            require_full_match=True,
+        )
+
+        num_role_bindings = len(role_bindings)
+        self.assertEqual(
+            num_role_bindings,
+            1,
+            f"Expected exactly 1 role binding against workspace {workspace} "
+            f"with roles {for_v2_roles} and groups {for_groups}, "
+            f"but got {len(role_bindings)}.\n"
+            f"Matched role bindings: {role_bindings}.\n"
+            f"Unmatched role bindings: {unmatched}",
+        )
 
 
 class DualWriteSystemRolesTestCase(TestCase):
@@ -154,10 +212,10 @@ class DualWriteCustomRolesTestCase(DualWriteTestCase):
         group = self.given_group("group_a2", ["principal1", "principal2"])
         self.given_policy(group, roles=[role])
 
-        id = self.expect_1_v2_role_like(["app1:hosts:read", "inventory:hosts:write"])
+        id = self.expect_1_v2_role_with_permissions(["app1:hosts:read", "inventory:hosts:write"])
         # TODO: assert group once group replication is implemented
-        # self.expect_1_role_binding(resource=self.default_workspace(), v2_roles=[id], groups=[])
-        # self.expect_1_role_binding(resource=self.workspace("2"), v2_role=[id], groups=[])
+        self.expect_1_role_binding_to_workspace(self.default_workspace(), for_v2_roles=[id], for_groups=[])
+        self.expect_1_role_binding_to_workspace("ws_2", for_v2_roles=[id], for_groups=[])
 
 
 class RbacFixture:
