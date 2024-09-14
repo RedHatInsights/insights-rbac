@@ -14,7 +14,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
-"""Test dual write logic."""
+"""Test tuple changes for RBAC operations."""
 
 from django.test import TestCase, override_settings
 from management.group.model import Group
@@ -182,10 +182,10 @@ class DualWriteTestCase(TestCase):
 
 
 class DualWriteSystemRolesTestCase(DualWriteTestCase):
-    """Test dual write logic when there is no prior state for access binding."""
+    """Test dual write logic for system roles."""
 
     def test_system_role_grants_access_to_default_workspace(self):
-        """Test the dual write."""
+        """Create role binding only when system role is bound to group."""
         role = self.given_v1_system_role("r1", ["app1:hosts:read", "inventory:hosts:write"])
         group = self.given_group("g1", ["u1", "u2"])
 
@@ -201,9 +201,8 @@ class DualWriteSystemRolesTestCase(DualWriteTestCase):
 class DualWriteCustomRolesTestCase(DualWriteTestCase):
     """Test dual write logic when we are working with custom roles."""
 
-    def test_dual_write(self):
-        """Test the dual write."""
-
+    def test_role_with_same_default_and_resource_permission_reuses_same_v2_role(self):
+        """With same resource permissions (when one of those is the default workspace), reuse the same v2 role."""
         role = self.given_v1_role(
             "r1",
             default=["app1:hosts:read", "inventory:hosts:write"],
@@ -217,6 +216,26 @@ class DualWriteCustomRolesTestCase(DualWriteTestCase):
         # TODO: assert group once group replication is implemented
         self.expect_1_role_binding_to_workspace(self.default_workspace(), for_v2_roles=[id], for_groups=[])
         self.expect_1_role_binding_to_workspace("ws_2", for_v2_roles=[id], for_groups=[])
+
+    def test_add_permissions_to_role(self):
+        """Modify the role in place when adding permissions."""
+        pass
+
+    def test_remove_permissions_from_role(self):
+        """Modify the role in place when removing permissions."""
+        pass
+
+    def test_delete_role(self):
+        """Delete the role and its bindings when deleting a custom role."""
+        pass
+
+    def test_remove_resource_removes_role_binding(self):
+        """Remove the role binding when removing the resource from attribute filter."""
+        pass
+
+    def test_two_roles_with_same_resource_permissions_create_two_v2_roles(self):
+        """Create two v2 roles when two roles have the same resource permissions across different resources."""
+        pass
 
 
 class RbacFixture:
