@@ -55,6 +55,8 @@ class ReplicationEventType(str, Enum):
     CREATE_GROUP = "create_group"
     UPDATE_GROUP = "update_group"
     DELETE_GROUP = "delete_group"
+    ADD_PRINCIPALS_TO_GROUP = "add_principals_to_group"
+    REMOVE_PRINCIPALS_FROM_GROUP = "remove_principals_from_group"
 
 
 class ReplicationEvent:
@@ -91,9 +93,21 @@ class RelationReplicator(ABC):
 class OutboxReplicator(RelationReplicator):
     """Replicates relations via the outbox table."""
 
-    def __init__(self, role):
+    def __init__(self, record):
         """Initialize OutboxReplicator."""
-        self.role = role
+        self.record = record
+
+    def _record_name(self):
+        """Return record name."""
+        return self.record.name
+
+    def _record_uuid(self):
+        """Return record uuid."""
+        return self.record.uuid
+
+    def _record_class(self):
+        """Return record class."""
+        return self.record.__class__.__name__
 
     def replicate(self, event: ReplicationEvent):
         """Replicate the given event to Kessel Relations via the Outbox."""
@@ -102,7 +116,12 @@ class OutboxReplicator(RelationReplicator):
 
     def _build_replication_event(self, relations_to_add, relations_to_remove):
         """Build replication event."""
-        logger.info("[Dual Write] Build Replication event for role(%s): '%s'", self.role.uuid, self.role.name)
+        logger.info(
+            "[Dual Write] Build Replication event for %s(%s): '%s'",
+            self._record_class(),
+            self._record_uuid(),
+            self._record_name()
+        )
         add_json = []
         for relation in relations_to_add:
             add_json.append(json_format.MessageToDict(relation))
@@ -117,9 +136,18 @@ class OutboxReplicator(RelationReplicator):
     def _save_replication_event(self, payload, event_type, aggregateid):
         """Save replication event."""
         logger.info(
-            "[Dual Write] Save replication event into outbox table for role(%s): '%s'", self.role.uuid, self.role.name
+            "[Dual Write] Save replication event into outbox table for %s(%s): '%s'",
+            self._record_class(),
+            self._record_uuid(),
+            self._record_name()
         )
-        logger.info("[Dual Write] Replication event: %s for role(%s): '%s'", payload, self.role.uuid, self.role.name)
+        logger.info(
+            "[Dual Write] Replication event: %s for %s(%s): '%s'",
+            payload,
+            self._record_class(),
+            self._record_uuid(),
+            self._record_name()
+        )
         # https://debezium.io/documentation/reference/stable/transformations/outbox-event-router.html#basic-outbox-table
         outbox_record = Outbox.objects.create(
             aggregatetype="RelationReplicationEvent",

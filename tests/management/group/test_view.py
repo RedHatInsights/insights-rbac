@@ -35,6 +35,34 @@ from tests.core.test_kafka import copy_call_args
 from tests.identity_request import IdentityRequest
 
 
+def generate_relation_entry(group_uuid, principal_uuid):
+    relation_entry = {"resource": {}}
+
+    relation_entry["resource"]["type"] = {}
+    relation_entry["resource"]["type"]["namespace"] = "rbac"
+    relation_entry["resource"]["type"]["name"] = "group"
+    relation_entry["resource"]["id"] = group_uuid
+
+    relation_entry["relation"] = "member"
+
+    relation_entry["subject"] = {}
+    relation_entry["subject"]["subject"] = {}
+    relation_entry["subject"]["subject"]["type"] = {}
+    relation_entry["subject"]["subject"]["type"]["namespace"] = "rbac"
+    relation_entry["subject"]["subject"]["type"]["name"] = "user"
+    relation_entry["subject"]["subject"]["id"] = principal_uuid
+
+    return relation_entry
+
+
+def generate_replication_event_to_add_principals(group_uuid, principal_uuid):
+    return {"relations_to_add": [generate_relation_entry(group_uuid, principal_uuid)], "relations_to_remove": []}
+
+
+def generate_replication_event_to_remove_principals(group_uuid, principal_uuid):
+    return {"relations_to_add": [], "relations_to_remove": [generate_relation_entry(group_uuid, principal_uuid)]}
+
+
 class GroupViewsetTests(IdentityRequest):
     """Test the group viewset."""
 
@@ -917,11 +945,12 @@ class GroupViewsetTests(IdentityRequest):
         response = client.post(url, test_data, format="json", **self.headers)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
+    @patch("management.role.relation_api_dual_write_handler.OutboxReplicator._save_replication_event")
     @patch(
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
         return_value={"status_code": 200, "data": []},
     )
-    def test_add_group_principal_not_exists(self, mock_request):
+    def test_add_group_principal_not_exists(self, mock_request, mock_method):
         """Test that adding a non-existing principal into existing group causes a 404"""
         url = reverse("group-principals", kwargs={"uuid": self.group.uuid})
         client = APIClient()
@@ -929,13 +958,15 @@ class GroupViewsetTests(IdentityRequest):
 
         response = client.post(url, test_data, format="json", **self.headers)
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertIsNone(mock_method.call_args)
 
+    @patch("management.role.relation_api_dual_write_handler.OutboxReplicator._save_replication_event")
     @patch(
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
         return_value={"status_code": 200, "data": [{"username": "test_add_user"}]},
     )
     @patch("core.kafka.RBACProducer.send_kafka_message")
-    def test_add_group_principals_success(self, send_kafka_message, mock_request):
+    def test_add_group_principals_success(self, send_kafka_message, mock_request, mock_method):
         """Test that adding a principal to a group returns successfully."""
         # Create a group and a cross account user.
         with self.settings(NOTIFICATIONS_ENABLED=True):
@@ -959,6 +990,9 @@ class GroupViewsetTests(IdentityRequest):
             self.assertEqual(len(response.data.get("principals")), 1)
             self.assertEqual(response.data.get("principals")[0], {"username": username})
             self.assertEqual(principal.tenant, self.tenant)
+
+            actual_call_arg = mock_method.call_args[0][0]
+            self.assertEqual(generate_replication_event_to_add_principals(str(test_group.uuid), str(principal.uuid)), actual_call_arg)
 
             send_kafka_message.assert_called_with(
                 settings.NOTIFICATIONS_TOPIC,
@@ -1064,12 +1098,13 @@ class GroupViewsetTests(IdentityRequest):
         self.assertEqual(len(response.data.get("data")), 1)
         self.assertEqual(response.data.get("data")[0].get("username"), "test_user")
 
+    @patch("management.role.relation_api_dual_write_handler.OutboxReplicator._save_replication_event")
     @patch(
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
         return_value={"status_code": 200, "data": [{"username": "test_user"}]},
     )
     @patch("core.kafka.RBACProducer.send_kafka_message")
-    def test_remove_group_principals_success(self, send_kafka_message, mock_request):
+    def test_remove_group_principals_success(self, send_kafka_message, mock_request, mock_method):
         """Test that removing a principal to a group returns successfully."""
         with self.settings(NOTIFICATIONS_ENABLED=True):
             test_user = Principal.objects.create(username="test_user", tenant=self.tenant)
@@ -1107,6 +1142,13 @@ class GroupViewsetTests(IdentityRequest):
                 },
                 ANY,
             )
+
+            actual_call_arg = mock_method.call_args[0][0]
+            self.assertEqual(
+                generate_replication_event_to_remove_principals(str(self.group.uuid), str(test_user.uuid)),
+                actual_call_arg
+            )
+
 
     def test_remove_group_principals_invalid(self):
         """Test that removing a principal returns an error with invalid data format."""
@@ -3580,7 +3622,8 @@ class GroupViewNonAdminTests(IdentityRequest):
         response = client.put(url, request_body, format="json", **self.headers_org_admin)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
-    def test_remove_group_without_User_Access_Admin_fail(self):
+    @patch("management.role.relation_api_dual_write_handler.OutboxReplicator._save_replication_event")
+    def test_remove_group_without_User_Access_Admin_fail(self, mock_method):
         """Test that non org admin without 'User Access administrator' role cannot remove a group."""
         test_group = Group(name="test group", tenant=self.tenant)
         test_group.save()
@@ -3591,7 +3634,7 @@ class GroupViewNonAdminTests(IdentityRequest):
         response = client.delete(url, **self.headers_user_based_principal)
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
         self.assertEqual(response.data.get("errors")[0].get("detail"), self.no_permission_err_message)
-
+        self.assertIsNone(mock_method.call_args)
         response = client.delete(url, **self.headers_service_account_principal)
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
         self.assertEqual(response.data.get("errors")[0].get("detail"), self.no_permission_err_message)
@@ -3834,8 +3877,9 @@ class GroupViewNonAdminTests(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
     @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
+    @patch("management.role.relation_api_dual_write_handler.OutboxReplicator._save_replication_event")
     @patch("management.principal.it_service.ITService.request_service_accounts")
-    def test_add_service_account_principal_in_group_without_User_Access_Admin_fail(self, mock_request):
+    def test_add_service_account_principal_in_group_without_User_Access_Admin_fail(self, mock_request, mock_method):
         """
         Test that non org admin without 'User Access administrator' role cannot add
         service account based principal into a group without 'User Access administrator' role.
@@ -3884,11 +3928,15 @@ class GroupViewNonAdminTests(IdentityRequest):
         response = client.post(url, request_body, format="json", **self.headers_org_admin)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
+        actual_call_arg = mock_method.call_args[0][0]
+        self.assertEqual(generate_replication_event_to_add_principals(str(test_group.uuid), str(sa_principal.uuid)), actual_call_arg)
+
+    @patch("management.role.relation_api_dual_write_handler.OutboxReplicator._save_replication_event")
     @patch(
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
         return_value={"status_code": 200, "data": []},
     )
-    def test_add_user_based_principal_in_group_with_User_Access_Admin_success(self, mock_request):
+    def test_add_user_based_principal_in_group_with_User_Access_Admin_success(self, mock_request, mock_method):
         """
         Test that non org admin with 'User Access administrator' role can add
         user based principal into a group without 'User Access administrator' role.
@@ -3914,13 +3962,18 @@ class GroupViewNonAdminTests(IdentityRequest):
 
         response = client.post(url, request_body, format="json", **self.headers_user_based_principal)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
+        actual_call_arg = mock_method.call_args[0][0]
+        self.assertEqual(generate_replication_event_to_add_principals(
+            str(test_group.uuid), str(test_principal.uuid)), actual_call_arg
+        )
 
         response = client.post(url, request_body, format="json", **self.headers_service_account_principal)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
     @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
+    @patch("management.role.relation_api_dual_write_handler.OutboxReplicator._save_replication_event")
     @patch("management.principal.it_service.ITService.request_service_accounts")
-    def test_add_service_account_principal_in_group_with_User_Access_Admin_success(self, mock_request):
+    def test_add_service_account_principal_in_group_with_User_Access_Admin_success(self, mock_request, mock_method):
         """
         Test that non org admin with 'User Access administrator' role can add
         service account based principal into a group without 'User Access administrator' role.
@@ -3964,6 +4017,12 @@ class GroupViewNonAdminTests(IdentityRequest):
 
         response = client.post(url, request_body, format="json", **self.headers_user_based_principal)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        actual_call_arg = mock_method.call_args[0][0]
+        self.assertEqual(
+            generate_replication_event_to_add_principals(str(test_group.uuid), str(sa_principal.uuid)),
+            actual_call_arg
+        )
 
         response = client.post(url, request_body, format="json", **self.headers_service_account_principal)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -4175,8 +4234,10 @@ class GroupViewNonAdminTests(IdentityRequest):
         response = client.delete(url, format="json", **self.headers_service_account_principal)
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
 
+
+    @patch("management.role.relation_api_dual_write_handler.OutboxReplicator._save_replication_event")
     @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
-    def test_remove_service_account_principal_from_group_with_User_Access_Admin_success(self):
+    def test_remove_service_account_principal_from_group_with_User_Access_Admin_success(self, mock_method):
         """
         Test that non org admin with 'User Access administrator' role can remove
         service account based principal from a group without 'User Access administrator' role.
@@ -4206,6 +4267,12 @@ class GroupViewNonAdminTests(IdentityRequest):
 
         response = client.delete(url, format="json", **self.headers_user_based_principal)
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+
+        actual_call_arg = mock_method.call_args[0][0]
+        self.assertEqual(
+            generate_replication_event_to_remove_principals(str(test_group.uuid), str(sa_principal.uuid)),
+            actual_call_arg
+        )
 
         # Add once removed principal into group
         test_group.principals.add(sa_principal)
