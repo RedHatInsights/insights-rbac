@@ -164,7 +164,7 @@ class DualWriteTestCase(TestCase):
                 )
                 for group_id in for_groups
             ],
-            group_by=lambda perm: (perm.resource_type_namespace, perm.resource_type_name, perm.resource_id),
+            group_by=lambda t: (t.resource_type_namespace, t.resource_type_name, t.resource_id),
             group_filter=lambda group: group[0] == "rbac" and group[1] == "role_binding",
             require_full_match=True,
         )
