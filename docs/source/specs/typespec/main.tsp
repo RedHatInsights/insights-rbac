@@ -103,8 +103,10 @@ namespace Workspaces {
         ...Timestamps;
     }
 
-    model WorkspaceWithAncestry extends Workspace {
-        ancestry: Workspace[];
+    model WorkspaceAncestry {
+        @key uuid: UUID;
+        parent_id?: UUID;
+        name: string;
     }
 
     alias CreateWorkspaceRequest = BasicWorkspace;
@@ -113,8 +115,12 @@ namespace Workspaces {
         @statusCode _: 201;
     }
 
-    model ReadWorkspaceResponse extends WorkspaceWithAncestry{
+    model ReadWorkspaceResponse extends Workspace {
         @statusCode _: 200;
+    }
+
+    model ReadWorkspaceWithAncestryResponse extends ReadWorkspaceResponse {
+        ancestry: WorkspaceAncestry[];
     }
 
     model UpdateWorkspaceRequest {
@@ -209,7 +215,10 @@ namespace Workspaces {
     @get op read(
         @doc("Unique identification")
         @path uuid: UUID;
-    ): ReadWorkspaceResponse | Problems.CommonProblems | Problems.Problem404;
+
+        @doc("When true, the response will include the ancestry of the workspace.")
+        @query include_ancestry?: boolean;
+    ): ReadWorkspaceResponse | ReadWorkspaceWithAncestryResponse | Problems.CommonProblems | Problems.Problem404;
 
     @doc("Edit a workspace")
     @summary("Edit the workspace name or description")

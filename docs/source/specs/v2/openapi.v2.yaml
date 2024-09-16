@@ -150,13 +150,21 @@ paths:
           description: Unique identification
           schema:
             $ref: '#/components/schemas/UUID'
+        - name: include_ancestry
+          in: query
+          required: false
+          description: When true, the response will include the ancestry of the workspace.
+          schema:
+            type: boolean
       responses:
         '200':
           description: The request has succeeded.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Workspaces.ReadWorkspaceResponse'
+                anyOf:
+                  - $ref: '#/components/schemas/Workspaces.ReadWorkspaceResponse'
+                  - $ref: '#/components/schemas/Workspaces.ReadWorkspaceWithAncestryResponse'
         '401':
           description: Access is unauthorized.
           content:
@@ -703,7 +711,18 @@ components:
     Workspaces.ReadWorkspaceResponse:
       type: object
       allOf:
-        - $ref: '#/components/schemas/Workspaces.WorkspaceWithAncestry'
+        - $ref: '#/components/schemas/Workspaces.Workspace'
+    Workspaces.ReadWorkspaceWithAncestryResponse:
+      type: object
+      required:
+        - ancestry
+      properties:
+        ancestry:
+          type: array
+          items:
+            $ref: '#/components/schemas/Workspaces.WorkspaceAncestry'
+      allOf:
+        - $ref: '#/components/schemas/Workspaces.ReadWorkspaceResponse'
     Workspaces.UpdateWorkspaceRequest:
       type: object
       required:
@@ -749,6 +768,18 @@ components:
           type: string
           format: date-time
           description: 2019-01-21T17:32:28Z
+    Workspaces.WorkspaceAncestry:
+      type: object
+      required:
+        - uuid
+        - name
+      properties:
+        uuid:
+          $ref: '#/components/schemas/UUID'
+        parent_id:
+          $ref: '#/components/schemas/UUID'
+        name:
+          type: string
     Workspaces.WorkspaceListResponse:
       type: object
       required:
@@ -769,17 +800,6 @@ components:
           items:
             $ref: '#/components/schemas/Workspaces.Workspace'
           description: List of workspaces
-    Workspaces.WorkspaceWithAncestry:
-      type: object
-      required:
-        - ancestry
-      properties:
-        ancestry:
-          type: array
-          items:
-            $ref: '#/components/schemas/Workspaces.Workspace'
-      allOf:
-        - $ref: '#/components/schemas/Workspaces.Workspace'
 servers:
   - url: https://console.redhat.com/{basePath}
     description: Production Server
