@@ -78,17 +78,31 @@ class DualWriteTestCase(TestCase):
         role = self.fixture.new_custom_role(
             name=name,
             tenant=self.tenant,
-            resource_access=[
-                (default, {}),
-                *[
-                    (permissions, {"key": "group.id", "operation": "equal", "value": workspace})
-                    for workspace, permissions in kwargs.items()
-                ],
-            ],
+            resource_access=self._workspace_access_to_resource_definition(default, **kwargs),
         )
         dual_write = self.dual_write_handler(role, ReplicationEventType.CREATE_CUSTOM_ROLE)
         dual_write.replicate_new_or_updated_role(role)
         return role
+
+    def given_update_to_v1_role(self, role: Role, default: list[str], **kwargs: list[str]):
+        """Update the given role with the given workspace permissions."""
+        dual_write = self.dual_write_handler(role, ReplicationEventType.UPDATE_CUSTOM_ROLE)
+        dual_write.load_relations_from_current_state_of_role()
+        role = self.fixture.update_custom_role(
+            role,
+            resource_access=self._workspace_access_to_resource_definition(default, **kwargs),
+        )
+        dual_write.replicate_new_or_updated_role(role)
+        return role
+
+    def _workspace_access_to_resource_definition(self, default: list[str], **kwargs: list[str]):
+        return [
+            (default, {}),
+            *[
+                (permissions, {"key": "group.id", "operation": "equal", "value": workspace})
+                for workspace, permissions in kwargs.items()
+            ],
+        ]
 
     def given_group(self, name: str, users: list[str]) -> Group:
         """Create a new group with the given name and users."""
@@ -219,7 +233,28 @@ class DualWriteCustomRolesTestCase(DualWriteTestCase):
 
     def test_add_permissions_to_role(self):
         """Modify the role in place when adding permissions."""
-        pass
+        role = self.given_v1_role(
+            "r1",
+            default=["app1:hosts:read", "inventory:hosts:write"],
+            ws_2=["app1:hosts:read", "inventory:hosts:write"],
+        )
+
+        self.given_update_to_v1_role(
+            role,
+            default=["app1:hosts:read", "inventory:hosts:write"],
+            ws_2=["app1:hosts:read", "inventory:hosts:write", "app2:hosts:read"],
+        )
+
+        role_for_default = self.expect_1_v2_role_with_permissions(["app1:hosts:read", "inventory:hosts:write"])
+        role_for_ws_2 = self.expect_1_v2_role_with_permissions(
+            ["app1:hosts:read", "inventory:hosts:write", "app2:hosts:read"]
+        )
+
+        # TODO: assert group once group replication is implemented
+        self.expect_1_role_binding_to_workspace(
+            self.default_workspace(), for_v2_roles=[role_for_default], for_groups=[]
+        )
+        self.expect_1_role_binding_to_workspace("ws_2", for_v2_roles=[role_for_ws_2], for_groups=[])
 
     def test_remove_permissions_from_role(self):
         """Modify the role in place when removing permissions."""
@@ -272,14 +307,23 @@ class RbacFixture:
 
         [resource_access] is a list of tuples of the form (permissions, attribute_filter).
         """
-        role = Role.objects.create(name=name, system=True, tenant=tenant)
+        role = Role.objects.create(name=name, system=False, tenant=tenant)
+        return self.update_custom_role(role, resource_access)
+
+    def update_custom_role(self, role: Role, resource_access: list[tuple[list[str], dict]]) -> Role:
+        """
+        Update a custom role.
+
+        [resource_access] is a list of tuples of the form (permissions, attribute_filter).
+        """
+        role.access.all().delete()
 
         for permissions, attribute_filter in resource_access:
             access_list = [
                 Access(
-                    permission=Permission.objects.get_or_create(permission=permission, tenant=tenant)[0],
+                    permission=Permission.objects.get_or_create(permission=permission, tenant=role.tenant)[0],
                     role=role,
-                    tenant=tenant,
+                    tenant=role.tenant,
                 )
                 for permission in permissions
             ]
@@ -288,7 +332,9 @@ class RbacFixture:
 
             if attribute_filter:
                 for access in access_list:
-                    ResourceDefinition.objects.create(attributeFilter=attribute_filter, access=access, tenant=tenant)
+                    ResourceDefinition.objects.create(
+                        attributeFilter=attribute_filter, access=access, tenant=role.tenant
+                    )
 
         return role
 
