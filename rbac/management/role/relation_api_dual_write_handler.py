@@ -85,7 +85,7 @@ class RelationReplicator(ABC):
         pass
 
 
-class OutboxReplicater(RelationReplicator):
+class OutboxReplicator(RelationReplicator):
     """Replicates relations via the outbox table."""
 
     def __init__(self, role):
@@ -145,7 +145,7 @@ class RelationApiDualWriteHandler:
             self._replicator = NoopReplicator()
             return
         try:
-            self._replicator = replicator if replicator else OutboxReplicater(role)
+            self._replicator = replicator if replicator else OutboxReplicator(role)
             self.role_relations: list[common_pb2.Relationship] = []
             self.current_role_relations: list[common_pb2.Relationship] = []
             self.role = role
