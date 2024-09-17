@@ -196,12 +196,17 @@ class RelationApiDualWriteHandler:
             return
         self.role = role
         self._generate_relations_and_mappings_for_role()
-        self.replicate_deleted_role()
+        self._replicate()
 
     def replicate_deleted_role(self):
-        """Generate and store replication event to outbox table."""
+        """Replicate removal of current role state."""
         if not self.replication_enabled():
-            return {}
+            return
+        self._replicate()
+
+    def _replicate(self):
+        if not self.replication_enabled():
+            return
         try:
             self._replicator.replicate(
                 ReplicationEvent(
