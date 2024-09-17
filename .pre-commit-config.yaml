@@ -9,7 +9,7 @@ repos:
     pass_filenames: false
     require_serial: true
 - repo: https://github.com/psf/black
-  rev: 22.3.0
+  rev: 24.8.0
   hooks:
   - id: black
     args: ["--check", "-l", "119", "-t", "py39", "rbac", "tests", "--diff"]
