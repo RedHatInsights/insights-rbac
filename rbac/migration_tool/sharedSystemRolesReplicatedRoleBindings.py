@@ -18,19 +18,16 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 import json
 import logging
 import uuid
-from typing import Callable, FrozenSet, Optional, Tuple, Type
+from typing import Any, Iterable, Optional, Tuple, Union
 
 from django.conf import settings
 from management.models import BindingMapping
+from management.permission.model import Permission
 from management.role.model import Role
 from migration_tool.ingest import add_element
 from migration_tool.models import (
-    V1group,
-    V1permission,
     V1resourcedef,
-    V1role,
     V2boundresource,
-    V2group,
     V2role,
     V2rolebinding,
     cleanNameForV2SchemaCompatibility,
@@ -38,15 +35,7 @@ from migration_tool.models import (
 
 logger = logging.getLogger(__name__)
 
-Permissiongroupings = dict[V2boundresource, list[str]]
-Perm_bound_resources = dict[str, list[V2boundresource]]
-
-group_perms_for_rolebinding_fn = Type[
-    Callable[
-        [str, Permissiongroupings, Perm_bound_resources, FrozenSet[V1group]],
-        FrozenSet[V2rolebinding],
-    ]
-]
+PermissionGroupings = dict[V2boundresource, set[str]]
 
 
 def add_system_role(system_roles, role: V2role):
@@ -93,150 +82,116 @@ class SystemRole:
 
 
 def v1_role_to_v2_bindings(
-    v1_role: V1role,
+    v1_role: Role,
     default_workspace: str,
-    binding_mapping: Optional[BindingMapping],
-) -> FrozenSet[V2rolebinding]:
+    role_bindings: Iterable[BindingMapping],
+) -> list[BindingMapping]:
     """Convert a V1 role to a set of V2 role bindings."""
-    perm_groupings: Permissiongroupings = {}
+    perm_groupings: PermissionGroupings = {}
+
     # Group V2 permissions by target resource
-    for v1_perm in v1_role.permissions:
+    for access in v1_role.access.all():
+        v1_perm = access.permission
+
         if not is_for_enabled_app(v1_perm):
             continue
+
         v2_perm = v1_perm_to_v2_perm(v1_perm)
-        if v1_perm.resourceDefs:
+
+        default = True
+        for resource_def in access.resourceDefinitions.all():
             if not is_for_enabled_resource(v1_perm):
+                default = False
                 continue
-            for resource_def in v1_perm.resourceDefs:
-                resource_type = attribute_key_to_v2_related_resource_type(resource_def.resource_type)
-                if resource_type is None:
-                    # Resource type not mapped to v2
+
+            default = False
+            attri_filter = resource_def.attributeFilter
+
+            # Deal with some malformed data in db
+            if attri_filter["operation"] == "in":
+                if not isinstance(attri_filter["value"], list):
+                    # Override operation as "equal" if value is not a list
+                    attri_filter["operation"] = "equal"
+                elif attri_filter["value"] == [] or attri_filter["value"] == [None]:
+                    # Skip empty values
                     continue
-                for resource_id in split_resourcedef_literal(resource_def):
-                    if resource_id is None:
-                        raise ValueError(f"Resource ID is None for {resource_def}")
-                    add_element(
-                        perm_groupings,
-                        V2boundresource(resource_type, resource_id),
-                        v2_perm,
-                    )
-        elif default_workspace is None:
-            logger.info(f"Cannot create role binding for role; no resource to bind to: {v1_role.id}")
-        else:
+
+            resource_type = attribute_key_to_v2_related_resource_type(attri_filter["key"])
+            if resource_type is None:
+                # Resource type not mapped to v2
+                continue
+            for resource_id in values_from_attribute_filter(attri_filter):
+                # TODO: Need to bind against "ungrouped hosts" for inventory
+                if resource_id is None:
+                    raise ValueError(f"Resource ID is None for {resource_def}")
+                add_element(perm_groupings, V2boundresource(resource_type, resource_id), v2_perm, collection=set)
+        if default:
             add_element(
-                perm_groupings,
-                V2boundresource(("rbac", "workspace"), default_workspace),
-                v2_perm,
+                perm_groupings, V2boundresource(("rbac", "workspace"), default_workspace), v2_perm, collection=set
             )
+
     # Project permission sets to roles per set of resources
-    resource_roles = permission_groupings_to_v2_role_and_resource(perm_groupings, v1_role, binding_mapping)
-    # Construct rolebindings for each resource
-    v2_role_bindings: list[V2rolebinding] = []
-    v2_groups = v1groups_to_v2groups(v1_role.groups)
-    for role, resources in resource_roles.items():
-        for resource in resources:
-            if v2_groups:
-                for v2_group in v2_groups:
-                    if binding_mapping:
-                        role_binding_id = binding_mapping.find_role_binding_by_v2_role(role.id)
-                    else:
-                        role_binding_id = str(uuid.uuid4())
-                    v2_role_binding = V2rolebinding(
-                        role_binding_id, v1_role, role, frozenset({resource}), frozenset({v2_group})
-                    )
-                    v2_role_bindings.append(v2_role_binding)
-            else:
-                if binding_mapping:
-                    role_binding_id = binding_mapping.find_role_binding_by_v2_role(role.id)
-                else:
-                    role_binding_id = str(uuid.uuid4())
-                v2_role_binding = V2rolebinding(role_binding_id, v1_role, role, frozenset({resource}), v2_groups)
-                v2_role_bindings.append(v2_role_binding)
-    return frozenset(v2_role_bindings)
+    return permission_groupings_to_v2_role_bindings(perm_groupings, v1_role, role_bindings)
 
 
-custom_roles_created = 0
+def permission_groupings_to_v2_role_bindings(
+    perm_groupings: PermissionGroupings, v1_role: Role, role_bindings: Iterable[BindingMapping]
+) -> list[BindingMapping]:
+    """Determine updated role bindings based on latest resource-permission state and current role bindings."""
+    updated_mappings: list[BindingMapping] = []
+    latest_roles_by_id: dict[str, V2role] = {}
+    # TODO: this is broken for system roles, need to have Tenant or Policies provided
+    # so that we don't look up Policies across all Tenants!
+    latest_groups = frozenset([str(policy.group.uuid) for policy in v1_role.policies.all()])
 
-
-def permission_groupings_to_v2_role_and_resource(
-    perm_groupings: Permissiongroupings, v1_role: V1role, binding_mapping: Optional[BindingMapping]
-) -> dict[V2role, list[V2boundresource]]:
-    """
-    Determine V2 roles and resources they apply to from a set of V1 resources and permissions.
-
-    Prefers to reuse system roles where possible.
-    """
-    candidate_system_roles = {}
-    resource_roles: dict[V2role, list[V2boundresource]] = {}
-    system_roles = SystemRole.get_system_roles()
+    role_bindings_by_resource = {binding.get_role_binding().resource: binding for binding in role_bindings}
 
     for resource, permissions in perm_groupings.items():
-        system_role = system_roles.get(frozenset(permissions))
-        if system_role is not None:
-            role = system_roles[frozenset(permissions)]
-            add_element(resource_roles, role, resource)
-        else:
-            permset = set(permissions)
-            granted = set()
-            matched_roles = []
+        mapping = role_bindings_by_resource.get(resource)
+        current = mapping.get_role_binding() if mapping is not None else None
+        perm_set = frozenset(permissions)
+        new_role: Optional[V2role] = None
 
-            for sysperms, sysrole in system_roles.items():
-                if sysperms.issubset(permset) and not sysperms.issubset(
-                    granted
-                ):  # If all permissions on the role should be granted but not all of them have been, add it
-                    matched_roles.append(sysrole)
-                    granted |= sysperms
+        # Try to find an updated Role that matches (could be our current Role)
+        for _, role in latest_roles_by_id.items():
+            if role.permissions == perm_set:
+                new_role = role
+                break
 
-                if permset == granted:
-                    break
-            if permset == granted:
-                for role in matched_roles:
-                    add_element(resource_roles, role, resource)
+        if new_role is None:
+            # No updated Role matches. We need a new or reconfigured Role.
+            # Is there a current role? Should update it? Only if it wasn't already updated.
+            if current is not None and current.role.id not in latest_roles_by_id:
+                new_role = V2role(current.role.id, False, perm_set)
             else:
-                # Track leftovers and add a custom role
-                leftovers = permset - granted
-                logger.info(
-                    f"No system role for role: {v1_role.id}. Not matched permissions: {leftovers}. Resource: {resource}"
-                )
-                # Track possible missing system roles
-                # Get applications with unmatched permissions
-                apps = {}
-                for perm in leftovers:
-                    app = perm.split("_", 1)[0]  # Hack since we don't have the V1 data anymore by this point
-                    if app not in apps:
-                        apps[app] = []
-                # Get original permissions granted on this resource grouped by application,
-                # for applications with unmatched permissions
-                for perm in permissions:
-                    app = perm.split("_", 1)[0]  # Hack since we don't have the V1 data anymore by this point
-                    if app in apps:
-                        apps[app].append(perm)
-                # Increment counts for each distinct set of permissions
+                # Need to create a new role
+                id = str(uuid.uuid4())
+                new_role = V2role(id, False, perm_set)
+            latest_roles_by_id[new_role.id] = new_role
 
-                for app, perms in apps.items():
-                    candidate = frozenset(perms)
-                    if candidate in candidate_system_roles:
-                        candidate_system_roles[candidate].add(v1_role.id)
-                    else:
-                        candidate_system_roles[candidate] = {v1_role.id}
-                # Add a custom role
-                if binding_mapping:
-                    v2_uuid = binding_mapping.find_v2_role_by_permission(permissions)
-                else:
-                    v2_uuid = uuid.uuid4()
+        # Add the role binding, updating or creating as needed.
+        if mapping is None:
+            # No existing binding for this resource, have to create one
+            id = str(uuid.uuid4())
+            binding = V2rolebinding(id, new_role, resource, latest_groups)
+            updated_mapping = BindingMapping.for_role_binding(binding, v1_role)
+        else:
+            # Reuse current binding ID and mapping ID
+            binding = V2rolebinding(current.id, new_role, resource, latest_groups)
+            updated_mapping = mapping
+            updated_mapping.update_mappings_from_role_binding(binding)
 
-                add_element(resource_roles, V2role(str(v2_uuid), False, frozenset(permissions)), resource)
-                global custom_roles_created
-                custom_roles_created += 1
-    return resource_roles
+        updated_mappings.append(updated_mapping)
+
+    return updated_mappings
 
 
-def is_for_enabled_app(perm: V1permission):
+def is_for_enabled_app(perm: Permission):
     """Return true if the permission is for an app that should migrate."""
-    return perm.app not in settings.V2_MIGRATION_APP_EXCLUDE_LIST
+    return perm.application not in settings.V2_MIGRATION_APP_EXCLUDE_LIST
 
 
-def is_for_enabled_resource(perm: V1permission):
+def is_for_enabled_resource(perm: Permission):
     """
     Return true if the resource is for an app that should migrate.
 
@@ -247,33 +202,26 @@ def is_for_enabled_resource(perm: V1permission):
     Once the resource model is finalized, we should no longer exclude that app, and should instead update
     the migration code to account for migrating those resources in whatever form they should migrate.
     """
-    return perm.app not in settings.V2_MIGRATION_RESOURCE_APP_EXCLUDE_LIST
+    return perm.application not in settings.V2_MIGRATION_RESOURCE_APP_EXCLUDE_LIST
 
 
-def split_resourcedef_literal(resourceDef: V1resourcedef):
+def values_from_attribute_filter(attribute_filter: dict[str, Any]) -> list[str]:
     """Split a resource definition into a list of resource IDs."""
-    if resourceDef.op == "in":
-        try:
-            return json.loads(resourceDef.resource_id)  # Most are JSON arrays
-        except json.JSONDecodeError:
-            return resourceDef.resource_id.split(
-                ","
-            )  # If not JSON, assume comma-separated? Cost Management openshift assets are like this.
-    else:
-        return [json.loads(resourceDef.resource_id)]
+    op: str = attribute_filter["operation"]
+    resource_id: Union[list[str], str] = attribute_filter["value"]
+
+    if isinstance(resource_id, list):
+        return resource_id
+
+    return resource_id.split(",") if op == "in" else [resource_id]
 
 
-def v1groups_to_v2groups(v1groups: FrozenSet[V1group]):
-    """Convert a set of V1 groups to a set of V2 groups."""
-    return frozenset([V2group(v1group.id, v1group.users) for v1group in v1groups])
-
-
-def v1_perm_to_v2_perm(v1_permission):
+def v1_perm_to_v2_perm(v1_permission: Permission):
     """Convert a V1 permission to a V2 permission."""
-    if v1_permission.app == "inventory" and v1_permission.resource == "groups":
-        return cleanNameForV2SchemaCompatibility(f"workspace_{v1_permission.perm}")
+    if v1_permission.application == "inventory" and v1_permission.resource_type == "groups":
+        return cleanNameForV2SchemaCompatibility(f"workspace_{v1_permission.verb}")
     return cleanNameForV2SchemaCompatibility(
-        v1_permission.app + "_" + v1_permission.resource + "_" + v1_permission.perm
+        v1_permission.application + "_" + v1_permission.resource_type + "_" + v1_permission.verb
     )
 
 

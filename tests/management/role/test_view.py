@@ -68,26 +68,22 @@ def replication_event_for_v1_role(v1_role_uuid, default_workspace_uuid):
 def relation_api_tuples_for_v1_role(v1_role_uuid, default_workspace_uuid):
     """Create a relation API tuple for a v1 role."""
     role_id = Role.objects.get(uuid=v1_role_uuid).id
-    role_binding = BindingMapping.objects.filter(role=role_id).first()
+    mappings = BindingMapping.objects.filter(role=role_id).all()
     relations = []
-    for role_binding_uuid, data in role_binding.mappings.items():
-        relation_tuple = relation_api_tuple(
-            "role_binding", str(role_binding_uuid), "granted", "role", str(data["v2_role_uuid"])
-        )
+    for role_binding in [m.get_role_binding() for m in mappings]:
+        relation_tuple = relation_api_tuple("role_binding", role_binding.id, "granted", "role", role_binding.role.id)
         relations.append(relation_tuple)
 
-        for permission in data["permissions"]:
-            relation_tuple = relation_api_tuple("role", str(data["v2_role_uuid"]), permission, "user", "*")
+        for permission in role_binding.role.permissions:
+            relation_tuple = relation_api_tuple("role", role_binding.role.id, permission, "user", "*")
             relations.append(relation_tuple)
-        if "app_all_read" in data["permissions"]:
+        if "app_all_read" in role_binding.role.permissions:
             relation_tuple = relation_api_tuple(
-                "workspace", default_workspace_uuid, "user_grant", "role_binding", str(role_binding_uuid)
+                "workspace", default_workspace_uuid, "user_grant", "role_binding", role_binding.id
             )
             relations.append(relation_tuple)
         else:
-            relation_tuple = relation_api_tuple(
-                "keya/id", "valueA", "user_grant", "role_binding", str(role_binding_uuid)
-            )
+            relation_tuple = relation_api_tuple("keya/id", "valueA", "user_grant", "role_binding", role_binding.id)
             relations.append(relation_tuple)
     return relations
 
@@ -120,7 +116,6 @@ class RoleViewsetTests(IdentityRequest):
     def setUp(self):
         """Set up the role viewset tests."""
         super().setUp()
-        self.maxDiff = None
         sys_role_config = {"name": "system_role", "display_name": "system_display", "system": True}
 
         def_role_config = {"name": "default_role", "display_name": "default_display", "platform_default": True}
@@ -382,7 +377,7 @@ class RoleViewsetTests(IdentityRequest):
         )
 
         role = find_in_list(to_add, lambda r: r["resource"]["type"]["name"] == "role")
-
+        
         self.assertEquals(role["relation"], "app_all_read", "expected workspace permission")
 
     @patch("management.role.relation_api_dual_write_handler.OutboxReplicator._save_replication_event")

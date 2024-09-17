@@ -18,12 +18,15 @@ class Migration(migrations.Migration):
                 ("mappings", models.JSONField(default=dict)),
                 (
                     "role",
-                    models.OneToOneField(
+                    models.ForeignKey(
                         on_delete=django.db.models.deletion.CASCADE,
-                        related_name="binding_mapping",
+                        related_name="binding_mappings",
                         to="management.role",
                     ),
                 ),
+                ("resource_id", models.CharField(max_length=256, null=False)),
+                ("resource_type_name", models.CharField(max_length=256, null=False)),
+                ("resource_type_namespace", models.CharField(max_length=256, null=False)),
             ],
         ),
     ]

@@ -489,7 +489,7 @@ class RoleViewSet(
             dual_write_handler = RelationApiDualWriteHandler(
                 serializer.instance, ReplicationEventType.UPDATE_CUSTOM_ROLE
             )
-            dual_write_handler.load_relations_from_current_state_of_role()
+            dual_write_handler.prepare_for_update()
 
         role = serializer.save()
 
@@ -513,7 +513,7 @@ class RoleViewSet(
             raise serializers.ValidationError(error)
 
         dual_write_handler = RelationApiDualWriteHandler(instance, ReplicationEventType.DELETE_CUSTOM_ROLE)
-        dual_write_handler.load_relations_from_current_state_of_role()
+        dual_write_handler.prepare_for_update()
 
         self.delete_policies_if_no_role_attached(instance)
         instance.delete()

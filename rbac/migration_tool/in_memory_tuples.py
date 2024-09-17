@@ -1,7 +1,7 @@
 """This module contains the in-memory representation of a tuple store."""
 
-from typing import Callable, Hashable, Iterable, List, NamedTuple, Optional, Set, Tuple, TypeVar
-from collections import namedtuple, defaultdict
+from collections import defaultdict
+from typing import Callable, Hashable, Iterable, List, NamedTuple, Set, Tuple, TypeVar
 
 from kessel.relations.v1beta1.common_pb2 import Relationship
 from management.role.relation_api_dual_write_handler import RelationReplicator
@@ -54,10 +54,10 @@ class InMemoryTuples:
 
     def write(self, add: Iterable[Relationship], remove: Iterable[Relationship]):
         """Add / remove tuples."""
-        for tuple in add:
-            self.add(tuple)
         for tuple in remove:
             self.remove(tuple)
+        for tuple in add:
+            self.add(tuple)
 
     def find_tuples(self, predicate: Callable[[RelationTuple], bool]) -> List[RelationTuple]:
         """Find tuples matching the given predicate."""
@@ -194,7 +194,6 @@ def all_of(*predicates: Callable[[RelationTuple], bool]) -> Callable[[RelationTu
 
 def one_of(*predicates: Callable[[RelationTuple], bool]) -> Callable[[RelationTuple], bool]:
     """Return a predicate that is true if any of the given predicates are true."""
-
     if len(predicates) == 1:
         return predicates[0]
 

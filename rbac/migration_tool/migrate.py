@@ -16,7 +16,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 
 import logging
-from typing import Any, FrozenSet, Optional
+from typing import Iterable
 
 from django.conf import settings
 from kessel.relations.v1beta1 import common_pb2
@@ -26,24 +26,17 @@ from migration_tool.sharedSystemRolesReplicatedRoleBindings import v1_role_to_v2
 from migration_tool.utils import create_relationship, output_relationships
 
 from api.models import Tenant
-from .ingest import aggregate_v1_role
 
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
-BindingMappings = dict[str, dict[str, Any]]
-
 
 def get_kessel_relation_tuples(
-    v2_role_bindings: FrozenSet[V2rolebinding],
+    v2_role_bindings: Iterable[V2rolebinding],
     default_workspace: str,
-) -> tuple[list[common_pb2.Relationship], BindingMappings]:
+) -> list[common_pb2.Relationship]:
     """Generate a set of relationships and BindingMappings for the given set of v2 role bindings."""
     relationships: list[common_pb2.Relationship] = list()
-
-    # Dictionary of v2 role binding ID to v2 role UUID and its permissions
-    # for the given v1 role.
-    binding_mappings: BindingMappings = {}
 
     for v2_role_binding in v2_role_bindings:
         relationships.append(
@@ -52,16 +45,6 @@ def get_kessel_relation_tuples(
             )
         )
 
-        v2_role_data = v2_role_binding.role
-
-        if binding_mappings.get(v2_role_binding.id) is None:
-            binding_mappings[v2_role_binding.id] = {}
-
-        binding_mappings[v2_role_binding.id] = {
-            "v2_role_uuid": str(v2_role_data.id),
-            "permissions": list(v2_role_binding.role.permissions),
-        }
-
         for perm in v2_role_binding.role.permissions:
             relationships.append(
                 create_relationship(("rbac", "role"), v2_role_binding.role.id, ("rbac", "user"), "*", perm)
@@ -69,66 +52,63 @@ def get_kessel_relation_tuples(
         for group in v2_role_binding.groups:
             # These might be duplicate but it is OK, spiceDB will handle duplication through touch
             relationships.append(
-                create_relationship(
-                    ("rbac", "role_binding"), v2_role_binding.id, ("rbac", "group"), group.id, "subject"
-                )
+                create_relationship(("rbac", "role_binding"), v2_role_binding.id, ("rbac", "group"), group, "subject")
             )
 
-        for bound_resource in v2_role_binding.resources:
-            # Is this a workspace binding, but not to the root workspace?
-            # If so, ensure this workspace is a child of the root workspace.
-            # All other resource-resource or resource-workspace relations
-            # which may be implied or necessary are intentionally ignored.
-            # These should come from the apps that own the resource.
-            if (
-                bound_resource.resource_type == ("rbac", "workspace")
-                and not bound_resource.resourceId == default_workspace
-            ):
-                # This is not strictly necessary here and the relation may be a duplicate.
-                # Once we have more Workspace API / Inventory Group migration progress,
-                # this block can and probably should be removed.
-                # One of those APIs will add it themselves.
-                relationships.append(
-                    create_relationship(
-                        bound_resource.resource_type,
-                        bound_resource.resourceId,
-                        ("rbac", "workspace"),
-                        default_workspace,
-                        "parent",
-                    )
-                )
+        bound_resource = v2_role_binding.resource
 
+        # Is this a workspace binding, but not to the root workspace?
+        # If so, ensure this workspace is a child of the root workspace.
+        # All other resource-resource or resource-workspace relations
+        # which may be implied or necessary are intentionally ignored.
+        # These should come from the apps that own the resource.
+        if (
+            bound_resource.resource_type == ("rbac", "workspace")
+            and not bound_resource.resource_id == default_workspace
+        ):
+            # This is not strictly necessary here and the relation may be a duplicate.
+            # Once we have more Workspace API / Inventory Group migration progress,
+            # this block can and probably should be removed.
+            # One of those APIs will add it themselves.
             relationships.append(
                 create_relationship(
                     bound_resource.resource_type,
-                    bound_resource.resourceId,
-                    ("rbac", "role_binding"),
-                    v2_role_binding.id,
-                    "user_grant",
+                    bound_resource.resource_id,
+                    ("rbac", "workspace"),
+                    default_workspace,
+                    "parent",
                 )
             )
 
-    return relationships, binding_mappings
+        relationships.append(
+            create_relationship(
+                bound_resource.resource_type,
+                bound_resource.resource_id,
+                ("rbac", "role_binding"),
+                v2_role_binding.id,
+                "user_grant",
+            )
+        )
+
+    return relationships
 
 
 def migrate_role(
     role: Role,
     write_relationships: bool,
     default_workspace: str,
-    current_mapping: Optional[BindingMapping] = None,
-) -> tuple[list[common_pb2.Relationship], BindingMappings]:
+    current_bindings: Iterable[BindingMapping] = [],
+) -> tuple[list[common_pb2.Relationship], list[BindingMapping]]:
     """
     Migrate a role from v1 to v2, returning the tuples and mappings.
 
     The mappings are returned so that we can reconstitute the corresponding tuples for a given role.
     This is needed so we can remove those tuples when the role changes if needed.
     """
-    v1_role = aggregate_v1_role(role)
-    # This is where we wire in the implementation we're using into the Migrator
-    v2_role_bindings = [binding for binding in v1_role_to_v2_bindings(v1_role, default_workspace, current_mapping)]
-    relationships, mappings = get_kessel_relation_tuples(frozenset(v2_role_bindings), default_workspace)
+    v2_role_bindings = v1_role_to_v2_bindings(role, default_workspace, current_bindings)
+    relationships = get_kessel_relation_tuples([m.get_role_binding() for m in v2_role_bindings], default_workspace)
     output_relationships(relationships, write_relationships)
-    return relationships, mappings
+    return relationships, v2_role_bindings
 
 
 def migrate_workspace(tenant: Tenant, write_relationships: bool):
@@ -194,13 +174,13 @@ def migrate_data_for_tenant(tenant: Tenant, exclude_apps: list, write_relationsh
 
         _, mappings = migrate_role(role, write_relationships, default_workspace)
 
-        # Insert is forced with `create` in order to prevent this from
+        # Conflits are not ignored in order to prevent this from
         # accidentally running concurrently with dual-writes.
         # If migration should be rerun, then the bindings table should be dropped.
-        # If changing this to update_or_create,
+        # If changing this to allow updates,
         # always ensure writes are paused before running.
-        # Thus must always be the case, but `create` will at least start failing you if you forget.
-        BindingMapping.objects.create(role=role, mappings=mappings)
+        # This must always be the case, but this should at least start failing you if you forget.
+        BindingMapping.objects.bulk_create(mappings, ignore_conflicts=False)
 
         logger.info(f"Migration completed for role: {role.name} with UUID {role.uuid}.")
     logger.info(f"Migrated {roles.count()} roles for tenant: {tenant.org_id}")
