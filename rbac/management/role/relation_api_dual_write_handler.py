@@ -22,11 +22,11 @@ from enum import Enum
 from typing import Optional
 
 from django.conf import settings
+from google.protobuf import json_format
 from kessel.relations.v1beta1 import common_pb2
 from management.models import Outbox
 from management.role.model import BindingMapping
 from migration_tool.migrate import migrate_role
-from migration_tool.utils import relationship_to_json
 
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
@@ -57,7 +57,7 @@ class ReplicationEventType(str, Enum):
 class ReplicationEvent:
     """What tuples changes to replicate."""
 
-    type: ReplicationEventType
+    event_type: ReplicationEventType
     partition_key: str
     add: list[common_pb2.Relationship]
     remove: list[common_pb2.Relationship]
@@ -71,7 +71,7 @@ class ReplicationEvent:
     ):
         """Initialize ReplicationEvent."""
         self.partition_key = partition_key
-        self.type = type
+        self.event_type = type
         self.add = add
         self.remove = remove
 
@@ -89,24 +89,24 @@ class OutboxReplicator(RelationReplicator):
     """Replicates relations via the outbox table."""
 
     def __init__(self, role):
-        """Initialize OutboxReplicater."""
+        """Initialize OutboxReplicator."""
         self.role = role
 
     def replicate(self, event: ReplicationEvent):
         """Replicate the given event to Kessel Relations via the Outbox."""
         payload = self._build_replication_event(event.add, event.remove)
-        self._save_replication_event(payload, event.type, event.partition_key)
+        self._save_replication_event(payload, event.event_type, event.partition_key)
 
     def _build_replication_event(self, relations_to_add, relations_to_remove):
         """Build replication event."""
         logger.info("[Dual Write] Build Replication event for role(%s): '%s'", self.role.uuid, self.role.name)
         add_json = []
         for relation in relations_to_add:
-            add_json.append(relationship_to_json(relation))
+            add_json.append(json_format.MessageToDict(relation))
 
         remove_json = []
         for relation in relations_to_remove:
-            remove_json.append(relationship_to_json(relation))
+            remove_json.append(json_format.MessageToDict(relation))
 
         replication_event = {"relations_to_add": add_json, "relations_to_remove": remove_json}
         return replication_event
