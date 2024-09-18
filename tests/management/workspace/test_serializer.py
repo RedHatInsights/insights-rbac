@@ -83,6 +83,8 @@ class WorkspaceSerializerTest(TestCase):
             "name": self.child.name,
             "description": self.child.description,
             "parent_id": str(self.parent.uuid),
+            "created": self._format_timestamps(self.child.created),
+            "modified": self._format_timestamps(self.child.modified),
             "ancestry": [{"name": self.parent.name, "uuid": str(self.parent.uuid), "parent_id": None}],
             "created": self._format_timestamps(self.child.created),
             "modified": self._format_timestamps(self.child.modified),
