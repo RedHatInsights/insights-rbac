@@ -84,6 +84,8 @@ class WorkspaceSerializerTest(TestCase):
             "description": self.child.description,
             "parent_id": str(self.parent.uuid),
             "ancestry": [{"name": self.parent.name, "uuid": str(self.parent.uuid), "parent_id": None}],
+            "created": self._format_timestamps(self.child.created),
+            "modified": self._format_timestamps(self.child.modified),
         }
 
         self.assertDictEqual(serializer.data, expected_data)
