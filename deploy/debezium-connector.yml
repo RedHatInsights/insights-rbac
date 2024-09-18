@@ -11,7 +11,7 @@ objects:
       strimzi.io/cluster: ${KAFKA_CONNECT_INSTANCE}
   spec:
     class: io.debezium.connector.postgresql.PostgresConnector
-    tasksMax: ${MAX_TASKS}
+    tasksMax: ${{MAX_TASKS}}
     config:
       database.server.name: ${DB_SERVERNAME}
       database.dbname: ${DB_NAME}
@@ -59,4 +59,6 @@ parameters:
 - name: PAYLOAD_NAME
   value: payload
   description: Specify the field that contains the message payload in the outbox table
-
+- name: TOPIC_PREFIX
+  value: rbac
+  description: Topic name prefix for the connector

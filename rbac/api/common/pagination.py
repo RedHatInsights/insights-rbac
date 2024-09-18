@@ -17,12 +17,12 @@
 
 """Common pagination class."""
 import logging
+import re
+from urllib.parse import urlparse
 
 from rest_framework.pagination import LimitOffsetPagination
 from rest_framework.response import Response
 from rest_framework.utils.urls import replace_query_param
-
-from api import API_VERSION
 
 PATH_INFO = "PATH_INFO"
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
@@ -38,16 +38,13 @@ class StandardResultsSetPagination(LimitOffsetPagination):
     def link_rewrite(request, link):
         """Rewrite the link based on the path header to only provide partial url."""
         url = link
-        version = "v{}/".format(API_VERSION)
         if PATH_INFO in request.META:
-            try:
-                local_api_index = link.index(version)
-                path = request.META.get(PATH_INFO)
-                path_api_index = path.index(version)
-                path_link = "{}{}"
-                url = path_link.format(path[:path_api_index], link[local_api_index:])
-            except ValueError:
-                logger.warning('Unable to rewrite link as "{}" was not found.'.format(version))
+            url_components = urlparse(link)
+            path_and_query = url_components.path + (f"?{url_components.query}" if url_components.query else "")
+            if bool(re.search("/v[0-9]/", path_and_query)):
+                url = path_and_query
+            else:
+                logger.warning(f"Unable to rewrite link as no version was not found in {path_and_query}.")
         return url
 
     def get_first_link(self):

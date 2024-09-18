@@ -27,8 +27,8 @@ from rest_framework.filters import OrderingFilter
 from .model import Workspace
 from .serializer import WorkspaceSerializer
 
-VALID_PATCH_FIELDS = ["name", "description", "parent"]
-REQUIRED_PUT_FIELDS = ["name", "description", "parent"]
+VALID_PATCH_FIELDS = ["name", "description", "parent_id"]
+REQUIRED_PUT_FIELDS = ["name", "description", "parent_id"]
 REQUIRED_CREATE_FIELDS = ["name"]
 
 
@@ -37,6 +37,7 @@ class WorkspaceViewSet(
     mixins.DestroyModelMixin,
     mixins.RetrieveModelMixin,
     mixins.UpdateModelMixin,
+    mixins.ListModelMixin,
     viewsets.GenericViewSet,
 ):
     """Workspace View.
@@ -65,7 +66,7 @@ class WorkspaceViewSet(
     def destroy(self, request, *args, **kwargs):
         """Delete a workspace."""
         instance = self.get_object()
-        if Workspace.objects.filter(parent=instance.uuid, tenant=instance.tenant).exists():
+        if Workspace.objects.filter(parent=instance, tenant=instance.tenant).exists():
             message = "Unable to delete due to workspace dependencies"
             error = {"workspace": [_(message)]}
             raise serializers.ValidationError(error)
@@ -93,9 +94,9 @@ class WorkspaceViewSet(
     def update_validation(self, request):
         """Validate a workspace for update."""
         instance = self.get_object()
-        parent = request.data.get("parent")
-        if str(instance.uuid) == parent:
-            message = "Parent and UUID can't be same"
+        parent_id = request.data.get("parent_id")
+        if str(instance.uuid) == parent_id:
+            message = "Parent ID and UUID can't be same"
             error = {"workspace": [_(message)]}
             raise serializers.ValidationError(error)
 
@@ -109,18 +110,19 @@ class WorkspaceViewSet(
 
     def validate_workspace(self, request, action="create"):
         """Validate a workspace."""
-        parent = request.data.get("parent")
+        parent_id = request.data.get("parent_id")
         tenant = request.tenant
         if action == "create":
             self.validate_required_fields(request, REQUIRED_CREATE_FIELDS)
         else:
             self.validate_required_fields(request, REQUIRED_PUT_FIELDS)
-            if parent is None:
-                message = "Field 'parent' can't be null."
+            if parent_id is None:
+                message = "Field 'parent_id' can't be null."
                 error = {"workspace": [_(message)]}
                 raise serializers.ValidationError(error)
-            validate_uuid(parent)
-            if not Workspace.objects.filter(uuid=parent, tenant=tenant).exists():
-                message = f"Parent workspace '{parent}' doesn't exist in tenant"
+        if parent_id:
+            validate_uuid(parent_id)
+            if not Workspace.objects.filter(uuid=parent_id, tenant=tenant).exists():
+                message = f"Parent workspace '{parent_id}' doesn't exist in tenant"
                 error = {"workspace": [message]}
                 raise serializers.ValidationError(error)

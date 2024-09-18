@@ -21,7 +21,6 @@ from typing import FrozenSet
 
 from django.conf import settings
 from management.role.model import BindingMapping, Role, V2Role
-from management.workspace.model import Workspace
 from migration_tool.models import V1group, V2rolebinding
 from migration_tool.sharedSystemRolesReplicatedRoleBindings import v1_role_to_v2_mapping
 from migration_tool.utils import create_relationship, output_relationships
@@ -95,16 +94,16 @@ def migrate_role(role: Role, write_db: bool, root_workspace: str, default_worksp
 
 def migrate_workspace(tenant: Tenant, write_db: bool):
     """Migrate a workspace from v1 to v2."""
-    root_workspace = Workspace.objects.create(name="root", description="Root workspace", tenant=tenant)
+    root_workspace = f"root-workspace-{tenant.org_id}"
     # Org id represents the default workspace for now
     relationships = [
-        create_relationship("workspace", tenant.org_id, "workspace", str(root_workspace.uuid), "parent"),
-        create_relationship("workspace", str(root_workspace.uuid), "tenant", tenant.org_id, "parent"),
+        create_relationship("workspace", tenant.org_id, "workspace", root_workspace, "parent"),
+        create_relationship("workspace", root_workspace, "tenant", tenant.org_id, "parent"),
     ]
     # Include realm for tenant
     relationships.append(create_relationship("tenant", str(tenant.org_id), "realm", settings.ENV_NAME, "realm"))
     output_relationships(relationships, write_db)
-    return str(root_workspace.uuid), tenant.org_id
+    return root_workspace, tenant.org_id
 
 
 def migrate_users(tenant: Tenant, write_db: bool):
