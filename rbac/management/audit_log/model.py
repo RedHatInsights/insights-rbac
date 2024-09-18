@@ -98,6 +98,18 @@ class AuditLog(TenantAwareModel):
                 description = description + "edited access (permissions/resources)"
         return description
 
+    def find_specific_list_of_users(self, type_dict, user_type):
+        names_list = []
+        if user_type == "principals":
+            for i in type_dict:
+                names_list.append(i["username"])
+        if user_type == "service_accounts":
+            for i in type_dict:
+                names_list.append(i["clientId"])
+        if user_type == "roles":
+            names_list = type_dict
+        return ", ".join(names_list)
+            
     def log_create(self, request, resource):
         """Audit Log when a role or a group is created."""
         self.principal_username = request.user.username
@@ -136,5 +148,19 @@ class AuditLog(TenantAwareModel):
         more_information = self.find_edited_field(resource, resource_name, request, object)
         self.description = more_information
         self.action = AuditLog.EDIT
+        self.tenant_id = self.get_tenant_id(request)
+        super(AuditLog, self).save()
+
+    def log_add(self, request, resource, object, type_dict, user_type):
+        """Audit Log when a role, user/principal, or service account is added to a group."""
+        self.principal_username = request.user.username
+        self.resource_type = resource
+        self.resource_id = object.id
+        resource_name = "group: " + object.name
+        
+        name_list = self.find_specific_list_of_users(type_dict, user_type)
+        self.description = user_type + " " + name_list + " added to " + resource_name
+
+        self.action = AuditLog.ADD
         self.tenant_id = self.get_tenant_id(request)
         super(AuditLog, self).save()
