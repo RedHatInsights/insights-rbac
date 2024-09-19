@@ -35,7 +35,11 @@ from management.models import AuditLog, Permission
 from management.notifications.notification_handlers import role_obj_change_notification_handler
 from management.permissions import RoleAccessPermission
 from management.querysets import get_role_queryset, user_has_perm
-from management.role.relation_api_dual_write_handler import DualWriteException, RelationApiDualWriteHandler
+from management.role.relation_api_dual_write_handler import (
+    DualWriteException,
+    RelationApiDualWriteHandler,
+    ReplicationEventType,
+)
 from management.role.serializer import AccessSerializer, RoleDynamicSerializer, RolePatchSerializer
 from management.utils import validate_uuid
 from rest_framework import mixins, serializers, status, viewsets
@@ -467,8 +471,8 @@ class RoleViewSet(
         """
         role = serializer.save()
 
-        dual_write_handler = RelationApiDualWriteHandler(role, "CREATE")
-        dual_write_handler.generate_replication_event_to_outbox(role)
+        dual_write_handler = RelationApiDualWriteHandler(role, ReplicationEventType.CREATE_CUSTOM_ROLE)
+        dual_write_handler.replicate_new_or_updated_role(role)
 
         role_obj_change_notification_handler(role, "created", self.request.user)
 
@@ -482,13 +486,15 @@ class RoleViewSet(
         Assumes concurrent updates are prevented (e.g. with atomic block and locks).
         """
         if self.action != "partial_update":
-            dual_write_handler = RelationApiDualWriteHandler(serializer.instance, "UPDATE")
+            dual_write_handler = RelationApiDualWriteHandler(
+                serializer.instance, ReplicationEventType.UPDATE_CUSTOM_ROLE
+            )
             dual_write_handler.load_relations_from_current_state_of_role()
 
         role = serializer.save()
 
         if self.action != "partial_update":
-            dual_write_handler.generate_replication_event_to_outbox(role)
+            dual_write_handler.replicate_new_or_updated_role(role)
             role_obj_change_notification_handler(role, "updated", self.request.user)
 
         auditlog = AuditLog()
@@ -506,13 +512,13 @@ class RoleViewSet(
             error = {key: [_(message)]}
             raise serializers.ValidationError(error)
 
-        dual_write_handler = RelationApiDualWriteHandler(instance, "DELETE")
+        dual_write_handler = RelationApiDualWriteHandler(instance, ReplicationEventType.DELETE_CUSTOM_ROLE)
         dual_write_handler.load_relations_from_current_state_of_role()
 
         self.delete_policies_if_no_role_attached(instance)
         instance.delete()
 
-        dual_write_handler.save_replication_event_to_outbox()
+        dual_write_handler.replicate_deleted_role()
         role_obj_change_notification_handler(instance, "deleted", self.request.user)
 
         # Audit in perform_destroy because it needs access to deleted instance

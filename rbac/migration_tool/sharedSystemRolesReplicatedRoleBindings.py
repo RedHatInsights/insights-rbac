@@ -18,7 +18,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 import json
 import logging
 import uuid
-from typing import Callable, FrozenSet, Optional, Type
+from typing import Callable, FrozenSet, Optional, Tuple, Type
 
 from django.conf import settings
 from management.models import BindingMapping
@@ -108,24 +108,24 @@ def v1_role_to_v2_bindings(
             if not is_for_enabled_resource(v1_perm):
                 continue
             for resource_def in v1_perm.resourceDefs:
-                resource_type = (
-                    "workspace"
-                    if v1_perm.app == "inventory"
-                    else v1_attributefilter_resource_type_to_v2_resource_type(resource_def.resource_type)
-                )
+                resource_type = attribute_key_to_v2_related_resource_type(resource_def.resource_type)
+                if resource_type is None:
+                    # Resource type not mapped to v2
+                    continue
                 for resource_id in split_resourcedef_literal(resource_def):
-                    if resource_type == "workspace":
-                        if resource_id is None:
-                            resource_id = default_workspace
+                    if resource_id is None:
+                        raise ValueError(f"Resource ID is None for {resource_def}")
                     add_element(
                         perm_groupings,
                         V2boundresource(resource_type, resource_id),
                         v2_perm,
                     )
+        elif default_workspace is None:
+            logger.info(f"Cannot create role binding for role; no resource to bind to: {v1_role.id}")
         else:
             add_element(
                 perm_groupings,
-                V2boundresource("workspace", default_workspace),
+                V2boundresource(("rbac", "workspace"), default_workspace),
                 v2_perm,
             )
     # Project permission sets to roles per set of resources
@@ -277,9 +277,11 @@ def v1_perm_to_v2_perm(v1_permission):
     )
 
 
-def v1_attributefilter_resource_type_to_v2_resource_type(resourceType: str):  # Format is app.type
+V2_RESOURCE_BY_ATTRIBUTE = {"group.id": ("rbac", "workspace")}
+
+
+def attribute_key_to_v2_related_resource_type(resourceType: str) -> Optional[Tuple[str, str]]:
     """Convert a V1 resource type to a V2 resource type."""
-    parts = resourceType.split(".", 1)
-    app = cleanNameForV2SchemaCompatibility(parts[0])
-    resource = cleanNameForV2SchemaCompatibility(parts[1])
-    return f"{app}/{resource}"
+    if resourceType in V2_RESOURCE_BY_ATTRIBUTE:
+        return V2_RESOURCE_BY_ATTRIBUTE[resourceType]
+    return None
