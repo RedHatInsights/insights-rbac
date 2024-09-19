@@ -93,16 +93,17 @@ def relation_api_tuples_for_v1_role(v1_role_uuid, default_workspace_uuid):
 
 
 def relation_api_tuple(resource_type, resource_id, relation, subject_type, subject_id):
+    """Helper function for creating a relation tuple in json."""
     return {
         "resource": relation_api_resource(resource_type, resource_id),
         "relation": relation,
-        "subject": relation_api_resource(subject_type, subject_id),
+        "subject": {"subject": relation_api_resource(subject_type, subject_id)},
     }
 
 
 def relation_api_resource(type_resource, id_resource):
     """Helper function for creating a relation resource in json."""
-    return {"type": type_resource, "id": id_resource}
+    return {"type": {"namespace": "rbac", "name": type_resource}, "id": id_resource}
 
 
 def find_in_list(list, predicate):
@@ -119,6 +120,7 @@ class RoleViewsetTests(IdentityRequest):
     def setUp(self):
         """Set up the role viewset tests."""
         super().setUp()
+        self.maxDiff = None
         sys_role_config = {"name": "system_role", "display_name": "system_display", "system": True}
 
         def_role_config = {"name": "default_role", "display_name": "default_display", "platform_default": True}
@@ -343,7 +345,7 @@ class RoleViewsetTests(IdentityRequest):
             )
 
     @override_settings(V2_MIGRATION_RESOURCE_APP_EXCLUDE_LIST=["app"])
-    @patch("management.role.relation_api_dual_write_handler.RelationApiDualWriteHandler._save_replication_event")
+    @patch("management.role.relation_api_dual_write_handler.OutboxReplicator._save_replication_event")
     def test_role_replication_exluded_resource(self, mock_method):
         """Test that excluded resources do not replicate via dual write."""
         # Set up
@@ -368,18 +370,22 @@ class RoleViewsetTests(IdentityRequest):
         self.assertEqual([], actual_sorted["relations_to_remove"])
         self.assertEqual(3, len(to_add), "too many relations (should not add relations for excluded resource)")
 
-        role_binding = find_in_list(to_add, lambda r: r["resource"]["type"] == "role_binding")["resource"]["id"]
-        workspace = find_in_list(to_add, lambda r: r["resource"]["type"] == "workspace")
+        role_binding = find_in_list(to_add, lambda r: r["resource"]["type"]["name"] == "role_binding")["resource"][
+            "id"
+        ]
+        workspace = find_in_list(to_add, lambda r: r["resource"]["type"]["name"] == "workspace")
 
         self.assertEquals(
-            role_binding, workspace["subject"]["id"], "expected binding to workspace (not to excluded resource)"
+            role_binding,
+            workspace["subject"]["subject"]["id"],
+            "expected binding to workspace (not to excluded resource)",
         )
 
-        role = find_in_list(to_add, lambda r: r["resource"]["type"] == "role")
+        role = find_in_list(to_add, lambda r: r["resource"]["type"]["name"] == "role")
 
         self.assertEquals(role["relation"], "app_all_read", "expected workspace permission")
 
-    @patch("management.role.relation_api_dual_write_handler.RelationApiDualWriteHandler._save_replication_event")
+    @patch("management.role.relation_api_dual_write_handler.OutboxReplicator._save_replication_event")
     def test_create_role_with_display_success(self, mock_method):
         """Test that we can create a role."""
         role_name = "roleD"
@@ -1407,7 +1413,7 @@ class RoleViewsetTests(IdentityRequest):
         response = client.put(url, test_data, format="json", **self.headers)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
-    @patch("management.role.relation_api_dual_write_handler.RelationApiDualWriteHandler._save_replication_event")
+    @patch("management.role.relation_api_dual_write_handler.OutboxReplicator._save_replication_event")
     def test_update_role(self, mock_method):
         """Test that updating a role with an invalid permission returns an error."""
         # Set up
@@ -1530,7 +1536,7 @@ class RoleViewsetTests(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(response.data.get("errors")[0].get("detail"), f"Permission does not exist: {permission}")
 
-    @patch("management.role.relation_api_dual_write_handler.RelationApiDualWriteHandler._save_replication_event")
+    @patch("management.role.relation_api_dual_write_handler.OutboxReplicator._save_replication_event")
     def test_delete_role(self, mock_method):
         """Test that we can delete an existing role."""
         role_name = "roleA"

@@ -121,9 +121,14 @@ class ExtRoleRelation(models.Model):
 class BindingMapping(models.Model):
     """V2 binding Mapping definition."""
 
+    # The ID of the role binding
+    # id = models.UUIDField(primary_key=True, default=uuid4, editable=False)
+    # The relations
     mappings = models.JSONField(default=dict)
-    # One-to-one relationship with Role
     role = models.OneToOneField(Role, on_delete=models.CASCADE, related_name="binding_mapping")
+    # resource_type_namespace = models.CharField(max_length=20, null=False)
+    # resource_type_name = models.CharField(max_length=20, null=False)
+    # resource_id = models.CharField(max_length=50, null=False)
 
     def find_role_binding_by_v2_role(self, v2_role_id):
         """Find role binding by v2 role id."""

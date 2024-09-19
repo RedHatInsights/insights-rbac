@@ -2,6 +2,7 @@
 
 import json
 import logging
+from typing import Tuple
 
 import grpc
 from django.conf import settings
@@ -38,9 +39,9 @@ class GRPCError:
             self.metadata = json.loads(str(info.metadata).replace("'", '"'))
 
 
-def validate_and_create_obj_ref(obj_name, obj_id):
+def validate_and_create_obj_ref(obj_name: Tuple[str, str], obj_id):
     """Validate and create a resource."""
-    object_type = common_pb2.ObjectType(name=obj_name, namespace="rbac")
+    object_type = common_pb2.ObjectType(name=obj_name[1], namespace=obj_name[0])
     try:
         validate_all(object_type)
     except ValidationFailed as err:
@@ -53,7 +54,9 @@ def validate_and_create_obj_ref(obj_name, obj_id):
     return obj_ref
 
 
-def create_relationship(resource_name, resource_id, subject_name, subject_id, relation):
+def create_relationship(
+    resource_name: Tuple[str, str], resource_id, subject_name: Tuple[str, str], subject_id, relation
+):
     """Create a relationship between a resource and a subject."""
     return common_pb2.Relationship(
         resource=validate_and_create_obj_ref(resource_name, resource_id),

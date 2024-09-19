@@ -47,7 +47,9 @@ def get_kessel_relation_tuples(
 
     for v2_role_binding in v2_role_bindings:
         relationships.append(
-            create_relationship("role_binding", v2_role_binding.id, "role", v2_role_binding.role.id, "granted")
+            create_relationship(
+                ("rbac", "role_binding"), v2_role_binding.id, ("rbac", "role"), v2_role_binding.role.id, "granted"
+            )
         )
 
         v2_role_data = v2_role_binding.role
@@ -61,10 +63,16 @@ def get_kessel_relation_tuples(
         }
 
         for perm in v2_role_binding.role.permissions:
-            relationships.append(create_relationship("role", v2_role_binding.role.id, "user", "*", perm))
+            relationships.append(
+                create_relationship(("rbac", "role"), v2_role_binding.role.id, ("rbac", "user"), "*", perm)
+            )
         for group in v2_role_binding.groups:
             # These might be duplicate but it is OK, spiceDB will handle duplication through touch
-            relationships.append(create_relationship("role_binding", v2_role_binding.id, "group", group.id, "subject"))
+            relationships.append(
+                create_relationship(
+                    ("rbac", "role_binding"), v2_role_binding.id, ("rbac", "group"), group.id, "subject"
+                )
+            )
 
         for bound_resource in v2_role_binding.resources:
             # Is this a workspace binding, but not to the root workspace?
@@ -72,7 +80,10 @@ def get_kessel_relation_tuples(
             # All other resource-resource or resource-workspace relations
             # which may be implied or necessary are intentionally ignored.
             # These should come from the apps that own the resource.
-            if bound_resource.resource_type == "workspace" and not bound_resource.resourceId == default_workspace:
+            if (
+                bound_resource.resource_type == ("rbac", "workspace")
+                and not bound_resource.resourceId == default_workspace
+            ):
                 # This is not strictly necessary here and the relation may be a duplicate.
                 # Once we have more Workspace API / Inventory Group migration progress,
                 # this block can and probably should be removed.
@@ -81,7 +92,7 @@ def get_kessel_relation_tuples(
                     create_relationship(
                         bound_resource.resource_type,
                         bound_resource.resourceId,
-                        "workspace",
+                        ("rbac", "workspace"),
                         default_workspace,
                         "parent",
                     )
@@ -91,7 +102,7 @@ def get_kessel_relation_tuples(
                 create_relationship(
                     bound_resource.resource_type,
                     bound_resource.resourceId,
-                    "role_binding",
+                    ("rbac", "role_binding"),
                     v2_role_binding.id,
                     "user_grant",
                 )
@@ -125,11 +136,13 @@ def migrate_workspace(tenant: Tenant, write_relationships: bool):
     root_workspace = f"root-workspace-{tenant.org_id}"
     # Org id represents the default workspace for now
     relationships = [
-        create_relationship("workspace", tenant.org_id, "workspace", root_workspace, "parent"),
-        create_relationship("workspace", root_workspace, "tenant", tenant.org_id, "parent"),
+        create_relationship(("rbac", "workspace"), tenant.org_id, ("rbac", "workspace"), root_workspace, "parent"),
+        create_relationship(("rbac", "workspace"), root_workspace, ("rbac", "tenant"), tenant.org_id, "parent"),
     ]
     # Include realm for tenant
-    relationships.append(create_relationship("tenant", str(tenant.org_id), "realm", settings.ENV_NAME, "realm"))
+    relationships.append(
+        create_relationship(("rbac", "tenant"), str(tenant.org_id), ("rbac", "realm"), settings.ENV_NAME, "realm")
+    )
     output_relationships(relationships, write_relationships)
     return root_workspace, tenant.org_id
 
@@ -137,7 +150,7 @@ def migrate_workspace(tenant: Tenant, write_relationships: bool):
 def migrate_users(tenant: Tenant, write_relationships: bool):
     """Write users relationship to tenant."""
     relationships = [
-        create_relationship("tenant", str(tenant.org_id), "user", str(principal.uuid), "member")
+        create_relationship(("rbac", "tenant"), str(tenant.org_id), ("rbac", "user"), str(principal.uuid), "member")
         for principal in tenant.principal_set.all()
     ]
     output_relationships(relationships, write_relationships)
@@ -152,7 +165,9 @@ def migrate_users_for_groups(tenant: Tenant, write_relationships: bool):
             tenant.principal_set.filter(cross_account=False) if group.platform_default else group.principals.all()
         )
         for user in user_set:
-            relationships.append(create_relationship("group", str(group.uuid), "user", str(user.uuid), "member"))
+            relationships.append(
+                create_relationship(("rbac", "group"), str(group.uuid), ("rbac", "user"), str(user.uuid), "member")
+            )
     output_relationships(relationships, write_relationships)
 
 

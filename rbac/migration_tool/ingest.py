@@ -29,12 +29,14 @@ def aggregate_v1_role(role: Role) -> V1role:
     This maps the RBAC model to preloaded, navigable objects with the key data broken down.
     """
     perm_res_defs: dict[Tuple[str, str], list[V1resourcedef]] = {}
-    perm_list: list[str] = []
+    default_perm_list: list[str] = []
     role_id = str(role.uuid)
 
     # Determine v1 permissions
     for access in role.access.all():
+        default = True
         for resource_def in access.resourceDefinitions.all():
+            default = False
             attri_filter = resource_def.attributeFilter
             # Some malformed data in db
             if attri_filter["operation"] == "in":
@@ -44,13 +46,19 @@ def aggregate_v1_role(role: Role) -> V1role:
                     continue
             res_def = V1resourcedef(attri_filter["key"], attri_filter["operation"], json.dumps(attri_filter["value"]))
             if res_def.resource_id != "":
+                # TODO: Need to bind against "ungrouped hosts" for inventory
                 add_element(perm_res_defs, (role_id, access.permission.permission), res_def)
-        perm_list.append(access.permission.permission)
+        if default:
+            default_perm_list.append(access.permission.permission)
 
     v1_perms = []
-    for perm in perm_list:
+    for perm in default_perm_list:
         perm_parts = perm.split(":")
-        res_defs = [res_def for res_def in perm_res_defs.get((role_id, perm), [])]
+        v1_perm = V1permission(perm_parts[0], perm_parts[1], perm_parts[2], frozenset())
+        v1_perms.append(v1_perm)
+
+    for (role_id, perm), res_defs in perm_res_defs.items():
+        perm_parts = perm.split(":")
         v1_perm = V1permission(perm_parts[0], perm_parts[1], perm_parts[2], frozenset(res_defs))
         v1_perms.append(v1_perm)
 
