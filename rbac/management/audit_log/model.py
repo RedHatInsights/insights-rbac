@@ -101,7 +101,7 @@ class AuditLog(TenantAwareModel):
     def find_specific_list_of_users(self, type_dict, user_type):
         """Create list of principals/roles/service accounts for description."""
         names_list = []
-        if user_type == "principals":
+        if user_type == "user":
             for i in type_dict:
                 names_list.append(i["username"])
         if user_type == "service_accounts":
