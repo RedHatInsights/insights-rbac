@@ -960,6 +960,24 @@ class GroupViewsetTests(IdentityRequest):
             self.assertEqual(response.data.get("principals")[0], {"username": username})
             self.assertEqual(principal.tenant, self.tenant)
 
+            # test whether added principals into a group is added correctly within audit log database
+            al_url = "/api/v1/auditlogs/"
+            al_client = APIClient()
+            al_response = al_client.get(al_url, **self.headers)
+            retrieve_data = al_response.data.get("data")
+            al_list = retrieve_data
+            al_dict = al_list[0]
+
+            al_dict_principal_username = al_dict["principal_username"]
+            al_dict_description = al_dict["description"]
+            al_dict_resource = al_dict["resource_type"]
+            al_dict_action = al_dict["action"]
+
+            self.assertEqual(self.user_data["username"], al_dict_principal_username)
+            self.assertIsNotNone(al_dict_description)
+            self.assertEqual(al_dict_resource, "group")
+            self.assertEqual(al_dict_action, "add")
+
             send_kafka_message.assert_called_with(
                 settings.NOTIFICATIONS_TOPIC,
                 {
@@ -1813,6 +1831,24 @@ class GroupViewsetTests(IdentityRequest):
 
             self.assertCountEqual([self.role, self.roleB], list(groupC.roles()))
             self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+            # test whether adding roles into a group is added correctly within audit log database
+            al_url = "/api/v1/auditlogs/"
+            al_client = APIClient()
+            al_response = al_client.get(al_url, **self.headers)
+            retrieve_data = al_response.data.get("data")
+            al_list = retrieve_data
+            al_dict = al_list[0]
+
+            al_dict_principal_username = al_dict["principal_username"]
+            al_dict_description = al_dict["description"]
+            al_dict_resource = al_dict["resource_type"]
+            al_dict_action = al_dict["action"]
+
+            self.assertEqual(self.user_data["username"], al_dict_principal_username)
+            self.assertIsNotNone(al_dict_description)
+            self.assertEqual(al_dict_resource, "group")
+            self.assertEqual(al_dict_action, "add")
 
             notification_messages = [
                 call(
@@ -3883,6 +3919,24 @@ class GroupViewNonAdminTests(IdentityRequest):
         # Org Admin can add this principal into a group
         response = client.post(url, request_body, format="json", **self.headers_org_admin)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        # test whether the added service account is added correctly within audit log database
+        al_url = "/api/v1/auditlogs/"
+        al_client = APIClient()
+        al_response = al_client.get(al_url, **self.headers_org_admin)
+        retrieve_data = al_response.data.get("data")
+        al_list = retrieve_data
+        al_dict = al_list[0]
+
+        al_dict_principal_username = al_dict["principal_username"]
+        al_dict_description = al_dict["description"]
+        al_dict_resource = al_dict["resource_type"]
+        al_dict_action = al_dict["action"]
+
+        self.assertEqual(self.org_admin.username, al_dict_principal_username)
+        self.assertIsNotNone(al_dict_description)
+        self.assertEqual(al_dict_resource, "group")
+        self.assertEqual(al_dict_action, "add")
 
     @patch(
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",

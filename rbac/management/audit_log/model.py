@@ -99,6 +99,7 @@ class AuditLog(TenantAwareModel):
         return description
 
     def find_specific_list_of_users(self, type_dict, user_type):
+        """Create list of principals/roles/service accounts for description."""
         names_list = []
         if user_type == "principals":
             for i in type_dict:
@@ -109,7 +110,7 @@ class AuditLog(TenantAwareModel):
         if user_type == "roles":
             names_list = type_dict
         return ", ".join(names_list)
-            
+
     def log_create(self, request, resource):
         """Audit Log when a role or a group is created."""
         self.principal_username = request.user.username
@@ -157,7 +158,7 @@ class AuditLog(TenantAwareModel):
         self.resource_type = resource
         self.resource_id = object.id
         resource_name = "group: " + object.name
-        
+
         name_list = self.find_specific_list_of_users(type_dict, user_type)
         self.description = user_type + " " + name_list + " added to " + resource_name
 
