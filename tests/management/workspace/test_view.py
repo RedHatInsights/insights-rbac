@@ -385,6 +385,7 @@ class WorkspaceViewTests(IdentityRequest):
         self.assertNotEquals(data.get("modified"), "")
         self.assertEqual(response.get("content-type"), "application/json")
         self.assertEqual(data.get("ancestry"), None)
+        self.assertEqual(response.get("content-type"), "application/json")
 
     def test_get_workspace_with_ancestry(self):
         base_url = reverse("workspace-detail", kwargs={"uuid": self.init_workspace.uuid})
