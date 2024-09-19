@@ -410,6 +410,7 @@ class WorkspaceViewTests(IdentityRequest):
 
         url = reverse("workspace-detail", kwargs={"uuid": workspace.uuid})
         client = APIClient()
+        self.headers["HTTP_ACCEPT"] = "application/problem+json"
         response = client.delete(url, None, format="json", **self.headers)
 
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
