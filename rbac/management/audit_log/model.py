@@ -160,7 +160,7 @@ class AuditLog(TenantAwareModel):
         resource_name = "group: " + object.name
 
         name_list = self.find_specific_list_of_users(type_dict, user_type)
-        self.description = user_type + " " + name_list + " added to " + resource_name
+        self.description = f"{user_type} {name_list} added to {resource_name}"
 
         self.action = AuditLog.ADD
         self.tenant_id = self.get_tenant_id(request)
