@@ -156,8 +156,10 @@ services:
       KAFKA_HEAP_OPTS: "-Xmx500M -Xms500M"
 
   kafka_connect:
+    build:
+      context: .
+      dockerfile: Dockerfile-kafka-connect
     container_name: rbac_kafka_connect
-    image: quay.io/cloudservices/kafka-connect:57decfc
     command: [
       "sh", "-c", "bin/connect-distributed.sh /opt/kafka/config/rebac_connect.properties"
     ]
