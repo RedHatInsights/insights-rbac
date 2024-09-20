@@ -1,3 +1,8 @@
+apiVersion: template.openshift.io/v1
+kind: Template
+metadata:
+  name: kafka-template
+objects:
 - apiVersion: kafka.strimzi.io/v1beta2
   kind: Kafka
   metadata:
