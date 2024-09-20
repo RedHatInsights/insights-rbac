@@ -1,0 +1,122 @@
+- apiVersion: kafka.strimzi.io/v1beta2
+  kind: Kafka
+  metadata:
+    name: rbac-kafka
+  spec:
+    entityOperator:
+      template:
+        pod:
+          metadata:
+            labels:
+              service: strimziKafka
+        topicOperatorContainer:
+          env:
+            - name: STRIMZI_USE_FINALIZERS
+              value: 'false'
+      tlsSidecar:
+        resources:
+          limits:
+            cpu: 100m
+            memory: 100Mi
+          requests:
+            cpu: 50m
+            memory: 50Mi
+      topicOperator:
+        resources:
+          limits:
+            cpu: 200m
+            memory: 500Mi
+          requests:
+            cpu: 50m
+            memory: 250Mi
+      userOperator:
+        resources:
+          limits:
+            cpu: 400m
+            memory: 500Mi
+          requests:
+            cpu: 50m
+            memory: 250Mi
+    kafka:
+      config:
+        offsets.topic.replication.factor: '1'
+      resources:
+        limits:
+          cpu: 500m
+          memory: 1Gi
+        requests:
+          cpu: 250m
+          memory: 600Mi
+      version: 3.7.0
+      template:
+        perPodService:
+          metadata:
+            labels:
+              service: strimziKafka
+        pod:
+          metadata:
+            labels:
+              service: strimziKafka
+      storage:
+        type: ephemeral
+      replicas: 1
+      jvmOptions: {}
+      listeners:
+        - name: tcp
+          port: 9092
+          tls: false
+          type: internal
+    zookeeper:
+      replicas: 1
+      resources:
+        limits:
+          cpu: 350m
+          memory: 800Mi
+        requests:
+          cpu: 200m
+          memory: 400Mi
+      storage:
+        type: ephemeral
+      template:
+        nodesService:
+          metadata:
+            labels:
+              service: strimziKafka
+        pod:
+          metadata:
+            labels:
+              service: strimziKafka
+
+- apiVersion: kafka.strimzi.io/v1beta2
+  kind: KafkaConnect
+  metadata:
+    name: rbac-kafka-connect
+  annotations:
+    strimzi.io/use-connector-resources: 'true'
+  #  annotations:
+  #  # use-connector-resources configures this KafkaConnect
+  #  # to use KafkaConnector resources to avoid
+  #  # needing to call the Connect REST API directly
+  #    strimzi.io/use-connector-resources: "true"
+  spec:
+    version: 3.7.0
+    replicas: 1
+    bootstrapServers: rbac-kafka-kafka-bootstrap:9092
+    resources:
+      limits:
+        cpu: 500m
+        memory: 1Gi
+      requests:
+        cpu: 250m
+        memory: 512Mi
+    config:
+      config.providers: secrets
+      config.providers.secrets.class: io.strimzi.kafka.KubernetesSecretConfigProvider
+      group.id: rbac-kafka-connect-cluster
+      offset.storage.topic: rbac-kafka-connect-cluster-offsets
+      config.storage.topic: rbac-kafka-connect-cluster-configs
+      status.storage.topic: rbac-kafka-connect-cluster-status
+      # -1 means it will use the default replication factor configured in the broker
+      config.storage.replication.factor: '1'
+      offset.storage.replication.factor: '1'
+      status.storage.replication.factor: '1'

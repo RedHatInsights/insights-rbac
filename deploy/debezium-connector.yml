@@ -7,6 +7,8 @@ objects:
   kind: KafkaConnector
   metadata:
     name: ${CONNECTOR_NAME}
+    annotations:
+      strimzi.io/use-connector-resources: "true"
     labels:
       strimzi.io/cluster: ${KAFKA_CONNECT_INSTANCE}
   spec:
