@@ -71,7 +71,7 @@ class V2role:
         return {
             "id": self.id,
             "is_system": self.is_system,
-            "permissions": list(self.permissions),
+            **({"permissions": list(self.permissions)} if not self.is_system else {}),
         }
 
 
