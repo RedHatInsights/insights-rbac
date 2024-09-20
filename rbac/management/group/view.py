@@ -25,7 +25,6 @@ from django.conf import settings
 from django.db import transaction
 from django.db.models import Q
 from django.db.models.aggregates import Count
-from django.shortcuts import get_object_or_404
 from django.utils.translation import gettext as _
 from django_filters import rest_framework as filters
 from management.authorization.scope_claims import ScopeClaims
@@ -435,7 +434,7 @@ class GroupViewSet(
         for item in principals_from_response:
             username = item["username"]
             try:
-                principal = Principal.objects.select_for_update().get(username__iexact=username, tenant=tenant)
+                principal = Principal.objects.get(username__iexact=username, tenant=tenant)
             except Principal.DoesNotExist:
                 principal = Principal.objects.create(username=username, tenant=tenant)
                 logger.info("Created new principal %s for org_id %s.", username, org_id)
@@ -487,7 +486,7 @@ class GroupViewSet(
         for specified_sa in service_accounts:
             client_id = specified_sa["clientId"]
             try:
-                principal = Principal.objects.select_for_update().get(
+                principal = Principal.objects.get(
                     username__iexact=SERVICE_ACCOUNT_USERNAME_FORMAT.format(clientId=client_id),
                     tenant=tenant,
                 )
@@ -691,7 +690,7 @@ class GroupViewSet(
 
             with transaction.atomic():
                 new_service_accounts = []
-                group = self._get_locked_object()
+                group = self.get_object()
                 if len(service_accounts) > 0:
                     group, new_service_accounts = self.add_service_accounts(
                         group=group,
@@ -1156,26 +1155,3 @@ class GroupViewSet(
             group_principal_change_notification_handler(self.request.user, group, username, "removed")
 
         return removed_service_accounts
-
-    def _get_add_principals_queryset(self):
-        """Obtain queryset for requesting user based on access to add principals."""
-        return Group.objects.filter(tenant=self.request.tenant).select_for_update()
-
-    def _get_locked_object(self):
-        """Return the object the view is displaying."""
-        queryset = self.filter_queryset(self._get_add_principals_queryset())
-        # Perform the lookup filtering.
-        lookup_url_kwarg = self.lookup_url_kwarg or self.lookup_field
-
-        assert lookup_url_kwarg in self.kwargs, (
-            "Expected view %s to be called with a URL keyword argument named '%s'. Fix your URL conf, or set the"
-            "`.lookup_field` attribute on the view correctly." % (self.__class__.__name__, lookup_url_kwarg)
-        )
-
-        filter_kwargs = {self.lookup_field: self.kwargs[lookup_url_kwarg]}
-
-        obj = get_object_or_404(queryset, **filter_kwargs)
-
-        # May raise a permission denied
-        self.check_object_permissions(self.request, obj)
-        return obj
