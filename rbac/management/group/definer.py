@@ -17,23 +17,31 @@
 
 """Handler for system defined group."""
 import logging
+from typing import Iterable
 from uuid import uuid4
 
 from django.db import transaction
-from django.db.models import Q
 from django.db.models.query import QuerySet
 from django.utils.translation import gettext as _
+from kessel.relations.v1beta1.common_pb2 import Relationship
 from management.group.model import Group
 from management.notifications.notification_handlers import (
     group_flag_change_notification_handler,
     group_role_change_notification_handler,
 )
 from management.policy.model import Policy
-from management.role.model import Role
+from management.role.model import BindingMapping, Role
+from management.role.relation_api_dual_write_handler import (
+    OutboxReplicator,
+    RelationApiDualWriteHandler,
+    ReplicationEvent,
+    ReplicationEventType,
+)
 from management.utils import clear_pk
 from rest_framework import serializers
 
 from api.models import Tenant
+from migration_tool.models import V2boundresource, V2role, V2rolebinding
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
@@ -106,6 +114,7 @@ def clone_default_group_in_public_schema(group, tenant):
     return group
 
 
+@transaction.atomic
 def add_roles(group, roles_or_role_ids, tenant, user=None):
     """Process list of roles and add them to the group."""
     if not isinstance(roles_or_role_ids, QuerySet):
@@ -125,10 +134,14 @@ def add_roles(group, roles_or_role_ids, tenant, user=None):
     if system_policy_created:
         logger.info(f"Created new system policy for tenant {tenant.org_id}.")
 
-    roles = Role.objects.filter(
-        Q(tenant=tenant) | Q(tenant=Tenant.objects.get(tenant_name="public")), name__in=role_names
-    )
-    for role in roles:
+    system_roles = Role.objects.filter(tenant=Tenant.objects.get(tenant_name="public"), name__in=role_names)
+
+    # Custom roles are locked to prevent resources from being added/removed concurrently,
+    # in the case that the Roles had _no_ resources specified to begin with.
+    # This should not be necessary for system roles
+    custom_roles = Role.objects.filter(tenant=tenant, name__in=role_names).select_for_update()
+
+    for role in [*system_roles, *custom_roles]:
         # Only Organization administrators are allowed to add the role with RBAC permission
         # higher than "read" into a group.
         for access in role.access.all():
@@ -144,14 +157,62 @@ def add_roles(group, roles_or_role_ids, tenant, user=None):
                     "into groups."
                 )
                 raise serializers.ValidationError({key: _(message)})
+
         # Only add the role if it was not attached
-        if not system_policy.roles.filter(pk=role.pk).exists():
-            system_policy.roles.add(role)
+        if system_policy.roles.filter(pk=role.pk).exists():
+            continue
 
-            # Send notifications
-            group_role_change_notification_handler(user, group, role, "added")
+        system_policy.roles.add(role)
+        tuples_to_add: list[Relationship] = []
+
+        if role.system:
+            try:
+                mapping = (
+                    BindingMapping.objects.select_for_update()
+                    .filter(
+                        role=role,
+                        resource_type_namespace="rbac",
+                        resource_type_name="workspace",
+                        # TODO: don't use org id once we have workspace built ins
+                        resource_id=tenant.org_id,
+                    )
+                    .get()
+                )
+                tuples_to_add.append(mapping.add_group_to_bindings(group.uuid))
+                mapping.save(force_update=True)
+            except BindingMapping.DoesNotExist:
+                id = str(uuid4())
+                binding = V2rolebinding(
+                    id,
+                    V2role(role.uuid, True, frozenset()),
+                    # TODO: don't use org id once we have workspace built ins
+                    V2boundresource(("rbac", "workspace"), tenant.org_id),
+                    groups=[group.uuid],
+                )
+                mapping = BindingMapping.for_role_binding(binding, role)
+                mapping.save(force_insert=True)
+                tuples_to_add.extend(mapping.as_tuples())
+        else:
+            # Intentionally queried this way to avoid use of cached binding_mappings
+            # There is a risk of phantom reads here, but this is why we lock the custom Role
+            bindings: Iterable[BindingMapping] = BindingMapping.objects.filter(role=role).select_for_update()
+            for mapping in bindings:
+                tuples_to_add.append(mapping.add_group_to_bindings(group.uuid))
+                mapping.save(force_update=True)
+
+        # Send notifications
+        # TODO: maybe use top-level method instead so replicator can be modified for tests
+        OutboxReplicator(role).replicate(
+            ReplicationEvent(
+                type=ReplicationEventType.ASSIGN_ROLE,
+                partition_key="rbactodo",
+                add=tuples_to_add,
+            )
+        )
+        group_role_change_notification_handler(user, group, role, "added")
 
 
+@transaction.atomic
 def remove_roles(group, roles_or_role_ids, tenant, user=None):
     """Process list of roles and remove them from the group."""
     if not isinstance(roles_or_role_ids, QuerySet):
@@ -163,13 +224,34 @@ def remove_roles(group, roles_or_role_ids, tenant, user=None):
 
     group = Group.objects.get(name=group.name, tenant=tenant)
     roles = group.roles().filter(name__in=role_names)
+
+    # TODO: lock custom roles like above
     for policy in group.policies.all():
         # Only remove the role if it was attached
         for role in roles:
             if policy.roles.filter(pk=role.pk).exists():
                 policy.roles.remove(role)
                 logger.info(f"Removing role {role} from group {group.name} for tenant {tenant.org_id}.")
+                tuples_to_remove: list[Relationship] = []
+                # This logic can be the same for system vs custom b/c we'd never create a binding in this path
+                bindings: Iterable[BindingMapping] = role.binding_mappings.select_for_update.all()
+                for binding in bindings:
+                    tuples_to_remove.append(binding.remove_group_from_bindings(group.uuid))
+                    if not binding.is_empty():
+                        binding.save()
+                    else:
+                        tuples_to_remove.extend(binding.as_tuples())
+                        binding.delete()
+
                 # Send notifications
+                # TODO: maybe use top-level method instead so replicator can be modified for tests
+                OutboxReplicator(role).replicate(
+                    ReplicationEvent(
+                        type=ReplicationEventType.ASSIGN_ROLE,
+                        partition_key="rbactodo",
+                        remove=tuples_to_remove,
+                    )
+                )
                 group_role_change_notification_handler(user, group, role, "removed")
 
 
