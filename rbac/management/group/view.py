@@ -17,7 +17,7 @@
 
 """View for group management."""
 import logging
-from typing import Iterable, Optional
+from typing import Iterable, List, Optional, Tuple
 from uuid import UUID
 
 import requests
@@ -476,7 +476,7 @@ class GroupViewSet(
         group: Group,
         service_accounts: Iterable[dict],
         org_id: str = "",
-    ) -> Group:
+    ) -> Tuple[Group, List[Principal]]:
         """Add service accounts to the group."""
         # Get the tenant in order to fetch or store the service account in the database.
         tenant: Tenant = self.request.tenant
@@ -1142,10 +1142,9 @@ class GroupViewSet(
 
         removed_service_accounts = []
         # Remove service accounts from the group.
-        with transaction.atomic():
-            for service_account in valid_service_accounts:
-                group.principals.remove(service_account)
-                removed_service_accounts.append(service_account)
+        for service_account in valid_service_accounts:
+            group.principals.remove(service_account)
+            removed_service_accounts.append(service_account)
 
         logger.info(
             f"[Request_id:{request_id}] {valid_service_account_ids} "
