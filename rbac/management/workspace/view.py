@@ -19,13 +19,12 @@ import json
 
 from django.utils.translation import gettext as _
 from django_filters import rest_framework as filters
+from management.base_viewsets import BaseV2ViewSet
 from management.permissions import WorkspaceAccessPermission
 from management.utils import validate_uuid
-from rest_framework import mixins, serializers, viewsets
+from rest_framework import serializers
 from rest_framework.filters import OrderingFilter
-from rest_framework.settings import api_settings
 
-from api.common.renderers import ProblemJSONRenderer
 from .model import Workspace
 from .serializer import WorkspaceSerializer
 
@@ -34,14 +33,7 @@ REQUIRED_PUT_FIELDS = ["name", "description", "parent_id"]
 REQUIRED_CREATE_FIELDS = ["name"]
 
 
-class WorkspaceViewSet(
-    mixins.CreateModelMixin,
-    mixins.DestroyModelMixin,
-    mixins.RetrieveModelMixin,
-    mixins.UpdateModelMixin,
-    mixins.ListModelMixin,
-    viewsets.GenericViewSet,
-):
+class WorkspaceViewSet(BaseV2ViewSet):
     """Workspace View.
 
     A viewset that provides default `create()`, `destroy` and `retrieve()`.
@@ -52,7 +44,6 @@ class WorkspaceViewSet(
     queryset = Workspace.objects.annotate()
     lookup_field = "uuid"
     serializer_class = WorkspaceSerializer
-    renderer_classes = api_settings.DEFAULT_RENDERER_CLASSES + [ProblemJSONRenderer]
     ordering_fields = ("name",)
     ordering = ("name",)
     filter_backends = (filters.DjangoFilterBackend, OrderingFilter)
