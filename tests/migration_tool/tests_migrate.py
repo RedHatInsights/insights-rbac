@@ -22,7 +22,6 @@ from django.test import TestCase
 from api.models import Tenant
 from management.models import *
 from migration_tool.migrate import migrate_data
-from management.workspace.model import Workspace
 
 
 class MigrateTests(TestCase):
@@ -40,8 +39,8 @@ class MigrateTests(TestCase):
         another_tenant = Tenant.objects.create(org_id="7654321")
 
         # setup data for organization 1234567
-        self.aws_account_id_1 = "123456"
-        self.aws_account_id_2 = "654321"
+        self.workspace_id_1 = "123456"
+        self.workspace_id_2 = "654321"
         # This role will be skipped because it contains permission with skipping application
         self.role_a1 = Role.objects.create(name="role_a1", tenant=self.tenant)
         self.access_a11 = Access.objects.create(permission=permission1, role=self.role_a1, tenant=self.tenant)
@@ -51,9 +50,9 @@ class MigrateTests(TestCase):
         self.access_a2 = Access.objects.create(permission=permission2, role=self.role_a2, tenant=self.tenant)
         self.resourceDef_a2 = ResourceDefinition.objects.create(
             attributeFilter={
-                "key": "cost-management.aws.account",
+                "key": "group.id",
                 "operation": "equal",
-                "value": self.aws_account_id_1,
+                "value": self.workspace_id_1,
             },
             access=self.access_a2,
             tenant=self.tenant,
@@ -62,9 +61,9 @@ class MigrateTests(TestCase):
         self.access_a3 = Access.objects.create(permission=permission2, role=self.role_a3, tenant=self.tenant)
         self.resourceDef_a3 = ResourceDefinition.objects.create(
             attributeFilter={
-                "key": "aws.account",
+                "key": "group.id",
                 "operation": "in",
-                "value": [self.aws_account_id_1, self.aws_account_id_2],
+                "value": [self.workspace_id_1, self.workspace_id_2],
             },
             access=self.access_a3,
             tenant=self.tenant,
@@ -97,25 +96,22 @@ class MigrateTests(TestCase):
         org_id = self.tenant.org_id
         root_workspace_id = f"root-workspace-{self.tenant.org_id}"
 
-        role_binding = BindingMapping.objects.filter(role=self.role_a2).first()
+        role_binding = BindingMapping.objects.filter(role=self.role_a2).get().get_role_binding()
 
-        mappings_a2 = role_binding.mappings
-        first_key = list(mappings_a2.keys())[0]
+        rolebinding_a2 = role_binding.id
+        v2_role_a2 = role_binding.role.id
 
-        v2_role_a2 = mappings_a2[first_key]["v2_role_uuid"]
-        rolebinding_a2 = first_key
+        role_binding_a3_1 = (
+            BindingMapping.objects.filter(role=self.role_a3, resource_id=self.workspace_id_1).get().get_role_binding()
+        )
+        role_binding_a3_2 = (
+            BindingMapping.objects.filter(role=self.role_a3, resource_id=self.workspace_id_2).get().get_role_binding()
+        )
+        v2_role_a31 = role_binding_a3_1.role.id
+        v2_role_a32 = role_binding_a3_2.role.id
 
-        role_binding_a3 = BindingMapping.objects.filter(role=self.role_a3).first()
-        mappings_a3 = role_binding_a3.mappings
-        first_key = list(mappings_a3.keys())[0]
-        v2_role_a31_value = mappings_a3[first_key]["v2_role_uuid"]
-        v2_role_a31 = v2_role_a31_value
-
-        last_key = list(mappings_a3.keys())[-1]
-        v2_role_a32 = mappings_a3[last_key]["v2_role_uuid"]
-
-        rolebinding_a31 = first_key
-        rolebinding_a32 = last_key
+        rolebinding_a31 = role_binding_a3_1.id
+        rolebinding_a32 = role_binding_a3_2.id
 
         workspace_1 = "123456"
         workspace_2 = "654321"
@@ -124,7 +120,7 @@ class MigrateTests(TestCase):
             rolebinding_a31, rolebinding_a32 = rolebinding_a32, rolebinding_a31
         # Switch these two if binding is not in correct order
         if (
-            call(f"workspace:{self.aws_account_id_1}#user_grant@role_binding:{rolebinding_a31}")
+            call(f"workspace:{self.workspace_id_1}#user_grant@role_binding:{rolebinding_a31}")
             not in logger_mock.info.call_args_list
         ):
             workspace_1, workspace_2 = workspace_2, workspace_1
@@ -147,8 +143,8 @@ class MigrateTests(TestCase):
             call(f"role_binding:{rolebinding_a2}#granted@role:{v2_role_a2}"),
             call(f"role:{v2_role_a2}#inventory_hosts_write@user:*"),
             call(f"role_binding:{rolebinding_a2}#subject@group:{self.group_a2.uuid}"),
-            call(f"workspace:{self.aws_account_id_1}#parent@workspace:{org_id}"),
-            call(f"workspace:{self.aws_account_id_1}#user_grant@role_binding:{rolebinding_a2}"),
+            call(f"workspace:{self.workspace_id_1}#parent@workspace:{org_id}"),
+            call(f"workspace:{self.workspace_id_1}#user_grant@role_binding:{rolebinding_a2}"),
             ## Role binding to role_a3
             call(f"role_binding:{rolebinding_a31}#granted@role:{v2_role_a31}"),
             call(f"role:{v2_role_a31}#inventory_hosts_write@user:*"),
