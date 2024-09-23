@@ -727,7 +727,7 @@ class GroupViewSet(
                         AuditLog.GROUP,
                         object=group,
                         type_dict=service_accounts,
-                        user_type="service_accounts",
+                        user_type=AuditLog.SERVICE_ACCOUNT,
                     )
 
         elif request.method == "GET":
@@ -1091,7 +1091,7 @@ class GroupViewSet(
                     AuditLog.GROUP,
                     object=group,
                     type_dict=roles,
-                    user_type="roles",
+                    user_type=AuditLog.ROLE,
                 )
 
         elif request.method == "GET":

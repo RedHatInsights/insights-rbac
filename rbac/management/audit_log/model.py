@@ -32,11 +32,13 @@ class AuditLog(TenantAwareModel):
     ROLE = "role"
     USER = "user"
     PERMISSION = "permission"
+    SERVICE_ACCOUNT = "service_account"
     RESOURCE_CHOICES = (
         (GROUP, "Group"),
         (ROLE, "Role"),
         (USER, "User"),
         (PERMISSION, "Permission"),
+        (SERVICE_ACCOUNT, "Service_account"),
     )
 
     DELETE = "delete"
@@ -101,13 +103,13 @@ class AuditLog(TenantAwareModel):
     def find_specific_list_of_users(self, type_dict, user_type):
         """Create list of principals/roles/service accounts for description."""
         names_list = []
-        if user_type == "user":
+        if user_type == AuditLog.USER:
             for i in type_dict:
                 names_list.append(i["username"])
-        if user_type == "service_accounts":
+        if user_type == AuditLog.SERVICE_ACCOUNT:
             for i in type_dict:
                 names_list.append(i["clientId"])
-        if user_type == "roles":
+        if user_type == AuditLog.ROLE:
             names_list = type_dict
         return ", ".join(names_list)
 

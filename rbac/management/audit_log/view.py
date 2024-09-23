@@ -33,13 +33,13 @@ class AuditLogViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
     serializer_class = AuditLogSerializer
     permission_classes = (AuditLogAccessPermission,)
 
-    def filter_by_id(self, queryset):
-        """Filter queryset by id."""
+    def order_by_id(self, queryset):
+        """Order queryset by id."""
         return queryset.order_by("-id").values()
 
     def list(self, request, *args, **kwargs):
         """List all of the audit logs within database by tenant."""
         self.queryset = filter_queryset_by_tenant(AuditLog.objects.all(), request.tenant)
         if request.query_params.get("order_by") is not None:
-            self.queryset = self.filter_by_id(self.queryset)
+            self.queryset = self.order_by_id(self.queryset)
         return super().list(request=request, args=args, kwargs=kwargs)
