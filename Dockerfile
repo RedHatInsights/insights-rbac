@@ -1,6 +1,4 @@
-#FROM registry.access.redhat.com/ubi8/ubi-minimal:8.10 AS base
-
-FROM registry.access.redhat.com/ubi9/ubi-minimal:latest AS base
+FROM registry.access.redhat.com/ubi8/ubi-minimal:8.10 AS base
 
 USER root
 
@@ -34,6 +32,7 @@ LABEL summary="$SUMMARY" \
       version="1" \
       maintainer="Red Hat Insights"
 
+RUN printf '/run/secrets/etc-pki-entitlement:/run/secrets/etc-pki-entitlement\n/run/secrets/rhsm:/run/secrets/rhsm\n' > /etc/containers/mounts.conf
 
 # Very minimal set of packages
 # glibc-langpack-en is needed to set locale to en_US and disable warning about it
