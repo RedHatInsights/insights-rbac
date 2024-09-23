@@ -20,25 +20,6 @@ from typing import Tuple
 
 
 @dataclass(frozen=True)
-class Relationship:
-    """Relationship definition."""
-
-    resource_type: str
-    resource_id: str
-    relation: str
-    subject_type: str
-    subject_id: str
-
-
-@dataclass(frozen=True)
-class V1group:
-    """V1 group definition."""
-
-    id: str
-    users: frozenset[str]
-
-
-@dataclass(frozen=True)
 class V1resourcedef:
     """V1 resource definition."""
 
@@ -70,28 +51,11 @@ class V1permission:
 
 
 @dataclass(frozen=True)
-class V1role:
-    """V1 role definition."""
-
-    id: str
-    permissions: frozenset[V1permission]
-    groups: frozenset[V1group]
-
-
-@dataclass(frozen=True)
-class V2group:
-    """V2 group definition."""
-
-    id: str
-    users: frozenset[str]
-
-
-@dataclass(frozen=True)
 class V2boundresource:
     """V2 bound resource definition."""
 
     resource_type: Tuple[str, str]
-    resourceId: str
+    resource_id: str
 
 
 @dataclass(frozen=True)
@@ -102,16 +66,31 @@ class V2role:
     is_system: bool
     permissions: frozenset[str]
 
+    def as_dict(self) -> dict:
+        """Convert the V2 role to a dictionary."""
+        return {
+            "id": self.id,
+            "is_system": self.is_system,
+            "permissions": list(self.permissions),
+        }
+
 
 @dataclass(frozen=True)
 class V2rolebinding:
     """V2 role binding definition."""
 
     id: str
-    originalRole: V1role
     role: V2role
-    resources: frozenset[V2boundresource]
-    groups: frozenset[V2group]
+    resource: V2boundresource
+    groups: frozenset[str]
+
+    def as_minimal_dict(self) -> dict:
+        """Convert the V2 role binding to a dictionary, excluding resource, original role, and users."""
+        return {
+            "id": self.id,
+            "role": self.role.as_dict(),
+            "groups": [g for g in self.groups],
+        }
 
 
 def split_v2_perm(perm: str):

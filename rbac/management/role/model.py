@@ -17,6 +17,7 @@
 
 """Model for role management."""
 import logging
+from typing import Union
 from uuid import uuid4
 
 from django.conf import settings
@@ -27,6 +28,7 @@ from internal.integration import sync_handlers
 from management.cache import AccessCache
 from management.models import Permission, Principal
 from management.rbac_fields import AutoDateTimeField
+from migration_tool.models import V2boundresource, V2role, V2rolebinding
 
 from api.models import TenantAwareModel
 
@@ -121,36 +123,68 @@ class ExtRoleRelation(models.Model):
 class BindingMapping(models.Model):
     """V2 binding Mapping definition."""
 
-    # The ID of the role binding
-    # id = models.UUIDField(primary_key=True, default=uuid4, editable=False)
-    # The relations
+    # JSON encoding of migration_tool.models.V2rolebinding
     mappings = models.JSONField(default=dict)
-    role = models.OneToOneField(Role, on_delete=models.CASCADE, related_name="binding_mapping")
-    # resource_type_namespace = models.CharField(max_length=20, null=False)
-    # resource_type_name = models.CharField(max_length=20, null=False)
-    # resource_id = models.CharField(max_length=50, null=False)
+    role = models.ForeignKey(Role, on_delete=models.CASCADE, related_name="binding_mappings")
+    resource_type_namespace = models.CharField(max_length=256, null=False)
+    resource_type_name = models.CharField(max_length=256, null=False)
+    resource_id = models.CharField(max_length=256, null=False)
 
-    def find_role_binding_by_v2_role(self, v2_role_id):
-        """Find role binding by v2 role id."""
-        role_binding_id = None
-        for role_binding_uuid, data in self.mappings.items():
-            if data["v2_role_uuid"] == v2_role_id:
-                role_binding_id = str(role_binding_uuid)
+    @classmethod
+    def for_role_binding(cls, role_binding: V2rolebinding, v1_role: Union[Role, str]):
+        """Create a new BindingMapping for a V2rolebinding."""
+        mappings = role_binding.as_minimal_dict()
+        resource = role_binding.resource
+        resource_type_namespace = resource.resource_type[0]
+        resource_type_name = resource.resource_type[1]
+        resource_id = resource.resource_id
+        role_arg = {"role": v1_role} if isinstance(v1_role, Role) else {"role_id": v1_role}
+        return cls(
+            mappings=mappings,
+            **role_arg,
+            resource_type_namespace=resource_type_namespace,
+            resource_type_name=resource_type_name,
+            resource_id=resource_id,
+        )
 
-        if role_binding_id is None:
-            raise Exception(f"role_binding_id not found in mappings for v2 role {v2_role_id} ")
-        return role_binding_id
+    def remove_group_from_bindings(self, group_id: str):
+        """Remove group from mappings."""
+        self.mappings["groups"] = [group for group in self.mappings["groups"] if group != group_id]
 
-    def find_v2_role_by_permission(self, permissions):
-        """Find v2 role by permissions."""
-        v2_uuid = None
-        for v1_role_uuid, data in self.mappings.items():
-            if set(data["permissions"]) == set(permissions):
-                v2_uuid = data["v2_role_uuid"]
+    def add_group_to_bindings(self, group_id: str):
+        """Add group to mappings."""
+        self.mappings["groups"].append(group_id)
 
-        if v2_uuid is None:
-            raise Exception(f"v2_uuid not found in mappings for v1 role {self.role.uuid}")
-        return v2_uuid
+    def update_mappings_from_role_binding(self, role_binding: V2rolebinding):
+        """Set mappings."""
+        # Validate resource and v1 role match
+        resource = role_binding.resource
+        if (
+            resource.resource_type[0] != self.resource_type_namespace
+            or resource.resource_type[1] != self.resource_type_name
+            or resource.resource_id != self.resource_id
+        ):
+            raise Exception(
+                "Resource mismatch."
+                f"Expected: {self.resource_type_namespace}:{self.resource_type_name}:{self.resource_id} "
+                f"but got: {resource.resource_type[0]}:{resource.resource_type[1]}:{resource.resource_id} "
+            )
+
+        self.mappings = role_binding.as_minimal_dict()
+
+    def get_role_binding(self) -> V2rolebinding:
+        """Get role binding."""
+        args = {**self.mappings}
+        args["resource"] = V2boundresource(
+            resource_type=(self.resource_type_namespace, self.resource_type_name), resource_id=self.resource_id
+        )
+        args["role"] = V2role(
+            id=args["role"]["id"],
+            is_system=args["role"]["is_system"],
+            permissions=frozenset(args["role"]["permissions"]),
+        )
+        args["groups"] = frozenset(args["groups"])
+        return V2rolebinding(**args)
 
 
 def role_related_obj_change_cache_handler(sender=None, instance=None, using=None, **kwargs):
