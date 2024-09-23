@@ -1201,7 +1201,7 @@ class GroupViewSet(
         valid_service_accounts = Principal.objects.filter(
             group=group,
             tenant=tenant,
-            type="service-account",
+            type=TYPE_SERVICE_ACCOUNT,
             service_account_id__in=service_accounts,
         )
 
