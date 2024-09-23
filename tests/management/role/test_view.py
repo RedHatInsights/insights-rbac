@@ -377,7 +377,7 @@ class RoleViewsetTests(IdentityRequest):
         )
 
         role = find_in_list(to_add, lambda r: r["resource"]["type"]["name"] == "role")
-        
+
         self.assertEquals(role["relation"], "app_all_read", "expected workspace permission")
 
     @patch("management.role.relation_api_dual_write_handler.OutboxReplicator._save_replication_event")
