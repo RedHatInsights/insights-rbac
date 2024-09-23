@@ -2,20 +2,20 @@ default_language_version:
   python: python3.9
 repos:
 - repo: https://github.com/PyCQA/flake8
-  rev: "7.0.0"
+  rev: "7.1.1"
   hooks:
   - id: flake8
     args: ["rbac"]
     pass_filenames: false
     require_serial: true
 - repo: https://github.com/psf/black
-  rev: 22.3.0
+  rev: 24.8.0
   hooks:
   - id: black
     args: ["--check", "-l", "119", "-t", "py39", "rbac", "tests", "--diff"]
     require_serial: true
 - repo: https://github.com/pre-commit/pre-commit-hooks
-  rev: v4.5.0
+  rev: v4.6.0
   hooks:
   - id: trailing-whitespace
   - id: end-of-file-fixer
