@@ -175,6 +175,8 @@ def permission_groupings_to_v2_role_bindings(
             updated_mapping = BindingMapping.for_role_binding(binding, v1_role)
         else:
             # Reuse current binding ID and mapping ID
+            if current is None:
+                raise ValueError(f"Current role binding is None for {mapping}")
             binding = V2rolebinding(current.id, new_role, resource, latest_groups)
             updated_mapping = mapping
             updated_mapping.update_mappings_from_role_binding(binding)

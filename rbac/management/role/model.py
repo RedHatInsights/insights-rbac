@@ -138,7 +138,9 @@ class BindingMapping(models.Model):
         resource_type_namespace = resource.resource_type[0]
         resource_type_name = resource.resource_type[1]
         resource_id = resource.resource_id
-        role_arg = {"role": v1_role} if isinstance(v1_role, Role) else {"role_id": v1_role}
+        role_arg: dict[str, Union[Role, str]] = (
+            {"role": v1_role} if isinstance(v1_role, Role) else {"role_id": v1_role}
+        )
         return cls(
             mappings=mappings,
             **role_arg,

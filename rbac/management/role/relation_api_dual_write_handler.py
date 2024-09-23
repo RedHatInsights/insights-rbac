@@ -141,6 +141,8 @@ class NoopReplicator(RelationReplicator):
 class RelationApiDualWriteHandler:
     """Class to handle Dual Write API related operations."""
 
+    _replicator: RelationReplicator
+
     @classmethod
     def for_system_role_event(
         cls,
