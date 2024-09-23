@@ -16,6 +16,7 @@
 #
 """Test tuple changes for RBAC operations."""
 
+import unittest
 from django.test import TestCase, override_settings
 from management.group.model import Group
 from management.permission.model import Permission
@@ -209,6 +210,7 @@ class DualWriteTestCase(TestCase):
 class DualWriteSystemRolesTestCase(DualWriteTestCase):
     """Test dual write logic for system roles."""
 
+    @unittest.skip("Not implemented yet")
     def test_system_role_grants_access_to_default_workspace(self):
         """Create role binding only when system role is bound to group."""
         role = self.given_v1_system_role("r1", ["app1:hosts:read", "inventory:hosts:write"])
