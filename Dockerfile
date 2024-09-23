@@ -32,7 +32,6 @@ LABEL summary="$SUMMARY" \
       version="1" \
       maintainer="Red Hat Insights"
 
-RUN printf '/run/secrets/etc-pki-entitlement:/run/secrets/etc-pki-entitlement\n/run/secrets/rhsm:/run/secrets/rhsm\n' > /etc/containers/mounts.conf
 
 # Very minimal set of packages
 # glibc-langpack-en is needed to set locale to en_US and disable warning about it
