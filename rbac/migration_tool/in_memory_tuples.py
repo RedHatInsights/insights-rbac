@@ -163,9 +163,11 @@ class InMemoryTuples:
         return matching_groups, unmatched_groups
 
     def __str__(self):
+        """Return a string representation of the store."""
         return str(self._tuples)
 
     def __repr__(self):
+        """Return a representation of the store."""
         return f"InMemoryTuples({repr(self._tuples)})"
 
 
@@ -173,13 +175,16 @@ class TuplePredicate:
     """A predicate that can be used to filter relation tuples."""
 
     def __init__(self, func, repr):
+        """Initialize the predicate."""
         self.func = func
         self.repr = repr
 
     def __call__(self, *args, **kwargs):
+        """Call the predicate."""
         return self.func(*args, **kwargs)
 
     def __repr__(self):
+        """Return a representation of the predicate."""
         return self.repr
 
 
@@ -270,4 +275,5 @@ class InMemoryRelationReplicator(RelationReplicator):
         self.store = store
 
     def replicate(self, event):
+        """Replicate the event to the in-memory store."""
         self.store.write(event.add, event.remove)

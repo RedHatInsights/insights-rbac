@@ -15,7 +15,6 @@ You should have received a copy of the GNU Affero General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 
-import json
 import logging
 import uuid
 from typing import Any, Iterable, Optional, Tuple, Union
@@ -26,7 +25,6 @@ from management.permission.model import Permission
 from management.role.model import Role
 from migration_tool.ingest import add_element
 from migration_tool.models import (
-    V1resourcedef,
     V2boundresource,
     V2role,
     V2rolebinding,
