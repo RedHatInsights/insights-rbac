@@ -25,7 +25,7 @@ from management.role.relation_api_dual_write_handler import (
     OutboxReplicator,
     RelationReplicator,
     ReplicationEvent,
-    ReplicationEventType
+    ReplicationEventType,
 )
 from migration_tool.utils import create_relationship
 
@@ -67,11 +67,7 @@ class RelationApiDualWriteGroupHandler:
         for principal in self.principal_usernames + self.service_accounts:
             relations.append(
                 create_relationship(
-                    ("rbac", "group"),
-                    str(self.group.uuid),
-                    ("rbac", "user"),
-                    str(principal.uuid),
-                    "member"
+                    ("rbac", "group"), str(self.group.uuid), ("rbac", "user"), str(principal.uuid), "member"
                 )
             )
 

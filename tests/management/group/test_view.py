@@ -992,7 +992,10 @@ class GroupViewsetTests(IdentityRequest):
             self.assertEqual(principal.tenant, self.tenant)
 
             actual_call_arg = mock_method.call_args[0][0]
-            self.assertEqual(generate_replication_event_to_add_principals(str(test_group.uuid), str(principal.uuid)), actual_call_arg)
+            self.assertEqual(
+                generate_replication_event_to_add_principals(str(test_group.uuid), str(principal.uuid)),
+                actual_call_arg,
+            )
 
             send_kafka_message.assert_called_with(
                 settings.NOTIFICATIONS_TOPIC,
@@ -1146,9 +1149,8 @@ class GroupViewsetTests(IdentityRequest):
             actual_call_arg = mock_method.call_args[0][0]
             self.assertEqual(
                 generate_replication_event_to_remove_principals(str(self.group.uuid), str(test_user.uuid)),
-                actual_call_arg
+                actual_call_arg,
             )
-
 
     def test_remove_group_principals_invalid(self):
         """Test that removing a principal returns an error with invalid data format."""
@@ -3929,7 +3931,9 @@ class GroupViewNonAdminTests(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
         actual_call_arg = mock_method.call_args[0][0]
-        self.assertEqual(generate_replication_event_to_add_principals(str(test_group.uuid), str(sa_principal.uuid)), actual_call_arg)
+        self.assertEqual(
+            generate_replication_event_to_add_principals(str(test_group.uuid), str(sa_principal.uuid)), actual_call_arg
+        )
 
     @patch("management.role.relation_api_dual_write_handler.OutboxReplicator._save_replication_event")
     @patch(
@@ -3963,8 +3967,9 @@ class GroupViewNonAdminTests(IdentityRequest):
         response = client.post(url, request_body, format="json", **self.headers_user_based_principal)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         actual_call_arg = mock_method.call_args[0][0]
-        self.assertEqual(generate_replication_event_to_add_principals(
-            str(test_group.uuid), str(test_principal.uuid)), actual_call_arg
+        self.assertEqual(
+            generate_replication_event_to_add_principals(str(test_group.uuid), str(test_principal.uuid)),
+            actual_call_arg,
         )
 
         response = client.post(url, request_body, format="json", **self.headers_service_account_principal)
@@ -4021,7 +4026,7 @@ class GroupViewNonAdminTests(IdentityRequest):
         actual_call_arg = mock_method.call_args[0][0]
         self.assertEqual(
             generate_replication_event_to_add_principals(str(test_group.uuid), str(sa_principal.uuid)),
-            actual_call_arg
+            actual_call_arg,
         )
 
         response = client.post(url, request_body, format="json", **self.headers_service_account_principal)
@@ -4234,7 +4239,6 @@ class GroupViewNonAdminTests(IdentityRequest):
         response = client.delete(url, format="json", **self.headers_service_account_principal)
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
 
-
     @patch("management.role.relation_api_dual_write_handler.OutboxReplicator._save_replication_event")
     @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
     def test_remove_service_account_principal_from_group_with_User_Access_Admin_success(self, mock_method):
@@ -4271,7 +4275,7 @@ class GroupViewNonAdminTests(IdentityRequest):
         actual_call_arg = mock_method.call_args[0][0]
         self.assertEqual(
             generate_replication_event_to_remove_principals(str(test_group.uuid), str(sa_principal.uuid)),
-            actual_call_arg
+            actual_call_arg,
         )
 
         # Add once removed principal into group

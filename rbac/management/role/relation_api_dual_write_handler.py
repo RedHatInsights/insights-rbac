@@ -120,7 +120,7 @@ class OutboxReplicator(RelationReplicator):
             "[Dual Write] Build Replication event for %s(%s): '%s'",
             self._record_class(),
             self._record_uuid(),
-            self._record_name()
+            self._record_name(),
         )
         add_json = []
         for relation in relations_to_add:
@@ -139,14 +139,14 @@ class OutboxReplicator(RelationReplicator):
             "[Dual Write] Save replication event into outbox table for %s(%s): '%s'",
             self._record_class(),
             self._record_uuid(),
-            self._record_name()
+            self._record_name(),
         )
         logger.info(
             "[Dual Write] Replication event: %s for %s(%s): '%s'",
             payload,
             self._record_class(),
             self._record_uuid(),
-            self._record_name()
+            self._record_name(),
         )
         # https://debezium.io/documentation/reference/stable/transformations/outbox-event-router.html#basic-outbox-table
         outbox_record = Outbox.objects.create(

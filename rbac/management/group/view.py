@@ -37,7 +37,8 @@ from management.group.definer import (
 )
 from management.group.model import Group
 from management.group.relation_api_dual_write_group_handler import (
-    RelationApiDualWriteGroupHandler, ReplicationEventType
+    RelationApiDualWriteGroupHandler,
+    ReplicationEventType,
 )
 from management.group.serializer import (
     GroupInputSerializer,
@@ -921,7 +922,7 @@ class GroupViewSet(
                     group,
                     ReplicationEventType.REMOVE_PRINCIPALS_FROM_GROUP,
                     principals_to_remove,
-                    service_accounts_to_remove
+                    service_accounts_to_remove,
                 )
                 dual_write_handler.replicate_removed_principals()
 
@@ -1110,9 +1111,7 @@ class GroupViewSet(
         roles_for_group = group.roles().values("uuid")
         return roles.exclude(uuid__in=roles_for_group)
 
-    def remove_service_accounts(
-        self, user: User, group: Group, service_accounts: Iterable[str], org_id: str = ""
-    ):
+    def remove_service_accounts(self, user: User, group: Group, service_accounts: Iterable[str], org_id: str = ""):
         """Remove the given service accounts from the tenant."""
         # Log our intention.
         request_id = getattr(self.request, "req_id", None)
