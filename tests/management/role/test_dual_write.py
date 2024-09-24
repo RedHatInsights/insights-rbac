@@ -16,9 +16,11 @@
 #
 """Test tuple changes for RBAC operations."""
 
+from typing import Tuple
 import unittest
 from django.test import TestCase, override_settings
 from management.group.model import Group
+from management.group.relation_api_dual_write_group_handler import RelationApiDualWriteGroupHandler
 from management.permission.model import Permission
 from management.policy.model import Policy
 from management.principal.model import Principal
@@ -113,10 +115,49 @@ class DualWriteTestCase(TestCase):
             ],
         ]
 
-    def given_group(self, name: str, users: list[str]) -> Group:
+    def given_group(
+        self, name: str, users: list[str] = [], service_accounts: list[str] = []
+    ) -> Tuple[Group, list[Principal]]:
         """Create a new group with the given name and users."""
-        # TODO: replicate group membership
-        return self.fixture.new_group(name=name, users=users, tenant=self.tenant)
+        group, principals = self.fixture.new_group(
+            name=name, users=users, service_accounts=service_accounts, tenant=self.tenant
+        )
+        dual_write = RelationApiDualWriteGroupHandler(
+            group,
+            ReplicationEventType.CREATE_GROUP,
+            principals,
+            replicator=InMemoryRelationReplicator(self.tuples),
+        )
+        dual_write.replicate_new_principals()
+        return group, principals
+
+    def given_additional_group_members(
+        self, group: Group, users: list[str] = [], service_accounts: list[str] = []
+    ) -> list[Principal]:
+        """Add users to the given group."""
+        principals = self.fixture.add_members_to_group(group, users, service_accounts, group.tenant)
+        dual_write = RelationApiDualWriteGroupHandler(
+            group,
+            ReplicationEventType.CREATE_GROUP,
+            principals,
+            replicator=InMemoryRelationReplicator(self.tuples),
+        )
+        dual_write.replicate_new_principals()
+        return principals
+
+    def given_removed_group_members(
+        self, group: Group, users: list[str] = [], service_accounts: list[str] = []
+    ) -> list[Principal]:
+        """Remove users from the given group."""
+        principals = self.fixture.remove_members_from_group(group, users, service_accounts, group.tenant)
+        dual_write = RelationApiDualWriteGroupHandler(
+            group,
+            ReplicationEventType.CREATE_GROUP,
+            principals,
+            replicator=InMemoryRelationReplicator(self.tuples),
+        )
+        dual_write.replicate_removed_principals()
+        return principals
 
     def given_policy(self, group: Group, roles: list[Role]) -> Policy:
         """Assign the [roles] to the [group]."""
@@ -207,6 +248,34 @@ class DualWriteTestCase(TestCase):
         )
 
 
+class DualWriteGroupMembershipTestCase(DualWriteTestCase):
+    """Test dual write logic for group membership."""
+
+    def test_create_group_tuples(self):
+        """Create a group and add users to it."""
+        group, principals = self.given_group("g1", ["u1", "u2"])
+        tuples = self.tuples.find_tuples(all_of(resource("rbac", "group", group.uuid), relation("member")))
+        self.assertEquals(len(tuples), 2)
+        self.assertEquals({t.subject_id for t in tuples}, {str(p.uuid) for p in principals})
+
+    def test_update_group_tuples(self):
+        """Update a group by adding and removing users."""
+        group, principals = self.given_group("g1", ["u1", "u2"])
+
+        principals += self.given_additional_group_members(group, ["u3"])
+
+        tuples = self.tuples.find_tuples(all_of(resource("rbac", "group", group.uuid), relation("member")))
+        self.assertEquals(len(tuples), 3)
+        self.assertEquals({t.subject_id for t in tuples}, {str(p.uuid) for p in principals})
+
+        self.given_removed_group_members(group, ["u2"])
+        principals = [p for p in principals if p.username != "u2"]
+
+        tuples = self.tuples.find_tuples(all_of(resource("rbac", "group", group.uuid), relation("member")))
+        self.assertEquals(len(tuples), 2)
+        self.assertEquals({t.subject_id for t in tuples}, {str(p.uuid) for p in principals})
+
+
 class DualWriteSystemRolesTestCase(DualWriteTestCase):
     """Test dual write logic for system roles."""
 
@@ -214,7 +283,7 @@ class DualWriteSystemRolesTestCase(DualWriteTestCase):
     def test_system_role_grants_access_to_default_workspace(self):
         """Create role binding only when system role is bound to group."""
         role = self.given_v1_system_role("r1", ["app1:hosts:read", "inventory:hosts:write"])
-        group = self.given_group("g1", ["u1", "u2"])
+        group, _ = self.given_group("g1", ["u1", "u2"])
 
         self.expect_num_role_bindings(0)
 
@@ -236,7 +305,7 @@ class DualWriteCustomRolesTestCase(DualWriteTestCase):
             ws_2=["app1:hosts:read", "inventory:hosts:write"],
         )
 
-        group = self.given_group("g1", ["u1", "u2"])
+        group, _ = self.given_group("g1", ["u1", "u2"])
         self.given_policy(group, roles=[role])
 
         id = self.expect_1_v2_role_with_permissions(["app1:hosts:read", "inventory:hosts:write"])
@@ -325,8 +394,8 @@ class DualWriteCustomRolesTestCase(DualWriteTestCase):
             ws_2=["app1:hosts:read", "inventory:hosts:write"],
         )
 
-        g1 = self.given_group("g2", ["u2"])
-        g2 = self.given_group("g1", ["u1"])
+        g1, _ = self.given_group("g2", ["u2"])
+        g2, _ = self.given_group("g1", ["u1"])
         self.given_policy(g1, roles=[role])
         self.given_policy(g2, roles=[role])
 
@@ -450,15 +519,13 @@ class RbacFixture:
 
         return role
 
-    def new_group(self, name: str, users: list[str], tenant: Tenant) -> Group:
+    def new_group(
+        self, name: str, users: list[str], service_accounts: list[str], tenant: Tenant
+    ) -> Tuple[Group, list[Principal]]:
         """Create a new group with the given name, users, and tenant."""
         group = Group.objects.create(name=name, tenant=tenant)
-
-        principals = [Principal.objects.get_or_create(username=username, tenant=tenant)[0] for username in users]
-
-        group.principals.add(*principals)
-
-        return group
+        principals = self.add_members_to_group(group, users, service_accounts, tenant)
+        return group, principals
 
     def add_role_to_group(self, role: Role, group: Group, tenant: Tenant) -> Policy:
         """Add a role to a group for a given tenant and return the policy."""
@@ -466,3 +533,35 @@ class RbacFixture:
         policy.roles.add(role)
         policy.save()
         return policy
+
+    def add_members_to_group(
+        self, group: Group, users: list[str], service_accounts: list[str], principal_tenant: Tenant
+    ) -> list[Principal]:
+        """Add members to the group."""
+        principals = [
+            *[Principal.objects.get_or_create(username=username, tenant=principal_tenant)[0] for username in users],
+            *[
+                Principal.objects.get_or_create(username=username, tenant=principal_tenant, type="service-account")[0]
+                for username in service_accounts
+            ],
+        ]
+
+        group.principals.add(*principals)
+
+        return principals
+
+    def remove_members_from_group(
+        self, group: Group, users: list[str], service_accounts: list[str], principal_tenant: Tenant
+    ):
+        """Remove members from the group."""
+        principals = [
+            *[Principal.objects.get_or_create(username=username, tenant=principal_tenant)[0] for username in users],
+            *[
+                Principal.objects.get_or_create(username=username, tenant=principal_tenant, type="service-account")[0]
+                for username in service_accounts
+            ],
+        ]
+
+        group.principals.remove(*principals)
+
+        return principals

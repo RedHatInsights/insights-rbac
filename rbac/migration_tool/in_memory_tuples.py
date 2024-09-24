@@ -226,9 +226,9 @@ def resource_id(id: str) -> Callable[[RelationTuple], bool]:
     return TuplePredicate(predicate, f'resource_id("{id}")')
 
 
-def resource(namespace: str, name: str, id: str) -> Callable[[RelationTuple], bool]:
+def resource(namespace: str, name: str, id: object) -> Callable[[RelationTuple], bool]:
     """Return a predicate that is true if the resource matches the given namespace and name."""
-    return all_of(resource_type(namespace, name), resource_id(id))
+    return all_of(resource_type(namespace, name), resource_id(str(id)))
 
 
 def relation(relation: str) -> Callable[[RelationTuple], bool]:

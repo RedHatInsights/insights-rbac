@@ -17,7 +17,7 @@
 
 """View for group management."""
 import logging
-from typing import Iterable, Optional
+from typing import Iterable, List, Optional, Tuple
 from uuid import UUID
 
 import requests
@@ -36,6 +36,10 @@ from management.group.definer import (
     set_system_flag_before_update,
 )
 from management.group.model import Group
+from management.group.relation_api_dual_write_group_handler import (
+    RelationApiDualWriteGroupHandler,
+    ReplicationEventType,
+)
 from management.group.serializer import (
     GroupInputSerializer,
     GroupPrincipalInputSerializer,
@@ -195,9 +199,10 @@ class GroupViewSet(
             return GroupInputSerializer
         return GroupSerializer
 
-    def protect_system_groups(self, action):
+    def protect_system_groups(self, action, group=None):
         """Deny modifications on system groups."""
-        group = self.get_object()
+        if group is None:
+            group = self.get_object()
         if group.system:
             key = "group"
             message = "{} cannot be performed on system groups.".format(action.upper())
@@ -410,10 +415,8 @@ class GroupViewSet(
 
         return update_group
 
-    def add_principals(self, group, principals, org_id=None):
-        """Process list of principals and add them to the group."""
-        tenant = self.request.tenant
-
+    def validate_principals_in_proxy_request(self, principals, org_id=None):
+        """Validate principals in proxy request."""
         users = [principal.get("username") for principal in principals]
         resp = self.proxy.request_filtered_principals(users, org_id=org_id, limit=len(users))
         if "errors" in resp:
@@ -423,7 +426,13 @@ class GroupViewSet(
                 "status_code": status.HTTP_404_NOT_FOUND,
                 "errors": [{"detail": "User(s) {} not found.".format(users), "status": "404", "source": "principals"}],
             }
-        for item in resp.get("data", []):
+        return resp
+
+    def add_principals(self, group, principals_from_response, org_id=None):
+        """Add principals to the group."""
+        tenant = self.request.tenant
+        new_principals = []
+        for item in principals_from_response:
             username = item["username"]
             try:
                 principal = Principal.objects.get(username__iexact=username, tenant=tenant)
@@ -431,17 +440,16 @@ class GroupViewSet(
                 principal = Principal.objects.create(username=username, tenant=tenant)
                 logger.info("Created new principal %s for org_id %s.", username, org_id)
             group.principals.add(principal)
+            new_principals.append(principal)
             group_principal_change_notification_handler(self.request.user, group, username, "added")
-        return group
+        return group, new_principals
 
-    def add_service_accounts(
+    def raise_error_if_service_accounts_not_present_in_it_service(
         self,
         user: User,
-        group: Group,
         service_accounts: Iterable[dict],
-        org_id: str = "",
-    ) -> Group:
-        """Process the list of service accounts and add them to the group."""
+    ):
+        """Validate service account in it service."""
         # Fetch all the user's service accounts from IT. If we are on a development or testing environment, we might
         # want to skip calling IT
         it_service = ITService()
@@ -464,9 +472,16 @@ class GroupViewSet(
             if len(invalid_service_accounts) > 0:
                 raise ServiceAccountNotFoundError(f"Service account(s) {invalid_service_accounts} not found.")
 
+    def add_service_accounts(
+        self,
+        group: Group,
+        service_accounts: Iterable[dict],
+        org_id: str = "",
+    ) -> Tuple[Group, List[Principal]]:
+        """Add service accounts to the group."""
         # Get the tenant in order to fetch or store the service account in the database.
         tenant: Tenant = self.request.tenant
-
+        new_service_accounts = []
         # Fetch the service account from our database to add it to the group. If it doesn't exist, we create
         # it.
         for specified_sa in service_accounts:
@@ -487,6 +502,7 @@ class GroupViewSet(
                 logger.info("Created new service account %s for org_id %s.", client_id, org_id)
 
             group.principals.add(principal)
+            new_service_accounts.append(principal)
             group_principal_change_notification_handler(
                 self.request.user,
                 group,
@@ -494,7 +510,7 @@ class GroupViewSet(
                 "added",
             )
 
-        return group
+        return group, new_service_accounts
 
     def remove_principals(self, group, principals, org_id=None):
         """Process list of principals and remove them from the group."""
@@ -518,16 +534,17 @@ class GroupViewSet(
                         "source": "principals",
                     }
                 ],
-            }
+            }, []
 
-        with transaction.atomic():
-            for principal in valid_principals:
-                group.principals.remove(principal)
+        principals_to_remove = []
+        for principal in valid_principals:
+            group.principals.remove(principal)
+            principals_to_remove.append(principal)
 
         logger.info(f"[Request_id:{req_id}] {valid_usernames} removed from group {group.name} for org id {org_id}.")
         for username in principals:
             group_principal_change_notification_handler(self.request.user, group, username, "removed")
-        return group
+        return group, principals_to_remove
 
     @action(detail=True, methods=["get", "post", "delete"])
     def principals(self, request: Request, uuid: Optional[UUID] = None):
@@ -610,15 +627,10 @@ class GroupViewSet(
             HTTP/1.1 204 NO CONTENT
         """
         validate_uuid(uuid, "group uuid validation")
-        group = self.get_object()
+
         org_id = self.request.user.org_id
+        group = self.get_object()
         if request.method == "POST":
-            # Make sure that system groups are kept unmodified.
-            self.protect_system_groups("add principals")
-
-            if not request.user.admin:
-                self.protect_group_with_user_access_admin_role(group.roles_with_access(), "add_principals")
-
             serializer = GroupPrincipalInputSerializer(data=request.data)
 
             # Serialize the payload and validate that it is correct.
@@ -635,6 +647,11 @@ class GroupViewSet(
                 else:
                     principals.append(specified_principal)
 
+            self.protect_system_groups("add principals", group)
+
+            if not request.user.admin:
+                self.protect_group_with_user_access_admin_role(group.roles_with_access(), "add principals")
+
             # Process the service accounts and add them to the group.
             if len(service_accounts) > 0:
                 token_validator = ITSSOTokenValidator()
@@ -642,13 +659,9 @@ class GroupViewSet(
                     request=request,
                     additional_scopes_to_validate=set[ScopeClaims]([ScopeClaims.SERVICE_ACCOUNTS_CLAIM]),
                 )
-
                 try:
-                    resp = self.add_service_accounts(
-                        user=request.user,
-                        group=group,
-                        service_accounts=service_accounts,
-                        org_id=org_id,
+                    self.raise_error_if_service_accounts_not_present_in_it_service(
+                        user=request.user, service_accounts=service_accounts
                     )
                 except InsufficientPrivilegesError as ipe:
                     return Response(
@@ -668,18 +681,33 @@ class GroupViewSet(
                     )
 
             # Process user principals and add them to the group.
+            principals_from_response = []
             if len(principals) > 0:
-                resp = self.add_principals(group, principals, org_id=org_id)
+                proxy_response = self.validate_principals_in_proxy_request(principals, org_id=org_id)
+                if len(proxy_response.get("data", [])) > 0:
+                    principals_from_response = proxy_response.get("data", [])
+                if isinstance(proxy_response, dict) and "errors" in proxy_response:
+                    return Response(status=proxy_response["status_code"], data=proxy_response["errors"])
 
-            # Storing user principals might return an error structure instead of a group,
-            # so we need to check that before returning a response.
-            if isinstance(resp, dict) and "errors" in resp:
-                return Response(status=resp["status_code"], data=resp["errors"])
+            with transaction.atomic():
+                new_service_accounts = []
+                if len(service_accounts) > 0:
+                    group, new_service_accounts = self.add_service_accounts(
+                        group=group,
+                        service_accounts=service_accounts,
+                        org_id=org_id,
+                    )
+                new_principals = []
+                if len(principals) > 0:
+                    group, new_principals = self.add_principals(group, principals_from_response, org_id=org_id)
+
+                dual_write_handler = RelationApiDualWriteGroupHandler(
+                    group, ReplicationEventType.ADD_PRINCIPALS_TO_GROUP, new_principals + new_service_accounts
+                )
+                dual_write_handler.replicate_new_principals()
 
             # Serialize the group...
-            output = GroupSerializer(resp)
-
-            # ... and return it.
+            output = GroupSerializer(group)
             response = Response(status=status.HTTP_200_OK, data=output.data)
         elif request.method == "GET":
             # Check if the request comes with a bunch of service account client IDs that we need to check. Since this
@@ -856,60 +884,43 @@ class GroupViewSet(
                 message = "Query parameter {} or {} is required.".format(SERVICE_ACCOUNTS_KEY, USERNAMES_KEY)
                 raise serializers.ValidationError({key: _(message)})
 
-            # Remove the service accounts from the group.
-            if SERVICE_ACCOUNTS_KEY in request.query_params:
-                service_accounts_parameter = request.query_params.get(SERVICE_ACCOUNTS_KEY, "")
-                service_accounts = [
-                    service_account.strip() for service_account in service_accounts_parameter.split(",")
-                ]
+            with transaction.atomic():
+                service_accounts_to_remove = []
+                # Remove the service accounts from the group.
+                if SERVICE_ACCOUNTS_KEY in request.query_params:
+                    service_accounts_parameter = request.query_params.get(SERVICE_ACCOUNTS_KEY, "")
+                    service_accounts = [
+                        service_account.strip() for service_account in service_accounts_parameter.split(",")
+                    ]
 
-                try:
-                    token_validator = ITSSOTokenValidator()
-                    request.user.bearer_token = token_validator.validate_token(
-                        request=request,
-                        additional_scopes_to_validate=set[ScopeClaims]([ScopeClaims.SERVICE_ACCOUNTS_CLAIM]),
-                    )
-
-                    self.remove_service_accounts(
+                    service_accounts_to_remove = self.remove_service_accounts(
                         user=request.user,
                         service_accounts=service_accounts,
                         group=group,
                         org_id=org_id,
                     )
-                except InsufficientPrivilegesError as ipe:
-                    return Response(
-                        status=status.HTTP_403_FORBIDDEN,
-                        data={
-                            "errors": [{"detail": str(ipe), "status": status.HTTP_403_FORBIDDEN, "source": "groups"}]
-                        },
-                    )
-                except ValueError as ve:
-                    return Response(
-                        status=status.HTTP_404_NOT_FOUND,
-                        data={
-                            "errors": [
-                                {
-                                    "detail": str(ve),
-                                    "status": status.HTTP_404_NOT_FOUND,
-                                    "source": "groups",
-                                }
-                            ],
-                        },
-                    )
 
-                # Create a default and successful response object. If no user principals are to be removed below, this
-                # response will be returned. Else, it will be overridden with whichever response the user removal
-                # generates.
-                response = Response(status=status.HTTP_204_NO_CONTENT)
+                    # Create a default and successful response object. If no user principals are to be removed below,
+                    # this response will be returned. Else, it will be overridden with whichever response the user
+                    # removal generates.
+                    response = Response(status=status.HTTP_204_NO_CONTENT)
 
-            # Remove the users from the group too.
-            if USERNAMES_KEY in request.query_params:
-                username = request.query_params.get(USERNAMES_KEY, "")
-                principals = [name.strip() for name in username.split(",")]
-                resp = self.remove_principals(group, principals, org_id=org_id)
-                if isinstance(resp, dict) and "errors" in resp:
-                    return Response(status=resp.get("status_code"), data={"errors": resp.get("errors")})
-                response = Response(status=status.HTTP_204_NO_CONTENT)
+                principals_to_remove = []
+                # Remove the users from the group too.
+                if USERNAMES_KEY in request.query_params:
+                    username = request.query_params.get(USERNAMES_KEY, "")
+                    principals = [name.strip() for name in username.split(",")]
+                    resp, principals_to_remove = self.remove_principals(group, principals, org_id=org_id)
+                    if isinstance(resp, dict) and "errors" in resp:
+                        return Response(status=resp.get("status_code"), data={"errors": resp.get("errors")})
+                    response = Response(status=status.HTTP_204_NO_CONTENT)
+
+                dual_write_handler = RelationApiDualWriteGroupHandler(
+                    group,
+                    ReplicationEventType.REMOVE_PRINCIPALS_FROM_GROUP,
+                    principals_to_remove + service_accounts_to_remove,
+                )
+                dual_write_handler.replicate_removed_principals()
 
         return response
 
@@ -1096,9 +1107,7 @@ class GroupViewSet(
         roles_for_group = group.roles().values("uuid")
         return roles.exclude(uuid__in=roles_for_group)
 
-    def remove_service_accounts(
-        self, user: User, group: Group, service_accounts: Iterable[str], org_id: str = ""
-    ) -> None:
+    def remove_service_accounts(self, user: User, group: Group, service_accounts: Iterable[str], org_id: str = ""):
         """Remove the given service accounts from the tenant."""
         # Log our intention.
         request_id = getattr(self.request, "req_id", None)
@@ -1126,10 +1135,11 @@ class GroupViewSet(
 
             raise ValueError(f"Service account(s) {service_account_ids_diff} not found in the group '{group.name}'")
 
+        removed_service_accounts = []
         # Remove service accounts from the group.
-        with transaction.atomic():
-            for service_account in valid_service_accounts:
-                group.principals.remove(service_account)
+        for service_account in valid_service_accounts:
+            group.principals.remove(service_account)
+            removed_service_accounts.append(service_account)
 
         logger.info(
             f"[Request_id:{request_id}] {valid_service_account_ids} "
@@ -1137,3 +1147,5 @@ class GroupViewSet(
         )
         for username in service_accounts:
             group_principal_change_notification_handler(self.request.user, group, username, "removed")
+
+        return removed_service_accounts
