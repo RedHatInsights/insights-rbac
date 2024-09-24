@@ -20,6 +20,7 @@ import logging
 from typing import Optional
 
 from django.conf import settings
+from management.principal.model import Principal
 from management.role.relation_api_dual_write_handler import (
     DualWriteException,
     OutboxReplicator,
@@ -39,8 +40,7 @@ class RelationApiDualWriteGroupHandler:
         self,
         group,
         event_type: ReplicationEventType,
-        principal_usernames,
-        service_accounts,
+        principals: list[Principal],
         replicator: Optional[RelationReplicator] = None,
     ):
         """Initialize RelationApiDualWriteGroupHandler."""
@@ -49,8 +49,7 @@ class RelationApiDualWriteGroupHandler:
         try:
             self.group_relations_to_add = []
             self.group_relations_to_remove = []
-            self.principal_usernames = principal_usernames
-            self.service_accounts = service_accounts
+            self.principals = principals
             self.group = group
             self.event_type = event_type
             self._replicator = replicator if replicator else OutboxReplicator(group)
@@ -64,7 +63,7 @@ class RelationApiDualWriteGroupHandler:
     def _generate_relations(self):
         """Generate user-groups relations."""
         relations = []
-        for principal in self.principal_usernames + self.service_accounts:
+        for principal in self.principals:
             relations.append(
                 create_relationship(
                     ("rbac", "group"), str(self.group.uuid), ("rbac", "user"), str(principal.uuid), "member"

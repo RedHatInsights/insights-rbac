@@ -126,7 +126,6 @@ class DualWriteTestCase(TestCase):
             group,
             ReplicationEventType.CREATE_GROUP,
             principals,
-            [],
             replicator=InMemoryRelationReplicator(self.tuples),
         )
         dual_write.replicate_new_principals()
@@ -141,7 +140,6 @@ class DualWriteTestCase(TestCase):
             group,
             ReplicationEventType.CREATE_GROUP,
             principals,
-            [],
             replicator=InMemoryRelationReplicator(self.tuples),
         )
         dual_write.replicate_new_principals()
@@ -156,7 +154,6 @@ class DualWriteTestCase(TestCase):
             group,
             ReplicationEventType.CREATE_GROUP,
             principals,
-            [],
             replicator=InMemoryRelationReplicator(self.tuples),
         )
         dual_write.replicate_removed_principals()
