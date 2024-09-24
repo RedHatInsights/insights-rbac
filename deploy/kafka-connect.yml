@@ -98,14 +98,18 @@ objects:
     name: rbac-kafka-connect
     annotations:
       strimzi.io/use-connector-resources: "true"
-  imagePullSecrets:
-  - name: quay.io
   #  annotations:
   #  # use-connector-resources configures this KafkaConnect
   #  # to use KafkaConnector resources to avoid
   #  # needing to call the Connect REST API directly
   #    strimzi.io/use-connector-resources: "true"
   spec:
+    template:
+      pod:
+        imagePullSecrets:
+          - name: quay-cloudservices-pull
+          - name: rh-registry-pull
+          - name: quay.io
     image: quay.io/cloudservices/kafka-connect:latest
     version: 3.7.0
     replicas: 1
