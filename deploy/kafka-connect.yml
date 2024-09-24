@@ -96,8 +96,8 @@ objects:
   kind: KafkaConnect
   metadata:
     name: rbac-kafka-connect
-  annotations:
-    strimzi.io/use-connector-resources: 'true'
+    annotations:
+      strimzi.io/use-connector-resources: "true"
   #  annotations:
   #  # use-connector-resources configures this KafkaConnect
   #  # to use KafkaConnector resources to avoid
