@@ -104,6 +104,7 @@ objects:
   #  # needing to call the Connect REST API directly
   #    strimzi.io/use-connector-resources: "true"
   spec:
+    image: quay.io/cloudservices/kafka-connect:latest
     version: 3.7.0
     replicas: 1
     bootstrapServers: rbac-kafka-kafka-bootstrap:9092
