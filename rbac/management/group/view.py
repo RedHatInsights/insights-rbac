@@ -629,6 +629,7 @@ class GroupViewSet(
         validate_uuid(uuid, "group uuid validation")
 
         org_id = self.request.user.org_id
+        group = self.get_object()
         if request.method == "POST":
             serializer = GroupPrincipalInputSerializer(data=request.data)
 
@@ -646,11 +647,10 @@ class GroupViewSet(
                 else:
                     principals.append(specified_principal)
 
-            group_to_protect = self.get_object()
-            self.protect_system_groups("add principals", group_to_protect)
+            self.protect_system_groups("add principals", group)
 
             if not request.user.admin:
-                self.protect_group_with_user_access_admin_role(group_to_protect.roles_with_access(), "add principals")
+                self.protect_group_with_user_access_admin_role(group.roles_with_access(), "add principals")
 
             # Process the service accounts and add them to the group.
             if len(service_accounts) > 0:
@@ -691,7 +691,6 @@ class GroupViewSet(
 
             with transaction.atomic():
                 new_service_accounts = []
-                group = self.get_object()
                 if len(service_accounts) > 0:
                     group, new_service_accounts = self.add_service_accounts(
                         group=group,
@@ -711,7 +710,6 @@ class GroupViewSet(
             output = GroupSerializer(group)
             response = Response(status=status.HTTP_200_OK, data=output.data)
         elif request.method == "GET":
-            group = self.get_object()
             # Check if the request comes with a bunch of service account client IDs that we need to check. Since this
             # query parameter is incompatible with any other query parameter, we make the checks first. That way if any
             # other query parameter was specified, we simply return early.
@@ -876,7 +874,6 @@ class GroupViewSet(
             page = self.paginate_queryset(resp.get("data"))
             response = self.get_paginated_response(page)
         else:
-            group = self.get_object()
             self.protect_system_groups("remove principals")
 
             if not request.user.admin:
