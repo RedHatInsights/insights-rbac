@@ -39,6 +39,5 @@ fi
 
 # Example operation using the NAMESPACE
 echo "The provided namespace is: $NAMESPACE"
-
-oc process -f ../deploy/kafka-connect.yml | oc apply --namespace=$NAMESPACE -f -
-oc process -f ../deploy/debezium-connector.yml --param-file=connector-params.env | oc apply --namespace=$NAMESPACE -f -
+oc process -f ../deploy/kafka-connect.yml --namespace=$NAMESPACE | oc apply --namespace=$NAMESPACE -f -
+oc process -f ../deploy/debezium-connector.yml --param-file=connector-params.env --namespace=$NAMESPACE | oc apply --namespace=$NAMESPACE -f -
