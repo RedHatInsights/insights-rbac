@@ -133,15 +133,7 @@ class RelationApiDualWriteGroupHandler:
                 self.group_relations_to_add.append(mapping.add_group_to_bindings(str(self.group.uuid)))
                 mapping.save(force_update=True)
             except BindingMapping.DoesNotExist:
-                id = str(uuid4())
-                binding = V2rolebinding(
-                    id,
-                    V2role(str(role.uuid), True, frozenset()),
-                    # TODO: don't use org id once we have workspace built ins
-                    V2boundresource(("rbac", "workspace"), self.group.tenant.org_id),
-                    groups=[str(self.group.uuid)],
-                )
-                mapping = BindingMapping.for_role_binding(binding, role)
+                mapping = BindingMapping.for_group_and_role(role, str(self.group.uuid), self.group.tenant.org_id)
                 mapping.save(force_insert=True)
                 self.group_relations_to_add.extend(mapping.as_tuples())
         else:
@@ -160,7 +152,7 @@ class RelationApiDualWriteGroupHandler:
         # This logic can be the same for system vs custom b/c we'd never create a binding in this path
         bindings: Iterable[BindingMapping] = role.binding_mappings.select_for_update().all()
         for binding in bindings:
-            self.group_relations_to_remove.append(binding.remove_group_from_bindings(str(group.uuid)))
+            self.group_relations_to_remove.append(binding.remove_group_from_bindings(str(self.group.uuid)))
             if not binding.is_empty():
                 binding.save()
             else:

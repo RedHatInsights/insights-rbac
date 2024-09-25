@@ -133,6 +133,18 @@ class BindingMapping(models.Model):
     resource_id = models.CharField(max_length=256, null=False)
 
     @classmethod
+    def for_group_and_role(cls, role: Role, group_uuid, org_id):
+        id = str(uuid4())
+        binding = V2rolebinding(
+            id,
+            V2role(str(role.uuid), True, frozenset()),
+            # TODO: don't use org id once we have workspace built ins
+            V2boundresource(("rbac", "workspace"), org_id),
+            groups=[str(group_uuid)],
+        )
+        return BindingMapping.for_role_binding(binding, role)
+
+    @classmethod
     def for_role_binding(cls, role_binding: V2rolebinding, v1_role: Union[Role, str]):
         """Create a new BindingMapping for a V2rolebinding."""
         mappings = role_binding.as_minimal_dict()
