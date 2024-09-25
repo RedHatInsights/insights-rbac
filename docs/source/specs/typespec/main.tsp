@@ -103,7 +103,7 @@ namespace Workspaces {
         ...Timestamps;
     }
 
-    model WorkspaceAncestry {
+    model WorkspaceAncestor {
         @key uuid: UUID;
         parent_id?: UUID;
         name: string;
@@ -120,7 +120,7 @@ namespace Workspaces {
     }
 
     model ReadWorkspaceWithAncestryResponse extends ReadWorkspaceResponse {
-        ancestry: WorkspaceAncestry[];
+        ancestry: WorkspaceAncestor[];
     }
 
     model UpdateWorkspaceRequest {
