@@ -727,7 +727,7 @@ class GroupViewSet(
                         AuditLog.GROUP,
                         object=group,
                         type_dict=service_accounts,
-                        user_type=AuditLog.SERVICE_ACCOUNT,
+                        user_type="service-account",
                     )
 
         elif request.method == "GET":

@@ -32,13 +32,11 @@ class AuditLog(TenantAwareModel):
     ROLE = "role"
     USER = "user"
     PERMISSION = "permission"
-    SERVICE_ACCOUNT = "service_account"
     RESOURCE_CHOICES = (
         (GROUP, "Group"),
         (ROLE, "Role"),
         (USER, "User"),
         (PERMISSION, "Permission"),
-        (SERVICE_ACCOUNT, "Service_account"),
     )
 
     DELETE = "delete"
@@ -106,7 +104,7 @@ class AuditLog(TenantAwareModel):
         if user_type == AuditLog.USER:
             for i in type_dict:
                 names_list.append(i["username"])
-        if user_type == AuditLog.SERVICE_ACCOUNT:
+        if user_type == "service_account":
             for i in type_dict:
                 names_list.append(i["clientId"])
         if user_type == AuditLog.ROLE:
