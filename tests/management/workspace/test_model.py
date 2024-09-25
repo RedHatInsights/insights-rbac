@@ -45,3 +45,12 @@ class WorkspaceModelTests(IdentityRequest):
         parent = Workspace.objects.create(name="Parent", tenant=self.tenant)
         child = Workspace.objects.create(name="Child", tenant=self.tenant, parent=parent)
         self.assertRaises(ProtectedError, parent.delete)
+
+    def test_ancestors(self):
+        """Test ancestors on a workspce"""
+        root = Workspace.objects.create(name="Root", tenant=self.tenant, parent=None)
+        level_1 = Workspace.objects.create(name="Level 1", tenant=self.tenant, parent=root)
+        level_2 = Workspace.objects.create(name="Level 2", tenant=self.tenant, parent=level_1)
+        level_3 = Workspace.objects.create(name="Level 3", tenant=self.tenant, parent=level_2)
+        level_4 = Workspace.objects.create(name="Level 4", tenant=self.tenant, parent=level_3)
+        self.assertCountEqual(level_3.ancestors(), [root, level_1, level_2])

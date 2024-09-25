@@ -33,12 +33,13 @@ class WorkspaceViewTests(IdentityRequest):
     def setUp(self):
         """Set up the audit log model tests."""
         super().setUp()
-        self.init_workspace_attributes = {
-            "name": "Init Workspace",
-            "description": "Init Workspace - description",
-            "tenant_id": self.tenant.id,
-        }
-        self.init_workspace = Workspace.objects.create(**self.init_workspace_attributes)
+        self.parent_workspace = Workspace.objects.create(name="Parent Workspace", tenant=self.tenant)
+        self.init_workspace = Workspace.objects.create(
+            name="Init Workspace",
+            description="Init Workspace - description",
+            tenant=self.tenant,
+            parent=self.parent_workspace,
+        )
 
     def tearDown(self):
         """Tear down group model tests."""
@@ -68,6 +69,7 @@ class WorkspaceViewTests(IdentityRequest):
         self.assertNotEquals(data.get("created"), "")
         self.assertNotEquals(data.get("modified"), "")
         self.assertEquals(data.get("description"), "Workspace")
+        self.assertEqual(response.get("content-type"), "application/json")
 
     def test_create_workspace_without_parent(self):
         """Test for creating a workspace."""
@@ -84,6 +86,7 @@ class WorkspaceViewTests(IdentityRequest):
         self.assertNotEquals(data.get("created"), "")
         self.assertNotEquals(data.get("modified"), "")
         self.assertEquals(data.get("description"), "Workspace")
+        self.assertEqual(response.get("content-type"), "application/json")
 
     def test_create_workspace_empty_body(self):
         """Test for creating a workspace."""
@@ -100,6 +103,7 @@ class WorkspaceViewTests(IdentityRequest):
         self.assertEqual(detail, "Field 'name' is required.")
 
         self.assertEqual(status_code, 400)
+        self.assertEqual(response.get("content-type"), "application/problem+json")
 
     def test_create_workspace_unauthorized(self):
         """Test for creating a workspace."""
@@ -119,6 +123,7 @@ class WorkspaceViewTests(IdentityRequest):
         detail = response.data.get("detail")
         self.assertEqual(detail, "You do not have permission to perform this action.")
         self.assertEqual(status_code, 403)
+        self.assertEqual(response.get("content-type"), "application/problem+json")
 
     def test_duplicate_create_workspace(self):
         """Test that creating a duplicate workspace is allowed."""
@@ -137,6 +142,7 @@ class WorkspaceViewTests(IdentityRequest):
         client = APIClient()
         response = client.post(url, test_data, format="json", **self.headers)
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.get("content-type"), "application/json")
 
     def test_update_workspace(self):
         """Test for updating a workspace."""
@@ -168,6 +174,7 @@ class WorkspaceViewTests(IdentityRequest):
         update_workspace = Workspace.objects.filter(id=workspace.id).first()
         self.assertEquals(update_workspace.name, "Updated name")
         self.assertEquals(update_workspace.description, "Updated description")
+        self.assertEqual(response.get("content-type"), "application/json")
 
     def test_partial_update_workspace_with_put_method(self):
         """Test for updating a workspace."""
@@ -195,6 +202,7 @@ class WorkspaceViewTests(IdentityRequest):
         self.assertEqual(detail, "Field 'description' is required.")
         self.assertEqual(status_code, 400)
         self.assertEqual(instance, url)
+        self.assertEqual(response.get("content-type"), "application/problem+json")
 
     def test_update_workspace_same_parent(self):
         """Test for updating a workspace."""
@@ -229,6 +237,7 @@ class WorkspaceViewTests(IdentityRequest):
         self.assertIsNotNone(detail)
         self.assertEqual(detail, "Parent ID and UUID can't be same")
         self.assertEqual(status_code, 400)
+        self.assertEqual(response.get("content-type"), "application/problem+json")
 
     def test_update_workspace_parent_doesnt_exist(self):
         """Test for updating a workspace."""
@@ -261,6 +270,7 @@ class WorkspaceViewTests(IdentityRequest):
         self.assertEqual(detail, f"Parent workspace '{parent}' doesn't exist in tenant")
         self.assertEqual(status_code, 400)
         self.assertEqual(instance, url)
+        self.assertEqual(response.get("content-type"), "application/problem+json")
 
     def test_partial_update_workspace(self):
         """Test for updating a workspace."""
@@ -288,6 +298,7 @@ class WorkspaceViewTests(IdentityRequest):
 
         update_workspace = Workspace.objects.filter(id=workspace.id).first()
         self.assertEquals(update_workspace.name, "Updated name")
+        self.assertEqual(response.get("content-type"), "application/json")
 
     def test_update_workspace_empty_body(self):
         """Test for updating a workspace with empty body"""
@@ -305,6 +316,7 @@ class WorkspaceViewTests(IdentityRequest):
         self.assertEqual(detail, "Field 'name' is required.")
         self.assertEqual(status_code, 400)
         self.assertEqual(instance, url)
+        self.assertEqual(response.get("content-type"), "application/problem+json")
 
     def test_update_duplicate_workspace(self):
         workspace_data = {
@@ -336,6 +348,7 @@ class WorkspaceViewTests(IdentityRequest):
 
         response = client.put(url, workspace_data_for_put, format="json", **self.headers)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.get("content-type"), "application/json")
 
     def test_update_workspace_unauthorized(self):
         workspace = {}
@@ -355,6 +368,7 @@ class WorkspaceViewTests(IdentityRequest):
 
         self.assertEqual(detail, "You do not have permission to perform this action.")
         self.assertEqual(status_code, 403)
+        self.assertEqual(response.get("content-type"), "application/problem+json")
 
     def test_get_workspace(self):
         url = reverse("workspace-detail", kwargs={"uuid": self.init_workspace.uuid})
@@ -369,6 +383,50 @@ class WorkspaceViewTests(IdentityRequest):
         self.assertIsNotNone(data.get("uuid"))
         self.assertNotEquals(data.get("created"), "")
         self.assertNotEquals(data.get("modified"), "")
+        self.assertEqual(response.get("content-type"), "application/json")
+        self.assertEqual(data.get("ancestry"), None)
+        self.assertEqual(response.get("content-type"), "application/json")
+
+    def test_get_workspace_with_ancestry(self):
+        base_url = reverse("workspace-detail", kwargs={"uuid": self.init_workspace.uuid})
+        url = f"{base_url}?include_ancestry=true"
+        client = APIClient()
+        response = client.get(url, None, format="json", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.data
+        self.assertEqual(data.get("name"), "Init Workspace")
+        self.assertEquals(data.get("description"), "Init Workspace - description")
+        self.assertNotEquals(data.get("uuid"), "")
+        self.assertIsNotNone(data.get("uuid"))
+        self.assertNotEquals(data.get("created"), "")
+        self.assertNotEquals(data.get("modified"), "")
+        self.assertEqual(
+            data.get("ancestry"),
+            [{"name": self.parent_workspace.name, "uuid": str(self.parent_workspace.uuid), "parent_id": None}],
+        )
+        self.assertEqual(response.get("content-type"), "application/json")
+        self.assertEqual(data.get("ancestry"), None)
+
+    def test_get_workspace_with_ancestry(self):
+        base_url = reverse("workspace-detail", kwargs={"uuid": self.init_workspace.uuid})
+        url = f"{base_url}?include_ancestry=true"
+        client = APIClient()
+        response = client.get(url, None, format="json", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.data
+        self.assertEqual(data.get("name"), "Init Workspace")
+        self.assertEquals(data.get("description"), "Init Workspace - description")
+        self.assertNotEquals(data.get("uuid"), "")
+        self.assertIsNotNone(data.get("uuid"))
+        self.assertNotEquals(data.get("created"), "")
+        self.assertNotEquals(data.get("modified"), "")
+        self.assertEqual(
+            data.get("ancestry"),
+            [{"name": self.parent_workspace.name, "uuid": str(self.parent_workspace.uuid), "parent_id": None}],
+        )
+        self.assertEqual(response.get("content-type"), "application/json")
 
     def test_get_workspace_not_found(self):
         url = reverse("workspace-detail", kwargs={"uuid": "XXXX"})
@@ -381,6 +439,7 @@ class WorkspaceViewTests(IdentityRequest):
 
         self.assertEqual(detail, "Not found.")
         self.assertEqual(status_code, 404)
+        self.assertEqual(response.get("content-type"), "application/problem+json")
 
     def test_get_workspace_unauthorized(self):
         request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
@@ -398,6 +457,7 @@ class WorkspaceViewTests(IdentityRequest):
 
         self.assertEqual(detail, "You do not have permission to perform this action.")
         self.assertEqual(status_code, 403)
+        self.assertEqual(response.get("content-type"), "application/problem+json")
 
     def test_delete_workspace(self):
         workspace_data = {
@@ -410,9 +470,12 @@ class WorkspaceViewTests(IdentityRequest):
 
         url = reverse("workspace-detail", kwargs={"uuid": workspace.uuid})
         client = APIClient()
-        response = client.delete(url, None, format="json", **self.headers)
+        test_headers = self.headers.copy()
+        test_headers["HTTP_ACCEPT"] = "application/problem+json"
+        response = client.delete(url, None, format="json", **test_headers)
 
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertEqual(response.headers.get("content-type"), None)
         deleted_workspace = Workspace.objects.filter(id=workspace.id).first()
         self.assertIsNone(deleted_workspace)
 
@@ -426,6 +489,7 @@ class WorkspaceViewTests(IdentityRequest):
         detail = response.data.get("detail")
         self.assertEqual(detail, "Not found.")
         self.assertEqual(status_code, 404)
+        self.assertEqual(response.get("content-type"), "application/problem+json")
 
     def test_delete_workspace_unauthorized(self):
         request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
@@ -442,6 +506,7 @@ class WorkspaceViewTests(IdentityRequest):
         detail = response.data.get("detail")
         self.assertEqual(detail, "You do not have permission to perform this action.")
         self.assertEqual(status_code, 403)
+        self.assertEqual(response.get("content-type"), "application/problem+json")
 
     def test_get_workspace_list(self):
         """Test for listing workspaces."""
@@ -452,6 +517,7 @@ class WorkspaceViewTests(IdentityRequest):
         payload = response.data
         self.assertIsInstance(payload.get("data"), list)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.get("content-type"), "application/json")
         self.assertEqual(payload.get("meta").get("count"), Workspace.objects.count())
         for keyname in ["meta", "links", "data"]:
             self.assertIn(keyname, payload)

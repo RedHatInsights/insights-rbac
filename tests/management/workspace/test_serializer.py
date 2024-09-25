@@ -18,7 +18,11 @@ from django.test import TestCase
 from unittest.mock import Mock
 from api.models import Tenant
 from management.models import Workspace
-from management.workspace.serializer import WorkspaceSerializer
+from management.workspace.serializer import (
+    WorkspaceAncestrySerializer,
+    WorkspaceSerializer,
+    WorkspaceWithAncestrySerializer,
+)
 import uuid
 
 
@@ -68,5 +72,29 @@ class WorkspaceSerializerTest(TestCase):
             "created": self._format_timestamps(self.parent.created),
             "modified": self._format_timestamps(self.parent.modified),
         }
+
+        self.assertDictEqual(serializer.data, expected_data)
+
+    def test_get_workspace_detail_with_ancestry(self):
+        """Test workspace serializer with ancestry"""
+        serializer = WorkspaceWithAncestrySerializer(self.child)
+        expected_data = {
+            "uuid": str(self.child.uuid),
+            "name": self.child.name,
+            "description": self.child.description,
+            "parent_id": str(self.parent.uuid),
+            "created": self._format_timestamps(self.child.created),
+            "modified": self._format_timestamps(self.child.modified),
+            "ancestry": [{"name": self.parent.name, "uuid": str(self.parent.uuid), "parent_id": None}],
+            "created": self._format_timestamps(self.child.created),
+            "modified": self._format_timestamps(self.child.modified),
+        }
+
+        self.assertDictEqual(serializer.data, expected_data)
+
+    def test_workspace_ancestry(self):
+        """Test workspace ancestry serializer"""
+        serializer = WorkspaceAncestrySerializer(self.child)
+        expected_data = {"name": self.child.name, "parent_id": str(self.parent.uuid), "uuid": str(self.child.uuid)}
 
         self.assertDictEqual(serializer.data, expected_data)
