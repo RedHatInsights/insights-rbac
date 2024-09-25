@@ -41,7 +41,10 @@ from management.utils import clear_pk
 from rest_framework import serializers
 
 from api.models import Tenant
-from migration_tool.models import V2boundresource, V2role, V2rolebinding
+from management.group.relation_api_dual_write_group_handler import (
+    RelationApiDualWriteGroupHandler,
+    ReplicationEventType,
+)
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
@@ -163,52 +166,12 @@ def add_roles(group, roles_or_role_ids, tenant, user=None):
             continue
 
         system_policy.roles.add(role)
-        tuples_to_add: list[Relationship] = []
 
-        if role.system:
-            try:
-                mapping = (
-                    BindingMapping.objects.select_for_update()
-                    .filter(
-                        role=role,
-                        resource_type_namespace="rbac",
-                        resource_type_name="workspace",
-                        # TODO: don't use org id once we have workspace built ins
-                        resource_id=tenant.org_id,
-                    )
-                    .get()
-                )
-                tuples_to_add.append(mapping.add_group_to_bindings(group.uuid))
-                mapping.save(force_update=True)
-            except BindingMapping.DoesNotExist:
-                id = str(uuid4())
-                binding = V2rolebinding(
-                    id,
-                    V2role(role.uuid, True, frozenset()),
-                    # TODO: don't use org id once we have workspace built ins
-                    V2boundresource(("rbac", "workspace"), tenant.org_id),
-                    groups=[group.uuid],
-                )
-                mapping = BindingMapping.for_role_binding(binding, role)
-                mapping.save(force_insert=True)
-                tuples_to_add.extend(mapping.as_tuples())
-        else:
-            # Intentionally queried this way to avoid use of cached binding_mappings
-            # There is a risk of phantom reads here, but this is why we lock the custom Role
-            bindings: Iterable[BindingMapping] = BindingMapping.objects.filter(role=role).select_for_update()
-            for mapping in bindings:
-                tuples_to_add.append(mapping.add_group_to_bindings(group.uuid))
-                mapping.save(force_update=True)
-
-        # Send notifications
-        # TODO: maybe use top-level method instead so replicator can be modified for tests
-        OutboxReplicator(role).replicate(
-            ReplicationEvent(
-                type=ReplicationEventType.ASSIGN_ROLE,
-                partition_key="rbactodo",
-                add=tuples_to_add,
-            )
+        dual_write_handler = RelationApiDualWriteGroupHandler(
+            group, ReplicationEventType.ASSIGN_ROLE, []
         )
+        dual_write_handler.replicate_added_role(role)
+        # Send notifications
         group_role_change_notification_handler(user, group, role, "added")
 
 
@@ -224,7 +187,6 @@ def remove_roles(group, roles_or_role_ids, tenant, user=None):
 
     group = Group.objects.get(name=group.name, tenant=tenant)
     roles = group.roles().filter(name__in=role_names)
-
     # TODO: lock custom roles like above
     for policy in group.policies.all():
         # Only remove the role if it was attached
@@ -233,25 +195,13 @@ def remove_roles(group, roles_or_role_ids, tenant, user=None):
                 policy.roles.remove(role)
                 logger.info(f"Removing role {role} from group {group.name} for tenant {tenant.org_id}.")
                 tuples_to_remove: list[Relationship] = []
-                # This logic can be the same for system vs custom b/c we'd never create a binding in this path
-                bindings: Iterable[BindingMapping] = role.binding_mappings.select_for_update.all()
-                for binding in bindings:
-                    tuples_to_remove.append(binding.remove_group_from_bindings(group.uuid))
-                    if not binding.is_empty():
-                        binding.save()
-                    else:
-                        tuples_to_remove.extend(binding.as_tuples())
-                        binding.delete()
+
+                dual_write_handler = RelationApiDualWriteGroupHandler(
+                    group, ReplicationEventType.ASSIGN_ROLE, []
+                )
+                dual_write_handler.replicate_removed_role(role)
 
                 # Send notifications
-                # TODO: maybe use top-level method instead so replicator can be modified for tests
-                OutboxReplicator(role).replicate(
-                    ReplicationEvent(
-                        type=ReplicationEventType.ASSIGN_ROLE,
-                        partition_key="rbactodo",
-                        remove=tuples_to_remove,
-                    )
-                )
                 group_role_change_notification_handler(user, group, role, "removed")
 
 

@@ -17,10 +17,12 @@
 
 """Class to handle Dual Write API related operations."""
 import logging
-from typing import Optional
+from typing import Iterable, Optional
+from uuid import uuid4
 
 from django.conf import settings
 from management.principal.model import Principal
+from management.role.model import BindingMapping, Role
 from management.role.relation_api_dual_write_handler import (
     DualWriteException,
     OutboxReplicator,
@@ -29,6 +31,7 @@ from management.role.relation_api_dual_write_handler import (
     ReplicationEventType,
 )
 from migration_tool.utils import create_relationship
+from migration_tool.models import V2boundresource, V2role, V2rolebinding
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
@@ -107,3 +110,60 @@ class RelationApiDualWriteGroupHandler:
             )
         except Exception as e:
             raise DualWriteException(e)
+
+    def replicate_added_role(self, role: Role):
+        """Replicate added role. role needs to be locked"""
+
+        if not self.replication_enabled():
+            return
+
+        if role.system:
+            try:
+                mapping = (
+                    BindingMapping.objects.select_for_update()
+                    .filter(
+                        role=role,
+                        resource_type_namespace="rbac",
+                        resource_type_name="workspace",
+                        # TODO: don't use org id once we have workspace built ins
+                        resource_id=self.group.tenant.org_id,
+                    )
+                    .get()
+                )
+                self.group_relations_to_add.append(mapping.add_group_to_bindings(str(self.group.uuid)))
+                mapping.save(force_update=True)
+            except BindingMapping.DoesNotExist:
+                id = str(uuid4())
+                binding = V2rolebinding(
+                    id,
+                    V2role(str(role.uuid), True, frozenset()),
+                    # TODO: don't use org id once we have workspace built ins
+                    V2boundresource(("rbac", "workspace"), self.group.tenant.org_id),
+                    groups=[str(self.group.uuid)],
+                )
+                mapping = BindingMapping.for_role_binding(binding, role)
+                mapping.save(force_insert=True)
+                self.group_relations_to_add.extend(mapping.as_tuples())
+        else:
+            # Intentionally queried this way to avoid use of cached binding_mappings
+            # There is a risk of phantom reads here, but this is why we lock the custom Role
+            bindings: Iterable[BindingMapping] = BindingMapping.objects.filter(role=role).select_for_update()
+
+            for mapping in bindings:
+                self.group_relations_to_add.append(mapping.add_group_to_bindings(str(self.group.uuid)))
+                mapping.save(force_update=True)
+        self._replicate()
+
+    def replicate_removed_role(self, role: Role):
+        if not self.replication_enabled():
+            return
+        # This logic can be the same for system vs custom b/c we'd never create a binding in this path
+        bindings: Iterable[BindingMapping] = role.binding_mappings.select_for_update().all()
+        for binding in bindings:
+            self.group_relations_to_remove.append(binding.remove_group_from_bindings(str(group.uuid)))
+            if not binding.is_empty():
+                binding.save()
+            else:
+                self.group_relations_to_remove.extend(binding.as_tuples())
+                binding.delete()
+        self._replicate()
