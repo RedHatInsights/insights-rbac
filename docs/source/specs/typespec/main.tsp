@@ -205,7 +205,10 @@ namespace Workspaces {
 
     @doc("List workspaces in a tenant")
     @summary("List workspaces in a tenant")
-    @get op list(): WorkspaceListResponse | Problems.CommonProblems;
+    @get op list(
+        @query limit?: int64 = 10;
+        @query offset?: int64 = 0;
+    ): WorkspaceListResponse | Problems.CommonProblems;
 
     @doc("Create workspace in tenant")
     @summary("Create workspace in tenant")
