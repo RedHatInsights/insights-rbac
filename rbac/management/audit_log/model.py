@@ -80,9 +80,8 @@ class AuditLog(TenantAwareModel):
             group_object_name = "group: " + group_object.name
             return group_object_id, group_object_name
 
-        elif r_type == AuditLog.PERMISSION:
-            # TODO: update for permission related items
-            return None
+        else:
+            return TypeError("Wrong Resource Type")
 
     def find_edited_field(self, resource, resource_name, request, object):
         """Add additional information when group/role is edited."""
@@ -104,11 +103,13 @@ class AuditLog(TenantAwareModel):
         if user_type == AuditLog.USER:
             for i in type_dict:
                 names_list.append(i["username"])
-        if user_type == "service_account":
+        elif user_type == "service_account":
             for i in type_dict:
                 names_list.append(i["clientId"])
-        if user_type == AuditLog.ROLE:
+        elif user_type == AuditLog.ROLE:
             names_list = type_dict
+        else:
+            return NameError("User type does not exist")
         return ", ".join(names_list)
 
     def log_create(self, request, resource):
@@ -152,7 +153,7 @@ class AuditLog(TenantAwareModel):
         self.tenant_id = self.get_tenant_id(request)
         super(AuditLog, self).save()
 
-    def log_add(self, request, resource, object, type_dict, user_type):
+    def log_group_assignment(self, request, resource, object, type_dict, user_type):
         """Audit Log when a role, user/principal, or service account is added to a group."""
         self.principal_username = request.user.username
         self.resource_type = resource

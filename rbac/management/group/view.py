@@ -713,7 +713,7 @@ class GroupViewSet(
             if status.is_success(response.status_code):
                 if len(principals) > 0:
                     auditlog = AuditLog()
-                    auditlog.log_add(
+                    auditlog.log_group_assignment(
                         request,
                         AuditLog.GROUP,
                         object=group,
@@ -722,7 +722,7 @@ class GroupViewSet(
                     )
                 if len(service_accounts) > 0:
                     auditlog = AuditLog()
-                    auditlog.log_add(
+                    auditlog.log_group_assignment(
                         request,
                         AuditLog.GROUP,
                         object=group,
@@ -1086,7 +1086,7 @@ class GroupViewSet(
             response = Response(status=status.HTTP_200_OK, data=response_data.data)
             if status.is_success(response.status_code):
                 auditlog = AuditLog()
-                auditlog.log_add(
+                auditlog.log_group_assignment(
                     request,
                     AuditLog.GROUP,
                     object=group,
