@@ -21,16 +21,18 @@ from django.utils.translation import gettext as _
 from django_filters import rest_framework as filters
 from management.base_viewsets import BaseV2ViewSet
 from management.permissions import WorkspaceAccessPermission
-from management.utils import validate_uuid
+from management.utils import validate_and_get_key, validate_uuid
 from rest_framework import serializers
 from rest_framework.filters import OrderingFilter
 
 from .model import Workspace
-from .serializer import WorkspaceSerializer
+from .serializer import WorkspaceSerializer, WorkspaceWithAncestrySerializer
 
 VALID_PATCH_FIELDS = ["name", "description", "parent_id"]
 REQUIRED_PUT_FIELDS = ["name", "description", "parent_id"]
 REQUIRED_CREATE_FIELDS = ["name"]
+INCLUDE_ANCESTRY_KEY = "include_ancestry"
+VALID_BOOLEAN_VALUES = ["true", "false"]
 
 
 class WorkspaceViewSet(BaseV2ViewSet):
@@ -47,6 +49,16 @@ class WorkspaceViewSet(BaseV2ViewSet):
     ordering_fields = ("name",)
     ordering = ("name",)
     filter_backends = (filters.DjangoFilterBackend, OrderingFilter)
+
+    def get_serializer_class(self):
+        """Get serializer class based on route."""
+        if self.action == "retrieve":
+            include_ancestry = validate_and_get_key(
+                self.request.query_params, INCLUDE_ANCESTRY_KEY, VALID_BOOLEAN_VALUES, "false"
+            )
+            if include_ancestry == "true":
+                return WorkspaceWithAncestrySerializer
+        return super().get_serializer_class()
 
     def create(self, request, *args, **kwargs):
         """Create a Workspace."""

@@ -103,21 +103,33 @@ namespace Workspaces {
         ...Timestamps;
     }
 
+    model WorkspaceAncestor {
+        @key uuid: UUID;
+        parent_id?: UUID;
+        name: string;
+    }
+
     alias CreateWorkspaceRequest = BasicWorkspace;
 
-    model CreateWorkspaceResponse extends BasicWorkspace{
+    model CreateWorkspaceResponse extends Workspace{
         @statusCode _: 201;
     }
 
-    model ReadWorkspaceResponse extends BasicWorkspace{
+    model ReadWorkspaceResponse extends Workspace {
         @statusCode _: 200;
+    }
+
+    model ReadWorkspaceWithAncestryResponse extends ReadWorkspaceResponse {
+        ancestry: WorkspaceAncestor[];
     }
 
     model UpdateWorkspaceRequest {
         @doc("Workspace A")
         name: string = "Workspace A";
         @doc("Description of Workspace A")
-        description?: string = "Description of Workspace A";
+        description: string = "Description of Workspace A";
+        @doc("Description of Workspace A")
+        parent_id: UUID = "Parent UUID of Workspace A";
     }
 
     model PatchWorkspaceRequest {
@@ -127,11 +139,11 @@ namespace Workspaces {
         description?: string = "Description of Workspace A";
     }
 
-    model UpdateWorkspaceResponse extends BasicWorkspace{
+    model UpdateWorkspaceResponse extends Workspace{
         @statusCode _: 200;
     }
 
-    model PatchWorkspaceResponse extends BasicWorkspace{
+    model PatchWorkspaceResponse extends Workspace{
         @statusCode _: 200;
     }
 
@@ -193,7 +205,10 @@ namespace Workspaces {
 
     @doc("List workspaces in a tenant")
     @summary("List workspaces in a tenant")
-    @get op list(): WorkspaceListResponse | Problems.CommonProblems;
+    @get op list(
+        @query limit?: int64 = 10;
+        @query offset?: int64 = 0;
+    ): WorkspaceListResponse | Problems.CommonProblems;
 
     @doc("Create workspace in tenant")
     @summary("Create workspace in tenant")
@@ -205,7 +220,10 @@ namespace Workspaces {
     @get op read(
         @doc("Unique identification")
         @path uuid: UUID;
-    ): ReadWorkspaceResponse | Problems.CommonProblems | Problems.Problem404;
+
+        @doc("When true, the response will include the ancestry of the workspace.")
+        @query include_ancestry?: boolean;
+    ): ReadWorkspaceResponse | ReadWorkspaceWithAncestryResponse | Problems.CommonProblems | Problems.Problem404;
 
     @doc("Edit a workspace")
     @summary("Edit the workspace name or description")

@@ -33,12 +33,13 @@ class WorkspaceViewTests(IdentityRequest):
     def setUp(self):
         """Set up the audit log model tests."""
         super().setUp()
-        self.init_workspace_attributes = {
-            "name": "Init Workspace",
-            "description": "Init Workspace - description",
-            "tenant_id": self.tenant.id,
-        }
-        self.init_workspace = Workspace.objects.create(**self.init_workspace_attributes)
+        self.parent_workspace = Workspace.objects.create(name="Parent Workspace", tenant=self.tenant)
+        self.init_workspace = Workspace.objects.create(
+            name="Init Workspace",
+            description="Init Workspace - description",
+            tenant=self.tenant,
+            parent=self.parent_workspace,
+        )
 
     def tearDown(self):
         """Tear down group model tests."""
@@ -382,6 +383,49 @@ class WorkspaceViewTests(IdentityRequest):
         self.assertIsNotNone(data.get("uuid"))
         self.assertNotEquals(data.get("created"), "")
         self.assertNotEquals(data.get("modified"), "")
+        self.assertEqual(response.get("content-type"), "application/json")
+        self.assertEqual(data.get("ancestry"), None)
+        self.assertEqual(response.get("content-type"), "application/json")
+
+    def test_get_workspace_with_ancestry(self):
+        base_url = reverse("workspace-detail", kwargs={"uuid": self.init_workspace.uuid})
+        url = f"{base_url}?include_ancestry=true"
+        client = APIClient()
+        response = client.get(url, None, format="json", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.data
+        self.assertEqual(data.get("name"), "Init Workspace")
+        self.assertEquals(data.get("description"), "Init Workspace - description")
+        self.assertNotEquals(data.get("uuid"), "")
+        self.assertIsNotNone(data.get("uuid"))
+        self.assertNotEquals(data.get("created"), "")
+        self.assertNotEquals(data.get("modified"), "")
+        self.assertEqual(
+            data.get("ancestry"),
+            [{"name": self.parent_workspace.name, "uuid": str(self.parent_workspace.uuid), "parent_id": None}],
+        )
+        self.assertEqual(response.get("content-type"), "application/json")
+        self.assertEqual(data.get("ancestry"), None)
+
+    def test_get_workspace_with_ancestry(self):
+        base_url = reverse("workspace-detail", kwargs={"uuid": self.init_workspace.uuid})
+        url = f"{base_url}?include_ancestry=true"
+        client = APIClient()
+        response = client.get(url, None, format="json", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.data
+        self.assertEqual(data.get("name"), "Init Workspace")
+        self.assertEquals(data.get("description"), "Init Workspace - description")
+        self.assertNotEquals(data.get("uuid"), "")
+        self.assertIsNotNone(data.get("uuid"))
+        self.assertNotEquals(data.get("created"), "")
+        self.assertNotEquals(data.get("modified"), "")
+        self.assertEqual(
+            data.get("ancestry"),
+            [{"name": self.parent_workspace.name, "uuid": str(self.parent_workspace.uuid), "parent_id": None}],
+        )
         self.assertEqual(response.get("content-type"), "application/json")
 
     def test_get_workspace_not_found(self):
