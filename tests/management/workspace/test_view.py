@@ -17,6 +17,10 @@
 """Test the Audit Logs Model."""
 from django.db import transaction
 from django.test import TestCase
+from django.test.utils import override_settings
+from django.conf import settings
+from django.urls import clear_url_caches
+from importlib import reload
 from unittest.mock import Mock
 from django.urls import reverse
 from rest_framework import status
@@ -24,6 +28,7 @@ from rest_framework.response import Response
 from rest_framework.test import APIClient
 
 from management.models import Workspace
+from rbac import urls
 from tests.identity_request import IdentityRequest
 
 
@@ -32,6 +37,8 @@ class WorkspaceViewTests(IdentityRequest):
 
     def setUp(self):
         """Set up the audit log model tests."""
+        reload(urls)
+        clear_url_caches()
         super().setUp()
         self.parent_workspace = Workspace.objects.create(name="Parent Workspace", tenant=self.tenant)
         self.init_workspace = Workspace.objects.create(
@@ -46,6 +53,9 @@ class WorkspaceViewTests(IdentityRequest):
         Workspace.objects.update(parent=None)
         Workspace.objects.all().delete()
 
+
+@override_settings(V2_APIS_ENABLED=True)
+class WorkspaceViewTestsV2Enabled(WorkspaceViewTests):
     def test_create_workspace(self):
         """Test for creating a workspace."""
         workspace_data = {
@@ -523,3 +533,13 @@ class WorkspaceViewTests(IdentityRequest):
             self.assertIn(keyname, payload)
         for keyname in ["name", "uuid", "parent_id", "description"]:
             self.assertIn(keyname, payload.get("data")[0])
+
+
+class WorkspaceViewTestsV2Disabled(WorkspaceViewTests):
+    def test_get_workspace_list(self):
+        """Test for accessing v2 APIs which should be disabled by default."""
+        url = "/api/rbac/v2/workspaces/"
+        client = APIClient()
+        response = client.get(url, None, format="json", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
