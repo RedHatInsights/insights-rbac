@@ -113,7 +113,6 @@ class RelationApiDualWriteGroupHandler:
 
     def replicate_added_role(self, role: Role):
         """Replicate added role. role needs to be locked"""
-
         if not self.replication_enabled():
             return
 
@@ -152,10 +151,11 @@ class RelationApiDualWriteGroupHandler:
         # This logic can be the same for system vs custom b/c we'd never create a binding in this path
         bindings: Iterable[BindingMapping] = role.binding_mappings.select_for_update().all()
         for binding in bindings:
-            self.group_relations_to_remove.append(binding.remove_group_from_bindings(str(self.group.uuid)))
-            if not binding.is_empty():
-                binding.save()
-            else:
+            relations = binding.remove_group_from_bindings(str(self.group.uuid))
+            self.group_relations_to_remove.append(relations)
+            if role.system:
                 self.group_relations_to_remove.extend(binding.as_tuples())
                 binding.delete()
+            else:
+                binding.save()
         self._replicate()

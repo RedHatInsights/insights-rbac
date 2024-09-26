@@ -194,9 +194,6 @@ class BindingMapping(models.Model):
 
         return tuples
 
-    def is_empty(self):
-        return len(self.mappings["groups"]) == 0
-
     def remove_group_from_bindings(self, group_id: str) -> Relationship:
         """Remove group from mappings."""
         self.mappings["groups"] = [group for group in self.mappings["groups"] if group != group_id]

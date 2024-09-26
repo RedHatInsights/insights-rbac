@@ -189,12 +189,11 @@ def remove_roles(group, roles_or_role_ids, tenant, user=None):
     roles = group.roles().filter(name__in=role_names)
     # TODO: lock custom roles like above
     for policy in group.policies.all():
-        # Only remove the role if it was attached
         for role in roles:
+            # Only remove the role if it was attached
             if policy.roles.filter(pk=role.pk).exists():
                 policy.roles.remove(role)
                 logger.info(f"Removing role {role} from group {group.name} for tenant {tenant.org_id}.")
-                tuples_to_remove: list[Relationship] = []
 
                 dual_write_handler = RelationApiDualWriteGroupHandler(
                     group, ReplicationEventType.ASSIGN_ROLE, []
