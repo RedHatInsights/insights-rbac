@@ -87,7 +87,6 @@ SERVICE_ACCOUNT_CLIENT_IDS_KEY = "service_account_client_ids"
 SERVICE_ACCOUNT_DESCRIPTION_KEY = "service_account_description"
 SERVICE_ACCOUNT_NAME_KEY = "service_account_name"
 SERVICE_ACCOUNT_USERNAME_FORMAT = "service-account-{clientId}"
-TYPE_SERVICE_ACCOUNT = "service-account"
 VALID_EXCLUDE_VALUES = ["true", "false"]
 VALID_GROUP_ROLE_FILTERS = ["role_name", "role_description", "role_display_name", "role_system"]
 VALID_GROUP_PRINCIPAL_FILTERS = ["principal_username"]
@@ -418,7 +417,9 @@ class GroupViewSet(
     def validate_principals_in_proxy_request(self, principals, org_id=None):
         """Validate principals in proxy request."""
         users = [principal.get("username") for principal in principals]
-        resp = self.proxy.request_filtered_principals(users, org_id=org_id, limit=len(users))
+        resp = self.proxy.request_filtered_principals(
+            users, org_id=org_id, limit=len(users), options={"return_id": True}
+        )
         if "errors" in resp:
             return resp
         if len(resp.get("data", [])) == 0:
@@ -433,11 +434,12 @@ class GroupViewSet(
         tenant = self.request.tenant
         new_principals = []
         for item in principals_from_response:
+            # cross-account request principals won't be in the resp from BOP since they don't exist
             username = item["username"]
             try:
                 principal = Principal.objects.get(username__iexact=username, tenant=tenant)
             except Principal.DoesNotExist:
-                principal = Principal.objects.create(username=username, tenant=tenant)
+                principal = Principal.objects.create(username=username, tenant=tenant, user_id=item["user_id"])
                 logger.info("Created new principal %s for org_id %s.", username, org_id)
             group.principals.add(principal)
             new_principals.append(principal)
@@ -495,7 +497,7 @@ class GroupViewSet(
                 principal = Principal.objects.create(
                     username=SERVICE_ACCOUNT_USERNAME_FORMAT.format(clientId=client_id),
                     service_account_id=client_id,
-                    type=TYPE_SERVICE_ACCOUNT,
+                    type=Principal.Types.SERVICE_ACCOUNT,
                     tenant=tenant,
                 )
 

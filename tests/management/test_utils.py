@@ -172,10 +172,12 @@ class UtilsTests(IdentityRequest):
         database_principal.tenant = self.tenant
         database_principal.type = "user"
         database_principal.username = "clearly-not-a-service-account-db"
+        database_principal.user_id = "1234567890"
         database_principal.save()
 
         request = mock.Mock()
         request.tenant = self.tenant
+        request.user.user_id = "1234567890"
 
         # Call the function under test with the database principal's username and the "from_query" flag as "True", so
         # that we execute the "verify_principal_with_proxy" function from the "try" block, and not the "except" one.

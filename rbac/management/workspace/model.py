@@ -38,3 +38,29 @@ class Workspace(TenantAwareModel):
 
     class Meta:
         ordering = ["name", "modified"]
+
+    def ancestors(self):
+        """Return a list of ancestors for a Workspace instance."""
+        ancestor_ids = [a.uuid for a in self._ancestry_queryset() if a.uuid != self.uuid]
+        ancestors = Workspace.objects.filter(uuid__in=ancestor_ids)
+        return ancestors
+
+    def _ancestry_queryset(self):
+        """Return a raw queryset on the workspace model for ancestors."""
+        return Workspace.objects.raw(
+            """
+            WITH RECURSIVE ancestors AS
+              (SELECT uuid,
+                      parent_id
+               FROM management_workspace
+               WHERE uuid = %s
+               UNION SELECT w.uuid,
+                                w.parent_id
+               FROM management_workspace w
+               JOIN ancestors a ON w.uuid = a.parent_id)
+            SELECT uuid AS uuid,
+                   uuid AS id
+            FROM ancestors
+        """,
+            [self.uuid],
+        )

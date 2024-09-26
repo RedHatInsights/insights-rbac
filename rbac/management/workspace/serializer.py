@@ -50,3 +50,34 @@ class WorkspaceSerializer(serializers.ModelSerializer):
 
         workspace = Workspace.objects.create(**validated_data)
         return workspace
+
+
+class WorkspaceAncestrySerializer(serializers.ModelSerializer):
+    """Serializer for the Workspace ancestry."""
+
+    name = serializers.CharField(required=False, max_length=255)
+    uuid = serializers.UUIDField(read_only=True, required=False)
+    parent_id = serializers.UUIDField(allow_null=True, required=False)
+
+    class Meta:
+        """Metadata for the serializer."""
+
+        model = Workspace
+        fields = ("name", "uuid", "parent_id")
+
+
+class WorkspaceWithAncestrySerializer(WorkspaceSerializer):
+    """Serializer for the Workspace model with ancestry."""
+
+    ancestry = serializers.SerializerMethodField()
+
+    class Meta:
+        """Metadata for the serializer."""
+
+        model = Workspace
+        fields = WorkspaceSerializer.Meta.fields + ("ancestry",)
+
+    def get_ancestry(self, obj):
+        """Serialize the workspace's ancestors."""
+        ancestors = obj.ancestors().only("name", "uuid", "parent_id")
+        return WorkspaceAncestrySerializer(ancestors, many=True).data

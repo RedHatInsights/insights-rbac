@@ -774,17 +774,12 @@ class GroupViewsetTests(IdentityRequest):
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
         return_value={"status_code": 200, "data": [{"username": "test_user"}]},
     )
-    def test_add_group_principals_admin_default(self, mock_request):
-        """Test that adding a principal to a group returns successfully."""
-        # Create a group and a cross account user.
-        cross_account_user = Principal.objects.create(
-            username="cross_account_user", cross_account=True, tenant=self.tenant
-        )
-
+    def test_failure_adding_principals_to_admin_default(self, mock_request):
+        """Test that adding a principal to a admin default group will fail."""
         url = reverse("group-principals", kwargs={"uuid": self.adminGroup.uuid})
         client = APIClient()
         username = "test_user"
-        test_data = {"principals": [{"username": username}, {"username": "cross_account_user"}]}
+        test_data = {"principals": [{"username": username}]}
         response = client.post(url, test_data, format="json", **self.headers)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
@@ -963,7 +958,7 @@ class GroupViewsetTests(IdentityRequest):
     @patch("management.role.relation_api_dual_write_handler.OutboxReplicator._save_replication_event")
     @patch(
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
-        return_value={"status_code": 200, "data": [{"username": "test_add_user"}]},
+        return_value={"status_code": 200, "data": [{"username": "test_add_user", "user_id": -448717}]},
     )
     @patch("core.kafka.RBACProducer.send_kafka_message")
     def test_add_group_principals_success(self, send_kafka_message, mock_request, mock_method):
@@ -983,12 +978,15 @@ class GroupViewsetTests(IdentityRequest):
             test_data = {"principals": [{"username": username}, {"username": cross_account_user.username}]}
 
             response = client.post(url, test_data, format="json", **self.headers)
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
             principal = Principal.objects.get(username=username)
 
-            # Only the user exists in IT will be added to the group.
-            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            # Only the user exists in IT will be created and added to the group
+            # cross account users won't be added
             self.assertEqual(len(response.data.get("principals")), 1)
-            self.assertEqual(response.data.get("principals")[0], {"username": username})
+            self.assertEqual(
+                response.data.get("principals")[0], {"username": username, "user_id": int(principal.user_id)}
+            )
             self.assertEqual(principal.tenant, self.tenant)
 
             actual_call_arg = mock_method.call_args[0][0]
