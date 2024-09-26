@@ -720,7 +720,7 @@ class GroupViewSet(
                         AuditLog.GROUP,
                         object=group,
                         type_dict=principals,
-                        user_type=AuditLog.USER,
+                        user_type=Principal.Types.USER,
                     )
                 if len(service_accounts) > 0:
                     auditlog = AuditLog()
@@ -729,7 +729,7 @@ class GroupViewSet(
                         AuditLog.GROUP,
                         object=group,
                         type_dict=service_accounts,
-                        user_type="service-account",
+                        user_type=Principal.Types.SERVICE_ACCOUNT,
                     )
 
         elif request.method == "GET":
@@ -1203,7 +1203,7 @@ class GroupViewSet(
         valid_service_accounts = Principal.objects.filter(
             group=group,
             tenant=tenant,
-            type=TYPE_SERVICE_ACCOUNT,
+            type=Principal.Types.SERVICE_ACCOUNT,
             service_account_id__in=service_accounts,
         )
 
