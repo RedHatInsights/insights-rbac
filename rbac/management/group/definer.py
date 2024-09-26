@@ -186,10 +186,17 @@ def remove_roles(group, roles_or_role_ids, tenant, user=None):
     role_names = list(roles.values_list("name", flat=True))
 
     group = Group.objects.get(name=group.name, tenant=tenant)
-    roles = group.roles().filter(name__in=role_names)
+
+    system_roles = Role.objects.filter(tenant=Tenant.objects.get(tenant_name="public"), name__in=role_names)
+
+    # Custom roles are locked to prevent resources from being added/removed concurrently,
+    # in the case that the Roles had _no_ resources specified to begin with.
+    # This should not be necessary for system roles
+    custom_roles = Role.objects.filter(tenant=tenant, name__in=role_names).select_for_update()
+
     # TODO: lock custom roles like above
     for policy in group.policies.all():
-        for role in roles:
+        for role in [*system_roles, *custom_roles]:
             # Only remove the role if it was attached
             if policy.roles.filter(pk=role.pk).exists():
                 policy.roles.remove(role)
