@@ -26,14 +26,19 @@ from api.models import TenantAwareModel
 class Principal(TenantAwareModel):
     """A principal."""
 
+    class Types(models.TextChoices):
+        USER = "user", "User"
+        SERVICE_ACCOUNT = "service-account", "Service Account"
+
     uuid = models.UUIDField(default=uuid4, editable=False, unique=True, null=False)
     username = models.CharField(max_length=150)
     cross_account = models.BooleanField(default=False)
-    type = models.TextField(null=False, default="user")
+    type = models.CharField(null=False, default=Types.USER, choices=Types.choices, max_length=20)
     service_account_id = models.TextField(null=True)
+    user_id = models.CharField(max_length=36, null=True)
 
     class Meta:
         ordering = ["username"]
         constraints = [
-            models.UniqueConstraint(fields=["username", "tenant"], name="unique principal username per tenant")
+            models.UniqueConstraint(fields=["username", "tenant"], name="unique principal username per tenant"),
         ]

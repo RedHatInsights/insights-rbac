@@ -296,6 +296,7 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
         is_system = False
         org_id = None
         username = None
+        user_id = None
         req_id = getattr(request, "req_id", None)
         if request.META.get("QUERY_STRING"):
             query_string = "?{}".format(request.META.get("QUERY_STRING"))
@@ -307,6 +308,7 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
                 is_admin = request.user.admin
                 org_id = request.user.org_id
                 is_system = request.user.system
+                user_id = request.user.user_id
             else:
                 # django.contrib.auth.models.AnonymousUser does not
                 is_admin = is_system = False
@@ -346,6 +348,7 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
             "request_id": req_id,
             "org_id": org_id,
             "username": username,
+            "user_id": user_id,
             "is_admin": is_admin,
             "is_system": is_system,
             "is_internal": is_internal,
