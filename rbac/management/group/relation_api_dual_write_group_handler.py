@@ -115,6 +115,9 @@ class RelationApiDualWriteGroupHandler:
         """Replicate added role. role needs to be locked"""
         if not self.replication_enabled():
             return
+        # TODO - This needs to be removed to seed the default groups.
+        if self.group.tenant.tenant_name == "public":
+            return
 
         if role.system:
             try:
@@ -148,6 +151,10 @@ class RelationApiDualWriteGroupHandler:
     def replicate_removed_role(self, role: Role):
         if not self.replication_enabled():
             return
+        # TODO - This needs to be removed to seed the default groups.
+        if self.group.tenant.tenant_name == "public":
+            return
+
         # This logic can be the same for system vs custom b/c we'd never create a binding in this path
         bindings: Iterable[BindingMapping] = role.binding_mappings.select_for_update().all()
         for binding in bindings:
