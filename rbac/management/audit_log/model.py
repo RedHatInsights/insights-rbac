@@ -81,7 +81,7 @@ class AuditLog(TenantAwareModel):
             return group_object_id, group_object_name
 
         else:
-            return TypeError("Wrong Resource Type")
+            return ValueError("Wrong Resource Type")
 
     def find_edited_field(self, resource, resource_name, request, object):
         """Add additional information when group/role is edited."""
@@ -109,7 +109,7 @@ class AuditLog(TenantAwareModel):
         elif user_type == AuditLog.ROLE:
             names_list = type_dict
         else:
-            return NameError("User type does not exist")
+            return ValueError("User type does not exist")
         return ", ".join(names_list)
 
     def log_create(self, request, resource):
