@@ -69,6 +69,7 @@ class WorkspaceViewTests(IdentityRequest):
         self.assertNotEquals(data.get("created"), "")
         self.assertNotEquals(data.get("modified"), "")
         self.assertEquals(data.get("description"), "Workspace")
+        self.assertEquals(data.get("type"), "standard")
         self.assertEqual(response.get("content-type"), "application/json")
 
     def test_create_workspace_without_parent(self):
@@ -86,6 +87,7 @@ class WorkspaceViewTests(IdentityRequest):
         self.assertNotEquals(data.get("created"), "")
         self.assertNotEquals(data.get("modified"), "")
         self.assertEquals(data.get("description"), "Workspace")
+        self.assertEquals(data.get("type"), "standard")
         self.assertEqual(response.get("content-type"), "application/json")
 
     def test_create_workspace_empty_body(self):
@@ -169,6 +171,7 @@ class WorkspaceViewTests(IdentityRequest):
         self.assertIsNotNone(data.get("uuid"))
         self.assertNotEquals(data.get("created"), "")
         self.assertNotEquals(data.get("modified"), "")
+        self.assertEquals(data.get("type"), "standard")
         self.assertEquals(data.get("description"), "Updated description")
 
         update_workspace = Workspace.objects.filter(id=workspace.id).first()
@@ -295,6 +298,7 @@ class WorkspaceViewTests(IdentityRequest):
         self.assertIsNotNone(data.get("uuid"))
         self.assertNotEquals(data.get("created"), "")
         self.assertNotEquals(data.get("modified"), "")
+        self.assertEquals(data.get("type"), "standard")
 
         update_workspace = Workspace.objects.filter(id=workspace.id).first()
         self.assertEquals(update_workspace.name, "Updated name")
@@ -385,6 +389,7 @@ class WorkspaceViewTests(IdentityRequest):
         self.assertNotEquals(data.get("modified"), "")
         self.assertEqual(response.get("content-type"), "application/json")
         self.assertEqual(data.get("ancestry"), None)
+        self.assertEquals(data.get("type"), "standard")
         self.assertEqual(response.get("content-type"), "application/json")
 
     def test_get_workspace_with_ancestry(self):
@@ -405,6 +410,7 @@ class WorkspaceViewTests(IdentityRequest):
             data.get("ancestry"),
             [{"name": self.parent_workspace.name, "uuid": str(self.parent_workspace.uuid), "parent_id": None}],
         )
+        self.assertEquals(data.get("type"), "standard")
         self.assertEqual(response.get("content-type"), "application/json")
         self.assertEqual(data.get("ancestry"), None)
 
@@ -426,6 +432,7 @@ class WorkspaceViewTests(IdentityRequest):
             data.get("ancestry"),
             [{"name": self.parent_workspace.name, "uuid": str(self.parent_workspace.uuid), "parent_id": None}],
         )
+        self.assertEquals(data.get("type"), "standard")
         self.assertEqual(response.get("content-type"), "application/json")
 
     def test_get_workspace_not_found(self):
