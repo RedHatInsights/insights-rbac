@@ -27,6 +27,12 @@ paths:
             type: integer
             format: int64
             default: 0
+        - name: type
+          in: query
+          required: false
+          description: Defaults to all workspaces when param is not supplied, or 'all' is supplied as a value.
+          schema:
+            $ref: '#/components/schemas/Workspaces.WorkspaceTypesQueryParam'
       responses:
         '200':
           description: The request has succeeded.
@@ -827,6 +833,13 @@ components:
     Workspaces.WorkspaceTypes:
       type: string
       enum:
+        - root
+        - default
+        - standard
+    Workspaces.WorkspaceTypesQueryParam:
+      type: string
+      enum:
+        - all
         - root
         - default
         - standard
