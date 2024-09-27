@@ -69,6 +69,20 @@ class WorkspaceViewSet(BaseV2ViewSet):
         """Get a workspace."""
         return super().retrieve(request=request, args=args, kwargs=kwargs)
 
+    def list(self, request, *args, **kwargs):
+        """Get a list of workspaces."""
+        all_types = "all"
+        queryset = self.get_queryset()
+        type_values = Workspace.Types.values + [all_types]
+        type_field = validate_and_get_key(request.query_params, "type", type_values, all_types)
+
+        if type_field != all_types:
+            queryset = queryset.filter(type=type_field)
+
+        serializer = self.get_serializer(queryset, many=True)
+        page = self.paginate_queryset(serializer.data)
+        return self.get_paginated_response(page)
+
     def destroy(self, request, *args, **kwargs):
         """Delete a workspace."""
         instance = self.get_object()
