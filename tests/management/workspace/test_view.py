@@ -52,7 +52,7 @@ class WorkspaceViewTests(IdentityRequest):
             "name": "New Workspace",
             "description": "New Workspace - description",
             "tenant_id": self.tenant.id,
-            "parent_id": "cbe9822d-cadb-447d-bc80-8bef773c36ea",
+            "parent_id": self.init_workspace.uuid,
         }
 
         parent_workspace = Workspace.objects.create(**workspace_data)
@@ -182,7 +182,7 @@ class WorkspaceViewTests(IdentityRequest):
             "name": "New Workspace",
             "description": "New Workspace - description",
             "tenant_id": self.tenant.id,
-            "parent_id": "cbe9822d-cadb-447d-bc80-8bef773c36ea",
+            "parent_id": self.init_workspace.uuid,
         }
 
         workspace = Workspace.objects.create(**workspace_data)
@@ -210,7 +210,7 @@ class WorkspaceViewTests(IdentityRequest):
             "name": "New Workspace",
             "description": "New Workspace - description",
             "tenant_id": self.tenant.id,
-            "parent_id": "cbe9822d-cadb-447d-bc80-8bef773c36ea",
+            "parent_id": self.init_workspace.uuid,
         }
 
         parent_workspace = Workspace.objects.create(**parent_workspace_data)
