@@ -31,7 +31,7 @@ class WorkspaceViewTests(IdentityRequest):
     """Test the Workspace Model."""
 
     def setUp(self):
-        """Set up the audit log model tests."""
+        """Set up the workspace model tests."""
         super().setUp()
         self.parent_workspace = Workspace.objects.create(name="Parent Workspace", tenant=self.tenant)
         self.init_workspace = Workspace.objects.create(
@@ -515,18 +515,83 @@ class WorkspaceViewTests(IdentityRequest):
         self.assertEqual(status_code, 403)
         self.assertEqual(response.get("content-type"), "application/problem+json")
 
-    def test_get_workspace_list(self):
-        """Test for listing workspaces."""
-        url = reverse("workspace-list")
-        client = APIClient()
-        response = client.get(url, None, format="json", **self.headers)
 
-        payload = response.data
+class TestsList(WorkspaceViewTests):
+    """Tests for listing workspaces."""
+
+    def setUp(self):
+        """Set up the workspace model list tests."""
+        super().setUp()
+        self.root_workspace = Workspace.objects.create(name="Root Workspace", tenant=self.tenant, type="root")
+        self.default_workspace = Workspace.objects.create(name="Default Workspace", tenant=self.tenant, type="default")
+
+    def assertSuccessfulList(self, response, payload):
+        """Common list success assertions."""
         self.assertIsInstance(payload.get("data"), list)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.get("content-type"), "application/json")
-        self.assertEqual(payload.get("meta").get("count"), Workspace.objects.count())
         for keyname in ["meta", "links", "data"]:
             self.assertIn(keyname, payload)
-        for keyname in ["name", "uuid", "parent_id", "description"]:
+        for keyname in ["name", "uuid", "parent_id", "description", "type"]:
             self.assertIn(keyname, payload.get("data")[0])
+
+    def assertType(self, payload, expected_type):
+        """Ensure the correct type on data."""
+        for ws in payload.get("data"):
+            self.assertEqual(ws["type"], expected_type)
+
+    def test_workspace_list_unfiltered(self):
+        """List workspaces unfiltered."""
+        url = reverse("workspace-list")
+        client = APIClient()
+        response = client.get(url, None, format="json", **self.headers)
+        payload = response.data
+
+        self.assertSuccessfulList(response, payload)
+        self.assertEqual(payload.get("meta").get("count"), Workspace.objects.count())
+
+    def test_workspace_list_all(self):
+        """List workspaces type=all."""
+        url = reverse("workspace-list")
+        client = APIClient()
+        response = client.get(f"{url}?type=all", None, format="json", **self.headers)
+        payload = response.data
+
+        self.assertSuccessfulList(response, payload)
+        self.assertEqual(payload.get("meta").get("count"), Workspace.objects.count())
+
+    def test_workspace_list_standard(self):
+        """List workspaces type=standard."""
+        url = reverse("workspace-list")
+        client = APIClient()
+        response = client.get(f"{url}?type=standard", None, format="json", **self.headers)
+        payload = response.data
+
+        self.assertSuccessfulList(response, payload)
+        self.assertNotEqual(Workspace.objects.count(), Workspace.objects.filter(type="standard").count())
+        self.assertEqual(payload.get("meta").get("count"), Workspace.objects.filter(type="standard").count())
+        self.assertType(payload, "standard")
+
+    def test_workspace_list_root(self):
+        """List workspaces type=root."""
+        url = reverse("workspace-list")
+        client = APIClient()
+        response = client.get(f"{url}?type=root", None, format="json", **self.headers)
+        payload = response.data
+
+        self.assertSuccessfulList(response, payload)
+        self.assertEqual(payload.get("meta").get("count"), 1)
+        self.assertEqual(payload.get("data")[0]["uuid"], str(self.root_workspace.uuid))
+        self.assertType(payload, "root")
+
+    def test_workspace_list_default(self):
+        """List workspaces type=default."""
+        url = reverse("workspace-list")
+        client = APIClient()
+        response = client.get(f"{url}?type=default", None, format="json", **self.headers)
+        payload = response.data
+
+        self.assertSuccessfulList(response, payload)
+        self.assertEqual(payload.get("meta").get("count"), 1)
+        self.assertEqual(payload.get("data")[0]["uuid"], str(self.default_workspace.uuid))
+        self.assertType(payload, "default")
