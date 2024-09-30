@@ -17,7 +17,7 @@
 
 """Class to handle Dual Write API related operations."""
 import logging
-from typing import Iterable, Optional
+from typing import Callable, Iterable, Optional
 
 from django.conf import settings
 from management.principal.model import Principal
@@ -117,8 +117,59 @@ class RelationApiDualWriteGroupHandler:
         if self.group.tenant.tenant_name == "public":
             return
 
+        def add_group_to_binding(mapping: BindingMapping):
+            self.group_relations_to_add.append(mapping.add_group_to_bindings(str(self.group.uuid)))
+
+        def create_default_mapping():
+            mapping = BindingMapping.for_group_and_role(role, str(self.group.uuid), self.group.tenant.org_id)
+            self.group_relations_to_add.extend(mapping.as_tuples())
+            return mapping
+
+        self._update_mapping_for_role(
+            role, update_mapping=add_group_to_binding, create_default_mapping=create_default_mapping
+        )
+        self._replicate()
+
+    def replicate_removed_role(self, role: Role):
+        """Replicate removed role."""
+        if not self.replication_enabled():
+            return
+        # TODO - This needs to be removed to seed the default groups.
+        if self.group.tenant.tenant_name == "public":
+            return
+
+        def remove_group_from_binding(mapping: BindingMapping):
+            self.group_relations_to_remove.append(mapping.remove_group_from_bindings(str(self.group.uuid)))
+
+        self._update_mapping_for_role(
+            role, update_mapping=remove_group_from_binding, create_default_mapping=lambda: None
+        )
+        self._replicate()
+
+    def _update_mapping_for_role(
+        self,
+        role: Role,
+        update_mapping: Callable[[BindingMapping], None],
+        create_default_mapping: Callable[[], Optional[BindingMapping]],
+    ):
+        """
+        Update mapping for role using callbacks based on current state.
+
+        Callbacks are expected to modify [self.group_relations_to_add] and [self.group_relations_to_remove].
+        This method handles persistence and locking itself.
+        """
+        if not self.replication_enabled():
+            return
+        # TODO - This needs to be removed to seed the default groups.
+        if self.group.tenant.tenant_name == "public":
+            return
+
         if role.system:
             try:
+                # We lock the binding here because we cannot lock the Role for system roles,
+                # as they are used platform-wide,
+                # and their permissions do not refer to specific resources,
+                # so they can be changed concurrently safely.
                 mapping = (
                     BindingMapping.objects.select_for_update()
                     .filter(
@@ -130,38 +181,35 @@ class RelationApiDualWriteGroupHandler:
                     )
                     .get()
                 )
-                self.group_relations_to_add.append(mapping.add_group_to_bindings(str(self.group.uuid)))
+                update_mapping(mapping)
                 mapping.save(force_update=True)
+
+                if mapping.is_unassigned():
+                    self.group_relations_to_remove.extend(mapping.as_tuples())
+                    mapping.delete()
             except BindingMapping.DoesNotExist:
-                mapping = BindingMapping.for_group_and_role(role, str(self.group.uuid), self.group.tenant.org_id)
-                mapping.save(force_insert=True)
-                self.group_relations_to_add.extend(mapping.as_tuples())
+                mapping = create_default_mapping()
+                if mapping is not None:
+                    mapping.save(force_insert=True)
         else:
-            # Intentionally queried this way to avoid use of cached binding_mappings
-            # There is a risk of phantom reads here, but this is why we lock the custom Role
-            bindings: Iterable[BindingMapping] = BindingMapping.objects.filter(role=role).select_for_update()
+            # NOTE: The custom Role MUST be locked before this point in Read Committed isolation.
+            # There is a risk of write skew here otherwise, in the case that permissions are added
+            # to a custom role that currently has no permissions.
+            # In that case there would be no bindings to lock.
+            # We must lock something to prevent concurrent updates, so we lock the Role.
+            # Because custom roles must be locked already by this point,
+            # we don't need to lock the binding here.
+            bindings: Iterable[BindingMapping] = role.binding_mappings.all()
+
+            if not bindings:
+                logger.warning(
+                    "[Dual Write] Binding mappings not found for role(%s): '%s'. "
+                    "Assuming no current relations exist. "
+                    "If this is NOT the case, relations are inconsistent!",
+                    role.uuid,
+                    role.name,
+                )
 
             for mapping in bindings:
-                self.group_relations_to_add.append(mapping.add_group_to_bindings(str(self.group.uuid)))
+                update_mapping(mapping)
                 mapping.save(force_update=True)
-        self._replicate()
-
-    def replicate_removed_role(self, role: Role):
-        """Replicate removed role."""
-        if not self.replication_enabled():
-            return
-        # TODO - This needs to be removed to seed the default groups.
-        if self.group.tenant.tenant_name == "public":
-            return
-
-        # This logic can be the same for system vs custom b/c we'd never create a binding in this path
-        bindings: Iterable[BindingMapping] = role.binding_mappings.select_for_update().all()
-        for binding in bindings:
-            relations = binding.remove_group_from_bindings(str(self.group.uuid))
-            self.group_relations_to_remove.append(relations)
-            if role.system:
-                self.group_relations_to_remove.extend(binding.as_tuples())
-                binding.delete()
-            else:
-                binding.save()
-        self._replicate()

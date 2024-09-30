@@ -133,7 +133,7 @@ class BindingMapping(models.Model):
     resource_id = models.CharField(max_length=256, null=False)
 
     @classmethod
-    def for_group_and_role(cls, role: Role, group_uuid, org_id):
+    def for_group_and_role(cls, role: Role, group_uuid: str, org_id: str):
         """Create instance of BindingMapping from given parameters."""
         id = str(uuid4())
         binding = V2rolebinding(
@@ -195,6 +195,10 @@ class BindingMapping(models.Model):
         )
 
         return tuples
+
+    def is_unassigned(self):
+        """Return true if mapping is not assigned to any groups."""
+        return len(self.mappings["groups"]) == 0
 
     def remove_group_from_bindings(self, group_id: str) -> Relationship:
         """Remove group from mappings."""
