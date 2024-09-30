@@ -179,7 +179,7 @@ class BindingMapping(models.Model):
         for group in v2_role_binding.groups:
             # These might be duplicate but it is OK, spiceDB will handle duplication through touch
             tuples.append(
-                create_relationship(("rbac", "role_binding"), v2_role_binding.id, ("rbac", "group"), group, "member")
+                create_relationship(("rbac", "role_binding"), v2_role_binding.id, ("rbac", "group"), group, "subject")
             )
 
         tuples.append(

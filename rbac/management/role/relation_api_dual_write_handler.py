@@ -319,7 +319,7 @@ class RelationApiDualWriteHandler:
         except Exception as e:
             raise DualWriteException(e)
 
-    def replicate_system_role_permissions(self):
+    def replicate_new_system_role_permissions(self):
         """Replicate system role permissions."""
         SystemRole.set_system_role(self.role)
         for permissions, role in SystemRole.get_system_roles().items():

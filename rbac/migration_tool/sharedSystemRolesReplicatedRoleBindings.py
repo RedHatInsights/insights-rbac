@@ -71,13 +71,16 @@ class SystemRole:
             # Skip roles such as OCM since they don't have permission
             if role.external_role_id():
                 continue
-            permission_list = list()
-            for access in role.access.all():
-                v2_perm = cleanNameForV2SchemaCompatibility(access.permission.permission)
-                v2_perm = inventory_to_workspace(v2_perm)
-                permission_list.append(v2_perm)
-            add_system_role(cls.SYSTEM_ROLES, V2role(str(role.uuid), True, frozenset(permission_list)))
+            cls.set_system_role(role)
 
+    @classmethod
+    def set_system_role(cls, role):
+        permission_list = list()
+        for access in role.access.all():
+            v2_perm = cleanNameForV2SchemaCompatibility(access.permission.permission)
+            v2_perm = inventory_to_workspace(v2_perm)
+            permission_list.append(v2_perm)
+        add_system_role(cls.SYSTEM_ROLES, V2role(str(role.uuid), True, frozenset(permission_list)))
 
 def v1_role_to_v2_bindings(
     v1_role: Role,

@@ -202,7 +202,7 @@ def remove_roles(group, roles_or_role_ids, tenant, user=None):
                 logger.info(f"Removing role {role} from group {group.name} for tenant {tenant.org_id}.")
 
                 dual_write_handler = RelationApiDualWriteGroupHandler(
-                    group, ReplicationEventType.ASSIGN_ROLE, []
+                    group, ReplicationEventType.UNASSIGN_ROLE, []
                 )
                 dual_write_handler.replicate_removed_role(role)
 
