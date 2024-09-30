@@ -38,9 +38,6 @@ IT_PATH_GET_SERVICE_ACCOUNTS = "/service_accounts/v1"
 SERVICE_ACCOUNT_DESCRIPTION_KEY = "service_account_description"
 SERVICE_ACCOUNT_NAME_KEY = "service_account_name"
 
-# The principal type constant.
-TYPE_SERVICE_ACCOUNT = "service-account"
-
 
 class ITServiceTests(IdentityRequest):
     """Test the IT service class"""
@@ -99,7 +96,7 @@ class ITServiceTests(IdentityRequest):
                 Principal.objects.create(
                     username=f"service-account-{client_id}",
                     service_account_id=client_id,
-                    type=TYPE_SERVICE_ACCOUNT,
+                    type=Principal.Types.SERVICE_ACCOUNT,
                     tenant=tenant,
                 )
             )
@@ -209,7 +206,7 @@ class ITServiceTests(IdentityRequest):
         )
 
         self.assertEqual(
-            TYPE_SERVICE_ACCOUNT,
+            Principal.Types.SERVICE_ACCOUNT,
             sa["type"],
             "the mocked service account does not have the expected type",
         )

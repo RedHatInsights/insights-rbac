@@ -23,7 +23,6 @@ from collections import defaultdict
 
 import xmltodict
 from django.conf import settings
-from management.group.view import TYPE_SERVICE_ACCOUNT
 from management.principal.model import Principal
 from management.principal.proxy import PrincipalProxy
 from rest_framework import status
@@ -142,7 +141,7 @@ def clean_principal_umb(data_dict):
     principals = (
         Principal.objects.filter(username=user_principal_login)
         .exclude(cross_account=True)
-        .exclude(type=TYPE_SERVICE_ACCOUNT)
+        .exclude(type=Principal.Types.SERVICE_ACCOUNT)
     )
     groups = defaultdict(list)
     for principal in principals:
