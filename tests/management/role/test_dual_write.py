@@ -81,9 +81,9 @@ class DualWriteTestCase(TestCase):
     def given_v1_system_role(self, name: str, permissions: list[str]) -> Role:
         """Create a new system role with the given ID and permissions."""
         role = self.fixture.new_system_role(name=name, permissions=permissions)
-        # TODO: Need to replicate system role permission relations
-        # This is different from group assignment
-        dual_write = self.dual_write_handler_for_system_role(role, self.tenant, ReplicationEventType.CREATE_SYSTEM_ROLE)
+        dual_write = self.dual_write_handler_for_system_role(
+            role, self.tenant, ReplicationEventType.CREATE_SYSTEM_ROLE
+        )
         dual_write.replicate_new_system_role_permissions()
         return role
 
@@ -166,7 +166,8 @@ class DualWriteTestCase(TestCase):
         """Assign the [roles] to the [group]."""
 
         dual_write_handler = RelationApiDualWriteGroupHandler(
-            group, ReplicationEventType.ASSIGN_ROLE,
+            group,
+            ReplicationEventType.ASSIGN_ROLE,
             [],
             replicator=InMemoryRelationReplicator(self.tuples),
         )
@@ -178,7 +179,8 @@ class DualWriteTestCase(TestCase):
 
         policy = self.fixture.remove_role_to_group(roles[0], group, self.tenant)
         dual_write_handler = RelationApiDualWriteGroupHandler(
-            group, ReplicationEventType.UNASSIGN_ROLE,
+            group,
+            ReplicationEventType.UNASSIGN_ROLE,
             [],
             replicator=InMemoryRelationReplicator(self.tuples),
         )

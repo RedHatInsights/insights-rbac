@@ -17,34 +17,27 @@
 
 """Handler for system defined group."""
 import logging
-from typing import Iterable
 from uuid import uuid4
 
 from django.db import transaction
 from django.db.models.query import QuerySet
 from django.utils.translation import gettext as _
-from kessel.relations.v1beta1.common_pb2 import Relationship
 from management.group.model import Group
+from management.group.relation_api_dual_write_group_handler import (
+    RelationApiDualWriteGroupHandler,
+    ReplicationEventType,
+)
 from management.notifications.notification_handlers import (
     group_flag_change_notification_handler,
     group_role_change_notification_handler,
 )
 from management.policy.model import Policy
-from management.role.model import BindingMapping, Role
-from management.role.relation_api_dual_write_handler import (
-    OutboxReplicator,
-    RelationApiDualWriteHandler,
-    ReplicationEvent,
-    ReplicationEventType,
-)
+from management.role.model import Role
 from management.utils import clear_pk
 from rest_framework import serializers
 
 from api.models import Tenant
-from management.group.relation_api_dual_write_group_handler import (
-    RelationApiDualWriteGroupHandler,
-    ReplicationEventType,
-)
+
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
@@ -167,9 +160,7 @@ def add_roles(group, roles_or_role_ids, tenant, user=None):
 
         system_policy.roles.add(role)
 
-        dual_write_handler = RelationApiDualWriteGroupHandler(
-            group, ReplicationEventType.ASSIGN_ROLE, []
-        )
+        dual_write_handler = RelationApiDualWriteGroupHandler(group, ReplicationEventType.ASSIGN_ROLE, [])
         dual_write_handler.replicate_added_role(role)
         # Send notifications
         group_role_change_notification_handler(user, group, role, "added")
@@ -201,9 +192,7 @@ def remove_roles(group, roles_or_role_ids, tenant, user=None):
                 policy.roles.remove(role)
                 logger.info(f"Removing role {role} from group {group.name} for tenant {tenant.org_id}.")
 
-                dual_write_handler = RelationApiDualWriteGroupHandler(
-                    group, ReplicationEventType.UNASSIGN_ROLE, []
-                )
+                dual_write_handler = RelationApiDualWriteGroupHandler(group, ReplicationEventType.UNASSIGN_ROLE, [])
                 dual_write_handler.replicate_removed_role(role)
 
                 # Send notifications

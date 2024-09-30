@@ -19,6 +19,13 @@ class RelationTuple(NamedTuple):
     subject_id: str
     subject_relation: str
 
+    def stringify(self):
+        """Display all attributes in one line."""
+        return (
+            f"{self.resource_type_namespace}/{self.resource_type_name}:{self.resource_id}#{self.relation}"
+            f"@{self.subject_type_namespace}/{self.subject_type_name}:{self.subject_id}"
+        )
+
 
 T = TypeVar("T", bound=Hashable)
 

@@ -325,8 +325,6 @@ class RelationApiDualWriteHandler:
         for permissions, role in SystemRole.get_system_roles().items():
             for permission in permissions:
                 self.role_relations.append(
-                    create_relationship(
-                        ("rbac", "role"), str(role.id), ("rbac", "user"), str("*"), permission
-                    )
+                    create_relationship(("rbac", "role"), str(role.id), ("rbac", "user"), str("*"), permission)
                 )
         self._replicate()

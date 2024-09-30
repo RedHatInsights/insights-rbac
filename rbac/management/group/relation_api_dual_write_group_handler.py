@@ -18,7 +18,6 @@
 """Class to handle Dual Write API related operations."""
 import logging
 from typing import Iterable, Optional
-from uuid import uuid4
 
 from django.conf import settings
 from management.principal.model import Principal
@@ -111,7 +110,7 @@ class RelationApiDualWriteGroupHandler:
             raise DualWriteException(e)
 
     def replicate_added_role(self, role: Role):
-        """Replicate added role. role needs to be locked"""
+        """Replicate added role."""
         if not self.replication_enabled():
             return
         # TODO - This needs to be removed to seed the default groups.
@@ -148,6 +147,7 @@ class RelationApiDualWriteGroupHandler:
         self._replicate()
 
     def replicate_removed_role(self, role: Role):
+        """Replicate removed role."""
         if not self.replication_enabled():
             return
         # TODO - This needs to be removed to seed the default groups.
@@ -165,5 +165,3 @@ class RelationApiDualWriteGroupHandler:
             else:
                 binding.save()
         self._replicate()
-
-

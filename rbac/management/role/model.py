@@ -30,9 +30,9 @@ from management.cache import AccessCache
 from management.models import Permission, Principal
 from management.rbac_fields import AutoDateTimeField
 from migration_tool.models import V2boundresource, V2role, V2rolebinding
+from migration_tool.utils import create_relationship
 
 from api.models import TenantAwareModel
-from migration_tool.utils import create_relationship
 
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
@@ -134,6 +134,7 @@ class BindingMapping(models.Model):
 
     @classmethod
     def for_group_and_role(cls, role: Role, group_uuid, org_id):
+        """Create instance of BindingMapping from given parameters."""
         id = str(uuid4())
         binding = V2rolebinding(
             id,
@@ -164,6 +165,7 @@ class BindingMapping(models.Model):
         )
 
     def as_tuples(self) -> list[Relationship]:
+        """Create a tuples from BindingMapping model."""
         v2_role_binding = self.get_role_binding()
         tuples: list[Relationship] = list()
 
