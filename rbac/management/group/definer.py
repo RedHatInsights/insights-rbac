@@ -17,6 +17,7 @@
 
 """Handler for system defined group."""
 import logging
+from typing import Union
 from uuid import uuid4
 
 from django.db import transaction
@@ -113,13 +114,8 @@ def clone_default_group_in_public_schema(group, tenant):
 @transaction.atomic
 def add_roles(group, roles_or_role_ids, tenant, user=None):
     """Process list of roles and add them to the group."""
-    if not isinstance(roles_or_role_ids, QuerySet):
-        # If given an iterable of UUIDs, get the corresponding objects
-        roles = Role.objects.filter(uuid__in=roles_or_role_ids)
-    else:
-        roles = roles_or_role_ids
+    roles = _roles_by_query_or_ids(roles_or_role_ids)
     group_name = group.name
-    role_names = list(roles.values_list("name", flat=True))
 
     group, created = Group.objects.get_or_create(name=group_name, tenant=tenant)
     system_policy_name = "System Policy for Group {}".format(group.uuid)
@@ -130,12 +126,12 @@ def add_roles(group, roles_or_role_ids, tenant, user=None):
     if system_policy_created:
         logger.info(f"Created new system policy for tenant {tenant.org_id}.")
 
-    system_roles = Role.objects.filter(tenant=Tenant.objects.get(tenant_name="public"), name__in=role_names)
+    system_roles = roles.filter(tenant=Tenant.objects.get(tenant_name="public"))
 
     # Custom roles are locked to prevent resources from being added/removed concurrently,
     # in the case that the Roles had _no_ resources specified to begin with.
-    # This should not be necessary for system roles
-    custom_roles = Role.objects.filter(tenant=tenant, name__in=role_names).select_for_update()
+    # This should not be necessary for system roles.
+    custom_roles = roles.filter(tenant=tenant).select_for_update()
 
     for role in [*system_roles, *custom_roles]:
         # Only Organization administrators are allowed to add the role with RBAC permission
@@ -169,21 +165,14 @@ def add_roles(group, roles_or_role_ids, tenant, user=None):
 @transaction.atomic
 def remove_roles(group, roles_or_role_ids, tenant, user=None):
     """Process list of roles and remove them from the group."""
-    if not isinstance(roles_or_role_ids, QuerySet):
-        # If given an iterable of UUIDs, get the corresponding objects
-        roles = Role.objects.filter(uuid__in=roles_or_role_ids)
-    else:
-        roles = roles_or_role_ids
-    role_names = list(roles.values_list("name", flat=True))
-
+    roles = _roles_by_query_or_ids(roles_or_role_ids)
     group = Group.objects.get(name=group.name, tenant=tenant)
-
-    system_roles = Role.objects.filter(tenant=Tenant.objects.get(tenant_name="public"), name__in=role_names)
+    system_roles = roles.filter(tenant=Tenant.objects.get(tenant_name="public"))
 
     # Custom roles are locked to prevent resources from being added/removed concurrently,
     # in the case that the Roles had _no_ resources specified to begin with.
-    # This should not be necessary for system roles
-    custom_roles = Role.objects.filter(tenant=tenant, name__in=role_names).select_for_update()
+    # This should not be necessary for system roles.
+    custom_roles = roles.filter(tenant=tenant).select_for_update()
 
     for policy in group.policies.all():
         for role in [*system_roles, *custom_roles]:
@@ -208,3 +197,16 @@ def update_group_roles(group, roleset, tenant):
     role_ids = list(roleset.values_list("uuid", flat=True))
     roles_to_remove = group.roles().exclude(uuid__in=role_ids)
     remove_roles(group, roles_to_remove, tenant)
+
+
+def _roles_by_query_or_ids(roles_or_role_ids: Union[QuerySet[Role], list[str]]) -> QuerySet[Role]:
+    if not isinstance(roles_or_role_ids, QuerySet):
+        # If given an iterable of UUIDs, get the corresponding objects
+        return Role.objects.filter(uuid__in=roles_or_role_ids)
+    else:
+        # Given a queryset, so because it may not be efficient (e.g. query on non indexed field)
+        # keep prior behavior of querying once to get names, then use names (indexed) as base query
+        # for further queries.
+        # It MAY be faster to avoid this extra query, but this maintains prior behavior.
+        role_names = list(roles_or_role_ids.values_list("name", flat=True))
+        return Role.objects.filter(name__in=role_names)
