@@ -198,14 +198,14 @@ class BindingMapping(models.Model):
         """Remove group from mappings."""
         self.mappings["groups"] = [group for group in self.mappings["groups"] if group != group_id]
         return create_relationship(
-            ("rbac", "role_binding"), self.mappings["id"], ("rbac", "group"), group_id, "member"
+            ("rbac", "role_binding"), self.mappings["id"], ("rbac", "group"), group_id, "subject"
         )
 
     def add_group_to_bindings(self, group_id: str) -> Relationship:
         """Add group to mappings."""
         self.mappings["groups"].append(group_id)
         return create_relationship(
-            ("rbac", "role_binding"), self.mappings["id"], ("rbac", "group"), group_id, "member"
+            ("rbac", "role_binding"), self.mappings["id"], ("rbac", "group"), group_id, "subject"
         )
 
     def update_mappings_from_role_binding(self, role_binding: V2rolebinding):
