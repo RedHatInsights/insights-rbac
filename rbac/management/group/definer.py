@@ -194,7 +194,6 @@ def remove_roles(group, roles_or_role_ids, tenant, user=None):
     # This should not be necessary for system roles
     custom_roles = Role.objects.filter(tenant=tenant, name__in=role_names).select_for_update()
 
-    # TODO: lock custom roles like above
     for policy in group.policies.all():
         for role in [*system_roles, *custom_roles]:
             # Only remove the role if it was attached

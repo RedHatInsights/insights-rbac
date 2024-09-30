@@ -27,6 +27,8 @@ from kessel.relations.v1beta1 import common_pb2
 from management.models import Outbox
 from management.role.model import BindingMapping, Role
 from migration_tool.migrate import migrate_role
+from migration_tool.sharedSystemRolesReplicatedRoleBindings import SystemRole
+from migration_tool.utils import create_relationship
 
 
 from api.models import Tenant
@@ -316,3 +318,15 @@ class RelationApiDualWriteHandler:
             return relations
         except Exception as e:
             raise DualWriteException(e)
+
+    def replicate_system_role_permissions(self):
+        """Replicate system role permissions."""
+        SystemRole.set_system_role(self.role)
+        for permissions, role in SystemRole.get_system_roles().items():
+            for permission in permissions:
+                self.role_relations.append(
+                    create_relationship(
+                        ("rbac", "role"), str(role.id), ("rbac", "user"), str("*"), permission
+                    )
+                )
+        self._replicate()
