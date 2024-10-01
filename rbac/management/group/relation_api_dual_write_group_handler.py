@@ -18,6 +18,7 @@
 """Class to handle Dual Write API related operations."""
 import logging
 from typing import Callable, Iterable, Optional
+from uuid import uuid4
 
 from django.conf import settings
 from management.principal.model import Principal
@@ -29,6 +30,7 @@ from management.role.relation_api_dual_write_handler import (
     ReplicationEvent,
     ReplicationEventType,
 )
+from migration_tool.models import V2boundresource, V2role, V2rolebinding
 from migration_tool.utils import create_relationship
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
@@ -121,12 +123,21 @@ class RelationApiDualWriteGroupHandler:
             self.group_relations_to_add.append(mapping.add_group_to_bindings(str(self.group.uuid)))
 
         def create_default_mapping():
-            mapping = BindingMapping.for_group_and_role(role, str(self.group.uuid), self.group.tenant.org_id)
+            assert role.system is True, "Expected system role. Mappings for custom roles must already be created."
+            binding = V2rolebinding(
+                str(uuid4()),
+                # Assumes same role UUID for V2 system role equivalent.
+                V2role.for_system_role(str(role.uuid)),
+                # TODO: don't use org id once we have workspace built ins
+                V2boundresource(("rbac", "workspace"), self.group.tenant.org_id),
+                groups=frozenset([str(self.group.uuid)]),
+            )
+            mapping = BindingMapping.for_role_binding(binding, role)
             self.group_relations_to_add.extend(mapping.as_tuples())
             return mapping
 
         self._update_mapping_for_role(
-            role, update_mapping=add_group_to_binding, create_default_mapping=create_default_mapping
+            role, update_mapping=add_group_to_binding, create_default_mapping_for_system_role=create_default_mapping
         )
         self._replicate()
 
@@ -142,7 +153,7 @@ class RelationApiDualWriteGroupHandler:
             self.group_relations_to_remove.append(mapping.remove_group_from_bindings(str(self.group.uuid)))
 
         self._update_mapping_for_role(
-            role, update_mapping=remove_group_from_binding, create_default_mapping=lambda: None
+            role, update_mapping=remove_group_from_binding, create_default_mapping_for_system_role=lambda: None
         )
         self._replicate()
 
@@ -150,7 +161,7 @@ class RelationApiDualWriteGroupHandler:
         self,
         role: Role,
         update_mapping: Callable[[BindingMapping], None],
-        create_default_mapping: Callable[[], Optional[BindingMapping]],
+        create_default_mapping_for_system_role: Callable[[], Optional[BindingMapping]],
     ):
         """
         Update mapping for role using callbacks based on current state.
@@ -188,7 +199,7 @@ class RelationApiDualWriteGroupHandler:
                     self.group_relations_to_remove.extend(mapping.as_tuples())
                     mapping.delete()
             except BindingMapping.DoesNotExist:
-                mapping = create_default_mapping()
+                mapping = create_default_mapping_for_system_role()
                 if mapping is not None:
                     mapping.save(force_insert=True)
         else:

@@ -62,6 +62,11 @@ class V2boundresource:
 class V2role:
     """V2 role definition."""
 
+    @classmethod
+    def for_system_role(cls, id: str) -> "V2role":
+        """Create a V2 role for a system role."""
+        return cls(id=id, is_system=True, permissions=frozenset())
+
     id: str
     is_system: bool
     permissions: frozenset[str]
