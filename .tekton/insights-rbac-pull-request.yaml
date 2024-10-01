@@ -9,7 +9,6 @@ metadata:
     pipelinesascode.tekton.dev/max-keep-runs: "3"
     pipelinesascode.tekton.dev/on-cel-expression: event == "pull_request" && target_branch
       == "master"
-    pipelinesascode.tekton.dev/on-comment: "^/konflux$"
   creationTimestamp: null
   labels:
     appstudio.openshift.io/application: rbac
@@ -188,7 +187,8 @@ spec:
       # use the git-auth workspace for credentials
       - name: basic-auth
         workspace: git-auth
-    - name: task-running-unit-tasks
+    
+    - name: run-unit-tests
       # make sure the task runs after the artifact is created
       runAfter:
         - clone-repository-oci-ta
@@ -196,6 +196,16 @@ spec:
         # store the trusted artifact
         - name: SOURCE_ARTIFACT
           value: $(tasks.clone-repository-oci-ta.results.SOURCE_ARTIFACT)
+        - name: POSTGRESQL_USER
+          value: "root"
+        - name: POSTGRESQL_PASSWORD
+          value: root
+        - name: POSTGRESQL_DATABASE
+          value: "rbac"
+        - name: POSTGRESQL_PORT
+          value: "15432"
+        - name: DATABASE_HOST
+          value: "localhost"
       taskSpec:
         params:
           - description: The Trusted Artifact URI pointing to the artifact with the application source code.
@@ -209,6 +219,19 @@ spec:
           volumeMounts:
             - mountPath: /var/workdir
               name: workdir
+              readyOnly: false
+        sidecars: 
+          - image: quay.io/cloudservices/postgresql-rds:14
+            name: rbac-db
+            env:
+              - name: POSTGRESQL_DATABASE
+                value: $(params.POSTGRESQL_DATABASE)
+              - name: POSTGRESQL_USER
+                value: $(params.POSTGRESQL_USER)
+              - name: POSTGRESQL_PASSWORD
+                value: $(params.POSTGRESQL_PASSWORD)
+              - name: POSTGRESQL_PORT
+                value: $(params.POSTGRESQL_PORT)
         steps:
         # Add the trusted artifact to the task volume
         - name: use-trusted-artifact
@@ -216,19 +239,31 @@ spec:
           args:
             - use
             - $(params.SOURCE_ARTIFACT)=/var/workdir/source
-        - name: task-run
+        - name: run-database
           # set the working directory to value from previous step
           workingDir: /var/workdir/source
           # Use image that suites your use case
-          image: registry.access.redhat.com/ubi8/go-toolset:latest
+          image: registry.access.redhat.com/ubi8/python-39:latest
           securityContext:
           # If the task step needs write access to the volume, set the runAsUser to 0 (root).
             runAsUser: 0
+          env:
+            - name: DATABASE_NAME
+              value: $(params.POSTGRESQL_DATABASE)
+            - name: DATABASE_USER
+              value: $(params.POSTGRESQL_USER)
+            - name: DATBASE_PASSWORD
+              value: $(params.POSTGRESQL_PASSWORD)
+            - name: POSTGRESQL_PORT
+              value: $(params.POSTGRESQL_PORT)
+            - name: DATABASE_HOST
+              value: $(params.DATABASE_HOST)
+            - name: PIPENV_VERBOSITY
+              value: -1
           script: |
             #!/bin/bash
             set -ex
-            # Execute the task
-            echo "Run unit tests"
+
             bash konflux_unit_test.sh
 
 
