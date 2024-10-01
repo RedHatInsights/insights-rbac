@@ -29,8 +29,7 @@ from kessel.relations.v1beta1.common_pb2 import Relationship
 from management.cache import AccessCache
 from management.models import Permission, Principal
 from management.rbac_fields import AutoDateTimeField
-from migration_tool.models import V2boundresource, V2role, V2rolebinding
-from migration_tool.utils import create_relationship
+from migration_tool.models import V2boundresource, V2role, V2rolebinding, role_binding_group_subject_tuple
 
 from api.models import TenantAwareModel
 
@@ -133,19 +132,6 @@ class BindingMapping(models.Model):
     resource_id = models.CharField(max_length=256, null=False)
 
     @classmethod
-    def for_group_and_role(cls, role: Role, group_uuid: str, org_id: str):
-        """Create instance of BindingMapping from given parameters."""
-        id = str(uuid4())
-        binding = V2rolebinding(
-            id,
-            V2role(str(role.uuid), True, frozenset()),
-            # TODO: don't use org id once we have workspace built ins
-            V2boundresource(("rbac", "workspace"), org_id),
-            groups=[str(group_uuid)],
-        )
-        return BindingMapping.for_role_binding(binding, role)
-
-    @classmethod
     def for_role_binding(cls, role_binding: V2rolebinding, v1_role: Union[Role, str]):
         """Create a new BindingMapping for a V2rolebinding."""
         mappings = role_binding.as_minimal_dict()
@@ -165,54 +151,23 @@ class BindingMapping(models.Model):
         )
 
     def as_tuples(self) -> list[Relationship]:
-        """Create a tuples from BindingMapping model."""
+        """Create tuples from BindingMapping model."""
         v2_role_binding = self.get_role_binding()
-        tuples: list[Relationship] = list()
-
-        tuples.append(
-            create_relationship(
-                ("rbac", "role_binding"), v2_role_binding.id, ("rbac", "role"), v2_role_binding.role.id, "granted"
-            )
-        )
-
-        for perm in v2_role_binding.role.permissions:
-            tuples.append(create_relationship(("rbac", "role"), v2_role_binding.role.id, ("rbac", "user"), "*", perm))
-
-        for group in v2_role_binding.groups:
-            # These might be duplicate but it is OK, spiceDB will handle duplication through touch
-            tuples.append(
-                create_relationship(("rbac", "role_binding"), v2_role_binding.id, ("rbac", "group"), group, "subject")
-            )
-
-        tuples.append(
-            create_relationship(
-                v2_role_binding.resource.resource_type,
-                v2_role_binding.resource.resource_id,
-                ("rbac", "role_binding"),
-                v2_role_binding.id,
-                "user_grant",
-            )
-        )
-
-        return tuples
+        return v2_role_binding.as_tuples()
 
     def is_unassigned(self):
         """Return true if mapping is not assigned to any groups."""
         return len(self.mappings["groups"]) == 0
 
-    def remove_group_from_bindings(self, group_id: str) -> Relationship:
+    def remove_group_from_bindings(self, group_uuid: str) -> Relationship:
         """Remove group from mappings."""
-        self.mappings["groups"] = [group for group in self.mappings["groups"] if group != group_id]
-        return create_relationship(
-            ("rbac", "role_binding"), self.mappings["id"], ("rbac", "group"), group_id, "subject"
-        )
+        self.mappings["groups"] = [group for group in self.mappings["groups"] if group != group_uuid]
+        return role_binding_group_subject_tuple(self.mappings["id"], group_uuid)
 
-    def add_group_to_bindings(self, group_id: str) -> Relationship:
+    def add_group_to_bindings(self, group_uuid: str) -> Relationship:
         """Add group to mappings."""
-        self.mappings["groups"].append(group_id)
-        return create_relationship(
-            ("rbac", "role_binding"), self.mappings["id"], ("rbac", "group"), group_id, "subject"
-        )
+        self.mappings["groups"].append(group_uuid)
+        return role_binding_group_subject_tuple(self.mappings["id"], group_uuid)
 
     def update_mappings_from_role_binding(self, role_binding: V2rolebinding):
         """Set mappings."""

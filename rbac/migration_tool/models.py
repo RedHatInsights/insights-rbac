@@ -18,6 +18,9 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 from dataclasses import dataclass
 from typing import Tuple
 
+from kessel.relations.v1beta1.common_pb2 import Relationship
+from migration_tool.utils import create_relationship
+
 
 @dataclass(frozen=True)
 class V1resourcedef:
@@ -96,6 +99,45 @@ class V2rolebinding:
             "role": self.role.as_dict(),
             "groups": [g for g in self.groups],
         }
+
+    def as_tuples(self):
+        """Create tuples from V2rolebinding model."""
+        tuples: list[Relationship] = list()
+
+        tuples.append(
+            create_relationship(("rbac", "role_binding"), self.id, ("rbac", "role"), self.role.id, "granted")
+        )
+
+        for perm in self.role.permissions:
+            tuples.append(create_relationship(("rbac", "role"), self.role.id, ("rbac", "user"), "*", perm))
+
+        for group in self.groups:
+            # These might be duplicate but it is OK, spiceDB will handle duplication through touch
+            tuples.append(role_binding_group_subject_tuple(self.id, group))
+
+        tuples.append(
+            create_relationship(
+                self.resource.resource_type,
+                self.resource.resource_id,
+                ("rbac", "role_binding"),
+                self.id,
+                "user_grant",
+            )
+        )
+
+        return tuples
+
+
+def role_binding_group_subject_tuple(role_binding_id: str, group_uuid: str) -> Relationship:
+    """Create a relationship tuple for a role binding and a group."""
+    return create_relationship(
+        ("rbac", "role_binding"),
+        role_binding_id,
+        ("rbac", "group"),
+        group_uuid,
+        "subject",
+        subject_relation="member",
+    )
 
 
 def split_v2_perm(perm: str):

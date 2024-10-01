@@ -79,8 +79,8 @@ class DualWriteTestCase(TestCase):
     def default_workspace(self, tenant: Optional[Tenant] = None) -> str:
         """Return the default workspace ID."""
         tenant = tenant if tenant is not None else self.tenant
-        assert self.tenant.org_id is not None, "Tenant org_id should not be None"
-        return self.tenant.org_id
+        assert tenant.org_id is not None, "Tenant org_id should not be None"
+        return tenant.org_id
 
     def dual_write_handler(self, role: Role, event_type: ReplicationEventType) -> RelationApiDualWriteHandler:
         """Create a RelationApiDualWriteHandler for the given role and event type."""
@@ -279,7 +279,7 @@ class DualWriteTestCase(TestCase):
                 all_of(
                     resource_type("rbac", "role_binding"),
                     relation("subject"),
-                    subject("rbac", "group", group_id),
+                    subject("rbac", "group", group_id, "member"),
                 )
                 for group_id in for_groups
             ],
@@ -353,7 +353,7 @@ class DualWriteGroupRolesTestCase(DualWriteTestCase):
             all_of(
                 resource_type("rbac", "role_binding"),
                 relation("subject"),
-                subject_type("rbac", "group"),
+                subject_type("rbac", "group", "member"),
             )
         )
 
@@ -364,7 +364,7 @@ class DualWriteGroupRolesTestCase(DualWriteTestCase):
                     all_of(
                         resource("rbac", "role_binding", mapping["id"]),
                         relation("subject"),
-                        subject("rbac", "group", group_from_mapping),
+                        subject("rbac", "group", group_from_mapping, "member"),
                     )
                 )
                 self.assertEquals(len(tuples), 1)

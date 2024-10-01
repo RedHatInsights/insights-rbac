@@ -27,7 +27,7 @@ from kessel.relations.v1beta1 import common_pb2
 from management.models import Outbox
 from management.role.model import BindingMapping, Role
 from migration_tool.migrate import migrate_role
-from migration_tool.sharedSystemRolesReplicatedRoleBindings import SystemRole, v1_perm_to_v2_perm
+from migration_tool.sharedSystemRolesReplicatedRoleBindings import v1_perm_to_v2_perm
 from migration_tool.utils import create_relationship
 
 

@@ -39,21 +39,7 @@ def get_kessel_relation_tuples(
     relationships: list[common_pb2.Relationship] = list()
 
     for v2_role_binding in v2_role_bindings:
-        relationships.append(
-            create_relationship(
-                ("rbac", "role_binding"), v2_role_binding.id, ("rbac", "role"), v2_role_binding.role.id, "granted"
-            )
-        )
-
-        for perm in v2_role_binding.role.permissions:
-            relationships.append(
-                create_relationship(("rbac", "role"), v2_role_binding.role.id, ("rbac", "user"), "*", perm)
-            )
-        for group in v2_role_binding.groups:
-            # These might be duplicate but it is OK, spiceDB will handle duplication through touch
-            relationships.append(
-                create_relationship(("rbac", "role_binding"), v2_role_binding.id, ("rbac", "group"), group, "subject")
-            )
+        relationships.extend(v2_role_binding.as_tuples())
 
         bound_resource = v2_role_binding.resource
 
@@ -79,16 +65,6 @@ def get_kessel_relation_tuples(
                     "parent",
                 )
             )
-
-        relationships.append(
-            create_relationship(
-                bound_resource.resource_type,
-                bound_resource.resource_id,
-                ("rbac", "role_binding"),
-                v2_role_binding.id,
-                "user_grant",
-            )
-        )
 
     return relationships
 
