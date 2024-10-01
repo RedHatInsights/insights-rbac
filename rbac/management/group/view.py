@@ -57,7 +57,7 @@ from management.principal.serializer import ServiceAccountSerializer
 from management.principal.view import ADMIN_ONLY_KEY, USERNAME_ONLY_KEY, VALID_BOOLEAN_VALUE
 from management.querysets import get_group_queryset, get_role_queryset
 from management.role.view import RoleViewSet
-from management.utils import validate_and_get_key, validate_group_name, validate_uuid
+from management.utils import validate_and_get_key, validate_group_name, validate_uuid, check_group_exists
 from rest_framework import mixins, serializers, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.filters import OrderingFilter
@@ -252,12 +252,13 @@ class GroupViewSet(
             }
         """
         validate_group_name(request.data.get("name"))
+        check_group_exists(request.data.get("name"))
         create_group = super().create(request=request, args=args, kwargs=kwargs)
 
         if status.is_success(create_group.status_code):
             auditlog = AuditLog()
             auditlog.log_create(request, AuditLog.GROUP)
-
+        
         return create_group
 
     def list(self, request, *args, **kwargs):

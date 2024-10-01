@@ -280,6 +280,12 @@ def validate_group_name(name):
         message = f"{name} is reserved, please use another name."
         raise serializers.ValidationError({key: _(message)})
 
+def check_group_exists(groupName):
+    groupTenant = Group.objects.get(name=groupName)
+    if Group.objects.filter(name=groupName).exists():
+        key = f"Group is already present in the database for {groupTenant.tenant}"
+        message = f"{groupName} exists within the database"
+        raise serializers.ValidationError({key: _(message)})
 
 def validate_limit_and_offset(query_params):
     """Limit and offset should not be negative number."""
@@ -290,7 +296,6 @@ def validate_limit_and_offset(query_params):
             "status": str(status.HTTP_400_BAD_REQUEST),
         }
         return {"errors": [error]}
-
 
 def roles_for_cross_account_principal(principal):
     """Return roles for cross account principals."""
