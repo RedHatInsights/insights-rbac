@@ -16,7 +16,7 @@
 #
 """Test tuple changes for RBAC operations."""
 
-from typing import Tuple
+from typing import Optional, Tuple
 from django.test import TestCase, override_settings
 from django.db.models import Q
 from management.group.model import Group
@@ -62,9 +62,23 @@ class DualWriteTestCase(TestCase):
         self.tuples = InMemoryTuples()
         self.fixture = RbacFixture()
         self.tenant = self.fixture.new_tenant(name="tenant", org_id="1234567")
+        self.test_tenant = self.tenant
 
-    def default_workspace(self) -> str:
+    def switch_to_new_tenant(self, name: str, org_id: str) -> Tenant:
+        """Switch to a new tenant with the given name and org_id."""
+        tenant = self.fixture.new_tenant(name=name, org_id=org_id)
+        self.tenant = tenant
+        return tenant
+
+    def switch_tenant(self, tenant: Tenant):
+        self.tenant = tenant
+
+    def restore_test_tenant(self):
+        self.tenant = self.test_tenant
+
+    def default_workspace(self, tenant: Optional[Tenant] = None) -> str:
         """Return the default workspace ID."""
+        tenant = tenant if tenant is not None else self.tenant
         assert self.tenant.org_id is not None, "Tenant org_id should not be None"
         return self.tenant.org_id
 
@@ -237,6 +251,12 @@ class DualWriteTestCase(TestCase):
 
     def expect_1_role_binding_to_workspace(self, workspace: str, for_v2_roles: list[str], for_groups: list[str]):
         """Assert there is a role binding with the given roles and groups."""
+        self.expect_role_bindings_to_workspace(1, workspace, for_v2_roles, for_groups)
+
+    def expect_role_bindings_to_workspace(
+        self, num: int, workspace: str, for_v2_roles: list[str], for_groups: list[str]
+    ):
+        """Assert there is [num] role bindings with the given roles and groups."""
         # Find all bindings for the given workspace
         resources = self.tuples.find_tuples_grouped(
             all_of(resource("rbac", "workspace", workspace), relation("user_grant")),
@@ -271,7 +291,7 @@ class DualWriteTestCase(TestCase):
         num_role_bindings = len(role_bindings)
         self.assertEqual(
             num_role_bindings,
-            1,
+            num,
             f"Expected exactly 1 role binding against workspace {workspace} "
             f"with roles {for_v2_roles} and groups {for_groups}, "
             f"but got {len(role_bindings)}.\n"
@@ -419,6 +439,46 @@ class DualWriteSystemRolesTestCase(DualWriteTestCase):
         self.given_roles_unassigned_from_group(g1, roles=[role])
 
         self.expect_1_role_binding_to_workspace(self.default_workspace(), for_v2_roles=[id], for_groups=[str(g2.uuid)])
+
+    def test_assignment_is_tenant_specific(self):
+        """System role assignments are tenant-specific despite using the same role."""
+        role = self.given_v1_system_role("r1", ["app1:hosts:read", "inventory:hosts:write"])
+        g1, _ = self.given_group("g1", ["u1", "u2"])
+        self.given_roles_assigned_to_group(g1, roles=[role])
+
+        t2 = self.switch_to_new_tenant("tenant2", "7654321")
+        g2, _ = self.given_group("g2", ["u1", "u2"])
+        self.given_roles_assigned_to_group(g2, roles=[role])
+
+        id = self.expect_1_v2_role_with_permissions(["app1:hosts:read", "inventory:hosts:write"])
+
+        self.expect_1_role_binding_to_workspace(
+            self.default_workspace(self.test_tenant), for_v2_roles=[id], for_groups=[str(g1.uuid)]
+        )
+        self.expect_1_role_binding_to_workspace(
+            self.default_workspace(t2), for_v2_roles=[id], for_groups=[str(g2.uuid)]
+        )
+
+    def test_unassign_role_is_tenant_specific(self):
+        """System role unassignments are tenant-specific despite using the same role."""
+        role = self.given_v1_system_role("r1", ["app1:hosts:read", "inventory:hosts:write"])
+        g1, _ = self.given_group("g1", ["u1", "u2"])
+        self.given_roles_assigned_to_group(g1, roles=[role])
+
+        t2 = self.switch_to_new_tenant("tenant2", "7654321")
+        g2, _ = self.given_group("g2", ["u1", "u2"])
+        self.given_roles_assigned_to_group(g2, roles=[role])
+
+        self.given_roles_unassigned_from_group(g1, roles=[role])
+
+        id = self.expect_1_v2_role_with_permissions(["app1:hosts:read", "inventory:hosts:write"])
+
+        self.expect_role_bindings_to_workspace(
+            0, self.default_workspace(self.test_tenant), for_v2_roles=[id], for_groups=[str(g1.uuid)]
+        )
+        self.expect_1_role_binding_to_workspace(
+            self.default_workspace(t2), for_v2_roles=[id], for_groups=[str(g2.uuid)]
+        )
 
     # TODO: Add test to cover updating and deleting system role
 
