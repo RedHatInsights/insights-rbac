@@ -9,6 +9,7 @@ metadata:
     pipelinesascode.tekton.dev/max-keep-runs: "3"
     pipelinesascode.tekton.dev/on-cel-expression: event == "pull_request" && target_branch
       == "master"
+    pipelinesascode.tekton.dev/on-comment: "^/konflux$"
   creationTimestamp: null
   labels:
     appstudio.openshift.io/application: rbac
@@ -160,6 +161,77 @@ spec:
       workspaces:
       - name: basic-auth
         workspace: git-auth
+    
+    
+    #unit tests 
+    - name: clone-repository-oci-ta
+      params:
+      - name: url
+        value: $(params.git-url)
+      - name: revision
+        value: $(params.revision)
+      - name: ociStorage
+        # needs to be unique storage name
+        value: $(params.output-image).git
+      runAfter:
+      - init
+      taskRef:
+        params:
+        - name: name
+          value: git-clone-oci-ta
+        - name: bundle
+          value: quay.io/konflux-ci/tekton-catalog/task-git-clone-oci-ta@sha256:0f4360ce144d46171ebd2e8f4d4575539a0600e02208ba5fc9beeb2c27ddfd4c
+        - name: kind
+          value: task
+        resolver: bundles
+      workspaces:
+      # use the git-auth workspace for credentials
+      - name: basic-auth
+        workspace: git-auth
+    - name: task-running-unit-tasks
+      # make sure the task runs after the artifact is created
+      runAfter:
+        - clone-repository-oci-ta
+      params:
+        # store the trusted artifact
+        - name: SOURCE_ARTIFACT
+          value: $(tasks.clone-repository-oci-ta.results.SOURCE_ARTIFACT)
+      taskSpec:
+        params:
+          - description: The Trusted Artifact URI pointing to the artifact with the application source code.
+            name: SOURCE_ARTIFACT
+            type: string
+        volumes:
+          # New volume to store a copy of the source code accessible only to this Task.
+          - name: workdir
+            emptyDir: {}
+        stepTemplate:
+          volumeMounts:
+            - mountPath: /var/workdir
+              name: workdir
+        steps:
+        # Add the trusted artifact to the task volume
+        - name: use-trusted-artifact
+          image: quay.io/redhat-appstudio/build-trusted-artifacts:latest@sha256:e0e457b6af10e44ff6b90208a9e69adc863a865e1c062c4cb84bf3846037d74d
+          args:
+            - use
+            - $(params.SOURCE_ARTIFACT)=/var/workdir/source
+        - name: task-run
+          # set the working directory to value from previous step
+          workingDir: /var/workdir/source
+          # Use image that suites your use case
+          image: registry.access.redhat.com/ubi8/go-toolset:latest
+          securityContext:
+          # If the task step needs write access to the volume, set the runAsUser to 0 (root).
+            runAsUser: 0
+          script: |
+            #!/bin/bash
+            set -ex
+            # Execute the task
+            echo "Run unit tests"
+            bash konflux_unit_test.sh
+
+
     - name: prefetch-dependencies
       params:
       - name: input
