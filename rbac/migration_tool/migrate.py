@@ -118,13 +118,17 @@ def migrate_users(tenant: Tenant, write_db: bool):
 def migrate_users_for_groups(tenant: Tenant, write_db: bool):
     """Write users relationship to groups."""
     relationships = []
-    for group in tenant.group_set.all():
-        # Explicitly create relationships for platform default group
-        user_set = (
-            tenant.principal_set.filter(cross_account=False) if group.platform_default else group.principals.all()
-        )
+    for group in tenant.group_set.exclude(platform_default=True):
+        user_set = group.principals.all()
         for user in user_set:
             relationships.append(create_relationship("group", str(group.uuid), "user", str(user.uuid), "member"))
+    # Explicitly create relationships for platform default group
+    group_default = tenant.group_set.filter(platform_default=True).first()
+    if not group_default:  # Means it is not custom platform_default
+        group_default = Tenant.objects.get(tenant_name="public").group_set.get(platform_default=True)
+    user_set = tenant.principal_set.filter(cross_account=False)
+    for user in user_set:
+        relationships.append(create_relationship("group", str(group_default.uuid), "user", str(user.uuid), "member"))
     output_relationships(relationships, write_db)
 
 
