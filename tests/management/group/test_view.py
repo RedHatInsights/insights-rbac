@@ -30,9 +30,20 @@ from rest_framework.test import APIClient
 from api.models import Tenant, User
 from management.cache import TenantCache
 from management.group.serializer import GroupInputSerializer
-from management.models import Access, Group, Permission, Principal, Policy, Role, ExtRoleRelation, ExtTenant
+from management.models import (
+    Access,
+    BindingMapping,
+    Group,
+    Permission,
+    Principal,
+    Policy,
+    Role,
+    ExtRoleRelation,
+    ExtTenant,
+)
 from tests.core.test_kafka import copy_call_args
 from tests.identity_request import IdentityRequest
+from tests.management.role.test_view import find_in_list, relation_api_tuple
 
 
 def generate_relation_entry(group_uuid, principal_uuid):
@@ -55,12 +66,31 @@ def generate_relation_entry(group_uuid, principal_uuid):
     return relation_entry
 
 
+def replication_event(relations_to_add, relations_to_remove):
+    """Create a replication event for a v1 role."""
+    return {
+        "relations_to_add": relations_to_add,
+        "relations_to_remove": relations_to_remove,
+    }
+
+
 def generate_replication_event_to_add_principals(group_uuid, principal_uuid):
     return {"relations_to_add": [generate_relation_entry(group_uuid, principal_uuid)], "relations_to_remove": []}
 
 
 def generate_replication_event_to_remove_principals(group_uuid, principal_uuid):
     return {"relations_to_add": [], "relations_to_remove": [generate_relation_entry(group_uuid, principal_uuid)]}
+
+
+def find_relation_in_list(relation_list, relation_tuple):
+    return find_in_list(
+        relation_list,
+        lambda r: r["resource"]["type"]["name"] == relation_tuple["resource"]["type"]["name"]
+        and r["resource"]["id"] == relation_tuple["resource"]["id"]
+        and r["relation"] == relation_tuple["relation"]
+        and r["subject"]["subject"]["type"]["name"] == relation_tuple["subject"]["subject"]["type"]["name"]
+        and r["subject"]["subject"]["id"] == relation_tuple["subject"]["subject"]["id"],
+    )
 
 
 class GroupViewsetTests(IdentityRequest):
@@ -1590,7 +1620,8 @@ class GroupViewsetTests(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(principals, None)
 
-    def test_add_group_roles_system_policy_create_success(self):
+    @patch("management.group.relation_api_dual_write_group_handler.OutboxReplicator._save_replication_event")
+    def test_add_group_roles_system_policy_create_success(self, mock_method):
         """Test that adding a role to a group without a system policy returns successfully."""
         url = reverse("group-roles", kwargs={"uuid": self.group.uuid})
         client = APIClient()
@@ -2910,6 +2941,7 @@ class GroupViewNonAdminTests(IdentityRequest):
         test_data = {"roles": [self.roleB.uuid, self.dummy_role_id]}
 
         response = client.post(url, test_data, format="json", **self.headers)
+
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
     def test_remove_group_role_as_non_admin(self):
@@ -3583,6 +3615,138 @@ class GroupViewNonAdminTests(IdentityRequest):
         response = client.put(url, request_body, format="json", **self.headers_service_account_principal)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.json()["name"], new_name_sa)
+
+    @patch("management.group.relation_api_dual_write_group_handler.OutboxReplicator._save_replication_event")
+    def test_add_and_remove_role_to_group(self, mock_method):
+        Permission.objects.create(permission="app:inventory:read", tenant=self.tenant)
+
+        access_data = [
+            {
+                "permission": "app:inventory:read",
+                "resourceDefinitions": [
+                    {"attributeFilter": {"key": "group.id", "operation": "equal", "value": "111"}}
+                ],
+            }
+        ]
+
+        test_data = {"name": "role_name", "display_name": "role_display", "access": access_data}
+
+        url = reverse("role-list")
+        # create a role
+        client = APIClient()
+        response = client.post(url, test_data, format="json", **self.headers_org_admin)
+        role = Role.objects.get(uuid=response.data["uuid"])
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+        binding_mapping = BindingMapping.objects.get(role=role, resource_type_name="workspace", resource_id="111")
+
+        # Create a group and role we need for the test
+        group = Group.objects.create(name="test group", tenant=self.tenant)
+        request_body = {"roles": [role.uuid]}
+        url = reverse("group-roles", kwargs={"uuid": group.uuid})
+        client = APIClient()
+
+        response = client.post(url, request_body, format="json", **self.headers_org_admin)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        actual_call_arg = mock_method.call_args[0][0]
+        to_add = actual_call_arg["relations_to_add"]
+        self.assertEqual(1, len(to_add))
+
+        def assert_group_tuples(tuple_to_replicate):
+            relation_tuple = relation_api_tuple(
+                "role_binding", binding_mapping.mappings["id"], "subject", "group", str(group.uuid), "member"
+            )
+
+            self.assertIsNotNone(find_relation_in_list(tuple_to_replicate, relation_tuple))
+
+        assert_group_tuples(to_add)
+
+        url = reverse("group-roles", kwargs={"uuid": group.uuid})
+        client = APIClient()
+
+        url = "{}?roles={}".format(url, role.uuid)
+        response = client.delete(url, format="json", **self.headers_org_admin)
+        actual_call_arg = mock_method.call_args[0][0]
+        to_remove = actual_call_arg["relations_to_remove"]
+        self.assertEqual([], actual_call_arg["relations_to_add"])
+        self.assertEqual(1, len(to_remove))
+
+        assert_group_tuples(to_remove)
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+
+    @patch("management.group.relation_api_dual_write_group_handler.OutboxReplicator._save_replication_event")
+    def test_add_and_remove_system_role_to_group(self, mock_method):
+        # Create a group with 'User Access administrator' role and add principals we use in headers
+        group_with_admin = self._create_group_with_user_access_administrator_role(self.tenant)
+        group_with_admin.principals.add(self.user_based_principal, self.service_account_principal)
+
+        # Create another group with 'User Access administrator' role we will try to update
+        test_group = Group(name="test group", tenant=self.tenant)
+        test_group.save()
+
+        user_access_admin_role = group_with_admin.roles()[0]
+        request_body = {"roles": [user_access_admin_role.uuid]}
+
+        url = reverse("group-roles", kwargs={"uuid": test_group.uuid})
+        client = APIClient()
+        response = client.post(url, request_body, format="json", **self.headers_org_admin)
+
+        binding_mapping = BindingMapping.objects.filter(
+            role=user_access_admin_role, resource_id=user_access_admin_role.tenant.org_id
+        ).get()
+
+        actual_call_arg = mock_method.call_args[0][0]
+        to_add = actual_call_arg["relations_to_add"]
+        self.assertEqual([], actual_call_arg["relations_to_remove"])
+        self.assertEqual(3, len(to_add))
+
+        def assert_group_tuples(tuple_to_replicate):
+            relation_tuple = relation_api_tuple(
+                "role_binding",
+                binding_mapping.mappings["id"],
+                "granted",
+                "role",
+                str(user_access_admin_role.uuid),
+            )
+            self.assertIsNotNone(find_relation_in_list(tuple_to_replicate, relation_tuple))
+
+            relation_tuple = relation_api_tuple(
+                "role_binding",
+                binding_mapping.mappings["id"],
+                "subject",
+                "group",
+                str(test_group.uuid),
+                "member",
+            )
+
+            self.assertIsNotNone(find_relation_in_list(tuple_to_replicate, relation_tuple))
+
+            relation_tuple = relation_api_tuple(
+                "workspace",
+                test_group.tenant.org_id,
+                "user_grant",
+                "role_binding",
+                str(binding_mapping.mappings["id"]),
+            )
+
+            self.assertIsNotNone(find_relation_in_list(tuple_to_replicate, relation_tuple))
+
+        assert_group_tuples(to_add)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        url = reverse("group-roles", kwargs={"uuid": test_group.uuid})
+        client = APIClient()
+
+        url = "{}?roles={}".format(url, user_access_admin_role.uuid)
+        response = client.delete(url, format="json", **self.headers_org_admin)
+        actual_call_arg = mock_method.call_args[0][0]
+        to_remove = actual_call_arg["relations_to_remove"]
+        self.assertEqual([], actual_call_arg["relations_to_add"])
+        self.assertEqual(3, len(to_remove))
+
+        assert_group_tuples(to_remove)
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
 
     def test_update_group_with_User_Access_Admin_fail(self):
         """
