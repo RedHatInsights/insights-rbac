@@ -261,7 +261,7 @@ spec:
             #!/bin/bash
             set -ex
             bash konflux_unit_test.sh
-            
+
     - name: prefetch-dependencies
       params:
       - name: input
