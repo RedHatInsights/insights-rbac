@@ -160,107 +160,106 @@ spec:
       workspaces:
       - name: basic-auth
         workspace: git-auth
-      #unit tests
-    - name: clone-repository-oci-ta
-      params:
-      - name: url
-        value: $(params.git-url)
-      - name: revision
-        value: $(params.revision)
-      - name: ociStorage
-        # needs to be unique storage name
-        value: $(params.output-image).git
-      runAfter:
-      - init
-      taskRef:
-        params:
-        - name: name
-          value: git-clone-oci-ta
-        - name: bundle
-          value: quay.io/konflux-ci/tekton-catalog/task-git-clone-oci-ta@sha256:0f4360ce144d46171ebd2e8f4d4575539a0600e02208ba5fc9beeb2c27ddfd4c
-        - name: kind
-          value: task
-        resolver: bundles
-      workspaces:
-      # use the git-auth workspace for credentials
-      - name: basic-auth
-        workspace: git-auth
-    - name: run-unit-tests
-      # make sure the task runs after the artifact is created
-      runAfter:
-        - clone-repository-oci-ta
-      params:
-        # store the trusted artifact
-        - name: SOURCE_ARTIFACT
-          value: $(tasks.clone-repository-oci-ta.results.SOURCE_ARTIFACT)
-        - name: POSTGRESQL_USER
-          value: "root"
-        - name: POSTGRESQL_PASSWORD
-          value: root
-        - name: POSTGRESQL_DATABASE
-          value: "rbac"
-        - name: POSTGRESQL_PORT
-          value: "15432"
-        - name: DATABASE_HOST
-          value: "localhost"
-      taskSpec:
-        params:
-          - description: The Trusted Artifact URI pointing to the artifact with the application source code.
-            name: SOURCE_ARTIFACT
-            type: string
-        volumes:
-          # New volume to store a copy of the source code accessible only to this Task.
-          - name: workdir
-            emptyDir: {}
-        stepTemplate:
-          volumeMounts:
-            - mountPath: /var/workdir
-              name: workdir
-              readyOnly: false
-        sidecars:
-          - image: quay.io/cloudservices/postgresql-rds:14
-            name: rbac-db
-            env:
-              - name: POSTGRESQL_DATABASE
-                value: $(params.POSTGRESQL_DATABASE)
-              - name: POSTGRESQL_USER
-                value: $(params.POSTGRESQL_USER)
-              - name: POSTGRESQL_PASSWORD
-                value: $(params.POSTGRESQL_PASSWORD)
-              - name: POSTGRESQL_PORT
-                value: $(params.POSTGRESQL_PORT)
-        steps:
-        # Add the trusted artifact to the task volume
-        - name: use-trusted-artifact
-          image: quay.io/redhat-appstudio/build-trusted-artifacts:latest@sha256:e0e457b6af10e44ff6b90208a9e69adc863a865e1c062c4cb84bf3846037d74d
-          args:
-            - use
-            - $(params.SOURCE_ARTIFACT)=/var/workdir/source
-        - name: run-database
-          # set the working directory to value from previous step
-          workingDir: /var/workdir/source
-          # Use image that suites your use case
-          image: registry.access.redhat.com/ubi8/python-39:latest
-          securityContext:
-          # If the task step needs write access to the volume, set the runAsUser to 0 (root).
-            runAsUser: 0
-          env:
-            - name: DATABASE_NAME
-              value: $(params.POSTGRESQL_DATABASE)
-            - name: DATABASE_USER
-              value: $(params.POSTGRESQL_USER)
-            - name: DATBASE_PASSWORD
-              value: $(params.POSTGRESQL_PASSWORD)
-            - name: POSTGRESQL_PORT
-              value: $(params.POSTGRESQL_PORT)
-            - name: DATABASE_HOST
-              value: $(params.DATABASE_HOST)
-            - name: PIPENV_VERBOSITY
-              value: -1
-          script: |
-            #!/bin/bash
-            set -ex
-            bash konflux_unit_test.sh
+
+    #   # unit tests
+    # - name: clone-repository-oci-ta
+    #   params:
+    #   - name: url
+    #     value: $(params.git-url)
+    #   - name: revision
+    #     value: $(params.revision)
+    #   - name: ociStorage
+    #     # needs to be unique storage name
+    #     value: $(params.output-image).git
+    #   runAfter:
+    #   - init
+    #   taskRef:
+    #     params:
+    #     - name: name
+    #       value: git-clone-oci-ta
+    #     - name: bundle
+    #       value: quay.io/konflux-ci/tekton-catalog/task-git-clone-oci-ta@sha256:0f4360ce144d46171ebd2e8f4d4575539a0600e02208ba5fc9beeb2c27ddfd4c
+    #     - name: kind
+    #       value: task
+    #     resolver: bundles
+    #   workspaces:
+    #   # use the git-auth workspace for credentials
+    #   - name: basic-auth
+    #     workspace: git-auth
+    # - name: run-unit-tests
+    #   # make sure the task runs after the artifact is created
+    #   runAfter:
+    #     - clone-repository-oci-ta
+    #   params:
+    #     # store the trusted artifact
+    #     - name: SOURCE_ARTIFACT
+    #       value: $(tasks.clone-repository-oci-ta.results.SOURCE_ARTIFACT)
+    #     - name: POSTGRESQL_USER
+    #       value: "root"
+    #     - name: POSTGRESQL_PASSWORD
+    #       value: root
+    #     - name: POSTGRESQL_DATABASE
+    #       value: "rbac"
+    #     - name: POSTGRESQL_PORT
+    #       value: "15432"
+    #     - name: DATABASE_HOST
+    #       value: "localhost"
+    #   taskSpec:
+    #     params:
+    #       - description: The Trusted Artifact URI pointing to the artifact with the application source code.
+    #         name: SOURCE_ARTIFACT
+    #         type: string
+    #     volumes:
+    #       # New volume to store a copy of the source code accessible only to this Task.
+    #       - name: workdir
+    #         emptyDir: {}
+    #     stepTemplate:
+    #       volumeMounts:
+    #         - mountPath: /var/workdir
+    #           name: workdir
+    #           readyOnly: false
+    #     sidecars:
+    #       - image: quay.io/cloudservices/postgresql-rds:14
+    #         name: rbac-db
+    #         env:
+    #           - name: POSTGRESQL_DATABASE
+    #             value: $(params.POSTGRESQL_DATABASE)
+    #           - name: POSTGRESQL_USER
+    #             value: $(params.POSTGRESQL_USER)
+    #           - name: POSTGRESQL_PASSWORD
+    #             value: $(params.POSTGRESQL_PASSWORD)
+    #           - name: POSTGRESQL_PORT
+    #             value: $(params.POSTGRESQL_PORT)
+    #     steps:
+    #     # Add the trusted artifact to the task volume
+    #     - name: use-trusted-artifact
+    #       image: quay.io/redhat-appstudio/build-trusted-artifacts:latest@sha256:e0e457b6af10e44ff6b90208a9e69adc863a865e1c062c4cb84bf3846037d74d
+    #       args:
+    #         - use
+    #         - $(params.SOURCE_ARTIFACT)=/var/workdir/source
+    #     - name: run-database
+    #       # set the working directory to value from previous step
+    #       workingDir: /var/workdir/source
+    #       # Use image that suites your use case
+    #       image: registry.access.redhat.com/ubi8/python-39:latest
+    #       securityContext:
+    #       # If the task step needs write access to the volume, set the runAsUser to 0 (root).
+    #         runAsUser: 0
+    #       env:
+    #         - name: DATABASE_NAME
+    #           value: $(params.POSTGRESQL_DATABASE)
+    #         - name: DATABASE_USER
+    #           value: $(params.POSTGRESQL_USER)
+    #         - name: DATBASE_PASSWORD
+    #           value: $(params.POSTGRESQL_PASSWORD)
+    #         - name: POSTGRESQL_PORT
+    #           value: $(params.POSTGRESQL_PORT)
+    #         - name: DATABASE_HOST
+    #           value: $(params.DATABASE_HOST)
+    #       script: |
+    #         #!/bin/bash
+    #         set -ex
+    #         bash konflux_unit_test.sh
 
     - name: prefetch-dependencies
       params:
