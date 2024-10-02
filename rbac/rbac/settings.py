@@ -475,6 +475,7 @@ IT_TOKEN_JKWS_CACHE_LIFETIME = ENVIRONMENT.int("IT_TOKEN_JKWS_CACHE_LIFETIME", d
 
 # Settings for enabling/disabling deletion in principal cleanup job via UMB
 PRINCIPAL_CLEANUP_DELETION_ENABLED_UMB = ENVIRONMENT.bool("PRINCIPAL_CLEANUP_DELETION_ENABLED_UMB", default=False)
+UMB_JOB_ENABLED = ENVIRONMENT.bool("UMB_JOB_ENABLED", default=True)
 UMB_HOST = ENVIRONMENT.get_value("UMB_HOST", default="localhost")
 UMB_PORT = ENVIRONMENT.get_value("UMB_PORT", default="61612")
 # Service account name
