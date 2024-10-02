@@ -161,31 +161,31 @@ spec:
       - name: basic-auth
         workspace: git-auth
 
-    #   # unit tests
-    # - name: clone-repository-oci-ta
-    #   params:
-    #   - name: url
-    #     value: $(params.git-url)
-    #   - name: revision
-    #     value: $(params.revision)
-    #   - name: ociStorage
-    #     # needs to be unique storage name
-    #     value: $(params.output-image).git
-    #   runAfter:
-    #   - init
-    #   taskRef:
-    #     params:
-    #     - name: name
-    #       value: git-clone-oci-ta
-    #     - name: bundle
-    #       value: quay.io/konflux-ci/tekton-catalog/task-git-clone-oci-ta@sha256:0f4360ce144d46171ebd2e8f4d4575539a0600e02208ba5fc9beeb2c27ddfd4c
-    #     - name: kind
-    #       value: task
-    #     resolver: bundles
-    #   workspaces:
-    #   # use the git-auth workspace for credentials
-    #   - name: basic-auth
-    #     workspace: git-auth
+      # unit tests
+    - name: clone-repository-oci-ta
+      params:
+      - name: url
+        value: $(params.git-url)
+      - name: revision
+        value: $(params.revision)
+      - name: ociStorage
+        # needs to be unique storage name
+        value: $(params.output-image).git
+      runAfter:
+      - init
+      taskRef:
+        params:
+        - name: name
+          value: git-clone-oci-ta
+        - name: bundle
+          value: quay.io/konflux-ci/tekton-catalog/task-git-clone-oci-ta@sha256:0f4360ce144d46171ebd2e8f4d4575539a0600e02208ba5fc9beeb2c27ddfd4c
+        - name: kind
+          value: task
+        resolver: bundles
+      workspaces:
+      # use the git-auth workspace for credentials
+      - name: basic-auth
+        workspace: git-auth
     # - name: run-unit-tests
     #   # make sure the task runs after the artifact is created
     #   runAfter:
