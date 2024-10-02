@@ -222,7 +222,7 @@ namespace Workspaces {
         @query offset?: int64 = 0;
 
         @doc("Defaults to all when param is not supplied.")
-        @query type?: WorkspaceTypesQueryParam;
+        @query type?: WorkspaceTypesQueryParam = WorkspaceTypesQueryParam.all;
     ): WorkspaceListResponse | Problems.CommonProblems;
 
     @doc("Create workspace in tenant")

@@ -30,9 +30,10 @@ paths:
         - name: type
           in: query
           required: false
-          description: Defaults to all workspaces when param is not supplied, or 'all' is supplied as a value.
+          description: Defaults to all when param is not supplied.
           schema:
             $ref: '#/components/schemas/Workspaces.WorkspaceTypesQueryParam'
+            default: all
       responses:
         '200':
           description: The request has succeeded.
