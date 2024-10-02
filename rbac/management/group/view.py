@@ -704,9 +704,9 @@ class GroupViewSet(
                     group, new_principals = self.add_principals(group, principals_from_response, org_id=org_id)
 
                 dual_write_handler = RelationApiDualWriteGroupHandler(
-                    group, ReplicationEventType.ADD_PRINCIPALS_TO_GROUP, new_principals + new_service_accounts
+                    group, ReplicationEventType.ADD_PRINCIPALS_TO_GROUP
                 )
-                dual_write_handler.replicate_new_principals()
+                dual_write_handler.replicate_new_principals(new_principals + new_service_accounts)
 
             # Serialize the group...
             output = GroupSerializer(group)
@@ -920,9 +920,8 @@ class GroupViewSet(
                 dual_write_handler = RelationApiDualWriteGroupHandler(
                     group,
                     ReplicationEventType.REMOVE_PRINCIPALS_FROM_GROUP,
-                    principals_to_remove + service_accounts_to_remove,
                 )
-                dual_write_handler.replicate_removed_principals()
+                dual_write_handler.replicate_removed_principals(principals_to_remove + service_accounts_to_remove)
 
         return response
 

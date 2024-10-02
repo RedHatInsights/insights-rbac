@@ -43,7 +43,6 @@ class RelationApiDualWriteGroupHandler:
         self,
         group,
         event_type: ReplicationEventType,
-        principals: list[Principal],
         replicator: Optional[RelationReplicator] = None,
     ):
         """Initialize RelationApiDualWriteGroupHandler."""
@@ -52,7 +51,7 @@ class RelationApiDualWriteGroupHandler:
         try:
             self.group_relations_to_add = []
             self.group_relations_to_remove = []
-            self.principals = principals
+            self.principals = []
             self.group = group
             self.event_type = event_type
             self._replicator = replicator if replicator else OutboxReplicator(group)
@@ -75,21 +74,21 @@ class RelationApiDualWriteGroupHandler:
 
         return relations
 
-    def replicate_new_principals(self):
+    def replicate_new_principals(self, principals: list[Principal]):
         """Replicate new principals into group."""
         if not self.replication_enabled():
             return
         logger.info("[Dual Write] Generate new relations from Group(%s): '%s'", self.group.uuid, self.group.name)
-
+        self.principals = principals
         self.group_relations_to_add = self._generate_relations()
         self._replicate()
 
-    def replicate_removed_principals(self):
+    def replicate_removed_principals(self, principals: list[Principal]):
         """Replicate removed principals from group."""
         if not self.replication_enabled():
             return
         logger.info("[Dual Write] Generate new relations from Group(%s): '%s'", self.group.uuid, self.group.name)
-
+        self.principals = principals
         self.group_relations_to_remove = self._generate_relations()
 
         self._replicate()
