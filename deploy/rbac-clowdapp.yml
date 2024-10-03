@@ -513,6 +513,9 @@ objects:
             value: ${IT_SERVICE_TIMEOUT_SECONDS}
           - name: IT_TOKEN_JKWS_CACHE_LIFETIME
             value: ${IT_TOKEN_JKWS_CACHE_LIFETIME}
+          - name: V2_APIS_ENABLED
+            value: ${V2_APIS_ENABLED}
+
     jobs:
       - name: tenant-org-id-populator
         podSpec:
@@ -915,3 +918,6 @@ parameters:
 - name: RELATION_API_SERVER
   description: The gRPC API server to use for the relation
   value: "localhost:9000"
+- name: V2_APIS_ENABLED
+  description: Flag to explicitly enable v2 API endpoints
+  value: 'False'
