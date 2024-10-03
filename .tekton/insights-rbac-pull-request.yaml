@@ -264,7 +264,12 @@ spec:
             script: |
               #!/bin/bash
               set -ex
-              bash konflux_unit_test.sh
+              echo "RUN THE UNIT TESTS"
+              pip install --upgrade pip
+              #pip install pipenv
+              pip install tox
+
+              tox -r
 
     - name: prefetch-dependencies
       params:
