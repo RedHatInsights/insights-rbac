@@ -205,7 +205,7 @@ spec:
         - name: POSTGRESQL_PORT
           value: "15432"
         - name: DATABASE_HOST
-          value: "localhost"
+          value: "0.0.0.0"
       workspaces:
       - name: basic-auth
         workspace: git-auth
