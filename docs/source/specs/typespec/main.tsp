@@ -96,9 +96,16 @@ namespace Workspaces {
         description?: string = "Description of Workspace A";
     }
 
+    enum WorkspaceTypes {
+        "root",
+        "default",
+        "standard"
+    }
+
     model Workspace {
         @key uuid: UUID;
         parent_id?: UUID;
+        type: WorkspaceTypes;
         ...BasicWorkspace;
         ...Timestamps;
     }

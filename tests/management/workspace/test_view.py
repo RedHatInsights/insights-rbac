@@ -62,7 +62,7 @@ class WorkspaceViewTestsV2Enabled(WorkspaceViewTests):
             "name": "New Workspace",
             "description": "New Workspace - description",
             "tenant_id": self.tenant.id,
-            "parent_id": "cbe9822d-cadb-447d-bc80-8bef773c36ea",
+            "parent_id": self.init_workspace.uuid,
         }
 
         parent_workspace = Workspace.objects.create(**workspace_data)
@@ -79,6 +79,7 @@ class WorkspaceViewTestsV2Enabled(WorkspaceViewTests):
         self.assertNotEquals(data.get("created"), "")
         self.assertNotEquals(data.get("modified"), "")
         self.assertEquals(data.get("description"), "Workspace")
+        self.assertEquals(data.get("type"), "standard")
         self.assertEqual(response.get("content-type"), "application/json")
 
     def test_create_workspace_without_parent(self):
@@ -96,6 +97,7 @@ class WorkspaceViewTestsV2Enabled(WorkspaceViewTests):
         self.assertNotEquals(data.get("created"), "")
         self.assertNotEquals(data.get("modified"), "")
         self.assertEquals(data.get("description"), "Workspace")
+        self.assertEquals(data.get("type"), "standard")
         self.assertEqual(response.get("content-type"), "application/json")
 
     def test_create_workspace_empty_body(self):
@@ -179,6 +181,7 @@ class WorkspaceViewTestsV2Enabled(WorkspaceViewTests):
         self.assertIsNotNone(data.get("uuid"))
         self.assertNotEquals(data.get("created"), "")
         self.assertNotEquals(data.get("modified"), "")
+        self.assertEquals(data.get("type"), "standard")
         self.assertEquals(data.get("description"), "Updated description")
 
         update_workspace = Workspace.objects.filter(id=workspace.id).first()
@@ -192,7 +195,7 @@ class WorkspaceViewTestsV2Enabled(WorkspaceViewTests):
             "name": "New Workspace",
             "description": "New Workspace - description",
             "tenant_id": self.tenant.id,
-            "parent_id": "cbe9822d-cadb-447d-bc80-8bef773c36ea",
+            "parent_id": self.init_workspace.uuid,
         }
 
         workspace = Workspace.objects.create(**workspace_data)
@@ -220,7 +223,7 @@ class WorkspaceViewTestsV2Enabled(WorkspaceViewTests):
             "name": "New Workspace",
             "description": "New Workspace - description",
             "tenant_id": self.tenant.id,
-            "parent_id": "cbe9822d-cadb-447d-bc80-8bef773c36ea",
+            "parent_id": self.init_workspace.uuid,
         }
 
         parent_workspace = Workspace.objects.create(**parent_workspace_data)
@@ -305,6 +308,7 @@ class WorkspaceViewTestsV2Enabled(WorkspaceViewTests):
         self.assertIsNotNone(data.get("uuid"))
         self.assertNotEquals(data.get("created"), "")
         self.assertNotEquals(data.get("modified"), "")
+        self.assertEquals(data.get("type"), "standard")
 
         update_workspace = Workspace.objects.filter(id=workspace.id).first()
         self.assertEquals(update_workspace.name, "Updated name")
@@ -395,6 +399,7 @@ class WorkspaceViewTestsV2Enabled(WorkspaceViewTests):
         self.assertNotEquals(data.get("modified"), "")
         self.assertEqual(response.get("content-type"), "application/json")
         self.assertEqual(data.get("ancestry"), None)
+        self.assertEquals(data.get("type"), "standard")
         self.assertEqual(response.get("content-type"), "application/json")
 
     def test_get_workspace_with_ancestry(self):
@@ -415,6 +420,7 @@ class WorkspaceViewTestsV2Enabled(WorkspaceViewTests):
             data.get("ancestry"),
             [{"name": self.parent_workspace.name, "uuid": str(self.parent_workspace.uuid), "parent_id": None}],
         )
+        self.assertEquals(data.get("type"), "standard")
         self.assertEqual(response.get("content-type"), "application/json")
         self.assertEqual(data.get("ancestry"), None)
 
@@ -436,6 +442,7 @@ class WorkspaceViewTestsV2Enabled(WorkspaceViewTests):
             data.get("ancestry"),
             [{"name": self.parent_workspace.name, "uuid": str(self.parent_workspace.uuid), "parent_id": None}],
         )
+        self.assertEquals(data.get("type"), "standard")
         self.assertEqual(response.get("content-type"), "application/json")
 
     def test_get_workspace_not_found(self):

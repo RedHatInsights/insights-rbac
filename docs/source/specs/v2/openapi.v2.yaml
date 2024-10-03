@@ -765,6 +765,7 @@ components:
       type: object
       required:
         - uuid
+        - type
         - name
         - created
         - modified
@@ -773,6 +774,8 @@ components:
           $ref: '#/components/schemas/UUID'
         parent_id:
           $ref: '#/components/schemas/UUID'
+        type:
+          $ref: '#/components/schemas/Workspaces.WorkspaceTypes'
         name:
           type: string
           description: Workspace A
@@ -821,6 +824,12 @@ components:
           items:
             $ref: '#/components/schemas/Workspaces.Workspace'
           description: List of workspaces
+    Workspaces.WorkspaceTypes:
+      type: string
+      enum:
+        - root
+        - default
+        - standard
 servers:
   - url: https://console.redhat.com/{basePath}
     description: Production Server
