@@ -220,8 +220,6 @@ objects:
             value: ${SA_NAME}
           - name: RELATION_API_SERVER
             value: ${RELATION_API_SERVER}
-          - name: READ_ONLY_API_MODE
-            value: ${READ_ONLY_API_MODE}
 
     - name: scheduler-service
       minReplicas: ${{MIN_SCHEDULER_REPLICAS}}
@@ -517,6 +515,8 @@ objects:
             value: ${IT_TOKEN_JKWS_CACHE_LIFETIME}
           - name: V2_APIS_ENABLED
             value: ${V2_APIS_ENABLED}
+          - name: READ_ONLY_API_MODE
+            value: ${READ_ONLY_API_MODE}
 
     jobs:
       - name: tenant-org-id-populator
