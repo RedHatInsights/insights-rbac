@@ -199,11 +199,11 @@ spec:
         - name: POSTGRESQL_USER
           value: "root"
         - name: POSTGRESQL_PASSWORD
-          value: root
+          value: "root"
         - name: POSTGRESQL_DATABASE
           value: "rbac"
         - name: POSTGRESQL_PORT
-          value: "15432"
+          value: "5432"
         - name: DATABASE_HOST
           value: "0.0.0.0"
       workspaces:
