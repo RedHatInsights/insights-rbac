@@ -30,6 +30,7 @@ class WorkspaceSerializer(serializers.ModelSerializer):
     parent_id = serializers.UUIDField(allow_null=True, required=False)
     created = serializers.DateTimeField(read_only=True)
     modified = serializers.DateTimeField(read_only=True)
+    type = serializers.CharField(read_only=True)
 
     class Meta:
         """Metadata for the serializer."""
@@ -42,6 +43,7 @@ class WorkspaceSerializer(serializers.ModelSerializer):
             "description",
             "created",
             "modified",
+            "type",
         )
 
     def create(self, validated_data):
