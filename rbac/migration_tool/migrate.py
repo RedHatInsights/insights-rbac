@@ -95,9 +95,11 @@ def migrate_workspace(tenant: Tenant, write_relationships: bool):
         create_relationship(("rbac", "workspace"), tenant.org_id, ("rbac", "workspace"), root_workspace, "parent"),
         create_relationship(("rbac", "workspace"), root_workspace, ("rbac", "tenant"), tenant.org_id, "parent"),
     ]
-    # Include realm for tenant
+    # Include platform for tenant
     relationships.append(
-        create_relationship(("rbac", "tenant"), str(tenant.org_id), ("rbac", "realm"), settings.ENV_NAME, "realm")
+        create_relationship(
+            ("rbac", "tenant"), str(tenant.org_id), ("rbac", "platform"), settings.ENV_NAME, "platform"
+        )
     )
     output_relationships(relationships, write_relationships)
     return root_workspace, tenant.org_id
@@ -106,7 +108,9 @@ def migrate_workspace(tenant: Tenant, write_relationships: bool):
 def migrate_users(tenant: Tenant, write_relationships: bool):
     """Write users relationship to tenant."""
     relationships = [
-        create_relationship(("rbac", "tenant"), str(tenant.org_id), ("rbac", "user"), str(principal.uuid), "member")
+        create_relationship(
+            ("rbac", "tenant"), str(tenant.org_id), ("rbac", "principal"), str(principal.uuid), "member"
+        )
         for principal in tenant.principal_set.all()
     ]
     output_relationships(relationships, write_relationships)
@@ -119,7 +123,9 @@ def migrate_users_for_groups(tenant: Tenant, write_relationships: bool):
         user_set = group.principals.all()
         for user in user_set:
             relationships.append(
-                create_relationship(("rbac", "group"), str(group.uuid), ("rbac", "user"), str(user.uuid), "member")
+                create_relationship(
+                    ("rbac", "group"), str(group.uuid), ("rbac", "principal"), str(user.uuid), "member"
+                )
             )
     # Explicitly create relationships for platform default group
     group_default = tenant.group_set.filter(platform_default=True).first()
@@ -127,7 +133,11 @@ def migrate_users_for_groups(tenant: Tenant, write_relationships: bool):
         group_default = Tenant.objects.get(tenant_name="public").group_set.get(platform_default=True)
     user_set = tenant.principal_set.filter(cross_account=False)
     for user in user_set:
-        relationships.append(create_relationship("group", str(group_default.uuid), "user", str(user.uuid), "member"))
+        relationships.append(
+            create_relationship(
+                ("rbac", "group"), str(group_default.uuid), ("rbac", "principal"), str(user.uuid), "member"
+            )
+        )
     output_relationships(relationships, write_relationships)
 
 

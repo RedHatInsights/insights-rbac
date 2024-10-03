@@ -71,19 +71,19 @@ def relation_api_tuples_for_v1_role(v1_role_uuid, default_workspace_uuid):
     mappings = BindingMapping.objects.filter(role=role_id).all()
     relations = []
     for role_binding in [m.get_role_binding() for m in mappings]:
-        relation_tuple = relation_api_tuple("role_binding", role_binding.id, "granted", "role", role_binding.role.id)
+        relation_tuple = relation_api_tuple("role_binding", role_binding.id, "role", "role", role_binding.role.id)
         relations.append(relation_tuple)
 
         for permission in role_binding.role.permissions:
-            relation_tuple = relation_api_tuple("role", role_binding.role.id, permission, "user", "*")
+            relation_tuple = relation_api_tuple("role", role_binding.role.id, permission, "principal", "*")
             relations.append(relation_tuple)
         if "app_all_read" in role_binding.role.permissions:
             relation_tuple = relation_api_tuple(
-                "workspace", default_workspace_uuid, "user_grant", "role_binding", role_binding.id
+                "workspace", default_workspace_uuid, "binding", "role_binding", role_binding.id
             )
             relations.append(relation_tuple)
         else:
-            relation_tuple = relation_api_tuple("keya/id", "valueA", "user_grant", "role_binding", role_binding.id)
+            relation_tuple = relation_api_tuple("keya/id", "valueA", "binding", "role_binding", role_binding.id)
             relations.append(relation_tuple)
     return relations
 
