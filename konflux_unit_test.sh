@@ -7,10 +7,6 @@ pip install --upgrade pip
 pip install pipenv
 pip install tox
 
-echo "testing for db server--start"
-
-curl "http://localhost:15432"
-
-echo "testing for db server--end"
+echo "hit tox"
 
 tox -r
