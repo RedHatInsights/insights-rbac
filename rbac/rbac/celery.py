@@ -48,11 +48,12 @@ app.conf.beat_schedule = {
 }
 
 if settings.PRINCIPAL_CLEANUP_DELETION_ENABLED_UMB:
-    app.conf.beat_schedule["principal-cleanup-every-minute"] = {
-        "task": "management.tasks.principal_cleanup_via_umb",
-        "schedule": 60,  # Every 60 second
-        "args": [],
-    }
+    if settings.UMB_JOB_ENABLED:  # TODO: This is temp flag, remove it after populating user_id
+        app.conf.beat_schedule["principal-cleanup-every-minute"] = {
+            "task": "management.tasks.principal_cleanup_via_umb",
+            "schedule": 60,  # Every 60 second
+            "args": [],
+        }
 else:
     app.conf.beat_schedule["principal-cleanup-every-sevenish-days"] = {
         "task": "management.tasks.principal_cleanup",

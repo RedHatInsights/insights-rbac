@@ -30,7 +30,8 @@ class MigrateTests(TestCase):
     def setUp(self):
         """Set up the utils tests."""
         super().setUp()
-        public_tenant = Tenant.objects.create(tenant_name="public")
+        public_tenant = Tenant.objects.get(tenant_name="public")
+        Group.objects.create(name="default", tenant=public_tenant, platform_default=True)
         # This would be skipped
         permission1 = Permission.objects.create(permission="app1:hosts:read", tenant=public_tenant)
         permission2 = Permission.objects.create(permission="inventory:hosts:write", tenant=public_tenant)
