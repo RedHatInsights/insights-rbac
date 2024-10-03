@@ -104,9 +104,7 @@ class V2rolebinding:
         """Create tuples from V2rolebinding model."""
         tuples: list[Relationship] = list()
 
-        tuples.append(
-            create_relationship(("rbac", "role_binding"), self.id, ("rbac", "role"), self.role.id, "role")
-        )
+        tuples.append(create_relationship(("rbac", "role_binding"), self.id, ("rbac", "role"), self.role.id, "role"))
 
         for perm in self.role.permissions:
             tuples.append(create_relationship(("rbac", "role"), self.role.id, ("rbac", "principal"), "*", perm))
