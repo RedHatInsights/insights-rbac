@@ -255,9 +255,9 @@ spec:
                 value: $(params.POSTGRESQL_DATABASE)
               - name: DATABASE_USER
                 value: $(params.POSTGRESQL_USER)
-              - name: DATBASE_PASSWORD
+              - name: DATABASE_PASSWORD
                 value: $(params.POSTGRESQL_PASSWORD)
-              - name: POSTGRESQL_PORT
+              - name: DATABASE_PORT
                 value: $(params.POSTGRESQL_PORT)
               - name: DATABASE_HOST
                 value: $(params.DATABASE_HOST)
