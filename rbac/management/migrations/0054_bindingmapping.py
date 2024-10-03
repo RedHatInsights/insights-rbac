@@ -7,7 +7,7 @@ import django.db.models.deletion
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("management", "0052_remove_rolemapping_v1_role_and_more"),
+        ("management", "0053_remove_rolemapping_v1_role_and_more"),
     ]
 
     operations = [

@@ -6,7 +6,7 @@ from django.db import migrations
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("management", "0051_alter_principal_user_id"),
+        ("management", "0052_workspace_type_and_more"),
     ]
 
     operations = [
