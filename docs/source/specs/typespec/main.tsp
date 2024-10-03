@@ -96,9 +96,21 @@ namespace Workspaces {
         description?: string = "Description of Workspace A";
     }
 
+    enum WorkspaceTypes {
+        "root",
+        "default",
+        "standard"
+    }
+
+    enum WorkspaceTypesQueryParam {
+        "all",
+        ...WorkspaceTypes
+    }
+
     model Workspace {
         @key uuid: UUID;
         parent_id?: UUID;
+        type: WorkspaceTypes;
         ...BasicWorkspace;
         ...Timestamps;
     }
@@ -208,6 +220,9 @@ namespace Workspaces {
     @get op list(
         @query limit?: int64 = 10;
         @query offset?: int64 = 0;
+
+        @doc("Defaults to all when param is not supplied.")
+        @query type?: WorkspaceTypesQueryParam = WorkspaceTypesQueryParam.all;
     ): WorkspaceListResponse | Problems.CommonProblems;
 
     @doc("Create workspace in tenant")
