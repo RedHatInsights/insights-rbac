@@ -266,9 +266,7 @@ spec:
               set -ex
               echo "RUN THE UNIT TESTS"
               pip install --upgrade pip
-              #pip install pipenv
               pip install tox
-
               tox -r
 
     - name: prefetch-dependencies
