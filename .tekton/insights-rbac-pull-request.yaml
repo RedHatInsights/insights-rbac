@@ -188,7 +188,7 @@ spec:
         workspace: git-auth
 
     - name: run-unit-tests
-      description: Running Insights RBAC unit tests 
+      description: Running Insights RBAC unit tests
       # make sure the task runs after the artifact is created
       runAfter:
         - clone-repository-oci-ta
@@ -242,7 +242,7 @@ spec:
             args:
               - use
               - $(params.SOURCE_ARTIFACT)=/var/workdir
-          - name: run-database
+          - name: unit-tests
             # set the working directory to value from previous step
             workingDir: /var/workdir
             # Use image that suites your use case

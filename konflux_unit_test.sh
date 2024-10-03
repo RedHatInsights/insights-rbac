@@ -2,14 +2,14 @@
 
 set -ex
 
-echo "START THE DATABASE"
+echo "RUN THE UNIT TESTS"
 pip install --upgrade pip
-pip3 install pipenv
-pip3 install tox
-pip3 install docker
+pip install pipenv
+pip install tox
 
-make start-db
+DB_HOST=localhost DB_PORT=15432 bash -c 'printf "" 2>>/dev/null >>/dev/tcp/${DB_HOST}/${DB_PORT}'
+
+echo $? "testing for the db server"
+
 
 tox -r
-
-make stop-compose
