@@ -25,10 +25,11 @@ from django.db import models
 from django.db.models import signals
 from django.utils import timezone
 from internal.integration import sync_handlers
+from kessel.relations.v1beta1.common_pb2 import Relationship
 from management.cache import AccessCache
 from management.models import Permission, Principal
 from management.rbac_fields import AutoDateTimeField
-from migration_tool.models import V2boundresource, V2role, V2rolebinding
+from migration_tool.models import V2boundresource, V2role, V2rolebinding, role_binding_group_subject_tuple
 
 from api.models import TenantAwareModel
 
@@ -149,13 +150,24 @@ class BindingMapping(models.Model):
             resource_id=resource_id,
         )
 
-    def remove_group_from_bindings(self, group_id: str):
-        """Remove group from mappings."""
-        self.mappings["groups"] = [group for group in self.mappings["groups"] if group != group_id]
+    def as_tuples(self) -> list[Relationship]:
+        """Create tuples from BindingMapping model."""
+        v2_role_binding = self.get_role_binding()
+        return v2_role_binding.as_tuples()
 
-    def add_group_to_bindings(self, group_id: str):
+    def is_unassigned(self):
+        """Return true if mapping is not assigned to any groups."""
+        return len(self.mappings["groups"]) == 0
+
+    def remove_group_from_bindings(self, group_uuid: str) -> Relationship:
+        """Remove group from mappings."""
+        self.mappings["groups"] = [group for group in self.mappings["groups"] if group != group_uuid]
+        return role_binding_group_subject_tuple(self.mappings["id"], group_uuid)
+
+    def add_group_to_bindings(self, group_uuid: str) -> Relationship:
         """Add group to mappings."""
-        self.mappings["groups"].append(group_id)
+        self.mappings["groups"].append(group_uuid)
+        return role_binding_group_subject_tuple(self.mappings["id"], group_uuid)
 
     def update_mappings_from_role_binding(self, role_binding: V2rolebinding):
         """Set mappings."""

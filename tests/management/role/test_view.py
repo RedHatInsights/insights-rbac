@@ -88,13 +88,20 @@ def relation_api_tuples_for_v1_role(v1_role_uuid, default_workspace_uuid):
     return relations
 
 
-def relation_api_tuple(resource_type, resource_id, relation, subject_type, subject_id):
+def relation_api_tuple(resource_type, resource_id, relation, subject_type, subject_id, subject_relation=None):
     """Helper function for creating a relation tuple in json."""
     return {
         "resource": relation_api_resource(resource_type, resource_id),
         "relation": relation,
-        "subject": {"subject": relation_api_resource(subject_type, subject_id)},
+        "subject": relation_api_subject(subject_type, subject_id, subject_relation),
     }
+
+
+def relation_api_subject(subject_type, subject_id, subject_relation=None):
+    subject = {"subject": relation_api_resource(subject_type, subject_id)}
+    if subject_relation is not None:
+        subject["relation"] = subject_relation
+    return subject
 
 
 def relation_api_resource(type_resource, id_resource):

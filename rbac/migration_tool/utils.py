@@ -2,7 +2,7 @@
 
 import json
 import logging
-from typing import Tuple
+from typing import Optional, Tuple
 
 import grpc
 from django.conf import settings
@@ -55,13 +55,20 @@ def validate_and_create_obj_ref(obj_name: Tuple[str, str], obj_id):
 
 
 def create_relationship(
-    resource_name: Tuple[str, str], resource_id, subject_name: Tuple[str, str], subject_id, relation
+    resource_name: Tuple[str, str],
+    resource_id,
+    subject_name: Tuple[str, str],
+    subject_id,
+    relation,
+    subject_relation: Optional[str] = None,
 ):
     """Create a relationship between a resource and a subject."""
     return common_pb2.Relationship(
         resource=validate_and_create_obj_ref(resource_name, resource_id),
         relation=relation,
-        subject=common_pb2.SubjectReference(subject=validate_and_create_obj_ref(subject_name, subject_id)),
+        subject=common_pb2.SubjectReference(
+            subject=validate_and_create_obj_ref(subject_name, subject_id), relation=subject_relation
+        ),
     )
 
 

@@ -16,16 +16,19 @@
 #
 """Test tuple changes for RBAC operations."""
 
-from typing import Tuple
-import unittest
+from typing import Optional, Tuple
 from django.test import TestCase, override_settings
+from django.db.models import Q
 from management.group.model import Group
 from management.group.relation_api_dual_write_group_handler import RelationApiDualWriteGroupHandler
 from management.permission.model import Permission
 from management.policy.model import Policy
 from management.principal.model import Principal
-from management.role.model import Access, ResourceDefinition, Role
-from management.role.relation_api_dual_write_handler import RelationApiDualWriteHandler, ReplicationEventType
+from management.role.model import Access, ResourceDefinition, Role, BindingMapping
+from management.role.relation_api_dual_write_handler import (
+    RelationApiDualWriteHandler,
+    ReplicationEventType,
+)
 from migration_tool.in_memory_tuples import (
     InMemoryRelationReplicator,
     InMemoryTuples,
@@ -59,11 +62,25 @@ class DualWriteTestCase(TestCase):
         self.tuples = InMemoryTuples()
         self.fixture = RbacFixture()
         self.tenant = self.fixture.new_tenant(name="tenant", org_id="1234567")
+        self.test_tenant = self.tenant
 
-    def default_workspace(self) -> str:
+    def switch_to_new_tenant(self, name: str, org_id: str) -> Tenant:
+        """Switch to a new tenant with the given name and org_id."""
+        tenant = self.fixture.new_tenant(name=name, org_id=org_id)
+        self.tenant = tenant
+        return tenant
+
+    def switch_tenant(self, tenant: Tenant):
+        self.tenant = tenant
+
+    def restore_test_tenant(self):
+        self.tenant = self.test_tenant
+
+    def default_workspace(self, tenant: Optional[Tenant] = None) -> str:
         """Return the default workspace ID."""
-        assert self.tenant.org_id is not None, "Tenant org_id should not be None"
-        return self.tenant.org_id
+        tenant = tenant if tenant is not None else self.tenant
+        assert tenant.org_id is not None, "Tenant org_id should not be None"
+        return tenant.org_id
 
     def dual_write_handler(self, role: Role, event_type: ReplicationEventType) -> RelationApiDualWriteHandler:
         """Create a RelationApiDualWriteHandler for the given role and event type."""
@@ -80,8 +97,10 @@ class DualWriteTestCase(TestCase):
     def given_v1_system_role(self, name: str, permissions: list[str]) -> Role:
         """Create a new system role with the given ID and permissions."""
         role = self.fixture.new_system_role(name=name, permissions=permissions)
-        # TODO: Need to replicate system role permission relations
-        # This is different from group assignment
+        dual_write = self.dual_write_handler_for_system_role(
+            role, self.tenant, ReplicationEventType.CREATE_SYSTEM_ROLE
+        )
+        dual_write.replicate_new_system_role_permissions(role)
         return role
 
     def given_v1_role(self, name: str, default: list[str], **kwargs: list[str]) -> Role:
@@ -159,10 +178,37 @@ class DualWriteTestCase(TestCase):
         dual_write.replicate_removed_principals()
         return principals
 
-    def given_policy(self, group: Group, roles: list[Role]) -> Policy:
+    def given_roles_assigned_to_group(self, group: Group, roles: list[Role]) -> Policy:
         """Assign the [roles] to the [group]."""
-        # TODO: replicate role assignment
-        return self.fixture.add_role_to_group(roles[0], group, self.tenant)
+        assert roles, "Roles must not be empty"
+        dual_write_handler = RelationApiDualWriteGroupHandler(
+            group,
+            ReplicationEventType.ASSIGN_ROLE,
+            [],
+            replicator=InMemoryRelationReplicator(self.tuples),
+        )
+        policy: Policy
+        for role in roles:
+            policy = self.fixture.add_role_to_group(role, group, self.tenant)
+            dual_write_handler.replicate_added_role(role)
+
+        return policy
+
+    def given_roles_unassigned_from_group(self, group: Group, roles: list[Role]) -> Policy:
+        """Unassign the [roles] to the [group]."""
+        assert roles, "Roles must not be empty"
+        policy = self.fixture.remove_role_from_group(roles[0], group, self.tenant)
+        dual_write_handler = RelationApiDualWriteGroupHandler(
+            group,
+            ReplicationEventType.UNASSIGN_ROLE,
+            [],
+            replicator=InMemoryRelationReplicator(self.tuples),
+        )
+        policy: Policy
+        for role in roles:
+            policy = self.fixture.remove_role_from_group(role, group, self.tenant)
+            dual_write_handler.replicate_removed_role(role)
+        return policy
 
     def expect_1_v2_role_with_permissions(self, permissions: list[str]) -> str:
         """Assert there is a role matching the given permissions and return its ID."""
@@ -205,6 +251,12 @@ class DualWriteTestCase(TestCase):
 
     def expect_1_role_binding_to_workspace(self, workspace: str, for_v2_roles: list[str], for_groups: list[str]):
         """Assert there is a role binding with the given roles and groups."""
+        self.expect_role_bindings_to_workspace(1, workspace, for_v2_roles, for_groups)
+
+    def expect_role_bindings_to_workspace(
+        self, num: int, workspace: str, for_v2_roles: list[str], for_groups: list[str]
+    ):
+        """Assert there is [num] role bindings with the given roles and groups."""
         # Find all bindings for the given workspace
         resources = self.tuples.find_tuples_grouped(
             all_of(resource("rbac", "workspace", workspace), relation("user_grant")),
@@ -227,7 +279,7 @@ class DualWriteTestCase(TestCase):
                 all_of(
                     resource_type("rbac", "role_binding"),
                     relation("subject"),
-                    subject("rbac", "group", group_id),
+                    subject("rbac", "group", group_id, "member"),
                 )
                 for group_id in for_groups
             ],
@@ -239,7 +291,7 @@ class DualWriteTestCase(TestCase):
         num_role_bindings = len(role_bindings)
         self.assertEqual(
             num_role_bindings,
-            1,
+            num,
             f"Expected exactly 1 role binding against workspace {workspace} "
             f"with roles {for_v2_roles} and groups {for_groups}, "
             f"but got {len(role_bindings)}.\n"
@@ -276,10 +328,68 @@ class DualWriteGroupMembershipTestCase(DualWriteTestCase):
         self.assertEquals({t.subject_id for t in tuples}, {str(p.uuid) for p in principals})
 
 
+class DualWriteGroupRolesTestCase(DualWriteTestCase):
+    """Test case for verifying the dual write functionality for group role assignments."""
+
+    def test_custom_roles_group_assignments_tuples(self):
+        role_1 = self.given_v1_role(
+            "r1",
+            default=["app1:hosts:read", "inventory:hosts:write"],
+            ws_2=["app1:hosts:read", "inventory:hosts:write"],
+        )
+
+        role_2 = self.given_v1_role(
+            "r2",
+            default=["app2:hosts:read", "inventory:systems:write"],
+            ws_2=["app2:hosts:read", "inventory:systems:write"],
+        )
+        group, _ = self.given_group("g1", [])
+
+        self.given_roles_assigned_to_group(group, roles=[role_1, role_2])
+
+        mappings = BindingMapping.objects.filter(Q(role=role_1) | Q(role=role_2)).values_list("mappings", flat=True)
+
+        tuples = self.tuples.find_tuples(
+            all_of(
+                resource_type("rbac", "role_binding"),
+                relation("subject"),
+                subject_type("rbac", "group", "member"),
+            )
+        )
+
+        self.assertEquals(len(tuples), 4)
+        for mapping in mappings:
+            for group_from_mapping in mapping["groups"]:
+                tuples = self.tuples.find_tuples(
+                    all_of(
+                        resource("rbac", "role_binding", mapping["id"]),
+                        relation("subject"),
+                        subject("rbac", "group", group_from_mapping, "member"),
+                    )
+                )
+                self.assertEquals(len(tuples), 1)
+                self.assertEquals(tuples[0].subject_id, mapping["groups"][0])
+
+        self.given_roles_unassigned_from_group(group, [role_1, role_2])
+
+        mappings = BindingMapping.objects.filter(role=role_2).all()
+        for m in mappings:
+            self.assertEquals(m.mappings["groups"], [])
+
+        tuples = self.tuples.find_tuples(
+            all_of(
+                resource_type("rbac", "role_binding"),
+                relation("subject"),
+                subject_type("rbac", "group"),
+            )
+        )
+
+        self.assertEquals(len(tuples), 0)
+
+
 class DualWriteSystemRolesTestCase(DualWriteTestCase):
     """Test dual write logic for system roles."""
 
-    @unittest.skip("Not implemented yet")
     def test_system_role_grants_access_to_default_workspace(self):
         """Create role binding only when system role is bound to group."""
         role = self.given_v1_system_role("r1", ["app1:hosts:read", "inventory:hosts:write"])
@@ -287,11 +397,90 @@ class DualWriteSystemRolesTestCase(DualWriteTestCase):
 
         self.expect_num_role_bindings(0)
 
-        self.given_policy(group, roles=[role])
+        self.given_roles_assigned_to_group(group, roles=[role])
 
         id = self.expect_1_v2_role_with_permissions(["app1:hosts:read", "inventory:hosts:write"])
-        self.expect_1_role_binding_to_workspace(self.default_workspace(), for_v2_roles=[id], for_groups=[group.id])
+        self.expect_1_role_binding_to_workspace(
+            self.default_workspace(), for_v2_roles=[id], for_groups=[str(group.uuid)]
+        )
         self.expect_num_role_bindings(1)
+
+    def test_unassign_system_role_removes_role_binding_if_unassigned(self):
+        """Remove role binding when system role is unbound from group."""
+        role = self.given_v1_system_role("r1", ["app1:hosts:read", "inventory:hosts:write"])
+        group, _ = self.given_group("g1", ["u1", "u2"])
+
+        self.given_roles_assigned_to_group(group, roles=[role])
+
+        id = self.expect_1_v2_role_with_permissions(["app1:hosts:read", "inventory:hosts:write"])
+        self.expect_1_role_binding_to_workspace(
+            self.default_workspace(), for_v2_roles=[id], for_groups=[str(group.uuid)]
+        )
+
+        self.given_roles_unassigned_from_group(group, roles=[role])
+        self.expect_num_role_bindings(0)
+
+    def test_unassign_system_role_keeps_role_binding_if_still_assigned(self):
+        """Keep the role binding if it still has other groups assigned to it."""
+        role = self.given_v1_system_role("r1", ["app1:hosts:read", "inventory:hosts:write"])
+        g1, _ = self.given_group("g1", ["u1", "u2"])
+        g2, _ = self.given_group("g2", ["u1", "u2"])
+
+        self.expect_num_role_bindings(0)
+
+        self.given_roles_assigned_to_group(g1, roles=[role])
+        self.given_roles_assigned_to_group(g2, roles=[role])
+
+        id = self.expect_1_v2_role_with_permissions(["app1:hosts:read", "inventory:hosts:write"])
+        self.expect_1_role_binding_to_workspace(
+            self.default_workspace(), for_v2_roles=[id], for_groups=[str(g1.uuid), str(g2.uuid)]
+        )
+
+        self.given_roles_unassigned_from_group(g1, roles=[role])
+
+        self.expect_1_role_binding_to_workspace(self.default_workspace(), for_v2_roles=[id], for_groups=[str(g2.uuid)])
+
+    def test_assignment_is_tenant_specific(self):
+        """System role assignments are tenant-specific despite using the same role."""
+        role = self.given_v1_system_role("r1", ["app1:hosts:read", "inventory:hosts:write"])
+        g1, _ = self.given_group("g1", ["u1", "u2"])
+        self.given_roles_assigned_to_group(g1, roles=[role])
+
+        t2 = self.switch_to_new_tenant("tenant2", "7654321")
+        g2, _ = self.given_group("g2", ["u1", "u2"])
+        self.given_roles_assigned_to_group(g2, roles=[role])
+
+        id = self.expect_1_v2_role_with_permissions(["app1:hosts:read", "inventory:hosts:write"])
+
+        self.expect_1_role_binding_to_workspace(
+            self.default_workspace(self.test_tenant), for_v2_roles=[id], for_groups=[str(g1.uuid)]
+        )
+        self.expect_1_role_binding_to_workspace(
+            self.default_workspace(t2), for_v2_roles=[id], for_groups=[str(g2.uuid)]
+        )
+
+    def test_unassign_role_is_tenant_specific(self):
+        """System role unassignments are tenant-specific despite using the same role."""
+        role = self.given_v1_system_role("r1", ["app1:hosts:read", "inventory:hosts:write"])
+        g1, _ = self.given_group("g1", ["u1", "u2"])
+        self.given_roles_assigned_to_group(g1, roles=[role])
+
+        t2 = self.switch_to_new_tenant("tenant2", "7654321")
+        g2, _ = self.given_group("g2", ["u1", "u2"])
+        self.given_roles_assigned_to_group(g2, roles=[role])
+
+        self.given_roles_unassigned_from_group(g1, roles=[role])
+
+        id = self.expect_1_v2_role_with_permissions(["app1:hosts:read", "inventory:hosts:write"])
+
+        self.expect_role_bindings_to_workspace(
+            0, self.default_workspace(self.test_tenant), for_v2_roles=[id], for_groups=[str(g1.uuid)]
+        )
+        self.expect_1_role_binding_to_workspace(
+            self.default_workspace(t2), for_v2_roles=[id], for_groups=[str(g2.uuid)]
+        )
+
+    # TODO: Add test to cover updating and deleting system role
 
 
 class DualWriteCustomRolesTestCase(DualWriteTestCase):
@@ -306,12 +495,13 @@ class DualWriteCustomRolesTestCase(DualWriteTestCase):
         )
 
         group, _ = self.given_group("g1", ["u1", "u2"])
-        self.given_policy(group, roles=[role])
+        self.given_roles_assigned_to_group(group, roles=[role])
 
         id = self.expect_1_v2_role_with_permissions(["app1:hosts:read", "inventory:hosts:write"])
-        # TODO: assert group once group replication is implemented
-        self.expect_1_role_binding_to_workspace(self.default_workspace(), for_v2_roles=[id], for_groups=[])
-        self.expect_1_role_binding_to_workspace("ws_2", for_v2_roles=[id], for_groups=[])
+        self.expect_1_role_binding_to_workspace(
+            self.default_workspace(), for_v2_roles=[id], for_groups=[str(group.uuid)]
+        )
+        self.expect_1_role_binding_to_workspace("ws_2", for_v2_roles=[id], for_groups=[str(group.uuid)])
 
     def test_add_permissions_to_role(self):
         """Modify the role in place when adding permissions."""
@@ -327,16 +517,18 @@ class DualWriteCustomRolesTestCase(DualWriteTestCase):
             ws_2=["app1:hosts:read", "inventory:hosts:write", "app2:hosts:read"],
         )
 
+        group, _ = self.given_group("g1", ["u1"])
+        self.given_roles_assigned_to_group(group, [role])
+
         role_for_default = self.expect_1_v2_role_with_permissions(["app1:hosts:read", "inventory:hosts:write"])
         role_for_ws_2 = self.expect_1_v2_role_with_permissions(
             ["app1:hosts:read", "inventory:hosts:write", "app2:hosts:read"]
         )
 
-        # TODO: assert group once group replication is implemented
         self.expect_1_role_binding_to_workspace(
-            self.default_workspace(), for_v2_roles=[role_for_default], for_groups=[]
+            self.default_workspace(), for_v2_roles=[role_for_default], for_groups=[str(group.uuid)]
         )
-        self.expect_1_role_binding_to_workspace("ws_2", for_v2_roles=[role_for_ws_2], for_groups=[])
+        self.expect_1_role_binding_to_workspace("ws_2", for_v2_roles=[role_for_ws_2], for_groups=[str(group.uuid)])
 
     def test_remove_permissions_from_role(self):
         """Modify the role in place when removing permissions."""
@@ -352,14 +544,16 @@ class DualWriteCustomRolesTestCase(DualWriteTestCase):
             ws_2=["app1:hosts:read"],
         )
 
+        group, _ = self.given_group("g1", ["u1"])
+        self.given_roles_assigned_to_group(group, [role])
+
         role_for_default = self.expect_1_v2_role_with_permissions(["app1:hosts:read", "inventory:hosts:write"])
         role_for_ws_2 = self.expect_1_v2_role_with_permissions(["app1:hosts:read"])
 
-        # TODO: assert group once group replication is implemented
         self.expect_1_role_binding_to_workspace(
-            self.default_workspace(), for_v2_roles=[role_for_default], for_groups=[]
+            self.default_workspace(), for_v2_roles=[role_for_default], for_groups=[str(group.uuid)]
         )
-        self.expect_1_role_binding_to_workspace("ws_2", for_v2_roles=[role_for_ws_2], for_groups=[])
+        self.expect_1_role_binding_to_workspace("ws_2", for_v2_roles=[role_for_ws_2], for_groups=[str(group.uuid)])
 
     def test_remove_permissions_from_role_back_to_original(self):
         """Modify the role in place when removing permissions, consolidating roles."""
@@ -396,8 +590,8 @@ class DualWriteCustomRolesTestCase(DualWriteTestCase):
 
         g1, _ = self.given_group("g2", ["u2"])
         g2, _ = self.given_group("g1", ["u1"])
-        self.given_policy(g1, roles=[role])
-        self.given_policy(g2, roles=[role])
+        self.given_roles_assigned_to_group(g1, roles=[role])
+        self.given_roles_assigned_to_group(g2, roles=[role])
 
         self.given_update_to_v1_role(
             role,
@@ -452,6 +646,27 @@ class DualWriteCustomRolesTestCase(DualWriteTestCase):
         self.expect_1_role_binding_to_workspace(self.default_workspace(), for_v2_roles=[roles[1]], for_groups=[])
         self.expect_1_role_binding_to_workspace("ws_2", for_v2_roles=[roles[0]], for_groups=[])
         self.expect_1_role_binding_to_workspace("ws_2", for_v2_roles=[roles[1]], for_groups=[])
+
+    def test_unassigned_role_keeps_role_binding(self):
+        """Unassigning a role from a group does not remove the role binding."""
+        role = self.given_v1_role(
+            "r1",
+            default=["app1:hosts:read", "inventory:hosts:write"],
+            ws_2=["app1:hosts:read", "inventory:hosts:write"],
+        )
+
+        group, _ = self.given_group("g1", ["u1"])
+        self.given_roles_assigned_to_group(group, roles=[role])
+
+        id = self.expect_1_v2_role_with_permissions(["app1:hosts:read", "inventory:hosts:write"])
+
+        self.expect_1_role_binding_to_workspace(
+            self.default_workspace(), for_v2_roles=[id], for_groups=[str(group.uuid)]
+        )
+
+        self.given_roles_unassigned_from_group(group, roles=[role])
+
+        self.expect_1_role_binding_to_workspace(self.default_workspace(), for_v2_roles=[id], for_groups=[])
 
 
 class RbacFixture:
@@ -529,8 +744,19 @@ class RbacFixture:
 
     def add_role_to_group(self, role: Role, group: Group, tenant: Tenant) -> Policy:
         """Add a role to a group for a given tenant and return the policy."""
-        policy, _ = Policy.objects.get_or_create(name=f"System Policy_{group.name}", group=group, tenant=tenant)
+        policy, _ = Policy.objects.get_or_create(
+            name=f"System Policy_{group.name}_{tenant.tenant_name}", group=group, tenant=tenant
+        )
         policy.roles.add(role)
+        policy.save()
+        return policy
+
+    def remove_role_from_group(self, role: Role, group: Group, tenant: Tenant) -> Policy:
+        """Remove a role to a group for a given tenant and return the policy."""
+        policy, _ = Policy.objects.get_or_create(
+            name=f"System Policy_{group.name}_{tenant.tenant_name}", group=group, tenant=tenant
+        )
+        policy.roles.remove(role)
         policy.save()
         return policy
 
