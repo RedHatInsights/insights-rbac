@@ -420,3 +420,16 @@ class DisableCSRF(MiddlewareMixin):  # pylint: disable=too-few-public-methods
 
         """
         setattr(request, "_dont_enforce_csrf_checks", True)
+
+
+class ReadOnlyApiMiddleware(MiddlewareMixin):  # pylint: disable=too-few-public-methods
+    """Middleware to enable read-only on APIs when configured."""
+
+    def process_request(self, request):  # pylint: disable=no-self-use
+        """Process request ReadOnlyApiMiddleware."""
+        if settings.READ_ONLY_API_MODE and request.method in ["POST", "PUT", "PATCH", "DELETE"]:
+            return HttpResponse(
+                json.dumps({"error": "This API is currently in read-only mode. Please try again later."}),
+                content_type="application/json",
+                status=405,
+            )

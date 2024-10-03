@@ -129,6 +129,7 @@ MIDDLEWARE = [
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
     "django_prometheus.middleware.PrometheusAfterMiddleware",
+    "rbac.middleware.ReadOnlyApiMiddleware",
 ]
 
 DEVELOPMENT = ENVIRONMENT.bool("DEVELOPMENT", default=False)
@@ -494,3 +495,4 @@ ENV_NAME = ENVIRONMENT.get_value("ENV_NAME", default="stage")
 
 # Versioned API settings
 V2_APIS_ENABLED = ENVIRONMENT.bool("V2_APIS_ENABLED", default=False)
+READ_ONLY_API_MODE = ENVIRONMENT.get_value("READ_ONLY_API_MODE", default=False)

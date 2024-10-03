@@ -22,6 +22,7 @@ from unittest import mock
 from unittest.mock import Mock
 from django.conf import settings
 from django.http import QueryDict
+from django.test.utils import override_settings
 
 from django.test import TestCase
 from django.urls import reverse
@@ -32,7 +33,7 @@ from rest_framework.test import APIClient
 from api.models import Tenant, User
 from api.serializers import create_tenant_name
 from tests.identity_request import IdentityRequest
-from rbac.middleware import HttpResponseUnauthorizedRequest, IdentityHeaderMiddleware
+from rbac.middleware import HttpResponseUnauthorizedRequest, IdentityHeaderMiddleware, ReadOnlyApiMiddleware
 from management.models import Access, Group, Permission, Principal, Policy, ResourceDefinition, Role
 
 
@@ -574,3 +575,53 @@ class AccessHandlingTest(TestCase):
             "permission": {"read": ["*"], "write": ["*"]},
         }
         self.assertEqual(expected, access)
+
+
+class RBACReadOnlyApiMiddleware(IdentityRequest):
+    """Tests against the read-only API middleware."""
+
+    def setUp(self):
+        """Set up middleware tests."""
+        super().setUp()
+        self.request = Mock()
+        self.request.path = "/api/rbac/v1/roles/"
+        self.write_methods = ["POST", "PUT", "PATCH", "DELETE"]
+
+    def assertReadOnlyFailure(self, resp):
+        resp_body_str = resp.content.decode("utf-8")
+        self.assertEqual(
+            json.loads(resp_body_str)["error"], "This API is currently in read-only mode. Please try again later."
+        )
+        self.assertEqual(resp.status_code, 405)
+
+    @override_settings(READ_ONLY_API_MODE=True)
+    def test_get_read_only_true(self):
+        """Test GET and READ_ONLY_API_MODE=True."""
+        self.request.method = "GET"
+        middleware = ReadOnlyApiMiddleware(get_response=Mock())
+        resp = middleware.process_request(self.request)
+        self.assertEqual(resp, None)
+
+    @override_settings(READ_ONLY_API_MODE=True)
+    def test_write_methods_read_only_true(self):
+        """Test write methods and READ_ONLY_API_MODE=True."""
+        for method in self.write_methods:
+            self.request.method = method
+            middleware = ReadOnlyApiMiddleware(get_response=Mock())
+            resp = middleware.process_request(self.request)
+            self.assertReadOnlyFailure(resp)
+
+    def test_get_read_only_false(self):
+        """Test GET and READ_ONLY_API_MODE=False."""
+        self.request.method = "GET"
+        middleware = ReadOnlyApiMiddleware(get_response=Mock())
+        resp = middleware.process_request(self.request)
+        self.assertEqual(resp, None)
+
+    def test_write_methods_read_only_false(self):
+        """Test write methods and READ_ONLY_API_MODE=False."""
+        for method in self.write_methods:
+            self.request.method = method
+            middleware = ReadOnlyApiMiddleware(get_response=Mock())
+            resp = middleware.process_request(self.request)
+            self.assertEqual(resp, None)
