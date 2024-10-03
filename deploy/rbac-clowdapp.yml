@@ -515,6 +515,8 @@ objects:
             value: ${IT_TOKEN_JKWS_CACHE_LIFETIME}
           - name: V2_APIS_ENABLED
             value: ${V2_APIS_ENABLED}
+          - name: READ_ONLY_API_MODE
+            value: ${READ_ONLY_API_MODE}
 
     jobs:
       - name: tenant-org-id-populator
@@ -920,4 +922,6 @@ parameters:
   value: "localhost:9000"
 - name: V2_APIS_ENABLED
   description: Flag to explicitly enable v2 API endpoints
+- name: READ_ONLY_API_MODE
+  description: Enforce GET only on RBAC APIs
   value: 'False'
