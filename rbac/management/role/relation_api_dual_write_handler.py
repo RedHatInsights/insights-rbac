@@ -330,6 +330,6 @@ class RelationApiDualWriteHandler:
 
         for permission in permissions:
             self.role_relations.append(
-                create_relationship(("rbac", "role"), str(role.uuid), ("rbac", "user"), str("*"), permission)
+                create_relationship(("rbac", "role"), str(role.uuid), ("rbac", "principal"), str("*"), permission)
             )
         self._replicate()

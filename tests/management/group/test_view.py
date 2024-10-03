@@ -60,7 +60,7 @@ def generate_relation_entry(group_uuid, principal_uuid):
     relation_entry["subject"]["subject"] = {}
     relation_entry["subject"]["subject"]["type"] = {}
     relation_entry["subject"]["subject"]["type"]["namespace"] = "rbac"
-    relation_entry["subject"]["subject"]["type"]["name"] = "user"
+    relation_entry["subject"]["subject"]["type"]["name"] = "principal"
     relation_entry["subject"]["subject"]["id"] = principal_uuid
 
     return relation_entry
@@ -3705,7 +3705,7 @@ class GroupViewNonAdminTests(IdentityRequest):
             relation_tuple = relation_api_tuple(
                 "role_binding",
                 binding_mapping.mappings["id"],
-                "granted",
+                "role",
                 "role",
                 str(user_access_admin_role.uuid),
             )
@@ -3725,7 +3725,7 @@ class GroupViewNonAdminTests(IdentityRequest):
             relation_tuple = relation_api_tuple(
                 "workspace",
                 test_group.tenant.org_id,
-                "user_grant",
+                "binding",
                 "role_binding",
                 str(binding_mapping.mappings["id"]),
             )

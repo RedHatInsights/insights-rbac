@@ -68,7 +68,7 @@ class RelationApiDualWriteGroupHandler:
         for principal in self.principals:
             relations.append(
                 create_relationship(
-                    ("rbac", "group"), str(self.group.uuid), ("rbac", "user"), str(principal.uuid), "member"
+                    ("rbac", "group"), str(self.group.uuid), ("rbac", "principal"), str(principal.uuid), "member"
                 )
             )
 

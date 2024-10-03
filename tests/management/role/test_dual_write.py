@@ -144,10 +144,9 @@ class DualWriteTestCase(TestCase):
         dual_write = RelationApiDualWriteGroupHandler(
             group,
             ReplicationEventType.CREATE_GROUP,
-            principals,
             replicator=InMemoryRelationReplicator(self.tuples),
         )
-        dual_write.replicate_new_principals()
+        dual_write.replicate_new_principals(principals)
         return group, principals
 
     def given_additional_group_members(
@@ -158,10 +157,9 @@ class DualWriteTestCase(TestCase):
         dual_write = RelationApiDualWriteGroupHandler(
             group,
             ReplicationEventType.CREATE_GROUP,
-            principals,
             replicator=InMemoryRelationReplicator(self.tuples),
         )
-        dual_write.replicate_new_principals()
+        dual_write.replicate_new_principals(principals)
         return principals
 
     def given_removed_group_members(
@@ -172,10 +170,9 @@ class DualWriteTestCase(TestCase):
         dual_write = RelationApiDualWriteGroupHandler(
             group,
             ReplicationEventType.CREATE_GROUP,
-            principals,
             replicator=InMemoryRelationReplicator(self.tuples),
         )
-        dual_write.replicate_removed_principals()
+        dual_write.replicate_removed_principals(principals)
         return principals
 
     def given_roles_assigned_to_group(self, group: Group, roles: list[Role]) -> Policy:
@@ -184,7 +181,6 @@ class DualWriteTestCase(TestCase):
         dual_write_handler = RelationApiDualWriteGroupHandler(
             group,
             ReplicationEventType.ASSIGN_ROLE,
-            [],
             replicator=InMemoryRelationReplicator(self.tuples),
         )
         policy: Policy
@@ -201,7 +197,6 @@ class DualWriteTestCase(TestCase):
         dual_write_handler = RelationApiDualWriteGroupHandler(
             group,
             ReplicationEventType.UNASSIGN_ROLE,
-            [],
             replicator=InMemoryRelationReplicator(self.tuples),
         )
         policy: Policy
@@ -259,7 +254,7 @@ class DualWriteTestCase(TestCase):
         """Assert there is [num] role bindings with the given roles and groups."""
         # Find all bindings for the given workspace
         resources = self.tuples.find_tuples_grouped(
-            all_of(resource("rbac", "workspace", workspace), relation("user_grant")),
+            all_of(resource("rbac", "workspace", workspace), relation("binding")),
             group_by=lambda t: (t.resource_type_namespace, t.resource_type_name, t.resource_id),
         )
 
@@ -270,7 +265,7 @@ class DualWriteTestCase(TestCase):
                 all_of(
                     resource_type("rbac", "role_binding"),
                     one_of(*[resource_id(t.subject_id) for _, tuples in resources.items() for t in tuples]),
-                    relation("granted"),
+                    relation("role"),
                     subject("rbac", "role", role_id),
                 )
                 for role_id in for_v2_roles

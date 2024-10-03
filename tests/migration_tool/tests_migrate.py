@@ -117,11 +117,11 @@ class MigrateTests(TestCase):
         workspace_1 = "123456"
         workspace_2 = "654321"
         # Switch these two if rolebinding order is not the same as v2 roles
-        if call(f"role_binding:{rolebinding_a31}#granted@role:{v2_role_a31}") not in logger_mock.info.call_args_list:
+        if call(f"role_binding:{rolebinding_a31}#role@role:{v2_role_a31}") not in logger_mock.info.call_args_list:
             rolebinding_a31, rolebinding_a32 = rolebinding_a32, rolebinding_a31
         # Switch these two if binding is not in correct order
         if (
-            call(f"workspace:{self.workspace_id_1}#user_grant@role_binding:{rolebinding_a31}")
+            call(f"workspace:{self.workspace_id_1}#binding@role_binding:{rolebinding_a31}")
             not in logger_mock.info.call_args_list
         ):
             workspace_1, workspace_2 = workspace_2, workspace_1
@@ -133,27 +133,27 @@ class MigrateTests(TestCase):
             call(f"workspace:{org_id}#parent@workspace:{root_workspace_id}"),
             call(f"workspace:{root_workspace_id}#parent@tenant:{org_id}"),
             ## Realm
-            call(f"tenant:{org_id}#realm@realm:stage"),
+            call(f"tenant:{org_id}#platform@platform:stage"),
             ## Users to tenant
-            call(f"tenant:{org_id}#member@user:{self.principal1.uuid}"),
-            call(f"tenant:{org_id}#member@user:{self.principal2.uuid}"),
+            call(f"tenant:{org_id}#member@principal:{self.principal1.uuid}"),
+            call(f"tenant:{org_id}#member@principal:{self.principal2.uuid}"),
             ## Group member
-            call(f"group:{self.group_a2.uuid}#member@user:{self.principal1.uuid}"),
-            call(f"group:{self.group_a2.uuid}#member@user:{self.principal2.uuid}"),
+            call(f"group:{self.group_a2.uuid}#member@principal:{self.principal1.uuid}"),
+            call(f"group:{self.group_a2.uuid}#member@principal:{self.principal2.uuid}"),
             ## Role binding to role_a2
-            call(f"role_binding:{rolebinding_a2}#granted@role:{v2_role_a2}"),
-            call(f"role:{v2_role_a2}#inventory_hosts_write@user:*"),
+            call(f"role_binding:{rolebinding_a2}#role@role:{v2_role_a2}"),
+            call(f"role:{v2_role_a2}#inventory_hosts_write@principal:*"),
             call(f"role_binding:{rolebinding_a2}#subject@group:{self.group_a2.uuid}"),
             call(f"workspace:{self.workspace_id_1}#parent@workspace:{org_id}"),
-            call(f"workspace:{self.workspace_id_1}#user_grant@role_binding:{rolebinding_a2}"),
+            call(f"workspace:{self.workspace_id_1}#binding@role_binding:{rolebinding_a2}"),
             ## Role binding to role_a3
-            call(f"role_binding:{rolebinding_a31}#granted@role:{v2_role_a31}"),
-            call(f"role:{v2_role_a31}#inventory_hosts_write@user:*"),
+            call(f"role_binding:{rolebinding_a31}#role@role:{v2_role_a31}"),
+            call(f"role:{v2_role_a31}#inventory_hosts_write@principal:*"),
             call(f"workspace:{workspace_1}#parent@workspace:{org_id}"),
-            call(f"workspace:{workspace_1}#user_grant@role_binding:{rolebinding_a31}"),
-            call(f"role_binding:{rolebinding_a32}#granted@role:{v2_role_a32}"),
-            call(f"role:{v2_role_a32}#inventory_hosts_write@user:*"),
+            call(f"workspace:{workspace_1}#binding@role_binding:{rolebinding_a31}"),
+            call(f"role_binding:{rolebinding_a32}#role@role:{v2_role_a32}"),
+            call(f"role:{v2_role_a32}#inventory_hosts_write@principal:*"),
             call(f"workspace:{workspace_2}#parent@workspace:{org_id}"),
-            call(f"workspace:{workspace_2}#user_grant@role_binding:{rolebinding_a32}"),
+            call(f"workspace:{workspace_2}#binding@role_binding:{rolebinding_a32}"),
         ]
         logger_mock.info.assert_has_calls(tuples, any_order=True)
