@@ -20,6 +20,7 @@ from typing import Iterable
 
 from django.conf import settings
 from kessel.relations.v1beta1 import common_pb2
+from management.models import Workspace
 from management.role.model import BindingMapping, Role
 from migration_tool.models import V2rolebinding
 from migration_tool.sharedSystemRolesReplicatedRoleBindings import v1_role_to_v2_bindings
@@ -33,7 +34,7 @@ logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 def get_kessel_relation_tuples(
     v2_role_bindings: Iterable[V2rolebinding],
-    default_workspace: str,
+    default_workspace: Workspace,
 ) -> list[common_pb2.Relationship]:
     """Generate a set of relationships and BindingMappings for the given set of v2 role bindings."""
     relationships: list[common_pb2.Relationship] = list()
@@ -48,9 +49,8 @@ def get_kessel_relation_tuples(
         # All other resource-resource or resource-workspace relations
         # which may be implied or necessary are intentionally ignored.
         # These should come from the apps that own the resource.
-        if (
-            bound_resource.resource_type == ("rbac", "workspace")
-            and not bound_resource.resource_id == default_workspace
+        if bound_resource.resource_type == ("rbac", "workspace") and not bound_resource.resource_id == str(
+            default_workspace.uuid
         ):
             # This is not strictly necessary here and the relation may be a duplicate.
             # Once we have more Workspace API / Inventory Group migration progress,
@@ -61,7 +61,7 @@ def get_kessel_relation_tuples(
                     bound_resource.resource_type,
                     bound_resource.resource_id,
                     ("rbac", "workspace"),
-                    default_workspace,
+                    str(default_workspace.uuid),
                     "parent",
                 )
             )
@@ -72,7 +72,7 @@ def get_kessel_relation_tuples(
 def migrate_role(
     role: Role,
     write_relationships: bool,
-    default_workspace: str,
+    default_workspace: Workspace,
     current_bindings: Iterable[BindingMapping] = [],
 ) -> tuple[list[common_pb2.Relationship], list[BindingMapping]]:
     """
@@ -81,7 +81,7 @@ def migrate_role(
     The mappings are returned so that we can reconstitute the corresponding tuples for a given role.
     This is needed so we can remove those tuples when the role changes if needed.
     """
-    v2_role_bindings = v1_role_to_v2_bindings(role, default_workspace, current_bindings)
+    v2_role_bindings = v1_role_to_v2_bindings(role, str(default_workspace.uuid), current_bindings)
     relationships = get_kessel_relation_tuples([m.get_role_binding() for m in v2_role_bindings], default_workspace)
     output_relationships(relationships, write_relationships)
     return relationships, v2_role_bindings
@@ -89,11 +89,20 @@ def migrate_role(
 
 def migrate_workspace(tenant: Tenant, write_relationships: bool):
     """Migrate a workspace from v1 to v2."""
-    root_workspace = f"root-workspace-{tenant.org_id}"
-    # Org id represents the default workspace for now
+    root_workspace, _ = Workspace.objects.get_or_create(tenant=tenant, type=Workspace.Types.ROOT)
+    default_workspace, _ = Workspace.objects.get_or_create(tenant=tenant, type=Workspace.Types.DEFAULT)
+
     relationships = [
-        create_relationship(("rbac", "workspace"), tenant.org_id, ("rbac", "workspace"), root_workspace, "parent"),
-        create_relationship(("rbac", "workspace"), root_workspace, ("rbac", "tenant"), tenant.org_id, "parent"),
+        create_relationship(
+            ("rbac", "workspace"),
+            str(default_workspace.uuid),
+            ("rbac", "workspace"),
+            str(root_workspace.uuid),
+            "parent",
+        ),
+        create_relationship(
+            ("rbac", "workspace"), str(root_workspace.uuid), ("rbac", "tenant"), tenant.org_id, "parent"
+        ),
     ]
     # Include platform for tenant
     relationships.append(
@@ -102,7 +111,7 @@ def migrate_workspace(tenant: Tenant, write_relationships: bool):
         )
     )
     output_relationships(relationships, write_relationships)
-    return root_workspace, tenant.org_id
+    return root_workspace, default_workspace
 
 
 def migrate_users(tenant: Tenant, write_relationships: bool):
