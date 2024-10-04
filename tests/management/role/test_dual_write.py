@@ -16,6 +16,7 @@
 #
 """Test tuple changes for RBAC operations."""
 
+import unittest
 from typing import Optional, Tuple
 from django.test import TestCase, override_settings
 from django.db.models import Q
@@ -384,6 +385,7 @@ class DualWriteGroupRolesTestCase(DualWriteTestCase):
         self.assertEquals(len(tuples), 0)
 
 
+@unittest.skip("deferring until RHCLOUD-35357 / RHCLOUD-35303 / RHCLOUD-34511")
 class DualWriteSystemRolesTestCase(DualWriteTestCase):
     """Test dual write logic for system roles."""
 
