@@ -369,7 +369,14 @@ class GroupViewSet(
         if not request.user.admin:
             self.protect_group_with_user_access_admin_role(group.roles_with_access(), "remove_group")
 
-        response = super().destroy(request=request, args=args, kwargs=kwargs)
+        with transaction.atomic():
+            dual_write_handler = RelationApiDualWriteGroupHandler(group, ReplicationEventType.DELETE_GROUP)
+            dual_write_handler.prepare_to_delete_group()
+
+            response = super().destroy(request=request, args=args, kwargs=kwargs)
+
+            dual_write_handler.replicate_deleted_group()
+
         if response.status_code == status.HTTP_204_NO_CONTENT:
             group_obj_change_notification_handler(request.user, group, "deleted")
 
