@@ -89,9 +89,16 @@ def migrate_role(
 
 def migrate_workspace(tenant: Tenant, write_relationships: bool):
     """Migrate a workspace from v1 to v2."""
-    root_workspace, _ = Workspace.objects.get_or_create(tenant=tenant, type=Workspace.Types.ROOT)
+    root_workspace, _ = Workspace.objects.get_or_create(
+        tenant=tenant,
+        type=Workspace.Types.ROOT,
+        name="Root Workspace",
+    )
     default_workspace, _ = Workspace.objects.get_or_create(
-        tenant=tenant, type=Workspace.Types.DEFAULT, parent=root_workspace
+        tenant=tenant,
+        type=Workspace.Types.DEFAULT,
+        parent=root_workspace,
+        name="Default Workspace",
     )
 
     relationships = [
