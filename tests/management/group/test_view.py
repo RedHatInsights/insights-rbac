@@ -40,6 +40,7 @@ from management.models import (
     Role,
     ExtRoleRelation,
     ExtTenant,
+    Workspace,
 )
 from tests.core.test_kafka import copy_call_args
 from tests.identity_request import IdentityRequest
@@ -2857,6 +2858,12 @@ class GroupViewNonAdminTests(IdentityRequest):
             "Non org admin users are not allowed to add RBAC role with higher than 'read' permission into groups."
         )
 
+        self.default_workspace = Workspace.objects.create(
+            type=Workspace.Types.DEFAULT,
+            name="Default",
+            tenant=self.tenant,
+        )
+
     def tearDown(self):
         """Tear down group view tests."""
         Group.objects.all().delete()
@@ -3724,7 +3731,7 @@ class GroupViewNonAdminTests(IdentityRequest):
 
             relation_tuple = relation_api_tuple(
                 "workspace",
-                test_group.tenant.org_id,
+                str(self.default_workspace.uuid),
                 "binding",
                 "role_binding",
                 str(binding_mapping.mappings["id"]),
