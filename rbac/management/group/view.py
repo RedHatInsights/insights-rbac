@@ -525,7 +525,7 @@ class GroupViewSet(
 
         return group, new_service_accounts
 
-    def remove_users(self, group, principals, org_id=None):
+    def remove_principals(self, group, principals, org_id=None):
         """Process list of principals and remove them from the group."""
         req_id = getattr(self.request, "req_id", None)
         log_prefix = f"[Request_id:{req_id}]"
@@ -923,7 +923,7 @@ class GroupViewSet(
                 if USERNAMES_KEY in request.query_params:
                     username = request.query_params.get(USERNAMES_KEY, "")
                     principals = [name.strip() for name in username.split(",")]
-                    resp, principals_to_remove = self.remove_users(group, principals, org_id=org_id)
+                    resp, principals_to_remove = self.remove_principals(group, principals, org_id=org_id)
                     if isinstance(resp, dict) and "errors" in resp:
                         return Response(status=resp.get("status_code"), data={"errors": resp.get("errors")})
                     response = Response(status=status.HTTP_204_NO_CONTENT)
