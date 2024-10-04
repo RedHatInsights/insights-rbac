@@ -292,6 +292,8 @@ objects:
               name: ${GLITCHTIP_SECRET}
               key: dsn
               optional: true
+        - name: PRINCIPAL_USER_DOMAIN
+          value: ${PRINCIPAL_USER_DOMAIN}
         - name: PRINCIPAL_CLEANUP_DELETION_ENABLED_UMB
           value: ${PRINCIPAL_CLEANUP_DELETION_ENABLED_UMB}
         - name: UMB_JOB_ENABLED
@@ -912,6 +914,14 @@ parameters:
   value: '10'
 - name: IT_TOKEN_JKWS_CACHE_LIFETIME
   value: '28800'
+- name: PRINCIPAL_USER_DOMAIN
+  description: >
+    Kessel requires principal IDs to be qualified by a domain,
+    in order to future proof integration of identities from multiple issuers.
+    RBAC currently expects all principals to either come from itself (cross-account),
+    or from a single identity infrastructure domain (identity header, SSO, BOP).
+    This defines that single domain.
+  value: 'redhat.com'
 - name: PRINCIPAL_CLEANUP_DELETION_ENABLED_UMB
   description: Allow cleanup job to delete principals via messages from UMB
   value: 'False'

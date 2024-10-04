@@ -54,6 +54,7 @@ class RelationApiDualWriteGroupHandler:
             self.principals = []
             self.group = group
             self.event_type = event_type
+            self.user_domain = settings.PRINCIPAL_USER_DOMAIN
             self._replicator = replicator if replicator else OutboxReplicator(group)
         except Exception as e:
             raise DualWriteException(e)
@@ -62,13 +63,19 @@ class RelationApiDualWriteGroupHandler:
         """Check whether replication enabled."""
         return settings.REPLICATION_TO_RELATION_ENABLED is True
 
-    def _generate_relations(self):
+    def _generate_member_relations(self):
         """Generate user-groups relations."""
         relations = []
         for principal in self.principals:
+            if principal.user_id is None:
+                logger.warning(
+                    "[Dual Write] Principal(uuid=%s) does not have user_id. Skipping replication.", principal.uuid
+                )
+                continue
+            principal_id = f"{self.user_domain}:{principal.user_id}"
             relations.append(
                 create_relationship(
-                    ("rbac", "group"), str(self.group.uuid), ("rbac", "principal"), str(principal.uuid), "member"
+                    ("rbac", "group"), str(self.group.uuid), ("rbac", "principal"), principal_id, "member"
                 )
             )
 
@@ -80,7 +87,7 @@ class RelationApiDualWriteGroupHandler:
             return
         logger.info("[Dual Write] Generate new relations from Group(%s): '%s'", self.group.uuid, self.group.name)
         self.principals = principals
-        self.group_relations_to_add = self._generate_relations()
+        self.group_relations_to_add = self._generate_member_relations()
         self._replicate()
 
     def replicate_removed_principals(self, principals: list[Principal]):
@@ -89,7 +96,7 @@ class RelationApiDualWriteGroupHandler:
             return
         logger.info("[Dual Write] Generate new relations from Group(%s): '%s'", self.group.uuid, self.group.name)
         self.principals = principals
-        self.group_relations_to_remove = self._generate_relations()
+        self.group_relations_to_remove = self._generate_member_relations()
 
         self._replicate()
 

@@ -46,7 +46,7 @@ from tests.identity_request import IdentityRequest
 from tests.management.role.test_view import find_in_list, relation_api_tuple
 
 
-def generate_relation_entry(group_uuid, principal_uuid):
+def generate_group_member_relation_entry(group_uuid, principal_user_id):
     relation_entry = {"resource": {}}
 
     relation_entry["resource"]["type"] = {}
@@ -61,7 +61,7 @@ def generate_relation_entry(group_uuid, principal_uuid):
     relation_entry["subject"]["subject"]["type"] = {}
     relation_entry["subject"]["subject"]["type"]["namespace"] = "rbac"
     relation_entry["subject"]["subject"]["type"]["name"] = "principal"
-    relation_entry["subject"]["subject"]["id"] = principal_uuid
+    relation_entry["subject"]["subject"]["id"] = principal_user_id
 
     return relation_entry
 
@@ -74,12 +74,12 @@ def replication_event(relations_to_add, relations_to_remove):
     }
 
 
-def generate_replication_event_to_add_principals(group_uuid, principal_uuid):
-    return {"relations_to_add": [generate_relation_entry(group_uuid, principal_uuid)], "relations_to_remove": []}
+def generate_replication_event_to_add_principals(group_uuid, principal_user_id):
+    return {"relations_to_add": [generate_group_member_relation_entry(group_uuid, principal_user_id)], "relations_to_remove": []}
 
 
 def generate_replication_event_to_remove_principals(group_uuid, principal_uuid):
-    return {"relations_to_add": [], "relations_to_remove": [generate_relation_entry(group_uuid, principal_uuid)]}
+    return {"relations_to_add": [], "relations_to_remove": [generate_group_member_relation_entry(group_uuid, principal_uuid)]}
 
 
 def find_relation_in_list(relation_list, relation_tuple):
@@ -91,7 +91,6 @@ def find_relation_in_list(relation_list, relation_tuple):
         and r["subject"]["subject"]["type"]["name"] == relation_tuple["subject"]["subject"]["type"]["name"]
         and r["subject"]["subject"]["id"] == relation_tuple["subject"]["subject"]["id"],
     )
-
 
 class GroupViewsetTests(IdentityRequest):
     """Test the group viewset."""
@@ -1021,7 +1020,7 @@ class GroupViewsetTests(IdentityRequest):
 
             actual_call_arg = mock_method.call_args[0][0]
             self.assertEqual(
-                generate_replication_event_to_add_principals(str(test_group.uuid), str(principal.uuid)),
+                generate_replication_event_to_add_principals(str(test_group.uuid), "redhat.com:-448717"),
                 actual_call_arg,
             )
 
@@ -1137,8 +1136,9 @@ class GroupViewsetTests(IdentityRequest):
     @patch("core.kafka.RBACProducer.send_kafka_message")
     def test_remove_group_principals_success(self, send_kafka_message, mock_request, mock_method):
         """Test that removing a principal to a group returns successfully."""
+        self.maxDiff = None
         with self.settings(NOTIFICATIONS_ENABLED=True):
-            test_user = Principal.objects.create(username="test_user", tenant=self.tenant)
+            test_user = Principal.objects.create(username="test_user", tenant=self.tenant, user_id="123798")
             self.group.principals.add(test_user)
 
             url = reverse("group-principals", kwargs={"uuid": self.group.uuid})
@@ -1176,7 +1176,7 @@ class GroupViewsetTests(IdentityRequest):
 
             actual_call_arg = mock_method.call_args[0][0]
             self.assertEqual(
-                generate_replication_event_to_remove_principals(str(self.group.uuid), str(test_user.uuid)),
+                generate_replication_event_to_remove_principals(str(self.group.uuid), "redhat.com:123798"),
                 actual_call_arg,
             )
 
@@ -4115,11 +4115,11 @@ class GroupViewNonAdminTests(IdentityRequest):
         test_group = Group(name="test group", tenant=self.tenant)
         test_group.save()
 
-        test_principal = Principal(username="test-principal", tenant=self.tenant)
+        test_principal = Principal(username="test-principal", tenant=self.tenant, user_id="1234")
         test_principal.save()
 
         # Set the return value for the mock
-        mock_request.return_value["data"] = [{"username": test_principal.username}]
+        mock_request.return_value["data"] = [{"username": test_principal.username, "user_id": "1234"}]
 
         url = reverse("group-principals", kwargs={"uuid": test_group.uuid})
         client = APIClient()
@@ -4130,7 +4130,7 @@ class GroupViewNonAdminTests(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         actual_call_arg = mock_method.call_args[0][0]
         self.assertEqual(
-            generate_replication_event_to_add_principals(str(test_group.uuid), str(test_principal.uuid)),
+            generate_replication_event_to_add_principals(str(test_group.uuid), "redhat.com:1234"),
             actual_call_arg,
         )
 
@@ -4220,7 +4220,7 @@ class GroupViewNonAdminTests(IdentityRequest):
         # Role 'User Access administrator' added successfully into test group
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
-        test_principal = Principal(username="test-principal", tenant=self.tenant)
+        test_principal = Principal(username="test-principal", tenant=self.tenant, user_id="1234")
         test_principal.save()
 
         # Set the return value for the mock

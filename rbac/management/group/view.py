@@ -438,6 +438,17 @@ class GroupViewSet(
             username = item["username"]
             try:
                 principal = Principal.objects.get(username__iexact=username, tenant=tenant)
+                if principal.user_id is None:
+                    user_id = item.get("user_id")
+                    # This should never happen, but just in case, we have the data here, so we can fix it.
+                    logger.warning(
+                        "User principal %s found without user_id. Setting user_id to %s.",
+                        principal.username,
+                        user_id,
+                    )
+                    if user_id is not None:
+                        principal.user_id = user_id
+                        principal.save()
             except Principal.DoesNotExist:
                 principal = Principal.objects.create(username=username, tenant=tenant, user_id=item["user_id"])
                 logger.info("Created new principal %s for org_id %s.", username, org_id)
@@ -474,7 +485,7 @@ class GroupViewSet(
             if len(invalid_service_accounts) > 0:
                 raise ServiceAccountNotFoundError(f"Service account(s) {invalid_service_accounts} not found.")
 
-    def add_service_accounts(
+    def add_service_accounts_to_group(
         self,
         group: Group,
         service_accounts: Iterable[dict],
@@ -514,7 +525,7 @@ class GroupViewSet(
 
         return group, new_service_accounts
 
-    def remove_principals(self, group, principals, org_id=None):
+    def remove_users(self, group, principals, org_id=None):
         """Process list of principals and remove them from the group."""
         req_id = getattr(self.request, "req_id", None)
         log_prefix = f"[Request_id:{req_id}]"
@@ -694,7 +705,7 @@ class GroupViewSet(
             with transaction.atomic():
                 new_service_accounts = []
                 if len(service_accounts) > 0:
-                    group, new_service_accounts = self.add_service_accounts(
+                    group, new_service_accounts = self.add_service_accounts_to_group(
                         group=group,
                         service_accounts=service_accounts,
                         org_id=org_id,
@@ -912,7 +923,7 @@ class GroupViewSet(
                 if USERNAMES_KEY in request.query_params:
                     username = request.query_params.get(USERNAMES_KEY, "")
                     principals = [name.strip() for name in username.split(",")]
-                    resp, principals_to_remove = self.remove_principals(group, principals, org_id=org_id)
+                    resp, principals_to_remove = self.remove_users(group, principals, org_id=org_id)
                     if isinstance(resp, dict) and "errors" in resp:
                         return Response(status=resp.get("status_code"), data={"errors": resp.get("errors")})
                     response = Response(status=status.HTTP_204_NO_CONTENT)
