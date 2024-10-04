@@ -74,6 +74,15 @@ class AccessViewTests(IdentityRequest):
         )
         request = request_context["request"]
         self.test_headers = request.META
+        test_tenant_root_workspace = Workspace.objects.create(
+            name="Test Tenant Root Workspace", type=Workspace.Types.ROOT, tenant=self.test_tenant
+        )
+        Workspace.objects.create(
+            name="Test Tenant Default Workspace",
+            type=Workspace.Types.DEFAULT,
+            parent=test_tenant_root_workspace,
+            tenant=self.test_tenant,
+        )
 
         self.principal = Principal(username=user.username, tenant=self.tenant)
         self.principal.save()
@@ -85,8 +94,18 @@ class AccessViewTests(IdentityRequest):
         self.group.save()
         self.permission = Permission.objects.create(permission="app:*:*", tenant=self.tenant)
         Permission.objects.create(permission="app:foo:bar", tenant=self.tenant)
-        Workspace.objects.create(name="root", description="Root workspace", tenant=self.tenant)
-        Workspace.objects.create(name="root", description="Root workspace", tenant=self.test_tenant)
+        tenant_root_workspace = Workspace.objects.create(
+            name="root",
+            description="Root workspace",
+            tenant=self.tenant,
+            type=Workspace.Types.ROOT,
+        )
+        Workspace.objects.create(
+            name="Tenant Default Workspace",
+            type=Workspace.Types.DEFAULT,
+            parent=tenant_root_workspace,
+            tenant=self.tenant,
+        )
 
     def tearDown(self):
         """Tear down access view tests."""
@@ -94,7 +113,8 @@ class AccessViewTests(IdentityRequest):
         Principal.objects.all().delete()
         Role.objects.all().delete()
         Policy.objects.all().delete()
-        Workspace.objects.all().delete()
+        Workspace.objects.filter(parent__isnull=False).delete()
+        Workspace.objects.filter(parent__isnull=True).delete()
 
     def create_role(self, role_name, headers, in_access_data=None):
         """Create a role."""
