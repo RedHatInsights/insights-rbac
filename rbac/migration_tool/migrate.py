@@ -81,7 +81,7 @@ def migrate_role(
     The mappings are returned so that we can reconstitute the corresponding tuples for a given role.
     This is needed so we can remove those tuples when the role changes if needed.
     """
-    v2_role_bindings = v1_role_to_v2_bindings(role, str(default_workspace.uuid), current_bindings)
+    v2_role_bindings = v1_role_to_v2_bindings(role, default_workspace, current_bindings)
     relationships = get_kessel_relation_tuples([m.get_role_binding() for m in v2_role_bindings], default_workspace)
     output_relationships(relationships, write_relationships)
     return relationships, v2_role_bindings
