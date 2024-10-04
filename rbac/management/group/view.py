@@ -485,7 +485,7 @@ class GroupViewSet(
             if len(invalid_service_accounts) > 0:
                 raise ServiceAccountNotFoundError(f"Service account(s) {invalid_service_accounts} not found.")
 
-    def add_service_accounts_to_group(
+    def add_service_accounts(
         self,
         group: Group,
         service_accounts: Iterable[dict],
@@ -705,7 +705,7 @@ class GroupViewSet(
             with transaction.atomic():
                 new_service_accounts = []
                 if len(service_accounts) > 0:
-                    group, new_service_accounts = self.add_service_accounts_to_group(
+                    group, new_service_accounts = self.add_service_accounts(
                         group=group,
                         service_accounts=service_accounts,
                         org_id=org_id,
