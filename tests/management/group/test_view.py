@@ -5013,3 +5013,21 @@ class GroupViewNonAdminTests(IdentityRequest):
 
         response = client.put(url, request_body, format="json", **self.headers_service_account_principal)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+    def test_duplicate_entry_message(self):
+        #define client
+        client = APIClient()
+
+        #Initial group create
+        request_body = {"name": "duplicateEntry"}
+        url = reverse("group-list")
+        response = client.post(url, request_body, format="json", **self.headers_org_admin)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+        #Duplicate add attempt
+        request_body = {"name": "duplicateEntry"}
+        url = reverse("group-list")
+        response = client.post(url, request_body, format="json", **self.headers_org_admin)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data.get("errors")[0].get("detail"), "Group already exists")
+        self.assertEqual(response.data.get("errors")[0].get("source"), "Group duplicateEntry already exists") 
