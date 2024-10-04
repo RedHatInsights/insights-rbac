@@ -41,7 +41,7 @@ class MigrateTests(TestCase):
             type=Workspace.Types.ROOT, tenant=self.tenant, name="Root Workspace"
         )
         self.default_workspace = Workspace.objects.create(
-            type=Workspace.Types.DEFAULT, tenant=self.tenant, name="Default Workspace"
+            type=Workspace.Types.DEFAULT, tenant=self.tenant, name="Default Workspace", parent=self.root_workspace
         )
 
         another_tenant = Tenant.objects.create(org_id="7654321")
