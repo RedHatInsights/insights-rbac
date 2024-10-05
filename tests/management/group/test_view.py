@@ -75,11 +75,17 @@ def replication_event(relations_to_add, relations_to_remove):
 
 
 def generate_replication_event_to_add_principals(group_uuid, principal_user_id):
-    return {"relations_to_add": [generate_group_member_relation_entry(group_uuid, principal_user_id)], "relations_to_remove": []}
+    return {
+        "relations_to_add": [generate_group_member_relation_entry(group_uuid, principal_user_id)],
+        "relations_to_remove": [],
+    }
 
 
 def generate_replication_event_to_remove_principals(group_uuid, principal_uuid):
-    return {"relations_to_add": [], "relations_to_remove": [generate_group_member_relation_entry(group_uuid, principal_uuid)]}
+    return {
+        "relations_to_add": [],
+        "relations_to_remove": [generate_group_member_relation_entry(group_uuid, principal_uuid)],
+    }
 
 
 def find_relation_in_list(relation_list, relation_tuple):
@@ -91,6 +97,7 @@ def find_relation_in_list(relation_list, relation_tuple):
         and r["subject"]["subject"]["type"]["name"] == relation_tuple["subject"]["subject"]["type"]["name"]
         and r["subject"]["subject"]["id"] == relation_tuple["subject"]["subject"]["id"],
     )
+
 
 class GroupViewsetTests(IdentityRequest):
     """Test the group viewset."""
@@ -4065,6 +4072,7 @@ class GroupViewNonAdminTests(IdentityRequest):
         mocked_values = [
             {
                 "clientId": sa_uuid,
+                "userId": "2345",
                 "name": f"Service Account name",
                 "description": f"Service Account description",
                 "owner": "jsmith",
@@ -4094,7 +4102,7 @@ class GroupViewNonAdminTests(IdentityRequest):
 
         actual_call_arg = mock_method.call_args[0][0]
         self.assertEqual(
-            generate_replication_event_to_add_principals(str(test_group.uuid), str(sa_principal.uuid)), actual_call_arg
+            generate_replication_event_to_add_principals(str(test_group.uuid), "redhat.com:2345"), actual_call_arg
         )
 
     @patch("management.role.relation_api_dual_write_handler.OutboxReplicator._save_replication_event")
@@ -4167,6 +4175,7 @@ class GroupViewNonAdminTests(IdentityRequest):
         mocked_values = [
             {
                 "clientId": sa_uuid,
+                "userId": "1234",
                 "name": f"Service Account name",
                 "description": f"Service Account description",
                 "owner": "jsmith",
@@ -4187,7 +4196,7 @@ class GroupViewNonAdminTests(IdentityRequest):
 
         actual_call_arg = mock_method.call_args[0][0]
         self.assertEqual(
-            generate_replication_event_to_add_principals(str(test_group.uuid), str(sa_principal.uuid)),
+            generate_replication_event_to_add_principals(str(test_group.uuid), "redhat.com:1234"),
             actual_call_arg,
         )
 
@@ -4417,6 +4426,8 @@ class GroupViewNonAdminTests(IdentityRequest):
         service_account_data = self._create_service_account_data()
         sa_principal = Principal(
             username=service_account_data["username"],
+            # Any Principal already added to group is expected to have user_id set
+            user_id="3456",
             tenant=self.tenant,
             type="service-account",
             service_account_id=service_account_data["client_id"],
@@ -4436,7 +4447,7 @@ class GroupViewNonAdminTests(IdentityRequest):
 
         actual_call_arg = mock_method.call_args[0][0]
         self.assertEqual(
-            generate_replication_event_to_remove_principals(str(test_group.uuid), str(sa_principal.uuid)),
+            generate_replication_event_to_remove_principals(str(test_group.uuid), "redhat.com:3456"),
             actual_call_arg,
         )
 
