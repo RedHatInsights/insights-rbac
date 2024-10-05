@@ -94,37 +94,27 @@ def get_principal(
     tenant: Tenant = request.tenant
     is_username_service_account = ITService.is_username_service_account(username)
 
-    if is_username_service_account:
-        try:
-            principal = Principal.objects.get(username__iexact=username, tenant=tenant)
-        except Principal.DoesNotExist:
+    try:
+        # If the username was provided through a query we must verify if it exists in the corresponding services first.
+        if from_query and not is_username_service_account:
+            verify_principal_with_proxy(username=username, request=request, verify_principal=verify_principal)
+
+        principal = Principal.objects.get(username__iexact=username, tenant=tenant)
+    except Principal.DoesNotExist:
+        # If the "from query" parameter was specified, the username was validated above, so there is no need to
+        # validate it again.
+        if not from_query and not is_username_service_account:
+            verify_principal_with_proxy(username=username, request=request, verify_principal=verify_principal)
+
+        if is_username_service_account:
             client_id: uuid.UUID = ITService.extract_client_id_service_account_username(username)
 
             principal, _ = Principal.objects.get_or_create(
                 username=username, tenant=tenant, type=SERVICE_ACCOUNT_KEY, service_account_id=client_id
             )
-    else:
-        # If the username was provided through a query we must verify if it exists
-        # in the corresponding services first.
-        if from_query:
-            resp = verify_principal_with_proxy(username=username, request=request, verify_principal=verify_principal)
-            user_id = resp.get("data")[0].get("user_id")
-
-        try:
-            principal = Principal.objects.get(username__iexact=username, tenant=tenant)
-        except Principal.DoesNotExist:
-            # If the "from query" parameter was specified, the username was validated above,
-            # so there is no need to validate it again.
-            if not from_query:
-                resp = verify_principal_with_proxy(
-                    username=username, request=request, verify_principal=verify_principal
-                )
-                user_id = resp.get("data")[0].get("user_id")
-
+        else:
             # Avoid possible race condition if the user was created while checking BOP
-            principal, _ = Principal.objects.get_or_create(
-                username=username, tenant=tenant, defaults={"user_id": user_id}
-            )
+            principal, _ = Principal.objects.get_or_create(username=username, tenant=tenant)
 
     return principal
 
@@ -134,9 +124,7 @@ def verify_principal_with_proxy(username, request, verify_principal=True):
     org_id = request.user.org_id
     proxy = PrincipalProxy()
     if verify_principal:
-        resp = proxy.request_filtered_principals(
-            [username], org_id=org_id, options={"return_id": True, **(request.query_params)}
-        )
+        resp = proxy.request_filtered_principals([username], org_id=org_id, options=request.query_params)
 
         if isinstance(resp, dict) and "errors" in resp:
             raise Exception("Dependency error: request to get users from dependent service failed.")
