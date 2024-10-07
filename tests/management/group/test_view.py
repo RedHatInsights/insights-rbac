@@ -4294,6 +4294,64 @@ class GroupViewNonAdminTests(IdentityRequest):
         response = client.post(url, request_body, format="json", **self.headers_service_account_principal)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
+    @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
+    @patch("management.role.relation_api_dual_write_handler.OutboxReplicator._save_replication_event")
+    @patch("management.principal.it_service.ITService.request_service_accounts")
+    def test_add_invalid_service_account_principal_removes_principal(self, mock_request, mock_method):
+        """
+        Test that non org admin with 'User Access administrator' role can add
+        service account based principal into a group without 'User Access administrator' role.
+        """
+        # Create a group with 'User Access administrator' role and add principals we use in headers
+        group_with_UA_admin = self._create_group_with_user_access_administrator_role(self.tenant)
+        group_with_UA_admin.principals.add(self.user_based_principal, self.service_account_principal)
+
+        # Create a group and a principal
+        test_group = Group(name="test group", tenant=self.tenant)
+        test_group.save()
+
+        service_account_data = self._create_service_account_data()
+        sa_principal = Principal(
+            username=service_account_data["username"],
+            tenant=self.tenant,
+            type="service-account",
+            service_account_id=service_account_data["client_id"],
+        )
+        sa_principal.save()
+
+        # Set the return value for the mock
+        sa_uuid = sa_principal.service_account_id
+        mocked_values = [
+            {
+                "clientId": sa_uuid,
+                "userId": "1234",
+                "name": f"Service Account name",
+                "description": f"Service Account description",
+                "owner": "jsmith",
+                "username": "service_account-" + sa_uuid,
+                "time_created": 1706784741,
+                "type": "service-account",
+            }
+        ]
+        mock_request.return_value = mocked_values
+
+        url = reverse("group-principals", kwargs={"uuid": test_group.uuid})
+        client = APIClient()
+
+        request_body = {"principals": [{"clientId": sa_uuid, "type": "service-account"}]}
+
+        response = client.post(url, request_body, format="json", **self.headers_user_based_principal)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        actual_call_arg = mock_method.call_args[0][0]
+        self.assertEqual(
+            generate_replication_event_to_add_principals(str(test_group.uuid), "redhat.com:1234"),
+            actual_call_arg,
+        )
+
+        response = client.post(url, request_body, format="json", **self.headers_service_account_principal)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
     @patch(
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
         return_value={"status_code": 200, "data": []},

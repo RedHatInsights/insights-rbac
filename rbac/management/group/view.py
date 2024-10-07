@@ -23,7 +23,7 @@ from uuid import UUID
 import requests
 from django.conf import settings
 from django.db import transaction
-from django.db.models import Q
+from django.db.models import Prefetch, Q
 from django.db.models.aggregates import Count
 from django.utils.translation import gettext as _
 from django_filters import rest_framework as filters
@@ -476,7 +476,7 @@ class GroupViewSet(
                 it_service_accounts_by_client_ids[it_sa["clientId"]] = it_sa
 
             # Make sure that the service accounts the user specified are visible by them.
-            invalid_service_accounts: set = set()
+            invalid_service_accounts: set[str] = set()
             for specified_sa in service_accounts:
                 client_id = specified_sa["clientId"]
                 it_sa = it_service_accounts_by_client_ids.get(client_id)
@@ -488,7 +488,9 @@ class GroupViewSet(
 
             # If we have any invalid service accounts, notify the user.
             if len(invalid_service_accounts) > 0:
-                raise ServiceAccountNotFoundError(f"Service account(s) {invalid_service_accounts} not found.")
+                raise ServiceAccountNotFoundError(
+                    f"Service account(s) {invalid_service_accounts} not found.", invalid_service_accounts
+                )
 
     def add_service_accounts(
         self,
@@ -693,6 +695,9 @@ class GroupViewSet(
                         },
                     )
                 except ServiceAccountNotFoundError as sanfe:
+                    # We know of an invalid service account, so invalidate it.
+                    self.invalidate_service_accounts(sanfe.invalid)
+
                     return Response(
                         status=status.HTTP_400_BAD_REQUEST,
                         data={
@@ -1128,7 +1133,9 @@ class GroupViewSet(
         roles_for_group = group.roles().values("uuid")
         return roles.exclude(uuid__in=roles_for_group)
 
-    def remove_service_accounts(self, user: User, group: Group, service_accounts: Iterable[str], org_id: str = ""):
+    def remove_service_accounts(
+        self, user: User, group: Group, service_accounts: Iterable[str], org_id: str = ""
+    ) -> List[Principal]:
         """Remove the given service accounts from the tenant."""
         # Log our intention.
         request_id = getattr(self.request, "req_id", None)
@@ -1170,3 +1177,24 @@ class GroupViewSet(
             group_principal_change_notification_handler(self.request.user, group, username, "removed")
 
         return removed_service_accounts
+
+    def invalidate_service_accounts(self, service_accounts: Iterable[str]):
+        """Invalidate the service accounts that were not found."""
+        # Query groups where these service account principals are members
+        groups = Group.objects.filter(principals__service_account_id__in=service_accounts).prefetch_related(
+            Prefetch("principals", queryset=Principal.objects.only("service_account_id", "user_id"))
+        )
+
+        # For each service account,
+        # get the groups it is a member of.
+        # Then replicate removal of this service account from those groups.
+        for group in groups:
+            for principal in group.principals.all():
+                for client_id in service_accounts:
+                    if principal.service_account_id == client_id:
+                        dual_write_handler = RelationApiDualWriteGroupHandler(
+                            group,
+                            ReplicationEventType.REMOVE_PRINCIPALS_FROM_GROUP,
+                        )
+                        dual_write_handler.replicate_removed_principals([principal])
+                        break
