@@ -196,7 +196,7 @@ class RelationApiDualWriteGroupHandler:
                     )
                     .get()
                 )
-                
+
                 update_mapping(mapping)
 
                 if mapping.is_unassigned():
