@@ -205,6 +205,17 @@ class DualWriteTestCase(TestCase):
             dual_write_handler.replicate_removed_role(role)
         return policy
 
+    def given_group_removed(self, group: Group):
+        """Remove the given group."""
+        dual_write_handler = RelationApiDualWriteGroupHandler(
+            group,
+            ReplicationEventType.DELETE_GROUP,
+            replicator=InMemoryRelationReplicator(self.tuples),
+        )
+        dual_write_handler.prepare_to_delete_group()
+        group.delete()
+        dual_write_handler.replicate_deleted_group()
+
     def expect_1_v2_role_with_permissions(self, permissions: list[str]) -> str:
         """Assert there is a role matching the given permissions and return its ID."""
         return self.expect_v2_roles_with_permissions(1, permissions)[0]
@@ -295,8 +306,8 @@ class DualWriteTestCase(TestCase):
         )
 
 
-class DualWriteGroupMembershipTestCase(DualWriteTestCase):
-    """Test dual write logic for group membership."""
+class DualWriteGroupTestCase(DualWriteTestCase):
+    """Test dual write logic for group modifications."""
 
     def test_create_group_tuples(self):
         """Create a group and add users to it."""
@@ -321,10 +332,6 @@ class DualWriteGroupMembershipTestCase(DualWriteTestCase):
         tuples = self.tuples.find_tuples(all_of(resource("rbac", "group", group.uuid), relation("member")))
         self.assertEquals(len(tuples), 2)
         self.assertEquals({t.subject_id for t in tuples}, {str(p.uuid) for p in principals})
-
-
-class DualWriteGroupRolesTestCase(DualWriteTestCase):
-    """Test case for verifying the dual write functionality for group role assignments."""
 
     def test_custom_roles_group_assignments_tuples(self):
         role_1 = self.given_v1_role(
@@ -380,6 +387,120 @@ class DualWriteGroupRolesTestCase(DualWriteTestCase):
         )
 
         self.assertEquals(len(tuples), 0)
+
+    def test_delete_group_removes_group_from_role_bindings(self):
+        # Add two groups to two roles
+        role_1 = self.given_v1_role(
+            "r1",
+            default=["app1:hosts:read", "inventory:hosts:write"],
+            ws_2=["app1:hosts:read", "inventory:hosts:write"],
+        )
+
+        role_2 = self.given_v1_role(
+            "r2",
+            default=["app2:hosts:read", "inventory:systems:write"],
+            ws_2=["app2:hosts:read", "inventory:systems:write"],
+        )
+
+        group_1, _ = self.given_group("g1", ["u1"])
+        group_2, _ = self.given_group("g2", ["u2"])
+
+        self.given_roles_assigned_to_group(group_1, roles=[role_1, role_2])
+        self.given_roles_assigned_to_group(group_2, roles=[role_1, role_2])
+
+        # Delete the first group
+        self.given_group_removed(group_1)
+
+        # Assert that the group is removed from the role bindings by querying the role binding subject tuples
+        tuples = self.tuples.find_tuples(
+            all_of(
+                resource_type("rbac", "role_binding"),
+                relation("subject"),
+                subject_type("rbac", "group", "member"),
+            )
+        )
+
+        self.assertEquals({t.subject_id for t in tuples}, {str(group_2.uuid)})
+        # 2 resources * 2 roles * 1 group = 4 role bindings
+        self.assertEquals(len(tuples), 4)
+
+    def test_delete_group_removes_principals(self):
+        group, _ = self.given_group("g1", ["u1", "u2"])
+
+        self.given_group_removed(group)
+
+        tuples = self.tuples.find_tuples(all_of(resource("rbac", "group", group.uuid)))
+        self.assertEquals(len(tuples), 0)
+
+    def test_delete_group_removes_role_binding_for_system_roles_if_last_group(self):
+        role_1 = self.given_v1_role(
+            "r1",
+            default=["app1:hosts:read", "inventory:hosts:write"],
+            ws_2=["app1:hosts:read", "inventory:hosts:write"],
+        )
+
+        # Given system role
+        role_2 = self.given_v1_system_role("r2", ["app2:hosts:read", "inventory:systems:write"])
+
+        group_1, _ = self.given_group("g1", ["u1"])
+        self.given_roles_assigned_to_group(group_1, roles=[role_1, role_2])
+
+        # Now remove the group
+        self.given_group_removed(group_1)
+
+        # Assert no role binding tuples exist for the system role
+        tuples = self.tuples.find_tuples(
+            all_of(
+                resource_type("rbac", "role_binding"),
+                relation("role"),
+                subject("rbac", "role", str(role_2.uuid)),
+            )
+        )
+
+        self.assertEquals(len(tuples), 0)
+
+        # But the custom role remains
+        tuples = self.tuples.find_tuples(
+            all_of(
+                resource_type("rbac", "role_binding"),
+                relation("role"),
+                subject_type("rbac", "role"),
+            )
+        )
+
+        # 2 resources * 1 role
+        self.assertEquals(len(tuples), 2)
+
+    def test_delete_group_keeps_role_binding_for_system_roles_if_not_last_group(self):
+        """Keep the role binding if it still has other groups assigned to it."""
+        role_1 = self.given_v1_role(
+            "r1",
+            default=["app1:hosts:read", "inventory:hosts:write"],
+            ws_2=["app1:hosts:read", "inventory:hosts:write"],
+        )
+
+        # Given system role
+        role_2 = self.given_v1_system_role("r2", ["app2:hosts:read", "inventory:systems:write"])
+
+        group_1, _ = self.given_group("g1", ["u1"])
+        group_2, _ = self.given_group("g2", ["u2"])
+
+        self.given_roles_assigned_to_group(group_1, roles=[role_1, role_2])
+        self.given_roles_assigned_to_group(group_2, roles=[role_1, role_2])
+
+        # Delete the first group
+        self.given_group_removed(group_1)
+
+        # Check the system role binding remains
+        tuples = self.tuples.find_tuples(
+            all_of(
+                resource_type("rbac", "role_binding"),
+                relation("role"),
+                subject("rbac", "role", str(role_2.uuid)),
+            )
+        )
+
+        self.assertEquals(len(tuples), 1)
 
 
 class DualWriteSystemRolesTestCase(DualWriteTestCase):
@@ -669,7 +790,7 @@ class RbacFixture:
 
     def __init__(self):
         """Initialize the RBAC fixture."""
-        self.public_tenant = Tenant.objects.create(tenant_name="public")
+        self.public_tenant, _ = Tenant.objects.get_or_create(tenant_name="public")
 
     def new_tenant(self, name: str, org_id: str) -> Tenant:
         """Create a new tenant with the given name and organization ID."""
