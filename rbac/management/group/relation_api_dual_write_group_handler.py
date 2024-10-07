@@ -21,6 +21,7 @@ from typing import Callable, Iterable, Optional
 from uuid import uuid4
 
 from django.conf import settings
+from management.models import Workspace
 from management.principal.model import Principal
 from management.role.model import BindingMapping, Role
 from management.role.relation_api_dual_write_handler import (
@@ -53,6 +54,8 @@ class RelationApiDualWriteGroupHandler:
             self.group_relations_to_remove = []
             self.principals = []
             self.group = group
+            self.tenant = group.tenant
+            self.default_workspace = Workspace.objects.get(tenant=self.tenant, type=Workspace.Types.DEFAULT)
             self.event_type = event_type
             self._replicator = replicator if replicator else OutboxReplicator(group)
         except Exception as e:
@@ -127,8 +130,7 @@ class RelationApiDualWriteGroupHandler:
                 str(uuid4()),
                 # Assumes same role UUID for V2 system role equivalent.
                 V2role.for_system_role(str(role.uuid)),
-                # TODO: don't use org id once we have workspace built ins
-                V2boundresource(("rbac", "workspace"), self.group.tenant.org_id),
+                V2boundresource(("rbac", "workspace"), str(self.default_workspace.uuid)),
                 groups=frozenset([str(self.group.uuid)]),
             )
             mapping = BindingMapping.for_role_binding(binding, role)
@@ -186,8 +188,7 @@ class RelationApiDualWriteGroupHandler:
                         role=role,
                         resource_type_namespace="rbac",
                         resource_type_name="workspace",
-                        # TODO: don't use org id once we have workspace built ins
-                        resource_id=self.group.tenant.org_id,
+                        resource_id=str(self.default_workspace.uuid),
                     )
                     .get()
                 )

@@ -2858,10 +2858,16 @@ class GroupViewNonAdminTests(IdentityRequest):
             "Non org admin users are not allowed to add RBAC role with higher than 'read' permission into groups."
         )
 
+        self.root_workspace = Workspace.objects.create(
+            type=Workspace.Types.ROOT,
+            name="Root",
+            tenant=self.tenant,
+        )
         self.default_workspace = Workspace.objects.create(
             type=Workspace.Types.DEFAULT,
             name="Default",
             tenant=self.tenant,
+            parent=self.root_workspace,
         )
 
     def tearDown(self):
@@ -3700,7 +3706,7 @@ class GroupViewNonAdminTests(IdentityRequest):
         response = client.post(url, request_body, format="json", **self.headers_org_admin)
 
         binding_mapping = BindingMapping.objects.filter(
-            role=user_access_admin_role, resource_id=user_access_admin_role.tenant.org_id
+            role=user_access_admin_role, resource_id=str(self.default_workspace.uuid)
         ).get()
 
         actual_call_arg = mock_method.call_args[0][0]
