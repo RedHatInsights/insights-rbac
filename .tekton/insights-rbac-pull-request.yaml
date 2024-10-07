@@ -224,7 +224,7 @@ spec:
               name: workdir
               readyOnly: false
         sidecars:
-          - image: quay.io/cloudservices/postgresql-rds:14
+          - image: quay.io/cloudservices/postgresql-rds:16
             name: rbac-db
             env:
               - name: POSTGRESQL_DATABASE
