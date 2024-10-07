@@ -196,12 +196,14 @@ class RelationApiDualWriteGroupHandler:
                     )
                     .get()
                 )
+                
                 update_mapping(mapping)
-                mapping.save(force_update=True)
 
                 if mapping.is_unassigned():
                     self.group_relations_to_remove.extend(mapping.as_tuples())
                     mapping.delete()
+                else:
+                    mapping.save(force_update=True)
             except BindingMapping.DoesNotExist:
                 mapping = create_default_mapping_for_system_role()
                 if mapping is not None:
