@@ -59,12 +59,15 @@ class ReplicationEventType(str, Enum):
     DELETE_GROUP = "delete_group"
     ADD_PRINCIPALS_TO_GROUP = "add_principals_to_group"
     REMOVE_PRINCIPALS_FROM_GROUP = "remove_principals_from_group"
+    BOOTSTRAP_TENANT = "bootstrap_tenant"
+    EXTERNAL_USER_UPDATE = "external_user_update"
 
 
 class ReplicationEvent:
     """What tuples changes to replicate."""
 
     event_type: ReplicationEventType
+    event_info: dict[str, str]
     partition_key: str
     add: list[common_pb2.Relationship]
     remove: list[common_pb2.Relationship]
@@ -75,12 +78,14 @@ class ReplicationEvent:
         partition_key: str,
         add: list[common_pb2.Relationship] = [],
         remove: list[common_pb2.Relationship] = [],
+        info: dict[str, str] = {},
     ):
         """Initialize ReplicationEvent."""
         self.partition_key = partition_key
         self.event_type = type
         self.add = add
         self.remove = remove
+        self.event_info = info
 
 
 class RelationReplicator(ABC):
@@ -95,35 +100,13 @@ class RelationReplicator(ABC):
 class OutboxReplicator(RelationReplicator):
     """Replicates relations via the outbox table."""
 
-    def __init__(self, record):
-        """Initialize OutboxReplicator."""
-        self.record = record
-
-    def _record_name(self):
-        """Return record name."""
-        return self.record.name
-
-    def _record_uuid(self):
-        """Return record uuid."""
-        return self.record.uuid
-
-    def _record_class(self):
-        """Return record class."""
-        return self.record.__class__.__name__
-
     def replicate(self, event: ReplicationEvent):
         """Replicate the given event to Kessel Relations via the Outbox."""
         payload = self._build_replication_event(event.add, event.remove)
-        self._save_replication_event(payload, event.event_type, event.partition_key)
+        self._save_replication_event(payload, event.event_type, event.event_info, event.partition_key)
 
     def _build_replication_event(self, relations_to_add, relations_to_remove):
         """Build replication event."""
-        logger.info(
-            "[Dual Write] Build Replication event for %s(%s): '%s'",
-            self._record_class(),
-            self._record_uuid(),
-            self._record_name(),
-        )
         add_json = []
         for relation in relations_to_add:
             add_json.append(json_format.MessageToDict(relation))
@@ -135,20 +118,13 @@ class OutboxReplicator(RelationReplicator):
         replication_event = {"relations_to_add": add_json, "relations_to_remove": remove_json}
         return replication_event
 
-    def _save_replication_event(self, payload, event_type, aggregateid):
+    def _save_replication_event(self, payload, event_type, event_info: dict[str, str], aggregateid):
         """Save replication event."""
+        # TODO: Can we add these as proper fields for kibana but also get logged in simple formatter?
         logger.info(
-            "[Dual Write] Save replication event into outbox table for %s(%s): '%s'",
-            self._record_class(),
-            self._record_uuid(),
-            self._record_name(),
-        )
-        logger.info(
-            "[Dual Write] Replication event: %s for %s(%s): '%s'",
-            payload,
-            self._record_class(),
-            self._record_uuid(),
-            self._record_name(),
+            "[Dual Write] Publishing replication event. event_type='%s' %s",
+            event_type,
+            " ".join(f"info.{key}='{value}'" for key, value in event_info),
         )
         # https://debezium.io/documentation/reference/stable/transformations/outbox-event-router.html#basic-outbox-table
         outbox_record = Outbox.objects.create(
@@ -197,7 +173,7 @@ class RelationApiDualWriteHandler:
             self._replicator = NoopReplicator()
             return
         try:
-            self._replicator = replicator if replicator else OutboxReplicator(role)
+            self._replicator = replicator if replicator else OutboxReplicator()
             self.event_type = event_type
             self.role_relations: list[common_pb2.Relationship] = []
             self.current_role_relations: list[common_pb2.Relationship] = []
@@ -277,6 +253,7 @@ class RelationApiDualWriteHandler:
             self._replicator.replicate(
                 ReplicationEvent(
                     type=self.event_type,
+                    info={"v1_role_uuid": str(self.role.uuid)},
                     # TODO: need to think about partitioning
                     # Maybe resource id
                     partition_key="rbactodo",

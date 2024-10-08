@@ -19,23 +19,30 @@
 import logging
 import os
 import ssl
+from types import SimpleNamespace
 
 import xmltodict
 from django.conf import settings
 from management.principal.model import Principal
-from management.principal.proxy import PrincipalProxy
+from management.principal.proxy import PrincipalProxy, external_principal_to_user
 from management.principal.utils import (
-    create_tenant_relationships,
     create_user_relationships,
     remove_user_relationships,
 )
+from management.role.relation_api_dual_write_handler import (
+    OutboxReplicator,
+    RecordDescriptor,
+    ReplicationEvent,
+    ReplicationEventType,
+)
+from management.tenant.model import TenantBootstrapService, bootstrap_tenant, get_or_bootstrap_tenant
 from rest_framework import status
 from stompest.config import StompConfig
 from stompest.error import StompConnectionError
 from stompest.protocol import StompSpec
 from stompest.sync import Stomp
 
-from api.models import Tenant
+from api.models import Tenant, User
 
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
@@ -123,47 +130,7 @@ QUEUE = f"/queue/Consumer.{settings.SA_NAME}.users-subscription.VirtualTopic.can
 UMB_CLIENT = Stomp(CONFIG)
 
 
-def process_principal_deletion(user_data):
-    """Process the principal deletion."""
-    # TODO: cleanup the relationships in spicedb
-    user_id = user_data["user_id"]
-    groups = []
-    tenant = Tenant.objects.get(org_id=user_data["org_id"])
-    principal = Principal.objects.filter(username=user_data["username"], tenant=tenant).first()
-    if not principal:  # User not in RBAC
-        return
-
-    # Log the group info in case it is needed
-    for group in principal.group.all():
-        groups.append(group)
-        # We have to do the removal explicitly in order to clear the cache,
-        # or the console will still show the cached number of members
-        group.principals.remove(principal)
-    principal.delete()
-    remove_user_relationships(tenant, groups, principal, user_data["is_org_admin"])
-    if not groups:
-        logger.info(f"Principal {user_id} was not under any groups.")
-    for group in groups:
-        logger.info(f"Principal {user_id} was in group with uuid: {group.uuid}")
-
-
-def process_principal_edit(user_data):
-    """Process the principal update."""
-    org_id = user_data["org_id"]
-    tenant_name = f"org{org_id}"
-    tenant, created = Tenant.objects.get_or_create(org_id=org_id, defaults={"ready": True, "tenant_name": tenant_name})
-    if created:
-        create_tenant_relationships(tenant)
-    principal, created = Principal.objects.get_or_create(
-        username=user_data["username"],
-        tenant=tenant,
-        defaults={"user_id": user_data["user_id"]},
-    )
-    if created:
-        create_user_relationships(principal, user_data["is_org_admin"])
-
-
-def retrieve_user_info(message):
+def retrieve_user_info(message) -> User:
     """
     Retrieve user info from the message.
 
@@ -176,45 +143,54 @@ def retrieve_user_info(message):
     user_id = identifiers["Identifier"]["#text"]
 
     bop_resp = PROXY.request_filtered_principals([user_id], options={"return_id": True})
+
     if not bop_resp["data"]:  # User has been deleted
+        # Get data from message instead.
         is_org_admin = user.get("UserMembership") == {"Name": "admin:org:all"}
         user_name = user["Person"]["Credentials"]["Login"]
         for ref in identifiers["Reference"]:
             if ref["@entity-name"] == "Customer":
                 org_id = ref["#text"]
                 break
-        return {"user_id": user_id, "is_org_admin": is_org_admin, "username": user_name, "org_id": org_id}, True
-    return bop_resp["data"][0], False
+            if ref["@entity-name"] == "Account":
+                account_number = ref["#text"]
+                break
+        user = User()
+        user.user_id = user_id
+        user.org_id = org_id
+        user.username = user_name
+        user.admin = is_org_admin
+        user.account = account_number
+        user.is_active = False
+        return user
+
+    user_data = bop_resp["data"][0]
+    return external_principal_to_user(user_data)
 
 
-def process_principal_data(user_data, is_deleted):
-    """Process the principal data."""
-    if is_deleted:
-        process_principal_deletion(user_data)
-    else:
-        process_principal_edit(user_data)
-
-
-def process_umb_event(frame, umb_client):
+def process_umb_event(frame, umb_client: Stomp, bootstrap_service: TenantBootstrapService):
     """Process each umb frame."""
     data_dict = xmltodict.parse(frame.body)
     canonical_message = data_dict.get("CanonicalMessage")
     if not canonical_message:
+        # Message is malformed.
+        # Ensure we dont block the entire queue by discarding it.
+        umb_client.ack(frame)
         return
     try:
-        user_data, is_deleted = retrieve_user_info(canonical_message)
+        user = retrieve_user_info(canonical_message)
     except Exception as e:  # Skip processing and leave the it to be processed later
         logger.error("process_umb_event: Error retrieving user info: %s", str(e))
         return
 
-    process_principal_data(user_data, is_deleted)
-
+    bootstrap_service.update_user(user)
     umb_client.ack(frame)
 
 
 def process_principal_events_from_umb():
     """Process principals events from UMB."""
     logger.info("process_tenant_principal_events: Start processing principal events from umb.")
+    bootstrap_service = TenantBootstrapService(OutboxReplicator())
     try:
         UMB_CLIENT.connect()
         UMB_CLIENT.subscribe(QUEUE, {StompSpec.ACK_HEADER: StompSpec.ACK_CLIENT_INDIVIDUAL})
@@ -225,6 +201,6 @@ def process_principal_events_from_umb():
 
     while UMB_CLIENT.canRead(2):  # Check if queue is empty, two sec timeout
         frame = UMB_CLIENT.receiveFrame()
-        process_umb_event(frame, UMB_CLIENT)
+        process_umb_event(frame, UMB_CLIENT, bootstrap_service)
     UMB_CLIENT.disconnect()
     logger.info("process_tenant_principal_events: Principal event processing finished.")

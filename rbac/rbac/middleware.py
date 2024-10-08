@@ -29,6 +29,7 @@ from django.urls import resolve
 from django.utils.deprecation import MiddlewareMixin
 from management.cache import TenantCache
 from management.models import Principal
+from management.tenant.model import get_or_bootstrap_tenant
 from management.utils import APPLICATION_KEY, access_for_principal, validate_psk
 from prometheus_client import Counter
 from rest_framework import status
@@ -97,7 +98,6 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
 
     def get_tenant(self, model, hostname, request):
         """Override the tenant selection logic."""
-        tenant_name = create_tenant_name(request.user.account)
         tenant = TENANTS.get_tenant(request.user.org_id)
         if tenant is None:
             if request.user.system:
@@ -106,10 +106,9 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
                 except Tenant.DoesNotExist:
                     raise Http404()
             else:
-                tenant, _ = Tenant.objects.get_or_create(
-                    org_id=request.user.org_id,
-                    defaults={"ready": True, "account_id": request.user.account, "tenant_name": tenant_name},
-                )
+                bootstrap = get_or_bootstrap_tenant(request.user.org_id, "TODO", "TODO", request.user.account)
+                tenant = bootstrap.tenant
+                # TODO: publish relations
             TENANTS.save_tenant(tenant)
         return tenant
 
