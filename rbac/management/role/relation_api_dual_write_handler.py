@@ -24,7 +24,7 @@ from typing import Optional
 from django.conf import settings
 from google.protobuf import json_format
 from kessel.relations.v1beta1 import common_pb2
-from management.models import Outbox
+from management.models import Outbox, Workspace
 from management.role.model import BindingMapping, Role
 from migration_tool.migrate import migrate_role
 from migration_tool.sharedSystemRolesReplicatedRoleBindings import v1_perm_to_v2_perm
@@ -215,8 +215,9 @@ class RelationApiDualWriteHandler:
                 )
 
             self.tenant_id = binding_tenant.id
-            self.org_id = binding_tenant.org_id
+            self.default_workspace = Workspace.objects.get(tenant=binding_tenant, type=Workspace.Types.DEFAULT)
         except Exception as e:
+            logger.error(f"Failed to initialize RelationApiDualWriteHandler with error: {e}")
             raise DualWriteException(e)
 
     def replication_enabled(self):
@@ -247,7 +248,7 @@ class RelationApiDualWriteHandler:
             relations, _ = migrate_role(
                 self.role,
                 write_relationships=False,
-                default_workspace=self.org_id,
+                default_workspace=self.default_workspace,
                 current_bindings=self.binding_mappings.values(),
             )
 
@@ -296,7 +297,7 @@ class RelationApiDualWriteHandler:
             relations, mappings = migrate_role(
                 self.role,
                 write_relationships=False,
-                default_workspace=self.org_id,
+                default_workspace=self.default_workspace,
                 current_bindings=self.binding_mappings.values(),
             )
 

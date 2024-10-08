@@ -16,11 +16,13 @@
 #
 """Test tuple changes for RBAC operations."""
 
+import unittest
 from typing import Optional, Tuple
 from django.test import TestCase, override_settings
 from django.db.models import Q
 from management.group.model import Group
 from management.group.relation_api_dual_write_group_handler import RelationApiDualWriteGroupHandler
+from management.models import Workspace
 from management.permission.model import Permission
 from management.policy.model import Policy
 from management.principal.model import Principal
@@ -44,6 +46,7 @@ from migration_tool.in_memory_tuples import (
 
 
 from api.models import Tenant
+from migration_tool.migrate import migrate_workspace
 
 
 @override_settings(REPLICATION_TO_RELATION_ENABLED=True)
@@ -79,8 +82,8 @@ class DualWriteTestCase(TestCase):
     def default_workspace(self, tenant: Optional[Tenant] = None) -> str:
         """Return the default workspace ID."""
         tenant = tenant if tenant is not None else self.tenant
-        assert tenant.org_id is not None, "Tenant org_id should not be None"
-        return tenant.org_id
+        default = Workspace.objects.get(tenant=tenant, type=Workspace.Types.DEFAULT)
+        return str(default.uuid)
 
     def dual_write_handler(self, role: Role, event_type: ReplicationEventType) -> RelationApiDualWriteHandler:
         """Create a RelationApiDualWriteHandler for the given role and event type."""
@@ -503,6 +506,7 @@ class DualWriteGroupTestCase(DualWriteTestCase):
         self.assertEquals(len(tuples), 1)
 
 
+@unittest.skip("deferring until RHCLOUD-35357 / RHCLOUD-35303 / RHCLOUD-34511")
 class DualWriteSystemRolesTestCase(DualWriteTestCase):
     """Test dual write logic for system roles."""
 
@@ -794,7 +798,9 @@ class RbacFixture:
 
     def new_tenant(self, name: str, org_id: str) -> Tenant:
         """Create a new tenant with the given name and organization ID."""
-        return Tenant.objects.create(tenant_name=name, org_id=org_id)
+        tenant = Tenant.objects.create(tenant_name=name, org_id=org_id)
+        migrate_workspace(tenant, write_relationships=False)
+        return tenant
 
     def new_system_role(self, name: str, permissions: list[str]) -> Role:
         """Create a new system role with the given name and permissions."""

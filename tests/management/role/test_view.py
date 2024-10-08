@@ -206,7 +206,19 @@ class RoleViewsetTests(IdentityRequest):
 
         self.access3 = Access.objects.create(permission=self.permission2, role=self.sysRole, tenant=self.tenant)
         Permission.objects.create(permission="cost-management:*:*", tenant=self.tenant)
-        self.root_workspace = Workspace.objects.create(name="root", description="Root workspace", tenant=self.tenant)
+        self.root_workspace = Workspace.objects.create(
+            name="root",
+            description="Root workspace",
+            tenant=self.tenant,
+            type="root",
+        )
+        self.default_workspace = Workspace.objects.create(
+            name="default",
+            description="Default workspace",
+            tenant=self.tenant,
+            parent=self.root_workspace,
+            type="default",
+        )
 
     def tearDown(self):
         """Tear down role viewset tests."""
@@ -218,7 +230,8 @@ class RoleViewsetTests(IdentityRequest):
         Access.objects.all().delete()
         ExtTenant.objects.all().delete()
         ExtRoleRelation.objects.all().delete()
-        Workspace.objects.all().delete()
+        Workspace.objects.filter(parent__isnull=False).delete()
+        Workspace.objects.filter(parent__isnull=True).delete()
         # we need to delete old test_tenant's that may exist in cache
         test_tenant_org_id = "100001"
         cached_tenants = TenantCache()
@@ -405,7 +418,7 @@ class RoleViewsetTests(IdentityRequest):
         response = self.create_role(role_name, role_display=role_display, in_access_data=access_data)
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
 
-        replication_event = replication_event_for_v1_role(response.data.get("uuid"), str(self.tenant.org_id))
+        replication_event = replication_event_for_v1_role(response.data.get("uuid"), str(self.default_workspace.uuid))
 
         mock_method.assert_called_once()
         actual_call_arg = mock_method.call_args[0][0]
@@ -1444,10 +1457,10 @@ class RoleViewsetTests(IdentityRequest):
         test_data["access"] = new_access_data
         url = reverse("role-detail", kwargs={"uuid": role_uuid})
         client = APIClient()
-        current_relations = relation_api_tuples_for_v1_role(role_uuid, str(self.tenant.org_id))
+        current_relations = relation_api_tuples_for_v1_role(role_uuid, str(self.default_workspace.uuid))
 
         response = client.put(url, test_data, format="json", **self.headers)
-        replication_event = replication_event_for_v1_role(response.data.get("uuid"), str(self.tenant.org_id))
+        replication_event = replication_event_for_v1_role(response.data.get("uuid"), str(self.default_workspace.uuid))
         replication_event["relations_to_remove"] = current_relations
         actual_call_arg = mock_method.call_args[0][0]
         expected_sorted = normalize_and_sort(replication_event)
@@ -1555,7 +1568,7 @@ class RoleViewsetTests(IdentityRequest):
         url = reverse("role-detail", kwargs={"uuid": role_uuid})
         client = APIClient()
         replication_event = {"relations_to_add": [], "relations_to_remove": []}
-        current_relations = relation_api_tuples_for_v1_role(role_uuid, str(self.tenant.org_id))
+        current_relations = relation_api_tuples_for_v1_role(role_uuid, str(self.default_workspace.uuid))
         replication_event["relations_to_remove"] = current_relations
         response = client.delete(url, **self.headers)
         actual_call_arg = mock_method.call_args[0][0]

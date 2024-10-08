@@ -20,7 +20,7 @@ import uuid
 from typing import Any, Iterable, Optional, Tuple, Union
 
 from django.conf import settings
-from management.models import BindingMapping
+from management.models import BindingMapping, Workspace
 from management.permission.model import Permission
 from management.role.model import Role
 from migration_tool.ingest import add_element
@@ -86,7 +86,7 @@ class SystemRole:
 
 def v1_role_to_v2_bindings(
     v1_role: Role,
-    default_workspace: str,
+    default_workspace: Workspace,
     role_bindings: Iterable[BindingMapping],
 ) -> list[BindingMapping]:
     """Convert a V1 role to a set of V2 role bindings."""
@@ -130,7 +130,10 @@ def v1_role_to_v2_bindings(
                 add_element(perm_groupings, V2boundresource(resource_type, resource_id), v2_perm, collection=set)
         if default:
             add_element(
-                perm_groupings, V2boundresource(("rbac", "workspace"), default_workspace), v2_perm, collection=set
+                perm_groupings,
+                V2boundresource(("rbac", "workspace"), str(default_workspace.uuid)),
+                v2_perm,
+                collection=set,
             )
 
     # Project permission sets to roles per set of resources

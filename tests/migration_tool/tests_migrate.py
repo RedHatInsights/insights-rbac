@@ -37,6 +37,13 @@ class MigrateTests(TestCase):
         permission2 = Permission.objects.create(permission="inventory:hosts:write", tenant=public_tenant)
         # Two organization
         self.tenant = Tenant.objects.create(org_id="1234567", tenant_name="tenant")
+        self.root_workspace = Workspace.objects.create(
+            type=Workspace.Types.ROOT, tenant=self.tenant, name="Root Workspace"
+        )
+        self.default_workspace = Workspace.objects.create(
+            type=Workspace.Types.DEFAULT, tenant=self.tenant, name="Default Workspace", parent=self.root_workspace
+        )
+
         another_tenant = Tenant.objects.create(org_id="7654321")
 
         # setup data for organization 1234567
@@ -95,7 +102,8 @@ class MigrateTests(TestCase):
         migrate_data(**kwargs)
 
         org_id = self.tenant.org_id
-        root_workspace_id = f"root-workspace-{self.tenant.org_id}"
+        root_workspace_id = str(self.root_workspace.uuid)
+        default_workspace_id = str(self.default_workspace.uuid)
 
         role_binding = BindingMapping.objects.filter(role=self.role_a2).get().get_role_binding()
 
@@ -130,7 +138,7 @@ class MigrateTests(TestCase):
             # Org relationships of self.tenant
             # the other org is not included since it is not specified in the orgs parameter
             ## Workspaces root and default
-            call(f"workspace:{org_id}#parent@workspace:{root_workspace_id}"),
+            call(f"workspace:{default_workspace_id}#parent@workspace:{root_workspace_id}"),
             call(f"workspace:{root_workspace_id}#parent@tenant:{org_id}"),
             ## Realm
             call(f"tenant:{org_id}#platform@platform:stage"),
@@ -144,16 +152,16 @@ class MigrateTests(TestCase):
             call(f"role_binding:{rolebinding_a2}#role@role:{v2_role_a2}"),
             call(f"role:{v2_role_a2}#inventory_hosts_write@principal:*"),
             call(f"role_binding:{rolebinding_a2}#subject@group:{self.group_a2.uuid}"),
-            call(f"workspace:{self.workspace_id_1}#parent@workspace:{org_id}"),
+            call(f"workspace:{self.workspace_id_1}#parent@workspace:{default_workspace_id}"),
             call(f"workspace:{self.workspace_id_1}#binding@role_binding:{rolebinding_a2}"),
             ## Role binding to role_a3
             call(f"role_binding:{rolebinding_a31}#role@role:{v2_role_a31}"),
             call(f"role:{v2_role_a31}#inventory_hosts_write@principal:*"),
-            call(f"workspace:{workspace_1}#parent@workspace:{org_id}"),
+            call(f"workspace:{workspace_1}#parent@workspace:{default_workspace_id}"),
             call(f"workspace:{workspace_1}#binding@role_binding:{rolebinding_a31}"),
             call(f"role_binding:{rolebinding_a32}#role@role:{v2_role_a32}"),
             call(f"role:{v2_role_a32}#inventory_hosts_write@principal:*"),
-            call(f"workspace:{workspace_2}#parent@workspace:{org_id}"),
+            call(f"workspace:{workspace_2}#parent@workspace:{default_workspace_id}"),
             call(f"workspace:{workspace_2}#binding@role_binding:{rolebinding_a32}"),
         ]
         logger_mock.info.assert_has_calls(tuples, any_order=True)
