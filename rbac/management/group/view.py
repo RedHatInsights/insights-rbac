@@ -54,7 +54,11 @@ from management.principal.it_service import ITService
 from management.principal.model import Principal
 from management.principal.proxy import PrincipalProxy
 from management.principal.serializer import ServiceAccountSerializer
-from management.principal.view import ADMIN_ONLY_KEY, USERNAME_ONLY_KEY, VALID_BOOLEAN_VALUE
+from management.principal.view import (
+    ADMIN_ONLY_KEY,
+    USERNAME_ONLY_KEY,
+    VALID_BOOLEAN_VALUE,
+)
 from management.querysets import get_group_queryset, get_role_queryset
 from management.role.view import RoleViewSet
 from management.utils import validate_and_get_key, validate_group_name, validate_uuid
@@ -84,7 +88,12 @@ SERVICE_ACCOUNT_DESCRIPTION_KEY = "service_account_description"
 SERVICE_ACCOUNT_NAME_KEY = "service_account_name"
 SERVICE_ACCOUNT_USERNAME_FORMAT = "service-account-{clientId}"
 VALID_EXCLUDE_VALUES = ["true", "false"]
-VALID_GROUP_ROLE_FILTERS = ["role_name", "role_description", "role_display_name", "role_system"]
+VALID_GROUP_ROLE_FILTERS = [
+    "role_name",
+    "role_description",
+    "role_display_name",
+    "role_system",
+]
 VALID_GROUP_PRINCIPAL_FILTERS = ["principal_username"]
 VALID_PRINCIPAL_ORDER_FIELDS = ["username"]
 VALID_PRINCIPAL_TYPE_VALUE = ["service-account", "user"]
@@ -112,7 +121,10 @@ class GroupFilter(CommonFilters):
         roles_list = [value.lower() for value in values.split(",")]
 
         discriminator = validate_and_get_key(
-            self.request.query_params, ROLE_DISCRIMINATOR_KEY, VALID_ROLE_ROLE_DISCRIMINATOR, "any"
+            self.request.query_params,
+            ROLE_DISCRIMINATOR_KEY,
+            VALID_ROLE_ROLE_DISCRIMINATOR,
+            "any",
         )
 
         if discriminator == "any":
@@ -422,7 +434,13 @@ class GroupViewSet(
         if len(resp.get("data", [])) == 0:
             return {
                 "status_code": status.HTTP_404_NOT_FOUND,
-                "errors": [{"detail": "User(s) {} not found.".format(users), "status": "404", "source": "principals"}],
+                "errors": [
+                    {
+                        "detail": "User(s) {} not found.".format(users),
+                        "status": "404",
+                        "source": "principals",
+                    }
+                ],
             }
         for item in resp.get("data", []):
             # cross-account request principals won't be in the resp from BOP since they don't exist
@@ -656,7 +674,13 @@ class GroupViewSet(
                     return Response(
                         status=status.HTTP_403_FORBIDDEN,
                         data={
-                            "errors": [{"detail": str(ipe), "status": status.HTTP_403_FORBIDDEN, "source": "groups"}]
+                            "errors": [
+                                {
+                                    "detail": str(ipe),
+                                    "status": status.HTTP_403_FORBIDDEN,
+                                    "source": "groups",
+                                }
+                            ]
                         },
                     )
                 except ServiceAccountNotFoundError as sanfe:
@@ -664,7 +688,11 @@ class GroupViewSet(
                         status=status.HTTP_400_BAD_REQUEST,
                         data={
                             "errors": [
-                                {"detail": str(sanfe), "source": "group", "status": str(status.HTTP_400_BAD_REQUEST)}
+                                {
+                                    "detail": str(sanfe),
+                                    "source": "group",
+                                    "status": str(status.HTTP_400_BAD_REQUEST),
+                                }
                             ]
                         },
                     )
@@ -683,6 +711,27 @@ class GroupViewSet(
 
             # ... and return it.
             response = Response(status=status.HTTP_200_OK, data=output.data)
+
+            if status.is_success(response.status_code):
+                if len(principals) > 0:
+                    auditlog = AuditLog()
+                    auditlog.log_group_assignment(
+                        request,
+                        AuditLog.GROUP,
+                        object=group,
+                        type_dict=principals,
+                        user_type=Principal.Types.USER,
+                    )
+                if len(service_accounts) > 0:
+                    auditlog = AuditLog()
+                    auditlog.log_group_assignment(
+                        request,
+                        AuditLog.GROUP,
+                        object=group,
+                        type_dict=service_accounts,
+                        user_type=Principal.Types.SERVICE_ACCOUNT,
+                    )
+
         elif request.method == "GET":
             # Check if the request comes with a bunch of service account client IDs that we need to check. Since this
             # query parameter is incompatible with any other query parameter, we make the checks first. That way if any
@@ -690,7 +739,11 @@ class GroupViewSet(
             if SERVICE_ACCOUNT_CLIENT_IDS_KEY in request.query_params:
                 # pagination is ignored in this case
                 for query_param in request.query_params:
-                    if query_param not in [SERVICE_ACCOUNT_CLIENT_IDS_KEY, "limit", "offset"]:
+                    if query_param not in [
+                        SERVICE_ACCOUNT_CLIENT_IDS_KEY,
+                        "limit",
+                        "offset",
+                    ]:
                         return Response(
                             status=status.HTTP_400_BAD_REQUEST,
                             data={
@@ -769,7 +822,11 @@ class GroupViewSet(
 
             # Get the "username_only" query parameter.
             username_only = validate_and_get_key(
-                request.query_params, USERNAME_ONLY_KEY, VALID_BOOLEAN_VALUE, "false", required=False
+                request.query_params,
+                USERNAME_ONLY_KEY,
+                VALID_BOOLEAN_VALUE,
+                "false",
+                required=False,
             )
 
             # Build the options dict.
@@ -779,7 +836,10 @@ class GroupViewSet(
             # parameter. It is important because we need to call BOP for
             # the users, and IT for the service accounts.
             principalType = validate_and_get_key(
-                request.query_params, PRINCIPAL_TYPE_KEY, VALID_PRINCIPAL_TYPE_VALUE, required=False
+                request.query_params,
+                PRINCIPAL_TYPE_KEY,
+                VALID_PRINCIPAL_TYPE_VALUE,
+                required=False,
             )
 
             # Store the principal type in the options dict.
@@ -808,7 +868,10 @@ class GroupViewSet(
                     service_accounts = it_service.get_service_accounts_group(
                         group=group, user=request.user, options=options
                     )
-                except (requests.exceptions.ConnectionError, UnexpectedStatusCodeFromITError):
+                except (
+                    requests.exceptions.ConnectionError,
+                    UnexpectedStatusCodeFromITError,
+                ):
                     return Response(
                         status=status.HTTP_500_INTERNAL_SERVER_ERROR,
                         data={
@@ -882,7 +945,13 @@ class GroupViewSet(
                     return Response(
                         status=status.HTTP_403_FORBIDDEN,
                         data={
-                            "errors": [{"detail": str(ipe), "status": status.HTTP_403_FORBIDDEN, "source": "groups"}]
+                            "errors": [
+                                {
+                                    "detail": str(ipe),
+                                    "status": status.HTTP_403_FORBIDDEN,
+                                    "source": "groups",
+                                }
+                            ]
                         },
                     )
                 except ValueError as ve:
@@ -910,7 +979,10 @@ class GroupViewSet(
                 principals = [name.strip() for name in username.split(",")]
                 resp = self.remove_principals(group, principals, org_id=org_id)
                 if isinstance(resp, dict) and "errors" in resp:
-                    return Response(status=resp.get("status_code"), data={"errors": resp.get("errors")})
+                    return Response(
+                        status=resp.get("status_code"),
+                        data={"errors": resp.get("errors")},
+                    )
                 response = Response(status=status.HTTP_204_NO_CONTENT)
 
         return response
@@ -1013,6 +1085,17 @@ class GroupViewSet(
             group = set_system_flag_before_update(group, request.tenant, request.user)
             add_roles(group, roles, request.tenant, user=request.user)
             response_data = GroupRoleSerializerIn(group)
+            response = Response(status=status.HTTP_200_OK, data=response_data.data)
+            if status.is_success(response.status_code):
+                auditlog = AuditLog()
+                auditlog.log_group_assignment(
+                    request,
+                    AuditLog.GROUP,
+                    object=group,
+                    type_dict=roles,
+                    user_type=AuditLog.ROLE,
+                )
+
         elif request.method == "GET":
             serialized_roles = self.obtain_roles(request, group)
             page = self.paginate_queryset(serialized_roles)
@@ -1099,7 +1182,11 @@ class GroupViewSet(
         return roles.exclude(uuid__in=roles_for_group)
 
     def remove_service_accounts(
-        self, user: User, group: Group, service_accounts: Iterable[str], org_id: str = ""
+        self,
+        user: User,
+        group: Group,
+        service_accounts: Iterable[str],
+        org_id: str = "",
     ) -> None:
         """Remove the given service accounts from the tenant."""
         # Log our intention.
@@ -1114,7 +1201,10 @@ class GroupViewSet(
 
         # Get the group's service accounts that match the service accounts that the user specified.
         valid_service_accounts = Principal.objects.filter(
-            group=group, tenant=tenant, type="service-account", service_account_id__in=service_accounts
+            group=group,
+            tenant=tenant,
+            type=Principal.Types.SERVICE_ACCOUNT,
+            service_account_id__in=service_accounts,
         )
 
         # Collect the service account IDs the user specified.
