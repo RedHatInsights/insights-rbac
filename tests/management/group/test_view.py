@@ -143,9 +143,9 @@ class GroupViewsetTests(IdentityRequest):
         self.test_headers = test_request.META
 
         self.public_tenant = Tenant.objects.get(tenant_name="public")
-        self.principal = Principal(username=self.user_data["username"], tenant=self.tenant)
+        self.principal = Principal(username=self.user_data["username"], tenant=self.tenant, user_id="1")
         self.principal.save()
-        self.principalB = Principal(username="mock_user", tenant=self.tenant)
+        self.principalB = Principal(username="mock_user", tenant=self.tenant, user_id="2")
         self.principalB.save()
         self.principalC = Principal(username="user_not_attached_to_group_explicitly", tenant=self.tenant)
         self.principalC.save()
@@ -210,6 +210,7 @@ class GroupViewsetTests(IdentityRequest):
                 tenant=self.tenant,
                 type="service-account",
                 service_account_id=uuid,
+                user_id=f"sa_sub_{uuid}",
             )
             self.service_accounts.append(principal)
             principal.save()
@@ -861,13 +862,14 @@ class GroupViewsetTests(IdentityRequest):
             response = client.post(url, request_body, format="json", **self.headers)
             self.assertEqual(response.status_code, status.HTTP_200_OK)
 
+            default_workspace_uuid = str(self.default_workspace.uuid)
             role_binding_id = (
-                BindingMapping.objects.filter(role=self.role, resource_id=self.role.tenant.org_id).get().mappings["id"]
+                BindingMapping.objects.filter(role=self.role, resource_id=default_workspace_uuid).get().mappings["id"]
             )
 
             url = reverse("group-detail", kwargs={"uuid": self.group.uuid})
             client = APIClient()
-            principals_uuids = self.group.principals.values_list("uuid", flat=True)
+            principals_user_ids = self.group.principals.values_list("user_id", flat=True)
             group_uuid = self.group.uuid
             response = client.delete(url, **self.headers)
 
@@ -877,13 +879,13 @@ class GroupViewsetTests(IdentityRequest):
             self.assertEqual(8, len(to_remove))
 
             def assert_group_tuples(tuples_to_replicate):
-                for principal_uuid in principals_uuids:
+                for user_id in principals_user_ids:
                     relation_tuple = relation_api_tuple(
                         "group",
                         group_uuid,
                         "member",
                         "principal",
-                        str(principal_uuid),
+                        f"redhat.com:{user_id}",
                     )
 
                     self.assertIsNotNone(find_relation_in_list(tuples_to_replicate, relation_tuple))
@@ -909,7 +911,7 @@ class GroupViewsetTests(IdentityRequest):
 
                 relation_tuple = relation_api_tuple(
                     "workspace",
-                    self.group.tenant.org_id,
+                    default_workspace_uuid,
                     "binding",
                     "role_binding",
                     str(role_binding_id),

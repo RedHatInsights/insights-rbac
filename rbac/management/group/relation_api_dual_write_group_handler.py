@@ -261,7 +261,7 @@ class RelationApiDualWriteGroupHandler:
             pass  # TODO: create default bindings,
         else:
             self.principals = self.group.principals.all()
-            self.group_relations_to_remove.extend(self._generate_relations())
+            self.group_relations_to_remove.extend(self._generate_member_relations())
 
     def replicate_deleted_group(self):
         """Prepare for delete."""

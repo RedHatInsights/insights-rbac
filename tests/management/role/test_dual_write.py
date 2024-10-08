@@ -506,7 +506,6 @@ class DualWriteGroupTestCase(DualWriteTestCase):
         self.assertEquals(len(tuples), 1)
 
 
-@unittest.skip("deferring until RHCLOUD-35357 / RHCLOUD-35303 / RHCLOUD-34511")
 class DualWriteSystemRolesTestCase(DualWriteTestCase):
     """Test dual write logic for system roles."""
 
