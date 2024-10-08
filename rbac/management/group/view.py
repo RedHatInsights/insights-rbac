@@ -445,6 +445,11 @@ class GroupViewSet(
             username = item["username"]
             try:
                 principal = Principal.objects.get(username__iexact=username, tenant=tenant)
+                if principal.user_id is None and "user_id" in item:
+                    # Some lazily created Principals may not have user_id.
+                    user_id = item["user_id"]
+                    principal.user_id = user_id
+                    principal.save()
             except Principal.DoesNotExist:
                 principal = Principal.objects.create(username=username, tenant=tenant, user_id=item["user_id"])
                 logger.info("Created new principal %s for org_id %s.", username, org_id)
@@ -453,12 +458,12 @@ class GroupViewSet(
             group_principal_change_notification_handler(self.request.user, group, username, "added")
         return group, new_principals
 
-    def raise_error_if_service_accounts_not_present_in_it_service(
+    def ensure_id_for_service_accounts_exists(
         self,
         user: User,
         service_accounts: Iterable[dict],
     ):
-        """Validate service account in it service."""
+        """Validate service account in it service and populate user IDs if needed."""
         # Fetch all the user's service accounts from IT. If we are on a development or testing environment, we might
         # want to skip calling IT
         it_service = ITService()
@@ -471,11 +476,15 @@ class GroupViewSet(
                 it_service_accounts_by_client_ids[it_sa["clientId"]] = it_sa
 
             # Make sure that the service accounts the user specified are visible by them.
-            it_sa_client_ids = it_service_accounts_by_client_ids.keys()
             invalid_service_accounts: set = set()
             for specified_sa in service_accounts:
-                if specified_sa["clientId"] not in it_sa_client_ids:
-                    invalid_service_accounts.add(specified_sa["clientId"])
+                client_id = specified_sa["clientId"]
+                it_sa = it_service_accounts_by_client_ids.get(client_id)
+                if it_sa is None:
+                    invalid_service_accounts.add(client_id)
+                elif "userId" in it_sa:
+                    # Service may not be returning userId's yet.
+                    specified_sa["userId"] = it_sa["userId"]
 
             # If we have any invalid service accounts, notify the user.
             if len(invalid_service_accounts) > 0:
@@ -495,14 +504,20 @@ class GroupViewSet(
         # it.
         for specified_sa in service_accounts:
             client_id = specified_sa["clientId"]
+            user_id = specified_sa.get("userId")
             try:
                 principal = Principal.objects.get(
                     username__iexact=SERVICE_ACCOUNT_USERNAME_FORMAT.format(clientId=client_id),
                     tenant=tenant,
                 )
+                if principal.user_id is None and user_id is not None:
+                    # May happen in case principal is lazily created without user ID.
+                    principal.user_id = user_id
+                    principal.save()
             except Principal.DoesNotExist:
                 principal = Principal.objects.create(
                     username=SERVICE_ACCOUNT_USERNAME_FORMAT.format(clientId=client_id),
+                    user_id=user_id,
                     service_account_id=client_id,
                     type=Principal.Types.SERVICE_ACCOUNT,
                     tenant=tenant,
@@ -669,9 +684,7 @@ class GroupViewSet(
                     additional_scopes_to_validate=set[ScopeClaims]([ScopeClaims.SERVICE_ACCOUNTS_CLAIM]),
                 )
                 try:
-                    self.raise_error_if_service_accounts_not_present_in_it_service(
-                        user=request.user, service_accounts=service_accounts
-                    )
+                    self.ensure_id_for_service_accounts_exists(user=request.user, service_accounts=service_accounts)
                 except InsufficientPrivilegesError as ipe:
                     return Response(
                         status=status.HTTP_403_FORBIDDEN,
@@ -706,14 +719,14 @@ class GroupViewSet(
                         service_accounts=service_accounts,
                         org_id=org_id,
                     )
-                new_principals = []
+                new_users = []
                 if len(principals) > 0:
-                    group, new_principals = self.add_principals(group, principals_from_response, org_id=org_id)
+                    group, new_users = self.add_principals(group, principals_from_response, org_id=org_id)
 
                 dual_write_handler = RelationApiDualWriteGroupHandler(
                     group, ReplicationEventType.ADD_PRINCIPALS_TO_GROUP
                 )
-                dual_write_handler.replicate_new_principals(new_principals + new_service_accounts)
+                dual_write_handler.replicate_new_principals(new_users + new_service_accounts)
 
             # Serialize the group...
             output = GroupSerializer(group)
@@ -914,12 +927,12 @@ class GroupViewSet(
                     # removal generates.
                     response = Response(status=status.HTTP_204_NO_CONTENT)
 
-                principals_to_remove = []
+                users_to_remove = []
                 # Remove the users from the group too.
                 if USERNAMES_KEY in request.query_params:
                     username = request.query_params.get(USERNAMES_KEY, "")
                     principals = [name.strip() for name in username.split(",")]
-                    resp, principals_to_remove = self.remove_principals(group, principals, org_id=org_id)
+                    resp, users_to_remove = self.remove_principals(group, principals, org_id=org_id)
                     if isinstance(resp, dict) and "errors" in resp:
                         return Response(status=resp.get("status_code"), data={"errors": resp.get("errors")})
                     response = Response(status=status.HTTP_204_NO_CONTENT)
@@ -928,7 +941,7 @@ class GroupViewSet(
                     group,
                     ReplicationEventType.REMOVE_PRINCIPALS_FROM_GROUP,
                 )
-                dual_write_handler.replicate_removed_principals(principals_to_remove + service_accounts_to_remove)
+                dual_write_handler.replicate_removed_principals(users_to_remove + service_accounts_to_remove)
 
         return response
 
