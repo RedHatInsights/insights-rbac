@@ -42,6 +42,7 @@ from management.models import (
     ExtTenant,
     Workspace,
 )
+from migration_tool.migrate import migrate_workspace
 from tests.core.test_kafka import copy_call_args
 from tests.identity_request import IdentityRequest
 from tests.management.role.test_view import find_in_list, relation_api_tuple
@@ -210,12 +211,26 @@ class GroupViewsetTests(IdentityRequest):
         self.group.principals.add(*self.service_accounts)
         self.group.save()
 
+        self.root_workspace = Workspace.objects.create(
+            type=Workspace.Types.ROOT,
+            name="Root",
+            tenant=self.tenant,
+        )
+        self.default_workspace = Workspace.objects.create(
+            type=Workspace.Types.DEFAULT,
+            name="Default",
+            tenant=self.tenant,
+            parent=self.root_workspace,
+        )
+
     def tearDown(self):
         """Tear down group viewset tests."""
         Group.objects.all().delete()
         Principal.objects.all().delete()
         Role.objects.all().delete()
         Policy.objects.all().delete()
+        Workspace.objects.filter(parent__isnull=False).delete()
+        Workspace.objects.filter(parent__isnull=True).delete()
 
     @patch(
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
@@ -2878,6 +2893,8 @@ class GroupViewNonAdminTests(IdentityRequest):
         Access.objects.all().delete()
         Role.objects.all().delete()
         Policy.objects.all().delete()
+        Workspace.objects.filter(parent__isnull=False).delete()
+        Workspace.objects.filter(parent__isnull=True).delete()
 
     @staticmethod
     def _create_group_with_user_access_administrator_role(tenant: Tenant) -> Group:
@@ -2997,6 +3014,7 @@ class GroupViewNonAdminTests(IdentityRequest):
         user_access_admin_tenant.ready = True
         user_access_admin_tenant.tenant_name = "new-tenant"
         user_access_admin_tenant.save()
+        migrate_workspace(user_access_admin_tenant, write_relationships=False)
 
         user_access_admin_group = self._create_group_with_user_access_administrator_role(
             tenant=user_access_admin_tenant
@@ -3153,6 +3171,7 @@ class GroupViewNonAdminTests(IdentityRequest):
         user_access_admin_tenant.ready = True
         user_access_admin_tenant.tenant_name = "new-tenant"
         user_access_admin_tenant.save()
+        migrate_workspace(user_access_admin_tenant, write_relationships=False)
 
         user_access_admin_group = self._create_group_with_user_access_administrator_role(
             tenant=user_access_admin_tenant
@@ -3291,6 +3310,7 @@ class GroupViewNonAdminTests(IdentityRequest):
         user_access_admin_tenant.ready = True
         user_access_admin_tenant.tenant_name = "new-tenant"
         user_access_admin_tenant.save()
+        migrate_workspace(user_access_admin_tenant, write_relationships=False)
 
         user_access_admin_group = self._create_group_with_user_access_administrator_role(
             tenant=user_access_admin_tenant
@@ -3443,6 +3463,7 @@ class GroupViewNonAdminTests(IdentityRequest):
         user_access_admin_tenant.ready = True
         user_access_admin_tenant.tenant_name = "new-tenant"
         user_access_admin_tenant.save()
+        migrate_workspace(user_access_admin_tenant, write_relationships=False)
 
         user_access_admin_group = self._create_group_with_user_access_administrator_role(
             tenant=user_access_admin_tenant
