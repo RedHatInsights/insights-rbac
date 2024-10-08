@@ -16,11 +16,13 @@
 #
 
 """View for internal tenant management."""
+
 import json
 import logging
 
 import requests
 from core.utils import destructive_ok
+from django.conf import settings
 from django.db import transaction
 from django.db.migrations.recorder import MigrationRecorder
 from django.http import HttpResponse
@@ -469,27 +471,28 @@ def ocm_performance(request):
     return HttpResponse('Invalid method, only "POST" is allowed.', status=405)
 
 
-def get_param_list(request, param_name):
+def get_param_list(request, param_name, default: list = []):
     """Get a list of params from a request."""
     params = request.GET.get(param_name, [])
     if params:
-        params = params.split(",")
-    return params
+        return params.split(",")
+    else:
+        return default
 
 
 def data_migration(request):
     """View method for running migrations from V1 to V2 spiceDB schema.
 
-    POST /_private/api/utils/data_migration/?exclude_apps=cost_management,rbac&orgs=id_1,id_2&write_db=True
+    POST /_private/api/utils/data_migration/?exclude_apps=cost_management,rbac&orgs=id_1,id_2&write_relationships=True
     """
     if request.method != "POST":
         return HttpResponse('Invalid method, only "POST" is allowed.', status=405)
     logger.info("Running V1 data migration.")
 
     args = {
-        "exclude_apps": get_param_list(request, "exclude_apps"),
+        "exclude_apps": get_param_list(request, "exclude_apps", default=settings.V2_MIGRATION_APP_EXCLUDE_LIST),
         "orgs": get_param_list(request, "orgs"),
-        "write_db": request.GET.get("write_db", "False") == "True",
+        "write_relationships": request.GET.get("write_relationships", "False") == "True",
     }
     migrate_data_in_worker.delay(args)
     return HttpResponse("Data migration from V1 to V2 are running in a background worker.", status=202)

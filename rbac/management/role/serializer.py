@@ -18,7 +18,6 @@
 """Serializer for role management."""
 from django.utils.translation import gettext as _
 from management.group.model import Group
-from management.notifications.notification_handlers import role_obj_change_notification_handler
 from management.serializer_override_mixin import SerializerCreateOverrideMixin
 from management.utils import filter_queryset_by_tenant, get_principal, validate_and_get_key
 from rest_framework import serializers
@@ -139,7 +138,6 @@ class RoleSerializer(serializers.ModelSerializer):
         role = Role.objects.create(name=name, description=description, display_name=display_name, tenant=tenant)
         create_access_for_role(role, access_list, tenant)
 
-        role_obj_change_notification_handler(role, "created", self.context["request"].user)
         return role
 
     def update(self, instance, validated_data):
@@ -153,7 +151,6 @@ class RoleSerializer(serializers.ModelSerializer):
 
         create_access_for_role(instance, access_list, tenant)
 
-        role_obj_change_notification_handler(instance, "updated", self.context["request"].user)
         return instance
 
     def get_external_role_id(self, obj):
@@ -395,15 +392,22 @@ def validate_role_update(instance, validated_data):
 
 def update_role(role_name, update_data, tenant, clear_access=True):
     """Update role attribute."""
-    role, created = Role.objects.update_or_create(
-        name=role_name,
-        tenant=tenant,
-        defaults={
-            "name": update_data.get("updated_name"),
-            "display_name": update_data.get("updated_display_name"),
-            "description": update_data.get("updated_description"),
-        },
-    )
+    role = Role.objects.get(name=role_name, tenant=tenant)
+
+    update_fields = []
+
+    if "updated_name" in update_data:
+        role.name = update_data["updated_name"]
+        update_fields.append("name")
+    if "updated_display_name" in update_data:
+        role.display_name = update_data["updated_display_name"]
+        update_fields.append("display_name")
+    if "updated_description" in update_data:
+        role.description = update_data["updated_description"]
+        update_fields.append("description")
+
+    role.save(update_fields=update_fields)
+
     if clear_access:
         role.access.all().delete()
 

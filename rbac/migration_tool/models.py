@@ -16,25 +16,10 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 
 from dataclasses import dataclass
+from typing import Tuple
 
-
-@dataclass(frozen=True)
-class Relationship:
-    """Relationship definition."""
-
-    resource_type: str
-    resource_id: str
-    relation: str
-    subject_type: str
-    subject_id: str
-
-
-@dataclass(frozen=True)
-class V1group:
-    """V1 group definition."""
-
-    id: str
-    users: frozenset[str]
+from kessel.relations.v1beta1.common_pb2 import Relationship
+from migration_tool.utils import create_relationship
 
 
 @dataclass(frozen=True)
@@ -69,37 +54,33 @@ class V1permission:
 
 
 @dataclass(frozen=True)
-class V1role:
-    """V1 role definition."""
-
-    id: str
-    permissions: frozenset[V1permission]
-    groups: frozenset[V1group]
-
-
-@dataclass(frozen=True)
-class V2group:
-    """V2 group definition."""
-
-    id: str
-    users: frozenset[str]
-
-
-@dataclass(frozen=True)
 class V2boundresource:
     """V2 bound resource definition."""
 
-    resource_type: str
-    resourceId: str
+    resource_type: Tuple[str, str]
+    resource_id: str
 
 
 @dataclass(frozen=True)
 class V2role:
     """V2 role definition."""
 
+    @classmethod
+    def for_system_role(cls, id: str) -> "V2role":
+        """Create a V2 role for a system role."""
+        return cls(id=id, is_system=True, permissions=frozenset())
+
     id: str
     is_system: bool
     permissions: frozenset[str]
+
+    def as_dict(self) -> dict:
+        """Convert the V2 role to a dictionary."""
+        return {
+            "id": self.id,
+            "is_system": self.is_system,
+            "permissions": list(self.permissions) if not self.is_system else [],
+        }
 
 
 @dataclass(frozen=True)
@@ -107,10 +88,54 @@ class V2rolebinding:
     """V2 role binding definition."""
 
     id: str
-    originalRole: V1role
     role: V2role
-    resources: frozenset[V2boundresource]
-    groups: frozenset[V2group]
+    resource: V2boundresource
+    groups: frozenset[str]
+
+    def as_minimal_dict(self) -> dict:
+        """Convert the V2 role binding to a dictionary, excluding resource, original role, and users."""
+        return {
+            "id": self.id,
+            "role": self.role.as_dict(),
+            "groups": [g for g in self.groups],
+        }
+
+    def as_tuples(self):
+        """Create tuples from V2rolebinding model."""
+        tuples: list[Relationship] = list()
+
+        tuples.append(create_relationship(("rbac", "role_binding"), self.id, ("rbac", "role"), self.role.id, "role"))
+
+        for perm in self.role.permissions:
+            tuples.append(create_relationship(("rbac", "role"), self.role.id, ("rbac", "principal"), "*", perm))
+
+        for group in self.groups:
+            # These might be duplicate but it is OK, spiceDB will handle duplication through touch
+            tuples.append(role_binding_group_subject_tuple(self.id, group))
+
+        tuples.append(
+            create_relationship(
+                self.resource.resource_type,
+                self.resource.resource_id,
+                ("rbac", "role_binding"),
+                self.id,
+                "binding",
+            )
+        )
+
+        return tuples
+
+
+def role_binding_group_subject_tuple(role_binding_id: str, group_uuid: str) -> Relationship:
+    """Create a relationship tuple for a role binding and a group."""
+    return create_relationship(
+        ("rbac", "role_binding"),
+        role_binding_id,
+        ("rbac", "group"),
+        group_uuid,
+        "subject",
+        subject_relation="member",
+    )
 
 
 def split_v2_perm(perm: str):
