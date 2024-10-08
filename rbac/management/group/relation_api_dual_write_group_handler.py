@@ -33,6 +33,8 @@ from management.role.relation_api_dual_write_handler import (
 from migration_tool.models import V2boundresource, V2role, V2rolebinding
 from migration_tool.utils import create_relationship
 
+from api.models import Tenant
+
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 
@@ -148,13 +150,16 @@ class RelationApiDualWriteGroupHandler:
         if self.group.tenant.tenant_name == "public":
             return
 
+        self._update_mapping_for_role_removal(role)
+        self._replicate()
+
+    def _update_mapping_for_role_removal(self, role: Role):
         def remove_group_from_binding(mapping: BindingMapping):
             self.group_relations_to_remove.append(mapping.remove_group_from_bindings(str(self.group.uuid)))
 
         self._update_mapping_for_role(
             role, update_mapping=remove_group_from_binding, create_default_mapping_for_system_role=lambda: None
         )
-        self._replicate()
 
     def _update_mapping_for_role(
         self,
@@ -191,12 +196,14 @@ class RelationApiDualWriteGroupHandler:
                     )
                     .get()
                 )
+
                 update_mapping(mapping)
-                mapping.save(force_update=True)
 
                 if mapping.is_unassigned():
                     self.group_relations_to_remove.extend(mapping.as_tuples())
                     mapping.delete()
+                else:
+                    mapping.save(force_update=True)
             except BindingMapping.DoesNotExist:
                 mapping = create_default_mapping_for_system_role()
                 if mapping is not None:
@@ -210,7 +217,6 @@ class RelationApiDualWriteGroupHandler:
             # Because custom roles must be locked already by this point,
             # we don't need to lock the binding here.
             bindings: Iterable[BindingMapping] = role.binding_mappings.all()
-
             if not bindings:
                 logger.warning(
                     "[Dual Write] Binding mappings not found for role(%s): '%s'. "
@@ -223,3 +229,34 @@ class RelationApiDualWriteGroupHandler:
             for mapping in bindings:
                 update_mapping(mapping)
                 mapping.save(force_update=True)
+
+    def prepare_to_delete_group(self):
+        """Generate relations to delete."""
+        roles = Role.objects.filter(policies__group=self.group)
+
+        system_roles = roles.filter(tenant=Tenant.objects.get(tenant_name="public"))
+
+        # Custom roles are locked to prevent resources from being added/removed concurrently,
+        # in the case that the Roles had _no_ resources specified to begin with.
+        # This should not be necessary for system roles.
+        custom_roles = roles.filter(tenant=self.group.tenant).select_for_update()
+
+        custom_ids = []
+        for role in [*system_roles, *custom_roles]:
+            if role.id in custom_ids:
+                # it was needed to skip distinct clause because distinct doesn't work with select_for_update
+                continue
+            self._update_mapping_for_role_removal(role)
+            custom_ids.append(role.id)
+
+        if self.group.platform_default:
+            pass  # TODO: create default bindings,
+        else:
+            self.principals = self.group.principals.all()
+            self.group_relations_to_remove.extend(self._generate_relations())
+
+    def replicate_deleted_group(self):
+        """Prepare for delete."""
+        if not self.replication_enabled():
+            return
+        self._replicate()

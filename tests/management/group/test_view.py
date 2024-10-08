@@ -827,13 +827,75 @@ class GroupViewsetTests(IdentityRequest):
         response = client.put(url, {}, format="json", **self.headers)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
+    @patch("management.role.relation_api_dual_write_handler.OutboxReplicator._save_replication_event")
     @patch("core.kafka.RBACProducer.send_kafka_message")
-    def test_delete_group_success(self, send_kafka_message):
+    def test_delete_group_success(self, send_kafka_message, mock_method):
         """Test that we can delete an existing group."""
-        with self.settings(NOTIFICATIONS_ENABLED=True):
+        with (self.settings(NOTIFICATIONS_ENABLED=True)):
+            url = reverse("group-roles", kwargs={"uuid": self.group.uuid})
+            request_body = {"roles": [self.role.uuid]}
+
+            client = APIClient()
+            response = client.post(url, request_body, format="json", **self.headers)
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+            role_binding_id = (
+                BindingMapping.objects.filter(role=self.role, resource_id=self.role.tenant.org_id).get().mappings["id"]
+            )
+
             url = reverse("group-detail", kwargs={"uuid": self.group.uuid})
             client = APIClient()
+            principals_uuids = self.group.principals.values_list("uuid", flat=True)
+            group_uuid = self.group.uuid
             response = client.delete(url, **self.headers)
+
+            actual_call_arg = mock_method.call_args[0][0]
+            to_remove = actual_call_arg["relations_to_remove"]
+            print(to_remove)
+            self.assertEqual(8, len(to_remove))
+
+            def assert_group_tuples(tuples_to_replicate):
+                for principal_uuid in principals_uuids:
+                    relation_tuple = relation_api_tuple(
+                        "group",
+                        group_uuid,
+                        "member",
+                        "principal",
+                        str(principal_uuid),
+                    )
+
+                    self.assertIsNotNone(find_relation_in_list(tuples_to_replicate, relation_tuple))
+
+                relation_tuple = relation_api_tuple(
+                    "role_binding",
+                    role_binding_id,
+                    "subject",
+                    "group",
+                    str(group_uuid),
+                    "member",
+                )
+                self.assertIsNotNone(find_relation_in_list(tuples_to_replicate, relation_tuple))
+
+                relation_tuple = relation_api_tuple(
+                    "role_binding",
+                    role_binding_id,
+                    "role",
+                    "role",
+                    str(self.role.uuid),
+                )
+                self.assertIsNotNone(find_relation_in_list(tuples_to_replicate, relation_tuple))
+
+                relation_tuple = relation_api_tuple(
+                    "workspace",
+                    self.group.tenant.org_id,
+                    "binding",
+                    "role_binding",
+                    str(role_binding_id),
+                )
+                self.assertIsNotNone(find_relation_in_list(tuples_to_replicate, relation_tuple))
+
+            assert_group_tuples(to_remove)
+
             self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
 
             org_id = self.customer_data["org_id"]
