@@ -34,7 +34,6 @@ from .unexpected_status_code_from_it import UnexpectedStatusCodeFromITError
 # Constants or global variables.
 LOGGER = logging.getLogger(__name__)
 SERVICE_ACCOUNT_CLIENT_IDS_KEY = "service_account_client_ids"
-TYPE_SERVICE_ACCOUNT = "service-account"
 KEY_SERVICE_ACCOUNT = "service-account-"
 
 # IT path to fetch the service accounts.
@@ -236,7 +235,7 @@ class ITService:
 
         # Get the service accounts from the database. The weird filter is to fetch the service accounts depending on
         # the account number or the organization ID the user gave.
-        service_account_principals = Principal.objects.filter(type=TYPE_SERVICE_ACCOUNT).filter(
+        service_account_principals = Principal.objects.filter(type=Principal.Types.SERVICE_ACCOUNT).filter(
             (Q(tenant__isnull=False) & Q(tenant__account_id=user.account))
             | (Q(tenant__isnull=False) & Q(tenant__org_id=user.org_id))
         )
@@ -321,7 +320,7 @@ class ITService:
             it_service_accounts = self.request_service_accounts(bearer_token=user.bearer_token)
 
         # Fetch the service accounts from the group.
-        group_service_account_principals = group.principals.filter(type=TYPE_SERVICE_ACCOUNT)
+        group_service_account_principals = group.principals.filter(type=Principal.Types.SERVICE_ACCOUNT)
 
         # Apply the specified query parameters for the collection. Begin with the sort order.
         sort_order = options.get("sort_order")
@@ -436,7 +435,7 @@ class ITService:
         # Fetch the service accounts from the group.
         group_service_account_principals = (
             group.principals.values_list("service_account_id", flat=True)
-            .filter(type=TYPE_SERVICE_ACCOUNT)
+            .filter(type=Principal.Types.SERVICE_ACCOUNT)
             .filter(service_account_id__in=client_ids)
         )
 

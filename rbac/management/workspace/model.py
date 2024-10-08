@@ -18,6 +18,7 @@
 from uuid import uuid4
 
 from django.db import models
+from django.db.models import Q, UniqueConstraint
 from django.utils import timezone
 from management.rbac_fields import AutoDateTimeField
 
@@ -27,17 +28,35 @@ from api.models import TenantAwareModel
 class Workspace(TenantAwareModel):
     """A workspace."""
 
+    class Types(models.TextChoices):
+        STANDARD = "standard"
+        DEFAULT = "default"
+        ROOT = "root"
+
     name = models.CharField(max_length=255)
     uuid = models.UUIDField(default=uuid4, editable=False, unique=True, null=False)
     parent = models.ForeignKey(
         "self", to_field="uuid", on_delete=models.PROTECT, related_name="children", null=True, blank=True
     )
     description = models.CharField(max_length=255, null=True, blank=True, editable=True)
+    type = models.CharField(choices=Types.choices, default=Types.STANDARD, null=False)
     created = models.DateTimeField(default=timezone.now)
     modified = AutoDateTimeField(default=timezone.now)
 
     class Meta:
         ordering = ["name", "modified"]
+        constraints = [
+            UniqueConstraint(
+                fields=["tenant_id", "type"],
+                name="unique_default_root_workspace_per_tenant",
+                condition=Q(type__in=["root", "default"]),
+            )
+        ]
+
+    def save(self, *args, **kwargs):
+        """Override save on model to enforce validations."""
+        self.full_clean()
+        super().save(*args, **kwargs)
 
     def ancestors(self):
         """Return a list of ancestors for a Workspace instance."""

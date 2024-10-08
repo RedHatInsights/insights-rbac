@@ -293,6 +293,8 @@ objects:
               optional: true
         - name: PRINCIPAL_CLEANUP_DELETION_ENABLED_UMB
           value: ${PRINCIPAL_CLEANUP_DELETION_ENABLED_UMB}
+        - name: UMB_JOB_ENABLED
+          value: ${UMB_JOB_ENABLED}
 
     - name: service
       minReplicas: ${{MIN_REPLICAS}}
@@ -511,6 +513,11 @@ objects:
             value: ${IT_SERVICE_TIMEOUT_SECONDS}
           - name: IT_TOKEN_JKWS_CACHE_LIFETIME
             value: ${IT_TOKEN_JKWS_CACHE_LIFETIME}
+          - name: V2_APIS_ENABLED
+            value: ${V2_APIS_ENABLED}
+          - name: READ_ONLY_API_MODE
+            value: ${READ_ONLY_API_MODE}
+
     jobs:
       - name: tenant-org-id-populator
         podSpec:
@@ -895,6 +902,9 @@ parameters:
 - name: PRINCIPAL_CLEANUP_DELETION_ENABLED_UMB
   description: Allow cleanup job to delete principals via messages from UMB
   value: 'False'
+- name: UMB_JOB_ENABLE
+  description: Temp env to enable the UMB job
+  value: 'True'
 - name: UMB_HOST
   description: Host of the UMB service
   value: 'localhost'
@@ -910,3 +920,8 @@ parameters:
 - name: RELATION_API_SERVER
   description: The gRPC API server to use for the relation
   value: "localhost:9000"
+- name: V2_APIS_ENABLED
+  description: Flag to explicitly enable v2 API endpoints
+- name: READ_ONLY_API_MODE
+  description: Enforce GET only on RBAC APIs
+  value: 'False'
