@@ -19,13 +19,14 @@
 import logging
 import os
 import ssl
+from typing import Optional
 
 import xmltodict
 from django.conf import settings
 from management.principal.model import Principal
 from management.principal.proxy import PrincipalProxy, external_principal_to_user
 from management.role.relation_api_dual_write_handler import OutboxReplicator
-from management.tenant.model import TenantBootstrapService
+from management.tenant.model import TenantBootstrapService, V2TenantBootstrapService, get_tenant_bootstrap_service
 from rest_framework import status
 from stompest.config import StompConfig
 from stompest.error import StompConnectionError
@@ -168,14 +169,17 @@ def process_umb_event(frame, umb_client: Stomp, bootstrap_service: TenantBootstr
         logger.error("process_umb_event: Error retrieving user info: %s", str(e))
         return
 
-    bootstrap_service.update_user(user)
+    # By default, only process disabled users.
+    # If the setting is enabled, process all users.
+    if not user.is_active or settings.PRINCIPAL_CLEANUP_UPDATE_ENABLED_UMB:
+        bootstrap_service.upsert_user(user)
     umb_client.ack(frame)
 
 
-def process_principal_events_from_umb():
+def process_principal_events_from_umb(bootstrap_service: Optional[TenantBootstrapService] = None):
     """Process principals events from UMB."""
     logger.info("process_tenant_principal_events: Start processing principal events from umb.")
-    bootstrap_service = TenantBootstrapService(OutboxReplicator())
+    bootstrap_service = bootstrap_service or get_tenant_bootstrap_service(OutboxReplicator())
     try:
         UMB_CLIENT.connect()
         UMB_CLIENT.subscribe(QUEUE, {StompSpec.ACK_HEADER: StompSpec.ACK_CLIENT_INDIVIDUAL})

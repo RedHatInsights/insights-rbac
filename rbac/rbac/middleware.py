@@ -23,14 +23,17 @@ from json.decoder import JSONDecodeError
 
 from django.conf import settings
 from django.core.handlers.wsgi import WSGIRequest
-from django.db import IntegrityError, transaction
+from django.db import IntegrityError
 from django.http import Http404, HttpResponse, QueryDict
 from django.urls import resolve
 from django.utils.deprecation import MiddlewareMixin
 from management.cache import TenantCache
 from management.models import Principal
 from management.role.relation_api_dual_write_handler import OutboxReplicator
-from management.tenant.model import TenantBootstrapService
+from management.tenant.model import (
+    TenantBootstrapService,
+    get_tenant_bootstrap_service,
+)
 from management.utils import APPLICATION_KEY, access_for_principal, validate_psk
 from prometheus_client import Counter
 from rest_framework import status
@@ -100,7 +103,7 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
     # In this case the replicator needs to include a precondition
     # which does not add the tuples if any others already exist for the tenant
     # (the tx will be rolled back in that case)
-    bootstrap_service = TenantBootstrapService(OutboxReplicator())
+    bootstrap_service: TenantBootstrapService = get_tenant_bootstrap_service(OutboxReplicator())
 
     def get_tenant(self, model, hostname, request):
         """Override the tenant selection logic."""
@@ -114,7 +117,7 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
                 # Tenants are normally bootstrapped via principal job,
                 # but there is a race condition where the user can use the service before the message is processed.
                 try:
-                    bootstrap = self.bootstrap_service.update_user(request.user)
+                    bootstrap = self.bootstrap_service.upsert_user(request.user)
                     if bootstrap is None:
                         # User is inactive. Should never happen but just in case...
                         raise Http404()

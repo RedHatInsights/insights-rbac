@@ -19,6 +19,7 @@ import uuid
 
 from unittest.mock import MagicMock, patch
 
+from django.test import override_settings
 from rest_framework import status
 
 from management.group.model import Group
@@ -239,6 +240,7 @@ class PrincipalUMBTests(IdentityRequest):
         """Set up the principal processor tests."""
         super().setUp()
         self.principal_name = "principal-test"
+        self.principal_user_id = "56780000"
         self.group = Group(name="groupA", tenant=self.tenant)
         self.group.save()
         self.tenant.org_id = "17685860"
@@ -360,6 +362,7 @@ class PrincipalUMBTests(IdentityRequest):
         },
     )
     @patch("management.principal.cleaner.UMB_CLIENT")
+    @override_settings(PRINCIPAL_CLEANUP_UPDATE_ENABLED_UMB=True, V1_BOOTSTRAP_ADD_USER_ID=True)
     def test_principal_creation_event(self, client_mock, proxy_mock):
         """Test that we can run principal creation event."""
         public_tenant = Tenant.objects.get(tenant_name="public")
@@ -373,4 +376,4 @@ class PrincipalUMBTests(IdentityRequest):
         client_mock.disconnect.assert_called_once()
         client_mock.ack.assert_called_once()
         self.assertTrue(Tenant.objects.filter(org_id="17685860").exists())
-        self.assertTrue(Principal.objects.filter(username=self.principal_name).exists())
+        self.assertTrue(Principal.objects.filter(user_id=self.principal_user_id).exists())
