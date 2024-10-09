@@ -74,7 +74,14 @@ class TenantBootstrapService:
     def update_user(
         self, user: User, bootstrapped_tenant: Optional[BootstrappedTenant] = None
     ) -> Optional[BootstrappedTenant]:
-        """Bootstrap a user in a tenant."""
+        """
+        Bootstrap a user in a tenant.
+
+        Create a Tenant (and bootstrap it) if it does not exist.
+        If a [bootstrapped_tenant] is provided, it's assumed the Tenant already exists.
+
+        Returns [None] if the user is not active.
+        """
         if not user.is_active:
             self._disable_user_in_tenant(user)
             return
