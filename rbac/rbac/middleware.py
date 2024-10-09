@@ -103,7 +103,12 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
     # In this case the replicator needs to include a precondition
     # which does not add the tuples if any others already exist for the tenant
     # (the tx will be rolled back in that case)
-    bootstrap_service: TenantBootstrapService = get_tenant_bootstrap_service(OutboxReplicator())
+    bootstrap_service: TenantBootstrapService
+
+    def __init__(self, get_response):
+        """Initialize the middleware."""
+        super().__init__(get_response)
+        self.bootstrap_service = get_tenant_bootstrap_service(OutboxReplicator())
 
     def get_tenant(self, model, hostname, request):
         """Override the tenant selection logic."""

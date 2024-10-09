@@ -379,7 +379,7 @@ class V2TenantBootstrapService:
                         default_user_role_binding_uuid,
                         ("rbac", "group"),
                         str(mapping.default_group_uuid),
-                        "group",
+                        "subject",
                         "member",
                     ),
                 ]
@@ -408,7 +408,7 @@ class V2TenantBootstrapService:
                         default_admin_role_binding_uuid,
                         ("rbac", "group"),
                         str(mapping.default_admin_group_uuid),
-                        "group",
+                        "subject",
                         "member",
                     ),
                 ]
