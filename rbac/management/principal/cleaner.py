@@ -127,30 +127,26 @@ def retrieve_user_info(message) -> User:
     returns:
         user: User object as of latest known state.
     """
-    user = message["Payload"]["Sync"]["User"]
-    identifiers = user["Identifiers"]
+    message_user = message["Payload"]["Sync"]["User"]
+    identifiers = message_user["Identifiers"]
     user_id = identifiers["Identifier"]["#text"]
 
     bop_resp = PROXY.request_filtered_principals([user_id], options={"return_id": True})
 
     if not bop_resp["data"]:  # User has been deleted
         # Get data from message instead.
-        is_org_admin = user.get("UserMembership") == {"Name": "admin:org:all"}
-        user_name = user["Person"]["Credentials"]["Login"]
-        for ref in identifiers["Reference"]:
-            if ref["@entity-name"] == "Customer":
-                org_id = ref["#text"]
-                break
-            if ref["@entity-name"] == "Account":
-                account_number = ref["#text"]
-                break
         user = User()
         user.user_id = user_id
-        user.org_id = org_id
-        user.username = user_name
-        user.admin = is_org_admin
-        user.account = account_number
         user.is_active = False
+        user.admin = message_user.get("UserMembership") == {"Name": "admin:org:all"}
+        user.username = message_user["Person"]["Credentials"]["Login"]
+        for ref in identifiers["Reference"]:
+            if ref["@entity-name"] == "Customer":
+                user.org_id = ref["#text"]
+                break
+            if ref["@entity-name"] == "Account":
+                user.account = ref["#text"]
+                break
         return user
 
     user_data = bop_resp["data"][0]

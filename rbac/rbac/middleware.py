@@ -23,7 +23,7 @@ from json.decoder import JSONDecodeError
 
 from django.conf import settings
 from django.core.handlers.wsgi import WSGIRequest
-from django.db import IntegrityError
+from django.db import IntegrityError, transaction
 from django.http import Http404, HttpResponse, QueryDict
 from django.urls import resolve
 from django.utils.deprecation import MiddlewareMixin
@@ -97,20 +97,33 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
 
     header = RH_IDENTITY_HEADER
     # TODO: Lazy bootstrapping of tenants should use a synchronous replicator
+    # In this case the replicator needs to include a precondition
+    # which does not add the tuples if any others already exist for the tenant
+    # (the tx will be rolled back in that case)
     bootstrap_service = TenantBootstrapService(OutboxReplicator())
 
     def get_tenant(self, model, hostname, request):
         """Override the tenant selection logic."""
         tenant = TENANTS.get_tenant(request.user.org_id)
         if tenant is None:
-            if request.user.system:
-                try:
-                    tenant = Tenant.objects.get(org_id=request.user.org_id)
-                except Tenant.DoesNotExist:
+            try:
+                tenant = Tenant.objects.get(org_id=request.user.org_id)
+            except Tenant.DoesNotExist:
+                if request.user.system:
                     raise Http404()
-            else:
-                bootstrap = self.bootstrap_service.get_or_bootstrap_tenant(request.user.org_id, request.user.account)
-                tenant = bootstrap.tenant
+                # Tenants are normally bootstrapped via principal job,
+                # but there is a race condition where the user can use the service before the message is processed.
+                # This can ALSO still fail, though,
+                # if between the get above and this create the message WAS processed.
+                try:
+                    bootstrap = self.bootstrap_service.update_user(request.user)
+                    if bootstrap is None:
+                        # TODO better error?
+                        raise Http404()
+                    tenant = bootstrap.tenant
+                except IntegrityError:
+                    # The tenant was created by cleaner job in the meantime; just get it now.
+                    tenant = Tenant.objects.get(org_id=request.user.org_id)
             TENANTS.save_tenant(tenant)
         return tenant
 

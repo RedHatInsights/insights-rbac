@@ -56,10 +56,10 @@ def validate_and_create_obj_ref(obj_name: Tuple[str, str], obj_id):
 
 def create_relationship(
     resource_name: Tuple[str, str],
-    resource_id,
+    resource_id: str,
     subject_name: Tuple[str, str],
-    subject_id,
-    relation,
+    subject_id: str,
+    relation: str,
     subject_relation: Optional[str] = None,
 ):
     """Create a relationship between a resource and a subject."""

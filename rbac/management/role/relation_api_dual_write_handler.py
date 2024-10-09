@@ -124,7 +124,7 @@ class OutboxReplicator(RelationReplicator):
         logger.info(
             "[Dual Write] Publishing replication event. event_type='%s' %s",
             event_type,
-            " ".join(f"info.{key}='{value}'" for key, value in event_info),
+            " ".join([f"info.{key}='{value}'" for key, value in event_info.items()]),
         )
         # https://debezium.io/documentation/reference/stable/transformations/outbox-event-router.html#basic-outbox-table
         outbox_record = Outbox.objects.create(

@@ -1,5 +1,6 @@
 """Additional tenant-related models."""
 
+import logging
 import uuid
 from typing import List, Optional
 from typing import NamedTuple
@@ -30,10 +31,7 @@ class BootstrappedTenant(NamedTuple):
     """Tenant information."""
 
     tenant: Tenant
-    root_workspace: Workspace
-    default_workspace: Workspace
     mapping: TenantMapping
-    tuples: List[Relationship]  # TODO: maybe remove this
 
 
 class TenantBootstrapService:
@@ -50,9 +48,9 @@ class TenantBootstrapService:
         self._replicator = replicator
         self._public_tenant = public_tenant
 
-    def new_bootstrapped_tenant(self) -> BootstrappedTenant:
+    def new_bootstrapped_tenant(self, org_id: str, account_number: Optional[str] = None) -> BootstrappedTenant:
         """Create a new tenant."""
-        tenant = Tenant.objects.create()
+        tenant = Tenant.objects.create(org_id=org_id, account_id=account_number)
         return self.bootstrap_tenant(tenant)
 
     @transaction.atomic
@@ -73,11 +71,10 @@ class TenantBootstrapService:
         return self._bootstrap_tenant(tenant)
 
     @transaction.atomic
-    def update_user(self, user: User, bootstrapped_tenant: Optional[BootstrappedTenant] = None):
+    def update_user(
+        self, user: User, bootstrapped_tenant: Optional[BootstrappedTenant] = None
+    ) -> Optional[BootstrappedTenant]:
         """Bootstrap a user in a tenant."""
-        if user.is_service_account:
-            return
-
         if not user.is_active:
             self._disable_user_in_tenant(user)
             return
@@ -90,40 +87,41 @@ class TenantBootstrapService:
         tuples_to_add = []
         tuples_to_remove = []
 
-        # Add user to default group
-        self._ensure_principal_with_user_id_in_tenant(user, bootstrapped_tenant.tenant)
+        # Add user to default group if not a service account
+        if not user.is_service_account:
+            self._ensure_principal_with_user_id_in_tenant(user, bootstrapped_tenant.tenant)
 
-        tuples_to_add.append(
-            create_relationship(
-                ("rbac", "group"),
-                mapping.default_group_uuid,
-                ("rbac", "principal"),
-                principal_id,
-                "member",
-            )
-        )
-
-        # Add user to admin group if admin
-        if user.admin:
             tuples_to_add.append(
                 create_relationship(
                     ("rbac", "group"),
-                    mapping.default_admin_group_uuid,
+                    str(mapping.default_group_uuid),
                     ("rbac", "principal"),
                     principal_id,
                     "member",
                 )
             )
-        else:
-            tuples_to_remove.append(
-                create_relationship(
-                    ("rbac", "group"),
-                    mapping.default_admin_group_uuid,
-                    ("rbac", "principal"),
-                    principal_id,
-                    "member",
+
+            # Add user to admin group if admin
+            if user.admin:
+                tuples_to_add.append(
+                    create_relationship(
+                        ("rbac", "group"),
+                        str(mapping.default_admin_group_uuid),
+                        ("rbac", "principal"),
+                        principal_id,
+                        "member",
+                    )
                 )
-            )
+            else:
+                tuples_to_remove.append(
+                    create_relationship(
+                        ("rbac", "group"),
+                        str(mapping.default_admin_group_uuid),
+                        ("rbac", "principal"),
+                        principal_id,
+                        "member",
+                    )
+                )
 
         self._replicator.replicate(
             ReplicationEvent(
@@ -134,6 +132,8 @@ class TenantBootstrapService:
                 remove=tuples_to_remove,
             )
         )
+
+        return bootstrapped_tenant
 
     def _disable_user_in_tenant(self, user: User):
         """Disable a user in a tenant."""
@@ -149,7 +149,7 @@ class TenantBootstrapService:
             tuples_to_remove.append(
                 create_relationship(
                     ("rbac", "group"),
-                    mapping.default_group_uuid,
+                    str(mapping.default_group_uuid),
                     ("rbac", "principal"),
                     principal_id,
                     "member",
@@ -158,7 +158,7 @@ class TenantBootstrapService:
             tuples_to_remove.append(
                 create_relationship(
                     ("rbac", "group"),
-                    mapping.default_admin_group_uuid,
+                    str(mapping.default_admin_group_uuid),
                     ("rbac", "principal"),
                     principal_id,
                     "member",
@@ -168,14 +168,14 @@ class TenantBootstrapService:
             pass
 
         try:
-            principal = Principal.objects.filter(username=user.username, tenant_id=mapping.tenant_id).get()
+            principal = Principal.objects.filter(username=user.username, tenant__org_id=user.org_id).get()
 
             for group in principal.group.all():
                 group.principals.remove(principal)
                 tuples_to_remove.append(
                     create_relationship(
                         ("rbac", "group"),
-                        group.uuid,
+                        str(group.uuid),
                         ("rbac", "principal"),
                         principal_id,
                         "member",
@@ -201,16 +201,15 @@ class TenantBootstrapService:
             org_id=org_id,
             defaults={"ready": True, "account_id": account_number, "tenant_name": tenant_name},
         )
-        bootstrap = self._bootstrap_tenant(tenant)
-        self._replicator.replicate(
-            ReplicationEvent(
-                type=ReplicationEventType.BOOTSTRAP_TENANT,
-                info={"org_id": org_id, "default_workspace_uuid": str(bootstrap.default_workspace.uuid)},
-                partition_key="rbactodo",
-                add=bootstrap.tuples,
+        try:
+            mapping = TenantMapping.objects.get(tenant=tenant)
+            return BootstrappedTenant(
+                tenant=tenant,
+                mapping=mapping,
             )
-        )
-        return bootstrap
+        except TenantMapping.DoesNotExist:
+            bootstrap = self._bootstrap_tenant(tenant)
+            return bootstrap
 
     def _bootstrap_tenant(self, tenant: Tenant) -> BootstrappedTenant:
         # Set up workspace hierarchy for Tenant
@@ -247,7 +246,16 @@ class TenantBootstrapService:
         mapping = TenantMapping.objects.create(tenant=tenant)
         relationships.extend(self._bootstrap_default_access(tenant, mapping, default_workspace))
 
-        return BootstrappedTenant(tenant, root_workspace, default_workspace, mapping, relationships)
+        self._replicator.replicate(
+            ReplicationEvent(
+                type=ReplicationEventType.BOOTSTRAP_TENANT,
+                info={"org_id": tenant.org_id, "default_workspace_uuid": str(default_workspace.uuid)},
+                partition_key="rbactodo",
+                add=relationships,
+            )
+        )
+
+        return BootstrappedTenant(tenant, mapping)
 
     def _bootstrap_default_access(
         self, tenant: Tenant, mapping: TenantMapping, default_workspace: Workspace
@@ -260,6 +268,12 @@ class TenantBootstrapService:
         platform_default_role = self._get_platform_default_policy_uuid()
         admin_default_role = self._get_admin_default_policy_uuid()
 
+        if platform_default_role is None:
+            logging.warning("No platform default role found for public tenant. Default access will not be set up.")
+
+        if admin_default_role is None:
+            logging.warning("No admin default role found for public tenant. Default access will not be set up.")
+
         default_workspace_uuid = str(default_workspace.uuid)
         default_user_role_binding_uuid = str(mapping.default_user_role_binding_uuid)
         default_admin_role_binding_uuid = str(mapping.default_admin_role_binding_uuid)
@@ -267,7 +281,7 @@ class TenantBootstrapService:
         tuples_to_add: List[Relationship] = []
 
         # Add default role binding IFF there is no custom default access for the tenant
-        if not Group.objects.filter(platform_default=True, tenant=tenant).exists():
+        if platform_default_role and not Group.objects.filter(platform_default=True, tenant=tenant).exists():
             tuples_to_add.extend(
                 [
                     create_relationship(
@@ -296,50 +310,58 @@ class TenantBootstrapService:
             )
 
         # Admin role binding is not customizable
-        tuples_to_add.extend(
-            [
-                create_relationship(
-                    ("rbac", "workspace"),
-                    default_workspace_uuid,
-                    ("rbac", "role_binding"),
-                    default_admin_role_binding_uuid,
-                    "binding",
-                ),
-                create_relationship(
-                    ("rbac", "role_binding"),
-                    default_admin_role_binding_uuid,
-                    ("rbac", "role"),
-                    admin_default_role,
-                    "role",
-                ),
-                create_relationship(
-                    ("rbac", "role_binding"),
-                    default_admin_role_binding_uuid,
-                    ("rbac", "group"),
-                    str(mapping.default_admin_group_uuid),
-                    "group",
-                    "member",
-                ),
-            ]
-        )
+        if admin_default_role:
+            tuples_to_add.extend(
+                [
+                    create_relationship(
+                        ("rbac", "workspace"),
+                        default_workspace_uuid,
+                        ("rbac", "role_binding"),
+                        default_admin_role_binding_uuid,
+                        "binding",
+                    ),
+                    create_relationship(
+                        ("rbac", "role_binding"),
+                        default_admin_role_binding_uuid,
+                        ("rbac", "role"),
+                        admin_default_role,
+                        "role",
+                    ),
+                    create_relationship(
+                        ("rbac", "role_binding"),
+                        default_admin_role_binding_uuid,
+                        ("rbac", "group"),
+                        str(mapping.default_admin_group_uuid),
+                        "group",
+                        "member",
+                    ),
+                ]
+            )
 
         return tuples_to_add
 
-    def _get_platform_default_policy_uuid(self) -> str:
-        if self._platform_default_policy_uuid is None:
-            policy = Group.objects.get(
-                platform_default=True, system=True, tenant=self._get_public_tenant()
-            ).policies.get()
-            self._platform_default_policy_uuid = str(policy.uuid)
-        return self._platform_default_policy_uuid
+    def _get_platform_default_policy_uuid(self) -> Optional[str]:
+        try:
+            if self._platform_default_policy_uuid is None:
+                # TODO this doesnt always exist in tests
+                policy = Group.objects.get(
+                    platform_default=True, system=True, tenant=self._get_public_tenant()
+                ).policies.get()
+                self._platform_default_policy_uuid = str(policy.uuid)
+            return self._platform_default_policy_uuid
+        except Group.DoesNotExist:
+            return None
 
-    def _get_admin_default_policy_uuid(self) -> str:
-        if self._admin_default_policy_uuid is None:
-            policy = Group.objects.get(
-                admin_default=True, system=True, tenant=self._get_public_tenant()
-            ).policies.get()
-            self._admin_default_policy_uuid = str(policy.uuid)
-        return self._admin_default_policy_uuid
+    def _get_admin_default_policy_uuid(self) -> Optional[str]:
+        try:
+            if self._admin_default_policy_uuid is None:
+                policy = Group.objects.get(
+                    admin_default=True, system=True, tenant=self._get_public_tenant()
+                ).policies.get()
+                self._admin_default_policy_uuid = str(policy.uuid)
+            return self._admin_default_policy_uuid
+        except Group.DoesNotExist:
+            return None
 
     def _get_public_tenant(self) -> Tenant:
         if self._public_tenant is None:

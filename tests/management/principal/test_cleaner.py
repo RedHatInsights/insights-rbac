@@ -354,6 +354,7 @@ class PrincipalUMBTests(IdentityRequest):
                     "first_name": "user",
                     "last_name": "test",
                     "is_org_admin": False,
+                    "is_active": True,
                 }
             ],
         },
