@@ -118,7 +118,7 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
                 try:
                     bootstrap = self.bootstrap_service.update_user(request.user)
                     if bootstrap is None:
-                        # User is inactive. Authentication must be stale.
+                        # User is inactive. Should never happen but just in case...
                         raise Http404()
                     tenant = bootstrap.tenant
                 except IntegrityError:
