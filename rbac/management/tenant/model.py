@@ -226,6 +226,7 @@ class TenantBootstrapService:
             parent=root_workspace,
             name="Default Workspace",
         )
+        tenant_id = f"{self._user_domain}:{tenant.org_id}"
         relationships = [
             create_relationship(
                 ("rbac", "workspace"),
@@ -234,17 +235,14 @@ class TenantBootstrapService:
                 str(root_workspace.uuid),
                 "parent",
             ),
-            # TODO: tenant id's should also be prefixed with domain
             create_relationship(
-                ("rbac", "workspace"), str(root_workspace.uuid), ("rbac", "tenant"), tenant.org_id, "parent"
+                ("rbac", "workspace"), str(root_workspace.uuid), ("rbac", "tenant"), tenant_id, "parent"
             ),
         ]
 
         # Include platform for tenant
         relationships.append(
-            create_relationship(
-                ("rbac", "tenant"), str(tenant.org_id), ("rbac", "platform"), settings.ENV_NAME, "platform"
-            )
+            create_relationship(("rbac", "tenant"), tenant_id, ("rbac", "platform"), settings.ENV_NAME, "platform")
         )
 
         mapping = TenantMapping.objects.create(tenant=tenant)
