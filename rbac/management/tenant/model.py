@@ -51,27 +51,6 @@ class TenantBootstrapService:
         self._replicator = replicator
         self._public_tenant = public_tenant
 
-    def _get_public_tenant(self) -> Tenant:
-        if self._public_tenant is None:
-            self._public_tenant = Tenant.objects.get(tenant_name="public")
-        return self._public_tenant
-
-    def _get_platform_default_policy_uuid(self) -> str:
-        if self._platform_default_policy_uuid is None:
-            policy = Group.objects.get(
-                platform_default=True, system=True, tenant=self._get_public_tenant()
-            ).policies.get()
-            self._platform_default_policy_uuid = str(policy.uuid)
-        return self._platform_default_policy_uuid
-
-    def _get_admin_default_policy_uuid(self) -> str:
-        if self._admin_default_policy_uuid is None:
-            policy = Group.objects.get(
-                admin_default=True, system=True, tenant=self._get_public_tenant()
-            ).policies.get()
-            self._admin_default_policy_uuid = str(policy.uuid)
-        return self._admin_default_policy_uuid
-
     def new_bootstrapped_tenant(self) -> BootstrappedTenant:
         """Create a new tenant."""
         tenant = Tenant.objects.create()
@@ -79,7 +58,7 @@ class TenantBootstrapService:
 
     @transaction.atomic
     def get_or_bootstrap_tenant(self, org_id: str, account_number: Optional[str] = None) -> BootstrappedTenant:
-        """Get or create a tenant and replicate relations for it."""
+        """Get or create a tenant and replicate relations for it in a single transaction."""
         return self._get_or_bootstrap_tenant(org_id, account_number)
 
     @transaction.atomic
@@ -87,7 +66,11 @@ class TenantBootstrapService:
         self,
         tenant: Tenant,
     ) -> BootstrappedTenant:
-        """Bootstrap a tenant with built-in workspaces, default groups, and default role bindings."""
+        """
+        Bootstrap a tenant with built-in workspaces, default groups, and default role bindings.
+
+        Replicates related tuples with writes in a single transaction.
+        """
         return self._bootstrap_tenant(tenant)
 
     @transaction.atomic
@@ -328,6 +311,27 @@ class TenantBootstrapService:
                 "member",
             ),
         ]
+
+    def _get_platform_default_policy_uuid(self) -> str:
+        if self._platform_default_policy_uuid is None:
+            policy = Group.objects.get(
+                platform_default=True, system=True, tenant=self._get_public_tenant()
+            ).policies.get()
+            self._platform_default_policy_uuid = str(policy.uuid)
+        return self._platform_default_policy_uuid
+
+    def _get_admin_default_policy_uuid(self) -> str:
+        if self._admin_default_policy_uuid is None:
+            policy = Group.objects.get(
+                admin_default=True, system=True, tenant=self._get_public_tenant()
+            ).policies.get()
+            self._admin_default_policy_uuid = str(policy.uuid)
+        return self._admin_default_policy_uuid
+
+    def _get_public_tenant(self) -> Tenant:
+        if self._public_tenant is None:
+            self._public_tenant = Tenant.objects.get(tenant_name="public")
+        return self._public_tenant
 
     def _ensure_principal_with_user_id_in_tenant(self, user: User, tenant: Tenant):
         principal, created = Principal.objects.get_or_create(
