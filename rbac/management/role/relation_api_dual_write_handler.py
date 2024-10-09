@@ -168,6 +168,18 @@ class NoopReplicator(RelationReplicator):
         pass
 
 
+class SeedingRelationApiDualWriteHandler:
+    """Class to handle Dual Write API related operations specific to the seeding process."""
+
+    _replicator: RelationReplicator
+
+    def __init__(self, replicator: Optional[RelationReplicator] = None):
+        _replicator = replicator if replicator else OutboxReplicator(None)
+
+    def replicate_system_role(role: Role):
+        pass
+        
+
 class RelationApiDualWriteHandler:
     """Class to handle Dual Write API related operations."""
 
