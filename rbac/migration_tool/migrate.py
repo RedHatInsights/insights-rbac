@@ -30,7 +30,8 @@ from .ingest import extract_info_into_v1_role
 
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
-
+DEFAULT_GROUP = Tenant.objects.get(tenant_name="public").group_set.get(platform_default=True)
+DEFAULT_ADMIN_GROUP = Tenant.objects.get(tenant_name="public").group_set.get(admin_default=True)
 
 def spicedb_relationships(v2_role_bindings: FrozenSet[V2rolebinding], root_workspace: str):
     """Generate a set of relationships for the given set of v2 role bindings."""
@@ -92,7 +93,7 @@ def migrate_role(role: Role, write_db: bool, root_workspace: str, default_worksp
     output_relationships(relationships, write_db)
 
 
-def migrate_workspace(tenant: Tenant, write_db: bool):
+def migrate_workspace(tenant: Tenant, write_db: bool, env: str):
     """Migrate a workspace from v1 to v2."""
     root_workspace = f"root-workspace-{tenant.org_id}"
     # Org id represents the default workspace for now
@@ -101,7 +102,7 @@ def migrate_workspace(tenant: Tenant, write_db: bool):
         create_relationship("workspace", root_workspace, "tenant", tenant.org_id, "parent"),
     ]
     # Include realm for tenant
-    relationships.append(create_relationship("tenant", str(tenant.org_id), "realm", settings.ENV_NAME, "realm"))
+    relationships.append(create_relationship("tenant", str(tenant.org_id), "realm", env, "realm"))
     output_relationships(relationships, write_db)
     return root_workspace, tenant.org_id
 
@@ -135,7 +136,8 @@ def migrate_users_for_groups(tenant: Tenant, write_db: bool):
 def migrate_data_for_tenant(tenant: Tenant, app_list: list, write_db: bool):
     """Migrate all data for a given tenant."""
     logger.info("Creating workspace.")
-    root_workspace, default_workspace = migrate_workspace(tenant, write_db)
+    env = settings.ENV_NAME
+    root_workspace, default_workspace = migrate_workspace(tenant, write_db, env)
     logger.info("Workspace migrated.")
 
     logger.info("Relating users to tenant.")
@@ -174,3 +176,19 @@ def migrate_data(exclude_apps: list = [], orgs: list = [], write_db: bool = Fals
         count += 1
         logger.info(f"Finished migrating data for tenant: {tenant.org_id}. {count} of {total} tenants completed")
     logger.info("Finished migrating data for all tenants")
+
+
+def relationships_for_new_user(user_id, org_admin, tenant):
+    """Create relationships for new user."""
+    relationships = []
+    relationships.append(create_relationship("tenant", str(tenant.org_id), "user", user_id, "member"))
+    group_default = tenant.group_set.filter(platform_default=True).first()
+    if not group_default:  # Means it is not custom platform_default
+        group_default = DEFAULT_GROUP
+    relationships.append(create_relationship("group", str(group_default.uuid), "user", user_id, "member"))
+    if org_admin:
+        admin_default = tenant.group_set.filter(admin_default=True).first()
+        if not admin_default:
+            admin_default = DEFAULT_ADMIN_GROUP
+        relationships.append(create_relationship("group", str(admin_default.uuid), "user", user_id, "member"))
+    return relationships

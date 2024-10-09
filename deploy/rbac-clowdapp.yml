@@ -575,6 +575,37 @@ objects:
             requests:
               cpu: 50m
               memory: 512Mi
+      - name: user-id-populator
+        podSpec:
+          image: quay.io/cloudservices/rbac:latest
+          command:
+            - ./rbac/manage.py import_tenant_user_data
+            - --env
+            - ${ENV_NAME}
+            - --start_line
+            - ${USER_ID_POPULATOR_START_LINE}
+            - --batch_size
+            - ${USER_ID_POPULATOR_BATCH_SIZE}
+          env:
+            - name: S3_AWS_ACCESS_KEY_ID
+              value: ${S3_AWS_ACCESS_KEY_ID}
+            - name: S3_AWS_SECRET_ACCESS_KEY
+              value: ${S3_AWS_SECRET_ACCESS_KEY}
+          resources:
+            limits:
+              cpu: 300m
+              memory: 1Gi
+            requests:
+              cpu: 50m
+              memory: 512Mi
+          volumes:
+          - name: users-data
+            persistentVolumeClaim:
+              claimName: users-data
+          volumeMounts:
+          - mountPath: /tmp
+            name: users-data
+
 - apiVersion: v1
   kind: ConfigMap
   metadata:
@@ -641,6 +672,19 @@ objects:
     cert: MTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTE=
     key: MjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMg==
   type: Opaque
+
+- kind: PersistentVolumeClaim
+  apiVersion: v1
+  metadata:
+    labels:
+      app: rbac
+    name: users-data
+  spec:
+    accessModes:
+    - ReadWriteOnce
+    resources:
+      requests:
+        storage: 2Gi
 
 parameters:
 - description: Image name
@@ -925,3 +969,13 @@ parameters:
 - name: READ_ONLY_API_MODE
   description: Enforce GET only on RBAC APIs
   value: 'False'
+- name: S3_AWS_ACCESS_KEY_ID
+  description: The AWS access key ID for S3
+- name: S3_AWS_SECRET_ACCESS_KEY
+  description: The AWS secret access key for S3
+- name: USER_ID_POPULATOR_START_LINE
+  description: The line of the data file to start reading user IDs from
+  value: '1'
+- name: USER_ID_POPULATOR_BATCH_SIZE
+  description: The number of user records to process in each batch
+  value: '1000'
