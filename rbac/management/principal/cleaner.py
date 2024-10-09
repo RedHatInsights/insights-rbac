@@ -19,7 +19,6 @@
 import logging
 import os
 import ssl
-from types import SimpleNamespace
 
 import xmltodict
 from django.conf import settings

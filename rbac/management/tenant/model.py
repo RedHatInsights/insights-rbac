@@ -8,7 +8,6 @@ from django.conf import settings
 from django.db import models, transaction
 from kessel.relations.v1beta1.common_pb2 import Relationship
 from management.group.model import Group
-from management.policy.model import Policy
 from management.principal.model import Principal
 from management.role.relation_api_dual_write_handler import RelationReplicator, ReplicationEvent, ReplicationEventType
 from management.workspace.model import Workspace

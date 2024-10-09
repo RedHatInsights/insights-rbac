@@ -26,7 +26,6 @@ from management.principal.model import Principal
 from management.role.model import BindingMapping, Role
 from management.role.relation_api_dual_write_handler import (
     DualWriteException,
-    ModelDescriptor,
     OutboxReplicator,
     RelationReplicator,
     ReplicationEvent,
