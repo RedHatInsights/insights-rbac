@@ -29,7 +29,8 @@ from django.urls import resolve
 from django.utils.deprecation import MiddlewareMixin
 from management.cache import TenantCache
 from management.models import Principal
-from management.tenant.model import get_or_bootstrap_tenant
+from management.role.relation_api_dual_write_handler import OutboxReplicator
+from management.tenant.model import TenantBootstrapService
 from management.utils import APPLICATION_KEY, access_for_principal, validate_psk
 from prometheus_client import Counter
 from rest_framework import status
@@ -43,7 +44,7 @@ from api.common import (
     RH_RBAC_PSK,
 )
 from api.models import Tenant, User
-from api.serializers import create_tenant_name, extract_header
+from api.serializers import extract_header
 
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
@@ -95,6 +96,8 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
     """
 
     header = RH_IDENTITY_HEADER
+    # TODO: Lazy bootstrapping of tenants should use a synchronous replicator
+    bootstrap_service = TenantBootstrapService(OutboxReplicator())
 
     def get_tenant(self, model, hostname, request):
         """Override the tenant selection logic."""
@@ -106,9 +109,8 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
                 except Tenant.DoesNotExist:
                     raise Http404()
             else:
-                bootstrap = get_or_bootstrap_tenant(request.user.org_id, "TODO", "TODO", request.user.account)
+                bootstrap = self.bootstrap_service.get_or_bootstrap_tenant(request.user.org_id, request.user.account)
                 tenant = bootstrap.tenant
-                # TODO: publish relations
             TENANTS.save_tenant(tenant)
         return tenant
 

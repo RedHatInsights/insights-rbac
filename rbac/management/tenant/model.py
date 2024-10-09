@@ -7,6 +7,8 @@ from typing import NamedTuple
 from django.conf import settings
 from django.db import models, transaction
 from kessel.relations.v1beta1.common_pb2 import Relationship
+from management.group.model import Group
+from management.policy.model import Policy
 from management.principal.model import Principal
 from management.role.relation_api_dual_write_handler import RelationReplicator, ReplicationEvent, ReplicationEventType
 from management.workspace.model import Workspace
@@ -40,32 +42,53 @@ class TenantBootstrapService:
 
     _replicator: RelationReplicator
     _user_domain = settings.PRINCIPAL_USER_DOMAIN
+    _public_tenant: Optional[Tenant]
+    _platform_default_policy_uuid: Optional[str] = None
+    _admin_default_policy_uuid: Optional[str] = None
 
-    def __init__(self, replicator: RelationReplicator):
+    def __init__(self, replicator: RelationReplicator, public_tenant: Optional[Tenant] = None):
         """Initialize the TenantBootstrapService with a RelationReplicator."""
         self._replicator = replicator
+        self._public_tenant = public_tenant
 
-    def new_bootstrapped_tenant(self, platform_default_role: str, admin_default_role: str) -> BootstrappedTenant:
+    def _get_public_tenant(self) -> Tenant:
+        if self._public_tenant is None:
+            self._public_tenant = Tenant.objects.get(tenant_name="public")
+        return self._public_tenant
+
+    def _get_platform_default_policy_uuid(self) -> str:
+        if self._platform_default_policy_uuid is None:
+            policy = Group.objects.get(
+                platform_default=True, system=True, tenant=self._get_public_tenant()
+            ).policies.get()
+            self._platform_default_policy_uuid = str(policy.uuid)
+        return self._platform_default_policy_uuid
+
+    def _get_admin_default_policy_uuid(self) -> str:
+        if self._admin_default_policy_uuid is None:
+            policy = Group.objects.get(
+                admin_default=True, system=True, tenant=self._get_public_tenant()
+            ).policies.get()
+            self._admin_default_policy_uuid = str(policy.uuid)
+        return self._admin_default_policy_uuid
+
+    def new_bootstrapped_tenant(self) -> BootstrappedTenant:
         """Create a new tenant."""
         tenant = Tenant.objects.create()
-        return self.bootstrap_tenant(tenant, platform_default_role, admin_default_role)
+        return self.bootstrap_tenant(tenant)
 
     @transaction.atomic
-    def get_or_bootstrap_tenant(
-        self, org_id: str, platform_default_role: str, admin_default_role: str, account_number: Optional[str] = None
-    ) -> BootstrappedTenant:
+    def get_or_bootstrap_tenant(self, org_id: str, account_number: Optional[str] = None) -> BootstrappedTenant:
         """Get or create a tenant and replicate relations for it."""
-        return self._get_or_bootstrap_tenant(org_id, platform_default_role, admin_default_role, account_number)
+        return self._get_or_bootstrap_tenant(org_id, account_number)
 
     @transaction.atomic
     def bootstrap_tenant(
         self,
         tenant: Tenant,
-        platform_default_role: str,
-        admin_default_role: str,
     ) -> BootstrappedTenant:
         """Bootstrap a tenant with built-in workspaces, default groups, and default role bindings."""
-        return self._bootstrap_tenant(tenant, platform_default_role, admin_default_role)
+        return self._bootstrap_tenant(tenant)
 
     @transaction.atomic
     def update_user(self, user: User, bootstrapped_tenant: Optional[BootstrappedTenant] = None):
@@ -77,9 +100,7 @@ class TenantBootstrapService:
             self._disable_user_in_tenant(user)
             return
 
-        bootstrapped_tenant = bootstrapped_tenant or self._get_or_bootstrap_tenant(
-            user.org_id, settings.PLATFORM_DEFAULT_ROLE, settings.ADMIN_DEFAULT_ROLE, user.account
-        )
+        bootstrapped_tenant = bootstrapped_tenant or self._get_or_bootstrap_tenant(user.org_id, user.account)
 
         mapping = bootstrapped_tenant.mapping
         # TODO: DRY this? repeated in RelationApiDualWriteGroupHandler
@@ -138,15 +159,24 @@ class TenantBootstrapService:
 
         # Get tenant mapping if present but no need to create if not
         tuples_to_remove = []
+        # TODO: DRY this? repeated in RelationApiDualWriteGroupHandler
         principal_id = f"{self._user_domain}:{user.user_id}"
 
         try:
             mapping = TenantMapping.objects.filter(tenant__org_id=user.org_id).get()
-            # TODO: DRY this? repeated in RelationApiDualWriteGroupHandler
             tuples_to_remove.append(
                 create_relationship(
                     ("rbac", "group"),
                     mapping.default_group_uuid,
+                    ("rbac", "principal"),
+                    principal_id,
+                    "member",
+                )
+            )
+            tuples_to_remove.append(
+                create_relationship(
+                    ("rbac", "group"),
+                    mapping.default_admin_group_uuid,
                     ("rbac", "principal"),
                     principal_id,
                     "member",
@@ -183,19 +213,13 @@ class TenantBootstrapService:
             )
         )
 
-    def _get_or_bootstrap_tenant(
-        self,
-        org_id: str,
-        platform_default_role: str,
-        admin_default_role: str,
-        account_number: Optional[str] = None,
-    ) -> BootstrappedTenant:
+    def _get_or_bootstrap_tenant(self, org_id: str, account_number: Optional[str] = None) -> BootstrappedTenant:
         tenant_name = f"org{org_id}"
         tenant, _ = Tenant.objects.get_or_create(
             org_id=org_id,
             defaults={"ready": True, "account_id": account_number, "tenant_name": tenant_name},
         )
-        bootstrap = self._bootstrap_tenant(tenant, platform_default_role, admin_default_role)
+        bootstrap = self._bootstrap_tenant(tenant)
         self._replicator.replicate(
             ReplicationEvent(
                 type=ReplicationEventType.BOOTSTRAP_TENANT,
@@ -206,12 +230,7 @@ class TenantBootstrapService:
         )
         return bootstrap
 
-    def _bootstrap_tenant(
-        self,
-        tenant: Tenant,
-        platform_default_role: str,
-        admin_default_role: str,
-    ) -> BootstrappedTenant:
+    def _bootstrap_tenant(self, tenant: Tenant) -> BootstrappedTenant:
         # Set up workspace hierarchy for Tenant
         root_workspace = Workspace.objects.create(
             tenant=tenant,
@@ -245,24 +264,19 @@ class TenantBootstrapService:
         )
 
         mapping = TenantMapping.objects.create(tenant=tenant)
-        relationships.extend(
-            self._bootstrap_default_access(mapping, default_workspace, platform_default_role, admin_default_role)
-        )
+        relationships.extend(self._bootstrap_default_access(mapping, default_workspace))
 
         return BootstrappedTenant(tenant, root_workspace, default_workspace, mapping, relationships)
 
-    def _bootstrap_default_access(
-        self,
-        mapping: TenantMapping,
-        default_workspace: Workspace,
-        platform_default_role: str,
-        admin_default_role: str,
-    ) -> List[Relationship]:
+    def _bootstrap_default_access(self, mapping: TenantMapping, default_workspace: Workspace) -> List[Relationship]:
         """
         Bootstrap default access for a tenant's users and admins.
 
         Creates role bindings between the tenant's default workspace, default groups, and system policies.
         """
+        platform_default_role = self._get_platform_default_policy_uuid()
+        admin_default_role = self._get_admin_default_policy_uuid()
+
         default_workspace_uuid = str(default_workspace.uuid)
         default_user_role_binding_uuid = str(mapping.default_user_role_binding_uuid)
         default_admin_role_binding_uuid = str(mapping.default_admin_role_binding_uuid)
