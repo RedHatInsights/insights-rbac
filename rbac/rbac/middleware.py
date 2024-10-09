@@ -113,8 +113,6 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
                     raise Http404()
                 # Tenants are normally bootstrapped via principal job,
                 # but there is a race condition where the user can use the service before the message is processed.
-                # This can ALSO still fail, though,
-                # if between the get above and this create the message WAS processed.
                 try:
                     bootstrap = self.bootstrap_service.update_user(request.user)
                     if bootstrap is None:
@@ -122,7 +120,8 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
                         raise Http404()
                     tenant = bootstrap.tenant
                 except IntegrityError:
-                    # The tenant was created by cleaner job in the meantime; just get it now.
+                    # This would happen if between the time we first check for a tenant,
+                    # and when we went to create one, another request or the listener job created one.
                     tenant = Tenant.objects.get(org_id=request.user.org_id)
             TENANTS.save_tenant(tenant)
         return tenant
