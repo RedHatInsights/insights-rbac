@@ -377,3 +377,43 @@ class PrincipalUMBTests(IdentityRequest):
         client_mock.ack.assert_called_once()
         self.assertTrue(Tenant.objects.filter(org_id="17685860").exists())
         self.assertTrue(Principal.objects.filter(user_id=self.principal_user_id).exists())
+
+
+@override_settings(V2_BOOTSTRAP_TENANT=True)
+class PrincipalUMBTestsWithV2TenantBootstrap(PrincipalUMBTests):
+    """Test the principal processor functions with V2 tenant bootstrap enabled."""
+
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={
+            "status_code": 200,
+            "data": [
+                {
+                    "user_id": 56780000,
+                    "org_id": "17685860",
+                    "username": "principal-test",
+                    "email": "test_user@email.com",
+                    "first_name": "user",
+                    "last_name": "test",
+                    "is_org_admin": False,
+                    "is_active": True,
+                }
+            ],
+        },
+    )
+    @patch("management.principal.cleaner.UMB_CLIENT")
+    @override_settings(PRINCIPAL_CLEANUP_UPDATE_ENABLED_UMB=False)
+    def test_principal_creation_event_disabled(self, client_mock, proxy_mock):
+        """Test that we can run principal creation event."""
+        public_tenant = Tenant.objects.get(tenant_name="public")
+        Group.objects.create(name="default", platform_default=True, tenant=public_tenant)
+        client_mock.canRead.side_effect = [True, False]
+        client_mock.receiveFrame.return_value = MagicMock(body=FRAME_BODY_CREATION)
+        Tenant.objects.get(org_id="17685860").delete()
+        process_principal_events_from_umb()
+
+        client_mock.receiveFrame.assert_called_once()
+        client_mock.disconnect.assert_called_once()
+        client_mock.ack.assert_called_once()
+        self.assertFalse(Tenant.objects.filter(org_id="17685860").exists())
+        self.assertFalse(Principal.objects.filter(user_id=self.principal_user_id).exists())
