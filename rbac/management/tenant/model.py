@@ -234,6 +234,7 @@ class TenantBootstrapService:
                 str(root_workspace.uuid),
                 "parent",
             ),
+            # TODO: tenant id's should also be prefixed with domain
             create_relationship(
                 ("rbac", "workspace"), str(root_workspace.uuid), ("rbac", "tenant"), tenant.org_id, "parent"
             ),
@@ -247,11 +248,13 @@ class TenantBootstrapService:
         )
 
         mapping = TenantMapping.objects.create(tenant=tenant)
-        relationships.extend(self._bootstrap_default_access(mapping, default_workspace))
+        relationships.extend(self._bootstrap_default_access(tenant, mapping, default_workspace))
 
         return BootstrappedTenant(tenant, root_workspace, default_workspace, mapping, relationships)
 
-    def _bootstrap_default_access(self, mapping: TenantMapping, default_workspace: Workspace) -> List[Relationship]:
+    def _bootstrap_default_access(
+        self, tenant: Tenant, mapping: TenantMapping, default_workspace: Workspace
+    ) -> List[Relationship]:
         """
         Bootstrap default access for a tenant's users and admins.
 
@@ -263,54 +266,67 @@ class TenantBootstrapService:
         default_workspace_uuid = str(default_workspace.uuid)
         default_user_role_binding_uuid = str(mapping.default_user_role_binding_uuid)
         default_admin_role_binding_uuid = str(mapping.default_admin_role_binding_uuid)
-        return [
-            # Default role binding
-            create_relationship(
-                ("rbac", "workspace"),
-                default_workspace_uuid,
-                ("rbac", "role_binding"),
-                default_user_role_binding_uuid,
-                "binding",
-            ),
-            create_relationship(
-                ("rbac", "role_binding"),
-                default_user_role_binding_uuid,
-                ("rbac", "role"),
-                platform_default_role,
-                "role",
-            ),
-            create_relationship(
-                ("rbac", "role_binding"),
-                default_user_role_binding_uuid,
-                ("rbac", "group"),
-                str(mapping.default_group_uuid),
-                "group",
-                "member",
-            ),
-            # Admin role binding
-            create_relationship(
-                ("rbac", "workspace"),
-                str(default_workspace.uuid),
-                ("rbac", "role_binding"),
-                default_admin_role_binding_uuid,
-                "binding",
-            ),
-            create_relationship(
-                ("rbac", "role_binding"),
-                default_admin_role_binding_uuid,
-                ("rbac", "role"),
-                admin_default_role,
-                "role",
-            ),
-            create_relationship(
-                ("rbac", "role_binding"),
-                default_admin_role_binding_uuid,
-                ("rbac", "group"),
-                str(mapping.default_admin_group_uuid),
-                "group",
-                "member",
-            ),
-        ]
+
+        tuples_to_add: List[Relationship] = []
+
+        # Add default role binding IFF there is no custom default access for the tenant
+        if not Group.objects.filter(platform_default=True, tenant=tenant).exists():
+            tuples_to_add.extend(
+                [
+                    create_relationship(
+                        ("rbac", "workspace"),
+                        default_workspace_uuid,
+                        ("rbac", "role_binding"),
+                        default_user_role_binding_uuid,
+                        "binding",
+                    ),
+                    create_relationship(
+                        ("rbac", "role_binding"),
+                        default_user_role_binding_uuid,
+                        ("rbac", "role"),
+                        platform_default_role,
+                        "role",
+                    ),
+                    create_relationship(
+                        ("rbac", "role_binding"),
+                        default_user_role_binding_uuid,
+                        ("rbac", "group"),
+                        str(mapping.default_group_uuid),
+                        "group",
+                        "member",
+                    ),
+                ]
+            )
+
+        # Admin role binding is not customizable
+        tuples_to_add.extend(
+            [
+                create_relationship(
+                    ("rbac", "workspace"),
+                    default_workspace_uuid,
+                    ("rbac", "role_binding"),
+                    default_admin_role_binding_uuid,
+                    "binding",
+                ),
+                create_relationship(
+                    ("rbac", "role_binding"),
+                    default_admin_role_binding_uuid,
+                    ("rbac", "role"),
+                    admin_default_role,
+                    "role",
+                ),
+                create_relationship(
+                    ("rbac", "role_binding"),
+                    default_admin_role_binding_uuid,
+                    ("rbac", "group"),
+                    str(mapping.default_admin_group_uuid),
+                    "group",
+                    "member",
+                ),
+            ]
+        )
+
+        return tuples_to_add
 
     def _get_platform_default_policy_uuid(self) -> str:
         if self._platform_default_policy_uuid is None:
