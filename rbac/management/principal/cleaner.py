@@ -172,7 +172,7 @@ def process_umb_event(frame, umb_client: Stomp, bootstrap_service: TenantBootstr
     # By default, only process disabled users.
     # If the setting is enabled, process all users.
     if not user.is_active or settings.PRINCIPAL_CLEANUP_UPDATE_ENABLED_UMB:
-        bootstrap_service.upsert_user(user)
+        bootstrap_service.update_user(user)
     umb_client.ack(frame)
 
 

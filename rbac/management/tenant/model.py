@@ -46,8 +46,8 @@ def get_tenant_bootstrap_service(replicator: RelationReplicator) -> "TenantBoots
 class TenantBootstrapService(Protocol):
     """Service for bootstrapping users in tenants."""
 
-    def upsert_user(
-        self, user: User, bootstrapped_tenant: Optional[BootstrappedTenant] = None
+    def update_user(
+        self, user: User, upsert: bool = False, bootstrapped_tenant: Optional[BootstrappedTenant] = None
     ) -> Optional[BootstrappedTenant]:
         """Bootstrap a user in a tenant."""
         ...
@@ -62,43 +62,44 @@ class V1TenantBootstrapService:
         """Initialize the V1TenantBootstrapService."""
         self._add_user_id = settings.V1_BOOTSTRAP_ADD_USER_ID
 
-    def upsert_user(
-        self, user: User, bootstrapped_tenant: Optional[BootstrappedTenant] = None
+    def update_user(
+        self, user: User, upsert: bool = False, bootstrapped_tenant: Optional[BootstrappedTenant] = None
     ) -> Optional[BootstrappedTenant]:
         """Bootstrap a user in a tenant."""
         if user.is_active:
-            tenant_name = create_tenant_name(user.account)
-            tenant, _ = Tenant.objects.get_or_create(
-                org_id=user.org_id,
-                defaults={"ready": True, "account_id": user.account, "tenant_name": tenant_name},
-            )
-            if self._add_user_id:
-                principal, created = Principal.objects.get_or_create(
-                    username=user.username,
-                    tenant=tenant,
-                    defaults={"user_id": user.user_id},
-                )
-                if not created and principal.user_id != user.user_id:
-                    principal.user_id = user.user_id
-                    principal.save()
-            return BootstrappedTenant(tenant=tenant, mapping=None)
+            return self._update_active_user(user, upsert)
         else:
-            try:
-                tenant = Tenant.objects.get(org_id=user.org_id)
-                principal = Principal.objects.get(username=user.username, tenant=tenant)
-                groups = []
-                for group in principal.group.all():
-                    groups.append(group)
-                    # We have to do the removal explicitly in order to clear the cache,
-                    # or the console will still show the cached number of members
-                    group.principals.remove(principal)
-                principal.delete()
-                if not groups:
-                    logger.info(f"Principal {user.user_id} was not under any groups.")
-                for group in groups:
-                    logger.info(f"Principal {user.user_id} was in group with uuid: {group.uuid}")
-            except (Tenant.DoesNotExist, Principal.DoesNotExist):
-                return None
+            return self._update_inactive_user(user)
+
+    def _update_active_user(self, user: User, upsert: bool) -> Optional[BootstrappedTenant]:
+        tenant_name = create_tenant_name(user.account)
+        tenant, _ = Tenant.objects.get_or_create(
+            org_id=user.org_id,
+            defaults={"ready": True, "account_id": user.account, "tenant_name": tenant_name},
+        )
+
+        if self._add_user_id:
+            _ensure_principal_with_user_id_in_tenant(user, tenant, upsert=upsert)
+
+        return BootstrappedTenant(tenant=tenant, mapping=None)
+
+    def _update_inactive_user(self, user: User) -> None:
+        try:
+            tenant = Tenant.objects.get(org_id=user.org_id)
+            principal = Principal.objects.get(username=user.username, tenant=tenant)
+            groups = []
+            for group in principal.group.all():
+                groups.append(group)
+                # We have to do the removal explicitly in order to clear the cache,
+                # or the console will still show the cached number of members
+                group.principals.remove(principal)
+            principal.delete()
+            if not groups:
+                logger.info(f"Principal {user.user_id} was not under any groups.")
+            for group in groups:
+                logger.info(f"Principal {user.user_id} was in group with uuid: {group.uuid}")
+        except (Tenant.DoesNotExist, Principal.DoesNotExist):
+            return None
 
 
 class V2TenantBootstrapService:
@@ -138,14 +139,17 @@ class V2TenantBootstrapService:
         return self._bootstrap_tenant(tenant)
 
     @transaction.atomic
-    def upsert_user(
-        self, user: User, bootstrapped_tenant: Optional[BootstrappedTenant] = None
+    def update_user(
+        self, user: User, upsert: bool = False, bootstrapped_tenant: Optional[BootstrappedTenant] = None
     ) -> Optional[BootstrappedTenant]:
         """
         Bootstrap a user in a tenant.
 
         Create a Tenant (and bootstrap it) if it does not exist.
         If a [bootstrapped_tenant] is provided, it's assumed the Tenant already exists.
+
+        Creates a [Principal] for the [user] if [upsert] is True. Otherwise,
+        only updates the [Principal] with the user's user_id if needed.
 
         Returns [None] if the user is not active.
         """
@@ -165,7 +169,7 @@ class V2TenantBootstrapService:
 
         # Add user to default group if not a service account
         if not user.is_service_account:
-            self._ensure_principal_with_user_id_in_tenant(user, bootstrapped_tenant.tenant)
+            _ensure_principal_with_user_id_in_tenant(user, bootstrapped_tenant.tenant, upsert=upsert)
 
             tuples_to_add.append(
                 create_relationship(
@@ -444,13 +448,23 @@ class V2TenantBootstrapService:
             self._public_tenant = Tenant.objects.get(tenant_name="public")
         return self._public_tenant
 
-    def _ensure_principal_with_user_id_in_tenant(self, user: User, tenant: Tenant):
+
+def _ensure_principal_with_user_id_in_tenant(user: User, tenant: Tenant, upsert: bool = False):
+    created = False
+    principal = None
+
+    if upsert:
         principal, created = Principal.objects.get_or_create(
             username=user.username,
             tenant=tenant,
             defaults={"user_id": user.user_id},
         )
+    else:
+        try:
+            principal = Principal.objects.get(username=user.username, tenant=tenant)
+        except Principal.DoesNotExist:
+            pass
 
-        if not created and principal.user_id != user.user_id:
-            principal.user_id = user.user_id
-            principal.save()
+    if not created and principal and principal.user_id != user.user_id:
+        principal.user_id = user.user_id
+        principal.save()

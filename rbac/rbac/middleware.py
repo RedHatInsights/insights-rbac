@@ -122,7 +122,7 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
                 # Tenants are normally bootstrapped via principal job,
                 # but there is a race condition where the user can use the service before the message is processed.
                 try:
-                    bootstrap = self.bootstrap_service.upsert_user(request.user)
+                    bootstrap = self.bootstrap_service.update_user(request.user, upsert=True)
                     if bootstrap is None:
                         # User is inactive. Should never happen but just in case...
                         raise Http404()

@@ -376,7 +376,7 @@ class PrincipalUMBTests(IdentityRequest):
         client_mock.disconnect.assert_called_once()
         client_mock.ack.assert_called_once()
         self.assertTrue(Tenant.objects.filter(org_id="17685860").exists())
-        self.assertTrue(Principal.objects.filter(user_id=self.principal_user_id).exists())
+        self.assertFalse(Principal.objects.filter(user_id=self.principal_user_id).exists())
 
 
 @override_settings(V2_BOOTSTRAP_TENANT=True)
