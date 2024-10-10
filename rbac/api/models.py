@@ -16,6 +16,7 @@
 #
 """API models for import organization."""
 from typing import Optional
+
 from django.db import models
 from django.db.models import Q
 

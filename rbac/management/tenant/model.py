@@ -182,40 +182,7 @@ class V2TenantBootstrapService:
         # Add user to default group if not a service account
         if not user.is_service_account:
             _ensure_principal_with_user_id_in_tenant(user, bootstrapped_tenant.tenant, upsert=upsert)
-
-            tuples_to_add.append(
-                create_relationship(
-                    ("rbac", "group"),
-                    str(mapping.default_group_uuid),
-                    ("rbac", "principal"),
-                    principal_id,
-                    "member",
-                )
-            )
-
-            # Add user to admin group if admin
-            if user.admin:
-                tuples_to_add.append(
-                    create_relationship(
-                        ("rbac", "group"),
-                        str(mapping.default_admin_group_uuid),
-                        ("rbac", "principal"),
-                        principal_id,
-                        "member",
-                    )
-                )
-            else:
-                # If not admin, ensure they are not in the admin group
-                # (we don't know what the previous state was)
-                tuples_to_remove.append(
-                    create_relationship(
-                        ("rbac", "group"),
-                        str(mapping.default_admin_group_uuid),
-                        ("rbac", "principal"),
-                        principal_id,
-                        "member",
-                    )
-                )
+            tuples_to_add, tuples_to_remove = self.tuples_to_edit(user, mapping)
 
         self._replicator.replicate(
             ReplicationEvent(
@@ -228,6 +195,104 @@ class V2TenantBootstrapService:
         )
 
         return bootstrapped_tenant
+
+    @transaction.atomic
+    def update_users(self, users: list[User]):
+        """
+        Bootstrap multiple users in a tenant.
+
+        Create a Tenant (and bootstrap it) if it does not exist.
+        Creates a [Principal] for the [user] if [upsert] is True. Otherwise,
+        only updates the [Principal] with the user's user_id if needed.
+
+        Args:
+            users (list): List of User objects to update
+        """
+        bootstrapped_list = []
+        for user in users:
+            bootstrapped_list.append(self._get_or_bootstrap_tenant(user.org_id, user.account))
+        bootstrapped_mapping = {bootstrapped.tenant.org_id: bootstrapped for bootstrapped in bootstrapped_list}
+
+        tuples_to_add = []
+        tuples_to_remove = []
+        principals_to_update = []
+
+        # Fetch existing principals
+        tenants = [bootstrapped.tenant for bootstrapped in bootstrapped_list]
+        existing_principals = Principal.objects.filter(
+            models.Q(tenant__in=tenants) & models.Q(username__in=[user.username for user in users])
+        ).prefetch_related("tenant")
+        # Mapping of (org_id, username) -> principal
+        existing_principal_dict = {(p.tenant.org_id, p.username): p for p in existing_principals}
+
+        for user in users:
+            bootstrapped = bootstrapped_mapping[user.org_id]
+            key = (user.org_id, user.username)
+            user_id = user.user_id
+            if key in existing_principal_dict:  # Principal already in rbac db
+                principal = existing_principal_dict[key]
+                if principal.user_id != user_id:
+                    principal.user_id = user_id
+                    principals_to_update.append(principal)
+
+            mapping = bootstrapped.mapping
+            if mapping is None:
+                raise ValueError("Expected TenantMapping but got None.")
+
+            sub_tuples_to_add, sub_tuples_to_remove = self.tuples_to_edit(user, mapping)
+            tuples_to_add.extend(sub_tuples_to_add)
+            tuples_to_remove.extend(sub_tuples_to_remove)
+
+        # Bulk update existing principals
+        if principals_to_update:
+            Principal.objects.bulk_update(principals_to_update, ["user_id"])
+        self._replicator.replicate(
+            ReplicationEvent(
+                type=ReplicationEventType.EXTERNAL_USER_UPDATE,
+                info={"bulk_import": "users"},
+                partition_key="rbactodo",
+                add=tuples_to_add,
+                remove=tuples_to_remove,
+            )
+        )
+
+    def tuples_to_edit(self, user: User, mapping):
+        """Get the tuples to add and remove for a user."""
+        tuples_to_remove = []
+        principal_id = f"{self._user_domain}:{user.user_id}"
+        tuples_to_add = [
+            create_relationship(
+                ("rbac", "group"),
+                str(mapping.default_group_uuid),
+                ("rbac", "principal"),
+                principal_id,
+                "member",
+            )
+        ]
+
+        # Add user to admin group if admin
+        if user.admin:
+            tuples_to_add.append(
+                create_relationship(
+                    ("rbac", "group"),
+                    str(mapping.default_admin_group_uuid),
+                    ("rbac", "principal"),
+                    principal_id,
+                    "member",
+                )
+            )
+        else:
+            tuples_to_remove = [
+                create_relationship(
+                    ("rbac", "group"),
+                    str(mapping.default_admin_group_uuid),
+                    ("rbac", "principal"),
+                    principal_id,
+                    "member",
+                )
+            ]
+
+        return tuples_to_add, tuples_to_remove
 
     def _disable_user_in_tenant(self, user: User):
         """Disable a user in a tenant."""
