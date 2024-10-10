@@ -116,26 +116,10 @@ class V2TenantBootstrapService:
         self._replicator = replicator
         self._public_tenant = public_tenant
 
+    @transaction.atomic
     def new_bootstrapped_tenant(self, org_id: str, account_number: Optional[str] = None) -> BootstrappedTenant:
         """Create a new tenant."""
         tenant = Tenant.objects.create(org_id=org_id, account_id=account_number)
-        return self.bootstrap_tenant(tenant)
-
-    @transaction.atomic
-    def get_or_bootstrap_tenant(self, org_id: str, account_number: Optional[str] = None) -> BootstrappedTenant:
-        """Get or create a tenant and replicate relations for it in a single transaction."""
-        return self._get_or_bootstrap_tenant(org_id, account_number)
-
-    @transaction.atomic
-    def bootstrap_tenant(
-        self,
-        tenant: Tenant,
-    ) -> BootstrappedTenant:
-        """
-        Bootstrap a tenant with built-in workspaces, default groups, and default role bindings.
-
-        Replicates related tuples with writes in a single transaction.
-        """
         return self._bootstrap_tenant(tenant)
 
     @transaction.atomic
@@ -193,6 +177,8 @@ class V2TenantBootstrapService:
                     )
                 )
             else:
+                # If not admin, ensure they are not in the admin group
+                # (we don't know what the previous state was)
                 tuples_to_remove.append(
                     create_relationship(
                         ("rbac", "group"),

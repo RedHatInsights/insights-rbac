@@ -66,11 +66,15 @@ class InMemoryTuples:
         for tuple in add:
             self.add(tuple)
 
-    def count_tuples(self, predicate: Callable[[RelationTuple], bool]) -> int:
+    def clear(self):
+        """Clear all tuples from the store."""
+        self._tuples.clear()
+
+    def count_tuples(self, predicate: Callable[[RelationTuple], bool] = lambda _: True) -> int:
         """Count tuples matching the given predicate."""
         return len(self.find_tuples(predicate))
 
-    def find_tuples(self, predicate: Callable[[RelationTuple], bool]) -> List[RelationTuple]:
+    def find_tuples(self, predicate: Callable[[RelationTuple], bool] = lambda _: True) -> List[RelationTuple]:
         """Find tuples matching the given predicate."""
         return [rel for rel in self._tuples if predicate(rel)]
 

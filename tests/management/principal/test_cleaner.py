@@ -15,6 +15,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Test the principal cleaner."""
+from functools import partial
 import uuid
 
 from unittest.mock import MagicMock, patch
@@ -22,12 +23,25 @@ from unittest.mock import MagicMock, patch
 from django.test import override_settings
 from rest_framework import status
 
+from management.group.definer import seed_group
 from management.group.model import Group
+from management.policy.model import Policy
 from management.principal.cleaner import clean_tenant_principals
 from management.principal.model import Principal
 from management.principal.cleaner import process_principal_events_from_umb
+from management.principal.proxy import external_principal_to_user
+from management.tenant.model import TenantMapping, get_tenant_bootstrap_service
 from management.workspace.model import Workspace
 from api.models import Tenant
+from migration_tool.in_memory_tuples import (
+    InMemoryRelationReplicator,
+    InMemoryTuples,
+    RelationTuple,
+    all_of,
+    relation,
+    resource,
+    subject,
+)
 from tests.identity_request import IdentityRequest
 
 
@@ -363,7 +377,7 @@ class PrincipalUMBTests(IdentityRequest):
     )
     @patch("management.principal.cleaner.UMB_CLIENT")
     @override_settings(PRINCIPAL_CLEANUP_UPDATE_ENABLED_UMB=True, V1_BOOTSTRAP_ADD_USER_ID=True)
-    def test_principal_creation_event(self, client_mock, proxy_mock):
+    def test_principal_creation_event_does_not_create_principal(self, client_mock, proxy_mock):
         """Test that we can run principal creation event."""
         public_tenant = Tenant.objects.get(tenant_name="public")
         Group.objects.create(name="default", platform_default=True, tenant=public_tenant)
@@ -377,11 +391,6 @@ class PrincipalUMBTests(IdentityRequest):
         client_mock.ack.assert_called_once()
         self.assertTrue(Tenant.objects.filter(org_id="17685860").exists())
         self.assertFalse(Principal.objects.filter(user_id=self.principal_user_id).exists())
-
-
-@override_settings(V2_BOOTSTRAP_TENANT=True)
-class PrincipalUMBTestsWithV2TenantBootstrap(PrincipalUMBTests):
-    """Test the principal processor functions with V2 tenant bootstrap enabled."""
 
     @patch(
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
@@ -402,11 +411,57 @@ class PrincipalUMBTestsWithV2TenantBootstrap(PrincipalUMBTests):
         },
     )
     @patch("management.principal.cleaner.UMB_CLIENT")
-    @override_settings(PRINCIPAL_CLEANUP_UPDATE_ENABLED_UMB=False)
-    def test_principal_creation_event_disabled(self, client_mock, proxy_mock):
+    @override_settings(PRINCIPAL_CLEANUP_UPDATE_ENABLED_UMB=True, V1_BOOTSTRAP_ADD_USER_ID=True)
+    def test_principal_creation_event_updates_existing_principal(self, client_mock, proxy_mock):
         """Test that we can run principal creation event."""
         public_tenant = Tenant.objects.get(tenant_name="public")
         Group.objects.create(name="default", platform_default=True, tenant=public_tenant)
+        client_mock.canRead.side_effect = [True, False]
+        client_mock.receiveFrame.return_value = MagicMock(body=FRAME_BODY_CREATION)
+        tenant = Tenant.objects.get(org_id="17685860")
+        Principal.objects.create(tenant=tenant, username="principal-test")
+        process_principal_events_from_umb()
+
+        client_mock.receiveFrame.assert_called_once()
+        client_mock.disconnect.assert_called_once()
+        client_mock.ack.assert_called_once()
+        self.assertTrue(Tenant.objects.filter(org_id="17685860").exists())
+        self.assertTrue(Principal.objects.filter(user_id=self.principal_user_id).exists())
+
+
+@override_settings(V2_BOOTSTRAP_TENANT=True, PRINCIPAL_CLEANUP_UPDATE_ENABLED_UMB=True)
+class PrincipalUMBTestsWithV2TenantBootstrap(PrincipalUMBTests):
+    """Test the principal processor functions with V2 tenant bootstrap enabled."""
+
+    _tuples: InMemoryTuples
+
+    def setUp(self):
+        super().setUp()
+        seed_group()
+        self._tuples = InMemoryTuples()
+
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={
+            "status_code": 200,
+            "data": [
+                {
+                    "user_id": "56780000",
+                    "org_id": "17685860",
+                    "username": "principal-test",
+                    "email": "test_user@email.com",
+                    "first_name": "user",
+                    "last_name": "test",
+                    "is_org_admin": False,
+                    "is_active": True,
+                }
+            ],
+        },
+    )
+    @patch("management.principal.cleaner.UMB_CLIENT")
+    @override_settings(PRINCIPAL_CLEANUP_UPDATE_ENABLED_UMB=False)
+    def test_principal_creation_event_disabled(self, client_mock, proxy_mock):
+        """Test that we can run principal creation event."""
         client_mock.canRead.side_effect = [True, False]
         client_mock.receiveFrame.return_value = MagicMock(body=FRAME_BODY_CREATION)
         Tenant.objects.get(org_id="17685860").delete()
@@ -417,3 +472,208 @@ class PrincipalUMBTestsWithV2TenantBootstrap(PrincipalUMBTests):
         client_mock.ack.assert_called_once()
         self.assertFalse(Tenant.objects.filter(org_id="17685860").exists())
         self.assertFalse(Principal.objects.filter(user_id=self.principal_user_id).exists())
+
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={
+            "status_code": 200,
+            "data": [
+                {
+                    "user_id": "56780000",
+                    "org_id": "17685860",
+                    "username": "principal-test",
+                    "email": "test_user@email.com",
+                    "first_name": "user",
+                    "last_name": "test",
+                    "is_org_admin": False,
+                    "is_active": True,
+                }
+            ],
+        },
+    )
+    @patch("management.principal.cleaner.UMB_CLIENT")
+    def test_principal_creation_event_bootstraps_new_tenant(self, client_mock, proxy_mock):
+        client_mock.canRead.side_effect = [True, False]
+        client_mock.receiveFrame.return_value = MagicMock(body=FRAME_BODY_CREATION)
+        Tenant.objects.get(org_id="17685860").delete()
+
+        with patch(
+            "management.principal.cleaner.OutboxReplicator", new=partial(InMemoryRelationReplicator, self._tuples)
+        ):
+            process_principal_events_from_umb()
+
+            client_mock.receiveFrame.assert_called_once()
+            client_mock.disconnect.assert_called_once()
+            client_mock.ack.assert_called_once()
+
+            self.assertTenantBootstrappedByOrgId("17685860")
+
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={
+            "status_code": 200,
+            "data": [
+                {
+                    "user_id": "56780000",
+                    "org_id": "17685860",
+                    "username": "principal-test",
+                    "email": "test_user@email.com",
+                    "first_name": "user",
+                    "last_name": "test",
+                    "is_org_admin": False,
+                    "is_active": True,
+                }
+            ],
+        },
+    )
+    @patch("management.principal.cleaner.UMB_CLIENT")
+    def test_principal_creation_event_bootstraps_existing_tenants(self, client_mock, proxy_mock):
+        client_mock.canRead.side_effect = [True, False]
+        client_mock.receiveFrame.return_value = MagicMock(body=FRAME_BODY_CREATION)
+
+        with patch(
+            "management.principal.cleaner.OutboxReplicator", new=partial(InMemoryRelationReplicator, self._tuples)
+        ):
+            process_principal_events_from_umb()
+
+            client_mock.receiveFrame.assert_called_once()
+            client_mock.disconnect.assert_called_once()
+            client_mock.ack.assert_called_once()
+
+            self.assertTenantBootstrappedByOrgId("17685860")
+        pass
+
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={
+            "status_code": 200,
+            "data": [
+                {
+                    "user_id": "56780000",
+                    "org_id": "17685860",
+                    "username": "principal-test",
+                    "email": "test_user@email.com",
+                    "first_name": "user",
+                    "last_name": "test",
+                    "is_org_admin": False,
+                    "is_active": True,
+                }
+            ],
+        },
+    )
+    @patch("management.principal.cleaner.UMB_CLIENT")
+    def test_principal_creation_event_does_not_bootstrap_already_bootstraped_tenant(self, client_mock, proxy_mock):
+        client_mock.canRead.side_effect = [True, False]
+        client_mock.receiveFrame.return_value = MagicMock(body=FRAME_BODY_CREATION)
+
+        bootstrap_service = get_tenant_bootstrap_service(InMemoryRelationReplicator(self._tuples))
+        user = external_principal_to_user(proxy_mock.return_value["data"][0])
+        bootstrap_service.update_user(user)
+
+        self._tuples.clear()
+
+        with patch(
+            "management.principal.cleaner.OutboxReplicator", new=partial(InMemoryRelationReplicator, self._tuples)
+        ):
+            process_principal_events_from_umb()
+
+            client_mock.receiveFrame.assert_called_once()
+            client_mock.disconnect.assert_called_once()
+            client_mock.ack.assert_called_once()
+
+            mapping = TenantMapping.objects.get(tenant__org_id="17685860")
+            all_tuples = self._tuples.find_tuples()
+
+            # Should only have one tuple to ensure the user is in the default group
+            self.assertEqual(
+                all_tuples,
+                [
+                    RelationTuple(
+                        resource_type_namespace="rbac",
+                        resource_type_name="group",
+                        resource_id=str(mapping.default_group_uuid),
+                        relation="member",
+                        subject_type_namespace="rbac",
+                        subject_type_name="principal",
+                        subject_id=f"localhost:{self.principal_user_id}",
+                        subject_relation="",
+                    )
+                ],
+            )
+
+    def assertTenantBootstrappedByOrgId(self, org_id: str):
+        tenant = Tenant.objects.get(org_id=org_id)
+        self.assertIsNotNone(tenant)
+        mapping = TenantMapping.objects.get(tenant=tenant)
+        self.assertIsNotNone(mapping)
+        workspaces = list(Workspace.objects.filter(tenant=tenant))
+        self.assertEqual(len(workspaces), 2)
+        default = Workspace.objects.get(type=Workspace.Types.DEFAULT, tenant=tenant)
+        self.assertIsNotNone(default)
+        root = Workspace.objects.get(type=Workspace.Types.ROOT, tenant=tenant)
+        self.assertIsNotNone(root)
+
+        platform_default_policy = Policy.objects.get(group=Group.objects.get(platform_default=True))
+        admin_default_policy = Policy.objects.get(group=Group.objects.get(admin_default=True))
+
+        self.assertEqual(
+            1,
+            self._tuples.count_tuples(
+                all_of(
+                    resource("rbac", "workspace", default.uuid),
+                    relation("binding"),
+                    subject("rbac", "role_binding", mapping.default_user_role_binding_uuid),
+                )
+            ),
+        )
+        self.assertEqual(
+            1,
+            self._tuples.count_tuples(
+                all_of(
+                    resource("rbac", "role_binding", mapping.default_user_role_binding_uuid),
+                    relation("subject"),
+                    subject("rbac", "group", mapping.default_group_uuid, "member"),
+                )
+            ),
+        )
+        self.assertEqual(
+            1,
+            self._tuples.count_tuples(
+                all_of(
+                    resource("rbac", "role_binding", mapping.default_user_role_binding_uuid),
+                    relation("role"),
+                    subject("rbac", "role", platform_default_policy.uuid),
+                )
+            ),
+        )
+
+        self.assertEqual(
+            1,
+            self._tuples.count_tuples(
+                all_of(
+                    resource("rbac", "workspace", default.uuid),
+                    relation("binding"),
+                    subject("rbac", "role_binding", mapping.default_admin_role_binding_uuid),
+                )
+            ),
+        )
+        self.assertEqual(
+            1,
+            self._tuples.count_tuples(
+                all_of(
+                    resource("rbac", "role_binding", mapping.default_admin_role_binding_uuid),
+                    relation("subject"),
+                    subject("rbac", "group", mapping.default_admin_group_uuid, "member"),
+                )
+            ),
+        )
+        self.assertEqual(
+            1,
+            self._tuples.count_tuples(
+                all_of(
+                    resource("rbac", "role_binding", mapping.default_admin_role_binding_uuid),
+                    relation("role"),
+                    subject("rbac", "role", admin_default_policy.uuid),
+                )
+            ),
+        )
