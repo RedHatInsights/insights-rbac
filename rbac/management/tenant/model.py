@@ -1,3 +1,19 @@
+#
+# Copyright 2024 Red Hat, Inc.
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+#
 """Additional tenant-related models."""
 
 import logging
@@ -52,6 +68,10 @@ class TenantBootstrapService(Protocol):
         """Bootstrap a user in a tenant."""
         ...
 
+    def new_bootstrapped_tenant(self, org_id: str, account_number: Optional[str] = None) -> BootstrappedTenant:
+        """Create a new tenant."""
+        ...
+
 
 class V1TenantBootstrapService:
     """Service for bootstrapping tenants which retains V1-only behavior."""
@@ -61,6 +81,10 @@ class V1TenantBootstrapService:
     def __init__(self):
         """Initialize the V1TenantBootstrapService."""
         self._add_user_id = settings.V1_BOOTSTRAP_ADD_USER_ID
+
+    def new_bootstrapped_tenant(self, org_id: str, account_number: Optional[str] = None) -> BootstrappedTenant:
+        """Create a new tenant."""
+        return self._get_or_bootstrap_tenant(org_id, account_number)
 
     def update_user(
         self, user: User, upsert: bool = False, bootstrapped_tenant: Optional[BootstrappedTenant] = None
@@ -72,15 +96,19 @@ class V1TenantBootstrapService:
             return self._update_inactive_user(user)
 
     def _update_active_user(self, user: User, upsert: bool) -> Optional[BootstrappedTenant]:
-        tenant_name = create_tenant_name(user.account)
-        tenant, _ = Tenant.objects.get_or_create(
-            org_id=user.org_id,
-            defaults={"ready": True, "account_id": user.account, "tenant_name": tenant_name},
-        )
+        bootstrapped = self._get_or_bootstrap_tenant(user.org_id, user.account)
 
         if self._add_user_id:
-            _ensure_principal_with_user_id_in_tenant(user, tenant, upsert=upsert)
+            _ensure_principal_with_user_id_in_tenant(user, bootstrapped.tenant, upsert=upsert)
 
+        return bootstrapped
+
+    def _get_or_bootstrap_tenant(self, org_id: str, account_number: Optional[str] = None) -> BootstrappedTenant:
+        tenant_name = create_tenant_name(account_number)
+        tenant, _ = Tenant.objects.get_or_create(
+            org_id=org_id,
+            defaults={"ready": True, "account_id": account_number, "tenant_name": tenant_name},
+        )
         return BootstrappedTenant(tenant=tenant, mapping=None)
 
     def _update_inactive_user(self, user: User) -> None:

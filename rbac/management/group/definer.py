@@ -17,7 +17,7 @@
 
 """Handler for system defined group."""
 import logging
-from typing import Union
+from typing import Optional, Tuple, Union
 from uuid import uuid4
 
 from django.conf import settings
@@ -44,7 +44,7 @@ from api.models import Tenant
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 
-def seed_group():
+def seed_group() -> Tuple[Group, Group]:
     """Create or update default group."""
     public_tenant = Tenant.objects.get(tenant_name="public")
     with transaction.atomic():
@@ -79,16 +79,18 @@ def seed_group():
         update_group_roles(admin_group, admin_roles, public_tenant)
         logger.info("Finished seeding default org admin group %s.", name)
 
+    return group, admin_group
 
-def set_system_flag_before_update(group, tenant, user):
+
+def set_system_flag_before_update(group: Group, tenant, user) -> Optional[Group]:
     """Update system flag on default groups."""
     if group.system:
-        group = clone_default_group_in_public_schema(group, tenant)
+        group = clone_default_group_in_public_schema(group, tenant)  # type: ignore
         group_flag_change_notification_handler(user, group)
     return group
 
 
-def clone_default_group_in_public_schema(group, tenant):
+def clone_default_group_in_public_schema(group, tenant) -> Optional[Group]:
     """Clone the default group for a tenant into the public schema."""
     if settings.PRINCIPAL_CLEANUP_UPDATE_ENABLED_UMB:
         # TODO: bootstrap the tenant to get the mapping
@@ -109,6 +111,7 @@ def clone_default_group_in_public_schema(group, tenant):
     tenant_default_policy.name = "System Policy for Group {}".format(group.uuid)
     tenant_default_policy.tenant = tenant
     if Group.objects.filter(name=group.name, platform_default=group.platform_default, tenant=tenant):
+        # TODO: returning none can break other
         return
     public_default_roles = Role.objects.filter(platform_default=True, tenant=public_tenant)
 
