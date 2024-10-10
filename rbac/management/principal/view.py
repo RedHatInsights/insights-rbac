@@ -124,6 +124,7 @@ class PrincipalView(APIView):
         if offset - limit > 0:
             previous_offset = offset - limit
 
+
         # Attempt validating and obtaining the "principal type" query
         # parameter.
         principal_type = validate_and_get_key(
@@ -188,7 +189,7 @@ class PrincipalView(APIView):
                 "first": f"{path}?limit={limit}&offset=0{usernames_filter}",
                 "next": f"{path}?limit={limit}&offset={offset + limit}{usernames_filter}",
                 "previous": f"{path}?limit={limit}&offset={previous_offset}{usernames_filter}",
-                "last": None,
+                "last": f"{path}?limit={limit}&offset={limit-count}{usernames_filter}",
             }
             response_data["data"] = data
         else:
