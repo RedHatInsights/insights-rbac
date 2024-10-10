@@ -24,7 +24,6 @@ from management.role.serializer import RoleMinimumSerializer
 from management.serializer_override_mixin import SerializerCreateOverrideMixin
 from rest_framework import serializers, status
 
-
 class GroupInputSerializer(SerializerCreateOverrideMixin, serializers.ModelSerializer):
     """Serializer for Group input model."""
 
@@ -57,22 +56,22 @@ class GroupInputSerializer(SerializerCreateOverrideMixin, serializers.ModelSeria
             "roleCount",
             "created",
             "modified",
-            "system",
+            "system"
         )
 
     def create(self, validated_data):
-        """Create the role object in the database."""
-        group = super().create(validated_data)
-        group_obj_change_notification_handler(self.context["request"].user, group, "created")
-        return group
+            """Create the role object in the database."""
+            group = super().create(validated_data)
+            group_obj_change_notification_handler(self.context["request"].user, group, "created")
+            return group
+     
 
     def update(self, instance, validated_data):
         """Update the role object in the database."""
         group = super().update(instance, validated_data)
         group_obj_change_notification_handler(self.context["request"].user, group, "updated")
         return group
-
-
+    
 class GroupSerializer(SerializerCreateOverrideMixin, serializers.ModelSerializer):
     """Serializer for the Group model."""
 
