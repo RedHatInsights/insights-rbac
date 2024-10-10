@@ -16,10 +16,11 @@
 #
 """Test the project middleware."""
 import collections
+from functools import partial
 import json
 import os
 from unittest import mock
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 from django.conf import settings
 from django.http import QueryDict
 from django.test.utils import override_settings
@@ -32,6 +33,17 @@ from rest_framework.test import APIClient
 
 from api.models import Tenant, User
 from api.serializers import create_tenant_name
+from management.group.definer import seed_group
+from management.tenant.model import TenantMapping
+from management.workspace.model import Workspace
+from migration_tool.in_memory_tuples import (
+    InMemoryRelationReplicator,
+    InMemoryTuples,
+    all_of,
+    relation,
+    resource,
+    subject,
+)
 from tests.identity_request import IdentityRequest
 from rbac.middleware import HttpResponseUnauthorizedRequest, IdentityHeaderMiddleware, ReadOnlyApiMiddleware
 from management.models import Access, Group, Permission, Principal, Policy, ResourceDefinition, Role
@@ -625,3 +637,108 @@ class RBACReadOnlyApiMiddleware(IdentityRequest):
             middleware = ReadOnlyApiMiddleware(get_response=Mock())
             resp = middleware.process_request(self.request)
             self.assertEqual(resp, None)
+
+
+@override_settings(V2_BOOTSTRAP_TENANT=True)
+class V2RbacTenantMiddlewareTest(RbacTenantMiddlewareTest):
+    """Run all the same tests with v2 tenant bootstrap enabled."""
+
+    _tuples: InMemoryTuples
+
+    def setUp(self):
+        """Set up middleware tests."""
+        super().setUp()
+        self._tuples = InMemoryTuples()
+        seed_group()
+
+    def test_bootstraps_tenants_if_not_existing(self):
+        with patch("rbac.middleware.OutboxReplicator", new=partial(InMemoryRelationReplicator, self._tuples)):
+            # Change the user's org so we create a new tenant
+            self.request.user.org_id = "12345"
+            self.org_id = "12345"
+            mock_request = self.request
+            middleware = IdentityHeaderMiddleware(get_response=IdentityHeaderMiddleware.get_tenant)
+            result = middleware.get_tenant(Tenant, "localhost", mock_request)
+            self.assertEqual(result.org_id, mock_request.user.org_id)
+            tenant = Tenant.objects.get(org_id=self.org_id)
+            self.assertIsNotNone(tenant)
+            mapping = TenantMapping.objects.get(tenant=tenant)
+            self.assertIsNotNone(mapping)
+            workspaces = list(Workspace.objects.filter(tenant=tenant))
+            self.assertEqual(len(workspaces), 2)
+            default = Workspace.objects.get(type=Workspace.Types.DEFAULT, tenant=tenant)
+            self.assertIsNotNone(default)
+            root = Workspace.objects.get(type=Workspace.Types.ROOT, tenant=tenant)
+            self.assertIsNotNone(root)
+
+            platform_default_policy = Policy.objects.get(group=Group.objects.get(platform_default=True))
+            admin_default_policy = Policy.objects.get(group=Group.objects.get(admin_default=True))
+
+            self.assertEqual(
+                1,
+                self._tuples.count_tuples(
+                    all_of(
+                        resource("rbac", "workspace", default.uuid),
+                        relation("binding"),
+                        subject("rbac", "role_binding", mapping.default_user_role_binding_uuid),
+                    )
+                ),
+            )
+            self.assertEqual(
+                1,
+                self._tuples.count_tuples(
+                    all_of(
+                        resource("rbac", "role_binding", mapping.default_user_role_binding_uuid),
+                        relation("subject"),
+                        subject("rbac", "group", mapping.default_group_uuid, "member"),
+                    )
+                ),
+            )
+            self.assertEqual(
+                1,
+                self._tuples.count_tuples(
+                    all_of(
+                        resource("rbac", "role_binding", mapping.default_user_role_binding_uuid),
+                        relation("role"),
+                        subject("rbac", "role", platform_default_policy.uuid),
+                    )
+                ),
+            )
+
+            self.assertEqual(
+                1,
+                self._tuples.count_tuples(
+                    all_of(
+                        resource("rbac", "workspace", default.uuid),
+                        relation("binding"),
+                        subject("rbac", "role_binding", mapping.default_admin_role_binding_uuid),
+                    )
+                ),
+            )
+            self.assertEqual(
+                1,
+                self._tuples.count_tuples(
+                    all_of(
+                        resource("rbac", "role_binding", mapping.default_admin_role_binding_uuid),
+                        relation("subject"),
+                        subject("rbac", "group", mapping.default_admin_group_uuid, "member"),
+                    )
+                ),
+            )
+            self.assertEqual(
+                1,
+                self._tuples.count_tuples(
+                    all_of(
+                        resource("rbac", "role_binding", mapping.default_admin_role_binding_uuid),
+                        relation("role"),
+                        subject("rbac", "role", admin_default_policy.uuid),
+                    )
+                ),
+            )
+
+
+@override_settings(V2_BOOTSTRAP_TENANT=True)
+class V2IdentityHeaderMiddlewareTest(IdentityHeaderMiddlewareTest):
+    """Run all the same tests with v2 tenant bootstrap enabled plus additional."""
+
+    pass

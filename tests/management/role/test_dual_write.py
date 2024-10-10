@@ -20,6 +20,7 @@ import unittest
 from typing import Optional, Tuple
 from django.test import TestCase, override_settings
 from django.db.models import Q
+from management.group.definer import seed_group, set_system_flag_before_update
 from management.group.model import Group
 from management.group.relation_api_dual_write_group_handler import RelationApiDualWriteGroupHandler
 from management.models import Workspace
@@ -28,9 +29,11 @@ from management.policy.model import Policy
 from management.principal.model import Principal
 from management.role.model import Access, ResourceDefinition, Role, BindingMapping
 from management.role.relation_api_dual_write_handler import (
+    NoopReplicator,
     RelationApiDualWriteHandler,
     ReplicationEventType,
 )
+from management.tenant.model import BootstrappedTenant, TenantBootstrapService, V2TenantBootstrapService
 from migration_tool.in_memory_tuples import (
     InMemoryRelationReplicator,
     InMemoryTuples,
@@ -64,12 +67,12 @@ class DualWriteTestCase(TestCase):
         super().setUp()
         self.tuples = InMemoryTuples()
         self.fixture = RbacFixture()
-        self.tenant = self.fixture.new_tenant(name="tenant", org_id="1234567")
+        self.tenant = self.fixture.new_tenant(org_id="1234567").tenant
         self.test_tenant = self.tenant
 
     def switch_to_new_tenant(self, name: str, org_id: str) -> Tenant:
         """Switch to a new tenant with the given name and org_id."""
-        tenant = self.fixture.new_tenant(name=name, org_id=org_id)
+        tenant = self.fixture.new_tenant(org_id=org_id).tenant
         self.tenant = tenant
         return tenant
 
@@ -791,15 +794,19 @@ class DualWriteCustomRolesTestCase(DualWriteTestCase):
 class RbacFixture:
     """RBAC Fixture."""
 
-    def __init__(self):
+    def __init__(self, bootstrap_service: TenantBootstrapService = V2TenantBootstrapService(NoopReplicator())):
         """Initialize the RBAC fixture."""
-        self.public_tenant, _ = Tenant.objects.get_or_create(tenant_name="public")
+        self.public_tenant = Tenant.objects.get(tenant_name="public")
+        self.bootstrap_service = bootstrap_service
+        self.default_group, self.admin_group = seed_group()
 
-    def new_tenant(self, name: str, org_id: str) -> Tenant:
+    def new_tenant(self, org_id: str) -> BootstrappedTenant:
         """Create a new tenant with the given name and organization ID."""
-        tenant = Tenant.objects.create(tenant_name=name, org_id=org_id)
-        migrate_workspace(tenant, write_relationships=False)
-        return tenant
+        return self.bootstrap_service.new_bootstrapped_tenant(org_id)
+
+    def new_unbootstrapped_tenant(self, org_id: str) -> Tenant:
+        """Create a new tenant with the given name and organization ID."""
+        return Tenant.objects.create(tenant_name=f"org{org_id}", org_id=org_id)
 
     def new_system_role(self, name: str, permissions: list[str]) -> Role:
         """Create a new system role with the given name and permissions."""
@@ -863,10 +870,16 @@ class RbacFixture:
         principals = self.add_members_to_group(group, users, service_accounts, tenant)
         return group, principals
 
+    def custom_default_group(self, tenant: Tenant) -> Group:
+        return set_system_flag_before_update(self.default_group, tenant, None)  # type: ignore
+
+    def default_workspace(self, tenant: Tenant) -> Workspace:
+        return Workspace.objects.get(type=Workspace.Types.DEFAULT, tenant=tenant)
+
     def add_role_to_group(self, role: Role, group: Group, tenant: Tenant) -> Policy:
         """Add a role to a group for a given tenant and return the policy."""
         policy, _ = Policy.objects.get_or_create(
-            name=f"System Policy_{group.name}_{tenant.tenant_name}", group=group, tenant=tenant
+            name=f"System Policy for Group {group.uuid}", group=group, tenant=tenant
         )
         policy.roles.add(role)
         policy.save()

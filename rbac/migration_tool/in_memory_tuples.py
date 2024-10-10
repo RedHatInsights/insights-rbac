@@ -66,7 +66,15 @@ class InMemoryTuples:
         for tuple in add:
             self.add(tuple)
 
-    def find_tuples(self, predicate: Callable[[RelationTuple], bool]) -> List[RelationTuple]:
+    def clear(self):
+        """Clear all tuples from the store."""
+        self._tuples.clear()
+
+    def count_tuples(self, predicate: Callable[[RelationTuple], bool] = lambda _: True) -> int:
+        """Count tuples matching the given predicate."""
+        return len(self.find_tuples(predicate))
+
+    def find_tuples(self, predicate: Callable[[RelationTuple], bool] = lambda _: True) -> List[RelationTuple]:
         """Find tuples matching the given predicate."""
         return [rel for rel in self._tuples if predicate(rel)]
 
@@ -269,9 +277,9 @@ def subject_id(id: str) -> Callable[[RelationTuple], bool]:
     return TuplePredicate(predicate, f'subject_id("{id}")')
 
 
-def subject(namespace: str, name: str, id: str, relation: str = "") -> Callable[[RelationTuple], bool]:
+def subject(namespace: str, name: str, id: object, relation: str = "") -> Callable[[RelationTuple], bool]:
     """Return a predicate that is true if the subject matches the given namespace and name."""
-    return all_of(subject_type(namespace, name, relation), subject_id(id))
+    return all_of(subject_type(namespace, name, relation), subject_id(str(id)))
 
 
 class InMemoryRelationReplicator(RelationReplicator):

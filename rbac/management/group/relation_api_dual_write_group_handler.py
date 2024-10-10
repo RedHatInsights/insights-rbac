@@ -60,7 +60,7 @@ class RelationApiDualWriteGroupHandler:
             self.default_workspace = Workspace.objects.get(tenant=self.tenant, type=Workspace.Types.DEFAULT)
             self.event_type = event_type
             self.user_domain = settings.PRINCIPAL_USER_DOMAIN
-            self._replicator = replicator if replicator else OutboxReplicator(group)
+            self._replicator = replicator if replicator else OutboxReplicator()
         except Exception as e:
             raise DualWriteException(e)
 
@@ -112,6 +112,7 @@ class RelationApiDualWriteGroupHandler:
             self._replicator.replicate(
                 ReplicationEvent(
                     type=self.event_type,
+                    info={"group_uuid": self.group.uuid},
                     # TODO: need to think about partitioning
                     # Maybe resource id
                     partition_key="rbactodo",

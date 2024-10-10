@@ -87,6 +87,7 @@ def migrate_role(
     return relationships, v2_role_bindings
 
 
+# TODO: remove this
 def migrate_workspace(tenant: Tenant, write_relationships: bool):
     """Migrate a workspace from v1 to v2."""
     root_workspace, _ = Workspace.objects.get_or_create(
