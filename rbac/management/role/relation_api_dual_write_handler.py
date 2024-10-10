@@ -172,12 +172,62 @@ class SeedingRelationApiDualWriteHandler:
     """Class to handle Dual Write API related operations specific to the seeding process."""
 
     _replicator: RelationReplicator
+    _role: Role
+    _current_role_relations: list[common_pb2.Relationship]
 
     def __init__(self, replicator: Optional[RelationReplicator] = None):
         _replicator = replicator if replicator else OutboxReplicator(None)
 
-    def replicate_system_role(role: Role):
-        pass
+    def replication_enabled(self):
+        """Check whether replication enabled."""
+        return settings.REPLICATION_TO_RELATION_ENABLED is True
+
+    def prepare_for_update(self, role: Role):
+        if not self.replication_enabled():
+            return
+        
+        self._role = role
+        self._replicator.record = role
+        self._current_role_relations = self._generate_relations_for_role(role)
+
+    def replicate_update_system_role(self, role: Role):
+        if not self.replication_enabled():
+            return
+        
+        self._replicate(ReplicationEventType.UPDATE_SYSTEM_ROLE, self._current_role_relations, self._generate_relations_for_role(role))
+        
+    def replicate_new_system_role(self, role: Role):
+        if not self.replication_enabled():
+            return
+        self._replicate(ReplicationEventType.CREATE_SYSTEM_ROLE, list[common_pb2.Relationship], self._generate_relations_for_role(role))
+
+    def replicate_deleted_system_role(self, role: Role):
+        if not self.replication_enabled():
+            return
+        self._replicate(ReplicationEventType.DELETE_SYSTEM_ROLE, self._generate_relations_for_role(role), list[common_pb2.Relationship])
+    
+    def _generate_relations_for_role(self, role: Role) -> list[common_pb2.Relationship]:
+        if role.admin_default:
+            pass
+        if role.platform_default:
+            pass
+
+    def _replicate(self, event_type: str, remove: list[common_pb2.Relationship], add: list[common_pb2.Relationship]):
+        if not self.replication_enabled():
+            return
+        try:
+            self._replicator.replicate(
+                ReplicationEvent(
+                    type=self.event_type,
+                    # TODO: need to think about partitioning
+                    # Maybe resource id
+                    partition_key="rbactodo",
+                    remove=remove,
+                    add=add,
+                ),
+            )
+        except Exception as e:
+            raise DualWriteException(e)
         
 
 class RelationApiDualWriteHandler:
