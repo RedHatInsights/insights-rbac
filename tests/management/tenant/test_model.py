@@ -186,3 +186,52 @@ class V2TenantBootstrapServiceTest(TestCase):
                 )
             ),
         )
+
+    def test_bulk_adding_updating_users(self):
+        bootstrapped = self.fixture.new_tenant(org_id="o1")
+
+        users = []
+        for user_id, org_id in [("u1", "o1"), ("u2", "o2")]:
+            user = User()
+            user.user_id = user_id
+            user.org_id = org_id
+            user.admin = False
+            user.is_active = True
+            users.append(user)
+
+        self.service.update_users(users)
+        self.assertEqual(
+            1,
+            self.tuples.count_tuples(
+                all_of(
+                    resource("rbac", "group", bootstrapped.mapping.default_group_uuid),
+                    relation("member"),
+                    subject("rbac", "principal", "localhost:u1"),
+                )
+            ),
+        )
+        users[0].admin = False
+        self.service.update_users(users)
+
+        self.assertEqual(
+            0,
+            self.tuples.count_tuples(
+                all_of(
+                    resource("rbac", "group", bootstrapped.mapping.default_admin_group_uuid),
+                    relation("member"),
+                    subject("rbac", "principal", "localhost:u1"),
+                )
+            ),
+        )
+
+        # But is still a regular user
+        self.assertEqual(
+            1,
+            self.tuples.count_tuples(
+                all_of(
+                    resource("rbac", "group", bootstrapped.mapping.default_group_uuid),
+                    relation("member"),
+                    subject("rbac", "principal", "localhost:u1"),
+                )
+            ),
+        )

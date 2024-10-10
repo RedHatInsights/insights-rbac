@@ -26,7 +26,7 @@ from django.conf import settings
 from management.principal.model import Principal
 from management.principal.proxy import PrincipalProxy, external_principal_to_user
 from management.role.relation_api_dual_write_handler import OutboxReplicator
-from management.tenant.model import TenantBootstrapService, V2TenantBootstrapService, get_tenant_bootstrap_service
+from management.tenant.model import TenantBootstrapService, get_tenant_bootstrap_service
 from rest_framework import status
 from stompest.config import StompConfig
 from stompest.error import StompConnectionError
