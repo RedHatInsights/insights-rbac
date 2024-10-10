@@ -27,6 +27,10 @@ from django.utils import timezone
 from management.notifications.notification_handlers import role_obj_change_notification_handler
 from management.permission.model import Permission
 from management.role.model import Access, ExtRoleRelation, ExtTenant, ResourceDefinition, Role
+from management.role.relation_api_dual_write_handler import (
+    SeedingRelationApiDualWriteHandler,
+)
+
 
 from api.models import Tenant
 
@@ -75,15 +79,19 @@ def _make_role(data):
     )
     role, created = Role.objects.get_or_create(name=name, defaults=defaults, tenant=public_tenant)
 
+    dual_write_handler = SeedingRelationApiDualWriteHandler()
     if created:
         if role.display_name != display_name:
             role.display_name = display_name
             role.save()
+        dual_write_handler.replicate_new_system_role(role)
         logger.info("Created system role %s.", name)
         role_obj_change_notification_handler(role, "created")
     else:
         if role.version != defaults["version"]:
+            dual_write_handler.prepare_for_update(role)
             Role.objects.filter(name=name).update(**defaults, display_name=display_name, modified=timezone.now())
+            dual_write_handler.replicate_update_system_role(role)
             logger.info("Updated system role %s.", name)
             role.access.all().delete()
             role_obj_change_notification_handler(role, "updated")
@@ -137,10 +145,13 @@ def seed_roles():
     # Find roles in DB but not in config
     roles_to_delete = Role.objects.filter(system=True).exclude(id__in=current_role_ids)
     logger.info(f"The following '{roles_to_delete.count()}' roles(s) eligible for removal: {roles_to_delete.values()}")
+    dual_write_handler = SeedingRelationApiDualWriteHandler()
     if destructive_ok("seeding"):
         logger.info(f"Removing the following role(s): {roles_to_delete.values()}")
         # Actually remove roles no longer in config
         with transaction.atomic():
+            for role in roles_to_delete:
+                dual_write_handler.replicate_deleted_system_role(role)
             roles_to_delete.delete()
 
 
