@@ -20,6 +20,7 @@ import logging
 from typing import Union
 from uuid import uuid4
 
+from django.conf import settings
 from django.db import transaction
 from django.db.models.query import QuerySet
 from django.utils.translation import gettext as _
@@ -89,12 +90,19 @@ def set_system_flag_before_update(group, tenant, user):
 
 def clone_default_group_in_public_schema(group, tenant):
     """Clone the default group for a tenant into the public schema."""
+    if settings.PRINCIPAL_CLEANUP_UPDATE_ENABLED_UMB:
+        # TODO: bootstrap the tenant to get the mapping
+        # use this for uuid instead and to remove the default role binding tuple
+        uuid = uuid4()
+    else:
+        uuid = uuid4()
+
     public_tenant = Tenant.objects.get(tenant_name="public")
     tenant_default_policy = group.policies.get(system=True)
     group.name = "Custom default access"
     group.system = False
     group.tenant = tenant
-    group.uuid = uuid4()
+    group.uuid = uuid
     clear_pk(group)
     clear_pk(tenant_default_policy)
     tenant_default_policy.uuid = uuid4()

@@ -361,6 +361,15 @@ class V2TenantBootstrapService:
         tuples_to_add: List[Relationship] = []
 
         # Add default role binding IFF there is no custom default access for the tenant
+
+        # NOTE: This logic is prone to write skew: the platform group for the tenant may be created concurrently.
+        # Care must be taken to prevent this.
+        # Currently, when this default group is created (in group/definer.py) we:
+        # 1. Check for the existence of a tenant mapping. If exists, use that.
+        #    No race because if it already exists, this process must've already happened.
+        # 2. If tenant mapping does not exist, create it via this same bootstrap process.
+        #    Due to unique constraint, if this happens concurrently from another input (e.g. user import),
+        #    one will rollback, serializing the group creation with user import on next retry.
         if platform_default_role and not Group.objects.filter(platform_default=True, tenant=tenant).exists():
             tuples_to_add.extend(
                 [
