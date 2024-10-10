@@ -157,7 +157,7 @@ class SeedingRelationApiDualWriteHandler:
     _current_role_relations: list[common_pb2.Relationship]
 
     def __init__(self, replicator: Optional[RelationReplicator] = None):
-        _replicator = replicator if replicator else OutboxReplicator(None)
+        self._replicator = replicator if replicator else OutboxReplicator(None)
 
     def replication_enabled(self):
         """Check whether replication enabled."""
@@ -188,10 +188,25 @@ class SeedingRelationApiDualWriteHandler:
         self._replicate(ReplicationEventType.DELETE_SYSTEM_ROLE, self._generate_relations_for_role(role), list[common_pb2.Relationship])
     
     def _generate_relations_for_role(self, role: Role) -> list[common_pb2.Relationship]:
+        relations = list[common_pb2.Relationship]
+
         if role.admin_default:
-            pass
+            relations.append(create_relationship(("rbac", "role"), role.uuid, ("rbac", "role"), "admin_default", "child")) #Get actual id from somewhere? Prolly needs to be a uuid
         if role.platform_default:
-            pass
+            relations.append(create_relationship(("rbac", "role"), role.uuid, ("rbac", "role"), "platform_default", "child"))
+
+        permissions = list()
+        for access in role.access.all():
+            v1_perm = access.permission
+            v2_perm = v1_perm_to_v2_perm(v1_perm)
+            permissions.append(v2_perm)
+
+        for permission in permissions:
+            relations.append(
+                create_relationship(("rbac", "role"), str(role.uuid), ("rbac", "principal"), str("*"), permission)
+            )
+
+        return relations
 
     def _replicate(self, event_type: str, remove: list[common_pb2.Relationship], add: list[common_pb2.Relationship]):
         if not self.replication_enabled():
