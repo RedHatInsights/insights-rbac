@@ -32,6 +32,8 @@ from management.relation_replicator.relation_replicator import ReplicationEventT
 from management.role.model import Access, ResourceDefinition, Role, BindingMapping
 from management.role.relation_api_dual_write_handler import (
     RelationApiDualWriteHandler,
+    ReplicationEventType,
+    SeedingRelationApiDualWriteHandler,
 )
 from management.tenant_service.tenant_service import BootstrappedTenant
 from management.tenant_service.v2 import V2TenantBootstrapService
@@ -93,21 +95,11 @@ class DualWriteTestCase(TestCase):
         """Create a RelationApiDualWriteHandler for the given role and event type."""
         return RelationApiDualWriteHandler(role, event_type, replicator=InMemoryRelationReplicator(self.tuples))
 
-    def dual_write_handler_for_system_role(
-        self, role: Role, tenant: Tenant, event_type: ReplicationEventType
-    ) -> RelationApiDualWriteHandler:
-        """Create a RelationApiDualWriteHandler for the given role and event type."""
-        return RelationApiDualWriteHandler.for_system_role_event(
-            role, tenant, event_type, replicator=InMemoryRelationReplicator(self.tuples)
-        )
-
     def given_v1_system_role(self, name: str, permissions: list[str]) -> Role:
         """Create a new system role with the given ID and permissions."""
         role = self.fixture.new_system_role(name=name, permissions=permissions)
-        dual_write = self.dual_write_handler_for_system_role(
-            role, self.tenant, ReplicationEventType.CREATE_SYSTEM_ROLE
-        )
-        dual_write.replicate_new_system_role_permissions(role)
+        dual_write_handler = SeedingRelationApiDualWriteHandler(replicator=InMemoryRelationReplicator(self.tuples))
+        dual_write_handler.replicate_new_system_role(role)
         return role
 
     def given_v1_role(self, name: str, default: list[str], **kwargs: list[str]) -> Role:

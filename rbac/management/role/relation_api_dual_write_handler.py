@@ -152,10 +152,11 @@ class NoopReplicator(RelationReplicator):
 class SeedingRelationApiDualWriteHandler:
     """Class to handle Dual Write API related operations specific to the seeding process."""
 
-    _replicator: RelationReplicator
+    _replicator: OutboxReplicator
     _current_role_relations: list[common_pb2.Relationship]
 
-    def __init__(self, replicator: Optional[RelationReplicator] = None):
+    def __init__(self, replicator: Optional[OutboxReplicator] = None):
+        """Initialize SeedingRelationApiDualWriteHandler."""
         self._replicator = replicator if replicator else OutboxReplicator(None)
 
     def replication_enabled(self):
@@ -163,11 +164,13 @@ class SeedingRelationApiDualWriteHandler:
         return settings.REPLICATION_TO_RELATION_ENABLED is True
 
     def prepare_for_update(self, role: Role):
+        """Generate & store role's current relations."""
         if not self.replication_enabled():
             return
         self._current_role_relations = self._generate_relations_for_role(role)
 
     def replicate_update_system_role(self, role: Role):
+        """Replicate update of system role."""
         if not self.replication_enabled():
             return
         self._replicator.record = role
@@ -178,6 +181,7 @@ class SeedingRelationApiDualWriteHandler:
         )
 
     def replicate_new_system_role(self, role: Role):
+        """Replicate creation of new system role."""
         if not self.replication_enabled():
             return
         self._replicator.record = role
@@ -188,6 +192,7 @@ class SeedingRelationApiDualWriteHandler:
         )
 
     def replicate_deleted_system_role(self, role: Role):
+        """Replicate deletion of system role."""
         if not self.replication_enabled():
             return
         self._replicator.record = role
@@ -198,6 +203,7 @@ class SeedingRelationApiDualWriteHandler:
         )
 
     def _generate_relations_for_role(self, role: Role) -> list[common_pb2.Relationship]:
+        """Generate system role permissions."""
         relations = []
 
         if role.admin_default:
@@ -223,7 +229,12 @@ class SeedingRelationApiDualWriteHandler:
 
         return relations
 
-    def _replicate(self, event_type: str, remove: list[common_pb2.Relationship], add: list[common_pb2.Relationship]):
+    def _replicate(
+        self,
+        event_type: ReplicationEventType,
+        remove: list[common_pb2.Relationship],
+        add: list[common_pb2.Relationship],
+    ):
         if not self.replication_enabled():
             return
         try:
@@ -392,20 +403,3 @@ class RelationApiDualWriteHandler:
             return relations
         except Exception as e:
             raise DualWriteException(e)
-
-    # TODO: Remove/replace - placeholder for testing
-    def replicate_new_system_role_permissions(self, role: Role):
-        """Replicate system role permissions."""
-        if not self.replication_enabled():
-            return
-        permissions = list()
-        for access in role.access.all():
-            v1_perm = access.permission
-            v2_perm = v1_perm_to_v2_perm(v1_perm)
-            permissions.append(v2_perm)
-
-        for permission in permissions:
-            self.role_relations.append(
-                create_relationship(("rbac", "role"), str(role.uuid), ("rbac", "principal"), str("*"), permission)
-            )
-        self._replicate()
