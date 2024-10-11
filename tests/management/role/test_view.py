@@ -360,7 +360,7 @@ class RoleViewsetTests(IdentityRequest):
                 ANY,
             )
 
-    @override_settings(V2_MIGRATION_RESOURCE_APP_EXCLUDE_LIST=["app"])
+    @override_settings(V2_MIGRATION_RESOURCE_EXCLUDE_LIST=["rbac:workspace"])
     @patch("management.role.relation_api_dual_write_handler.OutboxReplicator._save_replication_event")
     def test_role_replication_exluded_resource(self, mock_method):
         """Test that excluded resources do not replicate via dual write."""
@@ -370,7 +370,7 @@ class RoleViewsetTests(IdentityRequest):
             {
                 "permission": "app:*:*",
                 "resourceDefinitions": [
-                    {"attributeFilter": {"key": "keyA.id", "operation": "equal", "value": "valueA"}}
+                    {"attributeFilter": {"key": "group.id", "operation": "equal", "value": "valueA"}}
                 ],
             },
             {"permission": "app:*:read", "resourceDefinitions": []},
