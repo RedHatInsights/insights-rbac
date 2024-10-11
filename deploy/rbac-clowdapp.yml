@@ -751,7 +751,7 @@ parameters:
 - description: Application exclude list for v2 migration (all permissions)
   name: V2_MIGRATION_APP_EXCLUDE_LIST
   value: approval
-- description: Application exclude list for v2 migration (resource definitions only)
+- description: Resources (by namespace:name) exclude list for v2 migration (resource definitions only)
   name: V2_MIGRATION_RESOURCE_EXCLUDE_LIST
   value: rbac:workspace
 - description: Timestamp expiration allowance on destructive actions through the internal RBAC API
