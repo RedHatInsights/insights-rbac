@@ -35,7 +35,7 @@ class Principal(TenantAwareModel):
     cross_account = models.BooleanField(default=False)
     type = models.CharField(null=False, default=Types.USER, choices=Types.choices, max_length=20)
     service_account_id = models.TextField(null=True)
-    user_id = models.CharField(max_length=36, null=True)
+    user_id = models.CharField(max_length=256, null=True, db_index=True)
 
     class Meta:
         ordering = ["username"]

@@ -15,15 +15,18 @@ You should have received a copy of the GNU Affero General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 
-from typing import Callable, Collection
+
+def create_tenant_relationships(tenant):
+    """Create relationships for tenant."""
+    pass
 
 
-def add_element(dict, key, value, collection: Callable[[], Collection] = list):
-    """Add append value to dictionnary according to key."""
-    if key not in dict:
-        dict[key] = collection()
-    c = dict[key]
-    if hasattr(c, "append"):
-        c.append(value)
-    else:
-        c.add(value)
+def create_user_relationships(principal, is_org_admin):
+    """Create relationships for user."""
+    pass
+
+
+def remove_user_relationships(tenant, groups, principal, is_org_admin):
+    """Remove relationships for user."""
+    # TODO: consider (admin) default groups
+    pass

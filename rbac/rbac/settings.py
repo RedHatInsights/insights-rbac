@@ -129,6 +129,7 @@ MIDDLEWARE = [
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
     "django_prometheus.middleware.PrometheusAfterMiddleware",
+    "rbac.middleware.ReadOnlyApiMiddleware",
 ]
 
 DEVELOPMENT = ENVIRONMENT.bool("DEVELOPMENT", default=False)
@@ -272,6 +273,7 @@ LOGGING = {
         "api": {"handlers": LOGGING_HANDLERS, "level": RBAC_LOGGING_LEVEL},
         "rbac": {"handlers": LOGGING_HANDLERS, "level": RBAC_LOGGING_LEVEL},
         "management": {"handlers": LOGGING_HANDLERS, "level": RBAC_LOGGING_LEVEL},
+        "migration_tool": {"handlers": LOGGING_HANDLERS, "level": RBAC_LOGGING_LEVEL},
     },
 }
 
@@ -345,6 +347,11 @@ CELERY_BROKER_URL = ENVIRONMENT.get_value("CELERY_BROKER_URL", default=DEFAULT_R
 
 ROLE_CREATE_ALLOW_LIST = ENVIRONMENT.get_value("ROLE_CREATE_ALLOW_LIST", default="").split(",")
 
+# Dual write migration configuration
+REPLICATION_TO_RELATION_ENABLED = ENVIRONMENT.bool("REPLICATION_TO_RELATION_ENABLED", default=False)
+V2_MIGRATION_APP_EXCLUDE_LIST = ENVIRONMENT.get_value("V2_MIGRATION_APP_EXCLUDE_LIST", default="").split(",")
+V2_MIGRATION_RESOURCE_EXCLUDE_LIST = ENVIRONMENT.get_value("V2_MIGRATION_RESOURCE_EXCLUDE_LIST", default="").split(",")
+
 # Migration Setup
 TENANT_PARALLEL_MIGRATION_MAX_PROCESSES = ENVIRONMENT.int("TENANT_PARALLEL_MIGRATION_MAX_PROCESSES", default=2)
 TENANT_PARALLEL_MIGRATION_CHUNKS = ENVIRONMENT.int("TENANT_PARALLEL_MIGRATION_CHUNKS", default=2)
@@ -365,7 +372,7 @@ except ValueError as e:
     DESTRUCTIVE_SEEDING_OK_UNTIL = datetime.datetime(1970, 1, 1, tzinfo=pytz.UTC)
 
 # disable log messages less than CRITICAL when running unit tests.
-if len(sys.argv) > 1 and sys.argv[1] == "test":
+if len(sys.argv) > 1 and sys.argv[1] == "test" and not ENVIRONMENT.bool("LOG_TEST_OUTPUT", default=False):
     logging.disable(logging.CRITICAL)
 
 # Optionally log all DB queries
@@ -473,8 +480,11 @@ IT_SERVICE_PROTOCOL_SCHEME = ENVIRONMENT.get_value("IT_SERVICE_PROTOCOL_SCHEME",
 IT_SERVICE_TIMEOUT_SECONDS = ENVIRONMENT.int("IT_SERVICE_TIMEOUT_SECONDS", default=10)
 IT_TOKEN_JKWS_CACHE_LIFETIME = ENVIRONMENT.int("IT_TOKEN_JKWS_CACHE_LIFETIME", default=28800)
 
+PRINCIPAL_USER_DOMAIN = ENVIRONMENT.get_value("PRINCIPAL_USER_DOMAIN", default="localhost")
+
 # Settings for enabling/disabling deletion in principal cleanup job via UMB
 PRINCIPAL_CLEANUP_DELETION_ENABLED_UMB = ENVIRONMENT.bool("PRINCIPAL_CLEANUP_DELETION_ENABLED_UMB", default=False)
+UMB_JOB_ENABLED = ENVIRONMENT.bool("UMB_JOB_ENABLED", default=True)
 UMB_HOST = ENVIRONMENT.get_value("UMB_HOST", default="localhost")
 UMB_PORT = ENVIRONMENT.get_value("UMB_PORT", default="61612")
 # Service account name
@@ -482,3 +492,7 @@ SA_NAME = ENVIRONMENT.get_value("SA_NAME", default="nonprod-hcc-rbac")
 
 RELATION_API_SERVER = ENVIRONMENT.get_value("RELATION_API_SERVER", default="localhost:9000")
 ENV_NAME = ENVIRONMENT.get_value("ENV_NAME", default="stage")
+
+# Versioned API settings
+V2_APIS_ENABLED = ENVIRONMENT.bool("V2_APIS_ENABLED", default=False)
+READ_ONLY_API_MODE = ENVIRONMENT.get_value("READ_ONLY_API_MODE", default=False)

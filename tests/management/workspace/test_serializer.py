@@ -57,6 +57,7 @@ class WorkspaceSerializerTest(TestCase):
             "parent_id": str(self.parent.uuid),
             "created": self._format_timestamps(self.child.created),
             "modified": self._format_timestamps(self.child.modified),
+            "type": self.child.type,
         }
 
         self.assertDictEqual(serializer.data, expected_data)
@@ -71,6 +72,7 @@ class WorkspaceSerializerTest(TestCase):
             "parent_id": None,
             "created": self._format_timestamps(self.parent.created),
             "modified": self._format_timestamps(self.parent.modified),
+            "type": self.parent.type,
         }
 
         self.assertDictEqual(serializer.data, expected_data)
@@ -88,6 +90,7 @@ class WorkspaceSerializerTest(TestCase):
             "ancestry": [{"name": self.parent.name, "uuid": str(self.parent.uuid), "parent_id": None}],
             "created": self._format_timestamps(self.child.created),
             "modified": self._format_timestamps(self.child.modified),
+            "type": self.child.type,
         }
 
         self.assertDictEqual(serializer.data, expected_data)
