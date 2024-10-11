@@ -174,8 +174,11 @@ class V2TenantBootstrapService:
         if mapping is None:
             raise ValueError("Expected TenantMapping but got None.")
 
-        # TODO: DRY this? repeated in RelationApiDualWriteGroupHandler
-        principal_id = f"{self._user_domain}:{user.user_id}"
+        user_id = user.user_id
+
+        if user_id is None:
+            raise ValueError(f"User {user.username} has no user_id.")
+
         tuples_to_add = []
         tuples_to_remove = []
 
@@ -183,44 +186,24 @@ class V2TenantBootstrapService:
         if not user.is_service_account:
             _ensure_principal_with_user_id_in_tenant(user, bootstrapped_tenant.tenant, upsert=upsert)
 
-            tuples_to_add.append(
-                create_relationship(
-                    ("rbac", "group"),
-                    str(mapping.default_group_uuid),
-                    ("rbac", "principal"),
-                    principal_id,
-                    "member",
-                )
-            )
+            tuples_to_add.append(Group.relationship_to_user_id_for_group(str(mapping.default_group_uuid), user_id))
 
             # Add user to admin group if admin
             if user.admin:
                 tuples_to_add.append(
-                    create_relationship(
-                        ("rbac", "group"),
-                        str(mapping.default_admin_group_uuid),
-                        ("rbac", "principal"),
-                        principal_id,
-                        "member",
-                    )
+                    Group.relationship_to_user_id_for_group(str(mapping.default_admin_group_uuid), user_id)
                 )
             else:
                 # If not admin, ensure they are not in the admin group
                 # (we don't know what the previous state was)
                 tuples_to_remove.append(
-                    create_relationship(
-                        ("rbac", "group"),
-                        str(mapping.default_admin_group_uuid),
-                        ("rbac", "principal"),
-                        principal_id,
-                        "member",
-                    )
+                    Group.relationship_to_user_id_for_group(str(mapping.default_admin_group_uuid), user_id)
                 )
 
         self._replicator.replicate(
             ReplicationEvent(
                 type=ReplicationEventType.EXTERNAL_USER_UPDATE,
-                info={"principal_id": principal_id},
+                info={"user_id": user_id},
                 partition_key="rbactodo",
                 add=tuples_to_add,
                 remove=tuples_to_remove,
@@ -235,29 +218,14 @@ class V2TenantBootstrapService:
 
         # Get tenant mapping if present but no need to create if not
         tuples_to_remove = []
-        # TODO: DRY this? repeated in RelationApiDualWriteGroupHandler
-        principal_id = f"{self._user_domain}:{user.user_id}"
+        user_id = user.user_id
+
+        if user_id is None:
+            raise ValueError(f"User {user.username} has no user_id.")
 
         try:
             mapping = TenantMapping.objects.filter(tenant__org_id=user.org_id).get()
-            tuples_to_remove.append(
-                create_relationship(
-                    ("rbac", "group"),
-                    str(mapping.default_group_uuid),
-                    ("rbac", "principal"),
-                    principal_id,
-                    "member",
-                )
-            )
-            tuples_to_remove.append(
-                create_relationship(
-                    ("rbac", "group"),
-                    str(mapping.default_admin_group_uuid),
-                    ("rbac", "principal"),
-                    principal_id,
-                    "member",
-                )
-            )
+            tuples_to_remove.append(Group.relationship_to_user_id_for_group(str(mapping.default_group_uuid), user_id))
         except TenantMapping.DoesNotExist:
             pass
 
@@ -265,16 +233,9 @@ class V2TenantBootstrapService:
             principal = Principal.objects.filter(username=user.username, tenant__org_id=user.org_id).get()
 
             for group in principal.group.all():
+                group: Group
                 group.principals.remove(principal)
-                tuples_to_remove.append(
-                    create_relationship(
-                        ("rbac", "group"),
-                        str(group.uuid),
-                        ("rbac", "principal"),
-                        principal_id,
-                        "member",
-                    )
-                )
+                tuples_to_remove.append(group.relationship_to_principal(principal))
 
             principal.delete()
         except Principal.DoesNotExist:
@@ -283,7 +244,7 @@ class V2TenantBootstrapService:
         self._replicator.replicate(
             ReplicationEvent(
                 type=ReplicationEventType.EXTERNAL_USER_UPDATE,
-                info={"principal_id": principal_id},
+                info={"user_id": user_id},
                 partition_key="rbactodo",
                 remove=tuples_to_remove,
             )

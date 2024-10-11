@@ -20,7 +20,9 @@ from typing import Iterable
 
 from django.conf import settings
 from kessel.relations.v1beta1 import common_pb2
+from management.group.model import Group
 from management.models import Workspace
+from management.principal.model import Principal
 from management.role.model import BindingMapping, Role
 from migration_tool.models import V2rolebinding
 from migration_tool.sharedSystemRolesReplicatedRoleBindings import v1_role_to_v2_bindings
@@ -124,55 +126,25 @@ def migrate_workspace(tenant: Tenant, write_relationships: bool):
     return root_workspace, default_workspace
 
 
-def migrate_users(tenant: Tenant, write_relationships: bool):
-    """Write users relationship to tenant."""
-    relationships = [
-        create_relationship(
-            ("rbac", "tenant"), str(tenant.org_id), ("rbac", "principal"), str(principal.uuid), "member"
-        )
-        for principal in tenant.principal_set.all()
-    ]
-    output_relationships(relationships, write_relationships)
-
-
 def migrate_users_for_groups(tenant: Tenant, write_relationships: bool):
     """Write users relationship to groups."""
     relationships = []
     for group in tenant.group_set.exclude(platform_default=True):
-        user_set = group.principals.all()
+        group: Group
+        user_set: Iterable[Principal] = group.principals.all()
         for user in user_set:
-            relationships.append(
-                create_relationship(
-                    ("rbac", "group"), str(group.uuid), ("rbac", "principal"), str(user.uuid), "member"
-                )
-            )
-    # Explicitly create relationships for platform default group
-    group_default = tenant.group_set.filter(platform_default=True).first()
-    if not group_default:  # Means it is not custom platform_default
-        group_default = Tenant.objects.get(tenant_name="public").group_set.get(platform_default=True)
-    user_set = tenant.principal_set.filter(cross_account=False)
-    for user in user_set:
-        relationships.append(
-            create_relationship(
-                ("rbac", "group"), str(group_default.uuid), ("rbac", "principal"), str(user.uuid), "member"
-            )
-        )
+            if (relationship := group.relationship_to_principal(user)) is not None:
+                relationships.append(relationship)
     output_relationships(relationships, write_relationships)
 
 
 def migrate_data_for_tenant(tenant: Tenant, exclude_apps: list, write_relationships: bool):
     """Migrate all data for a given tenant."""
-    logger.info("Creating workspace.")
-    _, default_workspace = migrate_workspace(tenant, write_relationships)
-    logger.info("Workspace migrated.")
-
-    logger.info("Relating users to tenant.")
-    migrate_users(tenant, write_relationships)
-    logger.info("Finished relationship between users and tenant.")
-
     logger.info("Migrating relations of group and user.")
     migrate_users_for_groups(tenant, write_relationships)
     logger.info("Finished migrating relations of group and user.")
+
+    default_workspace = Workspace.objects.get(type=Workspace.Types.DEFAULT, tenant=tenant)
 
     roles = tenant.role_set.all()
     if exclude_apps:
@@ -181,7 +153,7 @@ def migrate_data_for_tenant(tenant: Tenant, exclude_apps: list, write_relationsh
     for role in roles:
         logger.info(f"Migrating role: {role.name} with UUID {role.uuid}.")
 
-        _, mappings = migrate_role(role, write_relationships, default_workspace)
+        tuples, mappings = migrate_role(role, write_relationships, default_workspace)
 
         # Conflits are not ignored in order to prevent this from
         # accidentally running concurrently with dual-writes.
@@ -190,6 +162,8 @@ def migrate_data_for_tenant(tenant: Tenant, exclude_apps: list, write_relationsh
         # always ensure writes are paused before running.
         # This must always be the case, but this should at least start failing you if you forget.
         BindingMapping.objects.bulk_create(mappings, ignore_conflicts=False)
+
+        output_relationships(tuples, write_relationships)
 
         logger.info(f"Migration completed for role: {role.name} with UUID {role.uuid}.")
     logger.info(f"Migrated {roles.count()} roles for tenant: {tenant.org_id}")

@@ -21,6 +21,7 @@ from typing import Callable, Iterable, Optional
 from uuid import uuid4
 
 from django.conf import settings
+from management.group.model import Group
 from management.models import Workspace
 from management.principal.model import Principal
 from management.role.model import BindingMapping, Role
@@ -41,6 +42,8 @@ logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 class RelationApiDualWriteGroupHandler:
     """Class to handle Dual Write API related operations."""
+
+    group: Group
 
     def __init__(
         self,
@@ -72,17 +75,13 @@ class RelationApiDualWriteGroupHandler:
         """Generate user-groups relations."""
         relations = []
         for principal in self.principals:
-            if principal.user_id is None:
+            relationship = self.group.relationship_to_principal(principal)
+            if relationship is None:
                 logger.warning(
                     "[Dual Write] Principal(uuid=%s) does not have user_id. Skipping replication.", principal.uuid
                 )
                 continue
-            principal_id = f"{self.user_domain}:{principal.user_id}"
-            relations.append(
-                create_relationship(
-                    ("rbac", "group"), str(self.group.uuid), ("rbac", "principal"), principal_id, "member"
-                )
-            )
+            relations.append(relationship)
 
         return relations
 

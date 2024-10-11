@@ -111,7 +111,7 @@ def clone_default_group_in_public_schema(group, tenant) -> Optional[Group]:
     tenant_default_policy.name = "System Policy for Group {}".format(group.uuid)
     tenant_default_policy.tenant = tenant
     if Group.objects.filter(name=group.name, platform_default=group.platform_default, tenant=tenant):
-        # TODO: returning none can break other
+        # TODO: returning none can break other code
         return
     public_default_roles = Role.objects.filter(platform_default=True, tenant=public_tenant)
 

@@ -17,6 +17,7 @@
 
 """Model for group management."""
 import logging
+from typing import Optional, Union
 from uuid import uuid4
 
 from django.conf import settings
@@ -25,12 +26,14 @@ from django.db.models import signals
 from django.utils import timezone
 from internal.integration import chrome_handlers
 from internal.integration import sync_handlers
+from kessel.relations.v1beta1.common_pb2 import Relationship
 from management.cache import AccessCache
 from management.principal.model import Principal
 from management.rbac_fields import AutoDateTimeField
 from management.role.model import Role
+from migration_tool.utils import create_relationship
 
-from api.models import TenantAwareModel
+from api.models import TenantAwareModel, User
 
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
@@ -48,6 +51,29 @@ class Group(TenantAwareModel):
     platform_default = models.BooleanField(default=False)
     system = models.BooleanField(default=False)
     admin_default = models.BooleanField(default=False)
+
+    @staticmethod
+    def relationship_to_principal_for_group(
+        group: "Group", principal: Union[Principal, User]
+    ) -> Optional[Relationship]:
+        """Create a relationship between a group and a principal given a Principal or User."""
+        if principal is Principal:
+            id = principal.principal_resource_id()
+        elif (user_id := principal.user_id) is not None:
+            id = Principal.user_id_to_principal_resource_id(user_id)
+        else:
+            return None
+        return create_relationship(("rbac", "group"), str(group.uuid), ("rbac", "principal"), id, "member")
+
+    @staticmethod
+    def relationship_to_user_id_for_group(group_uuid: str, user_id: str) -> Relationship:
+        """Create a relationship between a group and a user ID."""
+        id = Principal.user_id_to_principal_resource_id(user_id)
+        return create_relationship(("rbac", "group"), group_uuid, ("rbac", "principal"), id, "member")
+
+    def relationship_to_principal(self, principal: Union[Principal, User]) -> Optional[Relationship]:
+        """Create a relationship between a group and a principal given a Principal or User."""
+        return Group.relationship_to_principal_for_group(self, principal)
 
     def roles(self):
         """Roles for a group."""
