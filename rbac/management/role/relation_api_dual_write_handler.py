@@ -323,6 +323,8 @@ class RelationApiDualWriteHandler:
     # TODO: Remove/replace - placeholder for testing
     def replicate_new_system_role_permissions(self, role: Role):
         """Replicate system role permissions."""
+        if not self.replication_enabled():
+            return
         permissions = list()
         for access in role.access.all():
             v1_perm = access.permission
