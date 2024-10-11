@@ -77,8 +77,8 @@ class MigrateTests(TestCase):
             tenant=self.tenant,
         )
         self.group_a2 = Group.objects.create(name="group_a2", tenant=self.tenant)
-        self.principal1 = Principal.objects.create(username="principal1", tenant=self.tenant)
-        self.principal2 = Principal.objects.create(username="principal2", tenant=self.tenant)
+        self.principal1 = Principal.objects.create(username="principal1", tenant=self.tenant, user_id="user_id_1")
+        self.principal2 = Principal.objects.create(username="principal2", tenant=self.tenant, user_id="user_id_2")
         self.group_a2.principals.add(self.principal1, self.principal2)
         self.policy_a2 = Policy.objects.create(name="System Policy_a2", group=self.group_a2, tenant=self.tenant)
         self.policy_a2.roles.add(self.role_a2)
@@ -137,17 +137,9 @@ class MigrateTests(TestCase):
         tuples = [
             # Org relationships of self.tenant
             # the other org is not included since it is not specified in the orgs parameter
-            ## Workspaces root and default
-            call(f"workspace:{default_workspace_id}#parent@workspace:{root_workspace_id}"),
-            call(f"workspace:{root_workspace_id}#parent@tenant:{org_id}"),
-            ## Realm
-            call(f"tenant:{org_id}#platform@platform:stage"),
-            ## Users to tenant
-            call(f"tenant:{org_id}#member@principal:{self.principal1.uuid}"),
-            call(f"tenant:{org_id}#member@principal:{self.principal2.uuid}"),
             ## Group member
-            call(f"group:{self.group_a2.uuid}#member@principal:{self.principal1.uuid}"),
-            call(f"group:{self.group_a2.uuid}#member@principal:{self.principal2.uuid}"),
+            call(f"group:{self.group_a2.uuid}#member@principal:{self.principal1.principal_resource_id()}"),
+            call(f"group:{self.group_a2.uuid}#member@principal:{self.principal2.principal_resource_id()}"),
             ## Role binding to role_a2
             call(f"role_binding:{rolebinding_a2}#role@role:{v2_role_a2}"),
             call(f"role:{v2_role_a2}#inventory_hosts_write@principal:*"),

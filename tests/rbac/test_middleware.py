@@ -118,6 +118,7 @@ class RbacTenantMiddlewareTest(IdentityRequest):
         user.username = self.user_data["username"]
         user.account = self.customer_data["account_id"]
         user.org_id = self.customer_data["org_id"]
+        user.user_id = self.user_data["user_id"]
         self.request.user = user
 
     def test_get_tenant_with_user(self):

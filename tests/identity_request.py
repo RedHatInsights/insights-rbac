@@ -70,7 +70,7 @@ class IdentityRequest(TestCase):
     @classmethod
     def _create_user_data(cls):
         """Create user data."""
-        user_data = {"username": cls.fake.user_name(), "email": cls.fake.email()}
+        user_data = {"username": cls.fake.user_name(), "email": cls.fake.email(), "user_id": cls.fake.ean8()}
         return user_data
 
     def _create_service_account_data(cls) -> dict[str, str]:

@@ -367,7 +367,6 @@ class V2TenantBootstrapService:
     def _get_platform_default_policy_uuid(self) -> Optional[str]:
         try:
             if self._platform_default_policy_uuid is None:
-                # TODO this doesnt always exist in tests
                 policy = Group.objects.get(
                     platform_default=True, system=True, tenant=self._get_public_tenant()
                 ).policies.get()

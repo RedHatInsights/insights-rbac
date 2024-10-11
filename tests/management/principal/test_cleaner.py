@@ -598,7 +598,7 @@ class PrincipalUMBTestsWithV2TenantBootstrap(PrincipalUMBTests):
                         relation="member",
                         subject_type_namespace="rbac",
                         subject_type_name="principal",
-                        subject_id=f"localhost:{self.principal_user_id}",
+                        subject_id=f"redhat.com:{self.principal_user_id}",
                         subject_relation="",
                     )
                 ],
