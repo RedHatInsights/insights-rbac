@@ -33,7 +33,9 @@ from management.role.relation_api_dual_write_handler import (
     RelationApiDualWriteHandler,
     ReplicationEventType,
 )
-from management.tenant.model import BootstrappedTenant, TenantBootstrapService, V2TenantBootstrapService
+from management.tenant_service.tenant_service import BootstrappedTenant
+from management.tenant_service.v2 import V2TenantBootstrapService
+from management.tenant_service.tenant_service import TenantBootstrapService
 from migration_tool.in_memory_tuples import (
     InMemoryRelationReplicator,
     InMemoryTuples,
@@ -872,6 +874,9 @@ class RbacFixture:
 
     def custom_default_group(self, tenant: Tenant) -> Group:
         return set_system_flag_before_update(self.default_group, tenant, None)  # type: ignore
+
+    def root_workspace(self, tenant: Tenant) -> Workspace:
+        return Workspace.objects.get(type=Workspace.Types.ROOT, tenant=tenant)
 
     def default_workspace(self, tenant: Tenant) -> Workspace:
         return Workspace.objects.get(type=Workspace.Types.DEFAULT, tenant=tenant)

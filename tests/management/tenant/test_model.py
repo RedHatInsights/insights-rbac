@@ -20,7 +20,8 @@ from django.test import TestCase
 from management.group.definer import seed_group
 from management.group.model import Group
 from management.policy.model import Policy
-from management.tenant.model import TenantMapping, V2TenantBootstrapService
+from management.tenant_mapping.model import TenantMapping
+from management.tenant_service.v2 import V2TenantBootstrapService
 from management.workspace.model import Workspace
 from migration_tool.in_memory_tuples import (
     InMemoryRelationReplicator,
@@ -47,6 +48,42 @@ class V2TenantBootstrapServiceTest(TestCase):
         self.service = V2TenantBootstrapService(InMemoryRelationReplicator(self.tuples))
         self.fixture = RbacFixture(self.service)
         self.default_group, self.admin_group = seed_group()
+
+    def test_relates_workspace_tenant_platform_hierarchy(self):
+        bootstrapped = self.fixture.new_tenant(org_id="o1")
+        root = self.fixture.root_workspace(bootstrapped.tenant)
+        default = self.fixture.default_workspace(bootstrapped.tenant)
+
+        self.assertEqual(
+            1,
+            self.tuples.count_tuples(
+                all_of(
+                    resource("rbac", "workspace", default.uuid),
+                    relation("parent"),
+                    subject("rbac", "workspace", root.uuid),
+                )
+            ),
+        )
+        self.assertEqual(
+            1,
+            self.tuples.count_tuples(
+                all_of(
+                    resource("rbac", "workspace", root.uuid),
+                    relation("parent"),
+                    subject("rbac", "tenant", "localhost:o1"),
+                )
+            ),
+        )
+        self.assertEqual(
+            1,
+            self.tuples.count_tuples(
+                all_of(
+                    resource("rbac", "tenant", "localhost:o1"),
+                    relation("platform"),
+                    subject("rbac", "platform", "stage"),
+                )
+            ),
+        )
 
     def test_removes_user_from_admin_group_when_no_longer_admin(self):
         bootstrapped = self.fixture.new_tenant(org_id="o1")

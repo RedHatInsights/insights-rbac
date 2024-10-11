@@ -30,10 +30,10 @@ from django.utils.deprecation import MiddlewareMixin
 from management.cache import TenantCache
 from management.models import Principal
 from management.role.relation_api_dual_write_handler import OutboxReplicator
-from management.tenant.model import (
+from management.tenant_service.tenant_service import (
     TenantBootstrapService,
-    get_tenant_bootstrap_service,
 )
+from management.tenant_service import get_tenant_bootstrap_service
 from management.utils import APPLICATION_KEY, access_for_principal, validate_psk
 from prometheus_client import Counter
 from rest_framework import status

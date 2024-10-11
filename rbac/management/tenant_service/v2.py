@@ -1,25 +1,6 @@
-#
-# Copyright 2024 Red Hat, Inc.
-#
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU Affero General Public License as
-# published by the Free Software Foundation, either version 3 of the
-# License, or (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU Affero General Public License for more details.
-#
-# You should have received a copy of the GNU Affero General Public License
-# along with this program.  If not, see <https://www.gnu.org/licenses/>.
-#
-"""Additional tenant-related models."""
+"""V2 implementation of Tenant bootstrapping."""
 
-import logging
-import uuid
-from typing import List, Optional, Protocol
-from typing import NamedTuple
+from typing import List, Optional
 
 from django.conf import settings
 from django.db import models, transaction
@@ -27,107 +8,14 @@ from kessel.relations.v1beta1.common_pb2 import Relationship
 from management.group.model import Group
 from management.principal.model import Principal
 from management.role.relation_api_dual_write_handler import RelationReplicator, ReplicationEvent, ReplicationEventType
+from management.tenant_mapping.model import TenantMapping, logger
+from management.tenant_service.tenant_service import BootstrappedTenant
+from management.tenant_service.tenant_service import _ensure_principal_with_user_id_in_tenant
 from management.workspace.model import Workspace
 from migration_tool.utils import create_relationship
 
+
 from api.models import Tenant, User
-from api.serializers import create_tenant_name
-
-
-logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
-
-
-class TenantMapping(models.Model):
-    """Tenant mappings to V2 domain concepts."""
-
-    tenant = models.OneToOneField(Tenant, on_delete=models.CASCADE)
-    default_group_uuid = models.UUIDField(default=uuid.uuid4, editable=False, null=False)
-    default_admin_group_uuid = models.UUIDField(default=uuid.uuid4, editable=False, null=False)
-    default_user_role_binding_uuid = models.UUIDField(default=uuid.uuid4, editable=False, null=False)
-    default_admin_role_binding_uuid = models.UUIDField(default=uuid.uuid4, editable=False, null=False)
-
-
-class BootstrappedTenant(NamedTuple):
-    """Tenant information."""
-
-    tenant: Tenant
-    mapping: Optional[TenantMapping]
-
-
-def get_tenant_bootstrap_service(replicator: RelationReplicator) -> "TenantBootstrapService":
-    """Get a UserBootstrapService instance based on settings."""
-    return V2TenantBootstrapService(replicator) if settings.V2_BOOTSTRAP_TENANT else V1TenantBootstrapService()
-
-
-class TenantBootstrapService(Protocol):
-    """Service for bootstrapping users in tenants."""
-
-    def update_user(
-        self, user: User, upsert: bool = False, bootstrapped_tenant: Optional[BootstrappedTenant] = None
-    ) -> Optional[BootstrappedTenant]:
-        """Bootstrap a user in a tenant."""
-        ...
-
-    def new_bootstrapped_tenant(self, org_id: str, account_number: Optional[str] = None) -> BootstrappedTenant:
-        """Create a new tenant."""
-        ...
-
-
-class V1TenantBootstrapService:
-    """Service for bootstrapping tenants which retains V1-only behavior."""
-
-    _add_user_id: bool
-
-    def __init__(self):
-        """Initialize the V1TenantBootstrapService."""
-        self._add_user_id = settings.V1_BOOTSTRAP_ADD_USER_ID
-
-    def new_bootstrapped_tenant(self, org_id: str, account_number: Optional[str] = None) -> BootstrappedTenant:
-        """Create a new tenant."""
-        return self._get_or_bootstrap_tenant(org_id, account_number)
-
-    def update_user(
-        self, user: User, upsert: bool = False, bootstrapped_tenant: Optional[BootstrappedTenant] = None
-    ) -> Optional[BootstrappedTenant]:
-        """Bootstrap a user in a tenant."""
-        if user.is_active:
-            return self._update_active_user(user, upsert)
-        else:
-            return self._update_inactive_user(user)
-
-    def _update_active_user(self, user: User, upsert: bool) -> Optional[BootstrappedTenant]:
-        bootstrapped = self._get_or_bootstrap_tenant(user.org_id, user.account)
-
-        if self._add_user_id:
-            _ensure_principal_with_user_id_in_tenant(user, bootstrapped.tenant, upsert=upsert)
-
-        return bootstrapped
-
-    def _get_or_bootstrap_tenant(self, org_id: str, account_number: Optional[str] = None) -> BootstrappedTenant:
-        tenant_name = create_tenant_name(account_number)
-        tenant, _ = Tenant.objects.get_or_create(
-            org_id=org_id,
-            defaults={"ready": True, "account_id": account_number, "tenant_name": tenant_name},
-        )
-        return BootstrappedTenant(tenant=tenant, mapping=None)
-
-    def _update_inactive_user(self, user: User) -> None:
-        try:
-            tenant = Tenant.objects.get(org_id=user.org_id)
-            principal = Principal.objects.get(username=user.username, tenant=tenant)
-            groups = []
-            for group in principal.group.all():
-                groups.append(group)
-                # We have to do the removal explicitly in order to clear the cache,
-                # or the console will still show the cached number of members
-                group.principals.remove(principal)
-            principal.delete()
-            if not groups:
-                logger.info(f"Principal {user.user_id} was not under any groups.")
-            for group in groups:
-                logger.info(f"Principal {user.user_id} was in group with uuid: {group.uuid}")
-        except (Tenant.DoesNotExist, Principal.DoesNotExist):
-            return None
 
 
 class V2TenantBootstrapService:
@@ -503,24 +391,3 @@ class V2TenantBootstrapService:
         if self._public_tenant is None:
             self._public_tenant = Tenant.objects.get(tenant_name="public")
         return self._public_tenant
-
-
-def _ensure_principal_with_user_id_in_tenant(user: User, tenant: Tenant, upsert: bool = False):
-    created = False
-    principal = None
-
-    if upsert:
-        principal, created = Principal.objects.get_or_create(
-            username=user.username,
-            tenant=tenant,
-            defaults={"user_id": user.user_id},
-        )
-    else:
-        try:
-            principal = Principal.objects.get(username=user.username, tenant=tenant)
-        except Principal.DoesNotExist:
-            pass
-
-    if not created and principal and principal.user_id != user.user_id:
-        principal.user_id = user.user_id
-        principal.save()

@@ -34,7 +34,7 @@ from rest_framework.test import APIClient
 from api.models import Tenant, User
 from api.serializers import create_tenant_name
 from management.group.definer import seed_group
-from management.tenant.model import TenantMapping
+from management.tenant_mapping.model import TenantMapping
 from management.workspace.model import Workspace
 from migration_tool.in_memory_tuples import (
     InMemoryRelationReplicator,

@@ -30,7 +30,8 @@ from management.principal.cleaner import clean_tenant_principals
 from management.principal.model import Principal
 from management.principal.cleaner import process_principal_events_from_umb
 from management.principal.proxy import external_principal_to_user
-from management.tenant.model import TenantMapping, get_tenant_bootstrap_service
+from management.tenant_mapping.model import TenantMapping
+from management.tenant_service import get_tenant_bootstrap_service
 from management.workspace.model import Workspace
 from api.models import Tenant
 from migration_tool.in_memory_tuples import (

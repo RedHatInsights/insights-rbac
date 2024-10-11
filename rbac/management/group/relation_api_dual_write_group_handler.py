@@ -33,7 +33,6 @@ from management.role.relation_api_dual_write_handler import (
     ReplicationEventType,
 )
 from migration_tool.models import V2boundresource, V2role, V2rolebinding
-from migration_tool.utils import create_relationship
 
 from api.models import Tenant
 
