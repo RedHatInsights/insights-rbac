@@ -595,7 +595,38 @@ class DualWriteSystemRolesTestCase(DualWriteTestCase):
             self.default_workspace(t2), for_v2_roles=[id], for_groups=[str(g2.uuid)]
         )
 
-    # TODO: Add test to cover updating and deleting system role
+    def test_updating_system_role(self):
+        role = self.given_v1_system_role("r1", ["app1:hosts:read", "inventory:hosts:write"])
+
+        # check if relations exist in replicator.
+        tuples = self.tuples.find_tuples(predicate=resource_type("rbac", "role"))
+        self.assertEquals(len(tuples), 2)
+
+        dual_write_handler = SeedingRelationApiDualWriteHandler(replicator=InMemoryRelationReplicator(self.tuples))
+        dual_write_handler.prepare_for_update(role)
+        role = self.fixture.update_custom_role(
+            role,
+            resource_access=self._workspace_access_to_resource_definition(default=["inventory:hosts:write"]),
+        )
+        dual_write_handler.replicate_update_system_role(role)
+
+        # check if only 1 relation exists in replicator.
+        tuples = self.tuples.find_tuples(predicate=resource_type("rbac", "role"))
+        self.assertEquals(len(tuples), 1)
+
+    def test_delete_system_role(self):
+        role = self.given_v1_system_role("d_r1", ["app1:hosts:read", "inventory:hosts:write"])
+
+        # check if relations exist in replicator.
+        tuples = self.tuples.find_tuples(predicate=resource_type("rbac", "role"))
+        self.assertEquals(len(tuples), 2)
+
+        dual_write_handler = SeedingRelationApiDualWriteHandler(replicator=InMemoryRelationReplicator(self.tuples))
+        dual_write_handler.replicate_deleted_system_role(role)
+
+        # check if relations do not exist in replicator.
+        tuples = self.tuples.find_tuples(predicate=resource_type("rbac", "role"))
+        self.assertEquals(len(tuples), 0)
 
 
 class DualWriteCustomRolesTestCase(DualWriteTestCase):
