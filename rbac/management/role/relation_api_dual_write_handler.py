@@ -67,7 +67,7 @@ class ReplicationEvent:
     """What tuples changes to replicate."""
 
     event_type: ReplicationEventType
-    event_info: dict[str, str]
+    event_info: dict[str, object]
     partition_key: str
     add: list[common_pb2.Relationship]
     remove: list[common_pb2.Relationship]
@@ -78,7 +78,7 @@ class ReplicationEvent:
         partition_key: str,
         add: list[common_pb2.Relationship] = [],
         remove: list[common_pb2.Relationship] = [],
-        info: dict[str, str] = {},
+        info: dict[str, object] = {},
     ):
         """Initialize ReplicationEvent."""
         self.partition_key = partition_key
@@ -118,13 +118,13 @@ class OutboxReplicator(RelationReplicator):
         replication_event = {"relations_to_add": add_json, "relations_to_remove": remove_json}
         return replication_event
 
-    def _save_replication_event(self, payload, event_type, event_info: dict[str, str], aggregateid):
+    def _save_replication_event(self, payload, event_type, event_info: dict[str, object], aggregateid):
         """Save replication event."""
         # TODO: Can we add these as proper fields for kibana but also get logged in simple formatter?
         logger.info(
             "[Dual Write] Publishing replication event. event_type='%s' %s",
             event_type,
-            " ".join([f"info.{key}='{value}'" for key, value in event_info.items()]),
+            " ".join([f"info.{key}='{str(value)}'" for key, value in event_info.items()]),
         )
         # https://debezium.io/documentation/reference/stable/transformations/outbox-event-router.html#basic-outbox-table
         outbox_record = Outbox.objects.create(

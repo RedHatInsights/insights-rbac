@@ -202,7 +202,7 @@ class V2TenantBootstrapService:
 
         self._replicator.replicate(
             ReplicationEvent(
-                type=ReplicationEventType.EXTERNAL_USER_UPDATE,
+                event_type=ReplicationEventType.EXTERNAL_USER_UPDATE,
                 info={"user_id": user_id},
                 partition_key="rbactodo",
                 add=tuples_to_add,
@@ -243,7 +243,7 @@ class V2TenantBootstrapService:
 
         self._replicator.replicate(
             ReplicationEvent(
-                type=ReplicationEventType.EXTERNAL_USER_UPDATE,
+                event_type=ReplicationEventType.EXTERNAL_USER_UPDATE,
                 info={"user_id": user_id},
                 partition_key="rbactodo",
                 remove=tuples_to_remove,
@@ -303,7 +303,7 @@ class V2TenantBootstrapService:
 
         self._replicator.replicate(
             ReplicationEvent(
-                type=ReplicationEventType.BOOTSTRAP_TENANT,
+                event_type=ReplicationEventType.BOOTSTRAP_TENANT,
                 info={"org_id": tenant.org_id, "default_workspace_uuid": str(default_workspace.uuid)},
                 partition_key="rbactodo",
                 add=relationships,
