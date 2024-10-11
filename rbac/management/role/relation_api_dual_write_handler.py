@@ -71,14 +71,14 @@ class ReplicationEvent:
 
     def __init__(
         self,
-        type: ReplicationEventType,
+        event_type: ReplicationEventType,
         partition_key: str,
         add: list[common_pb2.Relationship] = [],
         remove: list[common_pb2.Relationship] = [],
     ):
         """Initialize ReplicationEvent."""
         self.partition_key = partition_key
-        self.event_type = type
+        self.event_type = event_type
         self.add = add
         self.remove = remove
 
@@ -276,7 +276,7 @@ class RelationApiDualWriteHandler:
         try:
             self._replicator.replicate(
                 ReplicationEvent(
-                    type=self.event_type,
+                    event_type=self.event_type,
                     # TODO: need to think about partitioning
                     # Maybe resource id
                     partition_key="rbactodo",
