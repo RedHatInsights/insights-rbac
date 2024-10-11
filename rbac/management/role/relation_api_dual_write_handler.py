@@ -240,7 +240,7 @@ class SeedingRelationApiDualWriteHandler:
         try:
             self._replicator.replicate(
                 ReplicationEvent(
-                    type=event_type,
+                    event_type=event_type,
                     # TODO: need to think about partitioning
                     # Maybe resource id
                     partition_key="rbactodo",
