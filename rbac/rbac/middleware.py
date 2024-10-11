@@ -99,15 +99,15 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
     """
 
     header = RH_IDENTITY_HEADER
-    # TODO: Lazy bootstrapping of tenants should use a synchronous replicator
-    # In this case the replicator needs to include a precondition
-    # which does not add the tuples if any others already exist for the tenant
-    # (the tx will be rolled back in that case)
     bootstrap_service: TenantBootstrapService
 
     def __init__(self, get_response):
         """Initialize the middleware."""
         super().__init__(get_response)
+        # TODO: Lazy bootstrapping of tenants should use a synchronous replicator
+        # In this case the replicator needs to include a precondition
+        # which does not add the tuples if any others already exist for the tenant
+        # (the tx will be rolled back in that case)
         self.bootstrap_service = get_tenant_bootstrap_service(OutboxReplicator())
 
     def get_tenant(self, model, hostname, request):
