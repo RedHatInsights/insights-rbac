@@ -196,6 +196,7 @@ FRAME_BODY = (
     b'<Identifier system="WEB" entity-name="Email" qualifier="id">56780000_IEMAIL</Identifier>\n                    '
     b"</Identifiers>\n                    <EmailAddress>test@email.com</EmailAddress>\n                </Email>\n                "
     b"<UserMembership>\n                    <Name>admin:org:all</Name>\n                </UserMembership>\n                "
+    b"<UserMembership>\n                    <Name>foo</Name>\n                </UserMembership>\n                "
     b"<UserPrivilege>\n                    <Label>portal_system_management</Label>\n                    "
     b"<Description>Customer Portal: System Management</Description>\n                    <Privileged>Y</Privileged>\n                "
     b"</UserPrivilege>\n                <UserPrivilege>\n                    <Label>portal_download</Label>\n                    "
@@ -235,6 +236,7 @@ FRAME_BODY_CREATION = (
     b'<Identifier system="WEB" entity-name="Email" qualifier="id">56780000_IEMAIL</Identifier>\n                    '
     b"</Identifiers>\n                    <EmailAddress>test@email.com</EmailAddress>\n                </Email>\n                "
     b"<UserMembership>\n                    <Name>admin:org:all</Name>\n                </UserMembership>\n                "
+    b"<UserMembership>\n                    <Name>foo</Name>\n                </UserMembership>\n                "
     b"<UserPrivilege>\n                    <Label>portal_system_management</Label>\n                    "
     b"<Description>Customer Portal: System Management</Description>\n                    <Privileged>Y</Privileged>\n                "
     b"</UserPrivilege>\n                <UserPrivilege>\n                    <Label>portal_download</Label>\n                    "

@@ -139,7 +139,6 @@ def retrieve_user_info(message) -> User:
         user = User()
         user.user_id = user_id
         user.is_active = False
-        user.admin = message_user.get("UserMembership") == {"Name": "admin:org:all"}
         user.username = message_user["Person"]["Credentials"]["Login"]
         for ref in identifiers["Reference"]:
             if ref["@system"] == "WEB" and ref["@entity-name"] == "Customer" and ref["@qualifier"] == "id":
