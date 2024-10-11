@@ -172,7 +172,7 @@ class V2TenantBootstrapService:
         bootstrapped_tenant = bootstrapped_tenant or self._get_or_bootstrap_tenant(user.org_id, user.account)
         mapping = bootstrapped_tenant.mapping
         if mapping is None:
-            raise ValueError("Expected TenantMapping but got None.")
+            raise ValueError(f"Expected TenantMapping but got None. org_id: {bootstrapped_tenant.tenant.org_id}")
 
         user_id = user.user_id
 
@@ -185,7 +185,7 @@ class V2TenantBootstrapService:
         # Add user to default group if not a service account
         if not user.is_service_account:
             _ensure_principal_with_user_id_in_tenant(user, bootstrapped_tenant.tenant, upsert=upsert)
-            tuples_to_add, tuples_to_remove = self.tuples_to_edit(user, mapping)
+            tuples_to_add, tuples_to_remove = self._default_group_tuple_edits(user, mapping)
 
         self._replicator.replicate(
             ReplicationEvent(
@@ -204,9 +204,8 @@ class V2TenantBootstrapService:
         """
         Bootstrap multiple users in a tenant.
 
-        Create a Tenant (and bootstrap it) if it does not exist.
-        Creates a [Principal] for the [user] if [upsert] is True. Otherwise,
-        only updates the [Principal] with the user's user_id if needed.
+        Create each users' Tenant (and bootstrap it) if it does not exist.
+        Updates each [Principal] with the user's user_id if Principal exists but user_id not set.
 
         Args:
             users (list): List of User objects to update
@@ -240,26 +239,27 @@ class V2TenantBootstrapService:
 
             mapping = bootstrapped.mapping
             if mapping is None:
-                raise ValueError("Expected TenantMapping but got None.")
+                raise ValueError(f"Expected TenantMapping but got None. org_id: {bootstrapped.tenant.org_id}")
 
-            sub_tuples_to_add, sub_tuples_to_remove = self.tuples_to_edit(user, mapping)
+            sub_tuples_to_add, sub_tuples_to_remove = self._default_group_tuple_edits(user, mapping)
             tuples_to_add.extend(sub_tuples_to_add)
             tuples_to_remove.extend(sub_tuples_to_remove)
 
         # Bulk update existing principals
         if principals_to_update:
             Principal.objects.bulk_update(principals_to_update, ["user_id"])
+
         self._replicator.replicate(
             ReplicationEvent(
-                type=ReplicationEventType.EXTERNAL_USER_UPDATE,
-                info={"bulk_import": "users"},
+                event_type=ReplicationEventType.EXTERNAL_USER_UPDATE,
+                info={"bulk_import": ",".join([user.user_id for user in users if user.user_id is not None])},
                 partition_key="rbactodo",
                 add=tuples_to_add,
                 remove=tuples_to_remove,
             )
         )
 
-    def tuples_to_edit(self, user: User, mapping):
+    def _default_group_tuple_edits(self, user: User, mapping) -> tuple[list[Relationship], list[Relationship]]:
         """Get the tuples to add and remove for a user."""
         tuples_to_add = []
         tuples_to_remove = []
