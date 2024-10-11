@@ -100,15 +100,6 @@ def stringify_spicedb_relationship(rel: common_pb2.Relationship):
     )
 
 
-def relationship_to_json(rel):
-    """Convert a relationship to a JSON object."""
-    return {
-        "resource": {"type": rel.resource.type.name, "id": rel.resource.id},
-        "relation": rel.relation,
-        "subject": {"type": rel.subject.subject.type.name, "id": rel.subject.subject.id},
-    }
-
-
 def output_relationships(relationships: list, write_db: bool):
     """Output relationships to the console and optionally write them to the database."""
     for rel in relationships:

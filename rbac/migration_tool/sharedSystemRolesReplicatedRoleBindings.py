@@ -103,10 +103,6 @@ def v1_role_to_v2_bindings(
 
         default = True
         for resource_def in access.resourceDefinitions.all():
-            if not is_for_enabled_resource(v1_perm):
-                default = False
-                continue
-
             default = False
             attri_filter = resource_def.attributeFilter
 
@@ -122,6 +118,8 @@ def v1_role_to_v2_bindings(
             resource_type = attribute_key_to_v2_related_resource_type(attri_filter["key"])
             if resource_type is None:
                 # Resource type not mapped to v2
+                continue
+            if not is_for_enabled_resource(resource_type):
                 continue
             for resource_id in values_from_attribute_filter(attri_filter):
                 # TODO: Need to bind against "ungrouped hosts" for inventory
@@ -199,7 +197,7 @@ def is_for_enabled_app(perm: Permission):
     return perm.application not in settings.V2_MIGRATION_APP_EXCLUDE_LIST
 
 
-def is_for_enabled_resource(perm: Permission):
+def is_for_enabled_resource(resource: Tuple[str, str]):
     """
     Return true if the resource is for an app that should migrate.
 
@@ -210,7 +208,7 @@ def is_for_enabled_resource(perm: Permission):
     Once the resource model is finalized, we should no longer exclude that app, and should instead update
     the migration code to account for migrating those resources in whatever form they should migrate.
     """
-    return perm.application not in settings.V2_MIGRATION_RESOURCE_APP_EXCLUDE_LIST
+    return f"{resource[0]}:{resource[1]}" not in settings.V2_MIGRATION_RESOURCE_EXCLUDE_LIST
 
 
 def values_from_attribute_filter(attribute_filter: dict[str, Any]) -> list[str]:

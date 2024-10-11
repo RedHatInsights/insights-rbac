@@ -436,7 +436,7 @@ class GroupViewSet(
             }
         return resp
 
-    def add_principals(self, group, principals_from_response, org_id=None):
+    def add_users(self, group, principals_from_response, org_id=None):
         """Add principals to the group."""
         tenant = self.request.tenant
         new_principals = []
@@ -536,7 +536,7 @@ class GroupViewSet(
 
         return group, new_service_accounts
 
-    def remove_principals(self, group, principals, org_id=None):
+    def remove_users(self, group, principals, org_id=None):
         """Process list of principals and remove them from the group."""
         req_id = getattr(self.request, "req_id", None)
         log_prefix = f"[Request_id:{req_id}]"
@@ -721,7 +721,7 @@ class GroupViewSet(
                     )
                 new_users = []
                 if len(principals) > 0:
-                    group, new_users = self.add_principals(group, principals_from_response, org_id=org_id)
+                    group, new_users = self.add_users(group, principals_from_response, org_id=org_id)
 
                 dual_write_handler = RelationApiDualWriteGroupHandler(
                     group, ReplicationEventType.ADD_PRINCIPALS_TO_GROUP
@@ -932,7 +932,7 @@ class GroupViewSet(
                 if USERNAMES_KEY in request.query_params:
                     username = request.query_params.get(USERNAMES_KEY, "")
                     principals = [name.strip() for name in username.split(",")]
-                    resp, users_to_remove = self.remove_principals(group, principals, org_id=org_id)
+                    resp, users_to_remove = self.remove_users(group, principals, org_id=org_id)
                     if isinstance(resp, dict) and "errors" in resp:
                         return Response(status=resp.get("status_code"), data={"errors": resp.get("errors")})
                     response = Response(status=status.HTTP_204_NO_CONTENT)

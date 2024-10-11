@@ -110,7 +110,7 @@ class RelationApiDualWriteGroupHandler:
         try:
             self._replicator.replicate(
                 ReplicationEvent(
-                    type=self.event_type,
+                    event_type=self.event_type,
                     info={"group_uuid": self.group.uuid},
                     # TODO: need to think about partitioning
                     # Maybe resource id
@@ -240,6 +240,8 @@ class RelationApiDualWriteGroupHandler:
 
     def prepare_to_delete_group(self):
         """Generate relations to delete."""
+        if not self.replication_enabled():
+            return
         roles = Role.objects.filter(policies__group=self.group)
 
         system_roles = roles.filter(tenant=Tenant.objects.get(tenant_name="public"))

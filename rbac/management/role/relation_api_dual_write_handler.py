@@ -74,7 +74,7 @@ class ReplicationEvent:
 
     def __init__(
         self,
-        type: ReplicationEventType,
+        event_type: ReplicationEventType,
         partition_key: str,
         add: list[common_pb2.Relationship] = [],
         remove: list[common_pb2.Relationship] = [],
@@ -82,7 +82,7 @@ class ReplicationEvent:
     ):
         """Initialize ReplicationEvent."""
         self.partition_key = partition_key
-        self.event_type = type
+        self.event_type = event_type
         self.add = add
         self.remove = remove
         self.event_info = info
@@ -252,7 +252,7 @@ class RelationApiDualWriteHandler:
         try:
             self._replicator.replicate(
                 ReplicationEvent(
-                    type=self.event_type,
+                    event_type=self.event_type,
                     info={"v1_role_uuid": str(self.role.uuid)},
                     # TODO: need to think about partitioning
                     # Maybe resource id
@@ -300,6 +300,8 @@ class RelationApiDualWriteHandler:
     # TODO: Remove/replace - placeholder for testing
     def replicate_new_system_role_permissions(self, role: Role):
         """Replicate system role permissions."""
+        if not self.replication_enabled():
+            return
         permissions = list()
         for access in role.access.all():
             v1_perm = access.permission

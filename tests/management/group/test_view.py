@@ -875,7 +875,6 @@ class GroupViewsetTests(IdentityRequest):
 
             actual_call_arg = mock_method.call_args[0][0]
             to_remove = actual_call_arg["relations_to_remove"]
-            print(to_remove)
             self.assertEqual(8, len(to_remove))
 
             def assert_group_tuples(tuples_to_replicate):
