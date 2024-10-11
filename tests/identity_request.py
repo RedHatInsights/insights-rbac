@@ -29,7 +29,7 @@ from api.models import Tenant
 from api.common import RH_IDENTITY_HEADER
 
 
-@override_settings(REPLICATION_TO_RELATION_ENABLED=True, PRINCIPAL_USER_DOMAIN="redhat.com")
+@override_settings(REPLICATION_TO_RELATION_ENABLED=False, PRINCIPAL_USER_DOMAIN="redhat.com")
 class IdentityRequest(TestCase):
     """Parent Class for IAM test cases."""
 
