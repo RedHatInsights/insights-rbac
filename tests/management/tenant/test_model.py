@@ -17,9 +17,11 @@
 """Test cases for Tenant bootstrapping logic."""
 
 from django.test import TestCase
-from api.models import User
-from management.group.definer import seed_group, set_system_flag_before_update
-from management.tenant.model import V2TenantBootstrapService
+from management.group.definer import seed_group
+from management.group.model import Group
+from management.policy.model import Policy
+from management.tenant.model import TenantMapping, V2TenantBootstrapService
+from management.workspace.model import Workspace
 from migration_tool.in_memory_tuples import (
     InMemoryRelationReplicator,
     InMemoryTuples,
@@ -29,6 +31,8 @@ from migration_tool.in_memory_tuples import (
     subject,
 )
 from tests.management.role.test_dual_write import RbacFixture
+
+from api.models import Tenant, User
 
 
 class V2TenantBootstrapServiceTest(TestCase):
@@ -189,17 +193,22 @@ class V2TenantBootstrapServiceTest(TestCase):
 
     def test_bulk_adding_updating_users(self):
         bootstrapped = self.fixture.new_tenant(org_id="o1")
+        self.tuples.clear()
 
         users = []
-        for user_id, org_id in [("u1", "o1"), ("u2", "o2")]:
+        for user_id, org_id, admin in [("u1", "o1", True), ("u2", "o2", False)]:
             user = User()
             user.user_id = user_id
             user.org_id = org_id
-            user.admin = False
+            user.admin = admin
             user.is_active = True
             users.append(user)
 
         self.service.update_users(users)
+
+        self.assertEquals(12, self.tuples.count_tuples())
+
+        # Assert user updated for first user with existing tenant
         self.assertEqual(
             1,
             self.tuples.count_tuples(
@@ -210,11 +219,8 @@ class V2TenantBootstrapServiceTest(TestCase):
                 )
             ),
         )
-        users[0].admin = False
-        self.service.update_users(users)
-
         self.assertEqual(
-            0,
+            1,
             self.tuples.count_tuples(
                 all_of(
                     resource("rbac", "group", bootstrapped.mapping.default_admin_group_uuid),
@@ -224,14 +230,119 @@ class V2TenantBootstrapServiceTest(TestCase):
             ),
         )
 
-        # But is still a regular user
+        # And also bootstraps the second tenant
+        tenant = Tenant.objects.get(org_id="o2")
+        self.assertIsNotNone(tenant)
+        mapping = TenantMapping.objects.get(tenant=tenant)
+        self.assertIsNotNone(mapping)
+        workspaces = list(Workspace.objects.filter(tenant=tenant))
+        self.assertEqual(len(workspaces), 2)
+        default = Workspace.objects.get(type=Workspace.Types.DEFAULT, tenant=tenant)
+        self.assertIsNotNone(default)
+        root = Workspace.objects.get(type=Workspace.Types.ROOT, tenant=tenant)
+        self.assertIsNotNone(root)
+
+        platform_default_policy = Policy.objects.get(group=Group.objects.get(platform_default=True))
+        admin_default_policy = Policy.objects.get(group=Group.objects.get(admin_default=True))
+
         self.assertEqual(
             1,
             self.tuples.count_tuples(
                 all_of(
-                    resource("rbac", "group", bootstrapped.mapping.default_group_uuid),
+                    resource("rbac", "group", mapping.default_group_uuid),
                     relation("member"),
-                    subject("rbac", "principal", "localhost:u1"),
+                    subject("rbac", "principal", "localhost:u2"),
+                )
+            ),
+        )
+        self.assertEqual(
+            1,
+            self.tuples.count_tuples(
+                all_of(
+                    resource("rbac", "workspace", default.uuid),
+                    relation("parent"),
+                    subject("rbac", "workspace", root.uuid),
+                )
+            ),
+        )
+        self.assertEqual(
+            1,
+            self.tuples.count_tuples(
+                all_of(
+                    resource("rbac", "workspace", root.uuid),
+                    relation("parent"),
+                    subject("rbac", "tenant", "localhost:o2"),
+                )
+            ),
+        )
+        self.assertEqual(
+            1,
+            self.tuples.count_tuples(
+                all_of(
+                    resource("rbac", "workspace", default.uuid),
+                    relation("binding"),
+                    subject("rbac", "role_binding", mapping.default_user_role_binding_uuid),
+                )
+            ),
+        )
+        self.assertEqual(
+            1,
+            self.tuples.count_tuples(
+                all_of(
+                    resource("rbac", "tenant", "localhost:o2"),
+                    relation("platform"),
+                    subject("rbac", "platform", "stage"),
+                )
+            ),
+        )
+        self.assertEqual(
+            1,
+            self.tuples.count_tuples(
+                all_of(
+                    resource("rbac", "role_binding", mapping.default_user_role_binding_uuid),
+                    relation("subject"),
+                    subject("rbac", "group", mapping.default_group_uuid, "member"),
+                )
+            ),
+        )
+        self.assertEqual(
+            1,
+            self.tuples.count_tuples(
+                all_of(
+                    resource("rbac", "role_binding", mapping.default_user_role_binding_uuid),
+                    relation("role"),
+                    subject("rbac", "role", platform_default_policy.uuid),
+                )
+            ),
+        )
+
+        self.assertEqual(
+            1,
+            self.tuples.count_tuples(
+                all_of(
+                    resource("rbac", "workspace", default.uuid),
+                    relation("binding"),
+                    subject("rbac", "role_binding", mapping.default_admin_role_binding_uuid),
+                )
+            ),
+        )
+        self.assertEqual(
+            1,
+            self.tuples.count_tuples(
+                all_of(
+                    resource("rbac", "role_binding", mapping.default_admin_role_binding_uuid),
+                    relation("subject"),
+                    subject("rbac", "group", mapping.default_admin_group_uuid, "member"),
+                )
+            ),
+        )
+        self.assertEqual(
+            1,
+            self.tuples.count_tuples(
+                all_of(
+                    resource("rbac", "role_binding", mapping.default_admin_role_binding_uuid),
+                    relation("role"),
+                    subject("rbac", "role", admin_default_policy.uuid),
                 )
             ),
         )
