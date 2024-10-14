@@ -26,6 +26,7 @@ from django.conf import settings
 from management.principal.model import Principal
 from management.principal.proxy import PrincipalProxy, external_principal_to_user
 from management.role.relation_api_dual_write_handler import OutboxReplicator
+from management.tenant_service import get_tenant_bootstrap_service
 from management.tenant_service.tenant_service import TenantBootstrapService
 from rest_framework import status
 from stompest.config import StompConfig
@@ -34,7 +35,6 @@ from stompest.protocol import StompSpec
 from stompest.sync import Stomp
 
 from api.models import Tenant, User
-from management.tenant_service import get_tenant_bootstrap_service
 
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name

@@ -6,11 +6,11 @@ from django.conf import settings
 from management.principal.model import Principal
 from management.tenant_mapping.model import logger
 from management.tenant_service.tenant_service import BootstrappedTenant
+from management.tenant_service.tenant_service import _ensure_principal_with_user_id_in_tenant
 
 
 from api.models import Tenant, User
 from api.serializers import create_tenant_name
-from management.tenant_service.tenant_service import _ensure_principal_with_user_id_in_tenant
 
 
 class V1TenantBootstrapService:

@@ -1,7 +1,6 @@
 """This module contains the in-memory representation of a tuple store."""
 
 import re
-
 from collections import defaultdict
 from typing import Callable, Hashable, Iterable, List, NamedTuple, Set, Tuple, TypeVar
 
