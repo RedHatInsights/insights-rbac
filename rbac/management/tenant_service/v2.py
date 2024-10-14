@@ -39,6 +39,15 @@ class V2TenantBootstrapService:
         return self._bootstrap_tenant(tenant)
 
     @transaction.atomic
+    def bootstrap_tenant(self, tenant: Tenant) -> BootstrappedTenant:
+        """Bootstrap an existing tenant."""
+        try:
+            mapping = TenantMapping.objects.get(tenant=tenant)
+            return BootstrappedTenant(tenant=tenant, mapping=mapping)
+        except TenantMapping.DoesNotExist:
+            return self._bootstrap_tenant(tenant)
+
+    @transaction.atomic
     def update_user(
         self, user: User, upsert: bool = False, bootstrapped_tenant: Optional[BootstrappedTenant] = None
     ) -> Optional[BootstrappedTenant]:
@@ -270,7 +279,7 @@ class V2TenantBootstrapService:
             )
         )
 
-        return BootstrappedTenant(tenant, mapping)
+        return BootstrappedTenant(tenant, mapping, default_workspace=default_workspace, root_workspace=root_workspace)
 
     def _bootstrap_default_access(
         self, tenant: Tenant, mapping: TenantMapping, default_workspace: Workspace

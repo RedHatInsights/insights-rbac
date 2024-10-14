@@ -4,6 +4,7 @@ from typing import NamedTuple, Optional, Protocol
 
 from management.principal.model import Principal
 from management.tenant_mapping.model import TenantMapping
+from management.workspace.model import Workspace
 
 from api.models import Tenant, User
 
@@ -34,6 +35,8 @@ class BootstrappedTenant(NamedTuple):
 
     tenant: Tenant
     mapping: Optional[TenantMapping]
+    default_workspace: Optional[Workspace] = None
+    root_workspace: Optional[Workspace] = None
 
 
 class TenantBootstrapService(Protocol):

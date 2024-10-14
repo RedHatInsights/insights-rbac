@@ -51,7 +51,6 @@ from migration_tool.in_memory_tuples import (
 
 
 from api.models import Tenant
-from migration_tool.migrate import migrate_workspace
 
 
 @override_settings(REPLICATION_TO_RELATION_ENABLED=True)

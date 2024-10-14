@@ -89,43 +89,6 @@ def migrate_role(
     return relationships, v2_role_bindings
 
 
-# TODO: remove this
-def migrate_workspace(tenant: Tenant, write_relationships: bool):
-    """Migrate a workspace from v1 to v2."""
-    root_workspace, _ = Workspace.objects.get_or_create(
-        tenant=tenant,
-        type=Workspace.Types.ROOT,
-        name="Root Workspace",
-    )
-    default_workspace, _ = Workspace.objects.get_or_create(
-        tenant=tenant,
-        type=Workspace.Types.DEFAULT,
-        parent=root_workspace,
-        name="Default Workspace",
-    )
-
-    relationships = [
-        create_relationship(
-            ("rbac", "workspace"),
-            str(default_workspace.uuid),
-            ("rbac", "workspace"),
-            str(root_workspace.uuid),
-            "parent",
-        ),
-        create_relationship(
-            ("rbac", "workspace"), str(root_workspace.uuid), ("rbac", "tenant"), tenant.org_id, "parent"
-        ),
-    ]
-    # Include platform for tenant
-    relationships.append(
-        create_relationship(
-            ("rbac", "tenant"), str(tenant.org_id), ("rbac", "platform"), settings.ENV_NAME, "platform"
-        )
-    )
-    output_relationships(relationships, write_relationships)
-    return root_workspace, default_workspace
-
-
 def migrate_users_for_groups(tenant: Tenant, write_relationships: bool):
     """Write users relationship to groups."""
     relationships = []
