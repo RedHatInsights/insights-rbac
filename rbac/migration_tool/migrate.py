@@ -18,7 +18,6 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 import logging
 from typing import Iterable
 
-from django.conf import settings
 from kessel.relations.v1beta1 import common_pb2
 from management.group.model import Group
 from management.models import Workspace
