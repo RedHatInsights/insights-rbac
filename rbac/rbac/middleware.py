@@ -86,89 +86,26 @@ class HttpResponseUnauthorizedRequest(HttpResponse):
 
     status_code = 401
 
-
-class IdentityHeaderMiddleware(MiddlewareMixin):
-    """A subclass of RemoteUserMiddleware.
-
-    Processes the provided identity found on the request.
+class IdentityHeaderMiddleware():
+    """
+        Custom class for 
+        Processing the provided identity on the request
     """
 
-    header = RH_IDENTITY_HEADER
+    def process_exception(self, request, exception):
+        # Optional: Code to be executed if an exception occurs in the view.
+        # if isinstance(exception, IntegrityError):
+        #   raise IntegrityException()
+        pass
 
-    def get_tenant(self, model, hostname, request):
-        """Override the tenant selection logic."""
-        tenant_name = create_tenant_name(request.user.account)
-        tenant = TENANTS.get_tenant(request.user.org_id)
-        if tenant is None:
-            if request.user.system:
-                try:
-                    tenant = Tenant.objects.get(org_id=request.user.org_id)
-                except Tenant.DoesNotExist:
-                    raise Http404()
-            else:
-                tenant, _ = Tenant.objects.get_or_create(
-                    org_id=request.user.org_id,
-                    defaults={"ready": True, "account_id": request.user.account, "tenant_name": tenant_name},
-                )
-            TENANTS.save_tenant(tenant)
-        return tenant
+    def __init__(self, get_response):
+        self.get_response = get_response
+        # One-time configuration and initialization.
 
-    @staticmethod  # noqa: C901
-    def _get_access_for_user(username, tenant):  # pylint: disable=too-many-locals,too-many-branches
-        """Obtain access data for given username.
+    def __call__(self, request):
+        # Code to be executed for each request before
+        # the view (and later middleware) are called. 
 
-        Stubbed out to begin removal of RBAC on RBAC, with minimal disruption
-        """
-        principal = None
-        access_list = None
-
-        access = {
-            "group": {"read": [], "write": []},
-            "role": {"read": [], "write": []},
-            "policy": {"read": [], "write": []},
-            "principal": {"read": [], "write": []},
-            "permission": {"read": [], "write": []},
-        }
-
-        try:  # pylint: disable=R1702
-            principal = Principal.objects.get(username__iexact=username, tenant=tenant)
-            kwargs = {APPLICATION_KEY: "rbac"}
-            access_list = access_for_principal(principal, tenant, **kwargs)
-            for access_item in access_list:  # pylint: disable=too-many-nested-blocks
-                resource_type = access_item.permission.resource_type
-                operation = access_item.permission.verb
-                if operation == "*":
-                    operation = "write"
-                res_list = ["*"]
-                if resource_type == "*":
-                    for resource in ("group", "role", "policy", "principal", "permission"):
-                        if (
-                            resource in access.keys()
-                            and operation in access.get(resource, {}).keys()  # noqa: W504
-                            and isinstance(access.get(resource, {}).get(operation), list)  # noqa: W504
-                        ):  # noqa: E127
-                            access[resource][operation] += res_list
-                            if operation == "write":
-                                access[resource]["read"] += res_list
-                elif (
-                    resource_type in access.keys()
-                    and operation in access.get(resource_type, {}).keys()  # noqa: W504
-                    and isinstance(access.get(resource_type, {}).get(operation), list)  # noqa: W504
-                ):
-                    access[resource_type][operation] += res_list
-                    if operation == "write":
-                        access[resource_type]["read"] += res_list
-                for res_type, res_ops_obj in access.items():
-                    for op_type, op_list in res_ops_obj.items():
-                        if "*" in op_list:
-                            access[res_type][op_type] = ["*"]
-        except Principal.DoesNotExist:
-            return access
-
-        return access
-
-    @catch_integrity_error
-    def process_request(self, request):  # pylint: disable=R1710
         """Process request for identity middleware.
 
         Args:
@@ -282,6 +219,115 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
             request.user = user
             request.tenant = self.get_tenant(model=None, hostname=None, request=request)
 
+        response = self.get_response(request)
+
+        # Code to be executed for each request/response after
+        # the view is called.
+
+        """Process response for identity middleware.
+
+        Args:
+            request (object): The request object
+            response (object): The response object
+        """
+        is_internal = False
+        if any([request.path.startswith(prefix) for prefix in settings.INTERNAL_API_PATH_PREFIXES]):
+            # This request is for a private API endpoint
+            is_internal = True
+            IdentityHeaderMiddleware.log_request(request, response, is_internal)
+            return response
+
+        behalf = "principal"
+        is_system = False
+
+        if is_system:
+            behalf = "system"
+
+        req_sys_counter.labels(
+            behalf=behalf,
+            method=request.method,
+            view=resolve(request.path).url_name,
+            status=response.get("status_code"),
+        ).inc()
+
+        IdentityHeaderMiddleware.log_request(request, response, is_internal)
+        
+        return response
+    
+    header = RH_IDENTITY_HEADER
+
+    def get_tenant(self, model, hostname, request):
+        """Override the tenant selection logic."""
+        tenant_name = create_tenant_name(request.user.account)
+        tenant = TENANTS.get_tenant(request.user.org_id)
+        if tenant is None:
+            if request.user.system:
+                try:
+                    tenant = Tenant.objects.get(org_id=request.user.org_id)
+                except Tenant.DoesNotExist:
+                    raise Http404()
+            else:
+                tenant, _ = Tenant.objects.get_or_create(
+                    org_id=request.user.org_id,
+                    defaults={"ready": True, "account_id": request.user.account, "tenant_name": tenant_name},
+                )
+            TENANTS.save_tenant(tenant)
+        return tenant
+
+    @staticmethod  # noqa: C901
+    def _get_access_for_user(username, tenant):  # pylint: disable=too-many-locals,too-many-branches
+        """Obtain access data for given username.
+
+        Stubbed out to begin removal of RBAC on RBAC, with minimal disruption
+        """
+        principal = None
+        access_list = None
+
+        access = {
+            "group": {"read": [], "write": []},
+            "role": {"read": [], "write": []},
+            "policy": {"read": [], "write": []},
+            "principal": {"read": [], "write": []},
+            "permission": {"read": [], "write": []},
+        }
+
+        try:  # pylint: disable=R1702
+            principal = Principal.objects.get(username__iexact=username, tenant=tenant)
+            kwargs = {APPLICATION_KEY: "rbac"}
+            access_list = access_for_principal(principal, tenant, **kwargs)
+            for access_item in access_list:  # pylint: disable=too-many-nested-blocks
+                resource_type = access_item.permission.resource_type
+                operation = access_item.permission.verb
+                if operation == "*":
+                    operation = "write"
+                res_list = ["*"]
+                if resource_type == "*":
+                    for resource in ("group", "role", "policy", "principal", "permission"):
+                        if (
+                            resource in access.keys()
+                            and operation in access.get(resource, {}).keys()  # noqa: W504
+                            and isinstance(access.get(resource, {}).get(operation), list)  # noqa: W504
+                        ):  # noqa: E127
+                            access[resource][operation] += res_list
+                            if operation == "write":
+                                access[resource]["read"] += res_list
+                elif (
+                    resource_type in access.keys()
+                    and operation in access.get(resource_type, {}).keys()  # noqa: W504
+                    and isinstance(access.get(resource_type, {}).get(operation), list)  # noqa: W504
+                ):
+                    access[resource_type][operation] += res_list
+                    if operation == "write":
+                        access[resource_type]["read"] += res_list
+                for res_type, res_ops_obj in access.items():
+                    for op_type, op_list in res_ops_obj.items():
+                        if "*" in op_list:
+                            access[res_type][op_type] = ["*"]
+        except Principal.DoesNotExist:
+            return access
+
+        return access
+
     @staticmethod
     def log_request(request, response, is_internal=False):
         """Log requests for identity middleware.
@@ -296,6 +342,7 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
         is_system = False
         org_id = None
         username = None
+        user_id = None
         req_id = getattr(request, "req_id", None)
         if request.META.get("QUERY_STRING"):
             query_string = "?{}".format(request.META.get("QUERY_STRING"))
@@ -307,6 +354,7 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
                 is_admin = request.user.admin
                 org_id = request.user.org_id
                 is_system = request.user.system
+                user_id = request.user.user_id
             else:
                 # django.contrib.auth.models.AnonymousUser does not
                 is_admin = is_system = False
@@ -346,41 +394,12 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
             "request_id": req_id,
             "org_id": org_id,
             "username": username,
+            "user_id": user_id,
             "is_admin": is_admin,
             "is_system": is_system,
             "is_internal": is_internal,
         }
         logger.info(log_object)
-
-    def process_response(self, request, response):  # pylint: disable=no-self-use
-        """Process response for identity middleware.
-
-        Args:
-            request (object): The request object
-            response (object): The response object
-        """
-        is_internal = False
-        if any([request.path.startswith(prefix) for prefix in settings.INTERNAL_API_PATH_PREFIXES]):
-            # This request is for a private API endpoint
-            is_internal = True
-            IdentityHeaderMiddleware.log_request(request, response, is_internal)
-            return response
-
-        behalf = "principal"
-        is_system = False
-
-        if is_system:
-            behalf = "system"
-
-        req_sys_counter.labels(
-            behalf=behalf,
-            method=request.method,
-            view=resolve(request.path).url_name,
-            status=response.get("status_code"),
-        ).inc()
-
-        IdentityHeaderMiddleware.log_request(request, response, is_internal)
-        return response
 
     def should_load_user_permissions(self, request: WSGIRequest, user: User) -> bool:
         """Decide whether RBAC should load the access permissions for the user based on the given request."""
@@ -405,7 +424,6 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
         else:
             return True
 
-
 class DisableCSRF(MiddlewareMixin):  # pylint: disable=too-few-public-methods
     """Middleware to disable CSRF for 3scale usecase."""
 
@@ -417,3 +435,16 @@ class DisableCSRF(MiddlewareMixin):  # pylint: disable=too-few-public-methods
 
         """
         setattr(request, "_dont_enforce_csrf_checks", True)
+
+
+class ReadOnlyApiMiddleware(MiddlewareMixin):  # pylint: disable=too-few-public-methods
+    """Middleware to enable read-only on APIs when configured."""
+
+    def process_request(self, request):  # pylint: disable=no-self-use
+        """Process request ReadOnlyApiMiddleware."""
+        if settings.READ_ONLY_API_MODE and request.method in ["POST", "PUT", "PATCH", "DELETE"]:
+            return HttpResponse(
+                json.dumps({"error": "This API is currently in read-only mode. Please try again later."}),
+                content_type="application/json",
+                status=405,
+            )
