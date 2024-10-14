@@ -747,7 +747,7 @@ parameters:
   value: 'False'
 - description: Application allow list for role creation in RBAC
   name: ROLE_CREATE_ALLOW_LIST
-  value: cost-management,remediations,inventory,drift,policies,advisor,vulnerability,compliance,automation-analytics,notifications,patch,integrations,ros,staleness,config-manager,idmsvc
+  value: cost-management,remediations,inventory,policies,advisor,vulnerability,compliance,automation-analytics,notifications,patch,integrations,ros,staleness,config-manager,idmsvc
 - description: Application exclude list for v2 migration (all permissions)
   name: V2_MIGRATION_APP_EXCLUDE_LIST
   value: approval
