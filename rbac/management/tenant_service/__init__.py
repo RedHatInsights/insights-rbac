@@ -8,5 +8,5 @@ from management.tenant_service.v2 import V2TenantBootstrapService
 
 
 def get_tenant_bootstrap_service(replicator: RelationReplicator) -> "TenantBootstrapService":
-    """Get a UserBootstrapService instance based on settings."""
+    """Get a TenantBootstrapService instance based on settings."""
     return V2TenantBootstrapService(replicator) if settings.V2_BOOTSTRAP_TENANT else V1TenantBootstrapService()
