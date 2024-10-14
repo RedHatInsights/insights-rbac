@@ -258,10 +258,10 @@ class PrincipalUMBTests(IdentityRequest):
         super().setUp()
         self.principal_name = "principal-test"
         self.principal_user_id = "56780000"
-        self.group = Group(name="groupA", tenant=self.tenant)
-        self.group.save()
         self.tenant.org_id = "17685860"
         self.tenant.save()
+        self.group = Group(name="groupA", tenant=self.tenant)
+        self.group.save()
 
     @patch("management.principal.cleaner.UMB_CLIENT")
     def test_principal_cleanup_none(self, client_mock):
