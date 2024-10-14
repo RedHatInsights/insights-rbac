@@ -239,7 +239,7 @@ class V2TenantBootstrapService:
             parent=root_workspace,
             name="Default Workspace",
         )
-        tenant_id = f"{self._user_domain}:{tenant.org_id}"
+        tenant_id = f"{self._user_domain}/{tenant.org_id}"
         relationships = [
             create_relationship(
                 ("rbac", "workspace"),

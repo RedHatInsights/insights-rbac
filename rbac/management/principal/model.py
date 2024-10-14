@@ -36,7 +36,7 @@ class Principal(TenantAwareModel):
     def user_id_to_principal_resource_id(user_id: str) -> str:
         """Convert a user ID to a principal resource ID suitable for use in the Kessel access graph."""
         domain = settings.PRINCIPAL_USER_DOMAIN
-        return f"{domain}:{user_id}"
+        return f"{domain}/{user_id}"
 
     uuid = models.UUIDField(default=uuid4, editable=False, unique=True, null=False)
     username = models.CharField(max_length=150)

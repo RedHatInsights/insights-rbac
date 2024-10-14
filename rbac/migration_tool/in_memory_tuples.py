@@ -1,10 +1,15 @@
 """This module contains the in-memory representation of a tuple store."""
 
+import re
+
 from collections import defaultdict
 from typing import Callable, Hashable, Iterable, List, NamedTuple, Set, Tuple, TypeVar
 
 from kessel.relations.v1beta1.common_pb2 import Relationship
 from management.role.relation_api_dual_write_handler import RelationReplicator
+
+
+_OBJECT_ID_REGEX = r"^(([a-zA-Z0-9/_|\-=+]{1,})|\*)$"
 
 
 class RelationTuple(NamedTuple):
@@ -52,6 +57,18 @@ class InMemoryTuples:
     def add(self, tuple: Relationship):
         """Add a tuple to the store."""
         key = self._relationship_key(tuple)
+
+        invalid_resource_id = not re.match(_OBJECT_ID_REGEX, key.resource_id)
+        invalid_subject_id = not re.match(_OBJECT_ID_REGEX, key.subject_id)
+
+        if invalid_resource_id or invalid_subject_id:
+            invalid_fields = []
+            if invalid_resource_id:
+                invalid_fields.append(f"resource_id: {key.resource_id}")
+            if invalid_subject_id:
+                invalid_fields.append(f"subject_id: {key.subject_id}")
+            raise ValueError(f"Invalid format for: {', '.join(invalid_fields)}.")
+
         self._tuples.add(key)
 
     def remove(self, tuple: Relationship):

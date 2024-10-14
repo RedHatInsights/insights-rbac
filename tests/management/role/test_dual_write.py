@@ -322,7 +322,7 @@ class DualWriteGroupTestCase(DualWriteTestCase):
         group, principals = self.given_group("g1", ["u1", "u2"])
         tuples = self.tuples.find_tuples(all_of(resource("rbac", "group", group.uuid), relation("member")))
         self.assertEquals(len(tuples), 2)
-        self.assertEquals({t.subject_id for t in tuples}, {f"localhost:{p.user_id}" for p in principals})
+        self.assertEquals({t.subject_id for t in tuples}, {f"localhost/{p.user_id}" for p in principals})
 
     def test_update_group_tuples(self):
         """Update a group by adding and removing users."""
@@ -332,14 +332,14 @@ class DualWriteGroupTestCase(DualWriteTestCase):
 
         tuples = self.tuples.find_tuples(all_of(resource("rbac", "group", group.uuid), relation("member")))
         self.assertEquals(len(tuples), 3)
-        self.assertEquals({t.subject_id for t in tuples}, {f"localhost:{p.user_id}" for p in principals})
+        self.assertEquals({t.subject_id for t in tuples}, {f"localhost/{p.user_id}" for p in principals})
 
         self.given_removed_group_members(group, ["u2"])
         principals = [p for p in principals if p.username != "u2"]
 
         tuples = self.tuples.find_tuples(all_of(resource("rbac", "group", group.uuid), relation("member")))
         self.assertEquals(len(tuples), 2)
-        self.assertEquals({t.subject_id for t in tuples}, {f"localhost:{p.user_id}" for p in principals})
+        self.assertEquals({t.subject_id for t in tuples}, {f"localhost/{p.user_id}" for p in principals})
 
     def test_custom_roles_group_assignments_tuples(self):
         role_1 = self.given_v1_role(

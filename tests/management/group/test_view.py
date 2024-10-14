@@ -884,7 +884,7 @@ class GroupViewsetTests(IdentityRequest):
                         group_uuid,
                         "member",
                         "principal",
-                        f"redhat.com:{user_id}",
+                        f"redhat/{user_id}",
                     )
 
                     self.assertIsNotNone(find_relation_in_list(tuples_to_replicate, relation_tuple))
@@ -1106,7 +1106,7 @@ class GroupViewsetTests(IdentityRequest):
 
             actual_call_arg = mock_method.call_args[0][0]
             self.assertEqual(
-                generate_replication_event_to_add_principals(str(test_group.uuid), "redhat.com:-448717"),
+                generate_replication_event_to_add_principals(str(test_group.uuid), "redhat/-448717"),
                 actual_call_arg,
             )
 
@@ -1262,7 +1262,7 @@ class GroupViewsetTests(IdentityRequest):
 
             actual_call_arg = mock_method.call_args[0][0]
             self.assertEqual(
-                generate_replication_event_to_remove_principals(str(self.group.uuid), "redhat.com:123798"),
+                generate_replication_event_to_remove_principals(str(self.group.uuid), "redhat/123798"),
                 actual_call_arg,
             )
 
@@ -4199,7 +4199,7 @@ class GroupViewNonAdminTests(IdentityRequest):
 
         actual_call_arg = mock_method.call_args[0][0]
         self.assertEqual(
-            generate_replication_event_to_add_principals(str(test_group.uuid), "redhat.com:2345"), actual_call_arg
+            generate_replication_event_to_add_principals(str(test_group.uuid), "redhat/2345"), actual_call_arg
         )
 
     @patch("management.role.relation_api_dual_write_handler.OutboxReplicator._save_replication_event")
@@ -4235,7 +4235,7 @@ class GroupViewNonAdminTests(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         actual_call_arg = mock_method.call_args[0][0]
         self.assertEqual(
-            generate_replication_event_to_add_principals(str(test_group.uuid), "redhat.com:1234"),
+            generate_replication_event_to_add_principals(str(test_group.uuid), "redhat/1234"),
             actual_call_arg,
         )
 
@@ -4293,7 +4293,7 @@ class GroupViewNonAdminTests(IdentityRequest):
 
         actual_call_arg = mock_method.call_args[0][0]
         self.assertEqual(
-            generate_replication_event_to_add_principals(str(test_group.uuid), "redhat.com:1234"),
+            generate_replication_event_to_add_principals(str(test_group.uuid), "redhat/1234"),
             actual_call_arg,
         )
 
@@ -4544,7 +4544,7 @@ class GroupViewNonAdminTests(IdentityRequest):
 
         actual_call_arg = mock_method.call_args[0][0]
         self.assertEqual(
-            generate_replication_event_to_remove_principals(str(test_group.uuid), "redhat.com:3456"),
+            generate_replication_event_to_remove_principals(str(test_group.uuid), "redhat/3456"),
             actual_call_arg,
         )
 

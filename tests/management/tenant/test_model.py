@@ -70,7 +70,7 @@ class V2TenantBootstrapServiceTest(TestCase):
                 all_of(
                     resource("rbac", "workspace", root.uuid),
                     relation("parent"),
-                    subject("rbac", "tenant", "localhost:o1"),
+                    subject("rbac", "tenant", "localhost/o1"),
                 )
             ),
         )
@@ -78,7 +78,7 @@ class V2TenantBootstrapServiceTest(TestCase):
             1,
             self.tuples.count_tuples(
                 all_of(
-                    resource("rbac", "tenant", "localhost:o1"),
+                    resource("rbac", "tenant", "localhost/o1"),
                     relation("platform"),
                     subject("rbac", "platform", "stage"),
                 )
@@ -104,7 +104,7 @@ class V2TenantBootstrapServiceTest(TestCase):
                 all_of(
                     resource("rbac", "group", bootstrapped.mapping.default_admin_group_uuid),
                     relation("member"),
-                    subject("rbac", "principal", "localhost:u1"),
+                    subject("rbac", "principal", "localhost/u1"),
                 )
             ),
         )
@@ -116,7 +116,7 @@ class V2TenantBootstrapServiceTest(TestCase):
                 all_of(
                     resource("rbac", "group", bootstrapped.mapping.default_group_uuid),
                     relation("member"),
-                    subject("rbac", "principal", "localhost:u1"),
+                    subject("rbac", "principal", "localhost/u1"),
                 )
             ),
         )
@@ -138,7 +138,7 @@ class V2TenantBootstrapServiceTest(TestCase):
                 all_of(
                     resource("rbac", "group", bootstrapped.mapping.default_admin_group_uuid),
                     relation("member"),
-                    subject("rbac", "principal", "localhost:u1"),
+                    subject("rbac", "principal", "localhost/u1"),
                 )
             ),
         )
@@ -150,7 +150,7 @@ class V2TenantBootstrapServiceTest(TestCase):
                 all_of(
                     resource("rbac", "group", bootstrapped.mapping.default_group_uuid),
                     relation("member"),
-                    subject("rbac", "principal", "localhost:u1"),
+                    subject("rbac", "principal", "localhost/u1"),
                 )
             ),
         )
@@ -164,7 +164,7 @@ class V2TenantBootstrapServiceTest(TestCase):
                 all_of(
                     resource("rbac", "group", bootstrapped.mapping.default_admin_group_uuid),
                     relation("member"),
-                    subject("rbac", "principal", "localhost:u1"),
+                    subject("rbac", "principal", "localhost/u1"),
                 )
             ),
         )
@@ -176,7 +176,7 @@ class V2TenantBootstrapServiceTest(TestCase):
                 all_of(
                     resource("rbac", "group", bootstrapped.mapping.default_group_uuid),
                     relation("member"),
-                    subject("rbac", "principal", "localhost:u1"),
+                    subject("rbac", "principal", "localhost/u1"),
                 )
             ),
         )
@@ -252,7 +252,7 @@ class V2TenantBootstrapServiceTest(TestCase):
                 all_of(
                     resource("rbac", "group", bootstrapped.mapping.default_group_uuid),
                     relation("member"),
-                    subject("rbac", "principal", "localhost:u1"),
+                    subject("rbac", "principal", "localhost/u1"),
                 )
             ),
         )
@@ -262,7 +262,7 @@ class V2TenantBootstrapServiceTest(TestCase):
                 all_of(
                     resource("rbac", "group", bootstrapped.mapping.default_admin_group_uuid),
                     relation("member"),
-                    subject("rbac", "principal", "localhost:u1"),
+                    subject("rbac", "principal", "localhost/u1"),
                 )
             ),
         )
@@ -288,7 +288,7 @@ class V2TenantBootstrapServiceTest(TestCase):
                 all_of(
                     resource("rbac", "group", mapping.default_group_uuid),
                     relation("member"),
-                    subject("rbac", "principal", "localhost:u2"),
+                    subject("rbac", "principal", "localhost/u2"),
                 )
             ),
         )
@@ -308,7 +308,7 @@ class V2TenantBootstrapServiceTest(TestCase):
                 all_of(
                     resource("rbac", "workspace", root.uuid),
                     relation("parent"),
-                    subject("rbac", "tenant", "localhost:o2"),
+                    subject("rbac", "tenant", "localhost/o2"),
                 )
             ),
         )
@@ -326,7 +326,7 @@ class V2TenantBootstrapServiceTest(TestCase):
             1,
             self.tuples.count_tuples(
                 all_of(
-                    resource("rbac", "tenant", "localhost:o2"),
+                    resource("rbac", "tenant", "localhost/o2"),
                     relation("platform"),
                     subject("rbac", "platform", "stage"),
                 )

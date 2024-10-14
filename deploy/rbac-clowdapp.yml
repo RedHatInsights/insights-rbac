@@ -935,7 +935,7 @@ parameters:
     RBAC currently expects all principals to either come from itself (cross-account),
     or from a single identity infrastructure domain (identity header, SSO, BOP).
     This defines that single domain.
-  value: 'redhat.com'
+  value: 'redhat'
 - name: PRINCIPAL_CLEANUP_DELETION_ENABLED_UMB
   description: Allow cleanup job to delete principals via messages from UMB
   value: 'False'

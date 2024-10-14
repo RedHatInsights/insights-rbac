@@ -544,7 +544,6 @@ class PrincipalUMBTestsWithV2TenantBootstrap(PrincipalUMBTests):
             client_mock.ack.assert_called_once()
 
             self.assertTenantBootstrappedByOrgId("17685860")
-        pass
 
     @patch(
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
@@ -598,7 +597,7 @@ class PrincipalUMBTestsWithV2TenantBootstrap(PrincipalUMBTests):
                         relation="member",
                         subject_type_namespace="rbac",
                         subject_type_name="principal",
-                        subject_id=f"redhat.com:{self.principal_user_id}",
+                        subject_id=f"redhat/{self.principal_user_id}",
                         subject_relation="",
                     )
                 ],
