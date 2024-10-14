@@ -162,8 +162,9 @@ class IdentityHeaderMiddlewareTest(IdentityRequest):
     def test_process_status(self):
         """Test that the request gets a user."""
         mock_request = Mock(path="/api/v1/status/")
-        middleware = IdentityHeaderMiddleware(get_response=IdentityHeaderMiddleware.process_request)
-        middleware.process_request(mock_request)
+        get_response = mock.MagicMock()
+        middleware = IdentityHeaderMiddleware(get_response)
+        middleware(mock_request)
         self.assertTrue(hasattr(mock_request, "user"))
 
     def test_process_cross_account_request(self):
