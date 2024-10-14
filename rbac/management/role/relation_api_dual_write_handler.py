@@ -128,7 +128,7 @@ class OutboxReplicator(RelationReplicator):
         )
         # https://debezium.io/documentation/reference/stable/transformations/outbox-event-router.html#basic-outbox-table
         outbox_record = Outbox.objects.create(
-            aggregatetype="RelationReplicationEvent",
+            aggregatetype="relations-replication-event",
             aggregateid=aggregateid,
             event_type=event_type,
             payload=payload,
