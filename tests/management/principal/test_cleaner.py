@@ -341,6 +341,26 @@ class PrincipalUMBTests(IdentityRequest):
         },
     )
     @patch("management.principal.cleaner.UMB_CLIENT")
+    def test_cleanup_principal_does_not_exist_no_tenant(self, client_mock, proxy_mock):
+        """Test that can run a principal clean up with a user whose Tenant does not exist."""
+        principal_name = "principal-keep"
+        self.tenant.delete()
+
+        client_mock.canRead.side_effect = [True, False]
+        client_mock.receiveFrame.return_value = MagicMock(body=FRAME_BODY)
+        process_principal_events_from_umb()
+
+        client_mock.ack.assert_called_once()
+        self.assertFalse(Principal.objects.filter(username=principal_name).exists())
+
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={
+            "status_code": 200,
+            "data": [],
+        },
+    )
+    @patch("management.principal.cleaner.UMB_CLIENT")
     def test_cleanup_same_principal_name_in_multiple_tenants(self, client_mock, proxy_mock):
         """Test that can run a principal clean up with a principal that have multiple tenants."""
         another_tenant = Tenant.objects.create(
