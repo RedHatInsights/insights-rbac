@@ -31,7 +31,12 @@ class TenantMapping(models.Model):
     """Tenant mappings to V2 domain concepts."""
 
     tenant = models.OneToOneField(Tenant, on_delete=models.CASCADE)
+
+    # Default group UUID specific to a Tenant. This is used for adding members of the Tenant to the access graph.
+    # It is also used for custom default group UUID, so that the custom roles get bound to the default group
+    # members.
     default_group_uuid = models.UUIDField(default=uuid.uuid4, editable=False, null=False)
+    # The admin default group UUID, for the same purpose as above, except for admin users.
     default_admin_group_uuid = models.UUIDField(default=uuid.uuid4, editable=False, null=False)
-    default_user_role_binding_uuid = models.UUIDField(default=uuid.uuid4, editable=False, null=False)
+    default_role_binding_uuid = models.UUIDField(default=uuid.uuid4, editable=False, null=False)
     default_admin_role_binding_uuid = models.UUIDField(default=uuid.uuid4, editable=False, null=False)

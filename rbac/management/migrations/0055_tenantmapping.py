@@ -34,7 +34,7 @@ class Migration(migrations.Migration):
                     models.UUIDField(default=uuid.uuid4, editable=False),
                 ),
                 (
-                    "default_user_role_binding_uuid",
+                    "default_role_binding_uuid",
                     models.UUIDField(default=uuid.uuid4, editable=False),
                 ),
                 (
@@ -43,9 +43,7 @@ class Migration(migrations.Migration):
                 ),
                 (
                     "tenant",
-                    models.OneToOneField(
-                        on_delete=django.db.models.deletion.CASCADE, to="api.tenant"
-                    ),
+                    models.OneToOneField(on_delete=django.db.models.deletion.CASCADE, to="api.tenant"),
                 ),
             ],
         ),

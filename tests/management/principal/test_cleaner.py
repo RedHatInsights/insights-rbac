@@ -624,7 +624,7 @@ class PrincipalUMBTestsWithV2TenantBootstrap(PrincipalUMBTests):
                 all_of(
                     resource("rbac", "workspace", default.uuid),
                     relation("binding"),
-                    subject("rbac", "role_binding", mapping.default_user_role_binding_uuid),
+                    subject("rbac", "role_binding", mapping.default_role_binding_uuid),
                 )
             ),
         )
@@ -632,7 +632,7 @@ class PrincipalUMBTestsWithV2TenantBootstrap(PrincipalUMBTests):
             1,
             self._tuples.count_tuples(
                 all_of(
-                    resource("rbac", "role_binding", mapping.default_user_role_binding_uuid),
+                    resource("rbac", "role_binding", mapping.default_role_binding_uuid),
                     relation("subject"),
                     subject("rbac", "group", mapping.default_group_uuid, "member"),
                 )
@@ -642,7 +642,7 @@ class PrincipalUMBTestsWithV2TenantBootstrap(PrincipalUMBTests):
             1,
             self._tuples.count_tuples(
                 all_of(
-                    resource("rbac", "role_binding", mapping.default_user_role_binding_uuid),
+                    resource("rbac", "role_binding", mapping.default_role_binding_uuid),
                     relation("role"),
                     subject("rbac", "role", platform_default_policy.uuid),
                 )

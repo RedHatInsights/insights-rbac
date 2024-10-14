@@ -280,17 +280,17 @@ class V2TenantBootstrapService:
 
         Creates role bindings between the tenant's default workspace, default groups, and system policies.
         """
-        platform_default_role = self._get_platform_default_policy_uuid()
-        admin_default_role = self._get_admin_default_policy_uuid()
+        platform_default_role_uuid = self._get_platform_default_policy_uuid()
+        admin_default_role_uuid = self._get_admin_default_policy_uuid()
 
-        if platform_default_role is None:
+        if platform_default_role_uuid is None:
             logger.warning("No platform default role found for public tenant. Default access will not be set up.")
 
-        if admin_default_role is None:
+        if admin_default_role_uuid is None:
             logger.warning("No admin default role found for public tenant. Default access will not be set up.")
 
         default_workspace_uuid = str(default_workspace.uuid)
-        default_user_role_binding_uuid = str(mapping.default_user_role_binding_uuid)
+        default_user_role_binding_uuid = str(mapping.default_role_binding_uuid)
         default_admin_role_binding_uuid = str(mapping.default_admin_role_binding_uuid)
 
         tuples_to_add: List[Relationship] = []
@@ -305,7 +305,7 @@ class V2TenantBootstrapService:
         # 2. If tenant mapping does not exist, create it via this same bootstrap process.
         #    Due to unique constraint, if this happens concurrently from another input (e.g. user import),
         #    one will rollback, serializing the group creation with user import on next retry.
-        if platform_default_role and not Group.objects.filter(platform_default=True, tenant=tenant).exists():
+        if platform_default_role_uuid and not Group.objects.filter(platform_default=True, tenant=tenant).exists():
             tuples_to_add.extend(
                 [
                     create_relationship(
@@ -319,7 +319,7 @@ class V2TenantBootstrapService:
                         ("rbac", "role_binding"),
                         default_user_role_binding_uuid,
                         ("rbac", "role"),
-                        platform_default_role,
+                        platform_default_role_uuid,
                         "role",
                     ),
                     create_relationship(
@@ -334,7 +334,7 @@ class V2TenantBootstrapService:
             )
 
         # Admin role binding is not customizable
-        if admin_default_role:
+        if admin_default_role_uuid:
             tuples_to_add.extend(
                 [
                     create_relationship(
@@ -348,7 +348,7 @@ class V2TenantBootstrapService:
                         ("rbac", "role_binding"),
                         default_admin_role_binding_uuid,
                         ("rbac", "role"),
-                        admin_default_role,
+                        admin_default_role_uuid,
                         "role",
                     ),
                     create_relationship(
