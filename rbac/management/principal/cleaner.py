@@ -129,9 +129,28 @@ def retrieve_user_info(message) -> User:
     returns:
         user: User object as of latest known state.
     """
+    instance_id: Optional[str] = None
+
+    if (header := message.get("Header")) is not None:
+        if (id := header.get("InstanceId")) is not None:
+            instance_id = id
+
+    logger.debug("retrieve_user_info: Processing message with instance_id=%s", instance_id)
+
     message_user = message["Payload"]["Sync"]["User"]
     identifiers = message_user["Identifiers"]
-    user_id = identifiers["Identifier"]["#text"]
+    user_id: Optional[str] = None
+
+    if isinstance((ids := identifiers["Identifier"]), list):
+        for id in ids:  # type: ignore
+            if id["@system"] == "WEB" and id["@entity-name"] == "User" and id["@qualifier"] == "id":
+                user_id = id["#text"]
+                break
+    else:
+        user_id = identifiers["Identifier"]["#text"]
+
+    if user_id is None:
+        raise ValueError("User id not found in message. instance_id=%s", instance_id)
 
     bop_resp = PROXY.request_filtered_principals([user_id], options={"return_id": True})
 
@@ -141,12 +160,12 @@ def retrieve_user_info(message) -> User:
         user.user_id = user_id
         user.is_active = False
         user.username = message_user["Person"]["Credentials"]["Login"]
-        for ref in identifiers["Reference"]:
-            if ref["@system"] == "WEB" and ref["@entity-name"] == "Customer" and ref["@qualifier"] == "id":
-                user.org_id = ref["#text"]
+        for id in identifiers["Reference"]:
+            if id["@system"] == "WEB" and id["@entity-name"] == "Customer" and id["@qualifier"] == "id":
+                user.org_id = id["#text"]
                 break
-            if ref["@system"] == "EBS" and ref["@entity-name"] == "Account" and ref["@qualifier"] == "number":
-                user.account = ref["#text"]
+            if id["@system"] == "EBS" and id["@entity-name"] == "Account" and id["@qualifier"] == "number":
+                user.account = id["#text"]
                 break
         return user
 

@@ -176,6 +176,7 @@ FRAME_BODY = (
     b"<Payload>\n        <Sync>\n            <User>\n                <CreatedDate>2024-02-16T02:57:51.738</CreatedDate>\n                "
     b"<LastUpdatedDate>2024-02-21T06:47:24.672</LastUpdatedDate>\n                <Identifiers>\n                    "
     b'<Identifier system="WEB" entity-name="User" qualifier="id">56780000</Identifier>\n                   '
+    b'<Identifier system="FOO" entity-name="User" qualifier="id">56780001</Identifier>\n                   '
     b'<Reference system="WEB" entity-name="Customer" qualifier="id">17685860</Reference>\n                    '
     b'<Reference system="EBS" entity-name="Account" qualifier="number">11111111</Reference>\n                '
     b'</Identifiers>\n                <Status primary="true">\n                    <State>Inactive</State>\n                '
