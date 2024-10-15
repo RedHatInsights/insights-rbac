@@ -13,7 +13,7 @@ class LoggingReplicator(RelationReplicator):
     """Just logs relations."""
 
     def replicate(self, event: ReplicationEvent):
-        """Logs the event's tuples."""
+        """Log the event's tuples."""
         for rel in event.add:
             logger.info(stringify_spicedb_relationship(rel))
 

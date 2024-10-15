@@ -1,3 +1,5 @@
+"""A RelationReplicator which does nothing."""
+
 from management.relation_replicator.relation_replicator import RelationReplicator, ReplicationEvent
 
 

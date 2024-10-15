@@ -32,7 +32,7 @@ from management.relation_replicator.sync_replicator import SyncReplicator
 from management.role.model import BindingMapping, Role
 from migration_tool.models import V2rolebinding
 from migration_tool.sharedSystemRolesReplicatedRoleBindings import v1_role_to_v2_bindings
-from migration_tool.utils import create_relationship, output_relationships
+from migration_tool.utils import create_relationship
 
 from api.models import Tenant
 
