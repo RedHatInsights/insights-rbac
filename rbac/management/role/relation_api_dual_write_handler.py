@@ -43,7 +43,7 @@ logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 class SeedingRelationApiDualWriteHandler:
     """Class to handle Dual Write API related operations specific to the seeding process."""
 
-    _replicator: OutboxReplicator
+    _replicator: RelationReplicator
     _current_role_relations: list[common_pb2.Relationship]
 
     _public_tenant: Optional[Tenant] = None
