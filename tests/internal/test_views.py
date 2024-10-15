@@ -467,7 +467,7 @@ class InternalViewsetTests(IdentityRequest):
             {
                 "exclude_apps": ["rbac", "costmanagement"],
                 "orgs": ["acct00001", "acct00002"],
-                "write_relationships": False,
+                "write_relationships": "False",
             }
         )
         self.assertEqual(response.status_code, status.HTTP_202_ACCEPTED)
@@ -484,7 +484,7 @@ class InternalViewsetTests(IdentityRequest):
                 **self.request.META,
             )
             migration_mock.assert_called_once_with(
-                {"exclude_apps": ["fooapp"], "orgs": [], "write_relationships": False}
+                {"exclude_apps": ["fooapp"], "orgs": [], "write_relationships": "False"}
             )
             self.assertEqual(response.status_code, status.HTTP_202_ACCEPTED)
             self.assertEqual(
@@ -499,9 +499,30 @@ class InternalViewsetTests(IdentityRequest):
                 f"/_private/api/utils/data_migration/",
                 **self.request.META,
             )
-            migration_mock.assert_called_once_with({"exclude_apps": [], "orgs": [], "write_relationships": False})
+            migration_mock.assert_called_once_with({"exclude_apps": [], "orgs": [], "write_relationships": "False"})
             self.assertEqual(response.status_code, status.HTTP_202_ACCEPTED)
             self.assertEqual(
                 response.content.decode(),
                 "Data migration from V1 to V2 are running in a background worker.",
             )
+
+    @patch("management.tasks.migrate_data_in_worker.delay")
+    def test_run_migrations_of_data_async_replication(self, migration_mock):
+        """Test that we can trigger migrations of data to migrate from V1 to V2."""
+        response = self.client.post(
+            f"/_private/api/utils/data_migration/?exclude_apps=rbac,costmanagement&orgs=acct00001,acct00002"
+            "&write_relationships=async",
+            **self.request.META,
+        )
+        migration_mock.assert_called_once_with(
+            {
+                "exclude_apps": ["rbac", "costmanagement"],
+                "orgs": ["acct00001", "acct00002"],
+                "write_relationships": "async",
+            }
+        )
+        self.assertEqual(response.status_code, status.HTTP_202_ACCEPTED)
+        self.assertEqual(
+            response.content.decode(),
+            "Data migration from V1 to V2 are running in a background worker.",
+        )

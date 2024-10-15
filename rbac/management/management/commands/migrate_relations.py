@@ -23,7 +23,13 @@ class Command(BaseCommand):
             default=settings.V2_MIGRATION_APP_EXCLUDE_LIST,
             help="List of apps to exclude. Default comes from environment.",
         )
-        parser.add_argument("--write-relationships", default=False, action="store_true")
+        parser.add_argument(
+            "--write-relationships",
+            default="False",
+            choices=["True", "False", "sync", "async"],
+            help="Whether to replicate relationships and how. True is == sync. "
+            "'sync' uses the Relations API. 'async' uses the Outbox.",
+        )
 
     def handle(self, *args, **options):
         """Handle method for command."""

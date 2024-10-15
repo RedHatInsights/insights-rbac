@@ -22,6 +22,7 @@ from kessel.relations.v1beta1 import common_pb2
 from management.models import Workspace
 from management.principal.model import Principal
 from management.relation_replicator.logging_replicator import LoggingReplicator
+from management.relation_replicator.outbox_replicator import OutboxReplicator
 from management.relation_replicator.relation_replicator import (
     RelationReplicator,
     ReplicationEvent,
@@ -151,11 +152,11 @@ def migrate_data_for_tenant(tenant: Tenant, exclude_apps: list, replicator: Rela
     logger.info(f"Migrated {roles.count()} roles for tenant: {tenant.org_id}")
 
 
-def migrate_data(exclude_apps: list = [], orgs: list = [], write_relationships: bool = False):
+def migrate_data(exclude_apps: list = [], orgs: list = [], write_relationships: str = "False"):
     """Migrate all data for all tenants."""
     count = 0
     tenants = Tenant.objects.exclude(tenant_name="public")
-    replicator = SyncReplicator() if write_relationships else LoggingReplicator()
+    replicator = _get_replicator(write_relationships)
     if orgs:
         tenants = tenants.filter(org_id__in=orgs)
     total = tenants.count()
@@ -169,3 +170,15 @@ def migrate_data(exclude_apps: list = [], orgs: list = [], write_relationships: 
         count += 1
         logger.info(f"Finished migrating data for tenant: {tenant.org_id}. {count} of {total} tenants completed")
     logger.info("Finished migrating data for all tenants")
+
+
+def _get_replicator(write_relationships: str) -> RelationReplicator:
+    option = write_relationships.lower()
+
+    if option == "true" or option == "sync":
+        return SyncReplicator()
+
+    if option == "async":
+        return OutboxReplicator()
+
+    return LoggingReplicator()
