@@ -33,7 +33,8 @@ class V1TenantBootstrapService:
         if user.is_active:
             return self._update_active_user(user, upsert)
         else:
-            return self._update_inactive_user(user)
+            self._update_inactive_user(user)
+            return None
 
     def _update_active_user(self, user: User, upsert: bool) -> Optional[BootstrappedTenant]:
         bootstrapped = self._get_or_bootstrap_tenant(user.org_id, user.account)

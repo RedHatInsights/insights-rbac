@@ -19,7 +19,6 @@ import logging
 from typing import Iterable
 
 from kessel.relations.v1beta1 import common_pb2
-from management.group.model import Group
 from management.models import Workspace
 from management.principal.model import Principal
 from management.role.model import BindingMapping, Role
@@ -92,7 +91,6 @@ def migrate_users_for_groups(tenant: Tenant, write_relationships: bool):
     """Write users relationship to groups."""
     relationships = []
     for group in tenant.group_set.exclude(platform_default=True):
-        group: Group
         user_set: Iterable[Principal] = group.principals.all()
         for user in user_set:
             if (relationship := group.relationship_to_principal(user)) is not None:
@@ -117,7 +115,7 @@ def migrate_data_for_tenant(tenant: Tenant, exclude_apps: list, write_relationsh
 
         tuples, mappings = migrate_role(role, write_relationships, default_workspace)
 
-        # Conflits are not ignored in order to prevent this from
+        # Conflicts are not ignored in order to prevent this from
         # accidentally running concurrently with dual-writes.
         # If migration should be rerun, then the bindings table should be dropped.
         # If changing this to allow updates,

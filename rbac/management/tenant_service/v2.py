@@ -64,7 +64,7 @@ class V2TenantBootstrapService:
         """
         if not user.is_active:
             self._disable_user_in_tenant(user)
-            return
+            return None
 
         bootstrapped_tenant = bootstrapped_tenant or self._get_or_bootstrap_tenant(user.org_id, user.account)
         mapping = bootstrapped_tenant.mapping
@@ -202,7 +202,6 @@ class V2TenantBootstrapService:
             principal = Principal.objects.filter(username=user.username, tenant__org_id=user.org_id).get()
 
             for group in principal.group.all():
-                group: Group
                 group.principals.remove(principal)
                 tuples_to_remove.append(group.relationship_to_principal(principal))
 
