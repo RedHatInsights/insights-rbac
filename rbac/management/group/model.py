@@ -57,8 +57,10 @@ class Group(TenantAwareModel):
         group: "Group", principal: Union[Principal, User]
     ) -> Optional[Relationship]:
         """Create a relationship between a group and a principal given a Principal or User."""
-        if principal is Principal:
+        if isinstance(principal, Principal):
             id = principal.principal_resource_id()
+            if id is None:
+                return None
         elif (user_id := principal.user_id) is not None:
             id = Principal.user_id_to_principal_resource_id(user_id)
         else:

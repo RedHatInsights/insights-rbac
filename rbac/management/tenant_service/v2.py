@@ -62,6 +62,9 @@ class V2TenantBootstrapService:
 
         Returns [None] if the user is not active.
         """
+        if user.org_id is None:
+            raise ValueError(f"Cannot update user without org_id. username={user.username}")
+
         if not user.is_active:
             self._disable_user_in_tenant(user)
             return None
@@ -74,7 +77,7 @@ class V2TenantBootstrapService:
         user_id = user.user_id
 
         if user_id is None:
-            raise ValueError(f"User {user.username} has no user_id.")
+            raise ValueError(f"Cannot update user without user_id. username={user.username}")
 
         tuples_to_add = []
         tuples_to_remove = []
@@ -109,6 +112,9 @@ class V2TenantBootstrapService:
         """
         bootstrapped_list = []
         for user in users:
+            if user.org_id is None:
+                logger.warning(f"Cannot update user without org_id. Skipping. username={user.username}")
+                continue
             bootstrapped_list.append(self._get_or_bootstrap_tenant(user.org_id, user.account))
         bootstrapped_mapping = {bootstrapped.tenant.org_id: bootstrapped for bootstrapped in bootstrapped_list}
 

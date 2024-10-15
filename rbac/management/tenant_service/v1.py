@@ -44,7 +44,9 @@ class V1TenantBootstrapService:
 
         return bootstrapped
 
-    def _get_or_bootstrap_tenant(self, org_id: str, account_number: Optional[str] = None) -> BootstrappedTenant:
+    def _get_or_bootstrap_tenant(
+        self, org_id: Optional[str], account_number: Optional[str] = None
+    ) -> BootstrappedTenant:
         tenant_name = create_tenant_name(account_number)
         tenant, _ = Tenant.objects.get_or_create(
             org_id=org_id,
