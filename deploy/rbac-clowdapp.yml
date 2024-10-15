@@ -762,7 +762,7 @@ parameters:
   value: rbac:workspace
 - description: Whether or not to bootstrap tenants using V2 logic (i.e. creating workspaces and relations).
   name: V2_BOOTSTRAP_TENANT
-  value: false
+  value: 'False'
 - description: | 
     Whether or not to add user IDs to existing principals within V1 logic. Once V2 tenant bootstrapping is used,
     this flag is ignored and user IDs will be added regardless.
