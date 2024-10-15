@@ -38,8 +38,7 @@ from api.models import Tenant
 
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
-DEFAULT_GROUP = Tenant.objects.get(tenant_name="public").group_set.get(platform_default=True)
-DEFAULT_ADMIN_GROUP = Tenant.objects.get(tenant_name="public").group_set.get(admin_default=True)
+
 
 def get_kessel_relation_tuples(
     v2_role_bindings: Iterable[V2rolebinding],

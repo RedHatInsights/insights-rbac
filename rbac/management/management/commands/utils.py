@@ -20,10 +20,8 @@ import os
 
 import boto3
 from botocore.exceptions import ClientError
-from django.db import transaction
 from management.role.relation_api_dual_write_handler import OutboxReplicator
 from management.tenant_service.v2 import V2TenantBootstrapService
-from migration_tool.migrate import relationships_for_new_user
 
 from api.models import User
 
@@ -92,10 +90,10 @@ def process_batch(batch_data):
     users = []
     for org_id, org_admin, principal_name, user_id in batch_data:
         user = User()
-        user.org_id=org_id
-        user.admin=org_admin
-        user.usernanme=principal_name
-        user.user_id=user_id
+        user.org_id = org_id
+        user.admin = org_admin
+        user.usernanme = principal_name
+        user.user_id = user_id
         users.append(user)
 
     BOOT_STRAP_SERVICE.update_users(users)
