@@ -19,7 +19,6 @@ import logging
 from typing import Iterable
 
 from kessel.relations.v1beta1 import common_pb2
-from management.group.model import Group
 from management.models import Workspace
 from management.principal.model import Principal
 from management.relation_replicator.logging_replicator import LoggingReplicator
@@ -97,7 +96,6 @@ def migrate_users_for_groups(tenant: Tenant) -> list[common_pb2.Relationship]:
     """Write users relationship to groups."""
     relationships: list[common_pb2.Relationship] = []
     for group in tenant.group_set.exclude(platform_default=True):
-        group: Group
         user_set: Iterable[Principal] = group.principals.all()
         for user in user_set:
             if (relationship := group.relationship_to_principal(user)) is not None:
