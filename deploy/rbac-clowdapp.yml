@@ -597,8 +597,6 @@ objects:
           image: quay.io/cloudservices/rbac:latest
           command:
             - ./rbac/manage.py import_tenant_user_data
-            - --env
-            - ${ENV_NAME}
             - --start_line
             - ${USER_ID_POPULATOR_START_LINE}
             - --batch_size

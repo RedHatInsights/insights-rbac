@@ -1,6 +1,7 @@
 """V2 implementation of Tenant bootstrapping."""
 
 from typing import List, Optional
+from uuid import uuid4
 
 from django.conf import settings
 from django.db import models, transaction
@@ -103,6 +104,94 @@ class V2TenantBootstrapService:
 
         return bootstrapped_tenant
 
+    def _bootstrap_tenants(self, tenants: list[Tenant]) -> list[BootstrappedTenant]:
+        # Set up workspace hierarchy for Tenant
+        workspaces = []
+        relationships = []
+        mappings_to_create = []
+        default_workspace_uuids = []
+        tenant_mappings = {}
+        for tenant in tenants:
+            root_workspace_uuid = uuid4()
+            default_workspace_uuid = uuid4()
+            default_workspace_uuids.append(default_workspace_uuid)
+            workspaces.append(
+                Workspace(uuid=root_workspace_uuid, tenant=tenant, type=Workspace.Types.ROOT, name="Root Workspace")
+            )
+            workspaces.append(
+                Workspace(
+                    uuid=default_workspace_uuid, tenant=tenant, type=Workspace.Types.DEFAULT, name="Default Workspace"
+                )
+            )
+            # Existing tenant might have mapping or not
+            if not hasattr(tenant, "tenantmapping"):
+                mappings_to_create.append(TenantMapping(tenant=tenant))
+            else:
+                tenant_mappings[tenant.id] = tenant.tenantmapping
+            tenant_id = f"{self._user_domain}/{tenant.org_id}"
+            relationships = [
+                create_relationship(
+                    ("rbac", "workspace"),
+                    str(default_workspace_uuid),
+                    ("rbac", "workspace"),
+                    str(root_workspace_uuid),
+                    "parent",
+                ),
+                create_relationship(
+                    ("rbac", "workspace"), str(root_workspace_uuid), ("rbac", "tenant"), tenant_id, "parent"
+                ),
+            ]
+
+            # Include platform for tenant
+            relationships.append(
+                create_relationship(("rbac", "tenant"), tenant_id, ("rbac", "platform"), settings.ENV_NAME, "platform")
+            )
+
+        # Ignore those already created
+        Workspace.objects.bulk_create(workspaces, ignore_conflicts=True)
+
+        mappings = TenantMapping.objects.bulk_create(mappings_to_create, ignore_conflicts=True)
+        tenant_mappings.update({mapping.tenant_id: mapping for mapping in mappings})
+        bootstrapped_tenants = []
+
+        # Get existing custom groups
+        default_group_uuids = [mapping.default_group_uuid for mapping in tenant_mappings.values()]
+        existing_custom_groups = set(Group.objects.filter(uuid__in=default_group_uuids).values_list("uuid", flat=True))
+        for tenant, default_workspace_uuid in zip(tenants, default_workspace_uuids):
+            mapping = tenant_mappings[tenant.id]
+            relationships.extend(
+                self._bootstrap_default_access(tenant, mapping, str(default_workspace_uuid), existing_custom_groups)
+            )
+            bootstrapped_tenants.append(BootstrappedTenant(tenant, mapping))
+        self._replicator.replicate(
+            ReplicationEvent(
+                event_type=ReplicationEventType.BOOTSTRAP_TENANT,
+                info={"CJI": "bulk_bootstrap"},
+                partition_key="rbactodo",
+                add=relationships,
+            )
+        )
+        return bootstrapped_tenants
+
+    def _get_or_bootstrap_tenants(self, org_ids: list) -> list[BootstrappedTenant]:
+        """Bootstrap list of tenants, used by update_users."""
+        # Fetch existing tenants
+        existing_tenants = {
+            tenant.org_id: tenant
+            for tenant in Tenant.objects.filter(org_id__in=org_ids).select_related("tenantmapping")
+        }
+        # Create new tenants
+        new_tenants = [
+            Tenant(tenant_name=f"org{org_id}", org_id=org_id, ready=True)
+            for org_id in org_ids
+            if org_id not in existing_tenants
+        ]
+        if new_tenants:
+            new_tenants = Tenant.objects.bulk_create(new_tenants)
+            existing_tenants.update({tenant.org_id: tenant for tenant in new_tenants})
+
+        return self._bootstrap_tenants(list(existing_tenants.values()))
+
     @transaction.atomic
     def update_users(self, users: list[User]):
         """
@@ -114,12 +203,13 @@ class V2TenantBootstrapService:
         Args:
             users (list): List of User objects to update
         """
-        bootstrapped_list = []
+        org_ids = []
         for user in users:
             if user.org_id is None:
                 logger.warning(f"Cannot update user without org_id. Skipping. username={user.username}")
                 continue
-            bootstrapped_list.append(self._get_or_bootstrap_tenant(user.org_id, user.account))
+            org_ids.append(user.org_id)
+        bootstrapped_list = self._get_or_bootstrap_tenants(org_ids)
         bootstrapped_mapping = {bootstrapped.tenant.org_id: bootstrapped for bootstrapped in bootstrapped_list}
 
         tuples_to_add = []
@@ -151,7 +241,6 @@ class V2TenantBootstrapService:
             sub_tuples_to_add, sub_tuples_to_remove = self._default_group_tuple_edits(user, mapping)
             tuples_to_add.extend(sub_tuples_to_add)
             tuples_to_remove.extend(sub_tuples_to_remove)
-
         # Bulk update existing principals
         if principals_to_update:
             Principal.objects.bulk_update(principals_to_update, ["user_id"])
@@ -159,7 +248,7 @@ class V2TenantBootstrapService:
         self._replicator.replicate(
             ReplicationEvent(
                 event_type=ReplicationEventType.EXTERNAL_USER_UPDATE,
-                info={"bulk_import": ",".join([user.user_id for user in users if user.user_id is not None])},
+                info={"bulk_import": "users_default_group_relationships"},
                 partition_key="rbactodo",
                 add=tuples_to_add,
                 remove=tuples_to_remove,
@@ -280,7 +369,7 @@ class V2TenantBootstrapService:
         )
 
         mapping = TenantMapping.objects.create(tenant=tenant)
-        relationships.extend(self._bootstrap_default_access(tenant, mapping, default_workspace))
+        relationships.extend(self._bootstrap_default_access(tenant, mapping, str(default_workspace.uuid)))
 
         self._replicator.replicate(
             ReplicationEvent(
@@ -294,13 +383,42 @@ class V2TenantBootstrapService:
         return BootstrappedTenant(tenant, mapping, default_workspace=default_workspace, root_workspace=root_workspace)
 
     def _bootstrap_default_access(
-        self, tenant: Tenant, mapping: TenantMapping, default_workspace: Workspace
+        self, tenant: Tenant, mapping: TenantMapping, default_workspace_uuid: str, custom_groups=None
     ) -> List[Relationship]:
         """
         Bootstrap default access for a tenant's users and admins.
 
         Creates role bindings between the tenant's default workspace, default groups, and system policies.
         """
+
+        def _create_default_relation_tupples(
+            default_workspace_uuid, role_binding_uuid, default_role_uuid, default_group_uuid
+        ):
+            return [
+                create_relationship(
+                    ("rbac", "workspace"),
+                    default_workspace_uuid,
+                    ("rbac", "role_binding"),
+                    role_binding_uuid,
+                    "binding",
+                ),
+                create_relationship(
+                    ("rbac", "role_binding"),
+                    role_binding_uuid,
+                    ("rbac", "role"),
+                    default_role_uuid,
+                    "role",
+                ),
+                create_relationship(
+                    ("rbac", "role_binding"),
+                    role_binding_uuid,
+                    ("rbac", "group"),
+                    default_group_uuid,
+                    "subject",
+                    "member",
+                ),
+            ]
+
         platform_default_role_uuid = self._get_platform_default_policy_uuid()
         admin_default_role_uuid = self._get_admin_default_policy_uuid()
 
@@ -310,7 +428,6 @@ class V2TenantBootstrapService:
         if admin_default_role_uuid is None:
             logger.warning("No admin default role found for public tenant. Default access will not be set up.")
 
-        default_workspace_uuid = str(default_workspace.uuid)
         default_user_role_binding_uuid = str(mapping.default_role_binding_uuid)
         default_admin_role_binding_uuid = str(mapping.default_admin_role_binding_uuid)
 
@@ -326,63 +443,37 @@ class V2TenantBootstrapService:
         # 2. If tenant mapping does not exist, create it via this same bootstrap process.
         #    Due to unique constraint, if this happens concurrently from another input (e.g. user import),
         #    one will rollback, serializing the group creation with user import on next retry.
-        if platform_default_role_uuid and not Group.objects.filter(platform_default=True, tenant=tenant).exists():
-            tuples_to_add.extend(
-                [
-                    create_relationship(
-                        ("rbac", "workspace"),
+        if platform_default_role_uuid:
+            if custom_groups is not None:
+                if mapping.default_group_uuid not in custom_groups:
+                    tuples_to_add.extend(
+                        _create_default_relation_tupples(
+                            default_workspace_uuid,
+                            default_user_role_binding_uuid,
+                            platform_default_role_uuid,
+                            str(mapping.default_group_uuid),
+                        )
+                    )
+            # TODO: change the filter to be uuid=mapping.default_group_uuid
+            elif not Group.objects.filter(platform_default=True, tenant=tenant).exists():
+                tuples_to_add.extend(
+                    _create_default_relation_tupples(
                         default_workspace_uuid,
-                        ("rbac", "role_binding"),
                         default_user_role_binding_uuid,
-                        "binding",
-                    ),
-                    create_relationship(
-                        ("rbac", "role_binding"),
-                        default_user_role_binding_uuid,
-                        ("rbac", "role"),
                         platform_default_role_uuid,
-                        "role",
-                    ),
-                    create_relationship(
-                        ("rbac", "role_binding"),
-                        default_user_role_binding_uuid,
-                        ("rbac", "group"),
                         str(mapping.default_group_uuid),
-                        "subject",
-                        "member",
-                    ),
-                ]
-            )
-
+                    )
+                )
         # Admin role binding is not customizable
         if admin_default_role_uuid:
             tuples_to_add.extend(
-                [
-                    create_relationship(
-                        ("rbac", "workspace"),
-                        default_workspace_uuid,
-                        ("rbac", "role_binding"),
-                        default_admin_role_binding_uuid,
-                        "binding",
-                    ),
-                    create_relationship(
-                        ("rbac", "role_binding"),
-                        default_admin_role_binding_uuid,
-                        ("rbac", "role"),
-                        admin_default_role_uuid,
-                        "role",
-                    ),
-                    create_relationship(
-                        ("rbac", "role_binding"),
-                        default_admin_role_binding_uuid,
-                        ("rbac", "group"),
-                        str(mapping.default_admin_group_uuid),
-                        "subject",
-                        "member",
-                    ),
-                ]
+                _create_default_relation_tupples(
+                    default_workspace_uuid,
+                    default_admin_role_binding_uuid,
+                    admin_default_role_uuid,
+                    str(mapping.default_admin_group_uuid),
+                )
             )
-
         return tuples_to_add
 
     def _get_platform_default_policy_uuid(self) -> Optional[str]:

@@ -247,7 +247,7 @@ class V2TenantBootstrapServiceTest(TestCase):
 
         self.service.update_users(users)
 
-        self.assertEquals(12, self.tuples.count_tuples())
+        self.assertEquals(18, self.tuples.count_tuples())
 
         # Assert user updated for first user with existing tenant
         self.assertEqual(
