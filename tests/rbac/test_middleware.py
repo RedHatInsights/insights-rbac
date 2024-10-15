@@ -33,6 +33,7 @@ from rest_framework.test import APIClient
 
 from api.models import Tenant, User
 from api.serializers import create_tenant_name
+from management.cache import TenantCache
 from management.group.definer import seed_group
 from management.tenant_mapping.model import TenantMapping
 from management.workspace.model import Workspace
@@ -658,6 +659,8 @@ class V2RbacTenantMiddlewareTest(RbacTenantMiddlewareTest):
             self.request.user.org_id = "12345"
             self.org_id = "12345"
             mock_request = self.request
+            tenant_cache = TenantCache()
+            tenant_cache.delete_tenant(self.org_id)
             middleware = IdentityHeaderMiddleware(get_response=IdentityHeaderMiddleware.get_tenant)
             result = middleware.get_tenant(Tenant, "localhost", mock_request)
             self.assertEqual(result.org_id, mock_request.user.org_id)
