@@ -24,6 +24,7 @@ from management.models import Principal
 from prometheus_client import Counter, Histogram
 from rest_framework import status
 
+from api.models import User
 from rbac.env import ENVIRONMENT
 
 LOGGER = logging.getLogger(__name__)
@@ -285,3 +286,14 @@ class PrincipalProxy:  # pylint: disable=too-few-public-methods
             data=payload,
             return_id=return_id,
         )
+
+
+def external_principal_to_user(principal: dict) -> User:
+    """Convert external principal to the common User object."""
+    user = User()
+    user.user_id = principal.get("user_id")
+    user.org_id = principal.get("org_id")
+    user.username = principal.get("username")
+    user.is_active = principal.get("is_active", False)
+    user.admin = principal.get("is_org_admin", False)
+    return user
