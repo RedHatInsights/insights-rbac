@@ -52,7 +52,7 @@ class SeedingRelationApiDualWriteHandler:
 
     def __init__(self, replicator: Optional[OutboxReplicator] = None):
         """Initialize SeedingRelationApiDualWriteHandler."""
-        self._replicator = replicator if replicator else OutboxReplicator(None)
+        self._replicator = replicator if replicator else OutboxReplicator()
 
     def replication_enabled(self):
         """Check whether replication enabled."""
@@ -68,9 +68,10 @@ class SeedingRelationApiDualWriteHandler:
         """Replicate update of system role."""
         if not self.replication_enabled():
             return
-        self._replicator.record = role
+
         self._replicate(
             ReplicationEventType.UPDATE_SYSTEM_ROLE,
+            self._create_metadata_from_role(role),
             self._current_role_relations,
             self._generate_relations_for_role(role),
         )
@@ -79,9 +80,10 @@ class SeedingRelationApiDualWriteHandler:
         """Replicate creation of new system role."""
         if not self.replication_enabled():
             return
-        self._replicator.record = role
+
         self._replicate(
             ReplicationEventType.CREATE_SYSTEM_ROLE,
+            self._create_metadata_from_role(role),
             [],
             self._generate_relations_for_role(role),
         )
@@ -90,9 +92,10 @@ class SeedingRelationApiDualWriteHandler:
         """Replicate deletion of system role."""
         if not self.replication_enabled():
             return
-        self._replicator.record = role
+
         self._replicate(
             ReplicationEventType.DELETE_SYSTEM_ROLE,
+            self._create_metadata_from_role(role),
             self._generate_relations_for_role(role),
             [],
         )
@@ -126,9 +129,13 @@ class SeedingRelationApiDualWriteHandler:
 
         return relations
 
+    def _create_metadata_from_role(self, role: Role) -> dict[str, object]:
+        return {"role_uuid": role.uuid}
+    
     def _replicate(
         self,
         event_type: ReplicationEventType,
+        metadata: dict[str, object],
         remove: list[common_pb2.Relationship],
         add: list[common_pb2.Relationship],
     ):
@@ -138,6 +145,7 @@ class SeedingRelationApiDualWriteHandler:
             self._replicator.replicate(
                 ReplicationEvent(
                     event_type=event_type,
+                    info=metadata,
                     # TODO: need to think about partitioning
                     # Maybe resource id
                     partition_key="rbactodo",
