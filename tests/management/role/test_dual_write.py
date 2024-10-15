@@ -625,7 +625,6 @@ class DualWriteSystemRolesTestCase(DualWriteTestCase):
         tuples = self.tuples.find_tuples(predicate=resource_type("rbac", "role"))
         self.assertEquals(len(tuples), 0)
 
-
     def test_delete_system_role(self):
         role = self.given_v1_system_role("d_r1", ["app1:hosts:read", "inventory:hosts:write"])
 

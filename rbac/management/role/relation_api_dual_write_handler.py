@@ -107,7 +107,8 @@ class SeedingRelationApiDualWriteHandler:
         admin_default = self._get_admin_default_policy_uuid()
         platform_default = self._get_platform_default_policy_uuid()
 
-        if role.admin_default and admin_default: #Is it valid to skip this? If there are no default groups, the migration isn't going to succeed.
+        # Is it valid to skip this? If there are no default groups, the migration isn't going to succeed.
+        if role.admin_default and admin_default:
             relations.append(
                 create_relationship(("rbac", "role"), str(role.uuid), ("rbac", "role"), admin_default, "child")
             )
@@ -131,7 +132,7 @@ class SeedingRelationApiDualWriteHandler:
 
     def _create_metadata_from_role(self, role: Role) -> dict[str, object]:
         return {"role_uuid": role.uuid}
-    
+
     def _replicate(
         self,
         event_type: ReplicationEventType,
@@ -155,7 +156,7 @@ class SeedingRelationApiDualWriteHandler:
             )
         except Exception as e:
             raise DualWriteException(e)
-    
+
     def _get_platform_default_policy_uuid(self) -> Optional[str]:
         try:
             if self._platform_default_policy_uuid is None:
