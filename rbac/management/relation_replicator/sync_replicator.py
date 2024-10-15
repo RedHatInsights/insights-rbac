@@ -17,14 +17,13 @@ logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 
 class SyncReplicator(RelationReplicator):
-    """Replicates relations via the outbox table."""
+    """Replicates relations via the Relations API over gRPC."""
 
     def replicate(self, event: ReplicationEvent):
-        """Replicate the given event to Kessel Relations via the Outbox."""
+        """Replicate the given event to Kessel Relations via the gRPC API."""
         self._write_relationships(event.add)
 
     def _write_relationships(self, relationships):
-        """Write relationships to the relation API server."""
         with grpc.insecure_channel(settings.RELATION_API_SERVER) as channel:
             stub = relation_tuples_pb2_grpc.KesselTupleServiceStub(channel)
 
