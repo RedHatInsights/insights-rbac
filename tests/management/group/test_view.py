@@ -125,7 +125,10 @@ class GroupViewsetTests(IdentityRequest):
         TENANTS.delete_tenant(test_tenant_org_id)
 
         self.test_tenant = Tenant(
-            tenant_name="acct1111111", account_id="1111111", org_id=test_tenant_org_id, ready=True
+            tenant_name="acct1111111",
+            account_id="1111111",
+            org_id=test_tenant_org_id,
+            ready=True,
         )
         self.test_tenant.save()
         self.test_principal = Principal(username="test_user", tenant=self.test_tenant)
@@ -136,7 +139,11 @@ class GroupViewsetTests(IdentityRequest):
         self.test_principalC.save()
         user_data = {"username": "test_user", "email": "test@gmail.com"}
         test_request_context = self._create_request_context(
-            {"account_id": "1111111", "tenant_name": "acct1111111", "org_id": test_tenant_org_id},
+            {
+                "account_id": "1111111",
+                "tenant_name": "acct1111111",
+                "org_id": test_tenant_org_id,
+            },
             user_data,
             is_org_admin=True,
         )
@@ -153,7 +160,10 @@ class GroupViewsetTests(IdentityRequest):
         self.group = Group(name="groupA", tenant=self.tenant)
         self.group.save()
         self.role = Role.objects.create(
-            name="roleA", description="A role for a group.", system=True, tenant=self.tenant
+            name="roleA",
+            description="A role for a group.",
+            system=True,
+            tenant=self.tenant,
         )
         self.ext_tenant = ExtTenant.objects.create(name="foo")
         self.ext_role_relation = ExtRoleRelation.objects.create(role=self.role, ext_tenant=self.ext_tenant)
@@ -164,14 +174,29 @@ class GroupViewsetTests(IdentityRequest):
         self.group.principals.add(self.principal, self.principalB)
         self.group.save()
 
-        self.defGroup = Group(name="groupDef", platform_default=True, system=True, tenant=self.public_tenant)
+        self.defGroup = Group(
+            name="groupDef",
+            platform_default=True,
+            system=True,
+            tenant=self.public_tenant,
+        )
         self.defGroup.save()
         self.defGroup.principals.add(self.principal, self.test_principal)
         self.defGroup.save()
-        self.defPolicy = Policy(name="defPolicy", system=True, tenant=self.public_tenant, group=self.defGroup)
+        self.defPolicy = Policy(
+            name="defPolicy",
+            system=True,
+            tenant=self.public_tenant,
+            group=self.defGroup,
+        )
         self.defPolicy.save()
 
-        self.adminGroup = Group(name="groupAdmin", admin_default=True, tenant=self.public_tenant, system=True)
+        self.adminGroup = Group(
+            name="groupAdmin",
+            admin_default=True,
+            tenant=self.public_tenant,
+            system=True,
+        )
         self.adminGroup.save()
         self.adminGroup.principals.add(self.principal, self.test_principal)
         self.adminGroup.save()
@@ -647,7 +672,12 @@ class GroupViewsetTests(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         response_group_uuids = [group["uuid"] for group in response.data.get("data")]
         self.assertCountEqual(
-            response_group_uuids, [str(self.defGroup.uuid), str(system_group.uuid), str(self.adminGroup.uuid)]
+            response_group_uuids,
+            [
+                str(self.defGroup.uuid),
+                str(system_group.uuid),
+                str(self.adminGroup.uuid),
+            ],
         )
 
     def test_filter_group_list_by_system_false(self):
@@ -672,7 +702,10 @@ class GroupViewsetTests(IdentityRequest):
     def test_filter_group_list_by_platform_default_true(self):
         """Test that we can filter a list of groups by platform_default flag true."""
         default_group = Group.objects.create(
-            name="Platform Default", platform_default=True, system=False, tenant=self.tenant
+            name="Platform Default",
+            platform_default=True,
+            system=False,
+            tenant=self.tenant,
         )
 
         url = f"{reverse('group-list')}?platform_default=true"
@@ -707,7 +740,10 @@ class GroupViewsetTests(IdentityRequest):
     def test_filter_group_list_by_admin_default_true(self):
         """Test that we can filter a list of groups by admin default flag true."""
         default_group = Group.objects.create(
-            name="Default admin access", admin_default=True, system=False, tenant=self.tenant
+            name="Default admin access",
+            admin_default=True,
+            system=False,
+            tenant=self.tenant,
         )
 
         url = f"{reverse('group-list')}?admin_default=true"
@@ -930,7 +966,7 @@ class GroupViewsetTests(IdentityRequest):
             al_response = al_client.get(al_url, **self.headers)
             retrieve_data = al_response.data.get("data")
             al_list = retrieve_data
-            al_dict = al_list[0]
+            al_dict = al_list[1]
 
             al_dict_principal_username = al_dict["principal_username"]
             al_dict_description = al_dict["description"]
@@ -981,11 +1017,21 @@ class GroupViewsetTests(IdentityRequest):
         becomes default for the tenant
         """
         client = APIClient()
-        customDefGroup = Group(name="customDefGroup", platform_default=True, system=False, tenant=self.tenant)
+        customDefGroup = Group(
+            name="customDefGroup",
+            platform_default=True,
+            system=False,
+            tenant=self.tenant,
+        )
         customDefGroup.save()
         customDefGroup.principals.add(self.test_principal)
         customDefGroup.save()
-        customDefPolicy = Policy(name="customDefPolicy", system=True, tenant=self.tenant, group=customDefGroup)
+        customDefPolicy = Policy(
+            name="customDefPolicy",
+            system=True,
+            tenant=self.tenant,
+            group=customDefGroup,
+        )
         customDefPolicy.save()
 
         url = f"{reverse('group-list')}?platform_default=true"
@@ -1041,7 +1087,12 @@ class GroupViewsetTests(IdentityRequest):
         url = reverse("group-principals", kwargs={"uuid": self.group.uuid})
         client = APIClient()
         new_username = uuid4()
-        test_data = {"principals": [{"username": self.principal.username}, {"username": new_username}]}
+        test_data = {
+            "principals": [
+                {"username": self.principal.username},
+                {"username": new_username},
+            ]
+        }
         response = client.post(url, test_data, format="json", **self.headers)
         self.assertEqual(response.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
         self.assertEqual(response.data[0]["detail"], "Unexpected error.")
@@ -1074,7 +1125,10 @@ class GroupViewsetTests(IdentityRequest):
     @patch("management.role.relation_api_dual_write_handler.OutboxReplicator._save_replication_event")
     @patch(
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
-        return_value={"status_code": 200, "data": [{"username": "test_add_user", "user_id": -448717}]},
+        return_value={
+            "status_code": 200,
+            "data": [{"username": "test_add_user", "user_id": -448717}],
+        },
     )
     @patch("core.kafka.RBACProducer.send_kafka_message")
     def test_add_group_principals_success(self, send_kafka_message, mock_request, mock_method):
@@ -1091,7 +1145,12 @@ class GroupViewsetTests(IdentityRequest):
             url = reverse("group-principals", kwargs={"uuid": test_group.uuid})
             client = APIClient()
             username = "test_add_user"
-            test_data = {"principals": [{"username": username}, {"username": cross_account_user.username}]}
+            test_data = {
+                "principals": [
+                    {"username": username},
+                    {"username": cross_account_user.username},
+                ]
+            }
 
             response = client.post(url, test_data, format="json", **self.headers)
             self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -1101,7 +1160,8 @@ class GroupViewsetTests(IdentityRequest):
             # cross account users won't be added
             self.assertEqual(len(response.data.get("principals")), 1)
             self.assertEqual(
-                response.data.get("principals")[0], {"username": username, "user_id": int(principal.user_id)}
+                response.data.get("principals")[0],
+                {"username": username, "user_id": int(principal.user_id)},
             )
             self.assertEqual(principal.tenant, self.tenant)
 
@@ -1225,7 +1285,12 @@ class GroupViewsetTests(IdentityRequest):
         mock_request.assert_called_with(
             ANY,
             org_id=ANY,
-            options={"sort_order": None, "username_only": "false", "admin_only": True, "principal_type": None},
+            options={
+                "sort_order": None,
+                "username_only": "false",
+                "admin_only": True,
+                "principal_type": None,
+            },
         )
 
         self.assertTrue(self.principal.username in username_arg)
@@ -1303,7 +1368,10 @@ class GroupViewsetTests(IdentityRequest):
         client = APIClient()
         response = client.delete(url, format="json", **self.headers)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertEqual(str(response.data.get("errors")[0].get("detail")), f"{invalid_uuid} is not a valid UUID.")
+        self.assertEqual(
+            str(response.data.get("errors")[0].get("detail")),
+            f"{invalid_uuid} is not a valid UUID.",
+        )
 
     def test_remove_group_principals_invalid_username(self):
         """Test that removing a principal returns an error for invalid username."""
@@ -1665,7 +1733,11 @@ class GroupViewsetTests(IdentityRequest):
 
         mock_request.assert_called_with(
             [],
-            options={"sort_order": None, "username_only": "false", "principal_type": None},
+            options={
+                "sort_order": None,
+                "username_only": "false",
+                "principal_type": None,
+            },
             org_id=self.customer_data["org_id"],
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -1685,7 +1757,11 @@ class GroupViewsetTests(IdentityRequest):
 
         mock_request.assert_called_with(
             [self.principal.username],
-            options={"sort_order": None, "username_only": "false", "principal_type": None},
+            options={
+                "sort_order": None,
+                "username_only": "false",
+                "principal_type": None,
+            },
             org_id=self.customer_data["org_id"],
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -1705,7 +1781,11 @@ class GroupViewsetTests(IdentityRequest):
 
         mock_request.assert_called_with(
             expected_principals,
-            options={"sort_order": "asc", "username_only": "false", "principal_type": None},
+            options={
+                "sort_order": "asc",
+                "username_only": "false",
+                "principal_type": None,
+            },
             org_id=self.customer_data["org_id"],
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -1827,7 +1907,10 @@ class GroupViewsetTests(IdentityRequest):
                                     "username": self.user_data["username"],
                                     "uuid": str(custom_default_group.uuid),
                                     "operation": "added",
-                                    "role": {"uuid": str(self.roleB.uuid), "name": self.roleB.name},
+                                    "role": {
+                                        "uuid": str(self.roleB.uuid),
+                                        "name": self.roleB.name,
+                                    },
                                 },
                             }
                         ],
@@ -1910,7 +1993,10 @@ class GroupViewsetTests(IdentityRequest):
                                     "username": self.user_data["username"],
                                     "uuid": str(custom_default_group.uuid),
                                     "operation": "removed",
-                                    "role": {"uuid": str(default_role.uuid), "name": default_role.name},
+                                    "role": {
+                                        "uuid": str(default_role.uuid),
+                                        "name": default_role.name,
+                                    },
                                 },
                             }
                         ],
@@ -2026,7 +2112,10 @@ class GroupViewsetTests(IdentityRequest):
                                     "username": self.user_data["username"],
                                     "uuid": str(groupC.uuid),
                                     "operation": "added",
-                                    "role": {"uuid": str(self.role.uuid), "name": self.role.name},
+                                    "role": {
+                                        "uuid": str(self.role.uuid),
+                                        "name": self.role.name,
+                                    },
                                 },
                             }
                         ],
@@ -2049,7 +2138,10 @@ class GroupViewsetTests(IdentityRequest):
                                     "username": self.user_data["username"],
                                     "uuid": str(groupC.uuid),
                                     "operation": "added",
-                                    "role": {"uuid": str(self.roleB.uuid), "name": self.roleB.name},
+                                    "role": {
+                                        "uuid": str(self.roleB.uuid),
+                                        "name": self.roleB.name,
+                                    },
                                 },
                             }
                         ],
@@ -2148,7 +2240,10 @@ class GroupViewsetTests(IdentityRequest):
                                     "username": self.user_data["username"],
                                     "uuid": str(self.group.uuid),
                                     "operation": "removed",
-                                    "role": {"uuid": str(self.role.uuid), "name": self.role.name},
+                                    "role": {
+                                        "uuid": str(self.role.uuid),
+                                        "name": self.role.name,
+                                    },
                                 },
                             }
                         ],
@@ -2171,7 +2266,10 @@ class GroupViewsetTests(IdentityRequest):
                                     "username": self.user_data["username"],
                                     "uuid": str(self.group.uuid),
                                     "operation": "removed",
-                                    "role": {"uuid": str(self.roleB.uuid), "name": self.roleB.name},
+                                    "role": {
+                                        "uuid": str(self.roleB.uuid),
+                                        "name": self.roleB.name,
+                                    },
                                 },
                             }
                         ],
@@ -2361,7 +2459,15 @@ class GroupViewsetTests(IdentityRequest):
         sa = response.data.get("data")[0]
         self.assertCountEqual(
             list(sa.keys()),
-            ["clientId", "name", "description", "owner", "time_created", "type", "username"],
+            [
+                "clientId",
+                "name",
+                "description",
+                "owner",
+                "time_created",
+                "type",
+                "username",
+            ],
         )
 
         for mock_sa in mocked_values:
@@ -2467,7 +2573,10 @@ class GroupViewsetTests(IdentityRequest):
             self.assertEqual(len(response.data.get("data")), min(limit, max(0, 3 - offset)))
 
     @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
-    @patch("management.principal.it_service.ITService.request_service_accounts", return_value=None)
+    @patch(
+        "management.principal.it_service.ITService.request_service_accounts",
+        return_value=None,
+    )
     def test_get_group_service_account_invalid_limit_offset(self, mock_request):
         """Test that default values are used for invalid limit and offset."""
         mocked_values = []
@@ -2501,7 +2610,12 @@ class GroupViewsetTests(IdentityRequest):
     def test_get_group_principals_check_service_account_ids(self):
         """Test that the endpoint for checking if service accounts are part of a group works as expected."""
         # Create a group and associate principals to it.
-        group = Group(name="it-service-group", platform_default=False, system=False, tenant=self.tenant)
+        group = Group(
+            name="it-service-group",
+            platform_default=False,
+            system=False,
+            tenant=self.tenant,
+        )
         group.save()
 
         # The user principals should not be retrieved in the results.
@@ -2533,7 +2647,10 @@ class GroupViewsetTests(IdentityRequest):
 
         # Create a set with the service accounts that will go in the group. It will make it easier to make assertions
         # below.
-        group_service_accounts_set = {str(sa_1.service_account_id), str(sa_2.service_account_id)}
+        group_service_accounts_set = {
+            str(sa_1.service_account_id),
+            str(sa_2.service_account_id),
+        }
 
         # Create more service accounts that should not show in the results, since they're not going to be specified in
         # the "client_ids" parameter.
@@ -2686,7 +2803,12 @@ class GroupViewsetTests(IdentityRequest):
         with 'limit' and 'offset' present in the query.
         """
         # Create a group and associate principals to it.
-        group = Group(name="it-service-group", platform_default=False, system=False, tenant=self.tenant)
+        group = Group(
+            name="it-service-group",
+            platform_default=False,
+            system=False,
+            tenant=self.tenant,
+        )
         group.save()
 
         # Create a service account and it into group.
@@ -2721,7 +2843,9 @@ class GroupViewsetTests(IdentityRequest):
         is_present_in_group = response.data.get("data")[str(client_uuid)]
         self.assertTrue(is_present_in_group)
 
-    def test_get_group_principals_check_service_account_ids_incompatible_query_parameters(self):
+    def test_get_group_principals_check_service_account_ids_incompatible_query_parameters(
+        self,
+    ):
         """Test that no other query parameter can be used along with the "service_account_ids" one."""
         # Use a few extra query parameter to test the behavior. Since we use a "len(query_params) > 1" condition it
         # really does not matter which other query parameter we use for the test, but we are adding a bunch in case
@@ -2903,7 +3027,15 @@ class GroupViewNonAdminTests(IdentityRequest):
         self.headers = request.META
         self.access_data = {
             "permission": "app:*:*",
-            "resourceDefinitions": [{"attributeFilter": {"key": "key1.id", "operation": "equal", "value": "value1"}}],
+            "resourceDefinitions": [
+                {
+                    "attributeFilter": {
+                        "key": "key1.id",
+                        "operation": "equal",
+                        "value": "value1",
+                    }
+                }
+            ],
         }
 
         self.principal = Principal(username=self.user_data["username"], tenant=self.tenant)
@@ -2917,7 +3049,10 @@ class GroupViewNonAdminTests(IdentityRequest):
         self.roleB = Role.objects.create(name="roleB", system=False, tenant=self.tenant)
         self.roleB.save()
         self.role = Role.objects.create(
-            name="roleA", description="A role for a group.", system=False, tenant=self.tenant
+            name="roleA",
+            description="A role for a group.",
+            system=False,
+            tenant=self.tenant,
         )
         self.role.save()
 
@@ -2934,7 +3069,10 @@ class GroupViewNonAdminTests(IdentityRequest):
 
         request_context_user_based_principal = self._create_request_context(
             customer_data=customer_data,
-            user_data={"username": self.user_based_principal.username, "email": "test@email.com"},
+            user_data={
+                "username": self.user_based_principal.username,
+                "email": "test@email.com",
+            },
             is_org_admin=False,
         )
         self.headers_user_based_principal = request_context_user_based_principal["request"].META
@@ -3153,7 +3291,10 @@ class GroupViewNonAdminTests(IdentityRequest):
         # Create the test data to add a service account and a regular user to the group.
         test_data = {
             "principals": [
-                {"clientId": new_sa_principal.service_account_id, "type": "service-account"},
+                {
+                    "clientId": new_sa_principal.service_account_id,
+                    "type": "service-account",
+                },
                 {"username": new_principal.username},
             ]
         }
@@ -3175,7 +3316,10 @@ class GroupViewNonAdminTests(IdentityRequest):
 
         # Call the endpoint under test with an unprivileged service account.
         response = api_client.post(
-            group_principals_url, test_data, format="json", **unprivileged_request_context["request"].META
+            group_principals_url,
+            test_data,
+            format="json",
+            **unprivileged_request_context["request"].META,
         )
 
         # Assert that the service account does not have permission to perform this operation.
@@ -3210,12 +3354,18 @@ class GroupViewNonAdminTests(IdentityRequest):
 
         # Create the request context for privileged service account.
         privileged_request_context = self._create_request_context(
-            customer_data=customer_data, user_data=None, service_account_data=service_account_data, is_org_admin=False
+            customer_data=customer_data,
+            user_data=None,
+            service_account_data=service_account_data,
+            is_org_admin=False,
         )
 
         # Call the endpoint under test with the user with "User Access Administrator" permissions.
         response_two = api_client.post(
-            group_principals_url, test_data, format="json", **privileged_request_context["request"].META
+            group_principals_url,
+            test_data,
+            format="json",
+            **privileged_request_context["request"].META,
         )
 
         # Assert that the response is the expected one.
@@ -3331,7 +3481,10 @@ class GroupViewNonAdminTests(IdentityRequest):
 
         # Call the endpoint under test with an unprivileged service account.
         response = api_client.delete(
-            path=group_principals_url, data=None, format="json", **unprivileged_request_context["request"].META
+            path=group_principals_url,
+            data=None,
+            format="json",
+            **unprivileged_request_context["request"].META,
         )
 
         # Assert that the service account does not have permission to perform this operation.
@@ -3363,12 +3516,17 @@ class GroupViewNonAdminTests(IdentityRequest):
 
         # Create the request context for privileged service account.
         privileged_request_context = self._create_request_context(
-            customer_data=customer_data, user_data=None, service_account_data=service_account_data, is_org_admin=False
+            customer_data=customer_data,
+            user_data=None,
+            service_account_data=service_account_data,
+            is_org_admin=False,
         )
 
         # Call the endpoint under test with the service account with "User Access Administrator" permissions.
         response_two = api_client.delete(
-            path=group_principals_url, format="json", **privileged_request_context["request"].META
+            path=group_principals_url,
+            format="json",
+            **privileged_request_context["request"].META,
         )
 
         # Assert that the response is the expected one.
@@ -3449,7 +3607,10 @@ class GroupViewNonAdminTests(IdentityRequest):
         # Create the test data to add a service account and a regular user to the group.
         test_data = {
             "principals": [
-                {"clientId": new_sa_principal.service_account_id, "type": "service-account"},
+                {
+                    "clientId": new_sa_principal.service_account_id,
+                    "type": "service-account",
+                },
                 {"username": new_principal.username},
             ]
         }
@@ -3463,12 +3624,17 @@ class GroupViewNonAdminTests(IdentityRequest):
 
         # Create the request context for an unprivileged user.
         unprivileged_request_context = self._create_request_context(
-            customer_data=customer_data, user_data=self._create_user_data(), is_org_admin=False
+            customer_data=customer_data,
+            user_data=self._create_user_data(),
+            is_org_admin=False,
         )
 
         # Call the endpoint under test with an unprivileged user.
         response = api_client.post(
-            path=group_principals_url, data=test_data, format="json", **unprivileged_request_context["request"].META
+            path=group_principals_url,
+            data=test_data,
+            format="json",
+            **unprivileged_request_context["request"].META,
         )
 
         # Assert that the user does not have permission to perform this operation.
@@ -3507,7 +3673,10 @@ class GroupViewNonAdminTests(IdentityRequest):
 
         # Call the endpoint under test with the user with "User Access Administrator" permissions.
         response_two = api_client.post(
-            path=group_principals_url, data=test_data, format="json", **privileged_request_context["request"].META
+            path=group_principals_url,
+            data=test_data,
+            format="json",
+            **privileged_request_context["request"].META,
         )
 
         # Assert that the response is the expected one.
@@ -3615,12 +3784,17 @@ class GroupViewNonAdminTests(IdentityRequest):
 
         # Create the request context for an unprivileged user.
         unprivileged_request_context = self._create_request_context(
-            customer_data=customer_data, user_data=self._create_user_data(), is_org_admin=False
+            customer_data=customer_data,
+            user_data=self._create_user_data(),
+            is_org_admin=False,
         )
 
         # Call the endpoint under test with an unprivileged user.
         response = api_client.delete(
-            path=group_principals_url, data=None, format="json", **unprivileged_request_context["request"].META
+            path=group_principals_url,
+            data=None,
+            format="json",
+            **unprivileged_request_context["request"].META,
         )
 
         # Assert that the user does not have permission to perform this operation.
@@ -3656,7 +3830,9 @@ class GroupViewNonAdminTests(IdentityRequest):
 
         # Call the endpoint under test with the user with "User Access Administrator" permissions.
         response_two = api_client.delete(
-            path=group_principals_url, format="json", **privileged_request_context["request"].META
+            path=group_principals_url,
+            format="json",
+            **privileged_request_context["request"].META,
         )
 
         # Assert that the response is the expected one.
@@ -3758,12 +3934,22 @@ class GroupViewNonAdminTests(IdentityRequest):
             {
                 "permission": "app:inventory:read",
                 "resourceDefinitions": [
-                    {"attributeFilter": {"key": "group.id", "operation": "equal", "value": "111"}}
+                    {
+                        "attributeFilter": {
+                            "key": "group.id",
+                            "operation": "equal",
+                            "value": "111",
+                        }
+                    }
                 ],
             }
         ]
 
-        test_data = {"name": "role_name", "display_name": "role_display", "access": access_data}
+        test_data = {
+            "name": "role_name",
+            "display_name": "role_display",
+            "access": access_data,
+        }
 
         url = reverse("role-list")
         # create a role
@@ -3789,7 +3975,12 @@ class GroupViewNonAdminTests(IdentityRequest):
 
         def assert_group_tuples(tuple_to_replicate):
             relation_tuple = relation_api_tuple(
-                "role_binding", binding_mapping.mappings["id"], "subject", "group", str(group.uuid), "member"
+                "role_binding",
+                binding_mapping.mappings["id"],
+                "subject",
+                "group",
+                str(group.uuid),
+                "member",
             )
 
             self.assertIsNotNone(find_relation_in_list(tuple_to_replicate, relation_tuple))
@@ -3910,11 +4101,17 @@ class GroupViewNonAdminTests(IdentityRequest):
 
         response = client.put(url, request_body, format="json", **self.headers_user_based_principal)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertEqual(response.data.get("errors")[0].get("detail"), self.user_access_admin_group_err_message)
+        self.assertEqual(
+            response.data.get("errors")[0].get("detail"),
+            self.user_access_admin_group_err_message,
+        )
 
         response = client.put(url, request_body, format="json", **self.headers_service_account_principal)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertEqual(response.data.get("errors")[0].get("detail"), self.user_access_admin_group_err_message)
+        self.assertEqual(
+            response.data.get("errors")[0].get("detail"),
+            self.user_access_admin_group_err_message,
+        )
 
         # Only Org Admin can update a group with 'User Access administrator'
         response = client.put(url, request_body, format="json", **self.headers_org_admin)
@@ -3989,11 +4186,17 @@ class GroupViewNonAdminTests(IdentityRequest):
 
         response = client.delete(url, **self.headers_user_based_principal)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertEqual(response.data.get("errors")[0].get("detail"), self.user_access_admin_group_err_message)
+        self.assertEqual(
+            response.data.get("errors")[0].get("detail"),
+            self.user_access_admin_group_err_message,
+        )
 
         response = client.delete(url, **self.headers_service_account_principal)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertEqual(response.data.get("errors")[0].get("detail"), self.user_access_admin_group_err_message)
+        self.assertEqual(
+            response.data.get("errors")[0].get("detail"),
+            self.user_access_admin_group_err_message,
+        )
 
         # Only Org Admin can remove a group with 'User Access administrator'
         response = client.delete(url, **self.headers_org_admin)
@@ -4023,7 +4226,9 @@ class GroupViewNonAdminTests(IdentityRequest):
         # Check that principal is in the db
         self.assertIsNotNone(Principal.objects.get(username=self.principal.username))
 
-    def test_list_service_account_principals_in_group_without_User_Access_Admin_fail(self):
+    def test_list_service_account_principals_in_group_without_User_Access_Admin_fail(
+        self,
+    ):
         """
         Test that non org admin without 'User Access administrator' role cannot list
         service account based principals in group.
@@ -4247,7 +4452,8 @@ class GroupViewNonAdminTests(IdentityRequest):
 
         actual_call_arg = mock_method.call_args[0][0]
         self.assertEqual(
-            generate_replication_event_to_add_principals(str(test_group.uuid), "redhat/2345"), actual_call_arg
+            generate_replication_event_to_add_principals(str(test_group.uuid), "redhat/2345"),
+            actual_call_arg,
         )
 
     @patch("management.role.relation_api_dual_write_handler.OutboxReplicator._save_replication_event")
@@ -4387,11 +4593,17 @@ class GroupViewNonAdminTests(IdentityRequest):
 
         response = client.post(url, request_body, format="json", **self.headers_user_based_principal)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertEqual(response.data.get("errors")[0].get("detail"), self.user_access_admin_group_err_message)
+        self.assertEqual(
+            response.data.get("errors")[0].get("detail"),
+            self.user_access_admin_group_err_message,
+        )
 
         response = client.post(url, request_body, format="json", **self.headers_service_account_principal)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertEqual(response.data.get("errors")[0].get("detail"), self.user_access_admin_group_err_message)
+        self.assertEqual(
+            response.data.get("errors")[0].get("detail"),
+            self.user_access_admin_group_err_message,
+        )
 
         # Only Org Admin can add a principal into a group with 'User Access administrator' role
         response = client.post(url, request_body, format="json", **self.headers_org_admin)
@@ -4451,17 +4663,25 @@ class GroupViewNonAdminTests(IdentityRequest):
 
         response = client.post(url, request_body, format="json", **self.headers_user_based_principal)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertEqual(response.data.get("errors")[0].get("detail"), self.user_access_admin_group_err_message)
+        self.assertEqual(
+            response.data.get("errors")[0].get("detail"),
+            self.user_access_admin_group_err_message,
+        )
 
         response = client.post(url, request_body, format="json", **self.headers_service_account_principal)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertEqual(response.data.get("errors")[0].get("detail"), self.user_access_admin_group_err_message)
+        self.assertEqual(
+            response.data.get("errors")[0].get("detail"),
+            self.user_access_admin_group_err_message,
+        )
 
         # Only Org Admin can add a principal into a group with 'User Access administrator' role
         response = client.post(url, request_body, format="json", **self.headers_org_admin)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
-    def test_remove_user_based_principal_from_group_without_User_Access_Admin_fail(self):
+    def test_remove_user_based_principal_from_group_without_User_Access_Admin_fail(
+        self,
+    ):
         """
         Test that non org admin without 'User Access administrator' role cannot remove
         user based principal from a group without 'User Access administrator' role.
@@ -4489,7 +4709,9 @@ class GroupViewNonAdminTests(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
 
     @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
-    def test_remove_service_account_principal_from_group_without_User_Access_Admin_fail(self):
+    def test_remove_service_account_principal_from_group_without_User_Access_Admin_fail(
+        self,
+    ):
         """
         Test that non org admin without 'User Access administrator' role cannot remove
         service account based principal from a group without 'User Access administrator' role.
@@ -4526,7 +4748,9 @@ class GroupViewNonAdminTests(IdentityRequest):
         response = client.delete(url, format="json", **self.headers_org_admin)
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
 
-    def test_remove_user_based_principal_from_group_with_User_Access_Admin_success(self):
+    def test_remove_user_based_principal_from_group_with_User_Access_Admin_success(
+        self,
+    ):
         """
         Test that non org admin with 'User Access administrator' role can remove
         user based principal from a group without 'User Access administrator' role.
@@ -4635,18 +4859,26 @@ class GroupViewNonAdminTests(IdentityRequest):
 
         response = client.delete(url, format="json", **self.headers_user_based_principal)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertEqual(response.data.get("errors")[0].get("detail"), self.user_access_admin_group_err_message)
+        self.assertEqual(
+            response.data.get("errors")[0].get("detail"),
+            self.user_access_admin_group_err_message,
+        )
 
         response = client.delete(url, format="json", **self.headers_service_account_principal)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertEqual(response.data.get("errors")[0].get("detail"), self.user_access_admin_group_err_message)
+        self.assertEqual(
+            response.data.get("errors")[0].get("detail"),
+            self.user_access_admin_group_err_message,
+        )
 
         # Only Org admin can remove a principal from a group with 'User Access administrator' role
         response = client.delete(url, format="json", **self.headers_org_admin)
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
 
     @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
-    def test_remove_service_account_principal_from_group_with_User_Access_Admin_fail(self):
+    def test_remove_service_account_principal_from_group_with_User_Access_Admin_fail(
+        self,
+    ):
         """
         Test that non org admin with 'User Access administrator' role cannot remove
         service account based principal from a group with 'User Access administrator' role.
@@ -4687,11 +4919,17 @@ class GroupViewNonAdminTests(IdentityRequest):
 
         response = client.delete(url, format="json", **self.headers_user_based_principal)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertEqual(response.data.get("errors")[0].get("detail"), self.user_access_admin_group_err_message)
+        self.assertEqual(
+            response.data.get("errors")[0].get("detail"),
+            self.user_access_admin_group_err_message,
+        )
 
         response = client.delete(url, format="json", **self.headers_service_account_principal)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertEqual(response.data.get("errors")[0].get("detail"), self.user_access_admin_group_err_message)
+        self.assertEqual(
+            response.data.get("errors")[0].get("detail"),
+            self.user_access_admin_group_err_message,
+        )
 
         # Only Org admin can remove a principal from a group with 'User Access administrator' role
         response = client.delete(url, format="json", **self.headers_org_admin)
@@ -4703,7 +4941,10 @@ class GroupViewNonAdminTests(IdentityRequest):
         group = Group.objects.create(name="test group", tenant=self.tenant)
         policy = Policy.objects.create(name="policy for test group", tenant=self.tenant)
         role = Role.objects.create(
-            name="test role", description="test role description", system=False, tenant=self.tenant
+            name="test role",
+            description="test role description",
+            system=False,
+            tenant=self.tenant,
         )
         policy.roles.add(role)
         group.policies.add(policy)
@@ -4737,7 +4978,10 @@ class GroupViewNonAdminTests(IdentityRequest):
         group = Group.objects.create(name="test group", tenant=self.tenant)
         policy = Policy.objects.create(name="policy for test group", tenant=self.tenant)
         role = Role.objects.create(
-            name="test role", description="test role description", system=False, tenant=self.tenant
+            name="test role",
+            description="test role description",
+            system=False,
+            tenant=self.tenant,
         )
         policy.roles.add(role)
         group.policies.add(policy)
@@ -4761,7 +5005,10 @@ class GroupViewNonAdminTests(IdentityRequest):
         # Create a group and role we need for the test
         group = Group.objects.create(name="test group", tenant=self.tenant)
         role = Role.objects.create(
-            name="test role", description="test role description", system=False, tenant=self.tenant
+            name="test role",
+            description="test role description",
+            system=False,
+            tenant=self.tenant,
         )
 
         request_body = {"roles": [role.uuid]}
@@ -4794,7 +5041,10 @@ class GroupViewNonAdminTests(IdentityRequest):
         # Create a group and role we need for the test
         group = Group.objects.create(name="test group", tenant=self.tenant)
         role = Role.objects.create(
-            name="test role", description="test role description", system=False, tenant=self.tenant
+            name="test role",
+            description="test role description",
+            system=False,
+            tenant=self.tenant,
         )
 
         request_body = {"roles": [role.uuid]}
@@ -4859,7 +5109,10 @@ class GroupViewNonAdminTests(IdentityRequest):
 
         # Create a role we need for the test
         role = Role.objects.create(
-            name="test role", description="test role description", system=False, tenant=self.tenant
+            name="test role",
+            description="test role description",
+            system=False,
+            tenant=self.tenant,
         )
 
         request_body = {"roles": [role.uuid]}
@@ -4868,11 +5121,17 @@ class GroupViewNonAdminTests(IdentityRequest):
 
         response = client.post(url, request_body, format="json", **self.headers_user_based_principal)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertEqual(response.data.get("errors")[0].get("detail"), self.user_access_admin_group_err_message)
+        self.assertEqual(
+            response.data.get("errors")[0].get("detail"),
+            self.user_access_admin_group_err_message,
+        )
 
         response = client.post(url, request_body, format="json", **self.headers_service_account_principal)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertEqual(response.data.get("errors")[0].get("detail"), self.user_access_admin_group_err_message)
+        self.assertEqual(
+            response.data.get("errors")[0].get("detail"),
+            self.user_access_admin_group_err_message,
+        )
 
         # Only Org Admin can add a role to a group with 'User Access administrator' role
         response = client.post(url, request_body, format="json", **self.headers_org_admin)
@@ -4888,7 +5147,10 @@ class GroupViewNonAdminTests(IdentityRequest):
         group = Group.objects.create(name="test group", tenant=self.tenant)
         policy = Policy.objects.create(name="policy for test group", tenant=self.tenant)
         role = Role.objects.create(
-            name="test role", description="test role description", system=False, tenant=self.tenant
+            name="test role",
+            description="test role description",
+            system=False,
+            tenant=self.tenant,
         )
         policy.roles.add(role)
         group.policies.add(policy)
@@ -4921,7 +5183,10 @@ class GroupViewNonAdminTests(IdentityRequest):
         group = Group.objects.create(name="test group", tenant=self.tenant)
         policy = Policy.objects.create(name="policy for test group", tenant=self.tenant)
         role = Role.objects.create(
-            name="test role", description="test role description", system=False, tenant=self.tenant
+            name="test role",
+            description="test role description",
+            system=False,
+            tenant=self.tenant,
         )
         policy.roles.add(role)
         group.policies.add(policy)
@@ -4949,7 +5214,10 @@ class GroupViewNonAdminTests(IdentityRequest):
 
         # Add new role to the group with 'User Access administrator' role
         role = Role.objects.create(
-            name="test role", description="test role description", system=False, tenant=self.tenant
+            name="test role",
+            description="test role description",
+            system=False,
+            tenant=self.tenant,
         )
         request_body = {"roles": [role.uuid]}
         url = reverse("group-roles", kwargs={"uuid": group_with_UA_admin.uuid})
@@ -4962,11 +5230,17 @@ class GroupViewNonAdminTests(IdentityRequest):
 
         response = client.delete(url, format="json", **self.headers_user_based_principal)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertEqual(response.data.get("errors")[0].get("detail"), self.user_access_admin_group_err_message)
+        self.assertEqual(
+            response.data.get("errors")[0].get("detail"),
+            self.user_access_admin_group_err_message,
+        )
 
         response = client.delete(url, format="json", **self.headers_service_account_principal)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertEqual(response.data.get("errors")[0].get("detail"), self.user_access_admin_group_err_message)
+        self.assertEqual(
+            response.data.get("errors")[0].get("detail"),
+            self.user_access_admin_group_err_message,
+        )
 
         # Only Org Admin can remove role like this
         response = client.delete(url, format="json", **self.headers_org_admin)
@@ -4997,11 +5271,17 @@ class GroupViewNonAdminTests(IdentityRequest):
 
         response = client.delete(url, format="json", **self.headers_user_based_principal)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertEqual(response.data.get("errors")[0].get("detail"), self.user_access_admin_group_err_message)
+        self.assertEqual(
+            response.data.get("errors")[0].get("detail"),
+            self.user_access_admin_group_err_message,
+        )
 
         response = client.delete(url, format="json", **self.headers_service_account_principal)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertEqual(response.data.get("errors")[0].get("detail"), self.user_access_admin_group_err_message)
+        self.assertEqual(
+            response.data.get("errors")[0].get("detail"),
+            self.user_access_admin_group_err_message,
+        )
 
         # Only Org Admin can remove role like this
         response = client.delete(url, format="json", **self.headers_org_admin)
@@ -5136,15 +5416,24 @@ class GroupViewNonAdminTests(IdentityRequest):
         # The response for org admins and users with 'User Access administrator' role is 400
         response = client.get(url, format="json", **self.headers_user_based_principal)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertEqual(response.data.get("errors")[0].get("detail"), self.invalid_value_for_scope_query_param)
+        self.assertEqual(
+            response.data.get("errors")[0].get("detail"),
+            self.invalid_value_for_scope_query_param,
+        )
 
         response = client.get(url, format="json", **self.headers_service_account_principal)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertEqual(response.data.get("errors")[0].get("detail"), self.invalid_value_for_scope_query_param)
+        self.assertEqual(
+            response.data.get("errors")[0].get("detail"),
+            self.invalid_value_for_scope_query_param,
+        )
 
         response = client.get(url, format="json", **self.headers_org_admin)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertEqual(response.data.get("errors")[0].get("detail"), self.invalid_value_for_scope_query_param)
+        self.assertEqual(
+            response.data.get("errors")[0].get("detail"),
+            self.invalid_value_for_scope_query_param,
+        )
 
     def test_read_group_with_scope_principal_success(self):
         """
@@ -5388,11 +5677,17 @@ class GroupViewNonAdminTests(IdentityRequest):
 
         response = client.put(url, request_body, format="json", **self.headers_user_based_principal)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertEqual(response.data.get("errors")[0].get("detail"), self.user_access_admin_group_err_message)
+        self.assertEqual(
+            response.data.get("errors")[0].get("detail"),
+            self.user_access_admin_group_err_message,
+        )
 
         response = client.put(url, request_body, format="json", **self.headers_service_account_principal)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertEqual(response.data.get("errors")[0].get("detail"), self.user_access_admin_group_err_message)
+        self.assertEqual(
+            response.data.get("errors")[0].get("detail"),
+            self.user_access_admin_group_err_message,
+        )
 
         # RBAC admin can update group with 'User Access principal viewer' role
         url = reverse("group-detail", kwargs={"uuid": group_with_RBAC_viewer.uuid})

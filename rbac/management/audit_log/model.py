@@ -107,7 +107,8 @@ class AuditLog(TenantAwareModel):
             for i in type_dict:
                 names_list.append(i["clientId"])
         elif user_type == AuditLog.ROLE:
-            names_list = type_dict
+            for i in type_dict:
+                names_list.append(str(i.uuid))
         else:
             return ValueError("User type does not exist")
         return ", ".join(names_list)

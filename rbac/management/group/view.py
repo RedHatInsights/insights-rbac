@@ -1104,7 +1104,7 @@ class GroupViewSet(
             if serializer.is_valid(raise_exception=True):
                 roles = request.data.pop(ROLES_KEY, [])
             group = set_system_flag_before_update(group, request.tenant, request.user)
-            add_roles(group, roles, request.tenant, user=request.user)
+            log_roles = add_roles(group, roles, request.tenant, user=request.user)
             response_data = GroupRoleSerializerIn(group)
             response = Response(status=status.HTTP_200_OK, data=response_data.data)
             if status.is_success(response.status_code):
@@ -1113,7 +1113,7 @@ class GroupViewSet(
                     request,
                     AuditLog.GROUP,
                     object=group,
-                    type_dict=roles,
+                    type_dict=log_roles,
                     user_type=AuditLog.ROLE,
                 )
 
