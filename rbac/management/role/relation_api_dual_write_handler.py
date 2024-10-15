@@ -50,7 +50,7 @@ class SeedingRelationApiDualWriteHandler:
     _platform_default_policy_uuid: Optional[str] = None
     _admin_default_policy_uuid: Optional[str] = None
 
-    def __init__(self, replicator: Optional[OutboxReplicator] = None):
+    def __init__(self, replicator: Optional[RelationReplicator] = None):
         """Initialize SeedingRelationApiDualWriteHandler."""
         self._replicator = replicator if replicator else OutboxReplicator()
 
