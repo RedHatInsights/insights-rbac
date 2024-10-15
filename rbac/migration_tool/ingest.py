@@ -15,43 +15,15 @@ You should have received a copy of the GNU Affero General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 
-import json
-from typing import Tuple
-
-from management.role.model import Role
-from migration_tool.models import V1permission, V1resourcedef, V1role
+from typing import Callable, Collection
 
 
-def extract_info_into_v1_role(role: Role):
-    """Extract the information from the role and returns a V1role object."""
-    perm_res_defs: dict[Tuple[str, str], list[V1resourcedef]] = {}
-    perm_list: list[str] = []
-    role_id = str(role.uuid)
-    for access in role.access.all():
-        for resource_def in access.resourceDefinitions.all():
-            attri_filter = resource_def.attributeFilter
-            # Some malformed data in db
-            if attri_filter["operation"] == "in":
-                if not isinstance(attri_filter["value"], list):
-                    attri_filter["operation"] = "equal"
-                elif attri_filter["value"] == [] or attri_filter["value"] == [None]:
-                    continue
-            res_def = V1resourcedef(attri_filter["key"], attri_filter["operation"], json.dumps(attri_filter["value"]))
-            if res_def.resource_id != "":
-                add_element(perm_res_defs, (role_id, access.permission.permission), res_def)
-        perm_list.append(access.permission.permission)
-
-    v1_perms = []
-    for perm in perm_list:
-        perm_parts = perm.split(":")
-        res_defs = [res_def for res_def in perm_res_defs.get((role_id, perm), [])]
-        v1_perm = V1permission(perm_parts[0], perm_parts[1], perm_parts[2], frozenset(res_defs))
-        v1_perms.append(v1_perm)
-    return V1role(role_id, frozenset(v1_perms), frozenset())  # we don't get groups from the sheet
-
-
-def add_element(dict, key, value):
+def add_element(dict, key, value, collection: Callable[[], Collection] = list):
     """Add append value to dictionnary according to key."""
     if key not in dict:
-        dict[key] = []
-    dict[key].append(value)
+        dict[key] = collection()
+    c = dict[key]
+    if hasattr(c, "append"):
+        c.append(value)
+    else:
+        c.add(value)

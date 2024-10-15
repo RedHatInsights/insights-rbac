@@ -160,6 +160,115 @@ spec:
       workspaces:
       - name: basic-auth
         workspace: git-auth
+
+      # unit tests
+    - name: clone-repository-oci-ta
+      params:
+      - name: url
+        value: $(params.git-url)
+      - name: revision
+        value: $(params.revision)
+      - name: ociStorage
+        # needs to be unique storage name
+        value: $(params.output-image).git
+      runAfter:
+      - init
+      taskRef:
+        params:
+        - name: name
+          value: git-clone-oci-ta
+        - name: bundle
+          value: quay.io/konflux-ci/tekton-catalog/task-git-clone-oci-ta@sha256:0f4360ce144d46171ebd2e8f4d4575539a0600e02208ba5fc9beeb2c27ddfd4c
+        - name: kind
+          value: task
+        resolver: bundles
+      workspaces:
+      # use the git-auth workspace for credentials
+      - name: basic-auth
+        workspace: git-auth
+
+    - name: run-unit-tests
+      description: Running Insights RBAC unit tests
+      # make sure the task runs after the artifact is created
+      runAfter:
+        - clone-repository-oci-ta
+      params:
+        # store the trusted artifact
+        - name: SOURCE_ARTIFACT
+          value: $(tasks.clone-repository-oci-ta.results.SOURCE_ARTIFACT)
+        - name: POSTGRESQL_USER
+          value: "root"
+        - name: POSTGRESQL_PASSWORD
+          value: "root"
+        - name: POSTGRESQL_DATABASE
+          value: "rbac"
+        - name: POSTGRESQL_PORT
+          value: "5432"
+        - name: DATABASE_HOST
+          value: "0.0.0.0"
+      workspaces:
+      - name: basic-auth
+        workspace: git-auth
+      taskSpec:
+        params:
+          - description: The Trusted Artifact URI pointing to the artifact with the application source code.
+            name: SOURCE_ARTIFACT
+            type: string
+        volumes:
+          # New volume to store a copy of the source code accessible only to this Task.
+          - name: workdir
+            emptyDir: {}
+        stepTemplate:
+          volumeMounts:
+            - mountPath: /var/workdir
+              name: workdir
+              readyOnly: false
+        sidecars:
+          - image: quay.io/cloudservices/postgresql-rds:14
+            name: rbac-db
+            env:
+              - name: POSTGRESQL_DATABASE
+                value: $(params.POSTGRESQL_DATABASE)
+              - name: POSTGRESQL_USER
+                value: $(params.POSTGRESQL_USER)
+              - name: POSTGRESQL_PASSWORD
+                value: $(params.POSTGRESQL_PASSWORD)
+              - name: POSTGRESQL_PORT
+                value: $(params.POSTGRESQL_PORT)
+        steps:
+          # Add the trusted artifact to the task volume
+          - name: use-trusted-artifact
+            image: quay.io/redhat-appstudio/build-trusted-artifacts:latest@sha256:e0e457b6af10e44ff6b90208a9e69adc863a865e1c062c4cb84bf3846037d74d
+            args:
+              - use
+              - $(params.SOURCE_ARTIFACT)=/var/workdir
+          - name: unit-tests
+            # set the working directory to value from previous step
+            workingDir: /var/workdir
+            # Use image that suites your use case
+            image: registry.access.redhat.com/ubi8/python-39:latest
+            securityContext:
+            # If the task step needs write access to the volume, set the runAsUser to 0 (root).
+              runAsUser: 0
+            env:
+              - name: DATABASE_NAME
+                value: $(params.POSTGRESQL_DATABASE)
+              - name: DATABASE_USER
+                value: $(params.POSTGRESQL_USER)
+              - name: DATABASE_PASSWORD
+                value: $(params.POSTGRESQL_PASSWORD)
+              - name: DATABASE_PORT
+                value: $(params.POSTGRESQL_PORT)
+              - name: DATABASE_HOST
+                value: $(params.DATABASE_HOST)
+            script: |
+              #!/bin/bash
+              set -ex
+              echo "RUN THE UNIT TESTS"
+              pip install --upgrade pip
+              pip install tox
+              tox -r
+
     - name: prefetch-dependencies
       params:
       - name: input
@@ -218,7 +327,7 @@ spec:
         - name: name
           value: buildah-oci-ta
         - name: bundle
-          value: quay.io/konflux-ci/tekton-catalog/task-buildah-oci-ta:0.2@sha256:06946a3a676a9daa1efb16120ba0d81e0c3ce38c9f6242439e2169f27d5d2a2a
+          value: quay.io/konflux-ci/tekton-catalog/task-buildah-oci-ta:0.2@sha256:f1f2994a48c484f822f65bd88133738dfa8d6fb3057b6e3441defb6022e81e42
         - name: kind
           value: task
         resolver: bundles
@@ -319,7 +428,7 @@ spec:
         - name: name
           value: clair-scan
         - name: bundle
-          value: quay.io/konflux-ci/tekton-catalog/task-clair-scan:0.2@sha256:9f4ddafd599e06b319cece5a4b8ac36b9e7ec46bea378bc6c6af735d3f7f8060
+          value: quay.io/konflux-ci/tekton-catalog/task-clair-scan:0.2@sha256:28fee4bf5da87f2388c973d9336086749cad8436003f9a514e22ac99735e056b
         - name: kind
           value: task
         resolver: bundles
@@ -365,7 +474,7 @@ spec:
         - name: name
           value: sast-snyk-check-oci-ta
         - name: bundle
-          value: quay.io/konflux-ci/tekton-catalog/task-sast-snyk-check-oci-ta:0.2@sha256:c10a095a48bffe898cc95644eb9a826ea0667c6ba9e9ec35b6149337ece234fd
+          value: quay.io/konflux-ci/tekton-catalog/task-sast-snyk-check-oci-ta:0.2@sha256:7e99a122bc9e84fd9fb29062e825d3345177337d2448dcb50324f86ec5560c7a
         - name: kind
           value: task
         resolver: bundles
@@ -387,7 +496,7 @@ spec:
         - name: name
           value: clamav-scan
         - name: bundle
-          value: quay.io/konflux-ci/tekton-catalog/task-clamav-scan:0.1@sha256:5ac9b24cff7cfb391bc54cd5135536892090354862327d1028fa08872d759c03
+          value: quay.io/konflux-ci/tekton-catalog/task-clamav-scan:0.1@sha256:1e29eebe916b81b7100138d62db0e03e22d03657274d37041c59cbaca5fdbf7d
         - name: kind
           value: task
         resolver: bundles
@@ -430,7 +539,7 @@ spec:
         - name: name
           value: push-dockerfile-oci-ta
         - name: bundle
-          value: quay.io/konflux-ci/tekton-catalog/task-push-dockerfile-oci-ta:0.1@sha256:b048f99ab1ba013e809dc00523978542c2cb3fcd133b408267dd849eb40d1d0a
+          value: quay.io/konflux-ci/tekton-catalog/task-push-dockerfile-oci-ta:0.1@sha256:e32feb2c815116730917fe5665d9f003e53f2e1718f60bcbabf0ab3abad5d7d4
         - name: kind
           value: task
         resolver: bundles

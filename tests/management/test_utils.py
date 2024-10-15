@@ -21,13 +21,13 @@ from api.models import Tenant, User
 from management.models import Access, Group, Permission, Principal, Policy, Role
 from management.utils import (
     access_for_principal,
+    get_principal_from_request,
     groups_for_principal,
     policies_for_principal,
     roles_for_principal,
     account_id_for_tenant,
     get_principal,
 )
-from rest_framework.exceptions import ValidationError
 from tests.identity_request import IdentityRequest
 
 from unittest import mock
@@ -229,3 +229,38 @@ class UtilsTests(IdentityRequest):
         self.assertEqual(created_service_account.service_account_id, str(client_id))
         self.assertEqual(created_service_account.type, "service-account")
         self.assertEqual(created_service_account.username, service_account_username)
+
+    @mock.patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={
+            "status_code": 200,
+            "data": [
+                {
+                    "org_id": "100001",
+                    "is_org_admin": False,
+                    "is_internal": False,
+                    "id": 52567473,
+                    "username": "user_a",
+                    "account_number": "1111111",
+                    "is_active": True,
+                }
+            ],
+        },
+    )
+    def test_get_principal_from_request_created(self, mock_request_principals):
+        """Test that when a principal does not exist in the database, it gets created."""
+        username = "abcde"
+
+        request = mock.Mock()
+        request.tenant = self.tenant
+        request.user = User()
+        request.user.username = username
+        request.query_params = {}
+
+        # Attempt to fetch the principal from the database. Since it does not exist, it should create one.
+        get_principal_from_request(request=request)
+
+        # Assert that the principal was properly created in the database.
+        created_principal = Principal.objects.get(username=username)
+        self.assertEqual(created_principal.type, "user")
+        self.assertEqual(created_principal.username, username)
