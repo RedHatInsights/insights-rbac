@@ -16,8 +16,8 @@
 #
 
 """Class to handle Dual Write API related operations."""
-from abc import ABC
 import logging
+from abc import ABC
 from typing import Optional
 
 from django.conf import settings
@@ -43,10 +43,12 @@ logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 
 class BaseRelationApiDualWriteHandler(ABC):
+    """Base class to handle Dual Write API related operations on roles."""
+
     _replicator: RelationReplicator
     # TODO: continue factoring common behavior into this base class, and potentially into a higher base class
     # for the general pattern
-    
+
     def __init__(self, replicator: Optional[RelationReplicator] = None):
         """Initialize SeedingRelationApiDualWriteHandler."""
         if not self.replication_enabled():
@@ -57,6 +59,7 @@ class BaseRelationApiDualWriteHandler(ABC):
     def replication_enabled(self):
         """Check whether replication enabled."""
         return settings.REPLICATION_TO_RELATION_ENABLED is True
+
 
 class SeedingRelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
     """Class to handle Dual Write API related operations specific to the seeding process."""
