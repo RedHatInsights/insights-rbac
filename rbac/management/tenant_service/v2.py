@@ -241,6 +241,9 @@ class V2TenantBootstrapService:
             return bootstrap
 
     def _bootstrap_tenant(self, tenant: Tenant) -> BootstrappedTenant:
+        if tenant.tenant_name == "public":
+            raise ValueError("Cannot bootstrap public tenant.")
+
         # Set up workspace hierarchy for Tenant
         root_workspace = Workspace.objects.create(
             tenant=tenant,
