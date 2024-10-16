@@ -40,6 +40,7 @@ from api.models import Tenant
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
+
 class SeedingRelationApiDualWriteHandler:
     """Class to handle Dual Write API related operations specific to the seeding process."""
 

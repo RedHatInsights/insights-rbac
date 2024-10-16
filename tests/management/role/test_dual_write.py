@@ -32,7 +32,6 @@ from management.relation_replicator.relation_replicator import ReplicationEventT
 from management.role.model import Access, ResourceDefinition, Role, BindingMapping
 from management.role.relation_api_dual_write_handler import (
     RelationApiDualWriteHandler,
-    ReplicationEventType,
     SeedingRelationApiDualWriteHandler,
 )
 from management.tenant_service.tenant_service import BootstrappedTenant
@@ -624,7 +623,7 @@ class DualWriteSystemRolesTestCase(DualWriteTestCase):
         )
         dual_write_handler.replicate_update_system_role(role)
 
-        # check if only 1 relation exists in replicator.
+        # check if only 2 relations exists in replicator.
         tuples = self.tuples.find_tuples(predicate=resource_type("rbac", "role"))
         self.assertEquals(len(tuples), 2)
         parents = [rel.subject_id for rel in tuples if rel.relation == "child" and rel.resource_id == str(role.uuid)]
