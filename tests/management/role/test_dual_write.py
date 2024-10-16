@@ -27,11 +27,11 @@ from management.models import Workspace
 from management.permission.model import Permission
 from management.policy.model import Policy
 from management.principal.model import Principal
+from management.relation_replicator.noop_replicator import NoopReplicator
+from management.relation_replicator.relation_replicator import ReplicationEventType
 from management.role.model import Access, ResourceDefinition, Role, BindingMapping
 from management.role.relation_api_dual_write_handler import (
-    NoopReplicator,
     RelationApiDualWriteHandler,
-    ReplicationEventType,
 )
 from management.tenant_service.tenant_service import BootstrappedTenant
 from management.tenant_service.v2 import V2TenantBootstrapService
