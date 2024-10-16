@@ -64,7 +64,7 @@ def _add_ext_relation_if_it_exists(external_relation, role):
     )
 
 
-def _make_role(data):
+def _make_role(data, dual_write_handler):
     """Create the role object in the database."""
     public_tenant = Tenant.objects.get(tenant_name="public")
     name = data.pop("name")
@@ -79,7 +79,6 @@ def _make_role(data):
     )
     role, created = Role.objects.get_or_create(name=name, defaults=defaults, tenant=public_tenant)
 
-    dual_write_handler = SeedingRelationApiDualWriteHandler()
     if created:
         if role.display_name != display_name:
             role.display_name = display_name
@@ -112,12 +111,12 @@ def _make_role(data):
     return role
 
 
-def _update_or_create_roles(roles):
+def _update_or_create_roles(roles, dual_write_handler):
     """Update or create roles from list."""
     current_role_ids = set()
     for role_json in roles:
         try:
-            role = _make_role(role_json)
+            role = _make_role(role_json, dual_write_handler)
             current_role_ids.add(role.id)
         except Exception as e:
             logger.error(f"Failed to update or create system role: {role_json.get('name')} " f"with error: {e}")
@@ -132,6 +131,7 @@ def seed_roles():
         for f in os.listdir(roles_directory)
         if os.path.isfile(os.path.join(roles_directory, f)) and f.endswith(".json")
     ]
+    dual_write_handler = SeedingRelationApiDualWriteHandler()
     current_role_ids = set()
     with transaction.atomic():
         for role_file_name in role_files:
@@ -139,13 +139,12 @@ def seed_roles():
             with open(role_file_path) as json_file:
                 data = json.load(json_file)
                 role_list = data.get("roles")
-                file_role_ids = _update_or_create_roles(role_list)
+                file_role_ids = _update_or_create_roles(role_list, dual_write_handler)
                 current_role_ids.update(file_role_ids)
 
     # Find roles in DB but not in config
     roles_to_delete = Role.objects.filter(system=True).exclude(id__in=current_role_ids)
     logger.info(f"The following '{roles_to_delete.count()}' roles(s) eligible for removal: {roles_to_delete.values()}")
-    dual_write_handler = SeedingRelationApiDualWriteHandler()
     if destructive_ok("seeding"):
         logger.info(f"Removing the following role(s): {roles_to_delete.values()}")
         # Actually remove roles no longer in config
