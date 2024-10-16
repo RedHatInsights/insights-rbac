@@ -15,7 +15,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 
-"""RelationReplicator which writes to the outbox table."""
+"""RelationReplicator which writes to the Relations API."""
 
 import json
 import logging
@@ -33,7 +33,7 @@ from management.relation_replicator.relation_replicator import RelationReplicato
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 
-class SyncReplicator(RelationReplicator):
+class RelationsApiReplicator(RelationReplicator):
     """Replicates relations via the Relations API over gRPC."""
 
     def replicate(self, event: ReplicationEvent):

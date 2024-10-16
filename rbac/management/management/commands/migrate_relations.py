@@ -26,9 +26,8 @@ class Command(BaseCommand):
         parser.add_argument(
             "--write-relationships",
             default="False",
-            choices=["True", "False", "sync", "async"],
-            help="Whether to replicate relationships and how. True is == sync. "
-            "'sync' uses the Relations API. 'async' uses the Outbox.",
+            choices=["True", "False", "relations-api", "outbox"],
+            help="Whether to replicate relationships and how. True is == 'relations-api' for compatibility.",
         )
 
     def handle(self, *args, **options):

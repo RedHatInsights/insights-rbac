@@ -28,7 +28,7 @@ from management.relation_replicator.relation_replicator import (
     ReplicationEvent,
     ReplicationEventType,
 )
-from management.relation_replicator.sync_replicator import SyncReplicator
+from management.relation_replicator.relations_api_replicator import RelationsApiReplicator
 from management.role.model import BindingMapping, Role
 from migration_tool.models import V2rolebinding
 from migration_tool.sharedSystemRolesReplicatedRoleBindings import v1_role_to_v2_bindings
@@ -175,10 +175,10 @@ def migrate_data(exclude_apps: list = [], orgs: list = [], write_relationships: 
 def _get_replicator(write_relationships: str) -> RelationReplicator:
     option = write_relationships.lower()
 
-    if option == "true" or option == "sync":
-        return SyncReplicator()
+    if option == "true" or option == "relations-api":
+        return RelationsApiReplicator()
 
-    if option == "async":
+    if option == "outbox":
         return OutboxReplicator()
 
     return LoggingReplicator()

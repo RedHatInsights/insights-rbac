@@ -15,7 +15,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 
-"""RelationReplicator which writes to the outbox table."""
+"""RelationReplicator which just loggs added tuples."""
 
 import logging
 
