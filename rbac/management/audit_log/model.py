@@ -101,14 +101,14 @@ class AuditLog(TenantAwareModel):
         """Create list of principals/roles/service accounts for description."""
         names_list = []
         if user_type == "user" or user_type == "User":
-            for i in type_dict:
-                names_list.append(i["username"])
+            for username in type_dict:
+                names_list.append(username["username"])
         elif user_type == "service_account" or user_type == "Service Account":
-            for i in type_dict:
-                names_list.append(i["clientId"])
+            for service_account in type_dict:
+                names_list.append(service_account["clientId"])
         elif user_type == AuditLog.ROLE:
-            for i in type_dict:
-                names_list.append(str(i.uuid))
+            for role in type_dict:
+                names_list.append(str(role.uuid))
         else:
             return ValueError("User type does not exist")
         return ", ".join(names_list)
