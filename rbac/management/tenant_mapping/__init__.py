@@ -1,0 +1,1 @@
+"""Tenant Mapping model."""
