@@ -17,10 +17,12 @@
 
 """Class to handle Dual Write API related operations."""
 import logging
+from abc import ABC
 from typing import Optional
 
 from django.conf import settings
 from kessel.relations.v1beta1 import common_pb2
+from management.group.model import Group
 from management.models import Workspace
 from management.relation_replicator.noop_replicator import NoopReplicator
 from management.relation_replicator.outbox_replicator import OutboxReplicator
@@ -40,10 +42,164 @@ from api.models import Tenant
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 
-class RelationApiDualWriteHandler:
-    """Class to handle Dual Write API related operations."""
+class BaseRelationApiDualWriteHandler(ABC):
+    """Base class to handle Dual Write API related operations on roles."""
 
     _replicator: RelationReplicator
+    # TODO: continue factoring common behavior into this base class, and potentially into a higher base class
+    # for the general pattern
+
+    def __init__(self, replicator: Optional[RelationReplicator] = None):
+        """Initialize SeedingRelationApiDualWriteHandler."""
+        if not self.replication_enabled():
+            self._replicator = NoopReplicator()
+            return
+        self._replicator = replicator if replicator else OutboxReplicator()
+
+    def replication_enabled(self):
+        """Check whether replication enabled."""
+        return settings.REPLICATION_TO_RELATION_ENABLED is True
+
+
+class SeedingRelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
+    """Class to handle Dual Write API related operations specific to the seeding process."""
+
+    _replicator: RelationReplicator
+    _current_role_relations: list[common_pb2.Relationship]
+
+    _public_tenant: Optional[Tenant] = None
+    _platform_default_policy_uuid: Optional[str] = None
+    _admin_default_policy_uuid: Optional[str] = None
+
+    def prepare_for_update(self, role: Role):
+        """Generate & store role's current relations."""
+        if not self.replication_enabled():
+            return
+        self._current_role_relations = self._generate_relations_for_role(role)
+
+    def replicate_update_system_role(self, role: Role):
+        """Replicate update of system role."""
+        if not self.replication_enabled():
+            return
+
+        self._replicate(
+            ReplicationEventType.UPDATE_SYSTEM_ROLE,
+            self._create_metadata_from_role(role),
+            self._current_role_relations,
+            self._generate_relations_for_role(role),
+        )
+
+    def replicate_new_system_role(self, role: Role):
+        """Replicate creation of new system role."""
+        if not self.replication_enabled():
+            return
+
+        self._replicate(
+            ReplicationEventType.CREATE_SYSTEM_ROLE,
+            self._create_metadata_from_role(role),
+            [],
+            self._generate_relations_for_role(role),
+        )
+
+    def replicate_deleted_system_role(self, role: Role):
+        """Replicate deletion of system role."""
+        if not self.replication_enabled():
+            return
+
+        self._replicate(
+            ReplicationEventType.DELETE_SYSTEM_ROLE,
+            self._create_metadata_from_role(role),
+            self._generate_relations_for_role(role),
+            [],
+        )
+
+    def _generate_relations_for_role(self, role: Role) -> list[common_pb2.Relationship]:
+        """Generate system role permissions."""
+        relations = []
+
+        admin_default = self._get_admin_default_policy_uuid()
+        platform_default = self._get_platform_default_policy_uuid()
+
+        # Is it valid to skip this? If there are no default groups, the migration isn't going to succeed.
+        if role.admin_default and admin_default:
+            relations.append(
+                create_relationship(("rbac", "role"), str(role.uuid), ("rbac", "role"), admin_default, "child")
+            )
+        if role.platform_default and platform_default:
+            relations.append(
+                create_relationship(("rbac", "role"), str(role.uuid), ("rbac", "role"), platform_default, "child")
+            )
+
+        permissions = list()
+        for access in role.access.all():
+            v1_perm = access.permission
+            v2_perm = v1_perm_to_v2_perm(v1_perm)
+            permissions.append(v2_perm)
+
+        for permission in permissions:
+            relations.append(
+                create_relationship(("rbac", "role"), str(role.uuid), ("rbac", "principal"), str("*"), permission)
+            )
+
+        return relations
+
+    def _create_metadata_from_role(self, role: Role) -> dict[str, object]:
+        return {"role_uuid": role.uuid}
+
+    def _replicate(
+        self,
+        event_type: ReplicationEventType,
+        metadata: dict[str, object],
+        remove: list[common_pb2.Relationship],
+        add: list[common_pb2.Relationship],
+    ):
+        if not self.replication_enabled():
+            return
+        try:
+            self._replicator.replicate(
+                ReplicationEvent(
+                    event_type=event_type,
+                    info=metadata,
+                    # TODO: need to think about partitioning
+                    # Maybe resource id
+                    partition_key="rbactodo",
+                    remove=remove,
+                    add=add,
+                ),
+            )
+        except Exception as e:
+            raise DualWriteException(e)
+
+    def _get_platform_default_policy_uuid(self) -> Optional[str]:
+        try:
+            if self._platform_default_policy_uuid is None:
+                policy = Group.objects.get(
+                    platform_default=True, system=True, tenant=self._get_public_tenant()
+                ).policies.get()
+                self._platform_default_policy_uuid = str(policy.uuid)
+            return self._platform_default_policy_uuid
+        except Group.DoesNotExist:
+            return None
+
+    def _get_admin_default_policy_uuid(self) -> Optional[str]:
+        try:
+            if self._admin_default_policy_uuid is None:
+                policy = Group.objects.get(
+                    admin_default=True, system=True, tenant=self._get_public_tenant()
+                ).policies.get()
+                self._admin_default_policy_uuid = str(policy.uuid)
+            return self._admin_default_policy_uuid
+        except Group.DoesNotExist:
+            return None
+
+    def _get_public_tenant(self) -> Tenant:
+        if self._public_tenant is None:
+            self._public_tenant = Tenant.objects.get(tenant_name="public")
+        return self._public_tenant
+
+
+class RelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
+    """Class to handle Dual Write API related operations."""
 
     @classmethod
     def for_system_role_event(
@@ -65,11 +221,11 @@ class RelationApiDualWriteHandler:
         tenant: Optional[Tenant] = None,
     ):
         """Initialize RelationApiDualWriteHandler."""
+        super().__init__(replicator)
+
         if not self.replication_enabled():
-            self._replicator = NoopReplicator()
             return
         try:
-            self._replicator = replicator if replicator else OutboxReplicator()
             self.event_type = event_type
             self.role_relations: list[common_pb2.Relationship] = []
             self.current_role_relations: list[common_pb2.Relationship] = []
@@ -91,10 +247,6 @@ class RelationApiDualWriteHandler:
         except Exception as e:
             logger.error(f"Failed to initialize RelationApiDualWriteHandler with error: {e}")
             raise DualWriteException(e)
-
-    def replication_enabled(self):
-        """Check whether replication enabled."""
-        return settings.REPLICATION_TO_RELATION_ENABLED is True
 
     def prepare_for_update(self):
         """Generate relations from current state of role and UUIDs for v2 role and role binding from database."""
@@ -190,20 +342,3 @@ class RelationApiDualWriteHandler:
             return relations
         except Exception as e:
             raise DualWriteException(e)
-
-    # TODO: Remove/replace - placeholder for testing
-    def replicate_new_system_role_permissions(self, role: Role):
-        """Replicate system role permissions."""
-        if not self.replication_enabled():
-            return
-        permissions = list()
-        for access in role.access.all():
-            v1_perm = access.permission
-            v2_perm = v1_perm_to_v2_perm(v1_perm)
-            permissions.append(v2_perm)
-
-        for permission in permissions:
-            self.role_relations.append(
-                create_relationship(("rbac", "role"), str(role.uuid), ("rbac", "principal"), str("*"), permission)
-            )
-        self._replicate()
