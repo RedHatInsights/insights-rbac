@@ -17,14 +17,17 @@
 
 """Class to handle Dual Write API related operations."""
 import logging
-from abc import ABC, abstractmethod
-from enum import Enum
 from typing import Optional
 
 from django.conf import settings
-from google.protobuf import json_format
 from kessel.relations.v1beta1 import common_pb2
-from management.models import Outbox, Workspace
+from management.models import Workspace
+from management.relation_replicator.noop_replicator import NoopReplicator
+from management.relation_replicator.outbox_replicator import OutboxReplicator
+from management.relation_replicator.relation_replicator import DualWriteException
+from management.relation_replicator.relation_replicator import RelationReplicator
+from management.relation_replicator.relation_replicator import ReplicationEvent
+from management.relation_replicator.relation_replicator import ReplicationEventType
 from management.role.model import BindingMapping, Role
 from migration_tool.migrate import migrate_role
 from migration_tool.sharedSystemRolesReplicatedRoleBindings import v1_perm_to_v2_perm
@@ -35,113 +38,6 @@ from api.models import Tenant
 
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
-
-
-class DualWriteException(Exception):
-    """DualWrite exception."""
-
-    pass
-
-
-class ReplicationEventType(str, Enum):
-    """Replication event type."""
-
-    CREATE_SYSTEM_ROLE = "create_system_role"
-    UPDATE_SYSTEM_ROLE = "update_system_role"
-    DELETE_SYSTEM_ROLE = "delete_system_role"
-    CREATE_CUSTOM_ROLE = "create_custom_role"
-    UPDATE_CUSTOM_ROLE = "update_custom_role"
-    DELETE_CUSTOM_ROLE = "delete_custom_role"
-    ASSIGN_ROLE = "assign_role"
-    UNASSIGN_ROLE = "unassign_role"
-    CREATE_GROUP = "create_group"
-    UPDATE_GROUP = "update_group"
-    DELETE_GROUP = "delete_group"
-    ADD_PRINCIPALS_TO_GROUP = "add_principals_to_group"
-    REMOVE_PRINCIPALS_FROM_GROUP = "remove_principals_from_group"
-    BOOTSTRAP_TENANT = "bootstrap_tenant"
-    EXTERNAL_USER_UPDATE = "external_user_update"
-
-
-class ReplicationEvent:
-    """What tuples changes to replicate."""
-
-    event_type: ReplicationEventType
-    event_info: dict[str, object]
-    partition_key: str
-    add: list[common_pb2.Relationship]
-    remove: list[common_pb2.Relationship]
-
-    def __init__(
-        self,
-        event_type: ReplicationEventType,
-        partition_key: str,
-        add: list[common_pb2.Relationship] = [],
-        remove: list[common_pb2.Relationship] = [],
-        info: dict[str, object] = {},
-    ):
-        """Initialize ReplicationEvent."""
-        self.partition_key = partition_key
-        self.event_type = event_type
-        self.add = add
-        self.remove = remove
-        self.event_info = info
-
-
-class RelationReplicator(ABC):
-    """Type responsible for replicating relations to Kessel Relations."""
-
-    @abstractmethod
-    def replicate(self, event: ReplicationEvent):
-        """Replicate the given event to Kessel Relations."""
-        pass
-
-
-class OutboxReplicator(RelationReplicator):
-    """Replicates relations via the outbox table."""
-
-    def replicate(self, event: ReplicationEvent):
-        """Replicate the given event to Kessel Relations via the Outbox."""
-        payload = self._build_replication_event(event.add, event.remove)
-        self._save_replication_event(payload, event.event_type, event.event_info, event.partition_key)
-
-    def _build_replication_event(self, relations_to_add, relations_to_remove):
-        """Build replication event."""
-        add_json = []
-        for relation in relations_to_add:
-            add_json.append(json_format.MessageToDict(relation))
-
-        remove_json = []
-        for relation in relations_to_remove:
-            remove_json.append(json_format.MessageToDict(relation))
-
-        replication_event = {"relations_to_add": add_json, "relations_to_remove": remove_json}
-        return replication_event
-
-    def _save_replication_event(self, payload, event_type, event_info: dict[str, object], aggregateid):
-        """Save replication event."""
-        # TODO: Can we add these as proper fields for kibana but also get logged in simple formatter?
-        logger.info(
-            "[Dual Write] Publishing replication event. event_type='%s' %s",
-            event_type,
-            " ".join([f"info.{key}='{str(value)}'" for key, value in event_info.items()]),
-        )
-        # https://debezium.io/documentation/reference/stable/transformations/outbox-event-router.html#basic-outbox-table
-        outbox_record = Outbox.objects.create(
-            aggregatetype="relations-replication-event",
-            aggregateid=aggregateid,
-            event_type=event_type,
-            payload=payload,
-        )
-        outbox_record.delete()
-
-
-class NoopReplicator(RelationReplicator):
-    """Noop replicator."""
-
-    def replicate(self, event: ReplicationEvent):
-        """Noop."""
-        pass
 
 
 class RelationApiDualWriteHandler:
@@ -223,7 +119,6 @@ class RelationApiDualWriteHandler:
 
             relations, _ = migrate_role(
                 self.role,
-                write_relationships=False,
                 default_workspace=self.default_workspace,
                 current_bindings=self.binding_mappings.values(),
             )
@@ -273,7 +168,6 @@ class RelationApiDualWriteHandler:
 
             relations, mappings = migrate_role(
                 self.role,
-                write_relationships=False,
                 default_workspace=self.default_workspace,
                 current_bindings=self.binding_mappings.values(),
             )
