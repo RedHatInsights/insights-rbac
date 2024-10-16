@@ -16,6 +16,7 @@
 #
 
 """Class to handle Dual Write API related operations."""
+from abc import ABC
 import logging
 from typing import Optional
 
@@ -41,7 +42,23 @@ from api.models import Tenant
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 
-class SeedingRelationApiDualWriteHandler:
+class BaseRelationApiDualWriteHandler(ABC):
+    _replicator: RelationReplicator
+    # TODO: continue factoring common behavior into this base class, and potentially into a higher base class
+    # for the general pattern
+    
+    def __init__(self, replicator: Optional[RelationReplicator] = None):
+        """Initialize SeedingRelationApiDualWriteHandler."""
+        if not self.replication_enabled():
+            self._replicator = NoopReplicator()
+            return
+        self._replicator = replicator if replicator else OutboxReplicator()
+
+    def replication_enabled(self):
+        """Check whether replication enabled."""
+        return settings.REPLICATION_TO_RELATION_ENABLED is True
+
+class SeedingRelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
     """Class to handle Dual Write API related operations specific to the seeding process."""
 
     _replicator: RelationReplicator
@@ -50,14 +67,6 @@ class SeedingRelationApiDualWriteHandler:
     _public_tenant: Optional[Tenant] = None
     _platform_default_policy_uuid: Optional[str] = None
     _admin_default_policy_uuid: Optional[str] = None
-
-    def __init__(self, replicator: Optional[RelationReplicator] = None):
-        """Initialize SeedingRelationApiDualWriteHandler."""
-        self._replicator = replicator if replicator else OutboxReplicator()
-
-    def replication_enabled(self):
-        """Check whether replication enabled."""
-        return settings.REPLICATION_TO_RELATION_ENABLED is True
 
     def prepare_for_update(self, role: Role):
         """Generate & store role's current relations."""
@@ -186,10 +195,8 @@ class SeedingRelationApiDualWriteHandler:
         return self._public_tenant
 
 
-class RelationApiDualWriteHandler:
+class RelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
     """Class to handle Dual Write API related operations."""
-
-    _replicator: RelationReplicator
 
     @classmethod
     def for_system_role_event(
@@ -211,11 +218,11 @@ class RelationApiDualWriteHandler:
         tenant: Optional[Tenant] = None,
     ):
         """Initialize RelationApiDualWriteHandler."""
+        super().__init__(replicator)
+
         if not self.replication_enabled():
-            self._replicator = NoopReplicator()
             return
         try:
-            self._replicator = replicator if replicator else OutboxReplicator()
             self.event_type = event_type
             self.role_relations: list[common_pb2.Relationship] = []
             self.current_role_relations: list[common_pb2.Relationship] = []
@@ -237,10 +244,6 @@ class RelationApiDualWriteHandler:
         except Exception as e:
             logger.error(f"Failed to initialize RelationApiDualWriteHandler with error: {e}")
             raise DualWriteException(e)
-
-    def replication_enabled(self):
-        """Check whether replication enabled."""
-        return settings.REPLICATION_TO_RELATION_ENABLED is True
 
     def prepare_for_update(self):
         """Generate relations from current state of role and UUIDs for v2 role and role binding from database."""
