@@ -99,7 +99,9 @@ class DualWriteTestCase(TestCase):
         self, name: str, permissions: list[str], platform_default=False, admin_default=False
     ) -> Role:
         """Create a new system role with the given ID and permissions."""
-        role = self.fixture.new_system_role(name=name, permissions=permissions, platform_default=platform_default, admin_default=admin_default)
+        role = self.fixture.new_system_role(
+            name=name, permissions=permissions, platform_default=platform_default, admin_default=admin_default
+        )
         dual_write_handler = SeedingRelationApiDualWriteHandler(replicator=InMemoryRelationReplicator(self.tuples))
         dual_write_handler.replicate_new_system_role(role)
         return role
@@ -689,7 +691,7 @@ class DualWriteSystemRolesTestCase(DualWriteTestCase):
         # Delete system role
         dual_write_handler = SeedingRelationApiDualWriteHandler(replicator=InMemoryRelationReplicator(self.tuples))
         dual_write_handler.replicate_deleted_system_role(role)
-        
+
         # Check if relations do not exist in replicator.
         tuples = self.tuples.find_tuples(predicate=resource_type("rbac", "role"))
         self.assertEquals(len(tuples), 0)
@@ -913,9 +915,15 @@ class RbacFixture:
         """Create a new tenant with the given name and organization ID."""
         return Tenant.objects.create(tenant_name=f"org{org_id}", org_id=org_id)
 
-    def new_system_role(self, name: str, permissions: list[str], platform_default = False, admin_default = False) -> Role:
+    def new_system_role(self, name: str, permissions: list[str], platform_default=False, admin_default=False) -> Role:
         """Create a new system role with the given name and permissions."""
-        role = Role.objects.create(name=name, system=True, platform_default=platform_default, admin_default=admin_default, tenant=self.public_tenant)
+        role = Role.objects.create(
+            name=name,
+            system=True,
+            platform_default=platform_default,
+            admin_default=admin_default,
+            tenant=self.public_tenant,
+        )
 
         access_list = [
             Access(
