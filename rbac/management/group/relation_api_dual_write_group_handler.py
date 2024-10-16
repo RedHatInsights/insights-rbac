@@ -24,15 +24,16 @@ from django.conf import settings
 from management.group.model import Group
 from management.models import Workspace
 from management.principal.model import Principal
-from management.role.model import BindingMapping, Role
-from management.role.relation_api_dual_write_handler import (
+from management.relation_replicator.outbox_replicator import OutboxReplicator
+from management.relation_replicator.relation_replicator import (
     DualWriteException,
-    OutboxReplicator,
     RelationReplicator,
     ReplicationEvent,
     ReplicationEventType,
 )
+from management.role.model import BindingMapping, Role
 from migration_tool.models import V2boundresource, V2role, V2rolebinding
+
 
 from api.models import Tenant
 
