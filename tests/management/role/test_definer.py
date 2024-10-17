@@ -16,7 +16,7 @@
 #
 """Test the role definer."""
 from django.conf import settings
-from unittest.mock import ANY, call, patch
+from unittest.mock import ANY, call, patch, mock_open
 from management.role.definer import seed_roles, seed_permissions
 from api.models import Tenant
 from tests.core.test_kafka import copy_call_args
@@ -33,7 +33,7 @@ class RoleDefinerTests(IdentityRequest):
         self.public_tenant = Tenant.objects.get(tenant_name="public")
 
     @patch("core.kafka.RBACProducer.send_kafka_message")
-    def test_role_create(self, send_kafka_message): # can we modify this func?
+    def test_role_create(self, send_kafka_message):
         kafka_mock = copy_call_args(send_kafka_message)
         """Test that we can run a role seeding update."""
         with self.settings(NOTIFICATIONS_RH_ENABLED=True, NOTIFICATIONS_ENABLED=True):
@@ -241,18 +241,54 @@ class RoleDefinerTests(IdentityRequest):
         # Previous string verb still works
         self.assertEqual(Permission.objects.filter(permission="inventory:*:*").count(), 1)
 
+    @patch(
+        "management.role.relation_api_dual_write_handler.SeedingRelationApiDualWriteHandler.replicate_deleted_system_role"
+    )
+    @patch(
+        "management.role.relation_api_dual_write_handler.SeedingRelationApiDualWriteHandler.replicate_new_system_role"
+    )
+    def test_seed_roles_new_role(self, mock_replicate_new_system_role, mock_replicate_deleted_system_role):
+        seed_roles()
 
-    @patch("management.role.relation_api_dual_write_handler.SeedingRelationApiDualWriteHandler.replicate_new_system_role")
-    @patch("management.role.relation_api_dual_write_handler.SeedingRelationApiDualWriteHandler.replicate_deleted_system_role")
+        # ensure replication for new role was called
+        mock_replicate_new_system_role.assert_called()
+
+        # no roles to remove
+        mock_replicate_deleted_system_role.assert_not_called()
+
+    @patch(
+        "management.role.relation_api_dual_write_handler.SeedingRelationApiDualWriteHandler.replicate_new_system_role"
+    )
+    @patch(
+        "management.role.relation_api_dual_write_handler.SeedingRelationApiDualWriteHandler.replicate_deleted_system_role"
+    )
     @patch("management.role.definer.destructive_ok")
-    def test_seed_roles(self, replicate_new_system_role, replicate_deleted_system_role, destructive_ok):
-        destructive_ok.return_value = True
-        # roles_to_delete.return_value
+    @patch("builtins.open", new_callable=mock_open, read_data='{"roles": []}')
+    @patch("os.listdir")
+    @patch("os.path.isfile")
+    def test_seed_roles_delete_role(
+        self,
+        mock_isfile,
+        mock_listdir,
+        mock_open,
+        mock_destructive_ok,
+        mock_replicate_deleted_system_role,
+        mock_replicate_new_system_role,
+    ):
+        mock_destructive_ok.return_value = True
+
+        # mock files
+        mock_listdir.return_value = ["role.json"]
+        mock_isfile.return_value = True
+
+        # create a role in the database that's not in config
+        role_to_delete = Role.objects.create(name="dummy_role_delete", system=True, tenant=self.public_tenant)
 
         seed_roles()
 
-        replicate_new_system_role.assert_called()        
-        destructive_ok.assert_called()
-        # replicate_deleted_system_role.assert_called()
+        mock_replicate_new_system_role.assert_not_called()
+        mock_destructive_ok.assert_called_with("seeding")
+        mock_replicate_deleted_system_role.assert_called_with(role_to_delete)
 
-
+        # verify role was deleted from the database
+        self.assertFalse(Role.objects.filter(id=role_to_delete.id).exists())
