@@ -33,7 +33,7 @@ class RoleDefinerTests(IdentityRequest):
         self.public_tenant = Tenant.objects.get(tenant_name="public")
 
     @patch("core.kafka.RBACProducer.send_kafka_message")
-    def test_role_create(self, send_kafka_message):
+    def test_role_create(self, send_kafka_message): # can we modify this func?
         kafka_mock = copy_call_args(send_kafka_message)
         """Test that we can run a role seeding update."""
         with self.settings(NOTIFICATIONS_RH_ENABLED=True, NOTIFICATIONS_ENABLED=True):
@@ -240,3 +240,19 @@ class RoleDefinerTests(IdentityRequest):
         self.assertEqual(permission.first().description, "Approval local test templates read.")
         # Previous string verb still works
         self.assertEqual(Permission.objects.filter(permission="inventory:*:*").count(), 1)
+
+
+    @patch("management.role.relation_api_dual_write_handler.SeedingRelationApiDualWriteHandler.replicate_new_system_role")
+    @patch("management.role.relation_api_dual_write_handler.SeedingRelationApiDualWriteHandler.replicate_deleted_system_role")
+    @patch("management.role.definer.destructive_ok")
+    def test_seed_roles(self, replicate_new_system_role, replicate_deleted_system_role, destructive_ok):
+        destructive_ok.return_value = True
+        # roles_to_delete.return_value
+
+        seed_roles()
+
+        replicate_new_system_role.assert_called()        
+        destructive_ok.assert_called()
+        # replicate_deleted_system_role.assert_called()
+
+
