@@ -40,6 +40,9 @@ from rest_framework import serializers
 
 from api.models import Tenant
 
+from management.tenant_service.v2 import V2TenantBootstrapService
+from management.relation_replicator.outbox_replicator import OutboxReplicator
+
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
@@ -92,10 +95,16 @@ def set_system_flag_before_update(group: Group, tenant, user) -> Optional[Group]
 
 def clone_default_group_in_public_schema(group, tenant) -> Optional[Group]:
     """Clone the default group for a tenant into the public schema."""
-    if settings.PRINCIPAL_CLEANUP_UPDATE_ENABLED_UMB:
-        # TODO: bootstrap the tenant to get the mapping
-        # use this for uuid instead and to remove the default role binding tuple
-        group_uuid = uuid4()
+    if settings.PRINCIPAL_CLEANUP_UPDATE_ENABLED_UMB and settings.REPLICATION_TO_RELATION_ENABLED:
+        tenant_bootstrap_service = V2TenantBootstrapService(OutboxReplicator())
+        bootstrapped_tenant = tenant_bootstrap_service.bootstrap_tenant(tenant)
+        tenant_bootstrap_service.remove_default_bindings_for_group(bootstrapped_tenant)
+        if group.admin_default:
+            group_uuid = bootstrapped_tenant.mapping.default_admin_group_uuid
+        else:
+            group_uuid = bootstrapped_tenant.mapping.default_group_uuid
+
+
     else:
         group_uuid = uuid4()
 
@@ -122,7 +131,6 @@ def clone_default_group_in_public_schema(group, tenant) -> Optional[Group]:
     return group
 
 
-@transaction.atomic
 def add_roles(group, roles_or_role_ids, tenant, user=None):
     """Process list of roles and add them to the group."""
     roles = _roles_by_query_or_ids(roles_or_role_ids)

@@ -1040,8 +1040,9 @@ class GroupViewSet(
             serializer = GroupRoleSerializerIn(data=request.data)
             if serializer.is_valid(raise_exception=True):
                 roles = request.data.pop(ROLES_KEY, [])
-            group = set_system_flag_before_update(group, request.tenant, request.user)
-            add_roles(group, roles, request.tenant, user=request.user)
+            with transaction.atomic():
+                group = set_system_flag_before_update(group, request.tenant, request.user)
+                add_roles(group, roles, request.tenant, user=request.user)
             response_data = GroupRoleSerializerIn(group)
         elif request.method == "GET":
             serialized_roles = self.obtain_roles(request, group)

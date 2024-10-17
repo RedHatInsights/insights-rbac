@@ -48,7 +48,7 @@ class ReplicationEventType(str, Enum):
     EXTERNAL_USER_UPDATE = "external_user_update"
     MIGRATE_CUSTOM_ROLE = "migrate_custom_role"
     MIGRATE_TENANT_GROUPS = "migrate_tenant_groups"
-
+    REMOVE_DEFAULT_BINDINGS = "remove_default_bindings"
 
 class ReplicationEvent:
     """What tuples changes to replicate."""
