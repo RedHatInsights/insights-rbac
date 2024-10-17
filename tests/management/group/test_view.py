@@ -219,17 +219,10 @@ class GroupViewsetTests(IdentityRequest):
         self.group.principals.add(*self.service_accounts)
         self.group.save()
 
-        self.root_workspace = Workspace.objects.create(
-            type=Workspace.Types.ROOT,
-            name="Root",
-            tenant=self.tenant,
-        )
-        self.default_workspace = Workspace.objects.create(
-            type=Workspace.Types.DEFAULT,
-            name="Default",
-            tenant=self.tenant,
-            parent=self.root_workspace,
-        )
+        self.bootstrap_service = V2TenantBootstrapService(NoopReplicator())
+        bootstrapped = self.bootstrap_service.bootstrap_tenant(self.tenant)
+        self.default_workspace = bootstrapped.default_workspace
+        self.root_workspace = bootstrapped.root_workspace
 
     def tearDown(self):
         """Tear down group viewset tests."""

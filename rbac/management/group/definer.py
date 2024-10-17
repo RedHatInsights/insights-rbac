@@ -98,7 +98,7 @@ def clone_default_group_in_public_schema(group, tenant) -> Optional[Group]:
     if settings.PRINCIPAL_CLEANUP_UPDATE_ENABLED_UMB and settings.REPLICATION_TO_RELATION_ENABLED:
         tenant_bootstrap_service = V2TenantBootstrapService(OutboxReplicator())
         bootstrapped_tenant = tenant_bootstrap_service.bootstrap_tenant(tenant)
-        tenant_bootstrap_service.remove_default_bindings_for_group(bootstrapped_tenant)
+        tenant_bootstrap_service.remove_and_replicate_default_bindings(bootstrapped_tenant, group.admin_default)
         if group.admin_default:
             group_uuid = bootstrapped_tenant.mapping.default_admin_group_uuid
         else:
