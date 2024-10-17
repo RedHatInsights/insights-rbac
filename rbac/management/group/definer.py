@@ -17,13 +17,14 @@
 
 """Handler for system defined group."""
 import logging
-from typing import Optional, Tuple, Union
+from typing import Iterable, Optional, Tuple, Union
 from uuid import uuid4
 
 from django.conf import settings
 from django.db import transaction
 from django.db.models.query import QuerySet
 from django.utils.translation import gettext as _
+from kessel.relations.v1beta1.common_pb2 import Relationship
 from management.group.model import Group
 from management.group.relation_api_dual_write_group_handler import (
     RelationApiDualWriteGroupHandler,
@@ -83,20 +84,25 @@ def seed_group() -> Tuple[Group, Group]:
     return group, admin_group
 
 
-def set_system_flag_before_update(group: Group, tenant, user) -> Optional[Group]:
+def set_system_flag_before_update(group: Group, tenant, user) -> (Optional[Group], Iterable[Relationship]):
     """Update system flag on default groups."""
+    relations = []
     if group.system:
-        group = clone_default_group_in_public_schema(group, tenant)  # type: ignore
+        group, relations = clone_default_group_in_public_schema(group, tenant)  # type: ignore
         group_flag_change_notification_handler(user, group)
-    return group
+    return group, relations
 
 
-def clone_default_group_in_public_schema(group, tenant) -> Optional[Group]:
+def clone_default_group_in_public_schema(group, tenant) -> (Optional[Group], Iterable[Relationship]):
     """Clone the default group for a tenant into the public schema."""
-    if settings.PRINCIPAL_CLEANUP_UPDATE_ENABLED_UMB and settings.REPLICATION_TO_RELATION_ENABLED:
+    relationships = []
+    if settings.REPLICATION_TO_RELATION_ENABLED:
         tenant_bootstrap_service = V2TenantBootstrapService(OutboxReplicator())
         bootstrapped_tenant = tenant_bootstrap_service.bootstrap_tenant(tenant)
-        tenant_bootstrap_service.remove_and_replicate_default_bindings(bootstrapped_tenant, group.admin_default)
+
+        relationships = tenant_bootstrap_service.default_bindings_from_mapping(
+            bootstrapped_tenant, group.admin_default
+        )
         if group.admin_default:
             group_uuid = bootstrapped_tenant.mapping.default_admin_group_uuid
         else:
@@ -117,17 +123,17 @@ def clone_default_group_in_public_schema(group, tenant) -> Optional[Group]:
     tenant_default_policy.tenant = tenant
     if Group.objects.filter(name=group.name, platform_default=group.platform_default, tenant=tenant):
         # TODO: returning none can break other code
-        return None
+        return None, relationships
     public_default_roles = Role.objects.filter(platform_default=True, tenant=public_tenant)
 
     group.save()
     tenant_default_policy.group = group
     tenant_default_policy.save()
     tenant_default_policy.roles.set(public_default_roles)
-    return group
+    return group, relationships
 
 
-def add_roles(group, roles_or_role_ids, tenant, user=None):
+def add_roles(group, roles_or_role_ids, tenant, user=None, relations=None):
     """Process list of roles and add them to the group."""
     roles = _roles_by_query_or_ids(roles_or_role_ids)
     group_name = group.name
@@ -173,7 +179,10 @@ def add_roles(group, roles_or_role_ids, tenant, user=None):
 
         if tenant.tenant_name != "public":
             dual_write_handler = RelationApiDualWriteGroupHandler(group, ReplicationEventType.ASSIGN_ROLE)
+            if relations is not None:
+                dual_write_handler.extend_relations_to_remove(relations)
             dual_write_handler.replicate_added_role(role)
+
         # Send notifications
         group_role_change_notification_handler(user, group, role, "added")
 

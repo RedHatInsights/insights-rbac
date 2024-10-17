@@ -21,6 +21,7 @@ from typing import Callable, Iterable, Optional
 from uuid import uuid4
 
 from django.conf import settings
+from kessel.relations.v1beta1.common_pb2 import Relationship
 from management.group.model import Group
 from management.models import Workspace
 from management.principal.model import Principal
@@ -36,9 +37,7 @@ from management.role.model import BindingMapping, Role
 from management.tenant_service.v2 import V2TenantBootstrapService
 from migration_tool.models import V2boundresource, V2role, V2rolebinding
 
-
 from api.models import Tenant
-
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
@@ -126,6 +125,10 @@ class RelationApiDualWriteGroupHandler:
         except Exception as e:
             raise DualWriteException(e)
 
+    def extend_relations_to_remove(self, relations_to_remove: list[Relationship]):
+        """Extend relations to remove in replication."""
+        self.group_relations_to_remove.extend(relations_to_remove)
+
     def replicate_added_role(self, role: Role):
         """Replicate added role."""
         if not self.replication_enabled():
@@ -150,6 +153,7 @@ class RelationApiDualWriteGroupHandler:
         self._update_mapping_for_role(
             role, update_mapping=add_group_to_binding, create_default_mapping_for_system_role=create_default_mapping
         )
+
         self._replicate()
 
     def replicate_removed_role(self, role: Role):
