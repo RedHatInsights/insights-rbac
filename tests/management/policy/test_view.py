@@ -68,7 +68,7 @@ class PolicyViewsetTests(IdentityRequest):
         test_data = {"name": role_name, "access": [access_data]}
 
         # create a role
-        url = reverse("role-list")
+        url = reverse("v1_management:role-list")
         client = APIClient()
         response = client.post(url, test_data, format="json", **self.headers)
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
@@ -78,7 +78,7 @@ class PolicyViewsetTests(IdentityRequest):
         """Create a policy."""
         # create a policy
         test_data = {"name": policy_name, "group": group, "roles": roles}
-        url = reverse("policy-list")
+        url = reverse("v1_management:policy-list")
         client = APIClient()
         response = client.post(url, test_data, format="json", **self.headers)
         self.assertEqual(response.status_code, status)
@@ -94,7 +94,7 @@ class PolicyViewsetTests(IdentityRequest):
         response = self.create_policy(policy_name, self.group.uuid, [role_uuid])
 
         # test that we can retrieve the policy
-        url = reverse("policy-detail", kwargs={"uuid": response.data.get("uuid")})
+        url = reverse("v1_management:policy-detail", kwargs={"uuid": response.data.get("uuid")})
         client = APIClient()
         response = client.get(url, **self.headers)
         uuid = response.data.get("uuid")
@@ -117,11 +117,11 @@ class PolicyViewsetTests(IdentityRequest):
         policy_uuid = response.data.get("uuid")
 
         client = APIClient()
-        url = reverse("policy-detail", kwargs={"uuid": policy_uuid})
+        url = reverse("v1_management:policy-detail", kwargs={"uuid": policy_uuid})
         response = client.delete(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
 
-        url = reverse("policy-detail", kwargs={"uuid": policy_uuid})
+        url = reverse("v1_management:policy-detail", kwargs={"uuid": policy_uuid})
         client = APIClient()
         response = client.get(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
@@ -148,7 +148,7 @@ class PolicyViewsetTests(IdentityRequest):
     def test_create_policy_invalid(self):
         """Test that creating an invalid policy returns an error."""
         test_data = {}
-        url = reverse("policy-list")
+        url = reverse("v1_management:policy-list")
         client = APIClient()
         response = client.post(url, test_data, format="json", **self.headers)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
@@ -164,7 +164,7 @@ class PolicyViewsetTests(IdentityRequest):
 
     def test_read_policy_invalid(self):
         """Test that reading an invalid policy returns an error."""
-        url = reverse("policy-detail", kwargs={"uuid": uuid4()})
+        url = reverse("v1_management:policy-detail", kwargs={"uuid": uuid4()})
         client = APIClient()
         response = client.get(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
@@ -180,7 +180,7 @@ class PolicyViewsetTests(IdentityRequest):
         response = self.create_policy(policy_name, self.group.uuid, [role_uuid])
 
         # list a policies
-        url = reverse("policy-list")
+        url = reverse("v1_management:policy-list")
         client = APIClient()
         response = client.get(url, **self.headers)
 
@@ -210,7 +210,7 @@ class PolicyViewsetTests(IdentityRequest):
         test_data["group"] = self.group.uuid
         test_data["roles"] = [role_uuid]
         del test_data["uuid"]
-        url = reverse("policy-detail", kwargs={"uuid": policy_uuid})
+        url = reverse("v1_management:policy-detail", kwargs={"uuid": policy_uuid})
         client = APIClient()
         response = client.put(url, test_data, format="json", **self.headers)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -234,7 +234,7 @@ class PolicyViewsetTests(IdentityRequest):
         test_data["group"] = uuid4()
         test_data["roles"] = [role_uuid]
         del test_data["uuid"]
-        url = reverse("policy-detail", kwargs={"uuid": policy_uuid})
+        url = reverse("v1_management:policy-detail", kwargs={"uuid": policy_uuid})
         client = APIClient()
         response = client.put(url, test_data, format="json", **self.headers)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
@@ -255,7 +255,7 @@ class PolicyViewsetTests(IdentityRequest):
         test_data["group"] = self.group.uuid
         test_data["roles"] = [uuid4()]
         del test_data["uuid"]
-        url = reverse("policy-detail", kwargs={"uuid": policy_uuid})
+        url = reverse("v1_management:policy-detail", kwargs={"uuid": policy_uuid})
         client = APIClient()
         response = client.put(url, test_data, format="json", **self.headers)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
@@ -276,14 +276,14 @@ class PolicyViewsetTests(IdentityRequest):
         test_data["group"] = self.group.uuid
         test_data["roles"] = []
         del test_data["uuid"]
-        url = reverse("policy-detail", kwargs={"uuid": policy_uuid})
+        url = reverse("v1_management:policy-detail", kwargs={"uuid": policy_uuid})
         client = APIClient()
         response = client.put(url, test_data, format="json", **self.headers)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
     def test_update_policy_invalid(self):
         """Test that updating an invalid policy returns an error."""
-        url = reverse("policy-detail", kwargs={"uuid": uuid4()})
+        url = reverse("v1_management:policy-detail", kwargs={"uuid": uuid4()})
         client = APIClient()
         response = client.put(url, {}, format="json", **self.headers)
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
@@ -296,7 +296,7 @@ class PolicyViewsetTests(IdentityRequest):
         policy_name = "policyA"
         response = self.create_policy(policy_name, self.group.uuid, [role_uuid])
         policy_uuid = response.data.get("uuid")
-        url = reverse("policy-detail", kwargs={"uuid": policy_uuid})
+        url = reverse("v1_management:policy-detail", kwargs={"uuid": policy_uuid})
         client = APIClient()
         response = client.delete(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
@@ -307,7 +307,7 @@ class PolicyViewsetTests(IdentityRequest):
 
     def test_delete_policy_invalid(self):
         """Test that deleting an invalid policy returns an error."""
-        url = reverse("policy-detail", kwargs={"uuid": uuid4()})
+        url = reverse("v1_management:policy-detail", kwargs={"uuid": uuid4()})
         client = APIClient()
         response = client.delete(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
@@ -323,11 +323,11 @@ class PolicyViewsetTests(IdentityRequest):
         response = self.create_policy(policy_name, self.group.uuid, [role_uuid])
         policy_uuid = response.data.get("uuid")
 
-        url = reverse("group-detail", kwargs={"uuid": self.group.uuid})
+        url = reverse("v1_management:group-detail", kwargs={"uuid": self.group.uuid})
         client = APIClient()
         response = client.delete(url, **self.headers)
 
-        url = reverse("policy-detail", kwargs={"uuid": policy_uuid})
+        url = reverse("v1_management:policy-detail", kwargs={"uuid": policy_uuid})
         client = APIClient()
         response = client.get(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
@@ -343,11 +343,11 @@ class PolicyViewsetTests(IdentityRequest):
         response = self.create_policy(policy_name, self.group.uuid, [role_uuid])
         policy_uuid = response.data.get("uuid")
 
-        url = reverse("role-detail", kwargs={"uuid": role_uuid})
+        url = reverse("v1_management:role-detail", kwargs={"uuid": role_uuid})
         client = APIClient()
         response = client.delete(url, **self.headers)
 
-        url = reverse("policy-detail", kwargs={"uuid": policy_uuid})
+        url = reverse("v1_management:policy-detail", kwargs={"uuid": policy_uuid})
         client = APIClient()
         response = client.get(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
@@ -369,11 +369,11 @@ class PolicyViewsetTests(IdentityRequest):
         response = self.create_policy(policy_name, self.group.uuid, roles)
         policy_uuid = response.data.get("uuid")
 
-        url = reverse("role-detail", kwargs={"uuid": roles[0]})
+        url = reverse("v1_management:role-detail", kwargs={"uuid": roles[0]})
         client = APIClient()
         response = client.delete(url, **self.headers)
 
-        url = reverse("policy-detail", kwargs={"uuid": policy_uuid})
+        url = reverse("v1_management:policy-detail", kwargs={"uuid": policy_uuid})
         client = APIClient()
         response = client.get(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
