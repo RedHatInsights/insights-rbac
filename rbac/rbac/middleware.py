@@ -445,11 +445,30 @@ class DisableCSRF(MiddlewareMixin):  # pylint: disable=too-few-public-methods
 class ReadOnlyApiMiddleware(MiddlewareMixin):  # pylint: disable=too-few-public-methods
     """Middleware to enable read-only on APIs when configured."""
 
+    def _is_write_request(self, request):
+        """Determine whether or not the request is a write request."""
+        write_methods = ["POST", "PUT", "PATCH", "DELETE"]
+        return request.method in write_methods
+
+    def _should_deny_all_writes(self, request):
+        """Determine whether or not to deny all API writes."""
+        return settings.READ_ONLY_API_MODE and self._is_write_request(request)
+
+    def _should_deny_v2_writes(self, request):
+        """Determine whether or not to deny v2 writes."""
+        resolver = resolve(request.path)
+        api_namespace = resolver.app_name if resolver else ""
+        return settings.V2_READ_ONLY_API_MODE and self._is_write_request(request) and api_namespace == "v2_management"
+
+    def _read_only_response(self):
+        """Return a read-only API error response."""
+        return HttpResponse(
+            json.dumps({"error": "This API is currently in read-only mode. Please try again later."}),
+            content_type="application/json",
+            status=405,
+        )
+
     def process_request(self, request):  # pylint: disable=no-self-use
         """Process request ReadOnlyApiMiddleware."""
-        if settings.READ_ONLY_API_MODE and request.method in ["POST", "PUT", "PATCH", "DELETE"]:
-            return HttpResponse(
-                json.dumps({"error": "This API is currently in read-only mode. Please try again later."}),
-                content_type="application/json",
-                status=405,
-            )
+        if self._should_deny_all_writes(request) or self._should_deny_v2_writes(request):
+            return self._read_only_response()
