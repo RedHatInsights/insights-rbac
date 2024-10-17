@@ -349,6 +349,23 @@ class V2TenantBootstrapService:
 
         return tuples_to_add
 
+    def remove_default_bindings_for_group(self, bootstrapped_tenant: BootstrappedTenant):
+        default_workspace = Workspace.objects.get(tenant=bootstrapped_tenant.tenant, type=Workspace.Types.DEFAULT)
+        relationships = self._bootstrap_default_access(
+            tenant = bootstrapped_tenant.tenant,
+            mapping = bootstrapped_tenant.mapping,
+            default_workspace = default_workspace
+        )
+
+        self._replicator.replicate(
+            ReplicationEvent(
+                event_type=ReplicationEventType.REMOVE_DEFAULT_BINDINGS,
+                info={"org_id": bootstrapped_tenant.tenant},
+                partition_key="rbactodo",
+                remove=relationships,
+            )
+        )
+
     def _default_bindings(
             self, workspace_uuid: str, role_binding_uuid: str, role_uuid, group_uuid
     ) -> List[Relationship]:
