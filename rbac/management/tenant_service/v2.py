@@ -328,62 +328,59 @@ class V2TenantBootstrapService:
         #    one will rollback, serializing the group creation with user import on next retry.
         if platform_default_role_uuid and not Group.objects.filter(platform_default=True, tenant=tenant).exists():
             tuples_to_add.extend(
-                [
-                    create_relationship(
-                        ("rbac", "workspace"),
-                        default_workspace_uuid,
-                        ("rbac", "role_binding"),
-                        default_user_role_binding_uuid,
-                        "binding",
-                    ),
-                    create_relationship(
-                        ("rbac", "role_binding"),
-                        default_user_role_binding_uuid,
-                        ("rbac", "role"),
-                        platform_default_role_uuid,
-                        "role",
-                    ),
-                    create_relationship(
-                        ("rbac", "role_binding"),
-                        default_user_role_binding_uuid,
-                        ("rbac", "group"),
-                        str(mapping.default_group_uuid),
-                        "subject",
-                        "member",
-                    ),
-                ]
+                self._default_bindings(
+                    default_workspace_uuid,
+                    default_user_role_binding_uuid,
+                    platform_default_role_uuid,
+                    mapping.default_group_uuid
+                )
             )
 
         # Admin role binding is not customizable
         if admin_default_role_uuid:
             tuples_to_add.extend(
-                [
-                    create_relationship(
-                        ("rbac", "workspace"),
-                        default_workspace_uuid,
-                        ("rbac", "role_binding"),
-                        default_admin_role_binding_uuid,
-                        "binding",
-                    ),
-                    create_relationship(
-                        ("rbac", "role_binding"),
-                        default_admin_role_binding_uuid,
-                        ("rbac", "role"),
-                        admin_default_role_uuid,
-                        "role",
-                    ),
-                    create_relationship(
-                        ("rbac", "role_binding"),
-                        default_admin_role_binding_uuid,
-                        ("rbac", "group"),
-                        str(mapping.default_admin_group_uuid),
-                        "subject",
-                        "member",
-                    ),
-                ]
+                self._default_bindings(
+                    default_workspace_uuid,
+                    default_admin_role_binding_uuid,
+                    admin_default_role_uuid,
+                    mapping.default_admin_group_uuid
+                )
             )
 
         return tuples_to_add
+
+    def _default_bindings(
+            self, workspace_uuid: str, role_binding_uuid: str, role_uuid, group_uuid
+    ) -> List[Relationship]:
+        tuples = []
+        tuples.extend(
+            [
+                create_relationship(
+                    ("rbac", "workspace"),
+                    workspace_uuid,
+                    ("rbac", "role_binding"),
+                    role_binding_uuid,
+                    "binding",
+                ),
+                create_relationship(
+                    ("rbac", "role_binding"),
+                    role_binding_uuid,
+                    ("rbac", "role"),
+                    role_uuid,
+                    "role",
+                ),
+                create_relationship(
+                    ("rbac", "role_binding"),
+                    role_binding_uuid,
+                    ("rbac", "group"),
+                    str(group_uuid),
+                    "subject",
+                    "member",
+                ),
+            ]
+        )
+
+        return tuples
 
     def _get_platform_default_policy_uuid(self) -> Optional[str]:
         try:
