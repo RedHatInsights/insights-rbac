@@ -355,18 +355,27 @@ class V2TenantBootstrapService:
         mapping = bootstrapped_tenant.mapping
         if mapping is None:
             raise ValueError(f"Expected TenantMapping but got None. org_id: {bootstrapped_tenant.tenant.org_id}")
+
         if admin_default_group:
+            admin_default_role_uuid = self._get_admin_default_policy_uuid()
+            if admin_default_role_uuid is None:
+                logger.warning("No admin default role found for public tenant. Default access will not be set up.")
+
             relationships = self._default_bindings(
                 default_workspace.uuid,
                 mapping.default_admin_role_binding_uuid,
-                mapping.admin_default_role_uuid,
+                admin_default_role_uuid,
                 mapping.default_admin_group_uuid,
             )
         else:
+            platform_default_role_uuid = self._get_platform_default_policy_uuid()
+            if platform_default_role_uuid is None:
+                logger.warning("No platform default role found for public tenant. Default access will not be set up.")
+
             relationships = self._default_bindings(
                 default_workspace.uuid,
                 mapping.default_role_binding_uuid,
-                mapping.default_role_binding_uuid,
+                platform_default_role_uuid,
                 mapping.default_group_uuid,
             )
         return relationships

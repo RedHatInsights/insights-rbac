@@ -84,7 +84,7 @@ def seed_group() -> Tuple[Group, Group]:
     return group, admin_group
 
 
-def set_system_flag_before_update(group: Group, tenant, user) -> (Optional[Group], Iterable[Relationship]):
+def set_system_flag_before_update(group: Group, tenant, user) -> Tuple[Optional[Group], Iterable[Relationship]]:
     """Update system flag on default groups."""
     relations = []
     if group.system:
@@ -93,7 +93,7 @@ def set_system_flag_before_update(group: Group, tenant, user) -> (Optional[Group
     return group, relations
 
 
-def clone_default_group_in_public_schema(group, tenant) -> (Optional[Group], Iterable[Relationship]):
+def clone_default_group_in_public_schema(group, tenant) -> Tuple[Optional[Group], Iterable[Relationship]]:
     """Clone the default group for a tenant into the public schema."""
     relationships = []
     if settings.REPLICATION_TO_RELATION_ENABLED:

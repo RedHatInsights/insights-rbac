@@ -44,6 +44,8 @@ from management.models import (
 )
 from management.relation_replicator.noop_replicator import NoopReplicator
 from management.tenant_service.v2 import V2TenantBootstrapService
+from management.tenant_mapping.model import TenantMapping
+
 from tests.core.test_kafka import copy_call_args
 from tests.identity_request import IdentityRequest
 from tests.management.role.test_view import find_in_list, relation_api_tuple
@@ -1739,8 +1741,9 @@ class GroupViewsetTests(IdentityRequest):
         self.assertEqual(system_policy.tenant, self.tenant)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator._save_replication_event")
     @patch("core.kafka.RBACProducer.send_kafka_message")
-    def test_system_flag_update_on_add(self, send_kafka_message):
+    def test_system_flag_update_on_add(self, send_kafka_message, mock_method):
         """Test that adding a role to a platform_default group flips the system flag."""
         kafka_mock = copy_call_args(send_kafka_message)
         with self.settings(NOTIFICATIONS_ENABLED=True):
@@ -1761,6 +1764,47 @@ class GroupViewsetTests(IdentityRequest):
             self.assertTrue(self.defGroup.system)
             self.assertEqual(self.defGroup.roles().count(), 1)
             response = client.post(url, test_data, format="json", **self.headers)
+            actual_call_arg = mock_method.call_args[0][0]
+            to_remove = actual_call_arg["relations_to_remove"]
+            tenant_mapping = TenantMapping.objects.get(tenant=self.tenant)
+            policy_uuid = (
+                Group.objects.get(platform_default=True, system=True, tenant=Tenant.objects.get(tenant_name="public"))
+                .policies.get()
+                .uuid
+            )
+
+            def assert_group_tuples(tuple_to_replicate):
+                relation_tuple = relation_api_tuple(
+                    "workspace",
+                    str(self.default_workspace.uuid),
+                    "binding",
+                    "role_binding",
+                    str(tenant_mapping.default_role_binding_uuid),
+                )
+                self.assertIsNotNone(find_relation_in_list(tuple_to_replicate, relation_tuple))
+
+                relation_tuple = relation_api_tuple(
+                    "role_binding",
+                    str(tenant_mapping.default_role_binding_uuid),
+                    "role",
+                    "role",
+                    str(policy_uuid),
+                )
+
+                self.assertIsNotNone(find_relation_in_list(tuple_to_replicate, relation_tuple))
+
+                relation_tuple = relation_api_tuple(
+                    "role_binding",
+                    str(tenant_mapping.default_role_binding_uuid),
+                    "subject",
+                    "group",
+                    str(tenant_mapping.default_group_uuid),
+                    "member",
+                )
+
+                self.assertIsNotNone(find_relation_in_list(tuple_to_replicate, relation_tuple))
+
+            assert_group_tuples(to_remove)
 
             # Original platform default role does not change
             self.defGroup.refresh_from_db()
@@ -4247,7 +4291,6 @@ class GroupViewNonAdminTests(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
     @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
-    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator._save_replication_event")
     @patch("management.principal.it_service.ITService.request_service_accounts")
     def test_add_service_account_principal_in_group_with_User_Access_Admin_success(self, mock_request, mock_method):
         """
