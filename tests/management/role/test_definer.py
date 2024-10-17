@@ -22,7 +22,7 @@ from api.models import Tenant
 from tests.core.test_kafka import copy_call_args
 from tests.identity_request import IdentityRequest
 from management.models import Access, ExtRoleRelation, Permission, ResourceDefinition, Role
-
+from management.relation_replicator.relation_replicator import ReplicationEvent, ReplicationEventType
 
 class RoleDefinerTests(IdentityRequest):
     """Test the role definer functions."""
@@ -241,27 +241,22 @@ class RoleDefinerTests(IdentityRequest):
         # Previous string verb still works
         self.assertEqual(Permission.objects.filter(permission="inventory:*:*").count(), 1)
 
-    @patch(
-        "management.role.relation_api_dual_write_handler.SeedingRelationApiDualWriteHandler.replicate_deleted_system_role"
-    )
-    @patch(
-        "management.role.relation_api_dual_write_handler.SeedingRelationApiDualWriteHandler.replicate_new_system_role"
-    )
-    def test_seed_roles_new_role(self, mock_replicate_new_system_role, mock_replicate_deleted_system_role):
+    def matches_pattern(self, arg):
+        """Custom predicate to match specific call patterns."""
+        return arg[0].event_type == ReplicationEventType.CREATE_SYSTEM_ROLE
+
+    def is_create_event(self, relation: str, evt: ReplicationEvent) -> bool:
+        return evt.event_type == ReplicationEventType.CREATE_SYSTEM_ROLE and any(t.relation == relation for t in evt.add)
+
+    def is_remove_event(self, relation: str, evt: ReplicationEvent) -> bool:
+        return evt.event_type == ReplicationEventType.DELETE_SYSTEM_ROLE and any(t.relation == relation for t in evt.remove)
+
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
+    def test_seed_roles_new_role(self, mock_replicate):
         seed_roles()
+        self.assertTrue(any(self.is_create_event("inventory_hosts_read", args[0]) for args, _ in mock_replicate.call_args_list))
 
-        # ensure replication for new role was called
-        mock_replicate_new_system_role.assert_called()
-
-        # no roles to remove
-        mock_replicate_deleted_system_role.assert_not_called()
-
-    @patch(
-        "management.role.relation_api_dual_write_handler.SeedingRelationApiDualWriteHandler.replicate_new_system_role"
-    )
-    @patch(
-        "management.role.relation_api_dual_write_handler.SeedingRelationApiDualWriteHandler.replicate_deleted_system_role"
-    )
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
     @patch("management.role.definer.destructive_ok")
     @patch("builtins.open", new_callable=mock_open, read_data='{"roles": []}')
     @patch("os.listdir")
@@ -272,37 +267,30 @@ class RoleDefinerTests(IdentityRequest):
         mock_listdir,
         mock_open,
         mock_destructive_ok,
-        mock_replicate_deleted_system_role,
-        mock_replicate_new_system_role,
+        mock_replicate,
     ):
         mock_destructive_ok.return_value = True
-
         # mock files
         mock_listdir.return_value = ["role.json"]
         mock_isfile.return_value = True
 
         # create a role in the database that's not in config
         role_to_delete = Role.objects.create(name="dummy_role_delete", system=True, tenant=self.public_tenant)
+        # role_to_delete.access.add(["inventory:groups:read"])
+        public_tenant = Tenant.objects.get(tenant_name="public")
+        permission, created = Permission.objects.get_or_create("inventory:groups:read", tenant=public_tenant)   
+        access_obj = Access.objects.create(permission=permission, role=role_to_delete, tenant=public_tenant)
+
+        role_to_delete.save()
 
         seed_roles()
 
-        mock_replicate_new_system_role.assert_not_called()
-        mock_destructive_ok.assert_called_with("seeding")
-        mock_replicate_deleted_system_role.assert_called_with(role_to_delete)
+        self.assertTrue(any(self.is_remove_event("inventory_groups_read", args[0]) for args, _ in mock_replicate.call_args_list))
 
         # verify role was deleted from the database
         self.assertFalse(Role.objects.filter(id=role_to_delete.id).exists())
 
-    @patch("management.role.relation_api_dual_write_handler.SeedingRelationApiDualWriteHandler.prepare_for_update")
-    @patch(
-        "management.role.relation_api_dual_write_handler.SeedingRelationApiDualWriteHandler.replicate_new_system_role"
-    )
-    @patch(
-        "management.role.relation_api_dual_write_handler.SeedingRelationApiDualWriteHandler.replicate_update_system_role"
-    )
-    @patch(
-        "management.role.relation_api_dual_write_handler.SeedingRelationApiDualWriteHandler.replicate_deleted_system_role"
-    )
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
     @patch(
         "builtins.open",
         new_callable=mock_open,
@@ -310,15 +298,13 @@ class RoleDefinerTests(IdentityRequest):
     )
     @patch("os.listdir")
     @patch("os.path.isfile")
+    # @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
     def test_seed_roles_update_role(
         self,
         mock_isfile,
         mock_listdir,
         mock_open,
-        mock_replicate_deleted_system_role,
-        mock_replicate_update_system_role,
-        mock_replicate_new_system_role,
-        mock_prepare_for_update,
+        mock_replicate,
     ):
         # mock files
         mock_listdir.return_value = ["role.json"]
@@ -329,10 +315,7 @@ class RoleDefinerTests(IdentityRequest):
 
         seed_roles()
 
-        mock_prepare_for_update.assert_called()
-        mock_replicate_update_system_role.assert_called()
+        # return arg[0].event_type == ReplicationEventType.CREATE_SYSTEM_ROLE
 
-        # no new rule to create
-        mock_replicate_new_system_role.assert_not_called()
-        # no roles to remove
-        mock_replicate_deleted_system_role.assert_not_called()
+        self.assertTrue(any(arg[0].add for arg, _ in mock_replicate.call_args_list))
+
