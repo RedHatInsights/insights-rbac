@@ -292,3 +292,47 @@ class RoleDefinerTests(IdentityRequest):
 
         # verify role was deleted from the database
         self.assertFalse(Role.objects.filter(id=role_to_delete.id).exists())
+
+    @patch("management.role.relation_api_dual_write_handler.SeedingRelationApiDualWriteHandler.prepare_for_update")
+    @patch(
+        "management.role.relation_api_dual_write_handler.SeedingRelationApiDualWriteHandler.replicate_new_system_role"
+    )
+    @patch(
+        "management.role.relation_api_dual_write_handler.SeedingRelationApiDualWriteHandler.replicate_update_system_role"
+    )
+    @patch(
+        "management.role.relation_api_dual_write_handler.SeedingRelationApiDualWriteHandler.replicate_deleted_system_role"
+    )
+    @patch(
+        "builtins.open",
+        new_callable=mock_open,
+        read_data='{"roles": [{"name": "dummy_role_update", "system": true, "version": 3}]}',
+    )
+    @patch("os.listdir")
+    @patch("os.path.isfile")
+    def test_seed_roles_update_role(
+        self,
+        mock_isfile,
+        mock_listdir,
+        mock_open,
+        mock_replicate_deleted_system_role,
+        mock_replicate_update_system_role,
+        mock_replicate_new_system_role,
+        mock_prepare_for_update,
+    ):
+        # mock files
+        mock_listdir.return_value = ["role.json"]
+        mock_isfile.return_value = True
+
+        # create a role in the database that exists in config
+        Role.objects.create(name="dummy_role_update", system=True, tenant=self.public_tenant)
+
+        seed_roles()
+
+        mock_prepare_for_update.assert_called()
+        mock_replicate_update_system_role.assert_called()
+
+        # no new rule to create
+        mock_replicate_new_system_role.assert_not_called()
+        # no roles to remove
+        mock_replicate_deleted_system_role.assert_not_called()
