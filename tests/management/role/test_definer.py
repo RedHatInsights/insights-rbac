@@ -278,14 +278,14 @@ class RoleDefinerTests(IdentityRequest):
         role_to_delete = Role.objects.create(name="dummy_role_delete", system=True, tenant=self.public_tenant)
         # role_to_delete.access.add(["inventory:groups:read"])
         public_tenant = Tenant.objects.get(tenant_name="public")
-        permission, created = Permission.objects.get_or_create("inventory:groups:read", tenant=public_tenant)   
+        permission, created = Permission.objects.get_or_create(permission="inventory:hosts:read", tenant=public_tenant)   
         access_obj = Access.objects.create(permission=permission, role=role_to_delete, tenant=public_tenant)
 
         role_to_delete.save()
 
         seed_roles()
 
-        self.assertTrue(any(self.is_remove_event("inventory_groups_read", args[0]) for args, _ in mock_replicate.call_args_list))
+        self.assertTrue(any(self.is_remove_event("inventory_hosts_read", args[0]) for args, _ in mock_replicate.call_args_list))
 
         # verify role was deleted from the database
         self.assertFalse(Role.objects.filter(id=role_to_delete.id).exists())
