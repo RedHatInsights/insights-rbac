@@ -49,6 +49,10 @@ class V2TenantBootstrapServiceTest(TestCase):
         self.fixture = RbacFixture(self.service)
         self.default_group, self.admin_group = seed_group()
 
+    def test_prevents_bootstrapping_public_tenant(self):
+        with self.assertRaises(ValueError):
+            self.service.bootstrap_tenant(self.fixture.public_tenant)
+
     def test_relates_workspace_tenant_platform_hierarchy(self):
         bootstrapped = self.fixture.new_tenant(org_id="o1")
         root = self.fixture.root_workspace(bootstrapped.tenant)
