@@ -332,7 +332,7 @@ class V2TenantBootstrapService:
                     default_workspace_uuid,
                     default_user_role_binding_uuid,
                     platform_default_role_uuid,
-                    mapping.default_group_uuid
+                    mapping.default_group_uuid,
                 )
             )
 
@@ -343,32 +343,38 @@ class V2TenantBootstrapService:
                     default_workspace_uuid,
                     default_admin_role_binding_uuid,
                     admin_default_role_uuid,
-                    mapping.default_admin_group_uuid
+                    mapping.default_admin_group_uuid,
                 )
             )
 
         return tuples_to_add
 
     def default_bindings_from_mapping(self, bootstrapped_tenant: BootstrappedTenant, admin_default_group: bool):
+        """Calculate default bindings from tenant mapping."""
         default_workspace = Workspace.objects.get(tenant=bootstrapped_tenant.tenant, type=Workspace.Types.DEFAULT)
-
+        mapping = bootstrapped_tenant.mapping
+        if mapping is None:
+            raise ValueError(f"Expected TenantMapping but got None. org_id: {bootstrapped_tenant.tenant.org_id}")
         if admin_default_group:
             relationships = self._default_bindings(
                 default_workspace.uuid,
-                bootstrapped_tenant.mapping.default_admin_role_binding_uuid,
-                bootstrapped_tenant.mapping.admin_default_role_uuid,
-                bootstrapped_tenant.mapping.default_admin_group_uuid
+                mapping.default_admin_role_binding_uuid,
+                mapping.admin_default_role_uuid,
+                mapping.default_admin_group_uuid,
             )
         else:
             relationships = self._default_bindings(
                 default_workspace.uuid,
-                bootstrapped_tenant.mapping.default_role_binding_uuid,
-                bootstrapped_tenant.mapping.default_role_binding_uuid,
-                bootstrapped_tenant.mapping.default_group_uuid
+                mapping.default_role_binding_uuid,
+                mapping.default_role_binding_uuid,
+                mapping.default_group_uuid,
             )
         return relationships
 
-    def remove_and_replicate_default_bindings(self, bootstrapped_tenant: BootstrappedTenant, admin_default_group: bool):
+    def remove_and_replicate_default_bindings(
+        self, bootstrapped_tenant: BootstrappedTenant, admin_default_group: bool
+    ):
+        """Replicate removal of default bindings."""
         relationships = self.default_bindings_from_mapping(bootstrapped_tenant, admin_default_group)
 
         self._replicator.replicate(
@@ -381,7 +387,7 @@ class V2TenantBootstrapService:
         )
 
     def _default_bindings(
-            self, workspace_uuid: str, role_binding_uuid: str, role_uuid, group_uuid
+        self, workspace_uuid: str, role_binding_uuid: str, role_uuid, group_uuid
     ) -> List[Relationship]:
         tuples = []
         tuples.extend(

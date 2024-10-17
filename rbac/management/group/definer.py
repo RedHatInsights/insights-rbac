@@ -33,16 +33,14 @@ from management.notifications.notification_handlers import (
     group_role_change_notification_handler,
 )
 from management.policy.model import Policy
+from management.relation_replicator.outbox_replicator import OutboxReplicator
 from management.relation_replicator.relation_replicator import ReplicationEventType
 from management.role.model import Role
+from management.tenant_service.v2 import V2TenantBootstrapService
 from management.utils import clear_pk
 from rest_framework import serializers
 
 from api.models import Tenant
-
-from management.tenant_service.v2 import V2TenantBootstrapService
-from management.relation_replicator.outbox_replicator import OutboxReplicator
-
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
@@ -103,8 +101,6 @@ def clone_default_group_in_public_schema(group, tenant) -> Optional[Group]:
             group_uuid = bootstrapped_tenant.mapping.default_admin_group_uuid
         else:
             group_uuid = bootstrapped_tenant.mapping.default_group_uuid
-
-
     else:
         group_uuid = uuid4()
 

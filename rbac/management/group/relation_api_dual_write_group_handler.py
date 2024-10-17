@@ -24,6 +24,7 @@ from django.conf import settings
 from management.group.model import Group
 from management.models import Workspace
 from management.principal.model import Principal
+from management.relation_replicator.noop_replicator import NoopReplicator
 from management.relation_replicator.outbox_replicator import OutboxReplicator
 from management.relation_replicator.relation_replicator import (
     DualWriteException,
@@ -32,13 +33,12 @@ from management.relation_replicator.relation_replicator import (
     ReplicationEventType,
 )
 from management.role.model import BindingMapping, Role
+from management.tenant_service.v2 import V2TenantBootstrapService
 from migration_tool.models import V2boundresource, V2role, V2rolebinding
 
 
 from api.models import Tenant
 
-from management.relation_replicator.noop_replicator import NoopReplicator
-from management.tenant_service.v2 import V2TenantBootstrapService
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
