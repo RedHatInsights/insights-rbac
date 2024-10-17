@@ -58,7 +58,7 @@ class PrincipalViewNonAdminTests(IdentityRequest):
 
     def test_non_admin_cannot_read_principal_list_without_permissions(self):
         """Test that we can not read a list of principals as a non-admin without permissions."""
-        url = reverse("principals")
+        url = reverse("v1_management:principals")
         client = APIClient()
         response = client.get(url, **self.headers)
 
@@ -85,7 +85,7 @@ class PrincipalViewNonAdminTests(IdentityRequest):
         )
         access = Access.objects.create(permission=permission, role=role, tenant=self.non_admin_tenant)
 
-        url = reverse("principals")
+        url = reverse("v1_management:principals")
         client = APIClient()
         response = client.get(url, **self.headers)
 
@@ -149,7 +149,7 @@ class PrincipalViewsetTests(IdentityRequest):
             username="cross_account_user", cross_account=True, tenant=self.tenant
         )
 
-        url = reverse("principals")
+        url = reverse("v1_management:principals")
         client = APIClient()
         response = client.get(url, **self.headers)
 
@@ -184,7 +184,7 @@ class PrincipalViewsetTests(IdentityRequest):
 
     def test_read_principal_list_username_only_true_success(self):
         """Test that we can read a list of principals with username_only=true."""
-        url = f'{reverse("principals")}?username_only=true'
+        url = f'{reverse("v1_management:principals")}?username_only=true'
         client = APIClient()
         response = client.get(url, **self.headers)
 
@@ -203,7 +203,7 @@ class PrincipalViewsetTests(IdentityRequest):
     @override_settings(BYPASS_BOP_VERIFICATION=True)
     def test_read_principal_list_username_only_false_success(self):
         """Test that we can read a list of principals with username_only=false."""
-        url = f'{reverse("principals")}?username_only=false'
+        url = f'{reverse("v1_management:principals")}?username_only=false'
         client = APIClient()
         response = client.get(url, **self.headers)
 
@@ -223,7 +223,7 @@ class PrincipalViewsetTests(IdentityRequest):
 
     def test_read_principal_list_username_only_invalid(self):
         """Test that we get a 400 back with username_only=foo."""
-        url = f'{reverse("principals")}?username_only=foo'
+        url = f'{reverse("v1_management:principals")}?username_only=foo'
         client = APIClient()
         response = client.get(url, **self.headers)
 
@@ -244,7 +244,7 @@ class PrincipalViewsetTests(IdentityRequest):
     )
     def test_check_principal_admin(self, mock_request):
         """Test that we can read a list of principals."""
-        url = reverse("principals")
+        url = reverse("v1_management:principals")
         client = APIClient()
         response = client.get(url, **self.headers)
 
@@ -286,7 +286,7 @@ class PrincipalViewsetTests(IdentityRequest):
             username="cross_account_user", cross_account=True, tenant=self.tenant
         )
 
-        url = f'{reverse("principals")}?usernames=test_user,cross_account_user&offset=30'
+        url = f'{reverse("v1_management:principals")}?usernames=test_user,cross_account_user&offset=30'
         client = APIClient()
         response = client.get(url, **self.headers)
 
@@ -324,7 +324,7 @@ class PrincipalViewsetTests(IdentityRequest):
     )
     def test_read_principal_filtered_list_success(self, mock_request):
         """Test that we can read a filtered list of principals."""
-        url = f'{reverse("principals")}?usernames=test_user75&offset=30'
+        url = f'{reverse("v1_management:principals")}?usernames=test_user75&offset=30'
         client = APIClient()
         response = client.get(url, **self.headers)
 
@@ -359,7 +359,7 @@ class PrincipalViewsetTests(IdentityRequest):
     )
     def test_read_principal_partial_matching(self, mock_request):
         """Test that we can read a list of principals by partial matching."""
-        url = f'{reverse("principals")}?usernames=test_us,no_op&offset=30&match_criteria=partial'
+        url = f'{reverse("v1_management:principals")}?usernames=test_us,no_op&offset=30&match_criteria=partial'
         client = APIClient()
         response = client.get(url, **self.headers)
 
@@ -394,7 +394,7 @@ class PrincipalViewsetTests(IdentityRequest):
     )
     def test_read_principal_multi_filter(self, mock_request):
         """Test that we can read a list of principals by partial matching."""
-        url = f'{reverse("principals")}?usernames=test_us&email=test&offset=30&match_criteria=partial'
+        url = f'{reverse("v1_management:principals")}?usernames=test_us&email=test&offset=30&match_criteria=partial'
         client = APIClient()
         response = client.get(url, **self.headers)
 
@@ -425,7 +425,7 @@ class PrincipalViewsetTests(IdentityRequest):
 
     def test_bad_query_param(self):
         """Test handling of bad query params."""
-        url = f'{reverse("principals")}?limit=foo'
+        url = f'{reverse("v1_management:principals")}?limit=foo'
         client = APIClient()
         response = client.get(url, **self.headers)
 
@@ -433,7 +433,7 @@ class PrincipalViewsetTests(IdentityRequest):
 
     def test_bad_query_param_of_sort_order(self):
         """Test handling of bad query params."""
-        url = f'{reverse("principals")}?sort_order=det'
+        url = f'{reverse("v1_management:principals")}?sort_order=det'
         client = APIClient()
         response = client.get(url, **self.headers)
 
@@ -445,7 +445,7 @@ class PrincipalViewsetTests(IdentityRequest):
     )
     def test_read_principal_list_fail(self, mock_request):
         """Test that we can handle a failure with listing principals."""
-        url = reverse("principals")
+        url = reverse("v1_management:principals")
         client = APIClient()
         response = client.get(url, **self.headers)
 
@@ -462,7 +462,7 @@ class PrincipalViewsetTests(IdentityRequest):
     )
     def test_read_principal_list_account(self, mock_request):
         """Test that we can handle a request with matching accounts"""
-        url = f'{reverse("principals")}?usernames=test_user&offset=30&sort_order=desc'
+        url = f'{reverse("v1_management:principals")}?usernames=test_user&offset=30&sort_order=desc'
         client = APIClient()
         proxy = PrincipalProxy()
         response = client.get(url, **self.headers)
@@ -501,7 +501,7 @@ class PrincipalViewsetTests(IdentityRequest):
     )
     def test_read_principal_list_account_fail(self, mock_request):
         """Test that we can handle a request with matching accounts"""
-        url = f'{reverse("principals")}?usernames=test_user&offset=30'
+        url = f'{reverse("v1_management:principals")}?usernames=test_user&offset=30'
         client = APIClient()
         proxy = PrincipalProxy()
         response = client.get(url, **self.headers)
@@ -524,7 +524,7 @@ class PrincipalViewsetTests(IdentityRequest):
     )
     def test_read_principal_list_account_filter(self, mock_request):
         """Test that we can handle a request with matching accounts"""
-        url = f'{reverse("principals")}?usernames=test_user&offset=30'
+        url = f'{reverse("v1_management:principals")}?usernames=test_user&offset=30'
         client = APIClient()
         proxy = PrincipalProxy()
         response = client.get(url, **self.headers)
@@ -549,7 +549,7 @@ class PrincipalViewsetTests(IdentityRequest):
     )
     def test_read_principal_list_by_email(self, mock_request):
         """Test that we can handle a request with an email address"""
-        url = f'{reverse("principals")}?email=test_user@example.com'
+        url = f'{reverse("v1_management:principals")}?email=test_user@example.com'
         client = APIClient()
         proxy = PrincipalProxy()
         response = client.get(url, **self.headers)
@@ -587,7 +587,7 @@ class PrincipalViewsetTests(IdentityRequest):
     )
     def test_read_users_of_desired_status(self, mock_request):
         """Test that we can return users of desired status within an account"""
-        url = f'{reverse("principals")}?status=disabled'
+        url = f'{reverse("v1_management:principals")}?status=disabled'
         client = APIClient()
         proxy = PrincipalProxy()
         response = client.get(url, **self.headers)
@@ -620,7 +620,7 @@ class PrincipalViewsetTests(IdentityRequest):
     )
     def test_principal_default_status_enabled(self, mock_request):
         """Tests when not passing in status the user active status will be enabled"""
-        url = f'{reverse("principals")}'
+        url = f'{reverse("v1_management:principals")}'
         client = APIClient()
         proxy = PrincipalProxy()
         response = client.get(url, **self.headers)
@@ -653,7 +653,7 @@ class PrincipalViewsetTests(IdentityRequest):
     )
     def test_read_list_of_admins(self, mock_request):
         """Test that we can return only org admins within an account"""
-        url = f'{reverse("principals")}?admin_only=true'
+        url = f'{reverse("v1_management:principals")}?admin_only=true'
         client = APIClient()
         proxy = PrincipalProxy()
         response = client.get(url, **self.headers)
@@ -679,7 +679,7 @@ class PrincipalViewsetTests(IdentityRequest):
 
     def test_read_users_with_invalid_status_value(self):
         """Test that reading user with invalid status value returns 400"""
-        url = f'{reverse("principals")}?status=invalid'
+        url = f'{reverse("v1_management:principals")}?status=invalid'
         client = APIClient()
         proxy = PrincipalProxy()
         response = client.get(url, **self.headers)
@@ -687,7 +687,7 @@ class PrincipalViewsetTests(IdentityRequest):
 
     def test_read_users_with_invalid_admin_only_value(self):
         """Test that reading user with invalid status value returns 400"""
-        url = f'{reverse("principals")}?admin_only=invalid'
+        url = f'{reverse("v1_management:principals")}?admin_only=invalid'
         client = APIClient()
         proxy = PrincipalProxy()
         response = client.get(url, **self.headers)
@@ -709,7 +709,7 @@ class PrincipalViewsetTests(IdentityRequest):
     )
     def test_read_principal_list_by_email_partial_matching(self, mock_request):
         """Test that we can handle a request with a partial email address"""
-        url = f'{reverse("principals")}?email=test_use&match_criteria=partial'
+        url = f'{reverse("v1_management:principals")}?email=test_use&match_criteria=partial'
         client = APIClient()
         proxy = PrincipalProxy()
         response = client.get(url, **self.headers)
@@ -743,7 +743,7 @@ class PrincipalViewsetTests(IdentityRequest):
         Test that when an invalid "principal type" query parameter is specified,
         a bad request response is returned
         """
-        url = reverse("principals")
+        url = reverse("v1_management:principals")
         client = APIClient()
 
         invalidQueryParams = ["hello", "world", "service-accounts", "users"]
@@ -766,7 +766,7 @@ class PrincipalViewsetTests(IdentityRequest):
             username="cross_account_user", cross_account=True, tenant=self.tenant
         )
 
-        url = reverse("principals")
+        url = reverse("v1_management:principals")
         client = APIClient()
         response = client.get(url, **self.headers)
 
@@ -826,7 +826,7 @@ class PrincipalViewsetTests(IdentityRequest):
             }
         ]
 
-        url = f"{reverse('principals')}?type=service-account"
+        url = f"{reverse('v1_management:principals')}?type=service-account"
         client = APIClient()
         response = client.get(url, **self.headers)
 
@@ -865,7 +865,7 @@ class PrincipalViewsetTests(IdentityRequest):
             }
         ]
 
-        url = f"{reverse('principals')}?type=service-account"
+        url = f"{reverse('v1_management:principals')}?type=service-account"
         client = APIClient()
         response = client.get(url, **self.headers)
 
@@ -911,7 +911,7 @@ class PrincipalViewsetTests(IdentityRequest):
 
         # without limit and offset the default values are used
         # limit=10, offset=0
-        url = f"{reverse('principals')}?type=service-account"
+        url = f"{reverse('v1_management:principals')}?type=service-account"
         client = APIClient()
         response = client.get(url, **self.headers)
 
@@ -922,7 +922,7 @@ class PrincipalViewsetTests(IdentityRequest):
         # set custom limit and offset
         test_values = [(1, 1), (2, 2), (5, 5)]
         for limit, offset in test_values:
-            url = f"{reverse('principals')}?type=service-account&limit={limit}&offset={offset}"
+            url = f"{reverse('v1_management:principals')}?type=service-account&limit={limit}&offset={offset}"
             client = APIClient()
             response = client.get(url, **self.headers)
 
@@ -941,7 +941,7 @@ class PrincipalViewsetTests(IdentityRequest):
         expected_message = "Values for limit and offset must be positive numbers."
 
         for limit, offset in test_values:
-            url = f"{reverse('principals')}?type=service-account&limit={limit}&offset={offset}"
+            url = f"{reverse('v1_management:principals')}?type=service-account&limit={limit}&offset={offset}"
             client = APIClient()
             response = client.get(url, **self.headers)
             err = response.json()["errors"][0]
