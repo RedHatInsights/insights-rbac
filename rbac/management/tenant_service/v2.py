@@ -349,13 +349,27 @@ class V2TenantBootstrapService:
 
         return tuples_to_add
 
-    def remove_default_bindings_for_group(self, bootstrapped_tenant: BootstrappedTenant):
+    def default_bindings_from_mapping(self, bootstrapped_tenant: BootstrappedTenant, admin_default_group: bool):
         default_workspace = Workspace.objects.get(tenant=bootstrapped_tenant.tenant, type=Workspace.Types.DEFAULT)
-        relationships = self._bootstrap_default_access(
-            tenant = bootstrapped_tenant.tenant,
-            mapping = bootstrapped_tenant.mapping,
-            default_workspace = default_workspace
-        )
+
+        if admin_default_group:
+            relationships = self._default_bindings(
+                default_workspace.uuid,
+                bootstrapped_tenant.mapping.default_admin_role_binding_uuid,
+                bootstrapped_tenant.mapping.admin_default_role_uuid,
+                bootstrapped_tenant.mapping.default_admin_group_uuid
+            )
+        else:
+            relationships = self._default_bindings(
+                default_workspace.uuid,
+                bootstrapped_tenant.mapping.default_role_binding_uuid,
+                bootstrapped_tenant.mapping.default_role_binding_uuid,
+                bootstrapped_tenant.mapping.default_group_uuid
+            )
+        return relationships
+
+    def remove_and_replicate_default_bindings(self, bootstrapped_tenant: BootstrappedTenant, admin_default_group: bool):
+        relationships = self.default_bindings_from_mapping(bootstrapped_tenant, admin_default_group)
 
         self._replicator.replicate(
             ReplicationEvent(
@@ -374,21 +388,21 @@ class V2TenantBootstrapService:
             [
                 create_relationship(
                     ("rbac", "workspace"),
-                    workspace_uuid,
+                    str(workspace_uuid),
                     ("rbac", "role_binding"),
-                    role_binding_uuid,
+                    str(role_binding_uuid),
                     "binding",
                 ),
                 create_relationship(
                     ("rbac", "role_binding"),
-                    role_binding_uuid,
+                    str(role_binding_uuid),
                     ("rbac", "role"),
-                    role_uuid,
+                    str(role_uuid),
                     "role",
                 ),
                 create_relationship(
                     ("rbac", "role_binding"),
-                    role_binding_uuid,
+                    str(role_binding_uuid),
                     ("rbac", "group"),
                     str(group_uuid),
                     "subject",

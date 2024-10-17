@@ -37,6 +37,9 @@ from migration_tool.models import V2boundresource, V2role, V2rolebinding
 
 from api.models import Tenant
 
+from management.relation_replicator.noop_replicator import NoopReplicator
+from management.tenant_service.v2 import V2TenantBootstrapService
+
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 
@@ -252,7 +255,12 @@ class RelationApiDualWriteGroupHandler:
             custom_ids.append(role.id)
 
         if self.group.platform_default:
-            pass  # TODO: create default bindings,
+            bootstrap_service = V2TenantBootstrapService(replicator=NoopReplicator())
+            bootstrapped_tenant = bootstrap_service.bootstrap_tenant(self.group.tenant)
+            relations_to_add = bootstrap_service.default_bindings_from_mapping(
+                bootstrapped_tenant, self.group.admin_default
+            )
+            self.group_relations_to_add.extend(relations_to_add)
         else:
             self.principals = self.group.principals.all()
             self.group_relations_to_remove.extend(self._generate_member_relations())
