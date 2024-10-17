@@ -50,6 +50,7 @@ class ReplicationEventType(str, Enum):
     MIGRATE_TENANT_GROUPS = "migrate_tenant_groups"
     REMOVE_DEFAULT_BINDINGS = "remove_default_bindings"
 
+
 class ReplicationEvent:
     """What tuples changes to replicate."""
 
