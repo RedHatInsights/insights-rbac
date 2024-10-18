@@ -99,14 +99,8 @@ def clone_default_group_in_public_schema(group, tenant) -> Tuple[Optional[Group]
     if settings.REPLICATION_TO_RELATION_ENABLED:
         tenant_bootstrap_service = V2TenantBootstrapService(OutboxReplicator())
         bootstrapped_tenant = tenant_bootstrap_service.bootstrap_tenant(tenant)
-
-        relationships = tenant_bootstrap_service.default_bindings_from_mapping(
-            bootstrapped_tenant, group.admin_default
-        )
-        if group.admin_default:
-            group_uuid = bootstrapped_tenant.mapping.default_admin_group_uuid
-        else:
-            group_uuid = bootstrapped_tenant.mapping.default_group_uuid
+        relationships = tenant_bootstrap_service.default_bindings_from_mapping(bootstrapped_tenant)
+        group_uuid = bootstrapped_tenant.mapping.default_group_uuid
     else:
         group_uuid = uuid4()
 

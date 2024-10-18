@@ -282,9 +282,7 @@ class RelationApiDualWriteGroupHandler:
         if self.group.platform_default:
             bootstrap_service = V2TenantBootstrapService(replicator=NoopReplicator())
             bootstrapped_tenant = bootstrap_service.bootstrap_tenant(self.group.tenant)
-            relations_to_add = bootstrap_service.default_bindings_from_mapping(
-                bootstrapped_tenant, self.group.admin_default
-            )
+            relations_to_add = bootstrap_service.default_bindings_from_mapping(bootstrapped_tenant)
             self.group_relations_to_add.extend(relations_to_add)
         else:
             self.principals = self.group.principals.all()
