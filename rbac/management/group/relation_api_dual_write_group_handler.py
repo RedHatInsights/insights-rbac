@@ -129,13 +129,15 @@ class RelationApiDualWriteGroupHandler:
         """Extend relations to remove in replication."""
         self.group_relations_to_remove.extend(relations_to_remove)
 
-    def replicate_added_role(self, role: Role):
-        """Replicate added role."""
+    def generate_group_relations_and_binding_mapping_for_role(self, role: Role, custom_group: Optional[Group] = None):
+        """Generate group relations and binding mapping for role."""
         if not self.replication_enabled():
             return
-
+        group = self.group
+        if custom_group is not None:
+            group = custom_group
         def add_group_to_binding(mapping: BindingMapping):
-            self.group_relations_to_add.append(mapping.add_group_to_bindings(str(self.group.uuid)))
+            self.group_relations_to_add.append(mapping.add_group_to_bindings(str(group.uuid)))
 
         def create_default_mapping():
             assert role.system is True, "Expected system role. Mappings for custom roles must already be created."
@@ -144,7 +146,7 @@ class RelationApiDualWriteGroupHandler:
                 # Assumes same role UUID for V2 system role equivalent.
                 V2role.for_system_role(str(role.uuid)),
                 V2boundresource(("rbac", "workspace"), str(self.default_workspace.uuid)),
-                groups=frozenset([str(self.group.uuid)]),
+                groups=frozenset([str(group.uuid)]),
             )
             mapping = BindingMapping.for_role_binding(binding, role)
             self.group_relations_to_add.extend(mapping.as_tuples())
@@ -153,6 +155,16 @@ class RelationApiDualWriteGroupHandler:
         self._update_mapping_for_role(
             role, update_mapping=add_group_to_binding, create_default_mapping_for_system_role=create_default_mapping
         )
+
+    def replicate_added_role(self, role: Role):
+        """Replicate added role."""
+        if not self.replication_enabled():
+            return
+        # TODO - This needs to be removed to seed the default groups.
+        if self.group.tenant.tenant_name == "public":
+            return
+
+        self.generate_group_relations_and_binding_mapping_for_role(role)
 
         self._replicate()
 

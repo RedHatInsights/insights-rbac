@@ -137,7 +137,7 @@ def add_roles(group, roles_or_role_ids, tenant, user=None, relations=None):
     """Process list of roles and add them to the group."""
     roles = _roles_by_query_or_ids(roles_or_role_ids)
     group_name = group.name
-
+    custom_group = group
     group, created = Group.objects.get_or_create(name=group_name, tenant=tenant)
     system_policy_name = "System Policy for Group {}".format(group.uuid)
     system_policy, system_policy_created = Policy.objects.update_or_create(
@@ -181,6 +181,10 @@ def add_roles(group, roles_or_role_ids, tenant, user=None, relations=None):
             dual_write_handler = RelationApiDualWriteGroupHandler(group, ReplicationEventType.ASSIGN_ROLE)
             if relations is not None:
                 dual_write_handler.extend_relations_to_remove(relations)
+                roles = Role.objects.filter(policies__group=custom_group)
+                system_roles = roles.filter(tenant=Tenant.objects.get(tenant_name="public"))
+                for system_role in system_roles:
+                    dual_write_handler.generate_group_relations_and_binding_mapping_for_role(system_role, custom_group)
             dual_write_handler.replicate_added_role(role)
 
         # Send notifications
