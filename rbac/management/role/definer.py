@@ -99,7 +99,7 @@ def _make_role(data, dual_write_handler):
     if access_list:  # Allow external roles to have none access object
         for access_item in access_list:
             resource_def_list = access_item.pop("resourceDefinitions", [])
-            permission, created = Permission.objects.get_or_create(**access_item, tenant=public_tenant)
+            permission, _ = Permission.objects.get_or_create(**access_item, tenant=public_tenant)
 
             access_obj = Access.objects.create(permission=permission, role=role, tenant=public_tenant)
             for resource_def_item in resource_def_list:
