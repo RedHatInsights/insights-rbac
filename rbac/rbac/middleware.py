@@ -29,7 +29,7 @@ from django.urls import resolve
 from django.utils.deprecation import MiddlewareMixin
 from management.cache import TenantCache
 from management.models import Principal
-from management.role.relation_api_dual_write_handler import OutboxReplicator
+from management.relation_replicator.outbox_replicator import OutboxReplicator
 from management.tenant_service import get_tenant_bootstrap_service
 from management.tenant_service.tenant_service import TenantBootstrapService
 from management.utils import APPLICATION_KEY, access_for_principal, validate_psk

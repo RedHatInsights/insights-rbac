@@ -21,10 +21,18 @@ from typing import Iterable
 from kessel.relations.v1beta1 import common_pb2
 from management.models import Workspace
 from management.principal.model import Principal
+from management.relation_replicator.logging_replicator import LoggingReplicator
+from management.relation_replicator.outbox_replicator import OutboxReplicator
+from management.relation_replicator.relation_replicator import (
+    RelationReplicator,
+    ReplicationEvent,
+    ReplicationEventType,
+)
+from management.relation_replicator.relations_api_replicator import RelationsApiReplicator
 from management.role.model import BindingMapping, Role
 from migration_tool.models import V2rolebinding
 from migration_tool.sharedSystemRolesReplicatedRoleBindings import v1_role_to_v2_bindings
-from migration_tool.utils import create_relationship, output_relationships
+from migration_tool.utils import create_relationship
 
 from api.models import Tenant
 
@@ -71,7 +79,6 @@ def get_kessel_relation_tuples(
 
 def migrate_role(
     role: Role,
-    write_relationships: bool,
     default_workspace: Workspace,
     current_bindings: Iterable[BindingMapping] = [],
 ) -> tuple[list[common_pb2.Relationship], list[BindingMapping]]:
@@ -83,25 +90,34 @@ def migrate_role(
     """
     v2_role_bindings = v1_role_to_v2_bindings(role, default_workspace, current_bindings)
     relationships = get_kessel_relation_tuples([m.get_role_binding() for m in v2_role_bindings], default_workspace)
-    output_relationships(relationships, write_relationships)
     return relationships, v2_role_bindings
 
 
-def migrate_users_for_groups(tenant: Tenant, write_relationships: bool):
+def migrate_users_for_groups(tenant: Tenant) -> list[common_pb2.Relationship]:
     """Write users relationship to groups."""
-    relationships = []
+    relationships: list[common_pb2.Relationship] = []
     for group in tenant.group_set.exclude(platform_default=True):
         user_set: Iterable[Principal] = group.principals.all()
         for user in user_set:
             if (relationship := group.relationship_to_principal(user)) is not None:
                 relationships.append(relationship)
-    output_relationships(relationships, write_relationships)
+    return relationships
 
 
-def migrate_data_for_tenant(tenant: Tenant, exclude_apps: list, write_relationships: bool):
+def migrate_data_for_tenant(tenant: Tenant, exclude_apps: list, replicator: RelationReplicator):
     """Migrate all data for a given tenant."""
     logger.info("Migrating relations of group and user.")
-    migrate_users_for_groups(tenant, write_relationships)
+
+    tuples = migrate_users_for_groups(tenant)
+    replicator.replicate(
+        ReplicationEvent(
+            event_type=ReplicationEventType.MIGRATE_TENANT_GROUPS,
+            info={"tenant": tenant.org_id},
+            partition_key="rbactodo",
+            add=tuples,
+        )
+    )
+
     logger.info("Finished migrating relations of group and user.")
 
     default_workspace = Workspace.objects.get(type=Workspace.Types.DEFAULT, tenant=tenant)
@@ -113,7 +129,7 @@ def migrate_data_for_tenant(tenant: Tenant, exclude_apps: list, write_relationsh
     for role in roles:
         logger.info(f"Migrating role: {role.name} with UUID {role.uuid}.")
 
-        tuples, mappings = migrate_role(role, write_relationships, default_workspace)
+        tuples, mappings = migrate_role(role, default_workspace)
 
         # Conflicts are not ignored in order to prevent this from
         # accidentally running concurrently with dual-writes.
@@ -123,26 +139,46 @@ def migrate_data_for_tenant(tenant: Tenant, exclude_apps: list, write_relationsh
         # This must always be the case, but this should at least start failing you if you forget.
         BindingMapping.objects.bulk_create(mappings, ignore_conflicts=False)
 
-        output_relationships(tuples, write_relationships)
+        replicator.replicate(
+            ReplicationEvent(
+                event_type=ReplicationEventType.MIGRATE_CUSTOM_ROLE,
+                info={"role_uuid": str(role.uuid)},
+                partition_key="rbactodo",
+                add=tuples,
+            )
+        )
 
         logger.info(f"Migration completed for role: {role.name} with UUID {role.uuid}.")
     logger.info(f"Migrated {roles.count()} roles for tenant: {tenant.org_id}")
 
 
-def migrate_data(exclude_apps: list = [], orgs: list = [], write_relationships: bool = False):
+def migrate_data(exclude_apps: list = [], orgs: list = [], write_relationships: str = "False"):
     """Migrate all data for all tenants."""
     count = 0
     tenants = Tenant.objects.exclude(tenant_name="public")
+    replicator = _get_replicator(write_relationships)
     if orgs:
         tenants = tenants.filter(org_id__in=orgs)
     total = tenants.count()
     for tenant in tenants.iterator():
         logger.info(f"Migrating data for tenant: {tenant.org_id}")
         try:
-            migrate_data_for_tenant(tenant, exclude_apps, write_relationships)
+            migrate_data_for_tenant(tenant, exclude_apps, replicator)
         except Exception as e:
             logger.error(f"Failed to migrate data for tenant: {tenant.org_id}. Error: {e}")
             raise e
         count += 1
         logger.info(f"Finished migrating data for tenant: {tenant.org_id}. {count} of {total} tenants completed")
     logger.info("Finished migrating data for all tenants")
+
+
+def _get_replicator(write_relationships: str) -> RelationReplicator:
+    option = write_relationships.lower()
+
+    if option == "true" or option == "relations-api":
+        return RelationsApiReplicator()
+
+    if option == "outbox":
+        return OutboxReplicator()
+
+    return LoggingReplicator()

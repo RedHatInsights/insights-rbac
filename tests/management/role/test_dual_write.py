@@ -27,11 +27,12 @@ from management.models import Workspace
 from management.permission.model import Permission
 from management.policy.model import Policy
 from management.principal.model import Principal
+from management.relation_replicator.noop_replicator import NoopReplicator
+from management.relation_replicator.relation_replicator import ReplicationEventType
 from management.role.model import Access, ResourceDefinition, Role, BindingMapping
 from management.role.relation_api_dual_write_handler import (
-    NoopReplicator,
     RelationApiDualWriteHandler,
-    ReplicationEventType,
+    SeedingRelationApiDualWriteHandler,
 )
 from management.tenant_service.tenant_service import BootstrappedTenant
 from management.tenant_service.v2 import V2TenantBootstrapService
@@ -93,21 +94,15 @@ class DualWriteTestCase(TestCase):
         """Create a RelationApiDualWriteHandler for the given role and event type."""
         return RelationApiDualWriteHandler(role, event_type, replicator=InMemoryRelationReplicator(self.tuples))
 
-    def dual_write_handler_for_system_role(
-        self, role: Role, tenant: Tenant, event_type: ReplicationEventType
-    ) -> RelationApiDualWriteHandler:
-        """Create a RelationApiDualWriteHandler for the given role and event type."""
-        return RelationApiDualWriteHandler.for_system_role_event(
-            role, tenant, event_type, replicator=InMemoryRelationReplicator(self.tuples)
-        )
-
-    def given_v1_system_role(self, name: str, permissions: list[str]) -> Role:
+    def given_v1_system_role(
+        self, name: str, permissions: list[str], platform_default=False, admin_default=False
+    ) -> Role:
         """Create a new system role with the given ID and permissions."""
-        role = self.fixture.new_system_role(name=name, permissions=permissions)
-        dual_write = self.dual_write_handler_for_system_role(
-            role, self.tenant, ReplicationEventType.CREATE_SYSTEM_ROLE
+        role = self.fixture.new_system_role(
+            name=name, permissions=permissions, platform_default=platform_default, admin_default=admin_default
         )
-        dual_write.replicate_new_system_role_permissions(role)
+        dual_write_handler = SeedingRelationApiDualWriteHandler(replicator=InMemoryRelationReplicator(self.tuples))
+        dual_write_handler.replicate_new_system_role(role)
         return role
 
     def given_v1_role(self, name: str, default: list[str], **kwargs: list[str]) -> Role:
@@ -603,7 +598,117 @@ class DualWriteSystemRolesTestCase(DualWriteTestCase):
             self.default_workspace(t2), for_v2_roles=[id], for_groups=[str(g2.uuid)]
         )
 
-    # TODO: Add test to cover updating and deleting system role
+    def test_updating_system_role(self):
+        platform_default_group, admin_default_group = seed_group()
+        platform_default = str(platform_default_group.policies.get().uuid)
+        admin_default = str(admin_default_group.policies.get().uuid)
+
+        role = self.given_v1_system_role(
+            "r1", ["app1:hosts:read", "inventory:hosts:write"], platform_default=True, admin_default=True
+        )
+
+        # check if relations exist in replicator.
+        tuples = self.tuples.find_tuples(predicate=resource_type("rbac", "role"))
+        self.assertEquals(len(tuples), 4)
+
+        parents = [rel.subject_id for rel in tuples if rel.relation == "child" and rel.resource_id == str(role.uuid)]
+        self.assertSetEqual(set([admin_default, platform_default]), set(parents))
+
+        dual_write_handler = SeedingRelationApiDualWriteHandler(replicator=InMemoryRelationReplicator(self.tuples))
+        dual_write_handler.prepare_for_update(role)
+        role.admin_default = False
+        role = self.fixture.update_custom_role(
+            role,
+            resource_access=self._workspace_access_to_resource_definition(default=["inventory:hosts:write"]),
+        )
+        dual_write_handler.replicate_update_system_role(role)
+
+        # check if only 2 relations exists in replicator.
+        tuples = self.tuples.find_tuples(predicate=resource_type("rbac", "role"))
+        self.assertEquals(len(tuples), 2)
+        parents = [rel.subject_id for rel in tuples if rel.relation == "child" and rel.resource_id == str(role.uuid)]
+        self.assertSetEqual(set([platform_default]), set(parents))
+
+        # ensure no relations exist in replicator.
+        dual_write_handler.prepare_for_update(role)
+        role.platform_default = False
+        role = self.fixture.update_custom_role(
+            role,
+            resource_access=self._workspace_access_to_resource_definition(default=[]),
+        )
+        dual_write_handler.replicate_update_system_role(role)
+
+        tuples = self.tuples.find_tuples(predicate=resource_type("rbac", "role"))
+        self.assertEquals(len(tuples), 0)
+
+    def test_delete_system_role(self):
+        platform_default_group, admin_default_group = seed_group()
+        platform_default = str(platform_default_group.policies.get().uuid)
+        admin_default = str(admin_default_group.policies.get().uuid)
+
+        role = self.given_v1_system_role(
+            "d_r1", ["app1:hosts:read", "inventory:hosts:write"], platform_default=True, admin_default=True
+        )
+
+        # check if relations exist in replicator.
+        tuples = self.tuples.find_tuples(predicate=resource_type("rbac", "role"))
+        self.assertEquals(len(tuples), 4)
+        parents = [rel.subject_id for rel in tuples if rel.relation == "child" and rel.resource_id == str(role.uuid)]
+        self.assertSetEqual(set([admin_default, platform_default]), set(parents))
+
+        dual_write_handler = SeedingRelationApiDualWriteHandler(replicator=InMemoryRelationReplicator(self.tuples))
+        dual_write_handler.replicate_deleted_system_role(role)
+
+        # check if relations do not exist in replicator.
+        tuples = self.tuples.find_tuples(predicate=resource_type("rbac", "role"))
+        self.assertEquals(len(tuples), 0)
+
+        role = self.given_v1_system_role("d_r2", [], platform_default=True)
+
+        # Check that it was created as platform default
+        tuples = self.tuples.find_tuples(predicate=resource_type("rbac", "role"))
+        self.assertEquals(len(tuples), 1)
+        parents = [rel.subject_id for rel in tuples if rel.relation == "child" and rel.resource_id == str(role.uuid)]
+        self.assertSetEqual(set([platform_default]), set(parents))
+
+        # Delete system role
+        dual_write_handler = SeedingRelationApiDualWriteHandler(replicator=InMemoryRelationReplicator(self.tuples))
+        dual_write_handler.replicate_deleted_system_role(role)
+
+        # Check if relations do not exist in replicator.
+        tuples = self.tuples.find_tuples(predicate=resource_type("rbac", "role"))
+        self.assertEquals(len(tuples), 0)
+
+        role = self.given_v1_system_role("d_r3", [], admin_default=True)
+
+        # Check that it was created as platform default
+        tuples = self.tuples.find_tuples(predicate=resource_type("rbac", "role"))
+        self.assertEquals(len(tuples), 1)
+        parents = [rel.subject_id for rel in tuples if rel.relation == "child" and rel.resource_id == str(role.uuid)]
+        self.assertSetEqual(set([admin_default]), set(parents))
+
+        # Delete system role
+        dual_write_handler = SeedingRelationApiDualWriteHandler(replicator=InMemoryRelationReplicator(self.tuples))
+        dual_write_handler.replicate_deleted_system_role(role)
+
+        # Check if relations do not exist in replicator.
+        tuples = self.tuples.find_tuples(predicate=resource_type("rbac", "role"))
+        self.assertEquals(len(tuples), 0)
+
+        # create role with no relations
+        role = self.given_v1_system_role("d_r4", [])
+
+        # ensure no relations exist in replicator.
+        tuples = self.tuples.find_tuples(predicate=resource_type("rbac", "role"))
+        self.assertEquals(len(tuples), 0)
+
+        # delete system role
+        dual_write_handler = SeedingRelationApiDualWriteHandler(replicator=InMemoryRelationReplicator(self.tuples))
+        dual_write_handler.replicate_deleted_system_role(role)
+
+        # check if relations do not exist in replicator.
+        tuples = self.tuples.find_tuples(predicate=resource_type("rbac", "role"))
+        self.assertEquals(len(tuples), 0)
 
 
 class DualWriteCustomRolesTestCase(DualWriteTestCase):
@@ -809,9 +914,15 @@ class RbacFixture:
         """Create a new tenant with the given name and organization ID."""
         return Tenant.objects.create(tenant_name=f"org{org_id}", org_id=org_id)
 
-    def new_system_role(self, name: str, permissions: list[str]) -> Role:
+    def new_system_role(self, name: str, permissions: list[str], platform_default=False, admin_default=False) -> Role:
         """Create a new system role with the given name and permissions."""
-        role = Role.objects.create(name=name, system=True, tenant=self.public_tenant)
+        role = Role.objects.create(
+            name=name,
+            system=True,
+            platform_default=platform_default,
+            admin_default=admin_default,
+            tenant=self.public_tenant,
+        )
 
         access_list = [
             Access(
