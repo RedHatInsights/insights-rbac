@@ -127,6 +127,7 @@ def add_roles(group, roles_or_role_ids, tenant, user=None):
     """Process list of roles and add them to the group."""
     roles = _roles_by_query_or_ids(roles_or_role_ids)
     group_name = group.name
+    auditlog_roles = []
 
     group, created = Group.objects.get_or_create(name=group_name, tenant=tenant)
     system_policy_name = "System Policy for Group {}".format(group.uuid)
@@ -171,6 +172,8 @@ def add_roles(group, roles_or_role_ids, tenant, user=None):
         dual_write_handler.replicate_added_role(role)
         # Send notifications
         group_role_change_notification_handler(user, group, role, "added")
+        auditlog_roles.append(role)
+    return auditlog_roles
 
 
 @transaction.atomic
