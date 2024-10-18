@@ -84,7 +84,7 @@ def has_group_all_access(request):
     return (
         ENVIRONMENT.get_value("ALLOW_ANY", default=False, cast=bool)
         or request.user.admin
-        or (request.path == reverse("group-list") and request.method == "GET")
+        or (request.path == reverse("v1_management:group-list") and request.method == "GET")
     )
 
 

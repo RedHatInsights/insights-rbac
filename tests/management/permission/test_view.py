@@ -25,8 +25,8 @@ from api.models import User
 from management.models import Group, Permission, Policy, Principal, Role, Access
 from tests.identity_request import IdentityRequest
 
-OPTION_URL = reverse("permission-options")
-LIST_URL = reverse("permission-list")
+OPTION_URL = reverse("v1_management:permission-options")
+LIST_URL = reverse("v1_management:permission-list")
 CLIENT = APIClient()
 
 
