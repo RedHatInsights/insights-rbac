@@ -92,12 +92,6 @@ class IdentityHeaderMiddleware():
         Processing the provided identity on the request
     """
 
-    def process_exception(self, request, exception):
-        # Optional: Code to be executed if an exception occurs in the view.
-        # if isinstance(exception, IntegrityError):
-        #   raise IntegrityException()
-        pass
-
     def __init__(self, get_response):
         self.get_response = get_response
         # One-time configuration and initialization.
@@ -115,12 +109,13 @@ class IdentityHeaderMiddleware():
         # Get request ID
         request.req_id = request.META.get(RH_INSIGHTS_REQUEST_ID)
 
-        if any([request.path.startswith(prefix) for prefix in settings.INTERNAL_API_PATH_PREFIXES]):
+        #if any([request.path.startswith(prefix) for prefix in settings.INTERNAL_API_PATH_PREFIXES]):
             # This request is for a private API endpoint
-            return
+        #    return
 
-        if is_no_auth(request):
-            return
+        #if is_no_auth(request):
+        #    return 
+        
         user = User()
         try:
             _, json_rh_auth = extract_header(request, self.header)
@@ -389,7 +384,7 @@ class IdentityHeaderMiddleware():
 
         log_object = {
             "method": request.method,
-            "path": request.path + query_string,
+            "path": request.path, #+ query_string,
             "status": response.status_code,
             "request_id": req_id,
             "org_id": org_id,

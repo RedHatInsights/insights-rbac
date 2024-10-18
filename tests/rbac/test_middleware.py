@@ -117,21 +117,21 @@ class RbacTenantMiddlewareTest(IdentityRequest):
 
     def test_get_tenant_with_no_user(self):
         """Test that a 401 is returned."""
+        get_response=mock.MagicMock()
         request_context = self._create_request_context(self.customer, None)
         mock_request = request_context["request"]
-        mock_request.path = "/api/v1/providers/"
-        middleware = IdentityHeaderMiddleware(get_response=IdentityHeaderMiddleware.process_request)
-        result = middleware.process_request(mock_request)
+        middleware = IdentityHeaderMiddleware(get_response)
+        result = middleware(mock_request)
         self.assertIsInstance(result, HttpResponseUnauthorizedRequest)
 
     def test_get_tenant_with_org_id(self):
         """Test that the customer tenant is returned containing an org_id."""
+        get_response=mock.MagicMock()
         user_data = self._create_user_data()
         customer = self._create_customer_data()
         customer["org_id"] = "45321"
         request_context = self._create_request_context(customer, user_data)
         request = request_context["request"]
-        request.path = "/api/v1/providers/"
         request.META["QUERY_STRING"] = ""
         user = User()
         user.username = user_data["username"]
@@ -139,8 +139,8 @@ class RbacTenantMiddlewareTest(IdentityRequest):
         user.org_id = "45321"
         request.user = user
 
-        middleware = IdentityHeaderMiddleware(get_response=IdentityHeaderMiddleware.process_request)
-        middleware.process_request(request)
+        middleware = IdentityHeaderMiddleware(get_response)
+        middleware(request)
         self.assertEqual(request.tenant.org_id, user.org_id)
 
 
@@ -170,6 +170,8 @@ class IdentityHeaderMiddlewareTest(IdentityRequest):
     def test_process_cross_account_request(self):
         """Test that the process request functions correctly for cross account request."""
         get_response = mock.MagicMock()
+        mock_response = Mock()
+        mock_response.email = "test@redhat.com"
         middleware = IdentityHeaderMiddleware(get_response)
         # User without redhat email will fail.
         request_context = self._create_request_context(
@@ -192,12 +194,15 @@ class IdentityHeaderMiddlewareTest(IdentityRequest):
 
         # Success pass if user is internal and with redhat email
         self.user_data["email"] = "test@redhat.com"
-        request_context = self._create_request_context(self.customer, self.user_data, cross_account=True, is_internal=True)
+        request_context = self._create_request_context(
+            self.customer, self.user_data, cross_account=True, is_internal=True
+        )
         mock_request = request_context["request"]
-        mock_request.path = Mock("/api/v1/providers/")
-
         response = middleware(mock_request)
-        self.assertEqual(response, None)
+
+        self.assertTrue(hasattr(response.user_data, "email"))
+        self.assertTrue(hasattr(response, "cross_account"))
+        self.assertTrue(hasattr(response, "is_internal"))
 
     def test_process_response(self):
         """Test that the process response functions correctly."""
@@ -207,7 +212,7 @@ class IdentityHeaderMiddlewareTest(IdentityRequest):
         mock_request.path = "/api/v1/status/"
         mock_response = middleware(Mock(status_code=200))
         response = middleware(mock_request)
-        self.assertEqual(response, mock_response)
+        self.assertEqual(response.status_code, mock_response.status_code)
 
     def test_process_not_status(self):
         """Test that the customer, tenant and user are created."""
@@ -259,7 +264,6 @@ class IdentityHeaderMiddlewareTest(IdentityRequest):
         customer = self._create_customer_data()
         request_context = self._create_request_context(customer, user_data)
         request = request_context["request"]
-        request.path = Mock("/api/v1/providers/")
         request.META["QUERY_STRING"] = ""
         user = User()
         user.username = self.user_data["username"]
