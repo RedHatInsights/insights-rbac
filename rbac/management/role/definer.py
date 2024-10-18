@@ -83,14 +83,12 @@ def _make_role(data, dual_write_handler):
         if role.display_name != display_name:
             role.display_name = display_name
             role.save()
-        dual_write_handler.replicate_new_system_role(role)
         logger.info("Created system role %s.", name)
         role_obj_change_notification_handler(role, "created")
     else:
         if role.version != defaults["version"]:
             dual_write_handler.prepare_for_update(role)
             Role.objects.filter(name=name).update(**defaults, display_name=display_name, modified=timezone.now())
-            dual_write_handler.replicate_update_system_role(role)
             logger.info("Updated system role %s.", name)
             role.access.all().delete()
             role_obj_change_notification_handler(role, "updated")
@@ -108,6 +106,13 @@ def _make_role(data, dual_write_handler):
                 ResourceDefinition.objects.create(**resource_def_item, access=access_obj, tenant=public_tenant)
 
     _add_ext_relation_if_it_exists(data.get("external"), role)
+
+    if created:
+        dual_write_handler.replicate_new_system_role(role)
+    else:
+        if role.version != defaults["version"]:
+            dual_write_handler.replicate_update_system_role(role)
+
     return role
 
 
