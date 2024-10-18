@@ -855,7 +855,7 @@ class GroupViewsetTests(IdentityRequest):
     @patch("core.kafka.RBACProducer.send_kafka_message")
     def test_delete_group_success(self, send_kafka_message, mock_method):
         """Test that we can delete an existing group."""
-        with (self.settings(NOTIFICATIONS_ENABLED=True)):
+        with self.settings(NOTIFICATIONS_ENABLED=True):
             url = reverse("group-roles", kwargs={"uuid": self.group.uuid})
             request_body = {"roles": [self.role.uuid]}
 
