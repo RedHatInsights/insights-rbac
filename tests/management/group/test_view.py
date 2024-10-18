@@ -855,7 +855,7 @@ class GroupViewsetTests(IdentityRequest):
     @patch("core.kafka.RBACProducer.send_kafka_message")
     def test_delete_group_success(self, send_kafka_message, mock_method):
         """Test that we can delete an existing group."""
-        with (self.settings(NOTIFICATIONS_ENABLED=True)):
+        with self.settings(NOTIFICATIONS_ENABLED=True):
             url = reverse("group-roles", kwargs={"uuid": self.group.uuid})
             request_body = {"roles": [self.role.uuid]}
 
@@ -5348,3 +5348,21 @@ class GroupViewNonAdminTests(IdentityRequest):
 
         response = client.put(url, request_body, format="json", **self.headers_service_account_principal)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+    def test_duplicate_entry_message(self):
+        # define client
+        client = APIClient()
+
+        # Initial group create
+        request_body = {"name": "duplicateEntry"}
+        url = reverse("group-list")
+        response = client.post(url, request_body, format="json", **self.headers_org_admin)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+        # Duplicate add attempt
+        request_body = {"name": "duplicateEntry"}
+        url = reverse("group-list")
+        response = client.post(url, request_body, format="json", **self.headers_org_admin)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data.get("errors")[0].get("detail"), "Group already exists")
+        self.assertEqual(response.data.get("errors")[0].get("source"), "Group duplicateEntry already exists")
