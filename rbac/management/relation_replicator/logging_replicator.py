@@ -31,8 +31,14 @@ class LoggingReplicator(RelationReplicator):
 
     def replicate(self, event: ReplicationEvent):
         """Log the event's tuples."""
+        logger.info("#### Replicator BEGIN block #### ")
+        logger.info("#### Relations to ADD")
         for rel in event.add:
             logger.info(stringify_spicedb_relationship(rel))
+        logger.info("#### Relations to REMOVE")
+        for rel in event.remove:
+            logger.info(stringify_spicedb_relationship(rel))
+        logger.info("#### Replicator END block")
 
 
 def stringify_spicedb_relationship(rel: common_pb2.Relationship):
