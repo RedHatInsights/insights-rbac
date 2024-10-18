@@ -270,6 +270,7 @@ def validate_uuid(uuid, key="UUID Validation"):
         message = f"{uuid} is not a valid UUID."
         raise serializers.ValidationError({key: _(message)})
 
+
 def validate_group_name(name):
     """Verify name provided is valid."""
     if name and name.lower() in ["custom default access", "default access"]:
@@ -277,12 +278,15 @@ def validate_group_name(name):
         message = f"{name} is reserved, please use another name."
         raise serializers.ValidationError({key: _(message)})
 
+
 def check_duplicate_entry(grp_name, tenant_id):
+    """Check for duplicate group per tenant."""
     if Group.objects.filter(tenant=tenant_id).filter(name=grp_name):
-        raise serializers.ValidationError({"Group" + " " + grp_name +  " " + "already exists": "Group already exists"})
+        raise serializers.ValidationError({"Group" + " " + grp_name + " " + "already exists": "Group already exists"})
+
 
 def validate_limit_and_offset(query_params):
-    """Limit and offset should not be negative number."""    
+    """Limit and offset should not be negative number."""
     if (int(query_params.get("limit", 10)) < 0) | (int(query_params.get("offset", 0)) < 0):
         error = {
             "detail": "Values for limit and offset must be positive numbers.",
@@ -290,6 +294,7 @@ def validate_limit_and_offset(query_params):
             "status": str(status.HTTP_400_BAD_REQUEST),
         }
         return {"errors": [error]}
+
 
 def roles_for_cross_account_principal(principal):
     """Return roles for cross account principals."""
