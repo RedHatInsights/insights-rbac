@@ -220,7 +220,8 @@ objects:
             value: ${SA_NAME}
           - name: RELATION_API_SERVER
             value: ${RELATION_API_SERVER}
-
+          - name: REPLICATION_TO_RELATION_ENABLED
+            value: ${REPLICATION_TO_RELATION_ENABLED}
     - name: scheduler-service
       minReplicas: ${{MIN_SCHEDULER_REPLICAS}}
       metadata:
@@ -291,8 +292,14 @@ objects:
               name: ${GLITCHTIP_SECRET}
               key: dsn
               optional: true
+        - name: PRINCIPAL_USER_DOMAIN
+          value: ${PRINCIPAL_USER_DOMAIN}
         - name: PRINCIPAL_CLEANUP_DELETION_ENABLED_UMB
           value: ${PRINCIPAL_CLEANUP_DELETION_ENABLED_UMB}
+        - name: PRINCIPAL_CLEANUP_UPDATE_ENABLED_UMB
+          value: ${PRINCIPAL_CLEANUP_UPDATE_ENABLED_UMB}
+        - name: UMB_JOB_ENABLED
+          value: ${UMB_JOB_ENABLED}
 
     - name: service
       minReplicas: ${{MIN_REPLICAS}}
@@ -457,8 +464,18 @@ objects:
             value: ${GROUP_SEEDING_ENABLED}
           - name: BYPASS_BOP_VERIFICATION
             value: ${BYPASS_BOP_VERIFICATION}
+          - name: REPLICATION_TO_RELATION_ENABLED
+            value: ${REPLICATION_TO_RELATION_ENABLED}
           - name: ROLE_CREATE_ALLOW_LIST
             value: ${ROLE_CREATE_ALLOW_LIST}
+          - name: V2_MIGRATION_APP_EXCLUDE_LIST
+            value: ${V2_MIGRATION_APP_EXCLUDE_LIST}
+          - name: V2_MIGRATION_RESOURCE_EXCLUDE_LIST
+            value: ${V2_MIGRATION_RESOURCE_EXCLUDE_LIST}
+          - name: V2_BOOTSTRAP_TENANT
+            value: ${V2_BOOTSTRAP_TENANT}
+          - name: V1_BOOTSTRAP_ADD_USER_ID
+            value: ${V1_BOOTSTRAP_ADD_USER_ID}
           - name: RBAC_DESTRUCTIVE_API_ENABLED_UNTIL
             value: ${RBAC_DESTRUCTIVE_API_ENABLED_UNTIL}
           - name: RBAC_DESTRUCTIVE_SEEDING_ENABLED_UNTIL
@@ -511,6 +528,11 @@ objects:
             value: ${IT_SERVICE_TIMEOUT_SECONDS}
           - name: IT_TOKEN_JKWS_CACHE_LIFETIME
             value: ${IT_TOKEN_JKWS_CACHE_LIFETIME}
+          - name: V2_APIS_ENABLED
+            value: ${V2_APIS_ENABLED}
+          - name: READ_ONLY_API_MODE
+            value: ${READ_ONLY_API_MODE}
+
     jobs:
       - name: tenant-org-id-populator
         podSpec:
@@ -731,7 +753,21 @@ parameters:
   value: 'False'
 - description: Application allow list for role creation in RBAC
   name: ROLE_CREATE_ALLOW_LIST
-  value: cost-management,remediations,inventory,drift,policies,advisor,vulnerability,compliance,automation-analytics,notifications,patch,integrations,ros,staleness,config-manager,idmsvc
+  value: cost-management,remediations,inventory,policies,advisor,vulnerability,compliance,automation-analytics,notifications,patch,integrations,ros,staleness,config-manager,idmsvc
+- description: Application exclude list for v2 migration (all permissions)
+  name: V2_MIGRATION_APP_EXCLUDE_LIST
+  value: approval
+- description: Resources (by namespace:name) exclude list for v2 migration (resource definitions only)
+  name: V2_MIGRATION_RESOURCE_EXCLUDE_LIST
+  value: rbac:workspace
+- description: Whether or not to bootstrap tenants using V2 logic (i.e. creating workspaces and relations).
+  name: V2_BOOTSTRAP_TENANT
+  value: 'False'
+- description: | 
+    Whether or not to add user IDs to existing principals within V1 logic. Once V2 tenant bootstrapping is used,
+    this flag is ignored and user IDs will be added regardless.
+  name: V1_BOOTSTRAP_ADD_USER_ID
+  value: rbac:workspace
 - description: Timestamp expiration allowance on destructive actions through the internal RBAC API
   name: RBAC_DESTRUCTIVE_API_ENABLED_UNTIL
   value: ''
@@ -892,9 +928,23 @@ parameters:
   value: '10'
 - name: IT_TOKEN_JKWS_CACHE_LIFETIME
   value: '28800'
+- name: PRINCIPAL_USER_DOMAIN
+  description: >
+    Kessel requires principal IDs to be qualified by a domain,
+    in order to future proof integration of identities from multiple issuers.
+    RBAC currently expects all principals to either come from itself (cross-account),
+    or from a single identity infrastructure domain (identity header, SSO, BOP).
+    This defines that single domain.
+  value: 'redhat'
 - name: PRINCIPAL_CLEANUP_DELETION_ENABLED_UMB
   description: Allow cleanup job to delete principals via messages from UMB
   value: 'False'
+- name: PRINCIPAL_CLEANUP_UPDATE_ENABLED_UMB
+  description: Allow cleanup job to update principals via messages from UMB
+  value: 'False'
+- name: UMB_JOB_ENABLE
+  description: Temp env to enable the UMB job
+  value: 'True'
 - name: UMB_HOST
   description: Host of the UMB service
   value: 'localhost'
@@ -910,3 +960,11 @@ parameters:
 - name: RELATION_API_SERVER
   description: The gRPC API server to use for the relation
   value: "localhost:9000"
+- name: REPLICATION_TO_RELATION_ENABLED
+  description: Enable replication to Relation API
+  value: "False"
+- name: V2_APIS_ENABLED
+  description: Flag to explicitly enable v2 API endpoints
+- name: READ_ONLY_API_MODE
+  description: Enforce GET only on RBAC APIs
+  value: 'False'
