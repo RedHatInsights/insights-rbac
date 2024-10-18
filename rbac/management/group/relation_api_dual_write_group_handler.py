@@ -127,6 +127,8 @@ class RelationApiDualWriteGroupHandler:
 
     def extend_relations_to_remove(self, relations_to_remove: list[Relationship]):
         """Extend relations to remove in replication."""
+        if not self.replication_enabled():
+            return
         self.group_relations_to_remove.extend(relations_to_remove)
 
     def generate_group_relations_and_binding_mapping_for_role(self, role: Role, custom_group: Optional[Group] = None):
@@ -273,9 +275,7 @@ class RelationApiDualWriteGroupHandler:
         if self.group.platform_default:
             bootstrap_service = V2TenantBootstrapService(replicator=NoopReplicator())
             bootstrapped_tenant = bootstrap_service.bootstrap_tenant(self.group.tenant)
-            relations_to_add = bootstrap_service.default_bindings_from_mapping(
-                bootstrapped_tenant, self.group.admin_default
-            )
+            relations_to_add = bootstrap_service.default_bindings_from_mapping(bootstrapped_tenant)
             self.group_relations_to_add.extend(relations_to_add)
         else:
             self.principals = self.group.principals.all()

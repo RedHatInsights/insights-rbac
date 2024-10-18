@@ -349,29 +349,18 @@ class V2TenantBootstrapService:
 
         return tuples_to_add
 
-    def default_bindings_from_mapping(self, bootstrapped_tenant: BootstrappedTenant, admin_default_group: bool):
+    def default_bindings_from_mapping(self, bootstrapped_tenant: BootstrappedTenant):
         """Calculate default bindings from tenant mapping."""
         default_workspace = Workspace.objects.get(tenant=bootstrapped_tenant.tenant, type=Workspace.Types.DEFAULT)
         mapping = bootstrapped_tenant.mapping
         if mapping is None:
             raise ValueError(f"Expected TenantMapping but got None. org_id: {bootstrapped_tenant.tenant.org_id}")
 
-        if admin_default_group:
-            admin_default_role_uuid = self._get_admin_default_policy_uuid()
-            if admin_default_role_uuid is None:
-                logger.warning("No admin default role found for public tenant. Default access will not be set up.")
-
-            relationships = self._default_bindings(
-                default_workspace.uuid,
-                mapping.default_admin_role_binding_uuid,
-                admin_default_role_uuid,
-                mapping.default_admin_group_uuid,
-            )
+        relationships = []
+        platform_default_role_uuid = self._get_platform_default_policy_uuid()
+        if platform_default_role_uuid is None:
+            logger.warning("No platform default role found for public tenant. Default access will not be set up.")
         else:
-            platform_default_role_uuid = self._get_platform_default_policy_uuid()
-            if platform_default_role_uuid is None:
-                logger.warning("No platform default role found for public tenant. Default access will not be set up.")
-
             relationships = self._default_bindings(
                 default_workspace.uuid,
                 mapping.default_role_binding_uuid,
