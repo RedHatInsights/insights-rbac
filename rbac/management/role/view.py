@@ -35,10 +35,9 @@ from management.models import AuditLog, Permission
 from management.notifications.notification_handlers import role_obj_change_notification_handler
 from management.permissions import RoleAccessPermission
 from management.querysets import get_role_queryset, user_has_perm
+from management.relation_replicator.relation_replicator import DualWriteException, ReplicationEventType
 from management.role.relation_api_dual_write_handler import (
-    DualWriteException,
     RelationApiDualWriteHandler,
-    ReplicationEventType,
 )
 from management.role.serializer import AccessSerializer, RoleDynamicSerializer, RolePatchSerializer
 from management.utils import validate_uuid

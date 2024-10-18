@@ -95,7 +95,7 @@ class MigrateTests(TestCase):
             ]
         )
 
-    @patch("migration_tool.utils.logger")
+    @patch("management.relation_replicator.logging_replicator.logger")
     def test_migration_of_data(self, logger_mock):
         """Test that we get the correct access for a principal."""
         kwargs = {"exclude_apps": ["app1"], "orgs": ["1234567"]}

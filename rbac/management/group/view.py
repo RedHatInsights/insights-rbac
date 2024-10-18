@@ -38,7 +38,6 @@ from management.group.definer import (
 from management.group.model import Group
 from management.group.relation_api_dual_write_group_handler import (
     RelationApiDualWriteGroupHandler,
-    ReplicationEventType,
 )
 from management.group.serializer import (
     GroupInputSerializer,
@@ -60,6 +59,7 @@ from management.principal.proxy import PrincipalProxy
 from management.principal.serializer import ServiceAccountSerializer
 from management.principal.view import ADMIN_ONLY_KEY, USERNAME_ONLY_KEY, VALID_BOOLEAN_VALUE
 from management.querysets import get_group_queryset, get_role_queryset
+from management.relation_replicator.relation_replicator import ReplicationEventType
 from management.role.view import RoleViewSet
 from management.utils import validate_and_get_key, validate_group_name, validate_uuid
 from rest_framework import mixins, serializers, status, viewsets
