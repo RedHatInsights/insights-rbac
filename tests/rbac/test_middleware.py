@@ -750,6 +750,7 @@ class V2IdentityHeaderMiddlewareTest(IdentityHeaderMiddlewareTest):
 
     pass
 
+
 @override_settings(V2_APIS_ENABLED=True)
 class RBACReadOnlyApiMiddlewareV2(RBACReadOnlyApiMiddleware):
     """Tests against the read-only API middleware for v2."""
