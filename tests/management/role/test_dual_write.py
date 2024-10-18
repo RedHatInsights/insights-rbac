@@ -20,17 +20,23 @@ import unittest
 from typing import Optional, Tuple
 from django.test import TestCase, override_settings
 from django.db.models import Q
+from management.group.definer import seed_group, set_system_flag_before_update
 from management.group.model import Group
 from management.group.relation_api_dual_write_group_handler import RelationApiDualWriteGroupHandler
 from management.models import Workspace
 from management.permission.model import Permission
 from management.policy.model import Policy
 from management.principal.model import Principal
+from management.relation_replicator.noop_replicator import NoopReplicator
+from management.relation_replicator.relation_replicator import ReplicationEventType
 from management.role.model import Access, ResourceDefinition, Role, BindingMapping
 from management.role.relation_api_dual_write_handler import (
     RelationApiDualWriteHandler,
-    ReplicationEventType,
+    SeedingRelationApiDualWriteHandler,
 )
+from management.tenant_service.tenant_service import BootstrappedTenant
+from management.tenant_service.v2 import V2TenantBootstrapService
+from management.tenant_service.tenant_service import TenantBootstrapService
 from migration_tool.in_memory_tuples import (
     InMemoryRelationReplicator,
     InMemoryTuples,
@@ -46,7 +52,6 @@ from migration_tool.in_memory_tuples import (
 
 
 from api.models import Tenant
-from migration_tool.migrate import migrate_workspace
 
 
 @override_settings(REPLICATION_TO_RELATION_ENABLED=True)
@@ -64,12 +69,12 @@ class DualWriteTestCase(TestCase):
         super().setUp()
         self.tuples = InMemoryTuples()
         self.fixture = RbacFixture()
-        self.tenant = self.fixture.new_tenant(name="tenant", org_id="1234567")
+        self.tenant = self.fixture.new_tenant(org_id="1234567").tenant
         self.test_tenant = self.tenant
 
     def switch_to_new_tenant(self, name: str, org_id: str) -> Tenant:
         """Switch to a new tenant with the given name and org_id."""
-        tenant = self.fixture.new_tenant(name=name, org_id=org_id)
+        tenant = self.fixture.new_tenant(org_id=org_id).tenant
         self.tenant = tenant
         return tenant
 
@@ -89,21 +94,15 @@ class DualWriteTestCase(TestCase):
         """Create a RelationApiDualWriteHandler for the given role and event type."""
         return RelationApiDualWriteHandler(role, event_type, replicator=InMemoryRelationReplicator(self.tuples))
 
-    def dual_write_handler_for_system_role(
-        self, role: Role, tenant: Tenant, event_type: ReplicationEventType
-    ) -> RelationApiDualWriteHandler:
-        """Create a RelationApiDualWriteHandler for the given role and event type."""
-        return RelationApiDualWriteHandler.for_system_role_event(
-            role, tenant, event_type, replicator=InMemoryRelationReplicator(self.tuples)
-        )
-
-    def given_v1_system_role(self, name: str, permissions: list[str]) -> Role:
+    def given_v1_system_role(
+        self, name: str, permissions: list[str], platform_default=False, admin_default=False
+    ) -> Role:
         """Create a new system role with the given ID and permissions."""
-        role = self.fixture.new_system_role(name=name, permissions=permissions)
-        dual_write = self.dual_write_handler_for_system_role(
-            role, self.tenant, ReplicationEventType.CREATE_SYSTEM_ROLE
+        role = self.fixture.new_system_role(
+            name=name, permissions=permissions, platform_default=platform_default, admin_default=admin_default
         )
-        dual_write.replicate_new_system_role_permissions(role)
+        dual_write_handler = SeedingRelationApiDualWriteHandler(replicator=InMemoryRelationReplicator(self.tuples))
+        dual_write_handler.replicate_new_system_role(role)
         return role
 
     def given_v1_role(self, name: str, default: list[str], **kwargs: list[str]) -> Role:
@@ -317,7 +316,7 @@ class DualWriteGroupTestCase(DualWriteTestCase):
         group, principals = self.given_group("g1", ["u1", "u2"])
         tuples = self.tuples.find_tuples(all_of(resource("rbac", "group", group.uuid), relation("member")))
         self.assertEquals(len(tuples), 2)
-        self.assertEquals({t.subject_id for t in tuples}, {f"localhost:{p.user_id}" for p in principals})
+        self.assertEquals({t.subject_id for t in tuples}, {f"localhost/{p.user_id}" for p in principals})
 
     def test_update_group_tuples(self):
         """Update a group by adding and removing users."""
@@ -327,14 +326,14 @@ class DualWriteGroupTestCase(DualWriteTestCase):
 
         tuples = self.tuples.find_tuples(all_of(resource("rbac", "group", group.uuid), relation("member")))
         self.assertEquals(len(tuples), 3)
-        self.assertEquals({t.subject_id for t in tuples}, {f"localhost:{p.user_id}" for p in principals})
+        self.assertEquals({t.subject_id for t in tuples}, {f"localhost/{p.user_id}" for p in principals})
 
         self.given_removed_group_members(group, ["u2"])
         principals = [p for p in principals if p.username != "u2"]
 
         tuples = self.tuples.find_tuples(all_of(resource("rbac", "group", group.uuid), relation("member")))
         self.assertEquals(len(tuples), 2)
-        self.assertEquals({t.subject_id for t in tuples}, {f"localhost:{p.user_id}" for p in principals})
+        self.assertEquals({t.subject_id for t in tuples}, {f"localhost/{p.user_id}" for p in principals})
 
     def test_custom_roles_group_assignments_tuples(self):
         role_1 = self.given_v1_role(
@@ -599,7 +598,117 @@ class DualWriteSystemRolesTestCase(DualWriteTestCase):
             self.default_workspace(t2), for_v2_roles=[id], for_groups=[str(g2.uuid)]
         )
 
-    # TODO: Add test to cover updating and deleting system role
+    def test_updating_system_role(self):
+        platform_default_group, admin_default_group = seed_group()
+        platform_default = str(platform_default_group.policies.get().uuid)
+        admin_default = str(admin_default_group.policies.get().uuid)
+
+        role = self.given_v1_system_role(
+            "r1", ["app1:hosts:read", "inventory:hosts:write"], platform_default=True, admin_default=True
+        )
+
+        # check if relations exist in replicator.
+        tuples = self.tuples.find_tuples(predicate=resource_type("rbac", "role"))
+        self.assertEquals(len(tuples), 4)
+
+        parents = [rel.subject_id for rel in tuples if rel.relation == "child" and rel.resource_id == str(role.uuid)]
+        self.assertSetEqual(set([admin_default, platform_default]), set(parents))
+
+        dual_write_handler = SeedingRelationApiDualWriteHandler(replicator=InMemoryRelationReplicator(self.tuples))
+        dual_write_handler.prepare_for_update(role)
+        role.admin_default = False
+        role = self.fixture.update_custom_role(
+            role,
+            resource_access=self._workspace_access_to_resource_definition(default=["inventory:hosts:write"]),
+        )
+        dual_write_handler.replicate_update_system_role(role)
+
+        # check if only 2 relations exists in replicator.
+        tuples = self.tuples.find_tuples(predicate=resource_type("rbac", "role"))
+        self.assertEquals(len(tuples), 2)
+        parents = [rel.subject_id for rel in tuples if rel.relation == "child" and rel.resource_id == str(role.uuid)]
+        self.assertSetEqual(set([platform_default]), set(parents))
+
+        # ensure no relations exist in replicator.
+        dual_write_handler.prepare_for_update(role)
+        role.platform_default = False
+        role = self.fixture.update_custom_role(
+            role,
+            resource_access=self._workspace_access_to_resource_definition(default=[]),
+        )
+        dual_write_handler.replicate_update_system_role(role)
+
+        tuples = self.tuples.find_tuples(predicate=resource_type("rbac", "role"))
+        self.assertEquals(len(tuples), 0)
+
+    def test_delete_system_role(self):
+        platform_default_group, admin_default_group = seed_group()
+        platform_default = str(platform_default_group.policies.get().uuid)
+        admin_default = str(admin_default_group.policies.get().uuid)
+
+        role = self.given_v1_system_role(
+            "d_r1", ["app1:hosts:read", "inventory:hosts:write"], platform_default=True, admin_default=True
+        )
+
+        # check if relations exist in replicator.
+        tuples = self.tuples.find_tuples(predicate=resource_type("rbac", "role"))
+        self.assertEquals(len(tuples), 4)
+        parents = [rel.subject_id for rel in tuples if rel.relation == "child" and rel.resource_id == str(role.uuid)]
+        self.assertSetEqual(set([admin_default, platform_default]), set(parents))
+
+        dual_write_handler = SeedingRelationApiDualWriteHandler(replicator=InMemoryRelationReplicator(self.tuples))
+        dual_write_handler.replicate_deleted_system_role(role)
+
+        # check if relations do not exist in replicator.
+        tuples = self.tuples.find_tuples(predicate=resource_type("rbac", "role"))
+        self.assertEquals(len(tuples), 0)
+
+        role = self.given_v1_system_role("d_r2", [], platform_default=True)
+
+        # Check that it was created as platform default
+        tuples = self.tuples.find_tuples(predicate=resource_type("rbac", "role"))
+        self.assertEquals(len(tuples), 1)
+        parents = [rel.subject_id for rel in tuples if rel.relation == "child" and rel.resource_id == str(role.uuid)]
+        self.assertSetEqual(set([platform_default]), set(parents))
+
+        # Delete system role
+        dual_write_handler = SeedingRelationApiDualWriteHandler(replicator=InMemoryRelationReplicator(self.tuples))
+        dual_write_handler.replicate_deleted_system_role(role)
+
+        # Check if relations do not exist in replicator.
+        tuples = self.tuples.find_tuples(predicate=resource_type("rbac", "role"))
+        self.assertEquals(len(tuples), 0)
+
+        role = self.given_v1_system_role("d_r3", [], admin_default=True)
+
+        # Check that it was created as platform default
+        tuples = self.tuples.find_tuples(predicate=resource_type("rbac", "role"))
+        self.assertEquals(len(tuples), 1)
+        parents = [rel.subject_id for rel in tuples if rel.relation == "child" and rel.resource_id == str(role.uuid)]
+        self.assertSetEqual(set([admin_default]), set(parents))
+
+        # Delete system role
+        dual_write_handler = SeedingRelationApiDualWriteHandler(replicator=InMemoryRelationReplicator(self.tuples))
+        dual_write_handler.replicate_deleted_system_role(role)
+
+        # Check if relations do not exist in replicator.
+        tuples = self.tuples.find_tuples(predicate=resource_type("rbac", "role"))
+        self.assertEquals(len(tuples), 0)
+
+        # create role with no relations
+        role = self.given_v1_system_role("d_r4", [])
+
+        # ensure no relations exist in replicator.
+        tuples = self.tuples.find_tuples(predicate=resource_type("rbac", "role"))
+        self.assertEquals(len(tuples), 0)
+
+        # delete system role
+        dual_write_handler = SeedingRelationApiDualWriteHandler(replicator=InMemoryRelationReplicator(self.tuples))
+        dual_write_handler.replicate_deleted_system_role(role)
+
+        # check if relations do not exist in replicator.
+        tuples = self.tuples.find_tuples(predicate=resource_type("rbac", "role"))
+        self.assertEquals(len(tuples), 0)
 
 
 class DualWriteCustomRolesTestCase(DualWriteTestCase):
@@ -791,19 +900,29 @@ class DualWriteCustomRolesTestCase(DualWriteTestCase):
 class RbacFixture:
     """RBAC Fixture."""
 
-    def __init__(self):
+    def __init__(self, bootstrap_service: TenantBootstrapService = V2TenantBootstrapService(NoopReplicator())):
         """Initialize the RBAC fixture."""
-        self.public_tenant, _ = Tenant.objects.get_or_create(tenant_name="public")
+        self.public_tenant = Tenant.objects.get(tenant_name="public")
+        self.bootstrap_service = bootstrap_service
+        self.default_group, self.admin_group = seed_group()
 
-    def new_tenant(self, name: str, org_id: str) -> Tenant:
+    def new_tenant(self, org_id: str) -> BootstrappedTenant:
         """Create a new tenant with the given name and organization ID."""
-        tenant = Tenant.objects.create(tenant_name=name, org_id=org_id)
-        migrate_workspace(tenant, write_relationships=False)
-        return tenant
+        return self.bootstrap_service.new_bootstrapped_tenant(org_id)
 
-    def new_system_role(self, name: str, permissions: list[str]) -> Role:
+    def new_unbootstrapped_tenant(self, org_id: str) -> Tenant:
+        """Create a new tenant with the given name and organization ID."""
+        return Tenant.objects.create(tenant_name=f"org{org_id}", org_id=org_id)
+
+    def new_system_role(self, name: str, permissions: list[str], platform_default=False, admin_default=False) -> Role:
         """Create a new system role with the given name and permissions."""
-        role = Role.objects.create(name=name, system=True, tenant=self.public_tenant)
+        role = Role.objects.create(
+            name=name,
+            system=True,
+            platform_default=platform_default,
+            admin_default=admin_default,
+            tenant=self.public_tenant,
+        )
 
         access_list = [
             Access(
@@ -863,10 +982,19 @@ class RbacFixture:
         principals = self.add_members_to_group(group, users, service_accounts, tenant)
         return group, principals
 
+    def custom_default_group(self, tenant: Tenant) -> Group:
+        return set_system_flag_before_update(self.default_group, tenant, None)  # type: ignore
+
+    def root_workspace(self, tenant: Tenant) -> Workspace:
+        return Workspace.objects.get(type=Workspace.Types.ROOT, tenant=tenant)
+
+    def default_workspace(self, tenant: Tenant) -> Workspace:
+        return Workspace.objects.get(type=Workspace.Types.DEFAULT, tenant=tenant)
+
     def add_role_to_group(self, role: Role, group: Group, tenant: Tenant) -> Policy:
         """Add a role to a group for a given tenant and return the policy."""
         policy, _ = Policy.objects.get_or_create(
-            name=f"System Policy_{group.name}_{tenant.tenant_name}", group=group, tenant=tenant
+            name=f"System Policy for Group {group.uuid}", group=group, tenant=tenant
         )
         policy.roles.add(role)
         policy.save()

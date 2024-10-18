@@ -29,7 +29,7 @@ from api.models import Tenant
 from api.common import RH_IDENTITY_HEADER
 
 
-@override_settings(REPLICATION_TO_RELATION_ENABLED=True, PRINCIPAL_USER_DOMAIN="redhat.com")
+@override_settings(REPLICATION_TO_RELATION_ENABLED=True, PRINCIPAL_USER_DOMAIN="redhat")
 class IdentityRequest(TestCase):
     """Parent Class for IAM test cases."""
 
@@ -70,7 +70,7 @@ class IdentityRequest(TestCase):
     @classmethod
     def _create_user_data(cls):
         """Create user data."""
-        user_data = {"username": cls.fake.user_name(), "email": cls.fake.email()}
+        user_data = {"username": cls.fake.user_name(), "email": cls.fake.email(), "user_id": cls.fake.ean8()}
         return user_data
 
     def _create_service_account_data(cls) -> dict[str, str]:

@@ -21,18 +21,19 @@ from typing import Callable, Iterable, Optional
 from uuid import uuid4
 
 from django.conf import settings
+from management.group.model import Group
 from management.models import Workspace
 from management.principal.model import Principal
-from management.role.model import BindingMapping, Role
-from management.role.relation_api_dual_write_handler import (
+from management.relation_replicator.outbox_replicator import OutboxReplicator
+from management.relation_replicator.relation_replicator import (
     DualWriteException,
-    OutboxReplicator,
     RelationReplicator,
     ReplicationEvent,
     ReplicationEventType,
 )
+from management.role.model import BindingMapping, Role
 from migration_tool.models import V2boundresource, V2role, V2rolebinding
-from migration_tool.utils import create_relationship
+
 
 from api.models import Tenant
 
@@ -41,6 +42,8 @@ logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 class RelationApiDualWriteGroupHandler:
     """Class to handle Dual Write API related operations."""
+
+    group: Group
 
     def __init__(
         self,
@@ -60,7 +63,7 @@ class RelationApiDualWriteGroupHandler:
             self.default_workspace = Workspace.objects.get(tenant=self.tenant, type=Workspace.Types.DEFAULT)
             self.event_type = event_type
             self.user_domain = settings.PRINCIPAL_USER_DOMAIN
-            self._replicator = replicator if replicator else OutboxReplicator(group)
+            self._replicator = replicator if replicator else OutboxReplicator()
         except Exception as e:
             raise DualWriteException(e)
 
@@ -72,17 +75,13 @@ class RelationApiDualWriteGroupHandler:
         """Generate user-groups relations."""
         relations = []
         for principal in self.principals:
-            if principal.user_id is None:
+            relationship = self.group.relationship_to_principal(principal)
+            if relationship is None:
                 logger.warning(
                     "[Dual Write] Principal(uuid=%s) does not have user_id. Skipping replication.", principal.uuid
                 )
                 continue
-            principal_id = f"{self.user_domain}:{principal.user_id}"
-            relations.append(
-                create_relationship(
-                    ("rbac", "group"), str(self.group.uuid), ("rbac", "principal"), principal_id, "member"
-                )
-            )
+            relations.append(relationship)
 
         return relations
 
@@ -112,6 +111,7 @@ class RelationApiDualWriteGroupHandler:
             self._replicator.replicate(
                 ReplicationEvent(
                     event_type=self.event_type,
+                    info={"group_uuid": str(self.group.uuid)},
                     # TODO: need to think about partitioning
                     # Maybe resource id
                     partition_key="rbactodo",

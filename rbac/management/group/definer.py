@@ -17,22 +17,23 @@
 
 """Handler for system defined group."""
 import logging
-from typing import Union
+from typing import Optional, Tuple, Union
 from uuid import uuid4
 
+from django.conf import settings
 from django.db import transaction
 from django.db.models.query import QuerySet
 from django.utils.translation import gettext as _
 from management.group.model import Group
 from management.group.relation_api_dual_write_group_handler import (
     RelationApiDualWriteGroupHandler,
-    ReplicationEventType,
 )
 from management.notifications.notification_handlers import (
     group_flag_change_notification_handler,
     group_role_change_notification_handler,
 )
 from management.policy.model import Policy
+from management.relation_replicator.relation_replicator import ReplicationEventType
 from management.role.model import Role
 from management.utils import clear_pk
 from rest_framework import serializers
@@ -43,7 +44,7 @@ from api.models import Tenant
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 
-def seed_group():
+def seed_group() -> Tuple[Group, Group]:
     """Create or update default group."""
     public_tenant = Tenant.objects.get(tenant_name="public")
     with transaction.atomic():
@@ -78,30 +79,40 @@ def seed_group():
         update_group_roles(admin_group, admin_roles, public_tenant)
         logger.info("Finished seeding default org admin group %s.", name)
 
+    return group, admin_group
 
-def set_system_flag_before_update(group, tenant, user):
+
+def set_system_flag_before_update(group: Group, tenant, user) -> Optional[Group]:
     """Update system flag on default groups."""
     if group.system:
-        group = clone_default_group_in_public_schema(group, tenant)
+        group = clone_default_group_in_public_schema(group, tenant)  # type: ignore
         group_flag_change_notification_handler(user, group)
     return group
 
 
-def clone_default_group_in_public_schema(group, tenant):
+def clone_default_group_in_public_schema(group, tenant) -> Optional[Group]:
     """Clone the default group for a tenant into the public schema."""
+    if settings.PRINCIPAL_CLEANUP_UPDATE_ENABLED_UMB:
+        # TODO: bootstrap the tenant to get the mapping
+        # use this for uuid instead and to remove the default role binding tuple
+        group_uuid = uuid4()
+    else:
+        group_uuid = uuid4()
+
     public_tenant = Tenant.objects.get(tenant_name="public")
     tenant_default_policy = group.policies.get(system=True)
     group.name = "Custom default access"
     group.system = False
     group.tenant = tenant
-    group.uuid = uuid4()
+    group.uuid = group_uuid
     clear_pk(group)
     clear_pk(tenant_default_policy)
     tenant_default_policy.uuid = uuid4()
     tenant_default_policy.name = "System Policy for Group {}".format(group.uuid)
     tenant_default_policy.tenant = tenant
     if Group.objects.filter(name=group.name, platform_default=group.platform_default, tenant=tenant):
-        return
+        # TODO: returning none can break other code
+        return None
     public_default_roles = Role.objects.filter(platform_default=True, tenant=public_tenant)
 
     group.save()

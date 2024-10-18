@@ -296,6 +296,8 @@ objects:
           value: ${PRINCIPAL_USER_DOMAIN}
         - name: PRINCIPAL_CLEANUP_DELETION_ENABLED_UMB
           value: ${PRINCIPAL_CLEANUP_DELETION_ENABLED_UMB}
+        - name: PRINCIPAL_CLEANUP_UPDATE_ENABLED_UMB
+          value: ${PRINCIPAL_CLEANUP_UPDATE_ENABLED_UMB}
         - name: UMB_JOB_ENABLED
           value: ${UMB_JOB_ENABLED}
 
@@ -470,6 +472,10 @@ objects:
             value: ${V2_MIGRATION_APP_EXCLUDE_LIST}
           - name: V2_MIGRATION_RESOURCE_EXCLUDE_LIST
             value: ${V2_MIGRATION_RESOURCE_EXCLUDE_LIST}
+          - name: V2_BOOTSTRAP_TENANT
+            value: ${V2_BOOTSTRAP_TENANT}
+          - name: V1_BOOTSTRAP_ADD_USER_ID
+            value: ${V1_BOOTSTRAP_ADD_USER_ID}
           - name: RBAC_DESTRUCTIVE_API_ENABLED_UNTIL
             value: ${RBAC_DESTRUCTIVE_API_ENABLED_UNTIL}
           - name: RBAC_DESTRUCTIVE_SEEDING_ENABLED_UNTIL
@@ -747,12 +753,20 @@ parameters:
   value: 'False'
 - description: Application allow list for role creation in RBAC
   name: ROLE_CREATE_ALLOW_LIST
-  value: cost-management,remediations,inventory,drift,policies,advisor,vulnerability,compliance,automation-analytics,notifications,patch,integrations,ros,staleness,config-manager,idmsvc
+  value: cost-management,remediations,inventory,policies,advisor,vulnerability,compliance,automation-analytics,notifications,patch,integrations,ros,staleness,config-manager,idmsvc
 - description: Application exclude list for v2 migration (all permissions)
   name: V2_MIGRATION_APP_EXCLUDE_LIST
   value: approval
 - description: Resources (by namespace:name) exclude list for v2 migration (resource definitions only)
   name: V2_MIGRATION_RESOURCE_EXCLUDE_LIST
+  value: rbac:workspace
+- description: Whether or not to bootstrap tenants using V2 logic (i.e. creating workspaces and relations).
+  name: V2_BOOTSTRAP_TENANT
+  value: 'False'
+- description: | 
+    Whether or not to add user IDs to existing principals within V1 logic. Once V2 tenant bootstrapping is used,
+    this flag is ignored and user IDs will be added regardless.
+  name: V1_BOOTSTRAP_ADD_USER_ID
   value: rbac:workspace
 - description: Timestamp expiration allowance on destructive actions through the internal RBAC API
   name: RBAC_DESTRUCTIVE_API_ENABLED_UNTIL
@@ -921,9 +935,12 @@ parameters:
     RBAC currently expects all principals to either come from itself (cross-account),
     or from a single identity infrastructure domain (identity header, SSO, BOP).
     This defines that single domain.
-  value: 'redhat.com'
+  value: 'redhat'
 - name: PRINCIPAL_CLEANUP_DELETION_ENABLED_UMB
   description: Allow cleanup job to delete principals via messages from UMB
+  value: 'False'
+- name: PRINCIPAL_CLEANUP_UPDATE_ENABLED_UMB
+  description: Allow cleanup job to update principals via messages from UMB
   value: 'False'
 - name: UMB_JOB_ENABLE
   description: Temp env to enable the UMB job

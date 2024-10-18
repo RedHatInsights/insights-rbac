@@ -42,7 +42,8 @@ from management.models import (
     ExtTenant,
     Workspace,
 )
-from migration_tool.migrate import migrate_workspace
+from management.relation_replicator.noop_replicator import NoopReplicator
+from management.tenant_service.v2 import V2TenantBootstrapService
 from tests.core.test_kafka import copy_call_args
 from tests.identity_request import IdentityRequest
 from tests.management.role.test_view import find_in_list, relation_api_tuple
@@ -850,11 +851,11 @@ class GroupViewsetTests(IdentityRequest):
         response = client.put(url, {}, format="json", **self.headers)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
-    @patch("management.role.relation_api_dual_write_handler.OutboxReplicator._save_replication_event")
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator._save_replication_event")
     @patch("core.kafka.RBACProducer.send_kafka_message")
     def test_delete_group_success(self, send_kafka_message, mock_method):
         """Test that we can delete an existing group."""
-        with (self.settings(NOTIFICATIONS_ENABLED=True)):
+        with self.settings(NOTIFICATIONS_ENABLED=True):
             url = reverse("group-roles", kwargs={"uuid": self.group.uuid})
             request_body = {"roles": [self.role.uuid]}
 
@@ -884,7 +885,7 @@ class GroupViewsetTests(IdentityRequest):
                         group_uuid,
                         "member",
                         "principal",
-                        f"redhat.com:{user_id}",
+                        f"redhat/{user_id}",
                     )
 
                     self.assertIsNotNone(find_relation_in_list(tuples_to_replicate, relation_tuple))
@@ -1055,7 +1056,7 @@ class GroupViewsetTests(IdentityRequest):
         response = client.post(url, test_data, format="json", **self.headers)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
-    @patch("management.role.relation_api_dual_write_handler.OutboxReplicator._save_replication_event")
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator._save_replication_event")
     @patch(
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
         return_value={"status_code": 200, "data": []},
@@ -1070,7 +1071,7 @@ class GroupViewsetTests(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
         self.assertIsNone(mock_method.call_args)
 
-    @patch("management.role.relation_api_dual_write_handler.OutboxReplicator._save_replication_event")
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator._save_replication_event")
     @patch(
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
         return_value={"status_code": 200, "data": [{"username": "test_add_user", "user_id": -448717}]},
@@ -1106,7 +1107,7 @@ class GroupViewsetTests(IdentityRequest):
 
             actual_call_arg = mock_method.call_args[0][0]
             self.assertEqual(
-                generate_replication_event_to_add_principals(str(test_group.uuid), "redhat.com:-448717"),
+                generate_replication_event_to_add_principals(str(test_group.uuid), "redhat/-448717"),
                 actual_call_arg,
             )
 
@@ -1214,7 +1215,7 @@ class GroupViewsetTests(IdentityRequest):
         self.assertEqual(len(response.data.get("data")), 1)
         self.assertEqual(response.data.get("data")[0].get("username"), "test_user")
 
-    @patch("management.role.relation_api_dual_write_handler.OutboxReplicator._save_replication_event")
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator._save_replication_event")
     @patch(
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
         return_value={"status_code": 200, "data": [{"username": "test_user"}]},
@@ -1262,7 +1263,7 @@ class GroupViewsetTests(IdentityRequest):
 
             actual_call_arg = mock_method.call_args[0][0]
             self.assertEqual(
-                generate_replication_event_to_remove_principals(str(self.group.uuid), "redhat.com:123798"),
+                generate_replication_event_to_remove_principals(str(self.group.uuid), "redhat/123798"),
                 actual_call_arg,
             )
 
@@ -2943,17 +2944,10 @@ class GroupViewNonAdminTests(IdentityRequest):
             "Non org admin users are not allowed to add RBAC role with higher than 'read' permission into groups."
         )
 
-        self.root_workspace = Workspace.objects.create(
-            type=Workspace.Types.ROOT,
-            name="Root",
-            tenant=self.tenant,
-        )
-        self.default_workspace = Workspace.objects.create(
-            type=Workspace.Types.DEFAULT,
-            name="Default",
-            tenant=self.tenant,
-            parent=self.root_workspace,
-        )
+        self.bootstrap_service = V2TenantBootstrapService(NoopReplicator())
+        bootstrapped = self.bootstrap_service.bootstrap_tenant(self.tenant)
+        self.default_workspace = bootstrapped.default_workspace
+        self.root_workspace = bootstrapped.root_workspace
 
     def tearDown(self):
         """Tear down group view tests."""
@@ -3084,7 +3078,7 @@ class GroupViewNonAdminTests(IdentityRequest):
         user_access_admin_tenant.ready = True
         user_access_admin_tenant.tenant_name = "new-tenant"
         user_access_admin_tenant.save()
-        migrate_workspace(user_access_admin_tenant, write_relationships=False)
+        self.bootstrap_service.bootstrap_tenant(user_access_admin_tenant)
 
         user_access_admin_group = self._create_group_with_user_access_administrator_role(
             tenant=user_access_admin_tenant
@@ -3241,7 +3235,7 @@ class GroupViewNonAdminTests(IdentityRequest):
         user_access_admin_tenant.ready = True
         user_access_admin_tenant.tenant_name = "new-tenant"
         user_access_admin_tenant.save()
-        migrate_workspace(user_access_admin_tenant, write_relationships=False)
+        self.bootstrap_service.bootstrap_tenant(user_access_admin_tenant)
 
         user_access_admin_group = self._create_group_with_user_access_administrator_role(
             tenant=user_access_admin_tenant
@@ -3380,7 +3374,7 @@ class GroupViewNonAdminTests(IdentityRequest):
         user_access_admin_tenant.ready = True
         user_access_admin_tenant.tenant_name = "new-tenant"
         user_access_admin_tenant.save()
-        migrate_workspace(user_access_admin_tenant, write_relationships=False)
+        self.bootstrap_service.bootstrap_tenant(user_access_admin_tenant)
 
         user_access_admin_group = self._create_group_with_user_access_administrator_role(
             tenant=user_access_admin_tenant
@@ -3533,7 +3527,7 @@ class GroupViewNonAdminTests(IdentityRequest):
         user_access_admin_tenant.ready = True
         user_access_admin_tenant.tenant_name = "new-tenant"
         user_access_admin_tenant.save()
-        migrate_workspace(user_access_admin_tenant, write_relationships=False)
+        self.bootstrap_service.bootstrap_tenant(user_access_admin_tenant)
 
         user_access_admin_group = self._create_group_with_user_access_administrator_role(
             tenant=user_access_admin_tenant
@@ -3890,7 +3884,7 @@ class GroupViewNonAdminTests(IdentityRequest):
         response = client.put(url, request_body, format="json", **self.headers_org_admin)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
-    @patch("management.role.relation_api_dual_write_handler.OutboxReplicator._save_replication_event")
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator._save_replication_event")
     def test_remove_group_without_User_Access_Admin_fail(self, mock_method):
         """Test that non org admin without 'User Access administrator' role cannot remove a group."""
         test_group = Group(name="test group", tenant=self.tenant)
@@ -4145,7 +4139,7 @@ class GroupViewNonAdminTests(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
     @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
-    @patch("management.role.relation_api_dual_write_handler.OutboxReplicator._save_replication_event")
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator._save_replication_event")
     @patch("management.principal.it_service.ITService.request_service_accounts")
     def test_add_service_account_principal_in_group_without_User_Access_Admin_fail(self, mock_request, mock_method):
         """
@@ -4199,10 +4193,10 @@ class GroupViewNonAdminTests(IdentityRequest):
 
         actual_call_arg = mock_method.call_args[0][0]
         self.assertEqual(
-            generate_replication_event_to_add_principals(str(test_group.uuid), "redhat.com:2345"), actual_call_arg
+            generate_replication_event_to_add_principals(str(test_group.uuid), "redhat/2345"), actual_call_arg
         )
 
-    @patch("management.role.relation_api_dual_write_handler.OutboxReplicator._save_replication_event")
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator._save_replication_event")
     @patch(
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
         return_value={"status_code": 200, "data": []},
@@ -4235,7 +4229,7 @@ class GroupViewNonAdminTests(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         actual_call_arg = mock_method.call_args[0][0]
         self.assertEqual(
-            generate_replication_event_to_add_principals(str(test_group.uuid), "redhat.com:1234"),
+            generate_replication_event_to_add_principals(str(test_group.uuid), "redhat/1234"),
             actual_call_arg,
         )
 
@@ -4243,7 +4237,7 @@ class GroupViewNonAdminTests(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
     @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
-    @patch("management.role.relation_api_dual_write_handler.OutboxReplicator._save_replication_event")
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator._save_replication_event")
     @patch("management.principal.it_service.ITService.request_service_accounts")
     def test_add_service_account_principal_in_group_with_User_Access_Admin_success(self, mock_request, mock_method):
         """
@@ -4293,7 +4287,7 @@ class GroupViewNonAdminTests(IdentityRequest):
 
         actual_call_arg = mock_method.call_args[0][0]
         self.assertEqual(
-            generate_replication_event_to_add_principals(str(test_group.uuid), "redhat.com:1234"),
+            generate_replication_event_to_add_principals(str(test_group.uuid), "redhat/1234"),
             actual_call_arg,
         )
 
@@ -4507,7 +4501,7 @@ class GroupViewNonAdminTests(IdentityRequest):
         response = client.delete(url, format="json", **self.headers_service_account_principal)
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
 
-    @patch("management.role.relation_api_dual_write_handler.OutboxReplicator._save_replication_event")
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator._save_replication_event")
     @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
     def test_remove_service_account_principal_from_group_with_User_Access_Admin_success(self, mock_method):
         """
@@ -4544,7 +4538,7 @@ class GroupViewNonAdminTests(IdentityRequest):
 
         actual_call_arg = mock_method.call_args[0][0]
         self.assertEqual(
-            generate_replication_event_to_remove_principals(str(test_group.uuid), "redhat.com:3456"),
+            generate_replication_event_to_remove_principals(str(test_group.uuid), "redhat/3456"),
             actual_call_arg,
         )
 
