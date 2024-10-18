@@ -89,21 +89,22 @@ class HttpResponseUnauthorizedRequest(HttpResponse):
 
     status_code = 401
 
-class IdentityHeaderMiddleware():
+
+class IdentityHeaderMiddleware:
     """
-        Custom class for 
-        Processing the provided identity on the request
+    Custom class for.
+
+    Processing the provided identity on the request.
     """
 
     def __init__(self, get_response):
+        """One-time configuration and initialization."""
         self.get_response = get_response
-        # One-time configuration and initialization.
         self.bootstrap_service = get_tenant_bootstrap_service(OutboxReplicator())
-        
+
     def __call__(self, request):
         # Code to be executed for each request before
-        # the view (and later middleware) are called. 
-
+        # the view (and later middleware) are called.
         """Process request for identity middleware.
 
         Args:
@@ -113,13 +114,13 @@ class IdentityHeaderMiddleware():
         # Get request ID
         request.req_id = request.META.get(RH_INSIGHTS_REQUEST_ID)
 
-        #if any([request.path.startswith(prefix) for prefix in settings.INTERNAL_API_PATH_PREFIXES]):
-            # This request is for a private API endpoint
+        # if any([request.path.startswith(prefix) for prefix in settings.INTERNAL_API_PATH_PREFIXES]):
+        # This request is for a private API endpoint
         #    return
 
-        #if is_no_auth(request):
-        #    return 
-        
+        # if is_no_auth(request):
+        #    return
+
         user = User()
         try:
             _, json_rh_auth = extract_header(request, self.header)
@@ -250,12 +251,12 @@ class IdentityHeaderMiddleware():
         ).inc()
 
         IdentityHeaderMiddleware.log_request(request, response, is_internal)
-        
+
         return response
-    
+
     header = RH_IDENTITY_HEADER
     bootstrap_service: TenantBootstrapService
-      
+
     def get_tenant(self, model, hostname, request):
         """Override the tenant selection logic."""
         tenant = TENANTS.get_tenant(request.user.org_id)
@@ -344,15 +345,12 @@ class IdentityHeaderMiddleware():
             response (object): The response object
             is_internal (bool): Boolean for if request is internal
         """
-        query_string = ""
         is_admin = False
         is_system = False
         org_id = None
         username = None
         user_id = None
         req_id = getattr(request, "req_id", None)
-        if request.META.get("QUERY_STRING"):
-            query_string = "?{}".format(request.META.get("QUERY_STRING"))
 
         if hasattr(request, "user") and request.user:
             username = request.user.username
@@ -396,7 +394,7 @@ class IdentityHeaderMiddleware():
 
         log_object = {
             "method": request.method,
-            "path": request.path, #+ query_string,
+            "path": request.path,  # + query_string,
             "status": response.status_code,
             "request_id": req_id,
             "org_id": org_id,
@@ -430,6 +428,7 @@ class IdentityHeaderMiddleware():
             return "username" in query_params and "application" in query_params
         else:
             return True
+
 
 class DisableCSRF(MiddlewareMixin):  # pylint: disable=too-few-public-methods
     """Middleware to disable CSRF for 3scale usecase."""

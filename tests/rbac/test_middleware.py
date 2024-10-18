@@ -131,7 +131,7 @@ class RbacTenantMiddlewareTest(IdentityRequest):
 
     def test_get_tenant_with_no_user(self):
         """Test that a 401 is returned."""
-        get_response=mock.MagicMock()
+        get_response = mock.MagicMock()
         request_context = self._create_request_context(self.customer, None)
         mock_request = request_context["request"]
         middleware = IdentityHeaderMiddleware(get_response)
@@ -140,7 +140,7 @@ class RbacTenantMiddlewareTest(IdentityRequest):
 
     def test_get_tenant_with_org_id(self):
         """Test that the customer tenant is returned containing an org_id."""
-        get_response=mock.MagicMock()
+        get_response = mock.MagicMock()
         user_data = self._create_user_data()
         customer = self._create_customer_data()
         customer["org_id"] = "45321"
