@@ -16,18 +16,20 @@
 #
 """Test Case extension to collect common test data."""
 import uuid
+import os
 
 from base64 import b64encode
 from json import dumps as json_dumps
 from unittest.mock import Mock
 
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from faker import Faker
 
 from api.models import Tenant
 from api.common import RH_IDENTITY_HEADER
 
 
+@override_settings(REPLICATION_TO_RELATION_ENABLED=True, PRINCIPAL_USER_DOMAIN="redhat")
 class IdentityRequest(TestCase):
     """Parent Class for IAM test cases."""
 
@@ -68,7 +70,7 @@ class IdentityRequest(TestCase):
     @classmethod
     def _create_user_data(cls):
         """Create user data."""
-        user_data = {"username": cls.fake.user_name(), "email": cls.fake.email()}
+        user_data = {"username": cls.fake.user_name(), "email": cls.fake.email(), "user_id": cls.fake.ean8()}
         return user_data
 
     def _create_service_account_data(cls) -> dict[str, str]:

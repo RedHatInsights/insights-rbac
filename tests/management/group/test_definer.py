@@ -23,7 +23,7 @@ from management.group.definer import seed_group, add_roles, clone_default_group_
 from management.role.definer import seed_roles
 from tests.identity_request import IdentityRequest
 from tests.core.test_kafka import copy_call_args
-from management.models import Group, Role
+from management.models import Group, Role, Workspace
 
 
 class GroupDefinerTests(IdentityRequest):
@@ -33,8 +33,23 @@ class GroupDefinerTests(IdentityRequest):
         """Set up the group definer tests."""
         super().setUp()
         self.public_tenant = Tenant.objects.get(tenant_name="public")
+        self.root_workspace = Workspace.objects.create(
+            type=Workspace.Types.ROOT,
+            name="Root",
+            tenant=self.public_tenant,
+        )
+        self.default_workspace = Workspace.objects.create(
+            type=Workspace.Types.DEFAULT,
+            name="Default",
+            tenant=self.public_tenant,
+            parent=self.root_workspace,
+        )
         seed_roles()
         seed_group()
+
+    def tearDown(self):
+        Workspace.objects.filter(parent__isnull=False).delete()
+        Workspace.objects.filter(parent__isnull=True).delete()
 
     def test_default_group_seeding_properly(self):
         """Test that default group are seeded properly."""

@@ -2,6 +2,7 @@
 
 import logging
 
+from django.conf import settings
 from django.core.management.base import BaseCommand
 from migration_tool.migrate import migrate_data
 
@@ -16,8 +17,18 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         """Add arguments to command."""
         parser.add_argument("--org-list", nargs="+", default=[])
-        parser.add_argument("--exclude-apps", nargs="+", default=[])
-        parser.add_argument("--write-to-db", default=False, action="store_true")
+        parser.add_argument(
+            "--exclude-apps",
+            nargs="+",
+            default=settings.V2_MIGRATION_APP_EXCLUDE_LIST,
+            help="List of apps to exclude. Default comes from environment.",
+        )
+        parser.add_argument(
+            "--write-relationships",
+            default="False",
+            choices=["True", "False", "relations-api", "outbox"],
+            help="Whether to replicate relationships and how. True is == 'relations-api' for compatibility.",
+        )
 
     def handle(self, *args, **options):
         """Handle method for command."""
@@ -25,7 +36,7 @@ class Command(BaseCommand):
         kwargs = {
             "exclude_apps": options["exclude_apps"],
             "orgs": options["org_list"],
-            "write_db": options["write_to_db"],
+            "write_relationships": options["write_relationships"],
         }
         migrate_data(**kwargs)
         logger.info("*** Migration completed. ***\n")

@@ -29,6 +29,9 @@ from django.urls import resolve
 from django.utils.deprecation import MiddlewareMixin
 from management.cache import TenantCache
 from management.models import Principal
+from management.relation_replicator.outbox_replicator import OutboxReplicator
+from management.tenant_service import get_tenant_bootstrap_service
+from management.tenant_service.tenant_service import TenantBootstrapService
 from management.utils import APPLICATION_KEY, access_for_principal, validate_psk
 from prometheus_client import Counter
 from rest_framework import status
@@ -42,7 +45,7 @@ from api.common import (
     RH_RBAC_PSK,
 )
 from api.models import Tenant, User
-from api.serializers import create_tenant_name, extract_header
+from api.serializers import extract_header
 
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
@@ -94,22 +97,39 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
     """
 
     header = RH_IDENTITY_HEADER
+    bootstrap_service: TenantBootstrapService
+
+    def __init__(self, get_response):
+        """Initialize the middleware."""
+        super().__init__(get_response)
+        # TODO: Lazy bootstrapping of tenants should use a synchronous replicator
+        # In this case the replicator needs to include a precondition
+        # which does not add the tuples if any others already exist for the tenant
+        # (the tx will be rolled back in that case)
+        self.bootstrap_service = get_tenant_bootstrap_service(OutboxReplicator())
 
     def get_tenant(self, model, hostname, request):
         """Override the tenant selection logic."""
-        tenant_name = create_tenant_name(request.user.account)
         tenant = TENANTS.get_tenant(request.user.org_id)
         if tenant is None:
-            if request.user.system:
-                try:
-                    tenant = Tenant.objects.get(org_id=request.user.org_id)
-                except Tenant.DoesNotExist:
+            try:
+                # If the tenant already exists, we assume it must be bootstrapped if dual writes are enabled.
+                tenant = Tenant.objects.get(org_id=request.user.org_id)
+            except Tenant.DoesNotExist:
+                if request.user.system:
                     raise Http404()
-            else:
-                tenant, _ = Tenant.objects.get_or_create(
-                    org_id=request.user.org_id,
-                    defaults={"ready": True, "account_id": request.user.account, "tenant_name": tenant_name},
-                )
+                # Tenants are normally bootstrapped via principal job,
+                # but there is a race condition where the user can use the service before the message is processed.
+                try:
+                    bootstrap = self.bootstrap_service.update_user(request.user, upsert=True)
+                    if bootstrap is None:
+                        # User is inactive. Should never happen but just in case...
+                        raise Http404()
+                    tenant = bootstrap.tenant
+                except IntegrityError:
+                    # This would happen if between the time we first check for a tenant,
+                    # and when we went to create one, another request or the listener job created one.
+                    tenant = Tenant.objects.get(org_id=request.user.org_id)
             TENANTS.save_tenant(tenant)
         return tenant
 
@@ -296,6 +316,7 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
         is_system = False
         org_id = None
         username = None
+        user_id = None
         req_id = getattr(request, "req_id", None)
         if request.META.get("QUERY_STRING"):
             query_string = "?{}".format(request.META.get("QUERY_STRING"))
@@ -307,6 +328,7 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
                 is_admin = request.user.admin
                 org_id = request.user.org_id
                 is_system = request.user.system
+                user_id = request.user.user_id
             else:
                 # django.contrib.auth.models.AnonymousUser does not
                 is_admin = is_system = False
@@ -346,6 +368,7 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
             "request_id": req_id,
             "org_id": org_id,
             "username": username,
+            "user_id": user_id,
             "is_admin": is_admin,
             "is_system": is_system,
             "is_internal": is_internal,
@@ -417,3 +440,16 @@ class DisableCSRF(MiddlewareMixin):  # pylint: disable=too-few-public-methods
 
         """
         setattr(request, "_dont_enforce_csrf_checks", True)
+
+
+class ReadOnlyApiMiddleware(MiddlewareMixin):  # pylint: disable=too-few-public-methods
+    """Middleware to enable read-only on APIs when configured."""
+
+    def process_request(self, request):  # pylint: disable=no-self-use
+        """Process request ReadOnlyApiMiddleware."""
+        if settings.READ_ONLY_API_MODE and request.method in ["POST", "PUT", "PATCH", "DELETE"]:
+            return HttpResponse(
+                json.dumps({"error": "This API is currently in read-only mode. Please try again later."}),
+                content_type="application/json",
+                status=405,
+            )

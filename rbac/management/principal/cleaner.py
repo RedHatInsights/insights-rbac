@@ -19,25 +19,27 @@
 import logging
 import os
 import ssl
-from collections import defaultdict
+from typing import Optional
 
 import xmltodict
 from django.conf import settings
-from management.group.view import TYPE_SERVICE_ACCOUNT
 from management.principal.model import Principal
-from management.principal.proxy import PrincipalProxy
+from management.principal.proxy import PrincipalProxy, external_principal_to_user
+from management.relation_replicator.outbox_replicator import OutboxReplicator
+from management.tenant_service import get_tenant_bootstrap_service
+from management.tenant_service.tenant_service import TenantBootstrapService
 from rest_framework import status
 from stompest.config import StompConfig
 from stompest.error import StompConnectionError
 from stompest.protocol import StompSpec
 from stompest.sync import Stomp
 
-from api.models import Tenant
+from api.models import Tenant, User
 
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
-proxy = PrincipalProxy()  # pylint: disable=invalid-name
+PROXY = PrincipalProxy()  # pylint: disable=invalid-name
 CERT_LOC = "/opt/rbac/rbac/management/principal/umb_certs/cert.pem"
 KEY_LOC = "/opt/rbac/rbac/management/principal/umb_certs/key.pem"
 
@@ -55,7 +57,7 @@ def clean_tenant_principals(tenant):
             continue
         logger.debug("clean_tenant_principals: Checking for username %s for tenant %s.", principal.username, tenant_id)
         org_id = tenant.org_id
-        resp = proxy.request_filtered_principals([principal.username], org_id=org_id)
+        resp = PROXY.request_filtered_principals([principal.username], org_id=org_id)
         status_code = resp.get("status_code")
         data = resp.get("data")
         logger.info("clean_tenant_principals: Response code: %s Data: %s", str(status_code), str(data))
@@ -120,45 +122,83 @@ QUEUE = f"/queue/Consumer.{settings.SA_NAME}.users-subscription.VirtualTopic.can
 UMB_CLIENT = Stomp(CONFIG)
 
 
-def is_umb_deactivate_msg(data_dict):
-    """Check if the message is a user deactivation message from UMB."""
-    if not data_dict.get("CanonicalMessage"):  # Skip if it is not CanonicalMessage
-        return False
-    # We only care about disabled user, operation == update and status == Inactive
-    operation = data_dict["CanonicalMessage"].get("Header", {}).get("Operation")
-    if operation != "update":
-        return False
-    status = data_dict["CanonicalMessage"].get("Payload", {}).get("Sync").get("User", {}).get("Status", {})
-    if status.get("@primary") != "true" or status.get("State") != "Inactive":
-        return False
+def retrieve_user_info(message) -> User:
+    """
+    Retrieve user info from the message.
 
-    return True
+    returns:
+        user: User object as of latest known state.
+    """
+    instance_id: Optional[str] = None
+
+    if (header := message.get("Header")) is not None:
+        if (id := header.get("InstanceId")) is not None:
+            instance_id = id
+
+    logger.debug("retrieve_user_info: Processing message with instance_id=%s", instance_id)
+
+    message_user = message["Payload"]["Sync"]["User"]
+    identifiers = message_user["Identifiers"]
+    user_id: Optional[str] = None
+
+    if isinstance((ids := identifiers["Identifier"]), list):
+        for id in ids:  # type: ignore
+            if id["@system"] == "WEB" and id["@entity-name"] == "User" and id["@qualifier"] == "id":
+                user_id = id["#text"]
+                break
+    else:
+        user_id = identifiers["Identifier"]["#text"]
+
+    if user_id is None:
+        raise ValueError("User id not found in message. instance_id=%s", instance_id)
+
+    bop_resp = PROXY.request_filtered_principals([user_id], options={"return_id": True})
+
+    if not bop_resp["data"]:  # User has been deleted
+        # Get data from message instead.
+        user = User()
+        user.user_id = user_id
+        user.is_active = False
+        user.username = message_user["Person"]["Credentials"]["Login"]
+        for id in identifiers["Reference"]:
+            if id["@system"] == "WEB" and id["@entity-name"] == "Customer" and id["@qualifier"] == "id":
+                user.org_id = id["#text"]
+                break
+            if id["@system"] == "EBS" and id["@entity-name"] == "Account" and id["@qualifier"] == "number":
+                user.account = id["#text"]
+                break
+        return user
+
+    user_data = bop_resp["data"][0]
+    return external_principal_to_user(user_data)
 
 
-def clean_principal_umb(data_dict):
-    """Delete the principal if it exists."""
-    user_principal_login = data_dict["CanonicalMessage"]["Payload"]["Sync"]["User"]["Person"]["Credentials"]["Login"]
-    # In case the user is under multiple account
-    principals = (
-        Principal.objects.filter(username=user_principal_login)
-        .exclude(cross_account=True)
-        .exclude(type=TYPE_SERVICE_ACCOUNT)
-    )
-    groups = defaultdict(list)
-    for principal in principals:
-        # Log the group info in case it is needed
-        for group in principal.group.all():
-            groups[principal.tenant.tenant_name].append(group.name)
-            # We have to trigger the removal in order to clear the cache, or the console will still show the cached
-            # number of members
-            group.principals.remove(principal)
-        principal.delete()
-    return user_principal_login, groups
+def process_umb_event(frame, umb_client: Stomp, bootstrap_service: TenantBootstrapService):
+    """Process each umb frame."""
+    data_dict = xmltodict.parse(frame.body)
+    canonical_message = data_dict.get("CanonicalMessage")
+    if not canonical_message:
+        # Message is malformed.
+        # Ensure we dont block the entire queue by discarding it.
+        umb_client.ack(frame)
+        return
+    try:
+        user = retrieve_user_info(canonical_message)
+    except Exception as e:  # Skip processing and leave the it to be processed later
+        logger.error("process_umb_event: Error retrieving user info: %s", str(e))
+        return
+
+    # By default, only process disabled users.
+    # If the setting is enabled, process all users.
+    if not user.is_active or settings.PRINCIPAL_CLEANUP_UPDATE_ENABLED_UMB:
+        bootstrap_service.update_user(user)
+    umb_client.ack(frame)
 
 
-def clean_principals_via_umb():
-    """Check which principals are eligible for clean up via UMB."""
-    logger.info("clean_tenant_principals: Start principal clean up via umb.")
+def process_principal_events_from_umb(bootstrap_service: Optional[TenantBootstrapService] = None):
+    """Process principals events from UMB."""
+    logger.info("process_tenant_principal_events: Start processing principal events from umb.")
+    bootstrap_service = bootstrap_service or get_tenant_bootstrap_service(OutboxReplicator())
     try:
         UMB_CLIENT.connect()
         UMB_CLIENT.subscribe(QUEUE, {StompSpec.ACK_HEADER: StompSpec.ACK_CLIENT_INDIVIDUAL})
@@ -169,17 +209,6 @@ def clean_principals_via_umb():
 
     while UMB_CLIENT.canRead(2):  # Check if queue is empty, two sec timeout
         frame = UMB_CLIENT.receiveFrame()
-        data_dict = xmltodict.parse(frame.body)
-        is_deactivate = is_umb_deactivate_msg(data_dict)
-        if not is_deactivate:
-            # Drop the message cause it is useless for us
-            UMB_CLIENT.ack(frame)
-            continue
-        principal_name, groups = clean_principal_umb(data_dict)
-        if not groups:
-            logger.info(f"Principal {principal_name} was not under any groups.")
-        for tenant, group_names in groups.items():
-            logger.info(f"Principal {principal_name} was under tenant {tenant} in groups: {group_names}")
-        UMB_CLIENT.ack(frame)  # This will remove the message from the queue
+        process_umb_event(frame, UMB_CLIENT, bootstrap_service)
     UMB_CLIENT.disconnect()
-    logger.info("clean_tenant_principals: Principal clean up finished.")
+    logger.info("process_tenant_principal_events: Principal event processing finished.")
