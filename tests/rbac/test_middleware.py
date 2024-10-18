@@ -16,10 +16,11 @@
 #
 """Test the project middleware."""
 import collections
+from functools import partial
 import json
 import os
 from unittest import mock
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 from django.conf import settings
 from django.http import QueryDict
 from django.test.utils import override_settings
@@ -32,6 +33,18 @@ from rest_framework.test import APIClient
 
 from api.models import Tenant, User
 from api.serializers import create_tenant_name
+from management.cache import TenantCache
+from management.group.definer import seed_group
+from management.tenant_mapping.model import TenantMapping
+from management.workspace.model import Workspace
+from migration_tool.in_memory_tuples import (
+    InMemoryRelationReplicator,
+    InMemoryTuples,
+    all_of,
+    relation,
+    resource,
+    subject,
+)
 from tests.identity_request import IdentityRequest
 from rbac.middleware import HttpResponseUnauthorizedRequest, IdentityHeaderMiddleware, ReadOnlyApiMiddleware
 from management.models import Access, Group, Permission, Principal, Policy, ResourceDefinition, Role
@@ -106,6 +119,7 @@ class RbacTenantMiddlewareTest(IdentityRequest):
         user.username = self.user_data["username"]
         user.account = self.customer_data["account_id"]
         user.org_id = self.customer_data["org_id"]
+        user.user_id = self.user_data["user_id"]
         self.request.user = user
 
     def test_get_tenant_with_user(self):
@@ -117,21 +131,21 @@ class RbacTenantMiddlewareTest(IdentityRequest):
 
     def test_get_tenant_with_no_user(self):
         """Test that a 401 is returned."""
+        get_response = mock.MagicMock()
         request_context = self._create_request_context(self.customer, None)
         mock_request = request_context["request"]
-        mock_request.path = "/api/v1/providers/"
-        middleware = IdentityHeaderMiddleware(get_response=IdentityHeaderMiddleware.process_request)
-        result = middleware.process_request(mock_request)
+        middleware = IdentityHeaderMiddleware(get_response)
+        result = middleware(mock_request)
         self.assertIsInstance(result, HttpResponseUnauthorizedRequest)
 
     def test_get_tenant_with_org_id(self):
         """Test that the customer tenant is returned containing an org_id."""
+        get_response = mock.MagicMock()
         user_data = self._create_user_data()
         customer = self._create_customer_data()
         customer["org_id"] = "45321"
         request_context = self._create_request_context(customer, user_data)
         request = request_context["request"]
-        request.path = "/api/v1/providers/"
         request.META["QUERY_STRING"] = ""
         user = User()
         user.username = user_data["username"]
@@ -139,8 +153,8 @@ class RbacTenantMiddlewareTest(IdentityRequest):
         user.org_id = "45321"
         request.user = user
 
-        middleware = IdentityHeaderMiddleware(get_response=IdentityHeaderMiddleware.process_request)
-        middleware.process_request(request)
+        middleware = IdentityHeaderMiddleware(get_response)
+        middleware(request)
         self.assertEqual(request.tenant.org_id, user.org_id)
 
 
@@ -162,13 +176,17 @@ class IdentityHeaderMiddlewareTest(IdentityRequest):
     def test_process_status(self):
         """Test that the request gets a user."""
         mock_request = Mock(path="/api/v1/status/")
-        middleware = IdentityHeaderMiddleware(get_response=IdentityHeaderMiddleware.process_request)
-        middleware.process_request(mock_request)
+        get_response = mock.MagicMock()
+        middleware = IdentityHeaderMiddleware(get_response)
+        middleware(mock_request)
         self.assertTrue(hasattr(mock_request, "user"))
 
     def test_process_cross_account_request(self):
         """Test that the process request functions correctly for cross account request."""
-        middleware = IdentityHeaderMiddleware(get_response=IdentityHeaderMiddleware.process_request)
+        get_response = mock.MagicMock()
+        mock_response = Mock()
+        mock_response.email = "test@redhat.com"
+        middleware = IdentityHeaderMiddleware(get_response)
         # User without redhat email will fail.
         request_context = self._create_request_context(
             self.customer, self.user_data, cross_account=True, is_internal=True
@@ -176,7 +194,7 @@ class IdentityHeaderMiddlewareTest(IdentityRequest):
         mock_request = request_context["request"]
         mock_request.path = "/api/v1/providers/"
 
-        response = middleware.process_request(mock_request)
+        response = middleware(mock_request)
         self.assertIsInstance(response, HttpResponseUnauthorizedRequest)
 
         # User with is_internal equal to False will fail.
@@ -185,7 +203,7 @@ class IdentityHeaderMiddlewareTest(IdentityRequest):
         mock_request = request_context["request"]
         mock_request.path = "/api/v1/providers/"
 
-        response = middleware.process_request(mock_request)
+        response = middleware(mock_request)
         self.assertIsInstance(response, HttpResponseUnauthorizedRequest)
 
         # Success pass if user is internal and with redhat email
@@ -194,39 +212,46 @@ class IdentityHeaderMiddlewareTest(IdentityRequest):
             self.customer, self.user_data, cross_account=True, is_internal=True
         )
         mock_request = request_context["request"]
-        mock_request.path = "/api/v1/providers/"
+        response = middleware(mock_request)
 
-        response = middleware.process_request(mock_request)
-        self.assertEqual(response, None)
+        self.assertTrue(hasattr(response.user_data, "email"))
+        self.assertTrue(hasattr(response, "cross_account"))
+        self.assertTrue(hasattr(response, "is_internal"))
 
     def test_process_response(self):
         """Test that the process response functions correctly."""
-        mock_request = Mock(path="/api/v1/status/")
-        mock_response = Mock(status_code=200)
-        middleware = IdentityHeaderMiddleware(get_response=IdentityHeaderMiddleware.process_response)
-        response = middleware.process_response(mock_request, mock_response)
-        self.assertEqual(response, mock_response)
+        get_response = mock.MagicMock()
+        mock_request = Mock()
+        middleware = IdentityHeaderMiddleware(get_response)
+        mock_request.path = "/api/v1/status/"
+        mock_response = middleware(Mock(status_code=200))
+        response = middleware(mock_request)
+        self.assertEqual(response.status_code, mock_response.status_code)
 
     def test_process_not_status(self):
         """Test that the customer, tenant and user are created."""
-        mock_request = self.request
-        middleware = IdentityHeaderMiddleware(get_response=IdentityHeaderMiddleware.process_request)
-        middleware.process_request(mock_request)
+        request_context = self._create_request_context(self.customer, self.user_data)
+        get_response = mock.MagicMock()
+        mock_request = Mock()
+        mock_request.path = "/api/v1/providers/"
+        middleware = IdentityHeaderMiddleware(get_response)
+        middleware(mock_request)
         self.assertTrue(hasattr(mock_request, "user"))
-        self.assertEqual(mock_request.user.username, self.user_data["username"])
-        tenant = Tenant.objects.get(org_id=self.org_id)
+        self.assertTrue(hasattr(mock_request, "customer"))
+        tenant = Tenant.objects.get(org_id=self.tenant.org_id)
         self.assertIsNotNone(tenant)
 
     def test_process_no_customer(self):
         """Test that the customer, tenant and user are not created."""
+        get_response = mock.MagicMock()
         customer = self._create_customer_data()
         account_id = customer["account_id"]
         del customer["account_id"]
         request_context = self._create_request_context(customer, self.user_data)
         mock_request = request_context["request"]
-        mock_request.path = "/api/v1/providers/"
-        middleware = IdentityHeaderMiddleware(get_response=IdentityHeaderMiddleware.process_request)
-        middleware.process_request(mock_request)
+        mock_request.path = Mock("/api/v1/providers/")
+        middleware = IdentityHeaderMiddleware(get_response)
+        middleware(mock_request)
         self.assertTrue(hasattr(mock_request, "user"))
         with self.assertRaises(Tenant.DoesNotExist):
             Tenant.objects.get(org_id=self.org_id)
@@ -248,12 +273,11 @@ class IdentityHeaderMiddlewareTest(IdentityRequest):
     def test_tenant_process_without_org_id(self):
         """Test that an existing tenant doesn't create a new one when providing an org_id."""
         tenant = Tenant.objects.create(tenant_name="test_user")
-
+        get_response = mock.MagicMock()
         user_data = self._create_user_data()
         customer = self._create_customer_data()
         request_context = self._create_request_context(customer, user_data)
         request = request_context["request"]
-        request.path = "/api/v1/providers/"
         request.META["QUERY_STRING"] = ""
         user = User()
         user.username = self.user_data["username"]
@@ -261,8 +285,8 @@ class IdentityHeaderMiddlewareTest(IdentityRequest):
         user.org_id = "45321"
         request.user = user
 
-        middleware = IdentityHeaderMiddleware(get_response=IdentityHeaderMiddleware.process_request)
-        middleware.process_request(request)
+        middleware = IdentityHeaderMiddleware(get_response)
+        middleware(request)
         self.assertEqual(Tenant.objects.filter(tenant_name="test_user").count(), 1)
         self.assertEqual(Tenant.objects.filter(tenant_name="test_user").first().org_id, None)
 
@@ -625,3 +649,110 @@ class RBACReadOnlyApiMiddleware(IdentityRequest):
             middleware = ReadOnlyApiMiddleware(get_response=Mock())
             resp = middleware.process_request(self.request)
             self.assertEqual(resp, None)
+
+
+@override_settings(V2_BOOTSTRAP_TENANT=True)
+class V2RbacTenantMiddlewareTest(RbacTenantMiddlewareTest):
+    """Run all the same tests with v2 tenant bootstrap enabled."""
+
+    _tuples: InMemoryTuples
+
+    def setUp(self):
+        """Set up middleware tests."""
+        super().setUp()
+        self._tuples = InMemoryTuples()
+        seed_group()
+
+    def test_bootstraps_tenants_if_not_existing(self):
+        with patch("rbac.middleware.OutboxReplicator", new=partial(InMemoryRelationReplicator, self._tuples)):
+            # Change the user's org so we create a new tenant
+            self.request.user.org_id = "12345"
+            self.org_id = "12345"
+            mock_request = self.request
+            tenant_cache = TenantCache()
+            tenant_cache.delete_tenant(self.org_id)
+            middleware = IdentityHeaderMiddleware(get_response=IdentityHeaderMiddleware.get_tenant)
+            result = middleware.get_tenant(Tenant, "localhost", mock_request)
+            self.assertEqual(result.org_id, mock_request.user.org_id)
+            tenant = Tenant.objects.get(org_id=self.org_id)
+            self.assertIsNotNone(tenant)
+            mapping = TenantMapping.objects.get(tenant=tenant)
+            self.assertIsNotNone(mapping)
+            workspaces = list(Workspace.objects.filter(tenant=tenant))
+            self.assertEqual(len(workspaces), 2)
+            default = Workspace.objects.get(type=Workspace.Types.DEFAULT, tenant=tenant)
+            self.assertIsNotNone(default)
+            root = Workspace.objects.get(type=Workspace.Types.ROOT, tenant=tenant)
+            self.assertIsNotNone(root)
+
+            platform_default_policy = Policy.objects.get(group=Group.objects.get(platform_default=True))
+            admin_default_policy = Policy.objects.get(group=Group.objects.get(admin_default=True))
+
+            self.assertEqual(
+                1,
+                self._tuples.count_tuples(
+                    all_of(
+                        resource("rbac", "workspace", default.uuid),
+                        relation("binding"),
+                        subject("rbac", "role_binding", mapping.default_role_binding_uuid),
+                    )
+                ),
+            )
+            self.assertEqual(
+                1,
+                self._tuples.count_tuples(
+                    all_of(
+                        resource("rbac", "role_binding", mapping.default_role_binding_uuid),
+                        relation("subject"),
+                        subject("rbac", "group", mapping.default_group_uuid, "member"),
+                    )
+                ),
+            )
+            self.assertEqual(
+                1,
+                self._tuples.count_tuples(
+                    all_of(
+                        resource("rbac", "role_binding", mapping.default_role_binding_uuid),
+                        relation("role"),
+                        subject("rbac", "role", platform_default_policy.uuid),
+                    )
+                ),
+            )
+
+            self.assertEqual(
+                1,
+                self._tuples.count_tuples(
+                    all_of(
+                        resource("rbac", "workspace", default.uuid),
+                        relation("binding"),
+                        subject("rbac", "role_binding", mapping.default_admin_role_binding_uuid),
+                    )
+                ),
+            )
+            self.assertEqual(
+                1,
+                self._tuples.count_tuples(
+                    all_of(
+                        resource("rbac", "role_binding", mapping.default_admin_role_binding_uuid),
+                        relation("subject"),
+                        subject("rbac", "group", mapping.default_admin_group_uuid, "member"),
+                    )
+                ),
+            )
+            self.assertEqual(
+                1,
+                self._tuples.count_tuples(
+                    all_of(
+                        resource("rbac", "role_binding", mapping.default_admin_role_binding_uuid),
+                        relation("role"),
+                        subject("rbac", "role", admin_default_policy.uuid),
+                    )
+                ),
+            )
+
+
+@override_settings(V2_BOOTSTRAP_TENANT=True)
+class V2IdentityHeaderMiddlewareTest(IdentityHeaderMiddlewareTest):
+    """Run all the same tests with v2 tenant bootstrap enabled plus additional."""
+
+    pass
