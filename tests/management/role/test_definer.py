@@ -325,3 +325,32 @@ class RoleDefinerTests(IdentityRequest):
         self.assertTrue(
             any(self.is_update_event("dummy_hosts_read", args[0]) for args, _ in mock_replicate.call_args_list)
         )
+
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
+    def test_seed_roles_create_and_delete_role(
+        self,
+        mock_replicate,
+    ):
+        # seed to create role
+        seed_roles()
+        self.assertTrue(
+            any(self.is_create_event("inventory_hosts_read", args[0]) for args, _ in mock_replicate.call_args_list)
+        )
+
+        # seed to remove role
+        with (
+            patch("os.path.isfile") as mock_isfile,
+            patch("os.listdir") as mock_listdir,
+            patch("builtins.open", mock_open(read_data='{"roles": []}')) as mock_file,
+            patch("management.role.definer.destructive_ok") as mock_destructive_ok,
+        ):
+            # mock files
+            mock_destructive_ok.return_value = True
+            mock_listdir.return_value = ["role.json"]
+            mock_isfile.return_value = True
+
+            seed_roles()
+
+            self.assertTrue(
+                any(self.is_remove_event("inventory_hosts_read", args[0]) for args, _ in mock_replicate.call_args_list)
+            )
