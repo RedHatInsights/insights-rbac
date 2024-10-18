@@ -279,6 +279,12 @@ def validate_group_name(name):
         raise serializers.ValidationError({key: _(message)})
 
 
+def check_duplicate_entry(grp_name, tenant_id):
+    """Check for duplicate group per tenant."""
+    if Group.objects.filter(tenant=tenant_id).filter(name=grp_name):
+        raise serializers.ValidationError({"Group" + " " + grp_name + " " + "already exists": "Group already exists"})
+
+
 def validate_limit_and_offset(query_params):
     """Limit and offset should not be negative number."""
     if (int(query_params.get("limit", 10)) < 0) | (int(query_params.get("offset", 0)) < 0):
