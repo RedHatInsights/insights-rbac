@@ -15,6 +15,8 @@
 #    along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """API models for import organization."""
+from typing import Optional
+
 from django.db import models
 from django.db.models import Q
 
@@ -60,14 +62,14 @@ class TenantAwareModel(models.Model):
 class User:
     """A request User. Might also represent a service account."""
 
-    username = None
-    account = None
-    admin = False
+    username: Optional[str] = None
+    account: Optional[str] = None
+    admin: bool = False
     access = {}
-    system = False
-    is_active = True
-    org_id = None
-    user_id = None
+    system: bool = False
+    is_active: bool = True
+    org_id: Optional[str] = None
+    user_id: Optional[str] = None
     # Service account properties.
     bearer_token: str = ""
     client_id: str = ""
