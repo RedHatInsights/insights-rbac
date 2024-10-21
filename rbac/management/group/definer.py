@@ -127,6 +127,7 @@ def clone_default_group_in_public_schema(group, tenant) -> Tuple[Optional[Group]
     return group, relationships
 
 
+@transaction.atomic
 def add_roles(group, roles_or_role_ids, tenant, user=None, relations=None):
     """Process list of roles and add them to the group."""
     roles = _roles_by_query_or_ids(roles_or_role_ids)
@@ -200,8 +201,9 @@ def add_roles(group, roles_or_role_ids, tenant, user=None, relations=None):
 
 
 @transaction.atomic
-def remove_roles(group, roles_or_role_ids, tenant, user=None):
+def remove_roles(group, roles_or_role_ids, tenant, user=None, relations=[]):
     """Process list of roles and remove them from the group."""
+    custom_group = group
     roles = _roles_by_query_or_ids(roles_or_role_ids)
     group = Group.objects.get(name=group.name, tenant=tenant)
     system_roles = roles.filter(tenant=Tenant.objects.get(tenant_name="public"))
@@ -211,6 +213,13 @@ def remove_roles(group, roles_or_role_ids, tenant, user=None):
     # This should not be necessary for system roles.
     custom_roles = roles.filter(tenant=tenant).select_for_update()
 
+    removed_roles = []
+    dual_write_handler = RelationApiDualWriteGroupHandler(group, ReplicationEventType.UNASSIGN_ROLE)
+    if tenant.tenant_name != "public":
+        if relations is not None:  # Default group was changed to custom default group
+            dual_write_handler.extend_relations_to_remove(relations)
+            dual_write_handler.add_system_roles_to_default_custom_group(custom_group)
+
     for policy in group.policies.all():
         for role in [*system_roles, *custom_roles]:
             # Only remove the role if it was attached
@@ -219,11 +228,15 @@ def remove_roles(group, roles_or_role_ids, tenant, user=None):
                 logger.info(f"Removing role {role} from group {group.name} for tenant {tenant.org_id}.")
 
                 if tenant.tenant_name != "public":
-                    dual_write_handler = RelationApiDualWriteGroupHandler(group, ReplicationEventType.UNASSIGN_ROLE)
-                    dual_write_handler.replicate_removed_role(role)
+                    dual_write_handler.generate_group_relations_and_binding_mapping_for_role_removal(role)
 
-                # Send notifications
-                group_role_change_notification_handler(user, group, role, "removed")
+                removed_roles.append(role)
+
+    for role in removed_roles:
+        # Send notifications
+        group_role_change_notification_handler(user, group, role, "removed")
+    if tenant.tenant_name != "public":
+        dual_write_handler.replicate()
 
 
 def update_group_roles(group, roleset, tenant):

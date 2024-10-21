@@ -203,7 +203,8 @@ class DualWriteTestCase(TestCase):
         policy: Policy
         for role in roles:
             policy = self.fixture.remove_role_from_group(role, group, self.tenant)
-            dual_write_handler.replicate_removed_role(role)
+            dual_write_handler.generate_group_relations_and_binding_mapping_for_role_removal(role)
+        dual_write_handler.replicate()
         return policy
 
     def given_group_removed(self, group: Group):
