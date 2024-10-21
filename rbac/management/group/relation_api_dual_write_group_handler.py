@@ -153,9 +153,6 @@ class RelationApiDualWriteGroupHandler:
         """Replicate removed role."""
         if not self.replication_enabled():
             return
-        # TODO - This needs to be removed to seed the default groups.
-        if self.group.tenant.tenant_name == "public":
-            return
 
         self._update_mapping_for_role_removal(role)
         self._replicate()
@@ -181,9 +178,6 @@ class RelationApiDualWriteGroupHandler:
         This method handles persistence and locking itself.
         """
         if not self.replication_enabled():
-            return
-        # TODO - This needs to be removed to seed the default groups.
-        if self.group.tenant.tenant_name == "public":
             return
 
         if role.system:
