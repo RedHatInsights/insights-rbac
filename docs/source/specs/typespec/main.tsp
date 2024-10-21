@@ -121,7 +121,10 @@ namespace Workspaces {
         name: string;
     }
 
-    alias CreateWorkspaceRequest = BasicWorkspace;
+    model CreateWorkspaceRequest extends BasicWorkspace{
+        @doc("Parent UUID of Workspace A")
+        parent_id: UUID = "Parent UUID of Workspace A";
+    }
 
     model CreateWorkspaceResponse extends Workspace{
         @statusCode _: 201;

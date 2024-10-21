@@ -158,7 +158,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/Workspaces.BasicWorkspace'
+              $ref: '#/components/schemas/Workspaces.CreateWorkspaceRequest'
   /workspaces/{uuid}/:
     get:
       tags:
@@ -643,6 +643,18 @@ components:
           type: string
           description: Description of Workspace A
           default: Description of Workspace A
+    Workspaces.CreateWorkspaceRequest:
+      type: object
+      required:
+        - parent_id
+      properties:
+        parent_id:
+          allOf:
+            - $ref: '#/components/schemas/UUID'
+          description: Parent UUID of Workspace A
+          default: Parent UUID of Workspace A
+      allOf:
+        - $ref: '#/components/schemas/Workspaces.BasicWorkspace'
     Workspaces.CreateWorkspaceResponse:
       type: object
       allOf:
