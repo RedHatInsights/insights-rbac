@@ -59,7 +59,9 @@ class RelationApiDualWriteGroupHandler:
             self.group_relations_to_remove = []
             self.principals = []
             self.group = group
-            self.default_workspace = Workspace.objects.get(tenant_id=self.group.tenant_id, type=Workspace.Types.DEFAULT)
+            self.default_workspace = Workspace.objects.get(
+                tenant_id=self.group.tenant_id, type=Workspace.Types.DEFAULT
+            )
             self.event_type = event_type
             self.user_domain = settings.PRINCIPAL_USER_DOMAIN
             self._replicator = replicator if replicator else OutboxReplicator()
