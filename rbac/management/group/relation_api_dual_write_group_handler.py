@@ -59,8 +59,9 @@ class RelationApiDualWriteGroupHandler:
             self.group_relations_to_remove = []
             self.principals = []
             self.group = group
-            self.tenant = group.tenant
-            self.default_workspace = Workspace.objects.get(tenant=self.tenant, type=Workspace.Types.DEFAULT)
+            self.default_workspace = Workspace.objects.get(
+                tenant_id=self.group.tenant_id, type=Workspace.Types.DEFAULT
+            )
             self.event_type = event_type
             self.user_domain = settings.PRINCIPAL_USER_DOMAIN
             self._replicator = replicator if replicator else OutboxReplicator()
@@ -126,9 +127,6 @@ class RelationApiDualWriteGroupHandler:
         """Replicate added role."""
         if not self.replication_enabled():
             return
-        # TODO - This needs to be removed to seed the default groups.
-        if self.group.tenant.tenant_name == "public":
-            return
 
         def add_group_to_binding(mapping: BindingMapping):
             self.group_relations_to_add.append(mapping.add_group_to_bindings(str(self.group.uuid)))
@@ -155,9 +153,6 @@ class RelationApiDualWriteGroupHandler:
         """Replicate removed role."""
         if not self.replication_enabled():
             return
-        # TODO - This needs to be removed to seed the default groups.
-        if self.group.tenant.tenant_name == "public":
-            return
 
         self._update_mapping_for_role_removal(role)
         self._replicate()
@@ -183,9 +178,6 @@ class RelationApiDualWriteGroupHandler:
         This method handles persistence and locking itself.
         """
         if not self.replication_enabled():
-            return
-        # TODO - This needs to be removed to seed the default groups.
-        if self.group.tenant.tenant_name == "public":
             return
 
         if role.system:
