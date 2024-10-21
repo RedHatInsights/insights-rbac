@@ -5,7 +5,7 @@ from collections import defaultdict
 from typing import Callable, Hashable, Iterable, List, NamedTuple, Set, Tuple, TypeVar
 
 from kessel.relations.v1beta1.common_pb2 import Relationship
-from management.role.relation_api_dual_write_handler import RelationReplicator
+from management.relation_replicator.relation_replicator import RelationReplicator
 
 
 _OBJECT_ID_REGEX = r"^(([a-zA-Z0-9/_|\-=+]{1,})|\*)$"

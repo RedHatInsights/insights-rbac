@@ -27,13 +27,13 @@ from django.utils.translation import gettext as _
 from management.group.model import Group
 from management.group.relation_api_dual_write_group_handler import (
     RelationApiDualWriteGroupHandler,
-    ReplicationEventType,
 )
 from management.notifications.notification_handlers import (
     group_flag_change_notification_handler,
     group_role_change_notification_handler,
 )
 from management.policy.model import Policy
+from management.relation_replicator.relation_replicator import ReplicationEventType
 from management.role.model import Role
 from management.utils import clear_pk
 from rest_framework import serializers
