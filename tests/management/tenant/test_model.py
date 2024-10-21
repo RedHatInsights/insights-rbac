@@ -208,6 +208,9 @@ class V2TenantBootstrapServiceTest(TestCase):
                 )
             ),
         )
+        self.assertEqual(
+            tenant.tenant_mapping.default_group_uuid, Group.objects.get(tenant=tenant, platform_default=True).uuid
+        )
 
     def test_adds_default_access_when_not_customized(self):
         tenant = self.fixture.new_unbootstrapped_tenant(org_id="o1")
@@ -247,7 +250,7 @@ class V2TenantBootstrapServiceTest(TestCase):
 
         self.service.update_users(users)
 
-        self.assertEquals(18, self.tuples.count_tuples())
+        self.assertEquals(12, self.tuples.count_tuples())
 
         # Assert user updated for first user with existing tenant
         self.assertEqual(

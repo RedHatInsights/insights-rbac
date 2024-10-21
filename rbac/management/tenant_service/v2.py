@@ -4,7 +4,8 @@ from typing import List, Optional
 from uuid import uuid4
 
 from django.conf import settings
-from django.db import models, transaction
+from django.db import transaction
+from django.db.models import Prefetch, Q
 from kessel.relations.v1beta1.common_pb2 import Relationship
 from management.group.model import Group
 from management.principal.model import Principal
@@ -110,11 +111,16 @@ class V2TenantBootstrapService:
         relationships = []
         mappings_to_create = []
         default_workspace_uuids = []
-        tenant_mappings = {}
+        existing_custom_default_group_ids = set()
         for tenant in tenants:
+            kwargs = {"tenant": tenant}
+            if hasattr(tenant, "platform_default_groups") and tenant.platform_default_groups:
+                kwargs["default_group_uuid"] = tenant.platform_default_groups[0].uuid
+                existing_custom_default_group_ids.add(tenant.platform_default_groups[0].uuid)
+            mappings_to_create.append(TenantMapping(**kwargs))
+
             root_workspace_uuid = uuid4()
             default_workspace_uuid = uuid4()
-            default_workspace_uuids.append(default_workspace_uuid)
             workspaces.append(
                 Workspace(uuid=root_workspace_uuid, tenant=tenant, type=Workspace.Types.ROOT, name="Root Workspace")
             )
@@ -123,11 +129,7 @@ class V2TenantBootstrapService:
                     uuid=default_workspace_uuid, tenant=tenant, type=Workspace.Types.DEFAULT, name="Default Workspace"
                 )
             )
-            # Existing tenant might have mapping or not
-            if not hasattr(tenant, "tenantmapping"):
-                mappings_to_create.append(TenantMapping(tenant=tenant))
-            else:
-                tenant_mappings[tenant.id] = tenant.tenantmapping
+            default_workspace_uuids.append(default_workspace_uuid)
             tenant_id = f"{self._user_domain}/{tenant.org_id}"
             relationships = [
                 create_relationship(
@@ -147,20 +149,18 @@ class V2TenantBootstrapService:
                 create_relationship(("rbac", "tenant"), tenant_id, ("rbac", "platform"), settings.ENV_NAME, "platform")
             )
 
-        # Ignore those already created
-        Workspace.objects.bulk_create(workspaces, ignore_conflicts=True)
+        Workspace.objects.bulk_create(workspaces)
 
-        mappings = TenantMapping.objects.bulk_create(mappings_to_create, ignore_conflicts=True)
-        tenant_mappings.update({mapping.tenant_id: mapping for mapping in mappings})
+        mappings = TenantMapping.objects.bulk_create(mappings_to_create)
+        tenant_mappings = {mapping.tenant_id: mapping for mapping in mappings}
         bootstrapped_tenants = []
 
-        # Get existing custom groups
-        default_group_uuids = [mapping.default_group_uuid for mapping in tenant_mappings.values()]
-        existing_custom_groups = set(Group.objects.filter(uuid__in=default_group_uuids).values_list("uuid", flat=True))
         for tenant, default_workspace_uuid in zip(tenants, default_workspace_uuids):
             mapping = tenant_mappings[tenant.id]
             relationships.extend(
-                self._bootstrap_default_access(tenant, mapping, str(default_workspace_uuid), existing_custom_groups)
+                self._bootstrap_default_access(
+                    tenant, mapping, str(default_workspace_uuid), existing_custom_default_group_ids
+                )
             )
             bootstrapped_tenants.append(BootstrappedTenant(tenant, mapping))
         self._replicator.replicate(
@@ -173,13 +173,30 @@ class V2TenantBootstrapService:
         )
         return bootstrapped_tenants
 
-    def _get_or_bootstrap_tenants(self, org_ids: list) -> list[BootstrappedTenant]:
+    def _get_or_bootstrap_tenants(self, org_ids: set) -> list[BootstrappedTenant]:
         """Bootstrap list of tenants, used by update_users."""
         # Fetch existing tenants
         existing_tenants = {
             tenant.org_id: tenant
-            for tenant in Tenant.objects.filter(org_id__in=org_ids).select_related("tenantmapping")
+            for tenant in Tenant.objects.filter(org_id__in=org_ids)
+            .select_related("tenant_mapping")
+            .prefetch_related(
+                Prefetch(
+                    "group_set",
+                    queryset=Group.objects.filter(platform_default=True),
+                    to_attr="platform_default_groups",
+                )
+            )
         }
+
+        # An existing tenant might have been bootstrapped and already has mapping and workspaces
+        tenants_to_bootstrap = []
+        bootstrapped_list = []
+        for tenant in existing_tenants.values():
+            if not hasattr(tenant, "tenant_mapping"):
+                tenants_to_bootstrap.append(tenant)
+            else:
+                bootstrapped_list.append(BootstrappedTenant(tenant, tenant.tenant_mapping))
         # Create new tenants
         new_tenants = [
             Tenant(tenant_name=f"org{org_id}", org_id=org_id, ready=True)
@@ -188,9 +205,10 @@ class V2TenantBootstrapService:
         ]
         if new_tenants:
             new_tenants = Tenant.objects.bulk_create(new_tenants)
-            existing_tenants.update({tenant.org_id: tenant for tenant in new_tenants})
+            tenants_to_bootstrap.extend(new_tenants)
 
-        return self._bootstrap_tenants(list(existing_tenants.values()))
+        bootstrapped_list.extend(self._bootstrap_tenants(tenants_to_bootstrap))
+        return bootstrapped_list
 
     @transaction.atomic
     def update_users(self, users: list[User]):
@@ -203,12 +221,14 @@ class V2TenantBootstrapService:
         Args:
             users (list): List of User objects to update
         """
-        org_ids = []
+        org_ids = set()
         for user in users:
+            if not user.is_active:
+                continue
             if user.org_id is None:
                 logger.warning(f"Cannot update user without org_id. Skipping. username={user.username}")
                 continue
-            org_ids.append(user.org_id)
+            org_ids.add(user.org_id)
         bootstrapped_list = self._get_or_bootstrap_tenants(org_ids)
         bootstrapped_mapping = {bootstrapped.tenant.org_id: bootstrapped for bootstrapped in bootstrapped_list}
 
@@ -219,12 +239,17 @@ class V2TenantBootstrapService:
         # Fetch existing principals
         tenants = [bootstrapped.tenant for bootstrapped in bootstrapped_list]
         existing_principals = Principal.objects.filter(
-            models.Q(tenant__in=tenants) & models.Q(username__in=[user.username for user in users])
+            Q(tenant__in=tenants) & Q(username__in=[user.username for user in users])
         ).prefetch_related("tenant")
         # Mapping of (org_id, username) -> principal
         existing_principal_dict = {(p.tenant.org_id, p.username): p for p in existing_principals}
 
         for user in users:
+            if not user.is_active:
+                continue
+            if user.org_id is None:
+                logger.warning(f"Cannot update user without org_id. Skipping. username={user.username}")
+                continue
             bootstrapped = bootstrapped_mapping[user.org_id]
             key = (user.org_id, user.username)
             user_id = user.user_id
@@ -368,7 +393,12 @@ class V2TenantBootstrapService:
             create_relationship(("rbac", "tenant"), tenant_id, ("rbac", "platform"), settings.ENV_NAME, "platform")
         )
 
-        mapping = TenantMapping.objects.create(tenant=tenant)
+        # Check if custom platform default group exist
+        custom_platform_default_group = Group.objects.filter(tenant=tenant, platform_default=True).first()
+        kwargs = {"tenant": tenant}
+        if custom_platform_default_group:
+            kwargs["default_group_uuid"] = custom_platform_default_group.uuid
+        mapping = TenantMapping.objects.create(**kwargs)
         relationships.extend(self._bootstrap_default_access(tenant, mapping, str(default_workspace.uuid)))
 
         self._replicator.replicate(

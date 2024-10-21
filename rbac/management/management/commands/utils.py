@@ -40,7 +40,7 @@ def get_s3_client():
     )
 
 
-def download_tenant_user_data(env):
+def download_tenant_user_data():
     """Download users data from S3."""
     s3_client = get_s3_client()
     if os.path.exists(FILE_PATH):
@@ -92,8 +92,9 @@ def process_batch(batch_data):
         user = User()
         user.org_id = org_id
         user.admin = org_admin
-        user.usernanme = principal_name
+        user.username = principal_name
         user.user_id = user_id
+        user.is_active = True
         users.append(user)
 
     BOOT_STRAP_SERVICE.update_users(users)

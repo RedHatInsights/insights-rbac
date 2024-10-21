@@ -1,4 +1,4 @@
-"""Seeds command."""
+"""Import user data command."""
 
 import logging
 
