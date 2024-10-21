@@ -4345,12 +4345,20 @@ class GroupViewNonAdminTests(IdentityRequest):
 
         actual_call_arg = mock_method.call_args[0][0]
         self.assertEqual(
-            generate_replication_event_to_add_principals(str(test_group.uuid), "redhat.com:1234"),
+            generate_replication_event_to_add_principals(str(test_group.uuid), "redhat/1234"),
             actual_call_arg,
         )
 
+        # Now attempt to add to second group, but at this time the service account no longer exists
+        second_group = Group(name="second group", tenant=self.tenant)
+        second_group.save()
+        url = reverse("group-principals", kwargs={"uuid": second_group.uuid})
+        mock_request.return_value = []
+
         response = client.post(url, request_body, format="json", **self.headers_service_account_principal)
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+        self.assertFalse(Principal.objects.filter(username=sa_principal.username).exists())
 
     @patch(
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",

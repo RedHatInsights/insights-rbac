@@ -1182,7 +1182,10 @@ class GroupViewSet(
         """Invalidate the service accounts that were not found."""
         # Query groups where these service account principals are members
         groups = Group.objects.filter(principals__service_account_id__in=service_accounts).prefetch_related(
-            Prefetch("principals", queryset=Principal.objects.only("service_account_id", "user_id"))
+            Prefetch(
+                "principals",
+                queryset=Principal.objects.filter(uuid__in=service_accounts).only("service_account_id", "user_id"),
+            )
         )
 
         # For each service account,
