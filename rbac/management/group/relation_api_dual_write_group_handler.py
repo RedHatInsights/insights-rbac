@@ -56,6 +56,10 @@ class RelationApiDualWriteGroupHandler:
         """Initialize RelationApiDualWriteGroupHandler."""
         if not self.replication_enabled():
             return
+
+        self.group = group
+        if self.group.tenant.tenant_name == "public":
+            return
         try:
             self.group_relations_to_add = []
             self.group_relations_to_remove = []
@@ -131,6 +135,14 @@ class RelationApiDualWriteGroupHandler:
             return
         self.group_relations_to_remove.extend(relations_to_remove)
 
+    def add_system_roles_to_default_custom_group(self, custom_group: Group):
+        """Add system roles to default custom group."""
+        roles = Role.objects.filter(policies__group=custom_group)
+        system_roles = roles.filter(tenant=Tenant.objects.get(tenant_name="public"))
+        for system_role in system_roles:
+            self.generate_group_relations_and_binding_mapping_for_role(system_role, custom_group)
+        self._replicate()
+
     def generate_group_relations_and_binding_mapping_for_role(self, role: Role, custom_group: Optional[Group] = None):
         """Generate group relations and binding mapping for role."""
         if not self.replication_enabled():
@@ -158,16 +170,13 @@ class RelationApiDualWriteGroupHandler:
             role, update_mapping=add_group_to_binding, create_default_mapping_for_system_role=create_default_mapping
         )
 
-    def replicate_added_role(self, role: Role):
+    def replicate(self):
         """Replicate added role."""
         if not self.replication_enabled():
             return
-        # TODO - This needs to be removed to seed the default groups.
+
         if self.group.tenant.tenant_name == "public":
             return
-
-        self.generate_group_relations_and_binding_mapping_for_role(role)
-
         self._replicate()
 
     def replicate_removed_role(self, role: Role):

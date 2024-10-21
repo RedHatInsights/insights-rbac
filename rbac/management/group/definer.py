@@ -148,6 +148,14 @@ def add_roles(group, roles_or_role_ids, tenant, user=None, relations=None):
     # This should not be necessary for system roles.
     custom_roles = roles.filter(tenant=tenant).select_for_update()
 
+    if tenant.tenant_name != "public":
+        dual_write_handler = RelationApiDualWriteGroupHandler(group, ReplicationEventType.ASSIGN_ROLE)
+
+        if relations is not None:  # Default group was changed to custom default group
+            dual_write_handler.extend_relations_to_remove(relations)
+            dual_write_handler.add_system_roles_to_default_custom_group(custom_group)
+
+    added_roles = []
     for role in [*system_roles, *custom_roles]:
         # Only Organization administrators are allowed to add the role with RBAC permission
         # higher than "read" into a group.
@@ -172,7 +180,8 @@ def add_roles(group, roles_or_role_ids, tenant, user=None, relations=None):
         system_policy.roles.add(role)
 
         if tenant.tenant_name != "public":
-            dual_write_handler = RelationApiDualWriteGroupHandler(group, ReplicationEventType.ASSIGN_ROLE)
+            dual_write_handler.generate_group_relations_and_binding_mapping_for_role(role)
+
             if relations is not None:
                 dual_write_handler.extend_relations_to_remove(relations)
                 roles = Role.objects.filter(policies__group=custom_group)
@@ -180,9 +189,14 @@ def add_roles(group, roles_or_role_ids, tenant, user=None, relations=None):
                 for system_role in system_roles:
                     dual_write_handler.generate_group_relations_and_binding_mapping_for_role(system_role, custom_group)
             dual_write_handler.replicate_added_role(role)
+        added_roles.append(role)
 
+    for role in added_roles:
         # Send notifications
         group_role_change_notification_handler(user, group, role, "added")
+
+    if tenant.tenant_name != "public":
+        dual_write_handler.replicate()
 
 
 @transaction.atomic

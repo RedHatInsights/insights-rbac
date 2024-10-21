@@ -187,8 +187,8 @@ class DualWriteTestCase(TestCase):
         policy: Policy
         for role in roles:
             policy = self.fixture.add_role_to_group(role, group, self.tenant)
-            dual_write_handler.replicate_added_role(role)
-
+            dual_write_handler.generate_group_relations_and_binding_mapping_for_role(role)
+        dual_write_handler.replicate()
         return policy
 
     def given_roles_unassigned_from_group(self, group: Group, roles: list[Role]) -> Policy:
