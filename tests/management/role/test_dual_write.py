@@ -16,7 +16,6 @@
 #
 """Test tuple changes for RBAC operations."""
 
-import unittest
 from typing import Optional, Tuple
 from django.test import TestCase, override_settings
 from django.db.models import Q
@@ -28,7 +27,7 @@ from management.permission.model import Permission
 from management.policy.model import Policy
 from management.principal.model import Principal
 from management.relation_replicator.noop_replicator import NoopReplicator
-from management.relation_replicator.relation_replicator import ReplicationEventType
+from management.relation_replicator.relation_replicator import DualWriteException, ReplicationEventType
 from management.role.model import Access, ResourceDefinition, Role, BindingMapping
 from management.role.relation_api_dual_write_handler import (
     RelationApiDualWriteHandler,
@@ -158,7 +157,7 @@ class DualWriteTestCase(TestCase):
         principals = self.fixture.add_members_to_group(group, users, service_accounts, group.tenant)
         dual_write = RelationApiDualWriteGroupHandler(
             group,
-            ReplicationEventType.CREATE_GROUP,
+            ReplicationEventType.ADD_PRINCIPALS_TO_GROUP,
             replicator=InMemoryRelationReplicator(self.tuples),
         )
         dual_write.replicate_new_principals(principals)
@@ -171,7 +170,7 @@ class DualWriteTestCase(TestCase):
         principals = self.fixture.remove_members_from_group(group, users, service_accounts, group.tenant)
         dual_write = RelationApiDualWriteGroupHandler(
             group,
-            ReplicationEventType.CREATE_GROUP,
+            ReplicationEventType.REMOVE_PRINCIPALS_FROM_GROUP,
             replicator=InMemoryRelationReplicator(self.tuples),
         )
         dual_write.replicate_removed_principals(principals)
@@ -310,6 +309,16 @@ class DualWriteTestCase(TestCase):
 
 class DualWriteGroupTestCase(DualWriteTestCase):
     """Test dual write logic for group modifications."""
+
+    def test_cannot_replicate_group_for_public_tenant(self):
+        """Do not replicate group changes for the public tenant groups (system groups)."""
+        platform_default, admin_default = seed_group()
+
+        with self.assertRaises(DualWriteException):
+            RelationApiDualWriteGroupHandler(platform_default, ReplicationEventType.CREATE_GROUP)
+
+        with self.assertRaises(DualWriteException):
+            RelationApiDualWriteGroupHandler(admin_default, ReplicationEventType.CREATE_GROUP)
 
     def test_create_group_tuples(self):
         """Create a group and add users to it."""

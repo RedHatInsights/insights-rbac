@@ -33,23 +33,8 @@ class GroupDefinerTests(IdentityRequest):
         """Set up the group definer tests."""
         super().setUp()
         self.public_tenant = Tenant.objects.get(tenant_name="public")
-        self.root_workspace = Workspace.objects.create(
-            type=Workspace.Types.ROOT,
-            name="Root",
-            tenant=self.public_tenant,
-        )
-        self.default_workspace = Workspace.objects.create(
-            type=Workspace.Types.DEFAULT,
-            name="Default",
-            tenant=self.public_tenant,
-            parent=self.root_workspace,
-        )
         seed_roles()
         seed_group()
-
-    def tearDown(self):
-        Workspace.objects.filter(parent__isnull=False).delete()
-        Workspace.objects.filter(parent__isnull=True).delete()
 
     def test_default_group_seeding_properly(self):
         """Test that default group are seeded properly."""
