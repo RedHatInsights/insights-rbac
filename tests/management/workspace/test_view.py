@@ -89,16 +89,14 @@ class WorkspaceViewTestsV2Enabled(WorkspaceViewTests):
         url = reverse("v2_management:workspace-list")
         client = APIClient()
         response = client.post(url, workspace, format="json", **self.headers)
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        data = response.data
-        self.assertEqual(data.get("name"), "New Workspace")
-        self.assertNotEquals(data.get("uuid"), "")
-        self.assertIsNotNone(data.get("uuid"))
-        self.assertNotEquals(data.get("created"), "")
-        self.assertNotEquals(data.get("modified"), "")
-        self.assertEquals(data.get("description"), "Workspace")
-        self.assertEquals(data.get("type"), "standard")
-        self.assertEqual(response.get("content-type"), "application/json")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        status_code = response.data.get("status")
+        detail = response.data.get("detail")
+        self.assertIsNotNone(detail)
+        self.assertEqual(detail, "Field 'parent_id' is required.")
+
+        self.assertEqual(status_code, 400)
+        self.assertEqual(response.get("content-type"), "application/problem+json")
 
     def test_create_workspace_empty_body(self):
         """Test for creating a workspace."""
