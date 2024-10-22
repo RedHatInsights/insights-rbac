@@ -1184,7 +1184,7 @@ class GroupViewSet(
         groups = Group.objects.filter(principals__service_account_id__in=service_accounts).prefetch_related(
             Prefetch(
                 "principals",
-                queryset=Principal.objects.filter(uuid__in=service_accounts).only("service_account_id", "user_id"),
+                queryset=Principal.objects.filter(service_account_id__in=service_accounts).only("service_account_id", "user_id"),
             )
         )
 
@@ -1195,9 +1195,12 @@ class GroupViewSet(
             for principal in group.principals.all():
                 for client_id in service_accounts:
                     if principal.service_account_id == client_id:
-                        dual_write_handler = RelationApiDualWriteGroupHandler(
-                            group,
-                            ReplicationEventType.REMOVE_PRINCIPALS_FROM_GROUP,
-                        )
-                        dual_write_handler.replicate_removed_principals([principal])
+                        with transaction.atomic():
+                            dual_write_handler = RelationApiDualWriteGroupHandler(
+                                group,
+                                ReplicationEventType.REMOVE_PRINCIPALS_FROM_GROUP,
+                            )
+                            dual_write_handler.replicate_removed_principals([principal])
+                            group.principals.remove(principal)
+                            principal.delete()
                         break
