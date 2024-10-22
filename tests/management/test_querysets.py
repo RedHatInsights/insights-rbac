@@ -147,7 +147,7 @@ class QuerySetTest(TestCase):
             method="GET",
             tenant=self.tenant,
             query_params={"username": "test_user"},
-            path=reverse("group-list"),
+            path=reverse("v1_management:group-list"),
         )
         queryset = get_group_queryset(req)
         self.assertEqual(queryset.count(), 1)
@@ -330,7 +330,7 @@ class QuerySetTest(TestCase):
             method="GET",
             tenant=self.tenant,
             query_params={"exclude_username": "test_user"},
-            path=reverse("group-list"),
+            path=reverse("v1_management:group-list"),
         )
         queryset = get_group_queryset(req)
 
