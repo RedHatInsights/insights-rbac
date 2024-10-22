@@ -1766,6 +1766,45 @@ class GroupViewsetTests(IdentityRequest):
             response = client.post(url, test_data, format="json", **self.headers)
             actual_call_arg = mock_method.call_args[0][0]
             to_remove = actual_call_arg["relations_to_remove"]
+            to_add = actual_call_arg["relations_to_add"]
+
+            binding_mapping = BindingMapping.objects.get(
+                role=default_role, resource_type_name="workspace", resource_id=self.default_workspace.uuid
+            )
+
+            # New platform default role for tenant created
+            custom_default_group = Group.objects.get(platform_default=True, tenant=self.tenant)
+
+            def assert_group_tuples(tuple_to_replicate):
+                relation_tuple = relation_api_tuple(
+                    "role_binding", binding_mapping.mappings["id"],"role","role", str(default_role.uuid)
+                )
+
+                self.assertIsNotNone(find_relation_in_list(tuple_to_replicate, relation_tuple))
+
+                relation_tuple = relation_api_tuple(
+                    "workspace",
+                    str(self.default_workspace.uuid),
+                    "binding",
+                    "role_binding",
+                    str(binding_mapping.mappings["id"]),
+                )
+
+                self.assertIsNotNone(find_relation_in_list(tuple_to_replicate, relation_tuple))
+
+                relation_tuple = relation_api_tuple(
+                    "role_binding",
+                    binding_mapping.mappings["id"],
+                    "subject",
+                    "group",
+                    str(custom_default_group.uuid), ## this is custom group
+                    "member",
+                )
+
+                self.assertIsNotNone(find_relation_in_list(tuple_to_replicate, relation_tuple))
+
+            assert_group_tuples(to_add)
+
             tenant_mapping = TenantMapping.objects.get(tenant=self.tenant)
             policy_uuid = (
                 Group.objects.get(platform_default=True, system=True, tenant=Tenant.objects.get(tenant_name="public"))
@@ -1813,8 +1852,6 @@ class GroupViewsetTests(IdentityRequest):
             self.assertEqual(self.defGroup.tenant, self.public_tenant)
             self.assertEqual(response.status_code, status.HTTP_200_OK)
 
-            # New platform default role for tenant created
-            custom_default_group = Group.objects.get(platform_default=True, tenant=self.tenant)
             self.assertEqual(custom_default_group.name, "Custom default access")
             self.assertFalse(custom_default_group.system)
             self.assertEqual(custom_default_group.tenant, self.tenant)
