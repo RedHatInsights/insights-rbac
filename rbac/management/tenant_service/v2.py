@@ -131,18 +131,20 @@ class V2TenantBootstrapService:
             )
             default_workspace_uuids.append(default_workspace_uuid)
             tenant_id = f"{self._user_domain}/{tenant.org_id}"
-            relationships = [
-                create_relationship(
-                    ("rbac", "workspace"),
-                    str(default_workspace_uuid),
-                    ("rbac", "workspace"),
-                    str(root_workspace_uuid),
-                    "parent",
-                ),
-                create_relationship(
-                    ("rbac", "workspace"), str(root_workspace_uuid), ("rbac", "tenant"), tenant_id, "parent"
-                ),
-            ]
+            relationships.extend(
+                [
+                    create_relationship(
+                        ("rbac", "workspace"),
+                        str(default_workspace_uuid),
+                        ("rbac", "workspace"),
+                        str(root_workspace_uuid),
+                        "parent",
+                    ),
+                    create_relationship(
+                        ("rbac", "workspace"), str(root_workspace_uuid), ("rbac", "tenant"), tenant_id, "parent"
+                    ),
+                ]
+            )
 
             # Include platform for tenant
             relationships.append(
