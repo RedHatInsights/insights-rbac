@@ -397,7 +397,8 @@ class V2TenantBootstrapServiceTest(TestCase):
     @patch("management.management.commands.utils.BOOT_STRAP_SERVICE")
     def test_retrying_bulk(self, mock_bss):
         mock_bss.import_bulk_users.side_effect = [
-            IntegrityError("IntegrityError: duplicate key value violates unique constraint"), None
+            IntegrityError("IntegrityError: duplicate key value violates unique constraint"),
+            None,
         ]
 
         batch = [("u1", "o1", "test_user", True)]

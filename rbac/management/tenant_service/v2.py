@@ -393,11 +393,13 @@ class V2TenantBootstrapService:
             create_relationship(("rbac", "tenant"), tenant_id, ("rbac", "platform"), settings.ENV_NAME, "platform")
         )
 
-        # Check if custom platform default group exist
-        custom_platform_default_group = Group.objects.filter(tenant=tenant, platform_default=True).first()
         kwargs = {"tenant": tenant}
-        if custom_platform_default_group:
+        # Check if custom platform default group exist
+        try:
+            custom_platform_default_group = Group.objects.get(tenant=tenant, platform_default=True)
             kwargs["default_group_uuid"] = custom_platform_default_group.uuid
+        except Group.DoesNotExist:
+            pass
         mapping = TenantMapping.objects.create(**kwargs)
         relationships.extend(self._bootstrap_default_access(tenant, mapping, str(default_workspace.uuid)))
 
