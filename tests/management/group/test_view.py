@@ -1777,7 +1777,7 @@ class GroupViewsetTests(IdentityRequest):
 
             def assert_group_tuples(tuple_to_replicate):
                 relation_tuple = relation_api_tuple(
-                    "role_binding", binding_mapping.mappings["id"],"role","role", str(default_role.uuid)
+                    "role_binding", binding_mapping.mappings["id"], "role", "role", str(default_role.uuid)
                 )
 
                 self.assertIsNotNone(find_relation_in_list(tuple_to_replicate, relation_tuple))
@@ -1797,7 +1797,7 @@ class GroupViewsetTests(IdentityRequest):
                     binding_mapping.mappings["id"],
                     "subject",
                     "group",
-                    str(custom_default_group.uuid), ## this is custom group
+                    str(custom_default_group.uuid),
                     "member",
                 )
 

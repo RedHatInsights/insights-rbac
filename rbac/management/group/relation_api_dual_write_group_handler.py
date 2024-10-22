@@ -56,10 +56,8 @@ class RelationApiDualWriteGroupHandler:
         """Initialize RelationApiDualWriteGroupHandler."""
         if not self.replication_enabled():
             return
-
-        self.group = group
-        if self.group.tenant.tenant_name == "public":
-            return
+        if group.tenant.tenant_name == "public":
+            raise DualWriteException()
         try:
             self.group_relations_to_add = []
             self.group_relations_to_remove = []
@@ -149,6 +147,7 @@ class RelationApiDualWriteGroupHandler:
         group = self.group
         if custom_group is not None:
             group = custom_group
+
         def add_group_to_binding(mapping: BindingMapping):
             self.group_relations_to_add.append(mapping.add_group_to_bindings(str(group.uuid)))
 
