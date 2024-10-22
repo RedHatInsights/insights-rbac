@@ -62,4 +62,4 @@ class StatusViewTest(TestCase):
         """Test the status endpoint."""
         url = reverse("server-status")
         response = self.client.get(url)
-        self.assertEqual(response.status_code, 401)
+        self.assertEqual(response.status_code, 200)

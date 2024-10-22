@@ -114,12 +114,12 @@ class IdentityHeaderMiddleware:
         # Get request ID
         request.req_id = request.META.get(RH_INSIGHTS_REQUEST_ID)
 
-        # if any([request.path.startswith(prefix) for prefix in settings.INTERNAL_API_PATH_PREFIXES]):
-        # This request is for a private API endpoint
-        #    return
+        if any([request.path.startswith(prefix) for prefix in settings.INTERNAL_API_PATH_PREFIXES]):
+            # This request is for a private API endpoint
+            return self.get_response(request)
 
-        # if is_no_auth(request):
-        #    return
+        if is_no_auth(request):
+            return self.get_response(request)
 
         user = User()
         try:
