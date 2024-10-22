@@ -20,7 +20,9 @@ import os
 
 import boto3
 from botocore.exceptions import ClientError
+from django.db import IntegrityError
 from management.role.relation_api_dual_write_handler import OutboxReplicator
+from management.tenant_mapping.model import logger
 from management.tenant_service.v2 import V2TenantBootstrapService
 
 from api.models import User
@@ -96,5 +98,9 @@ def process_batch(batch_data):
         user.user_id = user_id
         user.is_active = True
         users.append(user)
-
-    BOOT_STRAP_SERVICE.update_users(users)
+    try:
+        BOOT_STRAP_SERVICE.import_bulk_users(users)
+    except IntegrityError as e:
+        """Retry once if there is creation conflict."""
+        logger.info(f"IntegrityError: {e.__cause__}. Retrying import.")
+        BOOT_STRAP_SERVICE.import_bulk_users(users)

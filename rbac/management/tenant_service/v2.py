@@ -174,7 +174,7 @@ class V2TenantBootstrapService:
         return bootstrapped_tenants
 
     def _get_or_bootstrap_tenants(self, org_ids: set) -> list[BootstrappedTenant]:
-        """Bootstrap list of tenants, used by update_users."""
+        """Bootstrap list of tenants, used by import_bulk_users."""
         # Fetch existing tenants
         existing_tenants = {
             tenant.org_id: tenant
@@ -211,7 +211,7 @@ class V2TenantBootstrapService:
         return bootstrapped_list
 
     @transaction.atomic
-    def update_users(self, users: list[User]):
+    def import_bulk_users(self, users: list[User]):
         """
         Bootstrap multiple users in a tenant.
 

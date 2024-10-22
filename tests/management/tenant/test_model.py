@@ -16,9 +16,12 @@
 #
 """Test cases for Tenant bootstrapping logic."""
 
+from unittest.mock import patch
+from django.db import IntegrityError
 from django.test import TestCase
 from management.group.definer import seed_group
 from management.group.model import Group
+from management.management.commands.utils import process_batch
 from management.policy.model import Policy
 from management.tenant_mapping.model import TenantMapping
 from management.tenant_service.v2 import V2TenantBootstrapService
@@ -248,7 +251,7 @@ class V2TenantBootstrapServiceTest(TestCase):
             user.is_active = True
             users.append(user)
 
-        self.service.update_users(users)
+        self.service.import_bulk_users(users)
 
         self.assertEquals(12, self.tuples.count_tuples())
 
@@ -390,3 +393,13 @@ class V2TenantBootstrapServiceTest(TestCase):
                 )
             ),
         )
+
+    @patch("management.management.commands.utils.BOOT_STRAP_SERVICE")
+    def test_retrying_bulk(self, mock_bss):
+        mock_bss.import_bulk_users.side_effect = [
+            IntegrityError("IntegrityError: duplicate key value violates unique constraint"), None
+        ]
+
+        batch = [("u1", "o1", "test_user", True)]
+        process_batch(batch)
+        self.assertEqual(mock_bss.import_bulk_users.call_count, 2)
