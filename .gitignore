@@ -12,8 +12,6 @@ __pycache__/
 # Distribution / packaging
 .Python
 env/
-rbac_venv/
-python_grpc_venv/
 build/
 develop-eggs/
 dist/
