@@ -279,19 +279,19 @@ class GroupViewsetTests(IdentityRequest):
             org_id = self.customer_data["org_id"]
 
             # create a group
-            url = reverse("group-list")
+            url = reverse("v1_management:group-list")
             client = APIClient()
             response = client.post(url, test_data, format="json", **self.headers)
             uuid = response.data.get("uuid")
             self.assertEqual(response.status_code, status.HTTP_201_CREATED)
 
             # test that we can retrieve the group
-            url = reverse("group-detail", kwargs={"uuid": response.data.get("uuid")})
+            url = reverse("v1_management:group-detail", kwargs={"uuid": response.data.get("uuid")})
             response = client.get(url, **self.headers)
             group = Group.objects.get(uuid=uuid)
 
             # test whether newly created group is added correctly within audit log database
-            al_url = "/api/v1/auditlogs/"
+            al_url = "/api/rbac/v1/auditlogs/"
             al_client = APIClient()
             al_response = al_client.get(al_url, **self.headers)
             retrieve_data = al_response.data.get("data")
@@ -309,7 +309,7 @@ class GroupViewsetTests(IdentityRequest):
             self.assertEqual(al_dict_action, "create")
 
             # test that we can retrieve the role
-            url = reverse("role-detail", kwargs={"uuid": response.data.get("uuid")})
+            url = reverse("v1_management:role-detail", kwargs={"uuid": response.data.get("uuid")})
             client = APIClient()
             self.assertIsNotNone(uuid)
             self.assertIsNotNone(response.data.get("name"))
@@ -343,7 +343,7 @@ class GroupViewsetTests(IdentityRequest):
 
         # test group retrieval
         client = APIClient()
-        url = reverse("group-detail", kwargs={"uuid": self.defGroup.uuid})
+        url = reverse("v1_management:group-detail", kwargs={"uuid": self.defGroup.uuid})
         response = client.get(url, **self.headers)
 
         self.assertIsNotNone(response.data.get("uuid"))
@@ -354,7 +354,7 @@ class GroupViewsetTests(IdentityRequest):
     def test_create_group_invalid(self):
         """Test that creating an invalid group returns an error."""
         test_data = {}
-        url = reverse("group-list")
+        url = reverse("v1_management:group-list")
         client = APIClient()
         response = client.post(url, test_data, format="json", **self.headers)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
@@ -366,7 +366,7 @@ class GroupViewsetTests(IdentityRequest):
 
         # create a group
         with transaction.atomic():
-            url = reverse("group-list")
+            url = reverse("v1_management:group-list")
             client = APIClient()
             response = client.post(url, test_data, format="json", **self.headers)
             self.assertEqual(response.status_code, status.HTTP_201_CREATED)
@@ -378,7 +378,7 @@ class GroupViewsetTests(IdentityRequest):
         """Test that creating a group with reserved name is not allowed."""
 
         # create a group
-        url = reverse("group-list")
+        url = reverse("v1_management:group-list")
         client = APIClient()
 
         test_data = {"name": "Custom default access"}
@@ -391,7 +391,7 @@ class GroupViewsetTests(IdentityRequest):
 
     def test_group_filter_by_any_role_name_in_a_list_success(self):
         """Test default behaviour that filter groups by any role name in a list success."""
-        url = "{}?role_names={},{}".format(reverse("group-list"), "RoleA", "RoleB")
+        url = "{}?role_names={},{}".format(reverse("v1_management:group-list"), "RoleA", "RoleB")
         client = APIClient()
         response = client.get(url, **self.headers)
 
@@ -402,7 +402,9 @@ class GroupViewsetTests(IdentityRequest):
 
     def test_group_filter_by_all_role_name_in_a_list_success(self):
         """Test that filter groups by all role names in a list success."""
-        url = "{}?role_names={},{}&role_discriminator=all".format(reverse("group-list"), "RoleA", "roleB")
+        url = "{}?role_names={},{}&role_discriminator=all".format(
+            reverse("v1_management:group-list"), "RoleA", "roleB"
+        )
         client = APIClient()
         response = client.get(url, **self.headers)
 
@@ -413,7 +415,9 @@ class GroupViewsetTests(IdentityRequest):
 
     def test_group_filter_with_invalid_discriminator_failure(self):
         """Test that filter groups with invalid discriminator returns failed validation."""
-        url = "{}?role_names={},{}&role_discriminator=invalid".format(reverse("group-list"), "roleA", "ROLEb")
+        url = "{}?role_names={},{}&role_discriminator=invalid".format(
+            reverse("v1_management:group-list"), "roleA", "ROLEb"
+        )
         client = APIClient()
         response = client.get(url, **self.headers)
 
@@ -433,7 +437,7 @@ class GroupViewsetTests(IdentityRequest):
     )
     def test_read_group_success(self, mock_request):
         """Test that we can read a group."""
-        url = reverse("group-detail", kwargs={"uuid": self.group.uuid})
+        url = reverse("v1_management:group-detail", kwargs={"uuid": self.group.uuid})
         client = APIClient()
         response = client.get(url, **self.headers)
 
@@ -445,21 +449,21 @@ class GroupViewsetTests(IdentityRequest):
 
     def test_read_group_invalid(self):
         """Test that reading an invalid group returns an error."""
-        url = reverse("group-detail", kwargs={"uuid": uuid4()})
+        url = reverse("v1_management:group-detail", kwargs={"uuid": uuid4()})
         client = APIClient()
         response = client.get(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
     def test_read_group_nonguid(self):
         """Test that reading a group with an invalid UUID returns an error."""
-        url = reverse("group-detail", kwargs={"uuid": "potato"})
+        url = reverse("v1_management:group-detail", kwargs={"uuid": "potato"})
         client = APIClient()
         response = client.get(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
     def test_read_group_list_success(self):
         """Test that we can read a list of groups."""
-        url = reverse("group-list")
+        url = reverse("v1_management:group-list")
         client = APIClient()
         response = client.get(url, **self.headers)
 
@@ -532,7 +536,7 @@ class GroupViewsetTests(IdentityRequest):
         self.group.save()
 
         # Test that /groups/{uuid}/principals/ returns correct count of user based principals
-        url = f"{reverse('group-principals', kwargs={'uuid': group.uuid})}"
+        url = f"{reverse('v1_management:group-principals', kwargs={'uuid': group.uuid})}"
         client = APIClient()
         response = client.get(url, **self.headers)
 
@@ -544,7 +548,9 @@ class GroupViewsetTests(IdentityRequest):
 
         # Test that /groups/{uuid}/principals/?principal_type=service-account returns
         # correct count of service account based principals
-        url = f"{reverse('group-principals', kwargs={'uuid': group.uuid})}?principal_type=service-account"
+        url = (
+            f"{reverse('v1_management:group-principals', kwargs={'uuid': group.uuid})}?principal_type=service-account"
+        )
         client = APIClient()
         response = client.get(url, **self.headers)
 
@@ -555,7 +561,7 @@ class GroupViewsetTests(IdentityRequest):
         self.assertEqual(sa_out["username"], sa_based_principal.username)
 
         # Test that /groups/?name=<group_name> returns 1 group with principalCount for only user based principals
-        url = f"{reverse('group-list')}?name={group_name}"
+        url = f"{reverse('v1_management:group-list')}?name={group_name}"
         client = APIClient()
         response = client.get(url, **self.headers)
 
@@ -567,7 +573,7 @@ class GroupViewsetTests(IdentityRequest):
 
     def test_get_group_by_partial_name_by_default(self):
         """Test that getting groups by name returns partial match by default."""
-        url = reverse("group-list")
+        url = reverse("v1_management:group-list")
         url = "{}?name={}".format(url, "group")
         client = APIClient()
         response = client.get(url, **self.headers)
@@ -575,7 +581,7 @@ class GroupViewsetTests(IdentityRequest):
 
     def test_get_group_by_partial_name_explicit(self):
         """Test that getting groups by name returns partial match when specified."""
-        url = reverse("group-list")
+        url = reverse("v1_management:group-list")
         url = "{}?name={}&name_match={}".format(url, "group", "partial")
         client = APIClient()
         response = client.get(url, **self.headers)
@@ -583,7 +589,7 @@ class GroupViewsetTests(IdentityRequest):
 
     def test_get_group_by_name_invalid_criteria(self):
         """Test that getting groups by name fails with invalid name_match."""
-        url = reverse("group-list")
+        url = reverse("v1_management:group-list")
         url = "{}?name={}&name_match={}".format(url, "group", "bad_criteria")
         client = APIClient()
         response = client.get(url, **self.headers)
@@ -591,7 +597,7 @@ class GroupViewsetTests(IdentityRequest):
 
     def test_get_group_by_exact_name_match(self):
         """Test that getting groups by name returns exact match."""
-        url = reverse("group-list")
+        url = reverse("v1_management:group-list")
         url = "{}?name={}&name_match={}".format(url, self.group.name, "exact")
         client = APIClient()
         response = client.get(url, **self.headers)
@@ -601,7 +607,7 @@ class GroupViewsetTests(IdentityRequest):
 
     def test_get_group_by_exact_name_no_match(self):
         """Test that getting groups by name returns no results with exact match."""
-        url = reverse("group-list")
+        url = reverse("v1_management:group-list")
         url = "{}?name={}&name_match={}".format(url, "group", "exact")
         client = APIClient()
         response = client.get(url, **self.headers)
@@ -609,7 +615,7 @@ class GroupViewsetTests(IdentityRequest):
 
     def test_get_group_invalid_sort_order_ignored(self):
         """Test that an invalid sort order value is ignored when getting groups."""
-        url = reverse("group-list")
+        url = reverse("v1_management:group-list")
         url = "{}?order_by=potato".format(url)
         client = APIClient()
         response = client.get(url, **self.headers)
@@ -617,7 +623,7 @@ class GroupViewsetTests(IdentityRequest):
 
     def test_filter_group_list_by_uuid_success(self):
         """Test that we can filter a list of groups by uuid."""
-        url = f"{reverse('group-list')}?uuid={self.group.uuid}"
+        url = f"{reverse('v1_management:group-list')}?uuid={self.group.uuid}"
         client = APIClient()
         response = client.get(url, **self.headers)
 
@@ -633,7 +639,7 @@ class GroupViewsetTests(IdentityRequest):
 
     def test_filter_group_list_by_uuid_multiple(self):
         """Test that we can filter a list of groups by uuid."""
-        url = f"{reverse('group-list')}?uuid={self.group.uuid},{self.groupB.uuid}"
+        url = f"{reverse('v1_management:group-list')}?uuid={self.group.uuid},{self.groupB.uuid}"
         client = APIClient()
         response = client.get(url, **self.headers)
 
@@ -652,7 +658,7 @@ class GroupViewsetTests(IdentityRequest):
 
     def test_filter_group_list_by_uuid_fail(self):
         """Test that filtering by a nonexistent uuid returns nothing."""
-        url = f"{reverse('group-list')}?uuid={uuid4()}"
+        url = f"{reverse('v1_management:group-list')}?uuid={uuid4()}"
         client = APIClient()
         response = client.get(url, **self.headers)
 
@@ -665,7 +671,7 @@ class GroupViewsetTests(IdentityRequest):
     def test_filter_group_list_by_system_true(self):
         """Test that we can filter a list of groups by system flag true."""
         system_group = Group.objects.create(system=True, tenant=self.tenant)
-        url = f"{reverse('group-list')}?system=true"
+        url = f"{reverse('v1_management:group-list')}?system=true"
         client = APIClient()
         response = client.get(url, **self.headers)
 
@@ -682,7 +688,7 @@ class GroupViewsetTests(IdentityRequest):
 
     def test_filter_group_list_by_system_false(self):
         """Test that we can filter a list of groups by system flag false."""
-        url = f"{reverse('group-list')}?system=false"
+        url = f"{reverse('v1_management:group-list')}?system=false"
         client = APIClient()
         response = client.get(url, **self.headers)
 
@@ -708,7 +714,7 @@ class GroupViewsetTests(IdentityRequest):
             tenant=self.tenant,
         )
 
-        url = f"{reverse('group-list')}?platform_default=true"
+        url = f"{reverse('v1_management:group-list')}?platform_default=true"
         client = APIClient()
         response = client.get(url, **self.headers)
 
@@ -719,7 +725,7 @@ class GroupViewsetTests(IdentityRequest):
 
     def test_filter_group_list_by_platform_default_false(self):
         """Test that we can filter a list of groups by platform_default flag false."""
-        url = f"{reverse('group-list')}?platform_default=false"
+        url = f"{reverse('v1_management:group-list')}?platform_default=false"
         client = APIClient()
         response = client.get(url, **self.headers)
 
@@ -746,7 +752,7 @@ class GroupViewsetTests(IdentityRequest):
             tenant=self.tenant,
         )
 
-        url = f"{reverse('group-list')}?admin_default=true"
+        url = f"{reverse('v1_management:group-list')}?admin_default=true"
         client = APIClient()
         response = client.get(url, **self.headers)
 
@@ -757,7 +763,7 @@ class GroupViewsetTests(IdentityRequest):
 
     def test_filter_group_list_by_admin_default_false(self):
         """Test that we can filter a list of groups by admin_default flag false."""
-        url = f"{reverse('group-list')}?admin_default=false"
+        url = f"{reverse('v1_management:group-list')}?admin_default=false"
         client = APIClient()
         response = client.get(url, **self.headers)
 
@@ -788,7 +794,7 @@ class GroupViewsetTests(IdentityRequest):
 
             org_id = self.customer_data["org_id"]
 
-            url = reverse("group-detail", kwargs={"uuid": self.group.uuid})
+            url = reverse("v1_management:group-detail", kwargs={"uuid": self.group.uuid})
             client = APIClient()
             response = client.put(url, test_data, format="json", **self.headers)
             self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -797,7 +803,7 @@ class GroupViewsetTests(IdentityRequest):
             self.assertEqual(updated_name, response.data.get("name"))
 
             # test whether newly edited (POST) group is added correctly within audit log database
-            al_url = "/api/v1/auditlogs/"
+            al_url = "/api/rbac/v1/auditlogs/"
             al_client = APIClient()
             al_response = al_client.get(al_url, **self.headers)
             retrieve_data = al_response.data.get("data")
@@ -838,7 +844,7 @@ class GroupViewsetTests(IdentityRequest):
 
     def test_update_default_group(self):
         """Test that platform_default groups are protected from updates"""
-        url = reverse("group-detail", kwargs={"uuid": self.defGroup.uuid})
+        url = reverse("v1_management:group-detail", kwargs={"uuid": self.defGroup.uuid})
         test_data = {"name": self.defGroup.name + "_updated"}
         client = APIClient()
         response = client.put(url, test_data, format="json", **self.headers)
@@ -846,7 +852,7 @@ class GroupViewsetTests(IdentityRequest):
 
     def test_update_admin_default_group(self):
         """Test that admin_default groups are protected from updates"""
-        url = reverse("group-detail", kwargs={"uuid": self.adminGroup.uuid})
+        url = reverse("v1_management:group-detail", kwargs={"uuid": self.adminGroup.uuid})
         test_data = {"name": self.adminGroup.name + "_updated"}
         client = APIClient()
         response = client.put(url, test_data, format="json", **self.headers)
@@ -854,7 +860,7 @@ class GroupViewsetTests(IdentityRequest):
 
     def test_update_admin_default_group_roles(self):
         """Test that admin_default groups' roles are protected from updates"""
-        url = reverse("group-roles", kwargs={"uuid": self.adminGroup.uuid})
+        url = reverse("v1_management:group-roles", kwargs={"uuid": self.adminGroup.uuid})
         test_data = {"roles": [self.roleB.uuid]}
         client = APIClient()
         response = client.post(url, test_data, format="json", **self.headers)
@@ -866,7 +872,7 @@ class GroupViewsetTests(IdentityRequest):
     )
     def test_failure_adding_principals_to_admin_default(self, mock_request):
         """Test that adding a principal to a admin default group will fail."""
-        url = reverse("group-principals", kwargs={"uuid": self.adminGroup.uuid})
+        url = reverse("v1_management:group-principals", kwargs={"uuid": self.adminGroup.uuid})
         client = APIClient()
         username = "test_user"
         test_data = {"principals": [{"username": username}]}
@@ -875,14 +881,14 @@ class GroupViewsetTests(IdentityRequest):
 
     def test_update_group_invalid(self):
         """Test that updating an invalid group returns an error."""
-        url = reverse("group-detail", kwargs={"uuid": uuid4()})
+        url = reverse("v1_management:group-detail", kwargs={"uuid": uuid4()})
         client = APIClient()
         response = client.put(url, {}, format="json", **self.headers)
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
     def test_update_group_invalid_guid(self):
         """Test that an invalid GUID on update causes a 400."""
-        url = reverse("group-detail", kwargs={"uuid": "invalid_guid"})
+        url = reverse("v1_management:group-detail", kwargs={"uuid": "invalid_guid"})
         client = APIClient()
         response = client.put(url, {}, format="json", **self.headers)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
@@ -892,7 +898,7 @@ class GroupViewsetTests(IdentityRequest):
     def test_delete_group_success(self, send_kafka_message, mock_method):
         """Test that we can delete an existing group."""
         with self.settings(NOTIFICATIONS_ENABLED=True):
-            url = reverse("group-roles", kwargs={"uuid": self.group.uuid})
+            url = reverse("v1_management:group-roles", kwargs={"uuid": self.group.uuid})
             request_body = {"roles": [self.role.uuid]}
 
             client = APIClient()
@@ -904,7 +910,7 @@ class GroupViewsetTests(IdentityRequest):
                 BindingMapping.objects.filter(role=self.role, resource_id=default_workspace_uuid).get().mappings["id"]
             )
 
-            url = reverse("group-detail", kwargs={"uuid": self.group.uuid})
+            url = reverse("v1_management:group-detail", kwargs={"uuid": self.group.uuid})
             client = APIClient()
             principals_user_ids = self.group.principals.values_list("user_id", flat=True)
             group_uuid = self.group.uuid
@@ -961,7 +967,7 @@ class GroupViewsetTests(IdentityRequest):
             org_id = self.customer_data["org_id"]
 
             # test whether correctly added to audit logs
-            al_url = "/api/v1/auditlogs/"
+            al_url = "/api/rbac/v1/auditlogs/"
             al_client = APIClient()
             al_response = al_client.get(al_url, **self.headers)
             retrieve_data = al_response.data.get("data")
@@ -1006,7 +1012,7 @@ class GroupViewsetTests(IdentityRequest):
 
     def test_delete_default_group(self):
         """Test that platform_default groups are protected from deletion"""
-        url = reverse("group-detail", kwargs={"uuid": self.defGroup.uuid})
+        url = reverse("v1_management:group-detail", kwargs={"uuid": self.defGroup.uuid})
         client = APIClient()
         response = client.delete(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
@@ -1034,37 +1040,37 @@ class GroupViewsetTests(IdentityRequest):
         )
         customDefPolicy.save()
 
-        url = f"{reverse('group-list')}?platform_default=true"
+        url = f"{reverse('v1_management:group-list')}?platform_default=true"
         response = client.get(url, **self.headers)
         self.assertEqual(len(response.data.get("data")), 1)
         self.assertEqual(response.data.get("data")[0]["uuid"], str(customDefGroup.uuid))
 
-        url = reverse("group-detail", kwargs={"uuid": customDefGroup.uuid})
+        url = reverse("v1_management:group-detail", kwargs={"uuid": customDefGroup.uuid})
         response = client.delete(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
 
-        url = f"{reverse('group-list')}?platform_default=true"
+        url = f"{reverse('v1_management:group-list')}?platform_default=true"
         response = client.get(url, **self.headers)
         self.assertEqual(len(response.data.get("data")), 1)
         self.assertEqual(response.data.get("data")[0]["uuid"], str(self.defGroup.uuid))
 
     def test_delete_group_invalid(self):
         """Test that deleting an invalid group returns an error."""
-        url = reverse("group-detail", kwargs={"uuid": uuid4()})
+        url = reverse("v1_management:group-detail", kwargs={"uuid": uuid4()})
         client = APIClient()
         response = client.delete(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
     def test_delete_group_invalid_guid(self):
         """Test that deleting group with an invalid GUID returns an error."""
-        url = reverse("group-detail", kwargs={"uuid": "invalid_guid"})
+        url = reverse("v1_management:group-detail", kwargs={"uuid": "invalid_guid"})
         client = APIClient()
         response = client.delete(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
     def test_group_principals_invalid_method(self):
         """Test that using an unsupported REST method returns an error."""
-        url = reverse("group-principals", kwargs={"uuid": uuid4()})
+        url = reverse("v1_management:group-principals", kwargs={"uuid": uuid4()})
         client = APIClient()
         response = client.put(url, {}, format="json", **self.headers)
         self.assertEqual(response.status_code, status.HTTP_405_METHOD_NOT_ALLOWED)
@@ -1084,7 +1090,7 @@ class GroupViewsetTests(IdentityRequest):
     )
     def test_add_group_principals_failure(self, mock_request):
         """Test that adding a principal to a group returns the proper response on failure."""
-        url = reverse("group-principals", kwargs={"uuid": self.group.uuid})
+        url = reverse("v1_management:group-principals", kwargs={"uuid": self.group.uuid})
         client = APIClient()
         new_username = uuid4()
         test_data = {
@@ -1101,7 +1107,7 @@ class GroupViewsetTests(IdentityRequest):
 
     def test_add_group_principal_invalid_guid(self):
         """Test that adding a principal to a group with an invalid GUID causes a 400."""
-        url = reverse("group-principals", kwargs={"uuid": "invalid_guid"})
+        url = reverse("v1_management:group-principals", kwargs={"uuid": "invalid_guid"})
         client = APIClient()
         test_data = {"principals": [{"username": self.principal.username}]}
         response = client.post(url, test_data, format="json", **self.headers)
@@ -1114,7 +1120,7 @@ class GroupViewsetTests(IdentityRequest):
     )
     def test_add_group_principal_not_exists(self, mock_request, mock_method):
         """Test that adding a non-existing principal into existing group causes a 404"""
-        url = reverse("group-principals", kwargs={"uuid": self.group.uuid})
+        url = reverse("v1_management:group-principals", kwargs={"uuid": self.group.uuid})
         client = APIClient()
         test_data = {"principals": [{"username": "not_existing_username"}]}
 
@@ -1142,7 +1148,7 @@ class GroupViewsetTests(IdentityRequest):
 
             org_id = self.customer_data["org_id"]
 
-            url = reverse("group-principals", kwargs={"uuid": test_group.uuid})
+            url = reverse("v1_management:group-principals", kwargs={"uuid": test_group.uuid})
             client = APIClient()
             username = "test_add_user"
             test_data = {
@@ -1220,7 +1226,7 @@ class GroupViewsetTests(IdentityRequest):
     def test_get_group_principals_empty(self, mock_request):
         """Test that getting principals from an empty group returns successfully."""
         client = APIClient()
-        url = reverse("group-principals", kwargs={"uuid": self.emptyGroup.uuid})
+        url = reverse("v1_management:group-principals", kwargs={"uuid": self.emptyGroup.uuid})
         response = client.get(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data.get("meta").get("count"), 0)
@@ -1228,14 +1234,14 @@ class GroupViewsetTests(IdentityRequest):
 
     def test_get_group_principals_invalid_guid(self):
         client = APIClient()
-        url = reverse("group-principals", kwargs={"uuid": "invalid"})
+        url = reverse("v1_management:group-principals", kwargs={"uuid": "invalid"})
         response = client.get(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
     def test_get_group_principals_invalid_sort_order(self):
         """Test that an invalid value for sort order is rejected."""
         client = APIClient()
-        url = reverse("group-principals", kwargs={"uuid": self.emptyGroup.uuid})
+        url = reverse("v1_management:group-principals", kwargs={"uuid": self.emptyGroup.uuid})
         url += "?order_by=themis"
         response = client.get(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
@@ -1252,7 +1258,7 @@ class GroupViewsetTests(IdentityRequest):
         ]
 
         client = APIClient()
-        url = reverse("group-principals", kwargs={"uuid": self.group.uuid})
+        url = reverse("v1_management:group-principals", kwargs={"uuid": self.group.uuid})
 
         response = client.get(url, **self.headers)
 
@@ -1275,7 +1281,7 @@ class GroupViewsetTests(IdentityRequest):
         """Test that getting principals from a nonempty group returns successfully."""
 
         client = APIClient()
-        url = reverse("group-principals", kwargs={"uuid": self.group.uuid}) + f"?admin_only=true"
+        url = reverse("v1_management:group-principals", kwargs={"uuid": self.group.uuid}) + f"?admin_only=true"
 
         response = client.get(url, **self.headers)
 
@@ -1311,7 +1317,7 @@ class GroupViewsetTests(IdentityRequest):
             test_user = Principal.objects.create(username="test_user", tenant=self.tenant, user_id="123798")
             self.group.principals.add(test_user)
 
-            url = reverse("group-principals", kwargs={"uuid": self.group.uuid})
+            url = reverse("v1_management:group-principals", kwargs={"uuid": self.group.uuid})
             client = APIClient()
 
             org_id = self.customer_data["org_id"]
@@ -1352,7 +1358,7 @@ class GroupViewsetTests(IdentityRequest):
 
     def test_remove_group_principals_invalid(self):
         """Test that removing a principal returns an error with invalid data format."""
-        url = reverse("group-principals", kwargs={"uuid": self.group.uuid})
+        url = reverse("v1_management:group-principals", kwargs={"uuid": self.group.uuid})
         client = APIClient()
         response = client.delete(url, format="json", **self.headers)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
@@ -1364,7 +1370,7 @@ class GroupViewsetTests(IdentityRequest):
     def test_remove_group_principals_invalid_guid(self):
         """Test that removing a principal returns an error when GUID is invalid."""
         invalid_uuid = "invalid"
-        url = reverse("group-principals", kwargs={"uuid": invalid_uuid})
+        url = reverse("v1_management:group-principals", kwargs={"uuid": invalid_uuid})
         client = APIClient()
         response = client.delete(url, format="json", **self.headers)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
@@ -1376,7 +1382,10 @@ class GroupViewsetTests(IdentityRequest):
     def test_remove_group_principals_invalid_username(self):
         """Test that removing a principal returns an error for invalid username."""
         invalid_username = "invalid_3098408"
-        url = reverse("group-principals", kwargs={"uuid": self.group.uuid}) + f"?usernames={invalid_username}"
+        url = (
+            reverse("v1_management:group-principals", kwargs={"uuid": self.group.uuid})
+            + f"?usernames={invalid_username}"
+        )
         client = APIClient()
         response = client.delete(url, format="json", **self.headers)
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
@@ -1403,14 +1412,14 @@ class GroupViewsetTests(IdentityRequest):
     )
     def test_get_group_by_username(self, mock_request):
         """Test that getting groups for a principal returns successfully."""
-        url = reverse("group-list")
+        url = reverse("v1_management:group-list")
         url = "{}?username={}".format(url, self.test_principal.username)
         client = APIClient()
         response = client.get(url, **self.test_headers)
         self.assertEqual(response.data.get("meta").get("count"), 4)
 
         # Return bad request when user does not exist
-        url = reverse("group-list")
+        url = reverse("v1_management:group-list")
         url = "{}?username={}".format(url, uuid4())
         client = APIClient()
         response = client.get(url, **self.test_headers)
@@ -1436,7 +1445,7 @@ class GroupViewsetTests(IdentityRequest):
     def test_get_group_by_username_no_assigned_group(self, mock_request):
         """Test that getting groups for a principal not assigned to a group returns successfully."""
         # User who is not added to a group explicitly will return platform default group
-        url = reverse("group-list")
+        url = reverse("v1_management:group-list")
         url = "{}?username={}".format(url, self.principalC.username)
         client = APIClient()
         response = client.get(url, **self.test_headers)
@@ -1463,7 +1472,7 @@ class GroupViewsetTests(IdentityRequest):
         """Test that getting groups for a cross account principal won't have platform default group."""
         self.test_principalC.cross_account = True
         self.test_principalC.save()
-        url = reverse("group-list")
+        url = reverse("v1_management:group-list")
         url = "{}?username={}".format(url, self.test_principalC.username)
         client = APIClient()
 
@@ -1491,7 +1500,7 @@ class GroupViewsetTests(IdentityRequest):
     )
     def test_get_group_by_username_with_capitalization(self, mock_request):
         """Test that getting groups for a username with capitalization returns successfully."""
-        url = reverse("group-list")
+        url = reverse("v1_management:group-list")
         username = "".join(random.choice([k.upper(), k]) for k in self.test_principal.username)
         url = "{}?username={}".format(url, username)
         client = APIClient()
@@ -1500,7 +1509,7 @@ class GroupViewsetTests(IdentityRequest):
 
     def test_get_group_roles_success(self):
         """Test that getting roles for a group returns successfully."""
-        url = reverse("group-roles", kwargs={"uuid": self.group.uuid})
+        url = reverse("v1_management:group-roles", kwargs={"uuid": self.group.uuid})
         client = APIClient()
         response = client.get(url, **self.headers)
         roles = response.data.get("data")
@@ -1513,7 +1522,7 @@ class GroupViewsetTests(IdentityRequest):
 
     def test_get_group_roles_with_exclude_false_success(self):
         """Test that getting roles with 'exclude=false' for a group works as default."""
-        url = "%s?exclude=FALSE" % (reverse("group-roles", kwargs={"uuid": self.group.uuid}))
+        url = "%s?exclude=FALSE" % (reverse("v1_management:group-roles", kwargs={"uuid": self.group.uuid}))
         client = APIClient()
         response = client.get(url, **self.headers)
         roles = response.data.get("data")
@@ -1526,7 +1535,7 @@ class GroupViewsetTests(IdentityRequest):
 
     def test_get_group_roles_with_exclude_success(self):
         """Test that getting roles with 'exclude=True' for a group returns successfully."""
-        url = "%s?exclude=True" % (reverse("group-roles", kwargs={"uuid": self.group.uuid}))
+        url = "%s?exclude=True" % (reverse("v1_management:group-roles", kwargs={"uuid": self.group.uuid}))
         client = APIClient()
         response = client.get(url, **self.headers)
         roles = response.data.get("data")
@@ -1537,7 +1546,9 @@ class GroupViewsetTests(IdentityRequest):
 
     def test_get_group_roles_with_exclude_in_principal_scope_success(self):
         """Test that getting roles with 'exclude=True' for a group in principal scope."""
-        url = "%s?exclude=True&scope=principal" % (reverse("group-roles", kwargs={"uuid": self.group.uuid}))
+        url = "%s?exclude=True&scope=principal" % (
+            reverse("v1_management:group-roles", kwargs={"uuid": self.group.uuid})
+        )
         client = APIClient()
         response = client.get(url, **self.headers)
         roles = response.data.get("data")
@@ -1550,7 +1561,7 @@ class GroupViewsetTests(IdentityRequest):
 
     def test_get_group_roles_ordered(self):
         """Test getting roles with 'order_by=' returns properly."""
-        url = f"{reverse('group-roles', kwargs={'uuid': self.group.uuid})}?order_by=-name"
+        url = f"{reverse('v1_management:group-roles', kwargs={'uuid': self.group.uuid})}?order_by=-name"
         client = APIClient()
 
         test_data = {"roles": [self.roleB.uuid]}
@@ -1566,27 +1577,27 @@ class GroupViewsetTests(IdentityRequest):
         self.assertEqual(roles[1].get("name"), self.role.name)
 
     def test_get_group_roles_ordered_bad_input(self):
-        url = f"{reverse('group-roles', kwargs={'uuid': self.group.uuid})}?order_by=-themis"
+        url = f"{reverse('v1_management:group-roles', kwargs={'uuid': self.group.uuid})}?order_by=-themis"
         client = APIClient()
         response = client.get(url, **self.headers)
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
     def test_get_group_roles_bad_group_guid(self):
-        url = f"{reverse('group-roles', kwargs={'uuid': 'kielbasa'})}"
+        url = f"{reverse('v1_management:group-roles', kwargs={'uuid': 'kielbasa'})}"
         client = APIClient()
         response = client.get(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
     def test_get_group_roles_nonexistent_group(self):
-        url = f"{reverse('group-roles', kwargs={'uuid': uuid4()})}"
+        url = f"{reverse('v1_management:group-roles', kwargs={'uuid': uuid4()})}"
         client = APIClient()
         response = client.get(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
     def test_exclude_input_invalid(self):
         """Test that getting roles with 'exclude=' for a group returns failed validation."""
-        url = "%s?exclude=sth" % (reverse("group-roles", kwargs={"uuid": self.group.uuid}))
+        url = "%s?exclude=sth" % (reverse("v1_management:group-roles", kwargs={"uuid": self.group.uuid}))
         client = APIClient()
         response = client.get(url, **self.headers)
 
@@ -1594,7 +1605,7 @@ class GroupViewsetTests(IdentityRequest):
 
     def test_role_name_filter_for_group_roles_no_match(self):
         """Test role_name filter for getting roles for a group."""
-        url = reverse("group-roles", kwargs={"uuid": self.group.uuid})
+        url = reverse("v1_management:group-roles", kwargs={"uuid": self.group.uuid})
         url = "{}?role_name=test".format(url)
         client = APIClient()
         response = client.get(url, **self.headers)
@@ -1605,7 +1616,7 @@ class GroupViewsetTests(IdentityRequest):
 
     def test_role_name_filter_for_group_roles_match(self):
         """Test role_name filter for getting roles for a group."""
-        url = reverse("group-roles", kwargs={"uuid": self.group.uuid})
+        url = reverse("v1_management:group-roles", kwargs={"uuid": self.group.uuid})
         url = "{}?role_name={}".format(url, self.role.name)
         client = APIClient()
         response = client.get(url, **self.headers)
@@ -1617,7 +1628,7 @@ class GroupViewsetTests(IdentityRequest):
 
     def test_role_display_name_filter_for_group_roles_no_match(self):
         """Test role_display_name filter for getting roles for a group."""
-        url = reverse("group-roles", kwargs={"uuid": self.group.uuid})
+        url = reverse("v1_management:group-roles", kwargs={"uuid": self.group.uuid})
         url = "{}?role_display_name=test".format(url)
         client = APIClient()
         response = client.get(url, **self.headers)
@@ -1628,7 +1639,7 @@ class GroupViewsetTests(IdentityRequest):
 
     def test_role_display_name_filter_for_group_roles_match(self):
         """Test role_display_name filter for getting roles for a group."""
-        url = reverse("group-roles", kwargs={"uuid": self.group.uuid})
+        url = reverse("v1_management:group-roles", kwargs={"uuid": self.group.uuid})
         url = "{}?role_display_name={}".format(url, self.role.name)
         client = APIClient()
         response = client.get(url, **self.headers)
@@ -1640,7 +1651,7 @@ class GroupViewsetTests(IdentityRequest):
 
     def test_role_description_filter_for_group_roles_no_match(self):
         """Test role_description filter for getting roles for a group."""
-        url = reverse("group-roles", kwargs={"uuid": self.group.uuid})
+        url = reverse("v1_management:group-roles", kwargs={"uuid": self.group.uuid})
         url = "{}?role_description=test".format(url)
         client = APIClient()
         response = client.get(url, **self.headers)
@@ -1651,7 +1662,7 @@ class GroupViewsetTests(IdentityRequest):
 
     def test_role_description_filter_for_group_roles_match(self):
         """Test role_description filter for getting roles for a group."""
-        url = reverse("group-roles", kwargs={"uuid": self.group.uuid})
+        url = reverse("v1_management:group-roles", kwargs={"uuid": self.group.uuid})
         url = "{}?role_description={}".format(url, self.role.description)
         client = APIClient()
         response = client.get(url, **self.headers)
@@ -1663,7 +1674,7 @@ class GroupViewsetTests(IdentityRequest):
 
     def test_all_role_filters_for_group_roles_no_match(self):
         """Test role filters for getting roles for a group."""
-        url = reverse("group-roles", kwargs={"uuid": self.group.uuid})
+        url = reverse("v1_management:group-roles", kwargs={"uuid": self.group.uuid})
         url = "{}?role_description=test&role_name=test".format(url)
         client = APIClient()
         response = client.get(url, **self.headers)
@@ -1674,7 +1685,7 @@ class GroupViewsetTests(IdentityRequest):
 
     def test_all_role_filters_for_group_roles_match(self):
         """Test role filters for getting roles for a group."""
-        url = reverse("group-roles", kwargs={"uuid": self.group.uuid})
+        url = reverse("v1_management:group-roles", kwargs={"uuid": self.group.uuid})
         url = "{}?role_description={}&role_name={}".format(url, self.role.description, self.role.name)
         client = APIClient()
         response = client.get(url, **self.headers)
@@ -1686,7 +1697,7 @@ class GroupViewsetTests(IdentityRequest):
 
     def test_group_filter_by_role_external_tenant(self):
         """Test that filtering groups by role_external_tenant succeeds."""
-        url = reverse("group-roles", kwargs={"uuid": self.group.uuid})
+        url = reverse("v1_management:group-roles", kwargs={"uuid": self.group.uuid})
         url = "{}?role_external_tenant={}".format(url, "foo")
         client = APIClient()
         response = client.get(url, **self.headers)
@@ -1698,7 +1709,7 @@ class GroupViewsetTests(IdentityRequest):
 
     def test_role_system_filter_for_group_roles(self):
         """Test role_system filter for getting roles for a group."""
-        base_url = reverse("group-roles", kwargs={"uuid": self.groupMultiRole.uuid})
+        base_url = reverse("v1_management:group-roles", kwargs={"uuid": self.groupMultiRole.uuid})
         client = APIClient()
         response = client.get(base_url, **self.headers)
         self.assertEqual(len(response.data.get("data")), 2)
@@ -1725,7 +1736,7 @@ class GroupViewsetTests(IdentityRequest):
     )
     def test_principal_username_filter_for_group_roles_no_match(self, mock_request):
         """Test principal_username filter for getting principals for a group."""
-        url = reverse("group-principals", kwargs={"uuid": self.group.uuid})
+        url = reverse("v1_management:group-principals", kwargs={"uuid": self.group.uuid})
         url = "{}?principal_username=test".format(url)
         client = APIClient()
         response = client.get(url, **self.headers)
@@ -1749,7 +1760,7 @@ class GroupViewsetTests(IdentityRequest):
     )
     def test_principal_username_filter_for_group_roles_match(self, mock_request):
         """Test principal_username filter for getting principals for a group."""
-        url = reverse("group-principals", kwargs={"uuid": self.group.uuid})
+        url = reverse("v1_management:group-principals", kwargs={"uuid": self.group.uuid})
         url = "{}?principal_username={}".format(url, self.principal.username)
         client = APIClient()
         response = client.get(url, **self.headers)
@@ -1773,7 +1784,7 @@ class GroupViewsetTests(IdentityRequest):
     )
     def test_principal_get_ordering_username_success(self, mock_request):
         """Test that passing a username order_by parameter calls the proxy correctly."""
-        url = f"{reverse('group-principals', kwargs={'uuid': self.group.uuid})}?order_by=username"
+        url = f"{reverse('v1_management:group-principals', kwargs={'uuid': self.group.uuid})}?order_by=username"
         client = APIClient()
         response = client.get(url, **self.headers)
         principals = response.data.get("data")
@@ -1797,7 +1808,7 @@ class GroupViewsetTests(IdentityRequest):
     )
     def test_principal_get_ordering_nonusername_fail(self, mock_request):
         """Test that passing a username order_by parameter calls the proxy correctly."""
-        url = f"{reverse('group-principals', kwargs={'uuid': self.group.uuid})}?order_by=best_joke"
+        url = f"{reverse('v1_management:group-principals', kwargs={'uuid': self.group.uuid})}?order_by=best_joke"
         client = APIClient()
         response = client.get(url, **self.headers)
         principals = response.data.get("data")
@@ -1808,7 +1819,7 @@ class GroupViewsetTests(IdentityRequest):
     @patch("management.group.relation_api_dual_write_group_handler.OutboxReplicator._save_replication_event")
     def test_add_group_roles_system_policy_create_success(self, mock_method):
         """Test that adding a role to a group without a system policy returns successfully."""
-        url = reverse("group-roles", kwargs={"uuid": self.group.uuid})
+        url = reverse("v1_management:group-roles", kwargs={"uuid": self.group.uuid})
         client = APIClient()
         test_data = {"roles": [self.roleB.uuid, self.dummy_role_id]}
 
@@ -1838,7 +1849,7 @@ class GroupViewsetTests(IdentityRequest):
         """Test that adding a role to a platform_default group flips the system flag."""
         kafka_mock = copy_call_args(send_kafka_message)
         with self.settings(NOTIFICATIONS_ENABLED=True):
-            url = reverse("group-roles", kwargs={"uuid": self.defGroup.uuid})
+            url = reverse("v1_management:group-roles", kwargs={"uuid": self.defGroup.uuid})
             client = APIClient()
             test_data = {"roles": [self.roleB.uuid, self.dummy_role_id]}
 
@@ -1938,7 +1949,7 @@ class GroupViewsetTests(IdentityRequest):
 
             org_id = self.customer_data["org_id"]
 
-            url = reverse("group-roles", kwargs={"uuid": self.defGroup.uuid})
+            url = reverse("v1_management:group-roles", kwargs={"uuid": self.defGroup.uuid})
             client = APIClient()
             url = "{}?roles={}".format(url, default_role.uuid)
             response = client.delete(url, format="json", **self.headers)
@@ -2008,7 +2019,7 @@ class GroupViewsetTests(IdentityRequest):
             kafka_mock.assert_has_calls(notification_messages, any_order=True)
 
     def test_add_group_roles_bad_group_guid(self):
-        group_url = reverse("group-roles", kwargs={"uuid": "master_exploder"})
+        group_url = reverse("v1_management:group-roles", kwargs={"uuid": "master_exploder"})
         client = APIClient()
         test_data = {"roles": [self.roleB.uuid]}
         response = client.post(group_url, test_data, format="json", **self.headers)
@@ -2016,8 +2027,8 @@ class GroupViewsetTests(IdentityRequest):
 
     def test_add_group_roles_system_policy_create_new_group_success(self):
         """Test that adding a role to a group without a system policy returns successfully."""
-        group_url = reverse("group-roles", kwargs={"uuid": self.group.uuid})
-        groupB_url = reverse("group-roles", kwargs={"uuid": self.groupB.uuid})
+        group_url = reverse("v1_management:group-roles", kwargs={"uuid": self.group.uuid})
+        groupB_url = reverse("v1_management:group-roles", kwargs={"uuid": self.groupB.uuid})
         client = APIClient()
         test_data = {"roles": [self.roleB.uuid]}
 
@@ -2036,7 +2047,7 @@ class GroupViewsetTests(IdentityRequest):
 
     def test_add_group_roles_system_policy_get_success(self):
         """Test that adding a role to a group with existing system policy returns successfully."""
-        url = reverse("group-roles", kwargs={"uuid": self.group.uuid})
+        url = reverse("v1_management:group-roles", kwargs={"uuid": self.group.uuid})
         client = APIClient()
         test_data = {"roles": [self.roleB.uuid, self.dummy_role_id]}
         system_policy_name = "System Policy for Group {}".format(self.group.uuid)
@@ -2065,7 +2076,7 @@ class GroupViewsetTests(IdentityRequest):
         kafka_mock = copy_call_args(send_kafka_message)
         with self.settings(NOTIFICATIONS_ENABLED=True):
             groupC = Group.objects.create(name="groupC", tenant=self.tenant)
-            url = reverse("group-roles", kwargs={"uuid": groupC.uuid})
+            url = reverse("v1_management:group-roles", kwargs={"uuid": groupC.uuid})
             client = APIClient()
             test_data = {"roles": [self.role.uuid, self.roleB.uuid]}
 
@@ -2155,7 +2166,7 @@ class GroupViewsetTests(IdentityRequest):
     def test_add_group_multiple_roles_invalid(self):
         """Test that adding invalid roles to a group fails the request and does not add any."""
         groupC = Group.objects.create(name="groupC", tenant=self.tenant)
-        url = reverse("group-roles", kwargs={"uuid": groupC.uuid})
+        url = reverse("v1_management:group-roles", kwargs={"uuid": groupC.uuid})
         client = APIClient()
         test_data = {"roles": ["abc123", self.roleB.uuid]}
 
@@ -2169,7 +2180,7 @@ class GroupViewsetTests(IdentityRequest):
     def test_add_group_multiple_roles_not_found_success(self):
         """Test that adding roles to a group skips ids not found, and returns success."""
         groupC = Group.objects.create(name="groupC", tenant=self.tenant)
-        url = reverse("group-roles", kwargs={"uuid": groupC.uuid})
+        url = reverse("v1_management:group-roles", kwargs={"uuid": groupC.uuid})
         client = APIClient()
         test_data = {"roles": [self.dummy_role_id, self.roleB.uuid]}
 
@@ -2182,7 +2193,7 @@ class GroupViewsetTests(IdentityRequest):
 
     def test_remove_group_roles_success(self):
         """Test that removing a role from a group returns successfully."""
-        url = reverse("group-roles", kwargs={"uuid": self.group.uuid})
+        url = reverse("v1_management:group-roles", kwargs={"uuid": self.group.uuid})
         client = APIClient()
         url = "{}?roles={}".format(url, self.role.uuid)
 
@@ -2198,7 +2209,7 @@ class GroupViewsetTests(IdentityRequest):
 
     def test_remove_admin_default_group_roles(self):
         """Test that admin_default groups' roles are protected from removal"""
-        url = reverse("group-roles", kwargs={"uuid": self.adminGroup.uuid})
+        url = reverse("v1_management:group-roles", kwargs={"uuid": self.adminGroup.uuid})
         client = APIClient()
         url = "{}?roles={}".format(url, self.role.uuid)
 
@@ -2210,7 +2221,7 @@ class GroupViewsetTests(IdentityRequest):
         """Test that removing multiple roles from a group returns successfully."""
         kafka_mock = copy_call_args(send_kafka_message)
         with self.settings(NOTIFICATIONS_ENABLED=True):
-            url = reverse("group-roles", kwargs={"uuid": self.group.uuid})
+            url = reverse("v1_management:group-roles", kwargs={"uuid": self.group.uuid})
             client = APIClient()
             url = "{}?roles={},{}".format(url, self.role.uuid, self.roleB.uuid)
 
@@ -2282,7 +2293,7 @@ class GroupViewsetTests(IdentityRequest):
 
     def test_remove_group_multiple_roles_invalid(self):
         """Test that removing invalid roles from a group fails the request and does not remove any."""
-        url = reverse("group-roles", kwargs={"uuid": self.group.uuid})
+        url = reverse("v1_management:group-roles", kwargs={"uuid": self.group.uuid})
         client = APIClient()
         url = "{}?roles={},{}".format(url, "abc123", self.roleB.uuid)
 
@@ -2297,7 +2308,7 @@ class GroupViewsetTests(IdentityRequest):
 
     def test_remove_group_multiple_roles_not_found_success(self):
         """Test that removing roles from a group skips ids not found, and returns success."""
-        url = reverse("group-roles", kwargs={"uuid": self.group.uuid})
+        url = reverse("v1_management:group-roles", kwargs={"uuid": self.group.uuid})
         client = APIClient()
         url = "{}?roles={},{},{}".format(url, self.role.uuid, self.roleB.uuid, self.dummy_role_id)
 
@@ -2312,7 +2323,7 @@ class GroupViewsetTests(IdentityRequest):
 
     def test_remove_group_roles_invalid(self):
         """Test that removing a role returns an error with invalid data format."""
-        url = reverse("group-roles", kwargs={"uuid": self.group.uuid})
+        url = reverse("v1_management:group-roles", kwargs={"uuid": self.group.uuid})
         client = APIClient()
 
         response = client.delete(url, format="json", **self.headers)
@@ -2320,13 +2331,13 @@ class GroupViewsetTests(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
     def test_remove_group_roles_bad_guid(self):
-        url = reverse("group-roles", kwargs={"uuid": "invalid"})
+        url = reverse("v1_management:group-roles", kwargs={"uuid": "invalid"})
         client = APIClient()
         response = client.delete(url, format="json", **self.headers)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
     def test_remove_group_roles_nonexistent_role(self):
-        url = reverse("group-roles", kwargs={"uuid": self.group.uuid})
+        url = reverse("v1_management:group-roles", kwargs={"uuid": self.group.uuid})
         url = "{}?roles={}".format(url, self.dummy_role_id)
         client = APIClient()
         response = client.delete(url, format="json", **self.headers)
@@ -2334,7 +2345,7 @@ class GroupViewsetTests(IdentityRequest):
 
     def test_admin_RonR(self):
         """Test that an admin user can group RBAC resources"""
-        url = "{}?application={}".format(reverse("group-list"), "rbac")
+        url = "{}?application={}".format(reverse("v1_management:group-list"), "rbac")
         client = APIClient()
         response = client.get(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -2351,7 +2362,7 @@ class GroupViewsetTests(IdentityRequest):
         ]
 
         client = APIClient()
-        url = reverse("group-principals", kwargs={"uuid": self.group.uuid})
+        url = reverse("v1_management:group-principals", kwargs={"uuid": self.group.uuid})
 
         response = client.get(url, {"principal_type": "user"}, **self.headers)
 
@@ -2396,7 +2407,7 @@ class GroupViewsetTests(IdentityRequest):
         ]
 
         # Test that /groups/{uuid}/principals/ returns correct data with default limit and offset
-        url = f"{reverse('group-principals', kwargs={'uuid': group.uuid})}"
+        url = f"{reverse('v1_management:group-principals', kwargs={'uuid': group.uuid})}"
         client = APIClient()
         response = client.get(url, **self.headers)
 
@@ -2417,7 +2428,7 @@ class GroupViewsetTests(IdentityRequest):
             limit = item["limit"]
             offset = item["offset"]
             expected_data_count = item["expected_data_count"]
-            url = f"{reverse('group-principals', kwargs={'uuid': group.uuid})}?limit={limit}&offset={offset}"
+            url = f"{reverse('v1_management:group-principals', kwargs={'uuid': group.uuid})}?limit={limit}&offset={offset}"
             client = APIClient()
             response = client.get(url, **self.headers)
 
@@ -2447,7 +2458,7 @@ class GroupViewsetTests(IdentityRequest):
 
         mock_request.return_value = mocked_values
 
-        url = f"{reverse('group-principals', kwargs={'uuid': self.group.uuid})}?principal_type=service-account"
+        url = f"{reverse('v1_management:group-principals', kwargs={'uuid': self.group.uuid})}?principal_type=service-account"
         client = APIClient()
         response = client.get(url, **self.headers)
 
@@ -2488,7 +2499,7 @@ class GroupViewsetTests(IdentityRequest):
 
         sa_type_param = "principal_type=service-account"
         username_only_param = "username_only=true"
-        url = f"{reverse('group-principals', kwargs={'uuid': self.group.uuid})}?{sa_type_param}&{username_only_param}"
+        url = f"{reverse('v1_management:group-principals', kwargs={'uuid': self.group.uuid})}?{sa_type_param}&{username_only_param}"
         client = APIClient()
         response = client.get(url, **self.headers)
 
@@ -2517,7 +2528,7 @@ class GroupViewsetTests(IdentityRequest):
             }
         ]
 
-        url = f"{reverse('group-principals', kwargs={'uuid': self.groupB.uuid})}?principal_type=service-account"
+        url = f"{reverse('v1_management:group-principals', kwargs={'uuid': self.groupB.uuid})}?principal_type=service-account"
         client = APIClient()
         response = client.get(url, **self.headers)
 
@@ -2548,7 +2559,7 @@ class GroupViewsetTests(IdentityRequest):
 
         # without limit and offset the default values are used
         # limit=10, offset=0
-        url = f"{reverse('group-principals', kwargs={'uuid': self.group.uuid})}?principal_type=service-account"
+        url = f"{reverse('v1_management:group-principals', kwargs={'uuid': self.group.uuid})}?principal_type=service-account"
         client = APIClient()
         response = client.get(url, **self.headers)
 
@@ -2559,7 +2570,7 @@ class GroupViewsetTests(IdentityRequest):
         # set custom limit and offset
         test_values = [(1, 1), (2, 2), (5, 5)]
         for limit, offset in test_values:
-            base_url = f"{reverse('group-principals', kwargs={'uuid': self.group.uuid})}"
+            base_url = f"{reverse('v1_management:group-principals', kwargs={'uuid': self.group.uuid})}"
             query_params = f"?principal_type=service-account&limit={limit}&offset={offset}"
             url = f"{base_url}{query_params}"
             client = APIClient()
@@ -2597,7 +2608,7 @@ class GroupViewsetTests(IdentityRequest):
 
         test_values = [(-1, 0), (10, -2), ("xxx", 0), (10, "xxx")]
         for limit, offset in test_values:
-            base_url = f"{reverse('group-principals', kwargs={'uuid': self.group.uuid})}"
+            base_url = f"{reverse('v1_management:group-principals', kwargs={'uuid': self.group.uuid})}"
             query_params = f"?principal_type=service-account&limit={limit}&offset={offset}"
             url = f"{base_url}{query_params}"
             client = APIClient()
@@ -2692,7 +2703,7 @@ class GroupViewsetTests(IdentityRequest):
         )
 
         url = (
-            f"{reverse('group-principals', kwargs={'uuid': group.uuid})}"
+            f"{reverse('v1_management:group-principals', kwargs={'uuid': group.uuid})}"
             f"?service_account_client_ids={service_accounts_client_ids}"
         )
 
@@ -2758,7 +2769,7 @@ class GroupViewsetTests(IdentityRequest):
         )
 
         url = (
-            f"{reverse('group-principals', kwargs={'uuid': self.group.uuid})}"
+            f"{reverse('v1_management:group-principals', kwargs={'uuid': self.group.uuid})}"
             f"?service_account_client_ids={service_accounts_client_ids}"
         )
 
@@ -2823,7 +2834,7 @@ class GroupViewsetTests(IdentityRequest):
         group.save()
 
         url = (
-            f"{reverse('group-principals', kwargs={'uuid': group.uuid})}"
+            f"{reverse('v1_management:group-principals', kwargs={'uuid': group.uuid})}"
             f"?service_account_client_ids={client_uuid}&limit=10&offset=0"
         )
 
@@ -2860,7 +2871,7 @@ class GroupViewsetTests(IdentityRequest):
 
         for query_parameter in query_parameters_to_test:
             url = (
-                f"{reverse('group-principals', kwargs={'uuid': self.group.uuid})}"
+                f"{reverse('v1_management:group-principals', kwargs={'uuid': self.group.uuid})}"
                 f"?service_account_client_ids={uuid4()}&{query_parameter}=abcde"
             )
             client = APIClient()
@@ -2882,7 +2893,7 @@ class GroupViewsetTests(IdentityRequest):
 
     def test_get_group_principals_check_service_account_ids_empty_client_ids(self):
         """Test that an empty service account IDs query param returns a bad request response"""
-        url = f"{reverse('group-principals', kwargs={'uuid': self.group.uuid})}?service_account_client_ids="
+        url = f"{reverse('v1_management:group-principals', kwargs={'uuid': self.group.uuid})}?service_account_client_ids="
         client = APIClient()
         response: Response = client.get(url, **self.headers)
 
@@ -2902,7 +2913,7 @@ class GroupViewsetTests(IdentityRequest):
 
     def test_get_group_principals_check_service_account_ids_blank_string(self):
         """Test that a blank service account IDs query param returns a bad request response"""
-        url = f"{reverse('group-principals', kwargs={'uuid': self.group.uuid})}?service_account_client_ids=     "
+        url = f"{reverse('v1_management:group-principals', kwargs={'uuid': self.group.uuid})}?service_account_client_ids=     "
         client = APIClient()
         response: Response = client.get(url, **self.headers)
 
@@ -2922,7 +2933,7 @@ class GroupViewsetTests(IdentityRequest):
 
     def test_get_group_principals_check_service_account_ids_invalid_uuid(self):
         """Test that an invalid service account ID query param returns a bad request response"""
-        url = f"{reverse('group-principals', kwargs={'uuid': self.group.uuid})}?service_account_client_ids=abcde"
+        url = f"{reverse('v1_management:group-principals', kwargs={'uuid': self.group.uuid})}?service_account_client_ids=abcde"
         client = APIClient()
         response: Response = client.get(url, **self.headers)
 
@@ -2980,7 +2991,7 @@ class GroupViewsetTests(IdentityRequest):
         service_account_principal = "principal_type=service-account"
         principal_username_filter = "principal_username=a"
         url = (
-            f"{reverse('group-principals', kwargs={'uuid': group.uuid})}"
+            f"{reverse('v1_management:group-principals', kwargs={'uuid': group.uuid})}"
             f"?{service_account_principal}"
             f"&{principal_username_filter}"
         )
@@ -2999,7 +3010,7 @@ class GroupViewsetTests(IdentityRequest):
         # Test that 0 SA is returned for SA with "r" in username
         principal_username_filter = "principal_username=r"
         url = (
-            f"{reverse('group-principals', kwargs={'uuid': group.uuid})}"
+            f"{reverse('v1_management:group-principals', kwargs={'uuid': group.uuid})}"
             f"?{service_account_principal}"
             f"&{principal_username_filter}"
         )
@@ -3190,21 +3201,21 @@ class GroupViewNonAdminTests(IdentityRequest):
 
     def test_nonadmin_RonR_list(self):
         """Test that a nonadmin user cannot list groups in tenant"""
-        url = "{}?application={}".format(reverse("group-list"), "rbac")
+        url = "{}?application={}".format(reverse("v1_management:group-list"), "rbac")
         client = APIClient()
         response = client.get(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
     def test_nonadmin_RonR_retrieve(self):
         """Test that a nonadmin user can't retrieve group RBAC resources"""
-        url = reverse("group-detail", kwargs={"uuid": self.group.uuid})
+        url = reverse("v1_management:group-detail", kwargs={"uuid": self.group.uuid})
         client = APIClient()
         response = client.get(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
     def test_add_group_roles_as_non_admin(self):
         """Test that adding roles a group as a non-admin is forbidden."""
-        url = reverse("group-roles", kwargs={"uuid": self.group.uuid})
+        url = reverse("v1_management:group-roles", kwargs={"uuid": self.group.uuid})
         client = APIClient()
         test_data = {"roles": [self.roleB.uuid, self.dummy_role_id]}
 
@@ -3214,14 +3225,14 @@ class GroupViewNonAdminTests(IdentityRequest):
 
     def test_remove_group_role_as_non_admin(self):
         """Test that removal of a role from a group is forbidden to non-admins."""
-        url = reverse("group-roles", kwargs={"uuid": self.group.uuid})
+        url = reverse("v1_management:group-roles", kwargs={"uuid": self.group.uuid})
         client = APIClient()
         url = "{}?roles={}".format(url, self.role.uuid)
         response = client.delete(url, format="json", **self.headers)
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
     def test_group_role_filter_as_non_admin(self):
-        url = "%s?exclude=FALSE" % (reverse("group-roles", kwargs={"uuid": self.group.uuid}))
+        url = "%s?exclude=FALSE" % (reverse("v1_management:group-roles", kwargs={"uuid": self.group.uuid}))
         client = APIClient()
         response = client.get(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
@@ -3269,7 +3280,7 @@ class GroupViewNonAdminTests(IdentityRequest):
         regular_group.save()
 
         # Generate the URL for adding principals to the regular group.
-        group_principals_url = reverse("group-principals", kwargs={"uuid": regular_group.uuid})
+        group_principals_url = reverse("v1_management:group-principals", kwargs={"uuid": regular_group.uuid})
         api_client = APIClient()
 
         # Create a new principal to be added to the regular group.
@@ -3460,7 +3471,7 @@ class GroupViewNonAdminTests(IdentityRequest):
         regular_group.principals.add(user_principal_to_remove)
 
         # Generate the URL for removing the principals from the regular group.
-        group_principals_url = reverse("group-principals", kwargs={"uuid": regular_group.uuid})
+        group_principals_url = reverse("v1_management:group-principals", kwargs={"uuid": regular_group.uuid})
         group_principals_url = f"{group_principals_url}?service-accounts={service_account_principal_to_delete.service_account_id}&usernames={user_principal_to_remove.username}"
         api_client = APIClient()
 
@@ -3585,7 +3596,7 @@ class GroupViewNonAdminTests(IdentityRequest):
         regular_group.save()
 
         # Generate the URL for adding principals to the regular group.
-        group_principals_url = reverse("group-principals", kwargs={"uuid": regular_group.uuid})
+        group_principals_url = reverse("v1_management:group-principals", kwargs={"uuid": regular_group.uuid})
         api_client = APIClient()
 
         # Create a new principal to be added to the regular group.
@@ -3771,7 +3782,7 @@ class GroupViewNonAdminTests(IdentityRequest):
         regular_group.principals.add(user_principal_to_remove)
 
         # Generate the URL for removing the principals from the regular group.
-        group_principals_url = reverse("group-principals", kwargs={"uuid": regular_group.uuid})
+        group_principals_url = reverse("v1_management:group-principals", kwargs={"uuid": regular_group.uuid})
         group_principals_url = f"{group_principals_url}?service-accounts={service_account_principal_to_delete.service_account_id}&usernames={user_principal_to_remove.username}"
         api_client = APIClient()
 
@@ -3853,7 +3864,7 @@ class GroupViewNonAdminTests(IdentityRequest):
 
     def test_create_group_without_User_Access_Admin_fail(self):
         """Test that non org admin without 'User Access administrator' role cannot create a group."""
-        url = reverse("group-list")
+        url = reverse("v1_management:group-list")
         client = APIClient()
 
         request_body = {"name": "New group name"}
@@ -3871,7 +3882,7 @@ class GroupViewNonAdminTests(IdentityRequest):
         group_with_UA_admin = self._create_group_with_user_access_administrator_role(self.tenant)
         group_with_UA_admin.principals.add(self.user_based_principal, self.service_account_principal)
 
-        url = reverse("group-list")
+        url = reverse("v1_management:group-list")
         client = APIClient()
 
         request_body = {"name": "New group created by user based principal"}
@@ -3887,7 +3898,7 @@ class GroupViewNonAdminTests(IdentityRequest):
         test_group = Group(name="test group", tenant=self.tenant)
         test_group.save()
 
-        url = reverse("group-detail", kwargs={"uuid": test_group.uuid})
+        url = reverse("v1_management:group-detail", kwargs={"uuid": test_group.uuid})
         request_body = {"name": "new name"}
         client = APIClient()
 
@@ -3911,7 +3922,7 @@ class GroupViewNonAdminTests(IdentityRequest):
         test_group = Group(name="test group", tenant=self.tenant)
         test_group.save()
 
-        url = reverse("group-detail", kwargs={"uuid": test_group.uuid})
+        url = reverse("v1_management:group-detail", kwargs={"uuid": test_group.uuid})
         client = APIClient()
 
         new_name_user = "New name - user based principal"
@@ -3951,7 +3962,7 @@ class GroupViewNonAdminTests(IdentityRequest):
             "access": access_data,
         }
 
-        url = reverse("role-list")
+        url = reverse("v1_management:role-list")
         # create a role
         client = APIClient()
         response = client.post(url, test_data, format="json", **self.headers_org_admin)
@@ -3963,7 +3974,7 @@ class GroupViewNonAdminTests(IdentityRequest):
         # Create a group and role we need for the test
         group = Group.objects.create(name="test group", tenant=self.tenant)
         request_body = {"roles": [role.uuid]}
-        url = reverse("group-roles", kwargs={"uuid": group.uuid})
+        url = reverse("v1_management:group-roles", kwargs={"uuid": group.uuid})
         client = APIClient()
 
         response = client.post(url, request_body, format="json", **self.headers_org_admin)
@@ -3987,7 +3998,7 @@ class GroupViewNonAdminTests(IdentityRequest):
 
         assert_group_tuples(to_add)
 
-        url = reverse("group-roles", kwargs={"uuid": group.uuid})
+        url = reverse("v1_management:group-roles", kwargs={"uuid": group.uuid})
         client = APIClient()
 
         url = "{}?roles={}".format(url, role.uuid)
@@ -4013,7 +4024,7 @@ class GroupViewNonAdminTests(IdentityRequest):
         user_access_admin_role = group_with_admin.roles()[0]
         request_body = {"roles": [user_access_admin_role.uuid]}
 
-        url = reverse("group-roles", kwargs={"uuid": test_group.uuid})
+        url = reverse("v1_management:group-roles", kwargs={"uuid": test_group.uuid})
         client = APIClient()
         response = client.post(url, request_body, format="json", **self.headers_org_admin)
 
@@ -4060,7 +4071,7 @@ class GroupViewNonAdminTests(IdentityRequest):
         assert_group_tuples(to_add)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
-        url = reverse("group-roles", kwargs={"uuid": test_group.uuid})
+        url = reverse("v1_management:group-roles", kwargs={"uuid": test_group.uuid})
         client = APIClient()
 
         url = "{}?roles={}".format(url, user_access_admin_role.uuid)
@@ -4089,14 +4100,14 @@ class GroupViewNonAdminTests(IdentityRequest):
         user_access_admin_role = group_with_UA_admin.roles()[0]
         request_body = {"roles": [user_access_admin_role.uuid]}
 
-        url = reverse("group-roles", kwargs={"uuid": test_group.uuid})
+        url = reverse("v1_management:group-roles", kwargs={"uuid": test_group.uuid})
         client = APIClient()
         response = client.post(url, request_body, format="json", **self.headers_org_admin)
         # Role 'User Access administrator' added successfully into test group
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
         # Try to update a group with 'User Access administrator'
-        url = reverse("group-detail", kwargs={"uuid": test_group.uuid})
+        url = reverse("v1_management:group-detail", kwargs={"uuid": test_group.uuid})
         request_body = {"name": "new name"}
 
         response = client.put(url, request_body, format="json", **self.headers_user_based_principal)
@@ -4123,7 +4134,7 @@ class GroupViewNonAdminTests(IdentityRequest):
         test_group = Group(name="test group", tenant=self.tenant)
         test_group.save()
 
-        url = reverse("group-detail", kwargs={"uuid": test_group.uuid})
+        url = reverse("v1_management:group-detail", kwargs={"uuid": test_group.uuid})
         client = APIClient()
 
         response = client.delete(url, **self.headers_user_based_principal)
@@ -4148,14 +4159,14 @@ class GroupViewNonAdminTests(IdentityRequest):
 
         client = APIClient()
 
-        url = reverse("group-detail", kwargs={"uuid": test_group.uuid})
+        url = reverse("v1_management:group-detail", kwargs={"uuid": test_group.uuid})
         response = client.delete(url, **self.headers_user_based_principal)
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
 
         test_group = Group(name="test group", tenant=self.tenant)
         test_group.save()
 
-        url = reverse("group-detail", kwargs={"uuid": test_group.uuid})
+        url = reverse("v1_management:group-detail", kwargs={"uuid": test_group.uuid})
         response = client.delete(url, **self.headers_service_account_principal)
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
 
@@ -4175,14 +4186,14 @@ class GroupViewNonAdminTests(IdentityRequest):
         user_access_admin_role = group_with_UA_admin.roles()[0]
         request_body = {"roles": [user_access_admin_role.uuid]}
 
-        url = reverse("group-roles", kwargs={"uuid": test_group.uuid})
+        url = reverse("v1_management:group-roles", kwargs={"uuid": test_group.uuid})
         client = APIClient()
         response = client.post(url, request_body, format="json", **self.headers_org_admin)
         # Role 'User Access administrator' added successfully into test group
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
         # Try to remove a group with 'User Access administrator'
-        url = reverse("group-detail", kwargs={"uuid": test_group.uuid})
+        url = reverse("v1_management:group-detail", kwargs={"uuid": test_group.uuid})
 
         response = client.delete(url, **self.headers_user_based_principal)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
@@ -4212,7 +4223,7 @@ class GroupViewNonAdminTests(IdentityRequest):
         test_group.principals.add(self.principal)
         test_group.save()
 
-        url = reverse("group-principals", kwargs={"uuid": test_group.uuid})
+        url = reverse("v1_management:group-principals", kwargs={"uuid": test_group.uuid})
         client = APIClient()
 
         response = client.get(url, format="json", **self.headers_user_based_principal)
@@ -4246,7 +4257,10 @@ class GroupViewNonAdminTests(IdentityRequest):
         test_group.principals.add(sa_principal)
         test_group.save()
 
-        url = reverse("group-principals", kwargs={"uuid": test_group.uuid}) + "?principal_type=service-account"
+        url = (
+            reverse("v1_management:group-principals", kwargs={"uuid": test_group.uuid})
+            + "?principal_type=service-account"
+        )
         client = APIClient()
 
         response = client.get(url, format="json", **self.headers_user_based_principal)
@@ -4283,7 +4297,7 @@ class GroupViewNonAdminTests(IdentityRequest):
         # Set the return value for the mock
         mock_request.return_value["data"] = [{"username": test_principal.username}]
 
-        url = reverse("group-principals", kwargs={"uuid": test_group.uuid})
+        url = reverse("v1_management:group-principals", kwargs={"uuid": test_group.uuid})
         client = APIClient()
 
         response = client.get(url, **self.headers_user_based_principal)
@@ -4333,7 +4347,10 @@ class GroupViewNonAdminTests(IdentityRequest):
         ]
         mock_request.return_value = mocked_values
 
-        url = reverse("group-principals", kwargs={"uuid": test_group.uuid}) + "?principal_type=service-account"
+        url = (
+            reverse("v1_management:group-principals", kwargs={"uuid": test_group.uuid})
+            + "?principal_type=service-account"
+        )
         client = APIClient()
 
         response = client.get(url, **self.headers_user_based_principal)
@@ -4362,7 +4379,7 @@ class GroupViewNonAdminTests(IdentityRequest):
         # Set the return value for the mock
         mock_request.return_value["data"] = [{"username": test_principal.username}]
 
-        url = reverse("group-principals", kwargs={"uuid": test_group.uuid})
+        url = reverse("v1_management:group-principals", kwargs={"uuid": test_group.uuid})
         client = APIClient()
 
         request_body = {"principals": [{"username": test_principal.username}]}
@@ -4415,7 +4432,7 @@ class GroupViewNonAdminTests(IdentityRequest):
         ]
         mock_request.return_value = mocked_values
 
-        url = reverse("group-principals", kwargs={"uuid": test_group.uuid})
+        url = reverse("v1_management:group-principals", kwargs={"uuid": test_group.uuid})
         client = APIClient()
 
         request_body = {"principals": [{"clientId": sa_uuid, "type": "service-account"}]}
@@ -4480,7 +4497,7 @@ class GroupViewNonAdminTests(IdentityRequest):
         # Set the return value for the mock
         mock_request.return_value["data"] = [{"username": test_principal.username, "user_id": "1234"}]
 
-        url = reverse("group-principals", kwargs={"uuid": test_group.uuid})
+        url = reverse("v1_management:group-principals", kwargs={"uuid": test_group.uuid})
         client = APIClient()
 
         request_body = {"principals": [{"username": test_principal.username}]}
@@ -4537,7 +4554,7 @@ class GroupViewNonAdminTests(IdentityRequest):
         ]
         mock_request.return_value = mocked_values
 
-        url = reverse("group-principals", kwargs={"uuid": test_group.uuid})
+        url = reverse("v1_management:group-principals", kwargs={"uuid": test_group.uuid})
         client = APIClient()
 
         request_body = {"principals": [{"clientId": sa_uuid, "type": "service-account"}]}
@@ -4574,7 +4591,7 @@ class GroupViewNonAdminTests(IdentityRequest):
         user_access_admin_role = group_with_UA_admin.roles()[0]
         request_body = {"roles": [user_access_admin_role.uuid]}
 
-        url = reverse("group-roles", kwargs={"uuid": test_group.uuid})
+        url = reverse("v1_management:group-roles", kwargs={"uuid": test_group.uuid})
         client = APIClient()
         response = client.post(url, request_body, format="json", **self.headers_org_admin)
         # Role 'User Access administrator' added successfully into test group
@@ -4586,7 +4603,7 @@ class GroupViewNonAdminTests(IdentityRequest):
         # Set the return value for the mock
         mock_request.return_value["data"] = [{"username": test_principal.username}]
 
-        url = reverse("group-principals", kwargs={"uuid": test_group.uuid})
+        url = reverse("v1_management:group-principals", kwargs={"uuid": test_group.uuid})
         client = APIClient()
 
         request_body = {"principals": [{"username": test_principal.username}]}
@@ -4626,7 +4643,7 @@ class GroupViewNonAdminTests(IdentityRequest):
         user_access_admin_role = group_with_UA_admin.roles()[0]
         request_body = {"roles": [user_access_admin_role.uuid]}
 
-        url = reverse("group-roles", kwargs={"uuid": test_group.uuid})
+        url = reverse("v1_management:group-roles", kwargs={"uuid": test_group.uuid})
         client = APIClient()
         response = client.post(url, request_body, format="json", **self.headers_org_admin)
         # Role 'User Access administrator' added successfully into test group
@@ -4656,7 +4673,7 @@ class GroupViewNonAdminTests(IdentityRequest):
         ]
         mock_request.return_value = mocked_values
 
-        url = reverse("group-principals", kwargs={"uuid": test_group.uuid})
+        url = reverse("v1_management:group-principals", kwargs={"uuid": test_group.uuid})
         client = APIClient()
 
         request_body = {"principals": [{"clientId": sa_uuid, "type": "service-account"}]}
@@ -4693,7 +4710,10 @@ class GroupViewNonAdminTests(IdentityRequest):
         test_group.principals.add(test_principal)
         test_group.save()
 
-        url = reverse("group-principals", kwargs={"uuid": test_group.uuid}) + f"?usernames={test_principal.username}"
+        url = (
+            reverse("v1_management:group-principals", kwargs={"uuid": test_group.uuid})
+            + f"?usernames={test_principal.username}"
+        )
         client = APIClient()
 
         response = client.delete(url, format="json", **self.headers_user_based_principal)
@@ -4731,7 +4751,7 @@ class GroupViewNonAdminTests(IdentityRequest):
         test_group.save()
 
         url = (
-            reverse("group-principals", kwargs={"uuid": test_group.uuid})
+            reverse("v1_management:group-principals", kwargs={"uuid": test_group.uuid})
             + f"?service-accounts={sa_principal.service_account_id}"
         )
         client = APIClient()
@@ -4766,7 +4786,10 @@ class GroupViewNonAdminTests(IdentityRequest):
         test_group.principals.add(test_principal)
         test_group.save()
 
-        url = reverse("group-principals", kwargs={"uuid": test_group.uuid}) + f"?usernames={test_principal.username}"
+        url = (
+            reverse("v1_management:group-principals", kwargs={"uuid": test_group.uuid})
+            + f"?usernames={test_principal.username}"
+        )
         client = APIClient()
 
         response = client.delete(url, format="json", **self.headers_user_based_principal)
@@ -4806,7 +4829,7 @@ class GroupViewNonAdminTests(IdentityRequest):
         test_group.save()
 
         url = (
-            reverse("group-principals", kwargs={"uuid": test_group.uuid})
+            reverse("v1_management:group-principals", kwargs={"uuid": test_group.uuid})
             + f"?service-accounts={sa_principal.service_account_id}"
         )
         client = APIClient()
@@ -4843,7 +4866,7 @@ class GroupViewNonAdminTests(IdentityRequest):
         user_access_admin_role = group_with_UA_admin.roles()[0]
         request_body = {"roles": [user_access_admin_role.uuid]}
 
-        url = reverse("group-roles", kwargs={"uuid": test_group.uuid})
+        url = reverse("v1_management:group-roles", kwargs={"uuid": test_group.uuid})
         client = APIClient()
         response = client.post(url, request_body, format="json", **self.headers_org_admin)
         # Role 'User Access administrator' added successfully into test group
@@ -4854,7 +4877,10 @@ class GroupViewNonAdminTests(IdentityRequest):
         test_group.principals.add(test_principal)
         test_group.save()
 
-        url = reverse("group-principals", kwargs={"uuid": test_group.uuid}) + f"?usernames={test_principal.username}"
+        url = (
+            reverse("v1_management:group-principals", kwargs={"uuid": test_group.uuid})
+            + f"?usernames={test_principal.username}"
+        )
         client = APIClient()
 
         response = client.delete(url, format="json", **self.headers_user_based_principal)
@@ -4894,7 +4920,7 @@ class GroupViewNonAdminTests(IdentityRequest):
         user_access_admin_role = group_with_UA_admin.roles()[0]
         request_body = {"roles": [user_access_admin_role.uuid]}
 
-        url = reverse("group-roles", kwargs={"uuid": test_group.uuid})
+        url = reverse("v1_management:group-roles", kwargs={"uuid": test_group.uuid})
         client = APIClient()
         response = client.post(url, request_body, format="json", **self.headers_org_admin)
         # Role 'User Access administrator' added successfully into test group
@@ -4912,7 +4938,7 @@ class GroupViewNonAdminTests(IdentityRequest):
         test_group.save()
 
         url = (
-            reverse("group-principals", kwargs={"uuid": test_group.uuid})
+            reverse("v1_management:group-principals", kwargs={"uuid": test_group.uuid})
             + f"?service-accounts={sa_principal.service_account_id}"
         )
         client = APIClient()
@@ -4949,7 +4975,7 @@ class GroupViewNonAdminTests(IdentityRequest):
         policy.roles.add(role)
         group.policies.add(policy)
 
-        url = reverse("group-roles", kwargs={"uuid": group.uuid})
+        url = reverse("v1_management:group-roles", kwargs={"uuid": group.uuid})
         client = APIClient()
 
         response = client.get(url, format="json", **self.headers_user_based_principal)
@@ -4986,7 +5012,7 @@ class GroupViewNonAdminTests(IdentityRequest):
         policy.roles.add(role)
         group.policies.add(policy)
 
-        url = reverse("group-roles", kwargs={"uuid": group.uuid})
+        url = reverse("v1_management:group-roles", kwargs={"uuid": group.uuid})
         client = APIClient()
 
         response = client.get(url, format="json", **self.headers_user_based_principal)
@@ -5012,7 +5038,7 @@ class GroupViewNonAdminTests(IdentityRequest):
         )
 
         request_body = {"roles": [role.uuid]}
-        url = reverse("group-roles", kwargs={"uuid": group.uuid})
+        url = reverse("v1_management:group-roles", kwargs={"uuid": group.uuid})
         client = APIClient()
 
         response = client.post(url, request_body, format="json", **self.headers_user_based_principal)
@@ -5048,7 +5074,7 @@ class GroupViewNonAdminTests(IdentityRequest):
         )
 
         request_body = {"roles": [role.uuid]}
-        url = reverse("group-roles", kwargs={"uuid": group.uuid})
+        url = reverse("v1_management:group-roles", kwargs={"uuid": group.uuid})
         client = APIClient()
 
         response = client.post(url, request_body, format="json", **self.headers_user_based_principal)
@@ -5075,7 +5101,7 @@ class GroupViewNonAdminTests(IdentityRequest):
         user_access_admin_role = group_with_UA_admin.roles()[0]
 
         request_body = {"roles": [user_access_admin_role.uuid]}
-        url = reverse("group-roles", kwargs={"uuid": group.uuid})
+        url = reverse("v1_management:group-roles", kwargs={"uuid": group.uuid})
         client = APIClient()
 
         response = client.post(url, request_body, format="json", **self.headers_user_based_principal)
@@ -5116,7 +5142,7 @@ class GroupViewNonAdminTests(IdentityRequest):
         )
 
         request_body = {"roles": [role.uuid]}
-        url = reverse("group-roles", kwargs={"uuid": group_with_UA_admin.uuid})
+        url = reverse("v1_management:group-roles", kwargs={"uuid": group_with_UA_admin.uuid})
         client = APIClient()
 
         response = client.post(url, request_body, format="json", **self.headers_user_based_principal)
@@ -5155,7 +5181,7 @@ class GroupViewNonAdminTests(IdentityRequest):
         policy.roles.add(role)
         group.policies.add(policy)
 
-        url = reverse("group-roles", kwargs={"uuid": group.uuid}) + f"?roles={role.uuid}"
+        url = reverse("v1_management:group-roles", kwargs={"uuid": group.uuid}) + f"?roles={role.uuid}"
         client = APIClient()
 
         response = client.delete(url, format="json", **self.headers_user_based_principal)
@@ -5191,7 +5217,7 @@ class GroupViewNonAdminTests(IdentityRequest):
         policy.roles.add(role)
         group.policies.add(policy)
 
-        url = reverse("group-roles", kwargs={"uuid": group.uuid}) + f"?roles={role.uuid}"
+        url = reverse("v1_management:group-roles", kwargs={"uuid": group.uuid}) + f"?roles={role.uuid}"
         client = APIClient()
 
         response = client.delete(url, format="json", **self.headers_user_based_principal)
@@ -5220,13 +5246,13 @@ class GroupViewNonAdminTests(IdentityRequest):
             tenant=self.tenant,
         )
         request_body = {"roles": [role.uuid]}
-        url = reverse("group-roles", kwargs={"uuid": group_with_UA_admin.uuid})
+        url = reverse("v1_management:group-roles", kwargs={"uuid": group_with_UA_admin.uuid})
         client = APIClient()
         response = client.post(url, request_body, format="json", **self.headers_org_admin)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
         # Test that non org admin with 'User Access administrator' role cannot remove a role
-        url = reverse("group-roles", kwargs={"uuid": group_with_UA_admin.uuid}) + f"?roles={role.uuid}"
+        url = reverse("v1_management:group-roles", kwargs={"uuid": group_with_UA_admin.uuid}) + f"?roles={role.uuid}"
 
         response = client.delete(url, format="json", **self.headers_user_based_principal)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
@@ -5261,13 +5287,15 @@ class GroupViewNonAdminTests(IdentityRequest):
         user_access_admin_role = group_with_UA_admin.roles()[0]
         request_body = {"roles": [user_access_admin_role.uuid]}
 
-        url = reverse("group-roles", kwargs={"uuid": group.uuid})
+        url = reverse("v1_management:group-roles", kwargs={"uuid": group.uuid})
         client = APIClient()
         response = client.post(url, request_body, format="json", **self.headers_org_admin)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
         # Test that non org admin with 'User Access administrator' role cannot remove a role
-        url = reverse("group-roles", kwargs={"uuid": group.uuid}) + f"?roles={user_access_admin_role.uuid}"
+        url = (
+            reverse("v1_management:group-roles", kwargs={"uuid": group.uuid}) + f"?roles={user_access_admin_role.uuid}"
+        )
 
         response = client.delete(url, format="json", **self.headers_user_based_principal)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
@@ -5289,7 +5317,7 @@ class GroupViewNonAdminTests(IdentityRequest):
 
     def test_list_groups_without_User_Access_Admin_success(self):
         """Test that non org admin without 'User Access administrator' role cannot list groups."""
-        url = reverse("group-list")
+        url = reverse("v1_management:group-list")
         client = APIClient()
 
         response = client.get(url, format="json", **self.headers_user_based_principal)
@@ -5306,7 +5334,7 @@ class GroupViewNonAdminTests(IdentityRequest):
         group_with_UA_admin = self._create_group_with_user_access_administrator_role(self.tenant)
         group_with_UA_admin.principals.add(self.user_based_principal, self.service_account_principal)
 
-        url = reverse("group-list")
+        url = reverse("v1_management:group-list")
         client = APIClient()
 
         response = client.get(url, format="json", **self.headers_user_based_principal)
@@ -5319,7 +5347,7 @@ class GroupViewNonAdminTests(IdentityRequest):
         """Test that non org admin without 'User Access administrator' role cannot read a group."""
         group = Group.objects.create(name="test group", tenant=self.tenant)
 
-        url = reverse("group-detail", kwargs={"uuid": group.uuid})
+        url = reverse("v1_management:group-detail", kwargs={"uuid": group.uuid})
         client = APIClient()
 
         response = client.get(url, format="json", **self.headers_user_based_principal)
@@ -5344,7 +5372,7 @@ class GroupViewNonAdminTests(IdentityRequest):
 
         group = Group.objects.create(name="test group", tenant=self.tenant)
 
-        url = reverse("group-detail", kwargs={"uuid": group.uuid})
+        url = reverse("v1_management:group-detail", kwargs={"uuid": group.uuid})
         client = APIClient()
 
         response = client.get(url, format="json", **self.headers_user_based_principal)
@@ -5364,7 +5392,7 @@ class GroupViewNonAdminTests(IdentityRequest):
         group_with_UA_admin = self._create_group_with_user_access_administrator_role(self.tenant)
         group_with_UA_admin.principals.add(self.user_based_principal, self.service_account_principal)
 
-        url = reverse("group-list") + "?scope=org_id"
+        url = reverse("v1_management:group-list") + "?scope=org_id"
         client = APIClient()
 
         response = client.get(url, format="json", **self.headers_user_based_principal)
@@ -5382,7 +5410,7 @@ class GroupViewNonAdminTests(IdentityRequest):
         with '?scope=org_id' query param.
         """
 
-        url = reverse("group-list") + "?scope=org_id"
+        url = reverse("v1_management:group-list") + "?scope=org_id"
         client = APIClient()
 
         response = client.get(url, format="json", **self.headers_user_based_principal)
@@ -5397,7 +5425,7 @@ class GroupViewNonAdminTests(IdentityRequest):
         """
         Test that users cannot list groups with invalid '?scope=foo' query param.
         """
-        url = reverse("group-list") + "?scope=foo"
+        url = reverse("v1_management:group-list") + "?scope=foo"
         client = APIClient()
 
         # The response for non admins is 403
@@ -5439,7 +5467,7 @@ class GroupViewNonAdminTests(IdentityRequest):
         """
         Test that users can list groups with '?scope=principal' query param.
         """
-        url = reverse("group-list") + "?scope=principal"
+        url = reverse("v1_management:group-list") + "?scope=principal"
         client = APIClient()
 
         response = client.get(url, format="json", **self.headers_user_based_principal)
@@ -5499,7 +5527,7 @@ class GroupViewNonAdminTests(IdentityRequest):
         # The usernames in header and in query are same
         client = APIClient()
         username_param = f"?username={self.user_based_principal.username}"
-        url = reverse("group-list") + username_param
+        url = reverse("v1_management:group-list") + username_param
 
         response = client.get(url, format="json", **self.headers_user_based_principal)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -5542,14 +5570,14 @@ class GroupViewNonAdminTests(IdentityRequest):
             ],
         }
         username_param = f"?username={self.user_based_principal.username}"
-        url = reverse("group-list") + username_param
+        url = reverse("v1_management:group-list") + username_param
         response = client.get(url, format="json", **self.headers_user_based_principal)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data.get("data")), 1)
 
         # The username in header and in query are not same
         username_param = f"?username={self.service_account_principal.username}"
-        url = reverse("group-list") + username_param
+        url = reverse("v1_management:group-list") + username_param
         response = client.get(url, format="json", **self.headers_user_based_principal)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data.get("data")), 0)
@@ -5579,14 +5607,14 @@ class GroupViewNonAdminTests(IdentityRequest):
             ],
         }
         username_param = f"?username={self.user_based_principal.username}"
-        url = reverse("group-list") + username_param
+        url = reverse("v1_management:group-list") + username_param
         response = client.get(url, format="json", **self.headers_user_based_principal)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data.get("data")), 0)
 
         # The username in header and in query are not same
         username_param = f"?username={self.service_account_principal.username}"
-        url = reverse("group-list") + username_param
+        url = reverse("v1_management:group-list") + username_param
         response = client.get(url, format="json", **self.headers_user_based_principal)
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
         self.assertEqual(response.data.get("errors")[0].get("detail"), self.no_permission_err_message)
@@ -5607,7 +5635,7 @@ class GroupViewNonAdminTests(IdentityRequest):
         client = APIClient()
 
         username_param = f"?username={self.service_account_principal.username}"
-        url = reverse("group-list") + username_param
+        url = reverse("v1_management:group-list") + username_param
         response = client.get(url, format="json", **self.headers_service_account_principal)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data.get("data")), 1)
@@ -5628,7 +5656,7 @@ class GroupViewNonAdminTests(IdentityRequest):
             ],
         }
         username_param = f"?username={self.user_based_principal.username}"
-        url = reverse("group-list") + username_param
+        url = reverse("v1_management:group-list") + username_param
         response = client.get(url, format="json", **self.headers_service_account_principal)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data.get("data")), 0)
@@ -5641,14 +5669,14 @@ class GroupViewNonAdminTests(IdentityRequest):
         # The usernames in header and in query are same
         client = APIClient()
         username_param = f"?username={self.service_account_principal.username}"
-        url = reverse("group-list") + username_param
+        url = reverse("v1_management:group-list") + username_param
         response = client.get(url, format="json", **self.headers_service_account_principal)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data.get("data")), 0)
 
         # The username in header and in query are not same
         username_param = f"?username={self.user_based_principal.username}"
-        url = reverse("group-list") + username_param
+        url = reverse("v1_management:group-list") + username_param
         response = client.get(url, format="json", **self.headers_service_account_principal)
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
         self.assertEqual(response.data.get("errors")[0].get("detail"), self.no_permission_err_message)
@@ -5671,7 +5699,7 @@ class GroupViewNonAdminTests(IdentityRequest):
         policy.save()
 
         # RBAC admin cannot update group with 'User Access administrator' role
-        url = reverse("group-detail", kwargs={"uuid": group_with_UA_admin.uuid})
+        url = reverse("v1_management:group-detail", kwargs={"uuid": group_with_UA_admin.uuid})
         request_body = {"name": "New name"}
         client = APIClient()
 
@@ -5690,7 +5718,7 @@ class GroupViewNonAdminTests(IdentityRequest):
         )
 
         # RBAC admin can update group with 'User Access principal viewer' role
-        url = reverse("group-detail", kwargs={"uuid": group_with_RBAC_viewer.uuid})
+        url = reverse("v1_management:group-detail", kwargs={"uuid": group_with_RBAC_viewer.uuid})
 
         response = client.put(url, request_body, format="json", **self.headers_user_based_principal)
         self.assertEqual(response.status_code, status.HTTP_200_OK)

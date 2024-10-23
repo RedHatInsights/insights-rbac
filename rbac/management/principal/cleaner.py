@@ -152,7 +152,7 @@ def retrieve_user_info(message) -> User:
     if user_id is None:
         raise ValueError("User id not found in message. instance_id=%s", instance_id)
 
-    bop_resp = PROXY.request_filtered_principals([user_id], options={"return_id": True})
+    bop_resp = PROXY.request_filtered_principals([user_id], options={"query_by": "user_id", "return_id": True})
 
     if not bop_resp["data"]:  # User has been deleted
         # Get data from message instead.

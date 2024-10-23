@@ -32,7 +32,7 @@ from unittest.mock import patch
 from tests.identity_request import IdentityRequest
 
 
-URL_LIST = reverse("cross-list")
+URL_LIST = reverse("v1_api:cross-list")
 
 
 class CrossAccountRequestViewTests(IdentityRequest):
@@ -529,7 +529,7 @@ class CrossAccountRequestViewTests(IdentityRequest):
         self.data4create["roles"] = ["role_8", "role_9"]
 
         car_uuid = self.request_2.request_id
-        url = reverse("cross-detail", kwargs={"pk": str(car_uuid)})
+        url = reverse("v1_api:cross-detail", kwargs={"pk": str(car_uuid)})
 
         client = APIClient()
         response = client.put(url, self.data4create, format="json", **self.associate_admin_request.META)
@@ -556,7 +556,7 @@ class CrossAccountRequestViewTests(IdentityRequest):
         self.request_1.target_org = self.another_org_id
         self.request_1.status = "pending"
         self.request_1.save()
-        url = reverse("cross-detail", kwargs={"pk": str(car_uuid)})
+        url = reverse("v1_api:cross-detail", kwargs={"pk": str(car_uuid)})
 
         client = APIClient()
         response = client.put(url, self.data4create, format="json", **self.associate_admin_request.META)
@@ -577,7 +577,7 @@ class CrossAccountRequestViewTests(IdentityRequest):
         self.data4create["target_org"] = "1000001"
 
         car_uuid = self.request_6.request_id
-        url = reverse("cross-detail", kwargs={"pk": car_uuid})
+        url = reverse("v1_api:cross-detail", kwargs={"pk": car_uuid})
 
         client = APIClient()
         response = client.put(url, self.data4create, format="json", **self.associate_admin_request.META)
@@ -590,7 +590,7 @@ class CrossAccountRequestViewTests(IdentityRequest):
         self.data4create["target_org"] = "1000001"
 
         car_uuid = self.request_6.request_id
-        url = reverse("cross-detail", kwargs={"pk": car_uuid})
+        url = reverse("v1_api:cross-detail", kwargs={"pk": car_uuid})
 
         client = APIClient()
         response = client.put(url, self.data4create, format="json", **self.associate_admin_request.META)
@@ -605,7 +605,7 @@ class CrossAccountRequestViewTests(IdentityRequest):
         car_uuid = self.request_3.request_id
         self.request_3.status = "expired"
         self.request_3.save()
-        url = reverse("cross-detail", kwargs={"pk": car_uuid})
+        url = reverse("v1_api:cross-detail", kwargs={"pk": car_uuid})
 
         client = APIClient()
         response = client.put(url, self.data4create, format="json", **self.associate_admin_request.META)
@@ -620,7 +620,7 @@ class CrossAccountRequestViewTests(IdentityRequest):
         # request_4's user_id is "2222222", associate_admin_request'user_id is "1111111"
         # request_4's target_account is "123456", associate_admin_request's account is "xxxxxx"
         car_uuid = self.request_4.request_id
-        url = reverse("cross-detail", kwargs={"pk": str(car_uuid)})
+        url = reverse("v1_api:cross-detail", kwargs={"pk": str(car_uuid)})
 
         client = APIClient()
         response = client.patch(url, update_data, format="json", **self.associate_admin_request.META)
@@ -631,7 +631,7 @@ class CrossAccountRequestViewTests(IdentityRequest):
         """Test updating part of a CAR."""
         # request_2's account is "xxxxxx" same as associate_admin_request's account
         car_uuid = self.request_2.request_id
-        url = reverse("cross-detail", kwargs={"pk": str(car_uuid)})
+        url = reverse("v1_api:cross-detail", kwargs={"pk": str(car_uuid)})
 
         client = APIClient()
 
@@ -666,7 +666,7 @@ class CrossAccountRequestViewTests(IdentityRequest):
         """Test updating part of a CAR fail due to invalid update for approver."""
         # request_2's account is "xxxxxx" same as associate_admin_request's account
         car_uuid = self.request_2.request_id
-        url = reverse("cross-detail", kwargs={"pk": str(car_uuid)})
+        url = reverse("v1_api:cross-detail", kwargs={"pk": str(car_uuid)})
         client = APIClient()
 
         # fail to update if approver is not admin
@@ -697,7 +697,7 @@ class CrossAccountRequestViewTests(IdentityRequest):
         """Test updating part of a CAR."""
         # request_6's user_id is "1111111" same as associate_admin_request's user_id
         car_uuid = self.request_6.request_id
-        url = reverse("cross-detail", kwargs={"pk": str(car_uuid)})
+        url = reverse("v1_api:cross-detail", kwargs={"pk": str(car_uuid)})
 
         client = APIClient()
         update_data = {"status": "cancelled"}
@@ -709,7 +709,7 @@ class CrossAccountRequestViewTests(IdentityRequest):
     def test_partial_update_approved_request_for_requestor(self):
         """Test that updating protected fields of a CAR fails."""
         car_uuid = self.request_3.request_id
-        url = reverse("cross-detail", kwargs={"pk": str(car_uuid)})
+        url = reverse("v1_api:cross-detail", kwargs={"pk": str(car_uuid)})
 
         client = APIClient()
 
@@ -725,7 +725,7 @@ class CrossAccountRequestViewTests(IdentityRequest):
         car_uuid = self.request_3.request_id
         self.request_3.status = "expired"
         self.request_3.save()
-        url = reverse("cross-detail", kwargs={"pk": car_uuid})
+        url = reverse("v1_api:cross-detail", kwargs={"pk": car_uuid})
 
         client = APIClient()
         response = client.patch(url, update_data, format="json", **self.associate_admin_request.META)
@@ -737,7 +737,7 @@ class CrossAccountRequestViewTests(IdentityRequest):
         update_data = {"start_date": self.format_date(self.ref_time + timedelta(2)), "cup": "cake"}
 
         car_uuid = self.request_6.request_id
-        url = reverse("cross-detail", kwargs={"pk": str(car_uuid)})
+        url = reverse("v1_api:cross-detail", kwargs={"pk": str(car_uuid)})
 
         client = APIClient()
         response = client.patch(url, update_data, format="json", **self.associate_admin_request.META)
@@ -757,7 +757,7 @@ class CrossAccountRequestViewTests(IdentityRequest):
         self.request_1.target_org = self.another_org_id
         self.request_1.status = "pending"
         self.request_1.save()
-        url = reverse("cross-detail", kwargs={"pk": car_uuid})
+        url = reverse("v1_api:cross-detail", kwargs={"pk": car_uuid})
 
         client = APIClient()
         response = client.put(url, self.data4create, format="json", **self.associate_admin_request.META)
@@ -773,7 +773,7 @@ class CrossAccountRequestViewTests(IdentityRequest):
         update_data = {"start_date": 12252021}
 
         car_uuid = self.request_6.request_id
-        url = reverse("cross-detail", kwargs={"pk": str(car_uuid)})
+        url = reverse("v1_api:cross-detail", kwargs={"pk": str(car_uuid)})
 
         client = APIClient()
         response = client.patch(url, update_data, format="json", **self.associate_admin_request.META)
@@ -790,7 +790,7 @@ class CrossAccountRequestViewTests(IdentityRequest):
 
         client = APIClient()
         for bad_uuid in bad_uuids:
-            url = reverse("cross-detail", kwargs={"pk": bad_uuid})
+            url = reverse("v1_api:cross-detail", kwargs={"pk": bad_uuid})
             response = client.put(url, self.data4create, format="json", **self.associate_admin_request.META)
             self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
             response = client.patch(url, self.data4create, format="json", **self.associate_admin_request.META)
@@ -801,7 +801,7 @@ class CrossAccountRequestViewTests(IdentityRequest):
         update_data = {"status": "approved"}
         principal_name = get_cross_principal_name(self.request_2.target_org, self.request_2.user_id)
         car_uuid = self.request_2.request_id
-        url = reverse("cross-detail", kwargs={"pk": str(car_uuid)})
+        url = reverse("v1_api:cross-detail", kwargs={"pk": str(car_uuid)})
         tenant = Tenant.objects.get(org_id=self.request_2.target_org)
 
         client = APIClient()

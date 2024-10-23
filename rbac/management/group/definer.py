@@ -168,8 +168,9 @@ def add_roles(group, roles_or_role_ids, tenant, user=None):
 
         system_policy.roles.add(role)
 
-        dual_write_handler = RelationApiDualWriteGroupHandler(group, ReplicationEventType.ASSIGN_ROLE, [])
-        dual_write_handler.replicate_added_role(role)
+        if tenant.tenant_name != "public":
+            dual_write_handler = RelationApiDualWriteGroupHandler(group, ReplicationEventType.ASSIGN_ROLE)
+            dual_write_handler.replicate_added_role(role)
         # Send notifications
         group_role_change_notification_handler(user, group, role, "added")
         auditlog_roles.append(role)
@@ -195,8 +196,9 @@ def remove_roles(group, roles_or_role_ids, tenant, user=None):
                 policy.roles.remove(role)
                 logger.info(f"Removing role {role} from group {group.name} for tenant {tenant.org_id}.")
 
-                dual_write_handler = RelationApiDualWriteGroupHandler(group, ReplicationEventType.UNASSIGN_ROLE, [])
-                dual_write_handler.replicate_removed_role(role)
+                if tenant.tenant_name != "public":
+                    dual_write_handler = RelationApiDualWriteGroupHandler(group, ReplicationEventType.UNASSIGN_ROLE)
+                    dual_write_handler.replicate_removed_role(role)
 
                 # Send notifications
                 group_role_change_notification_handler(user, group, role, "removed")
