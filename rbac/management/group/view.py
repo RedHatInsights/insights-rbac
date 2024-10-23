@@ -22,10 +22,10 @@ from uuid import UUID
 
 import requests
 from django.conf import settings
-from django.http import JsonResponse
-from django.db import transaction, IntegrityError
+from django.db import IntegrityError, transaction
 from django.db.models import Q
 from django.db.models.aggregates import Count
+from django.http import JsonResponse
 from django.utils.translation import gettext as _
 from django_filters import rest_framework as filters
 from management.authorization.scope_claims import ScopeClaims
