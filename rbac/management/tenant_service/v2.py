@@ -416,6 +416,34 @@ class V2TenantBootstrapService:
 
         return BootstrappedTenant(tenant, mapping, default_workspace=default_workspace, root_workspace=root_workspace)
 
+    def _create_default_relation_tuples(
+        self, default_workspace_uuid, role_binding_uuid, default_role_uuid, default_group_uuid
+    ):
+        return [
+            create_relationship(
+                ("rbac", "workspace"),
+                default_workspace_uuid,
+                ("rbac", "role_binding"),
+                role_binding_uuid,
+                "binding",
+            ),
+            create_relationship(
+                ("rbac", "role_binding"),
+                role_binding_uuid,
+                ("rbac", "role"),
+                default_role_uuid,
+                "role",
+            ),
+            create_relationship(
+                ("rbac", "role_binding"),
+                role_binding_uuid,
+                ("rbac", "group"),
+                default_group_uuid,
+                "subject",
+                "member",
+            ),
+        ]
+
     def _bootstrap_default_access(
         self, tenant: Tenant, mapping: TenantMapping, default_workspace_uuid: str, custom_groups=None
     ) -> List[Relationship]:
@@ -424,35 +452,6 @@ class V2TenantBootstrapService:
 
         Creates role bindings between the tenant's default workspace, default groups, and system policies.
         """
-
-        def _create_default_relation_tupples(
-            default_workspace_uuid, role_binding_uuid, default_role_uuid, default_group_uuid
-        ):
-            return [
-                create_relationship(
-                    ("rbac", "workspace"),
-                    default_workspace_uuid,
-                    ("rbac", "role_binding"),
-                    role_binding_uuid,
-                    "binding",
-                ),
-                create_relationship(
-                    ("rbac", "role_binding"),
-                    role_binding_uuid,
-                    ("rbac", "role"),
-                    default_role_uuid,
-                    "role",
-                ),
-                create_relationship(
-                    ("rbac", "role_binding"),
-                    role_binding_uuid,
-                    ("rbac", "group"),
-                    default_group_uuid,
-                    "subject",
-                    "member",
-                ),
-            ]
-
         platform_default_role_uuid = self._get_platform_default_policy_uuid()
         admin_default_role_uuid = self._get_admin_default_policy_uuid()
 
@@ -481,7 +480,7 @@ class V2TenantBootstrapService:
             if custom_groups is not None:
                 if mapping.default_group_uuid not in custom_groups:
                     tuples_to_add.extend(
-                        _create_default_relation_tupples(
+                        self._create_default_relation_tuples(
                             default_workspace_uuid,
                             default_user_role_binding_uuid,
                             platform_default_role_uuid,
@@ -491,7 +490,7 @@ class V2TenantBootstrapService:
             # TODO: change the filter to be uuid=mapping.default_group_uuid
             elif not Group.objects.filter(platform_default=True, tenant=tenant).exists():
                 tuples_to_add.extend(
-                    _create_default_relation_tupples(
+                    self._create_default_relation_tuples(
                         default_workspace_uuid,
                         default_user_role_binding_uuid,
                         platform_default_role_uuid,
@@ -501,7 +500,7 @@ class V2TenantBootstrapService:
         # Admin role binding is not customizable
         if admin_default_role_uuid:
             tuples_to_add.extend(
-                _create_default_relation_tupples(
+                self._create_default_relation_tuples(
                     default_workspace_uuid,
                     default_admin_role_binding_uuid,
                     admin_default_role_uuid,
