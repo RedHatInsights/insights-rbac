@@ -10,15 +10,28 @@ from management.management.commands.utils import populate_tenant_user_data, proc
 class TestProcessBatch(TestCase):
     @patch("management.management.commands.utils.process_batch")
     def test_populate_tenant_user_data(self, batch_mock):
-        mock_file_content = "orgs_info[0].id,orgs_info[0].perm[0],principals[0],_id\n1000000,admin:org:all,test_user_1,1\n10000001,admin:org:all,test_user_2,2\n"
+        mock_file_content = """orgs_info[0].id,orgs_info[0].perm[0],principals[0],_id
+1000000,admin:org:all,test_user_1,1
+10000001,admin:org:all,test_user_2,2
+10000002,,test_user_3,3
+10000003,,test_user_4,4
+"""
 
         with patch("builtins.open", mock_open(read_data=mock_file_content)):
-            populate_tenant_user_data(start_line=2)
+            populate_tenant_user_data(start_line=2, batch_size=2)
 
-        batch_mock.assert_called_once_with(
+        self.assertEqual(
+            batch_mock.call_args_list[0][0][0],
             [
                 ("10000001", True, "test_user_2", "2"),
-            ]
+                ("10000002", False, "test_user_3", "3"),
+            ],
+        )
+        self.assertEqual(
+            batch_mock.call_args_list[1][0][0],
+            [
+                ("10000003", False, "test_user_4", "4"),
+            ],
         )
 
     @patch("management.management.commands.utils.BOOT_STRAP_SERVICE")
