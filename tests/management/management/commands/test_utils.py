@@ -1,4 +1,3 @@
-
 from io import StringIO
 from unittest.mock import mock_open, patch
 
@@ -9,11 +8,10 @@ from management.management.commands.utils import populate_tenant_user_data, proc
 
 
 class TestProcessBatch(TestCase):
-
     @patch("management.management.commands.utils.process_batch")
     def test_populate_tenant_user_data(self, batch_mock):
         mock_file_content = "orgs_info[0].id,orgs_info[0].perm[0],principals[0],_id\n1000000,admin:org:all,test_user_1,1\n10000001,admin:org:all,test_user_2,2\n"
-                                     
+
         with patch("builtins.open", mock_open(read_data=mock_file_content)):
             populate_tenant_user_data(start_line=2)
 
@@ -21,7 +19,7 @@ class TestProcessBatch(TestCase):
             [
                 ("10000001", True, "test_user_2", "2"),
             ]
-        )        
+        )
 
     @patch("management.management.commands.utils.BOOT_STRAP_SERVICE")
     def test_process_batch(self, mock_bss):
