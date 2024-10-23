@@ -95,7 +95,7 @@ class V2TenantBootstrapService:
             ReplicationEvent(
                 event_type=ReplicationEventType.EXTERNAL_USER_UPDATE,
                 info={"user_id": user_id},
-                partition_key="rbactodo",
+                partition_key="settings.ENV_NAME",
                 add=tuples_to_add,
                 remove=tuples_to_remove,
             )
@@ -160,7 +160,7 @@ class V2TenantBootstrapService:
             ReplicationEvent(
                 event_type=ReplicationEventType.EXTERNAL_USER_UPDATE,
                 info={"bulk_import": ",".join([user.user_id for user in users if user.user_id is not None])},
-                partition_key="rbactodo",
+                partition_key="settings.ENV_NAME",
                 add=tuples_to_add,
                 remove=tuples_to_remove,
             )
@@ -223,7 +223,7 @@ class V2TenantBootstrapService:
             ReplicationEvent(
                 event_type=ReplicationEventType.EXTERNAL_USER_UPDATE,
                 info={"user_id": user_id},
-                partition_key="rbactodo",
+                partition_key="settings.ENV_NAME",
                 remove=tuples_to_remove,
             )
         )
@@ -286,7 +286,7 @@ class V2TenantBootstrapService:
             ReplicationEvent(
                 event_type=ReplicationEventType.BOOTSTRAP_TENANT,
                 info={"org_id": tenant.org_id, "default_workspace_uuid": str(default_workspace.uuid)},
-                partition_key="rbactodo",
+                partition_key="settings.ENV_NAME",
                 add=relationships,
             )
         )
