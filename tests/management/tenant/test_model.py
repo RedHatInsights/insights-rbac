@@ -24,6 +24,7 @@ from management.group.definer import add_roles, clone_default_group_in_public_sc
 from management.group.model import Group
 from management.management.commands.utils import process_batch
 from management.policy.model import Policy
+from management.principal.model import Principal
 from management.tenant_mapping.model import TenantMapping
 from management.tenant_service.v2 import V2TenantBootstrapService
 from management.workspace.model import Workspace
@@ -252,16 +253,17 @@ class V2TenantBootstrapServiceTest(TestCase):
         self.fixture.new_unbootstrapped_tenant(org_id="o4")
 
         users = []
-        for user_id, org_id, admin in [
-            ("u1", "o1", True),
-            ("u2", "o2", False),
-            ("u3", "o2", True),
-            ("u4", "o1", False),
-            ("u5", "o3", False),
-            ("u6", "o4", False),
+        for user_id, username, org_id, admin in [
+            ("u1", "username1", "o1", True),
+            ("u2", "username2", "o2", False),
+            ("u3", "username3", "o2", True),
+            ("u4", "username4", "o1", False),
+            ("u5", "username5", "o3", False),
+            ("u6", "username6", "o4", False),
         ]:
             user = User()
             user.user_id = user_id
+            user.username = username
             user.org_id = org_id
             user.admin = admin
             user.is_active = True
@@ -296,6 +298,52 @@ class V2TenantBootstrapServiceTest(TestCase):
         # Bootstraps fourth tenant with new default group
         _, mapping, _, _ = self.assertTenantBootstrapped("o4")  # 9
         self.assertAddedToDefaultGroup("localhost/u6", mapping)  # 1
+
+    def test_bulk_import_updates_user_ids_on_principals_but_does_not_add_principals(self):
+        bootstrapped = self.fixture.new_tenant(org_id="o1")
+        self.tuples.clear()
+
+        # Set up another org with custom default group but not bootstrapped
+        o3_tenant = self.fixture.new_unbootstrapped_tenant(org_id="o3")
+        self.fixture.custom_default_group(o3_tenant)
+
+        o4_tenant = self.fixture.new_unbootstrapped_tenant(org_id="o4")
+
+        # Existing bootstrapped tenant with existing user with id
+        Principal.objects.create(username="username1", tenant=bootstrapped.tenant, user_id="u1")
+        # Another user without an id
+        Principal.objects.create(username="username4", tenant=bootstrapped.tenant)
+
+        Principal.objects.create(username="username5", tenant=o3_tenant)
+        Principal.objects.create(username="username6", tenant=o4_tenant, user_id="u6")
+
+        users = []
+        for user_id, username, org_id, admin in [
+            ("u1", "username1", "o1", True),  # Already bootstrapped tenant, existing user with ID
+            ("u2", "username2", "o2", False),  # New tenant, so new user, shouldn't get created
+            ("u3", "username3", "o2", True),  # New tenant, so new user, shouldn't get created
+            ("u4", "username4", "o1", False),  # Already bootstrapped tenant, existing user without ID
+            ("u5", "username5", "o3", False),  # Unbootstrapped tenant, existing user without ID
+            ("u6", "username6", "o4", False),  # Unbootstrapped tenant, existing user with ID
+        ]:
+            user = User()
+            user.user_id = user_id
+            user.username = username
+            user.org_id = org_id
+            user.admin = admin
+            user.is_active = True
+            users.append(user)
+
+        self.service.import_bulk_users(users)
+
+        # Assert each principal has the right user ID
+        self.assertEqual("u1", Principal.objects.get(username="username1").user_id)
+        self.assertEqual("u4", Principal.objects.get(username="username4").user_id)
+        self.assertEqual("u5", Principal.objects.get(username="username5").user_id)
+        self.assertEqual("u6", Principal.objects.get(username="username6").user_id)
+
+        # Assert no extra principals created
+        self.assertEqual(4, Principal.objects.count())
 
     def assertAddedToDefaultGroup(self, user_id: str, tenant_mapping: TenantMapping, and_admin_group: bool = False):
         self.assertEqual(
