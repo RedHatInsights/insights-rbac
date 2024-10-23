@@ -7,7 +7,11 @@ from django.db import models, transaction
 from kessel.relations.v1beta1.common_pb2 import Relationship
 from management.group.model import Group
 from management.principal.model import Principal
-from management.role.relation_api_dual_write_handler import RelationReplicator, ReplicationEvent, ReplicationEventType
+from management.relation_replicator.relation_replicator import (
+    RelationReplicator,
+    ReplicationEvent,
+    ReplicationEventType,
+)
 from management.tenant_mapping.model import TenantMapping, logger
 from management.tenant_service.tenant_service import BootstrappedTenant
 from management.tenant_service.tenant_service import _ensure_principal_with_user_id_in_tenant
@@ -241,6 +245,9 @@ class V2TenantBootstrapService:
             return bootstrap
 
     def _bootstrap_tenant(self, tenant: Tenant) -> BootstrappedTenant:
+        if tenant.tenant_name == "public":
+            raise ValueError("Cannot bootstrap public tenant.")
+
         # Set up workspace hierarchy for Tenant
         root_workspace = Workspace.objects.create(
             tenant=tenant,

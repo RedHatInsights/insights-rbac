@@ -68,7 +68,7 @@ class WorkspaceViewTestsV2Enabled(WorkspaceViewTests):
         parent_workspace = Workspace.objects.create(**workspace_data)
         workspace = {"name": "New Workspace", "description": "Workspace", "parent_id": parent_workspace.uuid}
 
-        url = reverse("workspace-list")
+        url = reverse("v2_management:workspace-list")
         client = APIClient()
         response = client.post(url, workspace, format="json", **self.headers)
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
@@ -86,25 +86,23 @@ class WorkspaceViewTestsV2Enabled(WorkspaceViewTests):
         """Test for creating a workspace."""
         workspace = {"name": "New Workspace", "description": "Workspace"}
 
-        url = reverse("workspace-list")
+        url = reverse("v2_management:workspace-list")
         client = APIClient()
         response = client.post(url, workspace, format="json", **self.headers)
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        data = response.data
-        self.assertEqual(data.get("name"), "New Workspace")
-        self.assertNotEquals(data.get("uuid"), "")
-        self.assertIsNotNone(data.get("uuid"))
-        self.assertNotEquals(data.get("created"), "")
-        self.assertNotEquals(data.get("modified"), "")
-        self.assertEquals(data.get("description"), "Workspace")
-        self.assertEquals(data.get("type"), "standard")
-        self.assertEqual(response.get("content-type"), "application/json")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        status_code = response.data.get("status")
+        detail = response.data.get("detail")
+        self.assertIsNotNone(detail)
+        self.assertEqual(detail, "Field 'parent_id' is required.")
+
+        self.assertEqual(status_code, 400)
+        self.assertEqual(response.get("content-type"), "application/problem+json")
 
     def test_create_workspace_empty_body(self):
         """Test for creating a workspace."""
         workspace = {}
 
-        url = reverse("workspace-list")
+        url = reverse("v2_management:workspace-list")
         client = APIClient()
         response = client.post(url, workspace, format="json", **self.headers)
 
@@ -126,7 +124,7 @@ class WorkspaceViewTestsV2Enabled(WorkspaceViewTests):
         request = request_context["request"]
         headers = request.META
 
-        url = reverse("workspace-list")
+        url = reverse("v2_management:workspace-list")
         client = APIClient()
         response = client.post(url, workspace, format="json", **headers)
 
@@ -150,7 +148,7 @@ class WorkspaceViewTestsV2Enabled(WorkspaceViewTests):
 
         test_data = {"name": "New Workspace", "parent_id": self.init_workspace.uuid}
 
-        url = reverse("workspace-list")
+        url = reverse("v2_management:workspace-list")
         client = APIClient()
         response = client.post(url, test_data, format="json", **self.headers)
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
@@ -167,7 +165,7 @@ class WorkspaceViewTestsV2Enabled(WorkspaceViewTests):
 
         workspace = Workspace.objects.create(**workspace_data)
 
-        url = reverse("workspace-detail", kwargs={"uuid": workspace.uuid})
+        url = reverse("v2_management:workspace-detail", kwargs={"uuid": workspace.uuid})
         client = APIClient()
 
         workspace_data["name"] = "Updated name"
@@ -200,7 +198,7 @@ class WorkspaceViewTestsV2Enabled(WorkspaceViewTests):
 
         workspace = Workspace.objects.create(**workspace_data)
 
-        url = reverse("workspace-detail", kwargs={"uuid": workspace.uuid})
+        url = reverse("v2_management:workspace-detail", kwargs={"uuid": workspace.uuid})
         client = APIClient()
 
         workspace_request_data = {"name": "New Workspace"}
@@ -237,7 +235,7 @@ class WorkspaceViewTestsV2Enabled(WorkspaceViewTests):
 
         workspace = Workspace.objects.create(**workspace_data)
 
-        url = reverse("workspace-detail", kwargs={"uuid": workspace.uuid})
+        url = reverse("v2_management:workspace-detail", kwargs={"uuid": workspace.uuid})
         client = APIClient()
 
         workspace_request_data = {"name": "New Workspace", "parent_id": workspace.uuid, "description": "XX"}
@@ -263,7 +261,7 @@ class WorkspaceViewTestsV2Enabled(WorkspaceViewTests):
 
         workspace = Workspace.objects.create(**workspace_data)
 
-        url = reverse("workspace-detail", kwargs={"uuid": workspace.uuid})
+        url = reverse("v2_management:workspace-detail", kwargs={"uuid": workspace.uuid})
         client = APIClient()
 
         parent = "cbe9822d-cadb-447d-bc80-8bef773c36ea"
@@ -296,7 +294,7 @@ class WorkspaceViewTestsV2Enabled(WorkspaceViewTests):
 
         workspace = Workspace.objects.create(**workspace_data)
 
-        url = reverse("workspace-detail", kwargs={"uuid": workspace.uuid})
+        url = reverse("v2_management:workspace-detail", kwargs={"uuid": workspace.uuid})
         client = APIClient()
 
         workspace_data = {"name": "Updated name"}
@@ -318,7 +316,7 @@ class WorkspaceViewTestsV2Enabled(WorkspaceViewTests):
         """Test for updating a workspace with empty body"""
         workspace = {}
 
-        url = reverse("workspace-detail", kwargs={"uuid": self.init_workspace.uuid})
+        url = reverse("v2_management:workspace-detail", kwargs={"uuid": self.init_workspace.uuid})
         client = APIClient()
         response = client.put(url, workspace, format="json", **self.headers)
 
@@ -351,7 +349,7 @@ class WorkspaceViewTestsV2Enabled(WorkspaceViewTests):
 
         workspace_for_update = Workspace.objects.create(**workspace_data_for_update)
 
-        url = reverse("workspace-detail", kwargs={"uuid": workspace_for_update.uuid})
+        url = reverse("v2_management:workspace-detail", kwargs={"uuid": workspace_for_update.uuid})
         client = APIClient()
 
         workspace_data_for_put = {
@@ -372,7 +370,7 @@ class WorkspaceViewTestsV2Enabled(WorkspaceViewTests):
         request = request_context["request"]
         headers = request.META
 
-        url = reverse("workspace-detail", kwargs={"uuid": self.init_workspace.uuid})
+        url = reverse("v2_management:workspace-detail", kwargs={"uuid": self.init_workspace.uuid})
         client = APIClient()
         response = client.put(url, workspace, format="json", **headers)
 
@@ -385,7 +383,7 @@ class WorkspaceViewTestsV2Enabled(WorkspaceViewTests):
         self.assertEqual(response.get("content-type"), "application/problem+json")
 
     def test_get_workspace(self):
-        url = reverse("workspace-detail", kwargs={"uuid": self.init_workspace.uuid})
+        url = reverse("v2_management:workspace-detail", kwargs={"uuid": self.init_workspace.uuid})
         client = APIClient()
         response = client.get(url, None, format="json", **self.headers)
 
@@ -403,7 +401,7 @@ class WorkspaceViewTestsV2Enabled(WorkspaceViewTests):
         self.assertEqual(response.get("content-type"), "application/json")
 
     def test_get_workspace_with_ancestry(self):
-        base_url = reverse("workspace-detail", kwargs={"uuid": self.init_workspace.uuid})
+        base_url = reverse("v2_management:workspace-detail", kwargs={"uuid": self.init_workspace.uuid})
         url = f"{base_url}?include_ancestry=true"
         client = APIClient()
         response = client.get(url, None, format="json", **self.headers)
@@ -425,7 +423,7 @@ class WorkspaceViewTestsV2Enabled(WorkspaceViewTests):
         self.assertEqual(data.get("ancestry"), None)
 
     def test_get_workspace_with_ancestry(self):
-        base_url = reverse("workspace-detail", kwargs={"uuid": self.init_workspace.uuid})
+        base_url = reverse("v2_management:workspace-detail", kwargs={"uuid": self.init_workspace.uuid})
         url = f"{base_url}?include_ancestry=true"
         client = APIClient()
         response = client.get(url, None, format="json", **self.headers)
@@ -446,7 +444,7 @@ class WorkspaceViewTestsV2Enabled(WorkspaceViewTests):
         self.assertEqual(response.get("content-type"), "application/json")
 
     def test_get_workspace_not_found(self):
-        url = reverse("workspace-detail", kwargs={"uuid": "XXXX"})
+        url = reverse("v2_management:workspace-detail", kwargs={"uuid": "XXXX"})
         client = APIClient()
         response = client.get(url, None, format="json", **self.headers)
 
@@ -464,7 +462,7 @@ class WorkspaceViewTestsV2Enabled(WorkspaceViewTests):
         request = request_context["request"]
         headers = request.META
 
-        url = reverse("workspace-detail", kwargs={"uuid": self.init_workspace.uuid})
+        url = reverse("v2_management:workspace-detail", kwargs={"uuid": self.init_workspace.uuid})
         client = APIClient()
         response = client.get(url, None, format="json", **headers)
 
@@ -485,7 +483,7 @@ class WorkspaceViewTestsV2Enabled(WorkspaceViewTests):
 
         workspace = Workspace.objects.create(**workspace_data)
 
-        url = reverse("workspace-detail", kwargs={"uuid": workspace.uuid})
+        url = reverse("v2_management:workspace-detail", kwargs={"uuid": workspace.uuid})
         client = APIClient()
         test_headers = self.headers.copy()
         test_headers["HTTP_ACCEPT"] = "application/problem+json"
@@ -497,7 +495,7 @@ class WorkspaceViewTestsV2Enabled(WorkspaceViewTests):
         self.assertIsNone(deleted_workspace)
 
     def test_delete_workspace_not_found(self):
-        url = reverse("workspace-detail", kwargs={"uuid": "XXXX"})
+        url = reverse("v2_management:workspace-detail", kwargs={"uuid": "XXXX"})
         client = APIClient()
         response = client.delete(url, None, format="json", **self.headers)
 
@@ -514,7 +512,7 @@ class WorkspaceViewTestsV2Enabled(WorkspaceViewTests):
         request = request_context["request"]
         headers = request.META
 
-        url = reverse("workspace-detail", kwargs={"uuid": self.init_workspace.uuid})
+        url = reverse("v2_management:workspace-detail", kwargs={"uuid": self.init_workspace.uuid})
         client = APIClient()
         response = client.delete(url, None, format="json", **headers)
 
@@ -553,7 +551,7 @@ class TestsList(WorkspaceViewTests):
 
     def test_workspace_list_unfiltered(self):
         """List workspaces unfiltered."""
-        url = reverse("workspace-list")
+        url = reverse("v2_management:workspace-list")
         client = APIClient()
         response = client.get(url, None, format="json", **self.headers)
         payload = response.data
@@ -563,7 +561,7 @@ class TestsList(WorkspaceViewTests):
 
     def test_workspace_list_all(self):
         """List workspaces type=all."""
-        url = reverse("workspace-list")
+        url = reverse("v2_management:workspace-list")
         client = APIClient()
         response = client.get(f"{url}?type=all", None, format="json", **self.headers)
         payload = response.data
@@ -573,7 +571,7 @@ class TestsList(WorkspaceViewTests):
 
     def test_workspace_list_standard(self):
         """List workspaces type=standard."""
-        url = reverse("workspace-list")
+        url = reverse("v2_management:workspace-list")
         client = APIClient()
         response = client.get(f"{url}?type=standard", None, format="json", **self.headers)
         payload = response.data
@@ -585,7 +583,7 @@ class TestsList(WorkspaceViewTests):
 
     def test_workspace_list_root(self):
         """List workspaces type=root."""
-        url = reverse("workspace-list")
+        url = reverse("v2_management:workspace-list")
         client = APIClient()
         response = client.get(f"{url}?type=root", None, format="json", **self.headers)
         payload = response.data
@@ -597,7 +595,7 @@ class TestsList(WorkspaceViewTests):
 
     def test_workspace_list_default(self):
         """List workspaces type=default."""
-        url = reverse("workspace-list")
+        url = reverse("v2_management:workspace-list")
         client = APIClient()
         response = client.get(f"{url}?type=default", None, format="json", **self.headers)
         payload = response.data
