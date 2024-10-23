@@ -169,8 +169,8 @@ class V2TenantBootstrapService:
 
         self._replicator.replicate(
             ReplicationEvent(
-                event_type=ReplicationEventType.EXTERNAL_USER_UPDATE,
-                info={"bulk_import": "users_default_group_relationships"},
+                event_type=ReplicationEventType.BULK_EXTERNAL_USER_UPDATE,
+                info={"num_users": len(users), "first_user_id": users[0].user_id if users else None},
                 partition_key="rbactodo",
                 add=tuples_to_add,
                 remove=tuples_to_remove,
@@ -323,8 +323,8 @@ class V2TenantBootstrapService:
             bootstrapped_tenants.append(BootstrappedTenant(tenant, mapping))
         self._replicator.replicate(
             ReplicationEvent(
-                event_type=ReplicationEventType.BOOTSTRAP_TENANT,
-                info={"CJI": "bulk_bootstrap"},
+                event_type=ReplicationEventType.BULK_BOOTSTRAP_TENANT,
+                info={"num_tenants": len(tenants), "first_org_id": tenants[0].org_id if tenants else None},
                 partition_key="rbactodo",
                 add=relationships,
             )
