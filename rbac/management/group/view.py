@@ -263,12 +263,27 @@ class GroupViewSet(
             if "unique constraint" in str(e.args):
                 return JsonResponse(
                     {
-                        "detail": "A group with this name already exists for this tenant",
-                        "source": "Group unique constraint violation error",
-                        "status": status.HTTP_400_BAD_REQUEST,
-                    },
-                    status=status.HTTP_400_BAD_REQUEST,
+                        "errors": [
+                            {
+                                "detail": f"A group with the name '{request.data.get('name')}' exists for this tenant",
+                                "source": "Group unique constraint violation error",
+                                "status": status.HTTP_400_BAD_REQUEST,
+                            },
+                        ]
+                    }
                 )
+        except IntegrityError as e:
+            return JsonResponse(
+                {
+                    "errors": [
+                        {
+                            "detail": "An unknown Integrity Error occurred while trying to add a group for this tenant",
+                            "source": f"{e.args}",
+                            "status": status.HTTP_400_BAD_REQUEST,
+                        },
+                    ]
+                }
+            )
 
         if status.is_success(create_group.status_code):
             auditlog = AuditLog()

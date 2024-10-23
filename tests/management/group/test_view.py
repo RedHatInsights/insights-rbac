@@ -345,9 +345,9 @@ class GroupViewsetTests(IdentityRequest):
             client = APIClient()
             response = client.post(url, test_data, format="json", **self.headers)
             self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-
             response = client.post(url, test_data, format="json", **self.headers)
-            self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+            duplicate_response_data = json.loads(response.content)
+            self.assertEqual(duplicate_response_data["errors"][0].get("status"), status.HTTP_400_BAD_REQUEST)
 
     def test_create_group_with_reserved_name(self):
         """Test that creating a group with reserved name is not allowed."""
@@ -5378,6 +5378,9 @@ class GroupViewNonAdminTests(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
     def test_duplicate_entry_message(self):
+        """
+        Test that when a duplicate group is added for a tenant the correct error response is being returned
+        """
         # Initial group creation
         request_body = {"name": "duplicateEntry"}
         url = reverse("v1_management:group-list")
@@ -5396,7 +5399,10 @@ class GroupViewNonAdminTests(IdentityRequest):
 
             # Validate the response content
             self.assertEqual(
-                duplicate_response_data["detail"], "A group with this name already exists for this tenant"
+                duplicate_response_data["errors"][0].get("detail"),
+                "A group with the name 'duplicateEntry' exists for this tenant",
             )
-            self.assertEqual(duplicate_response_data["source"], "Group unique constraint violation error")
-            self.assertEqual(duplicate_response.status_code, status.HTTP_400_BAD_REQUEST)
+            self.assertEqual(
+                duplicate_response_data["errors"][0].get("source"), "Group unique constraint violation error"
+            )
+            self.assertEqual(duplicate_response_data["errors"][0].get("status"), status.HTTP_400_BAD_REQUEST)
