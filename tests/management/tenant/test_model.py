@@ -397,6 +397,12 @@ class V2TenantBootstrapServiceTest(TestCase):
         custom_default_group = with_custom_default_group
 
         self.assertEqual(
+            default.parent_id,
+            root.uuid,
+            f"Expected default workspace to be child of root workspace for tenant {org_id}",
+        )
+
+        self.assertEqual(
             1,
             self.tuples.count_tuples(
                 all_of(

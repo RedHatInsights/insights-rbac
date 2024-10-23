@@ -233,35 +233,9 @@ class V2TenantBootstrapService:
             raise ValueError("Cannot bootstrap public tenant.")
 
         # Set up workspace hierarchy for Tenant
-        root_workspace = Workspace.objects.create(
-            tenant=tenant,
-            type=Workspace.Types.ROOT,
-            name="Root Workspace",
-        )
-        default_workspace = Workspace.objects.create(
-            tenant=tenant,
-            type=Workspace.Types.DEFAULT,
-            parent=root_workspace,
-            name="Default Workspace",
-        )
-        tenant_id = f"{self._user_domain}/{tenant.org_id}"
-        relationships = [
-            create_relationship(
-                ("rbac", "workspace"),
-                str(default_workspace.uuid),
-                ("rbac", "workspace"),
-                str(root_workspace.uuid),
-                "parent",
-            ),
-            create_relationship(
-                ("rbac", "workspace"), str(root_workspace.uuid), ("rbac", "tenant"), tenant_id, "parent"
-            ),
-        ]
-
-        # Include platform for tenant
-        relationships.append(
-            create_relationship(("rbac", "tenant"), tenant_id, ("rbac", "platform"), settings.ENV_NAME, "platform")
-        )
+        root_workspace, default_workspace, relationships = self._built_in_workspaces(tenant)
+        root_workspace.save(force_insert=True)
+        default_workspace.save(force_insert=True)
 
         # We do not check for custom default group here.
         # By this point if there is a custom default group,
@@ -329,37 +303,11 @@ class V2TenantBootstrapService:
                 kwargs["default_group_uuid"] = tenant.platform_default_groups[0].uuid
             mappings_to_create.append(TenantMapping(**kwargs))
 
-            root_workspace_uuid = uuid4()
-            default_workspace_uuid = uuid4()
-            workspaces.append(
-                Workspace(uuid=root_workspace_uuid, tenant=tenant, type=Workspace.Types.ROOT, name="Root Workspace")
-            )
-            workspaces.append(
-                Workspace(
-                    uuid=default_workspace_uuid, tenant=tenant, type=Workspace.Types.DEFAULT, name="Default Workspace"
-                )
-            )
-            default_workspace_uuids.append(default_workspace_uuid)
-            tenant_id = f"{self._user_domain}/{tenant.org_id}"
-            relationships.extend(
-                [
-                    create_relationship(
-                        ("rbac", "workspace"),
-                        str(default_workspace_uuid),
-                        ("rbac", "workspace"),
-                        str(root_workspace_uuid),
-                        "parent",
-                    ),
-                    create_relationship(
-                        ("rbac", "workspace"), str(root_workspace_uuid), ("rbac", "tenant"), tenant_id, "parent"
-                    ),
-                ]
-            )
+            root, default, built_in_relationships = self._built_in_workspaces(tenant)
 
-            # Include platform for tenant
-            relationships.append(
-                create_relationship(("rbac", "tenant"), tenant_id, ("rbac", "platform"), settings.ENV_NAME, "platform")
-            )
+            default_workspace_uuids.append(default.uuid)
+            workspaces.extend([root, default])
+            relationships.extend(built_in_relationships)
 
         Workspace.objects.bulk_create(workspaces)
 
@@ -488,6 +436,44 @@ class V2TenantBootstrapService:
                 )
             )
         return tuples_to_add
+
+    def _built_in_workspaces(self, tenant: Tenant) -> tuple[Workspace, Workspace, list[Relationship]]:
+        relationships = []
+
+        root_workspace_uuid = uuid4()
+        default_workspace_uuid = uuid4()
+
+        root = Workspace(uuid=root_workspace_uuid, tenant=tenant, type=Workspace.Types.ROOT, name="Root Workspace")
+        default = Workspace(
+            uuid=default_workspace_uuid,
+            parent_id=root.uuid,
+            tenant=tenant,
+            type=Workspace.Types.DEFAULT,
+            name="Default Workspace",
+        )
+
+        tenant_id = f"{self._user_domain}/{tenant.org_id}"
+
+        relationships.extend(
+            [
+                create_relationship(
+                    ("rbac", "workspace"),
+                    str(default_workspace_uuid),
+                    ("rbac", "workspace"),
+                    str(root_workspace_uuid),
+                    "parent",
+                ),
+                create_relationship(
+                    ("rbac", "workspace"), str(root_workspace_uuid), ("rbac", "tenant"), tenant_id, "parent"
+                ),
+                # Include platform for tenant
+                create_relationship(
+                    ("rbac", "tenant"), tenant_id, ("rbac", "platform"), settings.ENV_NAME, "platform"
+                ),
+            ]
+        )
+
+        return root, default, relationships
 
     def _get_platform_default_policy_uuid(self) -> Optional[str]:
         try:
