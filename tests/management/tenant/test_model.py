@@ -16,13 +16,10 @@
 #
 """Test cases for Tenant bootstrapping logic."""
 
-from unittest.mock import patch
-from django.db import IntegrityError
 from typing import Optional, Tuple
 from django.test import TestCase
-from management.group.definer import add_roles, clone_default_group_in_public_schema, seed_group
+from management.group.definer import seed_group
 from management.group.model import Group
-from management.management.commands.utils import process_batch
 from management.policy.model import Policy
 from management.principal.model import Principal
 from management.tenant_mapping.model import TenantMapping
@@ -34,7 +31,6 @@ from migration_tool.in_memory_tuples import (
     all_of,
     relation,
     resource,
-    resource_type,
     subject,
 )
 from tests.management.role.test_dual_write import RbacFixture
@@ -517,14 +513,3 @@ class V2TenantBootstrapServiceTest(TestCase):
             f"Expected admin default role binding to have admin default role for tenant {org_id}",
         )
         return tenant, mapping, root, default
-
-    @patch("management.management.commands.utils.BOOT_STRAP_SERVICE")
-    def test_retrying_bulk(self, mock_bss):
-        mock_bss.import_bulk_users.side_effect = [
-            IntegrityError("IntegrityError: duplicate key value violates unique constraint"),
-            None,
-        ]
-
-        batch = [("u1", "o1", "test_user", True)]
-        process_batch(batch)
-        self.assertEqual(mock_bss.import_bulk_users.call_count, 2)

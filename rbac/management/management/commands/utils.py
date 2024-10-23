@@ -47,15 +47,15 @@ def download_tenant_user_data():
     s3_client = get_s3_client()
     if os.path.exists(FILE_PATH):
         os.remove(FILE_PATH)
-        print(f"Removed existing user data file: {FILE_PATH}")
+        logger.info(f"Removed existing user data file: {FILE_PATH}")
 
     bucket = os.environ.get("S3_AWS_BUCKET")
-    print(f"Downloading file from S3 bucket: {bucket}")
+    logger.info(f"Downloading file from S3 bucket: {bucket}")
     try:
         s3_client.download_file(f"{bucket}", f"users_data/{FILE_NAME}", FILE_PATH)
-        print("File downloaded successfully.")
+        logger.info("File downloaded successfully.")
     except ClientError as e:
-        print(f"Error downloading file: {e}")
+        logger.info(f"Error downloading file: {e}")
         raise
 
 
@@ -70,20 +70,21 @@ def populate_tenant_user_data(start_line=1, batch_size=1000):
     with open(FILE_PATH, "r") as file:
         csv_reader = csv.reader(file)
         # Skip lines until start
-        for _ in range(start_line - 1):
+        for _ in range(start_line):
             next(csv_reader, None)
         batch_data = []
         for current_line, row in enumerate(csv_reader, start=start_line):
             org_id, admin, principal_name, user_id = row
+            admin = admin == "admin:org:all"
             batch_data.append((org_id, admin, principal_name, user_id))
             if len(batch_data) >= batch_size:
                 process_batch(batch_data)
-                print(f"Processed batch ending at line {current_line}")
+                logger.info(f"Processed batch ending at line {current_line}")
                 batch_data = []
         # Process any remaining records
         if batch_data:
             process_batch(batch_data)
-            print(f"Processed final batch ending at line {current_line}")
+            logger.info(f"Processed final batch ending at line {current_line}")
     return
 
 
