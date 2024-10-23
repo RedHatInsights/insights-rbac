@@ -5352,7 +5352,7 @@ class GroupViewNonAdminTests(IdentityRequest):
     def test_duplicate_entry_message(self):
         # Initial group creation
         request_body = {"name": "duplicateEntry"}
-        url = reverse("group-list")
+        url = reverse("v1_management:group-list")
 
         with transaction.atomic():
             # Initial group creation
