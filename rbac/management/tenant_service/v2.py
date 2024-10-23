@@ -264,7 +264,7 @@ class V2TenantBootstrapService:
             .prefetch_related(
                 Prefetch(
                     "group_set",
-                    queryset=Group.objects.filter(platform_default=True),
+                    queryset=Group.objects.filter(platform_default=True).order_by(),
                     to_attr="platform_default_groups",
                 )
             )
