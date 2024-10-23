@@ -1180,27 +1180,20 @@ class GroupViewSet(
 
     def invalidate_service_accounts(self, service_accounts: Iterable[str]):
         """Invalidate the service accounts that were not found."""
-        # Query groups where these service account principals are members
-        groups = Group.objects.filter(principals__service_account_id__in=service_accounts).prefetch_related(
-            Prefetch(
-                "principals",
-                queryset=Principal.objects.filter(service_account_id__in=service_accounts).only("service_account_id", "user_id"),
-            )
-        )
+        # Query service account principals that have been invalidated
+        principals_to_remove = Principal.objects.filter(service_account_id__in=service_accounts).only("service_account_id", "group")
+        # Grab the group ids of each invalidated principal
+        group_ids = principals_to_remove.values_list("group", flat=True).distinct()
 
-        # For each service account,
-        # get the groups it is a member of.
-        # Then replicate removal of this service account from those groups.
-        for group in groups:
-            for principal in group.principals.all():
-                for client_id in service_accounts:
-                    if principal.service_account_id == client_id:
-                        with transaction.atomic():
-                            dual_write_handler = RelationApiDualWriteGroupHandler(
-                                group,
-                                ReplicationEventType.REMOVE_PRINCIPALS_FROM_GROUP,
-                            )
-                            dual_write_handler.replicate_removed_principals([principal])
-                            group.principals.remove(principal)
-                            principal.delete()
-                        break
+        with transaction.atomic():
+            for group_id in group_ids:
+                group = Group.objects.get(id=group_id) # grab group from group id
+                group_principals = principals_to_remove.filter(group=group)
+
+                dual_write_handler = RelationApiDualWriteGroupHandler(
+                    group,
+                    ReplicationEventType.REMOVE_PRINCIPALS_FROM_GROUP,
+                )
+                dual_write_handler.replicate_removed_principals(group_principals)
+                group.principals.remove(*group_principals) # remove references from group
+            principals_to_remove.delete()
