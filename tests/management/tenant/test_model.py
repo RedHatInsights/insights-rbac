@@ -243,12 +243,13 @@ class V2TenantBootstrapServiceTest(TestCase):
 
     def test_bulk_adding_updating_users(self):
         bootstrapped = self.fixture.new_tenant(org_id="o1")
+        self.tuples.clear()
 
         # Set up another org with custom default group but not bootstrapped
         o3_tenant = self.fixture.new_unbootstrapped_tenant(org_id="o3")
         o3_custom_group = self.fixture.custom_default_group(o3_tenant)
 
-        self.tuples.clear()
+        self.fixture.new_unbootstrapped_tenant(org_id="o4")
 
         users = []
         for user_id, org_id, admin in [
@@ -257,6 +258,7 @@ class V2TenantBootstrapServiceTest(TestCase):
             ("u3", "o2", True),
             ("u4", "o1", False),
             ("u5", "o3", False),
+            ("u6", "o4", False),
         ]:
             user = User()
             user.user_id = user_id
@@ -267,9 +269,14 @@ class V2TenantBootstrapServiceTest(TestCase):
 
         self.service.import_bulk_users(users)
 
-        # TODO: correct this; we don't expect the custom default group tuples to all be replicated
-        # Some will rely on the migrator
-        # self.assertEquals(25, self.tuples.count_tuples())
+        # Admins get 2, otherwise 1
+        num_group_membership_tuples = 2 + 1 + 2 + 1 + 1 + 1
+        # o1 is already bootstrapped, should get 0
+        # existing unbootstrapped custom group tenants get 6
+        # new or otherwise unbootstrapped tenants get 9
+        num_tenant_bootstrapping_tuples = 0 + 9 + 6 + 9
+
+        self.assertEquals(num_group_membership_tuples + num_tenant_bootstrapping_tuples, self.tuples.count_tuples())
 
         # Assert user updated for first user with existing tenant
         self.assertAddedToDefaultGroup("localhost/u1", bootstrapped.mapping, and_admin_group=True)  # 2
@@ -283,8 +290,12 @@ class V2TenantBootstrapServiceTest(TestCase):
         self.assertAddedToDefaultGroup("localhost/u3", mapping, and_admin_group=True)  # 2
 
         # Bootstraps third tenant but uses existing custom group
-        _, mapping, _, _ = self.assertTenantBootstrapped("o3", with_custom_default_group=o3_custom_group)  # 9
+        _, mapping, _, _ = self.assertTenantBootstrapped("o3", with_custom_default_group=o3_custom_group)  # 6
         self.assertAddedToDefaultGroup("localhost/u5", mapping)  # 1
+
+        # Bootstraps fourth tenant with new default group
+        _, mapping, _, _ = self.assertTenantBootstrapped("o4")  # 9
+        self.assertAddedToDefaultGroup("localhost/u6", mapping)  # 1
 
     def assertAddedToDefaultGroup(self, user_id: str, tenant_mapping: TenantMapping, and_admin_group: bool = False):
         self.assertEqual(
@@ -393,6 +404,19 @@ class V2TenantBootstrapServiceTest(TestCase):
             ),
             f"Expected default role binding to have platform default role for tenant {org_id}",
         )
+
+        if custom_default_group is not None:
+            # We expect the migrator will take care of this.
+            self.assertEqual(
+                0,
+                self.tuples.count_tuples(
+                    all_of(
+                        relation("subject"),
+                        subject("rbac", "group", custom_default_group.uuid, "member"),
+                    )
+                ),
+                f"Expected no relations to custom default group (leave to migrator) for tenant {org_id}",
+            )
 
         self.assertEqual(
             1,
