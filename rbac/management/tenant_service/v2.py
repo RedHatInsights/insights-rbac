@@ -105,113 +105,6 @@ class V2TenantBootstrapService:
 
         return bootstrapped_tenant
 
-    def _bootstrap_tenants(self, tenants: list[Tenant]) -> list[BootstrappedTenant]:
-        # Set up workspace hierarchy for Tenant
-        workspaces = []
-        relationships = []
-        mappings_to_create = []
-        default_workspace_uuids = []
-        existing_custom_default_group_ids = set()
-        for tenant in tenants:
-            kwargs = {"tenant": tenant}
-            if hasattr(tenant, "platform_default_groups") and tenant.platform_default_groups:
-                kwargs["default_group_uuid"] = tenant.platform_default_groups[0].uuid
-                existing_custom_default_group_ids.add(tenant.platform_default_groups[0].uuid)
-            mappings_to_create.append(TenantMapping(**kwargs))
-
-            root_workspace_uuid = uuid4()
-            default_workspace_uuid = uuid4()
-            workspaces.append(
-                Workspace(uuid=root_workspace_uuid, tenant=tenant, type=Workspace.Types.ROOT, name="Root Workspace")
-            )
-            workspaces.append(
-                Workspace(
-                    uuid=default_workspace_uuid, tenant=tenant, type=Workspace.Types.DEFAULT, name="Default Workspace"
-                )
-            )
-            default_workspace_uuids.append(default_workspace_uuid)
-            tenant_id = f"{self._user_domain}/{tenant.org_id}"
-            relationships.extend(
-                [
-                    create_relationship(
-                        ("rbac", "workspace"),
-                        str(default_workspace_uuid),
-                        ("rbac", "workspace"),
-                        str(root_workspace_uuid),
-                        "parent",
-                    ),
-                    create_relationship(
-                        ("rbac", "workspace"), str(root_workspace_uuid), ("rbac", "tenant"), tenant_id, "parent"
-                    ),
-                ]
-            )
-
-            # Include platform for tenant
-            relationships.append(
-                create_relationship(("rbac", "tenant"), tenant_id, ("rbac", "platform"), settings.ENV_NAME, "platform")
-            )
-
-        Workspace.objects.bulk_create(workspaces)
-
-        mappings = TenantMapping.objects.bulk_create(mappings_to_create)
-        tenant_mappings = {mapping.tenant_id: mapping for mapping in mappings}
-        bootstrapped_tenants = []
-
-        for tenant, default_workspace_uuid in zip(tenants, default_workspace_uuids):
-            mapping = tenant_mappings[tenant.id]
-            relationships.extend(
-                self._bootstrap_default_access(
-                    tenant, mapping, str(default_workspace_uuid), existing_custom_default_group_ids
-                )
-            )
-            bootstrapped_tenants.append(BootstrappedTenant(tenant, mapping))
-        self._replicator.replicate(
-            ReplicationEvent(
-                event_type=ReplicationEventType.BOOTSTRAP_TENANT,
-                info={"CJI": "bulk_bootstrap"},
-                partition_key="rbactodo",
-                add=relationships,
-            )
-        )
-        return bootstrapped_tenants
-
-    def _get_or_bootstrap_tenants(self, org_ids: set) -> list[BootstrappedTenant]:
-        """Bootstrap list of tenants, used by import_bulk_users."""
-        # Fetch existing tenants
-        existing_tenants = {
-            tenant.org_id: tenant
-            for tenant in Tenant.objects.filter(org_id__in=org_ids)
-            .select_related("tenant_mapping")
-            .prefetch_related(
-                Prefetch(
-                    "group_set",
-                    queryset=Group.objects.filter(platform_default=True),
-                    to_attr="platform_default_groups",
-                )
-            )
-        }
-
-        # An existing tenant might have been bootstrapped and already has mapping and workspaces
-        tenants_to_bootstrap = []
-        bootstrapped_list = []
-        for tenant in existing_tenants.values():
-            if not hasattr(tenant, "tenant_mapping"):
-                tenants_to_bootstrap.append(tenant)
-            else:
-                bootstrapped_list.append(BootstrappedTenant(tenant, tenant.tenant_mapping))
-        # Create new tenants
-        new_tenants = [
-            Tenant(tenant_name=f"org{org_id}", org_id=org_id, ready=True)
-            for org_id in org_ids
-            if org_id not in existing_tenants
-        ]
-        if new_tenants:
-            new_tenants = Tenant.objects.bulk_create(new_tenants)
-            tenants_to_bootstrap.extend(new_tenants)
-
-        bootstrapped_list.extend(self._bootstrap_tenants(tenants_to_bootstrap))
-        return bootstrapped_list
-
     @transaction.atomic
     def import_bulk_users(self, users: list[User]):
         """
@@ -281,31 +174,6 @@ class V2TenantBootstrapService:
                 remove=tuples_to_remove,
             )
         )
-
-    def _default_group_tuple_edits(self, user: User, mapping) -> tuple[list[Relationship], list[Relationship]]:
-        """Get the tuples to add and remove for a user."""
-        tuples_to_add = []
-        tuples_to_remove = []
-        user_id = user.user_id
-
-        if user_id is None:
-            raise ValueError(f"User {user.username} has no user_id.")
-
-        tuples_to_add.append(Group.relationship_to_user_id_for_group(str(mapping.default_group_uuid), user_id))
-
-        # Add user to admin group if admin
-        if user.admin:
-            tuples_to_add.append(
-                Group.relationship_to_user_id_for_group(str(mapping.default_admin_group_uuid), user_id)
-            )
-        else:
-            # If not admin, ensure they are not in the admin group
-            # (we don't know what the previous state was)
-            tuples_to_remove.append(
-                Group.relationship_to_user_id_for_group(str(mapping.default_admin_group_uuid), user_id)
-            )
-
-        return tuples_to_add, tuples_to_remove
 
     def _disable_user_in_tenant(self, user: User):
         """Disable a user in a tenant."""
@@ -415,6 +283,138 @@ class V2TenantBootstrapService:
         )
 
         return BootstrappedTenant(tenant, mapping, default_workspace=default_workspace, root_workspace=root_workspace)
+
+    def _get_or_bootstrap_tenants(self, org_ids: set) -> list[BootstrappedTenant]:
+        """Bootstrap list of tenants, used by import_bulk_users."""
+        # Fetch existing tenants
+        existing_tenants = {
+            tenant.org_id: tenant
+            for tenant in Tenant.objects.filter(org_id__in=org_ids)
+            .select_related("tenant_mapping")
+            .prefetch_related(
+                Prefetch(
+                    "group_set",
+                    queryset=Group.objects.filter(platform_default=True),
+                    to_attr="platform_default_groups",
+                )
+            )
+        }
+
+        # An existing tenant might have been bootstrapped and already has mapping and workspaces
+        tenants_to_bootstrap = []
+        bootstrapped_list = []
+        for tenant in existing_tenants.values():
+            if not hasattr(tenant, "tenant_mapping"):
+                tenants_to_bootstrap.append(tenant)
+            else:
+                bootstrapped_list.append(BootstrappedTenant(tenant, tenant.tenant_mapping))
+        # Create new tenants
+        new_tenants = [
+            Tenant(tenant_name=f"org{org_id}", org_id=org_id, ready=True)
+            for org_id in org_ids
+            if org_id not in existing_tenants
+        ]
+        if new_tenants:
+            new_tenants = Tenant.objects.bulk_create(new_tenants)
+            tenants_to_bootstrap.extend(new_tenants)
+
+        bootstrapped_list.extend(self._bootstrap_tenants(tenants_to_bootstrap))
+        return bootstrapped_list
+
+    def _bootstrap_tenants(self, tenants: list[Tenant]) -> list[BootstrappedTenant]:
+        # Set up workspace hierarchy for Tenant
+        workspaces = []
+        relationships = []
+        mappings_to_create = []
+        default_workspace_uuids = []
+        existing_custom_default_group_ids = set()
+        for tenant in tenants:
+            kwargs = {"tenant": tenant}
+            if hasattr(tenant, "platform_default_groups") and tenant.platform_default_groups:
+                kwargs["default_group_uuid"] = tenant.platform_default_groups[0].uuid
+                existing_custom_default_group_ids.add(tenant.platform_default_groups[0].uuid)
+            mappings_to_create.append(TenantMapping(**kwargs))
+
+            root_workspace_uuid = uuid4()
+            default_workspace_uuid = uuid4()
+            workspaces.append(
+                Workspace(uuid=root_workspace_uuid, tenant=tenant, type=Workspace.Types.ROOT, name="Root Workspace")
+            )
+            workspaces.append(
+                Workspace(
+                    uuid=default_workspace_uuid, tenant=tenant, type=Workspace.Types.DEFAULT, name="Default Workspace"
+                )
+            )
+            default_workspace_uuids.append(default_workspace_uuid)
+            tenant_id = f"{self._user_domain}/{tenant.org_id}"
+            relationships.extend(
+                [
+                    create_relationship(
+                        ("rbac", "workspace"),
+                        str(default_workspace_uuid),
+                        ("rbac", "workspace"),
+                        str(root_workspace_uuid),
+                        "parent",
+                    ),
+                    create_relationship(
+                        ("rbac", "workspace"), str(root_workspace_uuid), ("rbac", "tenant"), tenant_id, "parent"
+                    ),
+                ]
+            )
+
+            # Include platform for tenant
+            relationships.append(
+                create_relationship(("rbac", "tenant"), tenant_id, ("rbac", "platform"), settings.ENV_NAME, "platform")
+            )
+
+        Workspace.objects.bulk_create(workspaces)
+
+        mappings = TenantMapping.objects.bulk_create(mappings_to_create)
+        tenant_mappings = {mapping.tenant_id: mapping for mapping in mappings}
+        bootstrapped_tenants = []
+
+        for tenant, default_workspace_uuid in zip(tenants, default_workspace_uuids):
+            mapping = tenant_mappings[tenant.id]
+            relationships.extend(
+                self._bootstrap_default_access(
+                    tenant, mapping, str(default_workspace_uuid), existing_custom_default_group_ids
+                )
+            )
+            bootstrapped_tenants.append(BootstrappedTenant(tenant, mapping))
+        self._replicator.replicate(
+            ReplicationEvent(
+                event_type=ReplicationEventType.BOOTSTRAP_TENANT,
+                info={"CJI": "bulk_bootstrap"},
+                partition_key="rbactodo",
+                add=relationships,
+            )
+        )
+        return bootstrapped_tenants
+
+    def _default_group_tuple_edits(self, user: User, mapping) -> tuple[list[Relationship], list[Relationship]]:
+        """Get the tuples to add and remove for a user."""
+        tuples_to_add = []
+        tuples_to_remove = []
+        user_id = user.user_id
+
+        if user_id is None:
+            raise ValueError(f"User {user.username} has no user_id.")
+
+        tuples_to_add.append(Group.relationship_to_user_id_for_group(str(mapping.default_group_uuid), user_id))
+
+        # Add user to admin group if admin
+        if user.admin:
+            tuples_to_add.append(
+                Group.relationship_to_user_id_for_group(str(mapping.default_admin_group_uuid), user_id)
+            )
+        else:
+            # If not admin, ensure they are not in the admin group
+            # (we don't know what the previous state was)
+            tuples_to_remove.append(
+                Group.relationship_to_user_id_for_group(str(mapping.default_admin_group_uuid), user_id)
+            )
+
+        return tuples_to_add, tuples_to_remove
 
     def _create_default_relation_tuples(
         self, default_workspace_uuid, role_binding_uuid, default_role_uuid, default_group_uuid
