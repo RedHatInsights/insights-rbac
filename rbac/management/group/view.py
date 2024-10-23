@@ -22,7 +22,8 @@ from uuid import UUID
 
 import requests
 from django.conf import settings
-from django.db import transaction
+from django.http import JsonResponse
+from django.db import transaction, IntegrityError
 from django.db.models import Q
 from django.db.models.aggregates import Count
 from django.utils.translation import gettext as _
@@ -61,7 +62,7 @@ from management.principal.serializer import ServiceAccountSerializer
 from management.principal.view import ADMIN_ONLY_KEY, USERNAME_ONLY_KEY, VALID_BOOLEAN_VALUE
 from management.querysets import get_group_queryset, get_role_queryset
 from management.role.view import RoleViewSet
-from management.utils import check_duplicate_entry, validate_and_get_key, validate_group_name, validate_uuid
+from management.utils import validate_and_get_key, validate_group_name, validate_uuid
 from rest_framework import mixins, serializers, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.filters import OrderingFilter
@@ -256,8 +257,18 @@ class GroupViewSet(
             }
         """
         validate_group_name(request.data.get("name"))
-        check_duplicate_entry(request.data.get("name"), self.request.tenant)
-        create_group = super().create(request=request, args=args, kwargs=kwargs)
+        try:
+            create_group = super().create(request=request, args=args, kwargs=kwargs)
+        except IntegrityError as e:
+            if "unique constraint" in str(e.args):
+                return JsonResponse(
+                    {
+                        "detail": "A group with this name already exists for this tenant",
+                        "source": "Group unique constraint violation error",
+                        "status": status.HTTP_400_BAD_REQUEST,
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
 
         if status.is_success(create_group.status_code):
             auditlog = AuditLog()
