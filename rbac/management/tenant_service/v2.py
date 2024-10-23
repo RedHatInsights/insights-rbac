@@ -263,14 +263,10 @@ class V2TenantBootstrapService:
             create_relationship(("rbac", "tenant"), tenant_id, ("rbac", "platform"), settings.ENV_NAME, "platform")
         )
 
-        kwargs = {"tenant": tenant}
-        # Check if custom platform default group exist
-        try:
-            custom_platform_default_group = Group.objects.get(tenant=tenant, platform_default=True)
-            kwargs["default_group_uuid"] = custom_platform_default_group.uuid
-        except Group.DoesNotExist:
-            pass
-        mapping = TenantMapping.objects.create(**kwargs)
+        # We do not check for custom default group here.
+        # By this point if there is a custom default group,
+        # a TenantMapping must have already been created.
+        mapping = TenantMapping.objects.create(tenant=tenant)
         relationships.extend(self._bootstrap_default_access(tenant, mapping, str(default_workspace.uuid)))
 
         self._replicator.replicate(
@@ -327,12 +323,10 @@ class V2TenantBootstrapService:
         relationships = []
         mappings_to_create = []
         default_workspace_uuids = []
-        existing_custom_default_group_ids = set()
         for tenant in tenants:
             kwargs = {"tenant": tenant}
             if hasattr(tenant, "platform_default_groups") and tenant.platform_default_groups:
                 kwargs["default_group_uuid"] = tenant.platform_default_groups[0].uuid
-                existing_custom_default_group_ids.add(tenant.platform_default_groups[0].uuid)
             mappings_to_create.append(TenantMapping(**kwargs))
 
             root_workspace_uuid = uuid4()
@@ -375,11 +369,7 @@ class V2TenantBootstrapService:
 
         for tenant, default_workspace_uuid in zip(tenants, default_workspace_uuids):
             mapping = tenant_mappings[tenant.id]
-            relationships.extend(
-                self._bootstrap_default_access(
-                    tenant, mapping, str(default_workspace_uuid), existing_custom_default_group_ids
-                )
-            )
+            relationships.extend(self._bootstrap_default_access(tenant, mapping, str(default_workspace_uuid)))
             bootstrapped_tenants.append(BootstrappedTenant(tenant, mapping))
         self._replicator.replicate(
             ReplicationEvent(
@@ -445,7 +435,7 @@ class V2TenantBootstrapService:
         ]
 
     def _bootstrap_default_access(
-        self, tenant: Tenant, mapping: TenantMapping, default_workspace_uuid: str, custom_groups=None
+        self, tenant: Tenant, mapping: TenantMapping, default_workspace_uuid: str
     ) -> List[Relationship]:
         """
         Bootstrap default access for a tenant's users and admins.
@@ -476,27 +466,17 @@ class V2TenantBootstrapService:
         # 2. If tenant mapping does not exist, create it via this same bootstrap process.
         #    Due to unique constraint, if this happens concurrently from another input (e.g. user import),
         #    one will rollback, serializing the group creation with user import on next retry.
-        if platform_default_role_uuid:
-            if custom_groups is not None:
-                if mapping.default_group_uuid not in custom_groups:
-                    tuples_to_add.extend(
-                        self._create_default_relation_tuples(
-                            default_workspace_uuid,
-                            default_user_role_binding_uuid,
-                            platform_default_role_uuid,
-                            str(mapping.default_group_uuid),
-                        )
-                    )
-            # TODO: change the filter to be uuid=mapping.default_group_uuid
-            elif not Group.objects.filter(platform_default=True, tenant=tenant).exists():
-                tuples_to_add.extend(
-                    self._create_default_relation_tuples(
-                        default_workspace_uuid,
-                        default_user_role_binding_uuid,
-                        platform_default_role_uuid,
-                        str(mapping.default_group_uuid),
-                    )
+        if platform_default_role_uuid and not (
+            hasattr(tenant, "platform_default_groups") and tenant.platform_default_groups
+        ):
+            tuples_to_add.extend(
+                self._create_default_relation_tuples(
+                    default_workspace_uuid,
+                    default_user_role_binding_uuid,
+                    platform_default_role_uuid,
+                    str(mapping.default_group_uuid),
                 )
+            )
         # Admin role binding is not customizable
         if admin_default_role_uuid:
             tuples_to_add.extend(

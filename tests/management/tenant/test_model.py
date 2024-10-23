@@ -192,7 +192,8 @@ class V2TenantBootstrapServiceTest(TestCase):
             ),
         )
 
-    def test_does_not_add_default_access_when_already_customized(self):
+    def test_will_add_default_access_when_already_customized(self):
+        """Test just to confirm behavior but this is not a valid state and this scenario should never happen."""
         tenant = self.fixture.new_unbootstrapped_tenant(org_id="o1")
         self.fixture.custom_default_group(tenant)
 
@@ -206,7 +207,7 @@ class V2TenantBootstrapServiceTest(TestCase):
         default_ws = self.fixture.default_workspace(tenant)
 
         self.assertEqual(
-            0,
+            1,
             self.tuples.count_tuples(
                 all_of(
                     resource("rbac", "workspace", default_ws.uuid),
@@ -216,6 +217,16 @@ class V2TenantBootstrapServiceTest(TestCase):
             ),
         )
         self.assertEqual(
+            1,
+            self.tuples.count_tuples(
+                all_of(
+                    resource("rbac", "role_binding", bootstrapped.mapping.default_role_binding_uuid),
+                    relation("subject"),
+                    subject("rbac", "group", bootstrapped.mapping.default_group_uuid, "member"),
+                )
+            ),
+        )
+        self.assertNotEqual(
             tenant.tenant_mapping.default_group_uuid, Group.objects.get(tenant=tenant, platform_default=True).uuid
         )
 
