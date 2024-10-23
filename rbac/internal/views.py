@@ -492,7 +492,7 @@ def data_migration(request):
     args = {
         "exclude_apps": get_param_list(request, "exclude_apps", default=settings.V2_MIGRATION_APP_EXCLUDE_LIST),
         "orgs": get_param_list(request, "orgs"),
-        "write_relationships": request.GET.get("write_relationships", "False") == "True",
+        "write_relationships": request.GET.get("write_relationships", "False"),
     }
     migrate_data_in_worker.delay(args)
     return HttpResponse("Data migration from V1 to V2 are running in a background worker.", status=202)

@@ -530,6 +530,8 @@ objects:
             value: ${IT_TOKEN_JKWS_CACHE_LIFETIME}
           - name: V2_APIS_ENABLED
             value: ${V2_APIS_ENABLED}
+          - name: V2_READ_ONLY_API_MODE
+            value: ${V2_READ_ONLY_API_MODE}
           - name: READ_ONLY_API_MODE
             value: ${READ_ONLY_API_MODE}
 
@@ -763,7 +765,7 @@ parameters:
 - description: Whether or not to bootstrap tenants using V2 logic (i.e. creating workspaces and relations).
   name: V2_BOOTSTRAP_TENANT
   value: 'False'
-- description: | 
+- description: |
     Whether or not to add user IDs to existing principals within V1 logic. Once V2 tenant bootstrapping is used,
     this flag is ignored and user IDs will be added regardless.
   name: V1_BOOTSTRAP_ADD_USER_ID
@@ -965,6 +967,9 @@ parameters:
   value: "False"
 - name: V2_APIS_ENABLED
   description: Flag to explicitly enable v2 API endpoints
+- name: V2_READ_ONLY_API_MODE
+  description: Enforce GET only on RBAC v2 APIs only
+  value: 'False'
 - name: READ_ONLY_API_MODE
   description: Enforce GET only on RBAC APIs
   value: 'False'
