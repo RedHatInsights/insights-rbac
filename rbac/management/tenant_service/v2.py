@@ -133,9 +133,11 @@ class V2TenantBootstrapService:
 
         # Fetch existing principals
         tenants = [bootstrapped.tenant for bootstrapped in bootstrapped_list]
-        existing_principals = Principal.objects.filter(
-            Q(tenant__in=tenants) & Q(username__in=[user.username for user in users])
-        ).prefetch_related("tenant")
+        existing_principals = (
+            Principal.objects.filter(Q(tenant__in=tenants) & Q(username__in=[user.username for user in users]))
+            .order_by()  # remove default sort order
+            .prefetch_related("tenant")
+        )
         # Mapping of (org_id, username) -> principal
         existing_principal_dict = {(p.tenant.org_id, p.username): p for p in existing_principals}
 
