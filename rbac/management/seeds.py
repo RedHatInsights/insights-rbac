@@ -33,9 +33,9 @@ def on_complete(progress, tenant):
     logger.info(f"Finished purging policy cache for tenant {tenant.org_id} [{progress}].")
 
 
-def role_seeding(force_update=False):
+def role_seeding(force_create=False):
     """Execute role seeding."""
-    run_seeds("role", force_update)
+    run_seeds("role", force_create)
 
 
 def group_seeding():
@@ -48,7 +48,7 @@ def permission_seeding():
     run_seeds("permission")
 
 
-def run_seeds(seed_type, force_update=False):
+def run_seeds(seed_type, force_create=False):
     """Update platform objects at startup."""
     # noqa: E402 pylint: disable=C0413
     from management.group.definer import seed_group
@@ -58,8 +58,8 @@ def run_seeds(seed_type, force_update=False):
 
     try:
         logger.info(f"Seeding {seed_type} changes.")
-        if force_update:
-            seed_functions[seed_type](force_update)
+        if force_create:
+            seed_functions[seed_type](force_create)
         else:
             seed_functions[seed_type]()
         logger.info(f"Finished seeding {seed_type}.")
