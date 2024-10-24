@@ -54,7 +54,7 @@ class WorkspaceSerializerTest(TestCase):
             "uuid": str(self.child.uuid),
             "name": self.child.name,
             "description": self.child.description,
-            "parent_id": str(self.parent.uuid),
+            "parent_uuid": str(self.parent.uuid),
             "created": self._format_timestamps(self.child.created),
             "modified": self._format_timestamps(self.child.modified),
             "type": self.child.type,
@@ -69,7 +69,7 @@ class WorkspaceSerializerTest(TestCase):
             "uuid": str(self.parent.uuid),
             "name": self.parent.name,
             "description": self.parent.description,
-            "parent_id": None,
+            "parent_uuid": None,
             "created": self._format_timestamps(self.parent.created),
             "modified": self._format_timestamps(self.parent.modified),
             "type": self.parent.type,
@@ -84,10 +84,10 @@ class WorkspaceSerializerTest(TestCase):
             "uuid": str(self.child.uuid),
             "name": self.child.name,
             "description": self.child.description,
-            "parent_id": str(self.parent.uuid),
+            "parent_uuid": str(self.parent.uuid),
             "created": self._format_timestamps(self.child.created),
             "modified": self._format_timestamps(self.child.modified),
-            "ancestry": [{"name": self.parent.name, "uuid": str(self.parent.uuid), "parent_id": None}],
+            "ancestry": [{"name": self.parent.name, "uuid": str(self.parent.uuid), "parent_uuid": None}],
             "created": self._format_timestamps(self.child.created),
             "modified": self._format_timestamps(self.child.modified),
             "type": self.child.type,
@@ -98,6 +98,6 @@ class WorkspaceSerializerTest(TestCase):
     def test_workspace_ancestry(self):
         """Test workspace ancestry serializer"""
         serializer = WorkspaceAncestrySerializer(self.child)
-        expected_data = {"name": self.child.name, "parent_id": str(self.parent.uuid), "uuid": str(self.child.uuid)}
+        expected_data = {"name": self.child.name, "parent_uuid": str(self.parent.uuid), "uuid": str(self.child.uuid)}
 
         self.assertDictEqual(serializer.data, expected_data)

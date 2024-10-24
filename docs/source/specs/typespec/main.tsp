@@ -109,7 +109,7 @@ namespace Workspaces {
 
     model Workspace {
         @key uuid: UUID;
-        parent_id?: UUID;
+        parent_uuid?: UUID;
         type: WorkspaceTypes;
         ...BasicWorkspace;
         ...Timestamps;
@@ -117,13 +117,13 @@ namespace Workspaces {
 
     model WorkspaceAncestor {
         @key uuid: UUID;
-        parent_id?: UUID;
+        parent_uuid?: UUID;
         name: string;
     }
 
     model CreateWorkspaceRequest extends BasicWorkspace{
         @doc("Parent UUID of Workspace A")
-        parent_id: UUID = "Parent UUID of Workspace A";
+        parent_uuid: UUID = "Parent UUID of Workspace A";
     }
 
     model CreateWorkspaceResponse extends Workspace{
@@ -144,7 +144,7 @@ namespace Workspaces {
         @doc("Description of Workspace A")
         description: string = "Description of Workspace A";
         @doc("Description of Workspace A")
-        parent_id: UUID = "Parent UUID of Workspace A";
+        parent_uuid: UUID = "Parent UUID of Workspace A";
     }
 
     model PatchWorkspaceRequest {

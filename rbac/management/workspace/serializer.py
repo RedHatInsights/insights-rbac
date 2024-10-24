@@ -27,7 +27,7 @@ class WorkspaceSerializer(serializers.ModelSerializer):
     name = serializers.CharField(required=False, max_length=255)
     uuid = serializers.UUIDField(read_only=True, required=False)
     description = serializers.CharField(allow_null=True, required=False, max_length=255)
-    parent_id = serializers.UUIDField(allow_null=True, required=False)
+    parent_uuid = serializers.UUIDField(allow_null=True, required=False)
     created = serializers.DateTimeField(read_only=True)
     modified = serializers.DateTimeField(read_only=True)
     type = serializers.CharField(read_only=True)
@@ -39,7 +39,7 @@ class WorkspaceSerializer(serializers.ModelSerializer):
         fields = (
             "name",
             "uuid",
-            "parent_id",
+            "parent_uuid",
             "description",
             "created",
             "modified",
@@ -59,13 +59,13 @@ class WorkspaceAncestrySerializer(serializers.ModelSerializer):
 
     name = serializers.CharField(required=False, max_length=255)
     uuid = serializers.UUIDField(read_only=True, required=False)
-    parent_id = serializers.UUIDField(allow_null=True, required=False)
+    parent_uuid = serializers.UUIDField(allow_null=True, required=False)
 
     class Meta:
         """Metadata for the serializer."""
 
         model = Workspace
-        fields = ("name", "uuid", "parent_id")
+        fields = ("name", "uuid", "parent_uuid")
 
 
 class WorkspaceWithAncestrySerializer(WorkspaceSerializer):

@@ -36,7 +36,13 @@ class Workspace(TenantAwareModel):
     name = models.CharField(max_length=255)
     uuid = models.UUIDField(default=uuid4, editable=False, unique=True, null=False)
     parent = models.ForeignKey(
-        "self", to_field="uuid", on_delete=models.PROTECT, related_name="children", null=True, blank=True
+        "self",
+        to_field="uuid",
+        on_delete=models.PROTECT,
+        related_name="children",
+        null=True,
+        blank=True,
+        db_column="parent_uuid",
     )
     description = models.CharField(max_length=255, null=True, blank=True, editable=True)
     type = models.CharField(choices=Types.choices, default=Types.STANDARD, null=False)
@@ -52,6 +58,16 @@ class Workspace(TenantAwareModel):
                 condition=Q(type__in=["root", "default"]),
             )
         ]
+
+    @property
+    def parent_uuid(self):
+        """Alias parent_uuid getter to parent_id."""
+        return self.parent_id
+
+    @parent_uuid.setter
+    def parent_uuid(self, parent_uuid):
+        """Alias parent_uuid setter to parent_id."""
+        self.parent_id = parent_uuid
 
     def save(self, *args, **kwargs):
         """Override save on model to enforce validations."""
@@ -70,13 +86,13 @@ class Workspace(TenantAwareModel):
             """
             WITH RECURSIVE ancestors AS
               (SELECT uuid,
-                      parent_id
+                      parent_uuid
                FROM management_workspace
                WHERE uuid = %s
                UNION SELECT w.uuid,
-                                w.parent_id
+                                w.parent_uuid
                FROM management_workspace w
-               JOIN ancestors a ON w.uuid = a.parent_id)
+               JOIN ancestors a ON w.uuid = a.parent_uuid)
             SELECT uuid AS uuid,
                    uuid AS id
             FROM ancestors
