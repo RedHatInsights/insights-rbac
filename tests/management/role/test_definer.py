@@ -354,3 +354,37 @@ class RoleDefinerTests(IdentityRequest):
             self.assertTrue(
                 any(self.is_remove_event("inventory_hosts_read", args[0]) for args, _ in mock_replicate.call_args_list)
             )
+
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
+    @patch(
+        "builtins.open",
+        new_callable=mock_open,
+        read_data='{"roles": [{"name": "existing_system_role", "system": true, "version": 1, "access": [{"permission": "dummy:hosts:read"}]}]}',
+    )
+    @patch("os.listdir")
+    @patch("os.path.isfile")
+    def test_seed_roles_existing_role_add_tuples(
+        self,
+        mock_isfile,
+        mock_listdir,
+        mock_open,
+        mock_replicate,
+    ):
+        # mock files
+        mock_listdir.return_value = ["role.json"]
+        mock_isfile.return_value = True
+
+        # create a role in the database that exists in config with no changes.
+        existing_role = Role.objects.create(
+            name="existing_system_role", system=True, version=1, tenant=self.public_tenant
+        )
+        permission, _ = Permission.objects.get_or_create(permission="dummy:hosts:read", tenant=self.public_tenant)
+        _ = Access.objects.create(permission=permission, role=existing_role, tenant=self.public_tenant)
+
+        existing_role.save()
+
+        seed_roles(force_update=True)
+
+        self.assertTrue(
+            any(self.is_create_event("dummy_hosts_read", args[0]) for args, _ in mock_replicate.call_args_list)
+        )

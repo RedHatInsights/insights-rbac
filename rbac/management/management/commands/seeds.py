@@ -33,6 +33,7 @@ class Command(BaseCommand):
         parser.add_argument("--permissions", action="store_true")
         parser.add_argument("--roles", action="store_true")
         parser.add_argument("--groups", action="store_true")
+        parser.add_argument("--force-update", action="store_true")
 
     def handle(self, *args, **options):
         """Handle method for command."""
@@ -45,7 +46,7 @@ class Command(BaseCommand):
 
         if options["roles"] or seed_all:
             logger.info("*** Seeding roles... ***")
-            role_seeding()
+            role_seeding(options["force-update"])
             logger.info("*** Role seeding completed. ***\n")
 
         if options["groups"] or seed_all:

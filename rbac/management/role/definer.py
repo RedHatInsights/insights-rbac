@@ -64,7 +64,7 @@ def _add_ext_relation_if_it_exists(external_relation, role):
     )
 
 
-def _make_role(data, dual_write_handler):
+def _make_role(data, dual_write_handler, force_update=False):
     """Create the role object in the database."""
     public_tenant = Tenant.objects.get(tenant_name="public")
     name = data.pop("name")
@@ -93,6 +93,8 @@ def _make_role(data, dual_write_handler):
             role.access.all().delete()
             role_obj_change_notification_handler(role, "updated")
         else:
+            if force_update:
+                dual_write_handler.replicate_new_system_role(role)
             logger.info("No change in system role %s", name)
             return role
 
@@ -116,19 +118,19 @@ def _make_role(data, dual_write_handler):
     return role
 
 
-def _update_or_create_roles(roles, dual_write_handler):
+def _update_or_create_roles(roles, dual_write_handler, force_update=False):
     """Update or create roles from list."""
     current_role_ids = set()
     for role_json in roles:
         try:
-            role = _make_role(role_json, dual_write_handler)
+            role = _make_role(role_json, dual_write_handler, force_update)
             current_role_ids.add(role.id)
         except Exception as e:
             logger.error(f"Failed to update or create system role: {role_json.get('name')} " f"with error: {e}")
     return current_role_ids
 
 
-def seed_roles():
+def seed_roles(force_update=False):
     """Update or create system defined roles."""
     roles_directory = os.path.join(settings.BASE_DIR, "management", "role", "definitions")
     role_files = [
@@ -144,7 +146,7 @@ def seed_roles():
             with open(role_file_path) as json_file:
                 data = json.load(json_file)
                 role_list = data.get("roles")
-                file_role_ids = _update_or_create_roles(role_list, dual_write_handler)
+                file_role_ids = _update_or_create_roles(role_list, dual_write_handler, force_update)
                 current_role_ids.update(file_role_ids)
 
     # Find roles in DB but not in config
