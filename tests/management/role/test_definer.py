@@ -359,7 +359,7 @@ class RoleDefinerTests(IdentityRequest):
     @patch(
         "builtins.open",
         new_callable=mock_open,
-        read_data='{"roles": [{"name": "existing_system_role", "system": true, "version": 1, "access": [{"permission": "dummy:hosts:read"}]}]}',
+        read_data='{"roles": [{"name": "existing_system_role", "system": true, "version": 1, "access": [{"permission": "dummy:hosts:read"}]}, {"name": "role_wants_update", "system": true, "version": 3, "access": [{"permission": "dummy:hosts:write"}]}]}',
     )
     @patch("os.listdir")
     @patch("os.path.isfile")
@@ -383,8 +383,14 @@ class RoleDefinerTests(IdentityRequest):
 
         existing_role.save()
 
+        # create a role in the database that exists in config with changes.
+        Role.objects.create(name="role_wants_update", system=True, version=1, tenant=self.public_tenant)
+
         seed_roles(force_update=True)
 
         self.assertTrue(
             any(self.is_create_event("dummy_hosts_read", args[0]) for args, _ in mock_replicate.call_args_list)
+        )
+        self.assertTrue(
+            any(self.is_update_event("dummy_hosts_write", args[0]) for args, _ in mock_replicate.call_args_list)
         )
