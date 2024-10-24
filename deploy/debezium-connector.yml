@@ -20,7 +20,6 @@ objects:
       database.user: ${DB_USER}
       database.password: ${DB_PASSWORD}
       topic.prefix: ${TOPIC_PREFIX}
-      table.whitelist: ${TABLE_LIST}
       table.include.list: ${TABLE_LIST}
       transforms: outbox
       transforms.outbox.type: io.debezium.transforms.outbox.EventRouter
