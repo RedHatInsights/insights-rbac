@@ -1,0 +1,9 @@
+---
+apiVersion: cloud.redhat.com/v1alpha1
+kind: ClowdJobInvocation
+metadata:
+  name: populate-user-id-columns
+spec:
+  appName: rbac
+  jobs:
+    - tenant-org-id-populator

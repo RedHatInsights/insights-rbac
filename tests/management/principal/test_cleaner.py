@@ -639,6 +639,7 @@ class PrincipalUMBTestsWithV2TenantBootstrap(PrincipalUMBTests):
         platform_default_policy = Policy.objects.get(group=Group.objects.get(platform_default=True))
         admin_default_policy = Policy.objects.get(group=Group.objects.get(admin_default=True))
 
+        self.assertEqual(default.parent_id, root.uuid)
         self.assertEqual(
             1,
             self._tuples.count_tuples(
