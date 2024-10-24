@@ -17,13 +17,14 @@
 
 """Handler for system defined group."""
 import logging
-from typing import Optional, Tuple, Union
+from typing import Iterable, Optional, Tuple, Union
 from uuid import uuid4
 
 from django.conf import settings
 from django.db import transaction
 from django.db.models.query import QuerySet
 from django.utils.translation import gettext as _
+from kessel.relations.v1beta1.common_pb2 import Relationship
 from management.group.model import Group
 from management.group.relation_api_dual_write_group_handler import (
     RelationApiDualWriteGroupHandler,
@@ -33,13 +34,14 @@ from management.notifications.notification_handlers import (
     group_role_change_notification_handler,
 )
 from management.policy.model import Policy
+from management.relation_replicator.outbox_replicator import OutboxReplicator
 from management.relation_replicator.relation_replicator import ReplicationEventType
 from management.role.model import Role
+from management.tenant_service.v2 import V2TenantBootstrapService
 from management.utils import clear_pk
 from rest_framework import serializers
 
 from api.models import Tenant
-
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
@@ -82,20 +84,23 @@ def seed_group() -> Tuple[Group, Group]:
     return group, admin_group
 
 
-def set_system_flag_before_update(group: Group, tenant, user) -> Optional[Group]:
+def set_system_flag_before_update(group: Group, tenant, user) -> Tuple[Optional[Group], Iterable[Relationship]]:
     """Update system flag on default groups."""
+    relations = []
     if group.system:
-        group = clone_default_group_in_public_schema(group, tenant)  # type: ignore
+        group, relations = clone_default_group_in_public_schema(group, tenant)  # type: ignore
         group_flag_change_notification_handler(user, group)
-    return group
+    return group, relations
 
 
-def clone_default_group_in_public_schema(group, tenant) -> Optional[Group]:
+def clone_default_group_in_public_schema(group, tenant) -> Tuple[Optional[Group], Iterable[Relationship]]:
     """Clone the default group for a tenant into the public schema."""
-    if settings.PRINCIPAL_CLEANUP_UPDATE_ENABLED_UMB:
-        # TODO: bootstrap the tenant to get the mapping
-        # use this for uuid instead and to remove the default role binding tuple
-        group_uuid = uuid4()
+    relationships = []
+    if settings.REPLICATION_TO_RELATION_ENABLED:
+        tenant_bootstrap_service = V2TenantBootstrapService(OutboxReplicator())
+        bootstrapped_tenant = tenant_bootstrap_service.bootstrap_tenant(tenant)
+        relationships = tenant_bootstrap_service.default_bindings_from_mapping(bootstrapped_tenant)
+        group_uuid = bootstrapped_tenant.mapping.default_group_uuid
     else:
         group_uuid = uuid4()
 
@@ -112,22 +117,22 @@ def clone_default_group_in_public_schema(group, tenant) -> Optional[Group]:
     tenant_default_policy.tenant = tenant
     if Group.objects.filter(name=group.name, platform_default=group.platform_default, tenant=tenant):
         # TODO: returning none can break other code
-        return None
+        return None, relationships
     public_default_roles = Role.objects.filter(platform_default=True, tenant=public_tenant)
 
     group.save()
     tenant_default_policy.group = group
     tenant_default_policy.save()
     tenant_default_policy.roles.set(public_default_roles)
-    return group
+    return group, relationships
 
 
 @transaction.atomic
-def add_roles(group, roles_or_role_ids, tenant, user=None):
+def add_roles(group, roles_or_role_ids, tenant, user=None, relations=None):
     """Process list of roles and add them to the group."""
     roles = _roles_by_query_or_ids(roles_or_role_ids)
     group_name = group.name
-
+    custom_group = group
     group, created = Group.objects.get_or_create(name=group_name, tenant=tenant)
     system_policy_name = "System Policy for Group {}".format(group.uuid)
     system_policy, system_policy_created = Policy.objects.update_or_create(
@@ -144,6 +149,15 @@ def add_roles(group, roles_or_role_ids, tenant, user=None):
     # This should not be necessary for system roles.
     custom_roles = roles.filter(tenant=tenant).select_for_update()
 
+    dual_write_handler = None
+    if tenant.tenant_name != "public":
+        dual_write_handler = RelationApiDualWriteGroupHandler(group, ReplicationEventType.ASSIGN_ROLE)
+
+    if dual_write_handler and relations is not None:  # Default group was changed to custom default group
+        dual_write_handler.extend_relations_to_remove(relations)
+        dual_write_handler.add_system_roles_to_default_custom_group(custom_group)
+
+    added_roles = []
     for role in [*system_roles, *custom_roles]:
         # Only Organization administrators are allowed to add the role with RBAC permission
         # higher than "read" into a group.
@@ -167,16 +181,22 @@ def add_roles(group, roles_or_role_ids, tenant, user=None):
 
         system_policy.roles.add(role)
 
-        if tenant.tenant_name != "public":
-            dual_write_handler = RelationApiDualWriteGroupHandler(group, ReplicationEventType.ASSIGN_ROLE)
-            dual_write_handler.replicate_added_role(role)
+        if dual_write_handler:
+            dual_write_handler.generate_group_relations_and_binding_mapping_for_role(role)
+        added_roles.append(role)
+
+    for role in added_roles:
         # Send notifications
         group_role_change_notification_handler(user, group, role, "added")
 
+    if dual_write_handler:
+        dual_write_handler.replicate()
+
 
 @transaction.atomic
-def remove_roles(group, roles_or_role_ids, tenant, user=None):
+def remove_roles(group, roles_or_role_ids, tenant, user=None, relations=[]):
     """Process list of roles and remove them from the group."""
+    custom_group = group
     roles = _roles_by_query_or_ids(roles_or_role_ids)
     group = Group.objects.get(name=group.name, tenant=tenant)
     system_roles = roles.filter(tenant=Tenant.objects.get(tenant_name="public"))
@@ -186,6 +206,15 @@ def remove_roles(group, roles_or_role_ids, tenant, user=None):
     # This should not be necessary for system roles.
     custom_roles = roles.filter(tenant=tenant).select_for_update()
 
+    removed_roles = []
+    dual_write_handler = None
+    if tenant.tenant_name != "public":
+        dual_write_handler = RelationApiDualWriteGroupHandler(group, ReplicationEventType.UNASSIGN_ROLE)
+
+    if dual_write_handler and relations is not None:  # Default group was changed to custom default group
+        dual_write_handler.extend_relations_to_remove(relations)
+        dual_write_handler.add_system_roles_to_default_custom_group(custom_group)
+
     for policy in group.policies.all():
         for role in [*system_roles, *custom_roles]:
             # Only remove the role if it was attached
@@ -193,12 +222,16 @@ def remove_roles(group, roles_or_role_ids, tenant, user=None):
                 policy.roles.remove(role)
                 logger.info(f"Removing role {role} from group {group.name} for tenant {tenant.org_id}.")
 
-                if tenant.tenant_name != "public":
-                    dual_write_handler = RelationApiDualWriteGroupHandler(group, ReplicationEventType.UNASSIGN_ROLE)
-                    dual_write_handler.replicate_removed_role(role)
+                if dual_write_handler:
+                    dual_write_handler.generate_group_relations_and_binding_mapping_for_role_removal(role)
 
-                # Send notifications
-                group_role_change_notification_handler(user, group, role, "removed")
+                removed_roles.append(role)
+
+    for role in removed_roles:
+        # Send notifications
+        group_role_change_notification_handler(user, group, role, "removed")
+    if dual_write_handler:
+        dual_write_handler.replicate()
 
 
 def update_group_roles(group, roleset, tenant):
