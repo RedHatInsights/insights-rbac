@@ -646,9 +646,9 @@ components:
     Workspaces.CreateWorkspaceRequest:
       type: object
       required:
-        - parent_id
+        - parent_uuid
       properties:
-        parent_id:
+        parent_uuid:
           allOf:
             - $ref: '#/components/schemas/UUID'
           description: Parent UUID of Workspace A
@@ -761,7 +761,7 @@ components:
       required:
         - name
         - description
-        - parent_id
+        - parent_uuid
       properties:
         name:
           type: string
@@ -771,7 +771,7 @@ components:
           type: string
           description: Description of Workspace A
           default: Description of Workspace A
-        parent_id:
+        parent_uuid:
           allOf:
             - $ref: '#/components/schemas/UUID'
           description: Description of Workspace A
@@ -791,7 +791,7 @@ components:
       properties:
         uuid:
           $ref: '#/components/schemas/UUID'
-        parent_id:
+        parent_uuid:
           $ref: '#/components/schemas/UUID'
         type:
           $ref: '#/components/schemas/Workspaces.WorkspaceTypes'
@@ -819,7 +819,7 @@ components:
       properties:
         uuid:
           $ref: '#/components/schemas/UUID'
-        parent_id:
+        parent_uuid:
           $ref: '#/components/schemas/UUID'
         name:
           type: string
