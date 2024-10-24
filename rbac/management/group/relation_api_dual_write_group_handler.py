@@ -113,9 +113,7 @@ class RelationApiDualWriteGroupHandler:
                 ReplicationEvent(
                     event_type=self.event_type,
                     info={"group_uuid": str(self.group.uuid)},
-                    # TODO: need to think about partitioning
-                    # Maybe resource id
-                    partition_key="rbactodo",
+                    partition_key="settings.ENV_NAME",
                     remove=self.group_relations_to_remove,
                     add=self.group_relations_to_add,
                 ),

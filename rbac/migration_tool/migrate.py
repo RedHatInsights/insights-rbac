@@ -18,6 +18,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 import logging
 from typing import Iterable
 
+from django.conf import settings
 from kessel.relations.v1beta1 import common_pb2
 from management.models import Workspace
 from management.principal.model import Principal
@@ -113,7 +114,7 @@ def migrate_data_for_tenant(tenant: Tenant, exclude_apps: list, replicator: Rela
         ReplicationEvent(
             event_type=ReplicationEventType.MIGRATE_TENANT_GROUPS,
             info={"tenant": tenant.org_id},
-            partition_key="rbactodo",
+            partition_key="settings.ENV_NAME",
             add=tuples,
         )
     )
@@ -143,7 +144,7 @@ def migrate_data_for_tenant(tenant: Tenant, exclude_apps: list, replicator: Rela
             ReplicationEvent(
                 event_type=ReplicationEventType.MIGRATE_CUSTOM_ROLE,
                 info={"role_uuid": str(role.uuid)},
-                partition_key="rbactodo",
+                partition_key="settings.ENV_NAME",
                 add=tuples,
             )
         )

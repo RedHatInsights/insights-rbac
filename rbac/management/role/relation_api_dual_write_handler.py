@@ -162,7 +162,7 @@ class SeedingRelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
                     info=metadata,
                     # TODO: need to think about partitioning
                     # Maybe resource id
-                    partition_key="rbactodo",
+                    partition_key="settings.ENV_NAME",
                     remove=remove,
                     add=add,
                 ),
@@ -301,9 +301,7 @@ class RelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
                 ReplicationEvent(
                     event_type=self.event_type,
                     info={"v1_role_uuid": str(self.role.uuid)},
-                    # TODO: need to think about partitioning
-                    # Maybe resource id
-                    partition_key="rbactodo",
+                    partition_key="settings.ENV_NAME",
                     remove=self.current_role_relations,
                     add=self.role_relations,
                 ),
