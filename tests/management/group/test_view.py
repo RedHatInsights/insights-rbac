@@ -18,7 +18,7 @@
 import random
 from unittest.mock import call, patch, ANY, Mock
 from uuid import uuid4
-
+import json
 from django.db import transaction
 from django.conf import settings
 from django.urls import reverse, resolve
@@ -345,9 +345,9 @@ class GroupViewsetTests(IdentityRequest):
             client = APIClient()
             response = client.post(url, test_data, format="json", **self.headers)
             self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-
             response = client.post(url, test_data, format="json", **self.headers)
-            self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+            duplicate_response_data = json.loads(response.content)
+            self.assertEqual(duplicate_response_data["errors"][0].get("status"), status.HTTP_400_BAD_REQUEST)
 
     def test_create_group_with_reserved_name(self):
         """Test that creating a group with reserved name is not allowed."""
@@ -5376,3 +5376,33 @@ class GroupViewNonAdminTests(IdentityRequest):
 
         response = client.put(url, request_body, format="json", **self.headers_service_account_principal)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+    def test_duplicate_entry_message(self):
+        """
+        Test that when a duplicate group is added for a tenant the correct error response is being returned
+        """
+        # Initial group creation
+        request_body = {"name": "duplicateEntry"}
+        url = reverse("v1_management:group-list")
+
+        with transaction.atomic():
+            # Initial group creation
+            response = self.client.post(url, request_body, format="json", **self.headers_org_admin)
+            self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+            # Duplicate add attempt
+            duplicate_response = self.client.post(url, request_body, format="json", **self.headers_org_admin)
+
+            duplicate_response_data = json.loads(
+                duplicate_response.content
+            )  # Get the response data for the duplicate attempt
+
+            # Validate the response content
+            self.assertEqual(
+                duplicate_response_data["errors"][0].get("detail"),
+                "A group with the name 'duplicateEntry' exists for this tenant",
+            )
+            self.assertEqual(
+                duplicate_response_data["errors"][0].get("source"), "Group unique constraint violation error"
+            )
+            self.assertEqual(duplicate_response_data["errors"][0].get("status"), status.HTTP_400_BAD_REQUEST)
