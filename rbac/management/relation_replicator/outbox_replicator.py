@@ -19,10 +19,8 @@
 
 import logging
 
-from django.conf import settings
 from google.protobuf import json_format
 from management.models import Outbox
-from management.relation_replicator.logging_replicator import LoggingReplicator
 from management.relation_replicator.relation_replicator import RelationReplicator, ReplicationEvent
 
 
@@ -36,8 +34,6 @@ class OutboxReplicator(RelationReplicator):
         """Replicate the given event to Kessel Relations via the Outbox."""
         payload = self._build_replication_event(event.add, event.remove)
         self._save_replication_event(payload, event.event_type, event.event_info, event.partition_key)
-        if settings.LOG_REPLICATION:
-            LoggingReplicator().replicate(event)
 
     def _build_replication_event(self, relations_to_add, relations_to_remove):
         """Build replication event."""
