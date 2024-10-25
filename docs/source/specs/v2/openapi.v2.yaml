@@ -159,7 +159,7 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/Workspaces.CreateWorkspaceRequest'
-  /workspaces/{uuid}/:
+  /workspaces/{id}/:
     get:
       tags:
         - Workspaces
@@ -167,7 +167,7 @@ paths:
       summary: Get a workspace in tenant
       description: Get a workspace in tenant
       parameters:
-        - name: uuid
+        - name: id
           in: path
           required: true
           description: Unique identification
@@ -247,7 +247,7 @@ paths:
       summary: Edit the workspace name or description
       description: Edit a workspace
       parameters:
-        - name: uuid
+        - name: id
           in: path
           required: true
           description: Unique identification
@@ -337,7 +337,7 @@ paths:
         - Workspaces
       operationId: Workspaces_patch
       parameters:
-        - name: uuid
+        - name: id
           in: path
           required: true
           description: Unique identification
@@ -429,7 +429,7 @@ paths:
       summary: Delete the workspace
       description: Delete a workspace
       parameters:
-        - name: uuid
+        - name: id
           in: path
           required: true
           description: Unique identification
@@ -651,8 +651,8 @@ components:
         parent_id:
           allOf:
             - $ref: '#/components/schemas/UUID'
-          description: Parent UUID of Workspace A
-          default: Parent UUID of Workspace A
+          description: Parent ID of Workspace A
+          default: Parent ID of Workspace A
       allOf:
         - $ref: '#/components/schemas/Workspaces.BasicWorkspace'
     Workspaces.CreateWorkspaceResponse:
@@ -775,7 +775,7 @@ components:
           allOf:
             - $ref: '#/components/schemas/UUID'
           description: Description of Workspace A
-          default: Parent UUID of Workspace A
+          default: Parent ID of Workspace A
     Workspaces.UpdateWorkspaceResponse:
       type: object
       allOf:
