@@ -96,7 +96,7 @@ def set_system_flag_before_update(group: Group, tenant, user) -> Tuple[Optional[
 def clone_default_group_in_public_schema(group, tenant) -> Tuple[Optional[Group], Iterable[Relationship]]:
     """Clone the default group for a tenant into the public schema."""
     relationships = []
-    if settings.REPLICATION_TO_RELATION_ENABLED:
+    if settings.V2_BOOTSTRAP_TENANT:
         tenant_bootstrap_service = V2TenantBootstrapService(OutboxReplicator())
         bootstrapped_tenant = tenant_bootstrap_service.bootstrap_tenant(tenant)
         relationships = tenant_bootstrap_service.default_bindings_from_mapping(bootstrapped_tenant)
