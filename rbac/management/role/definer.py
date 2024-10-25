@@ -95,6 +95,8 @@ def _make_role(data, dual_write_handler, force_create_relationships=False):
         else:
             if force_create_relationships:
                 dual_write_handler.replicate_new_system_role(role)
+                logger.info("Replicated system role %s", name)
+                return role
             logger.info("No change in system role %s", name)
             return role
 
