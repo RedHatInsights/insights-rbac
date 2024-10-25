@@ -102,8 +102,8 @@ class MigrateTests(TestCase):
         migrate_data(**kwargs)
 
         org_id = self.tenant.org_id
-        root_workspace_id = str(self.root_workspace.uuid)
-        default_workspace_id = str(self.default_workspace.uuid)
+        root_workspace_id = str(self.root_workspace.id)
+        default_workspace_id = str(self.default_workspace.id)
 
         role_binding = BindingMapping.objects.filter(role=self.role_a2).get().get_role_binding()
 
