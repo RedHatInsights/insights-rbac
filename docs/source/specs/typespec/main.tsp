@@ -108,7 +108,7 @@ namespace Workspaces {
     }
 
     model Workspace {
-        @key uuid: UUID;
+        @key id: UUID;
         parent_id?: UUID;
         type: WorkspaceTypes;
         ...BasicWorkspace;
@@ -116,7 +116,7 @@ namespace Workspaces {
     }
 
     model WorkspaceAncestor {
-        @key uuid: UUID;
+        @key id: UUID;
         parent_id?: UUID;
         name: string;
     }

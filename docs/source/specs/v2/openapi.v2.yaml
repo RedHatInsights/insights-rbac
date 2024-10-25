@@ -783,13 +783,13 @@ components:
     Workspaces.Workspace:
       type: object
       required:
-        - uuid
+        - id
         - type
         - name
         - created
         - modified
       properties:
-        uuid:
+        id:
           $ref: '#/components/schemas/UUID'
         parent_id:
           $ref: '#/components/schemas/UUID'
@@ -814,10 +814,10 @@ components:
     Workspaces.WorkspaceAncestor:
       type: object
       required:
-        - uuid
+        - id
         - name
       properties:
-        uuid:
+        id:
           $ref: '#/components/schemas/UUID'
         parent_id:
           $ref: '#/components/schemas/UUID'
