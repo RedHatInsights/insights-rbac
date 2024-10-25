@@ -386,7 +386,7 @@ class RoleDefinerTests(IdentityRequest):
         # create a role in the database that exists in config with changes.
         Role.objects.create(name="role_wants_update", system=True, version=1, tenant=self.public_tenant)
 
-        seed_roles(force_create=True)
+        seed_roles(force_create_relationships=True)
 
         self.assertTrue(
             any(self.is_create_event("dummy_hosts_read", args[0]) for args, _ in mock_replicate.call_args_list)

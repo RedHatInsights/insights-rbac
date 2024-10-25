@@ -636,7 +636,8 @@ objects:
           image: quay.io/cloudservices/rbac:latest
           command:
             - ./rbac/manage.py seeds
-            - --force-create
+            - --roles
+            - --force-create-relationships
           resources:
             limits:
               cpu: 300m
