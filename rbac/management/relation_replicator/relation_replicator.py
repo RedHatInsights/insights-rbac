@@ -51,6 +51,7 @@ class ReplicationEventType(str, Enum):
     MIGRATE_CUSTOM_ROLE = "migrate_custom_role"
     MIGRATE_TENANT_GROUPS = "migrate_tenant_groups"
 
+
 class ReplicationEvent:
     """What tuples changes to replicate."""
 

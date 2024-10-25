@@ -1786,6 +1786,7 @@ class GroupViewsetTests(IdentityRequest):
         self.assertEqual(system_policy.tenant, self.tenant)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
+    @override_settings(V2_BOOTSTRAP_TENANT=True)
     @patch("management.relation_replicator.outbox_replicator.OutboxReplicator._save_replication_event")
     @patch("core.kafka.RBACProducer.send_kafka_message")
     def test_system_flag_update_on_add(self, send_kafka_message, mock_method):
@@ -1950,6 +1951,7 @@ class GroupViewsetTests(IdentityRequest):
             ]
             kafka_mock.assert_has_calls(notification_messages, any_order=True)
 
+    @override_settings(V2_BOOTSTRAP_TENANT=True)
     @patch("management.relation_replicator.outbox_replicator.OutboxReplicator._save_replication_event")
     @patch("core.kafka.RBACProducer.send_kafka_message")
     def test_system_flag_update_on_remove(self, send_kafka_message, mock_method):

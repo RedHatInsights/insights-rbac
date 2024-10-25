@@ -255,7 +255,7 @@ class V2TenantBootstrapServiceTest(TestCase):
 
         # Set up another org with custom default group but not bootstrapped
         o3_tenant = self.fixture.new_unbootstrapped_tenant(org_id="o3")
-        o3_custom_group = self.fixture.custom_default_group(o3_tenant)
+        o3_custom_group, _ = self.fixture.custom_default_group(o3_tenant)
 
         self.fixture.new_unbootstrapped_tenant(org_id="o4")
 
