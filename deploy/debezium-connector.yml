@@ -25,6 +25,7 @@ objects:
       transforms.outbox.type: io.debezium.transforms.outbox.EventRouter
       transforms.outbox.table.field.payload: ${PAYLOAD_NAME}
       plugin.name: pgoutput
+      heartbeat.interval.ms: 300000
 parameters:
 - name: DB_SERVERNAME
   required: true
