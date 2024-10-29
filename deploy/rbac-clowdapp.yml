@@ -620,6 +620,8 @@ objects:
                   key: bucket
             - name: CLOWDER_ENABLED
               value: ${CLOWDER_ENABLED}
+            - name: REPLICATION_TO_RELATION_ENABLED
+              value: "True"
           resources:
             limits:
               cpu: 300m
@@ -652,6 +654,8 @@ objects:
           env:
             - name: CLOWDER_ENABLED
               value: ${CLOWDER_ENABLED}
+            - name: REPLICATION_TO_RELATION_ENABLED
+              value: "True"
 
 - apiVersion: v1
   kind: ConfigMap
