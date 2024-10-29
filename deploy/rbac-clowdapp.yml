@@ -1071,4 +1071,4 @@ parameters:
   value: '1'
 - name: USER_ID_POPULATOR_BATCH_SIZE
   description: The number of user records to process in each batch
-  value: '1000'
+  value: '350'
