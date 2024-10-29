@@ -56,15 +56,15 @@ def normalize_and_sort(json_obj):
     return json_obj
 
 
-def replication_event_for_v1_role(v1_role_uuid, default_workspace_uuid):
+def replication_event_for_v1_role(v1_role_uuid, default_workspace_id):
     """Create a replication event for a v1 role."""
     return {
-        "relations_to_add": relation_api_tuples_for_v1_role(v1_role_uuid, default_workspace_uuid),
+        "relations_to_add": relation_api_tuples_for_v1_role(v1_role_uuid, default_workspace_id),
         "relations_to_remove": [],
     }
 
 
-def relation_api_tuples_for_v1_role(v1_role_uuid, default_workspace_uuid):
+def relation_api_tuples_for_v1_role(v1_role_uuid, default_workspace_id):
     """Create a relation API tuple for a v1 role."""
     role_id = Role.objects.get(uuid=v1_role_uuid).id
     mappings = BindingMapping.objects.filter(role=role_id).all()
@@ -78,7 +78,7 @@ def relation_api_tuples_for_v1_role(v1_role_uuid, default_workspace_uuid):
             relations.append(relation_tuple)
         if "app_all_read" in role_binding.role.permissions:
             relation_tuple = relation_api_tuple(
-                "workspace", default_workspace_uuid, "binding", "role_binding", role_binding.id
+                "workspace", default_workspace_id, "binding", "role_binding", role_binding.id
             )
             relations.append(relation_tuple)
         else:
@@ -422,7 +422,7 @@ class RoleViewsetTests(IdentityRequest):
         response = self.create_role(role_name, role_display=role_display, in_access_data=access_data)
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
 
-        replication_event = replication_event_for_v1_role(response.data.get("uuid"), str(self.default_workspace.uuid))
+        replication_event = replication_event_for_v1_role(response.data.get("uuid"), str(self.default_workspace.id))
 
         mock_method.assert_called_once()
         actual_call_arg = mock_method.call_args[0][0]
@@ -1460,10 +1460,10 @@ class RoleViewsetTests(IdentityRequest):
         test_data["access"] = new_access_data
         url = reverse("v1_management:role-detail", kwargs={"uuid": role_uuid})
         client = APIClient()
-        current_relations = relation_api_tuples_for_v1_role(role_uuid, str(self.default_workspace.uuid))
+        current_relations = relation_api_tuples_for_v1_role(role_uuid, str(self.default_workspace.id))
 
         response = client.put(url, test_data, format="json", **self.headers)
-        replication_event = replication_event_for_v1_role(response.data.get("uuid"), str(self.default_workspace.uuid))
+        replication_event = replication_event_for_v1_role(response.data.get("uuid"), str(self.default_workspace.id))
         replication_event["relations_to_remove"] = current_relations
         actual_call_arg = mock_method.call_args[0][0]
         expected_sorted = normalize_and_sort(replication_event)
@@ -1571,7 +1571,7 @@ class RoleViewsetTests(IdentityRequest):
         url = reverse("v1_management:role-detail", kwargs={"uuid": role_uuid})
         client = APIClient()
         replication_event = {"relations_to_add": [], "relations_to_remove": []}
-        current_relations = relation_api_tuples_for_v1_role(role_uuid, str(self.default_workspace.uuid))
+        current_relations = relation_api_tuples_for_v1_role(role_uuid, str(self.default_workspace.id))
         replication_event["relations_to_remove"] = current_relations
         response = client.delete(url, **self.headers)
         actual_call_arg = mock_method.call_args[0][0]
@@ -1755,6 +1755,23 @@ class RoleViewsetTests(IdentityRequest):
         self.assertEqual(len(response.data.get("data")), 1)
         role = response.data.get("data")[0]
         self.assertEqual(role.get("groups_in_count"), 2)
+
+    def test_create_duplicate_role_fail(self):
+        """
+        Test that it is not possible to create a custom role with the same name for a tenant.
+        """
+        client = APIClient()
+        name = "Duplicate role name"
+        test_data = {"name": name, "access": []}
+
+        # Create new role
+        response = client.post(URL, test_data, format="json", **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+        # Try to create the same role again
+        response = client.post(URL, test_data, format="json", **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data.get("errors")[0].get("detail"), f"Role '{name}' already exists for a tenant.")
 
 
 class RoleViewNonAdminTests(IdentityRequest):

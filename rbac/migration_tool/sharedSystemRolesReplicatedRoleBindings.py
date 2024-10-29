@@ -129,7 +129,7 @@ def v1_role_to_v2_bindings(
         if default:
             add_element(
                 perm_groupings,
-                V2boundresource(("rbac", "workspace"), str(default_workspace.uuid)),
+                V2boundresource(("rbac", "workspace"), str(default_workspace.id)),
                 v2_perm,
                 collection=set,
             )
