@@ -24,7 +24,7 @@ import traceback
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.db.models import Q
 from django.db.models.aggregates import Count
 from django.http import Http404
@@ -70,6 +70,7 @@ LIST_ROLE_FIELDS = [
     "external_tenant",
 ]
 VALID_PATCH_FIELDS = ["name", "display_name", "description"]
+DUPLICATE_KEY_ERROR_MSG = "duplicate key value violates unique constraint"
 
 if TESTING_APP:
     settings.ROLE_CREATE_ALLOW_LIST.append(TESTING_APP)
@@ -269,6 +270,12 @@ class RoleViewSet(
         try:
             with transaction.atomic():
                 return super().create(request=request, args=args, kwargs=kwargs)
+        except IntegrityError as e:
+            if DUPLICATE_KEY_ERROR_MSG in e.args[0]:
+                raise serializers.ValidationError(
+                    {"role": f"Role '{request.data.get('name')}' already exists for a tenant."}
+                )
+            raise serializers.ValidationError({"role": "An unexpected database error occurred."}) from e
         except DualWriteException as e:
             return self.dual_write_exception_response(e)
 

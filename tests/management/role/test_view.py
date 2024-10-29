@@ -1738,6 +1738,23 @@ class RoleViewsetTests(IdentityRequest):
         role = response.data.get("data")[0]
         self.assertEqual(role.get("groups_in_count"), 2)
 
+    def test_create_duplicate_role_fail(self):
+        """
+        Test that it is not possible to create a custom role with the same name for a tenant.
+        """
+        client = APIClient()
+        name = "Duplicate role name"
+        test_data = {"name": name, "access": []}
+
+        # Create new role
+        response = client.post(URL, test_data, format="json", **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+        # Try to create the same role again
+        response = client.post(URL, test_data, format="json", **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data.get("errors")[0].get("detail"), f"Role '{name}' already exists for a tenant.")
+
 
 class RoleViewNonAdminTests(IdentityRequest):
     """Test the role view for nonadmin user."""
