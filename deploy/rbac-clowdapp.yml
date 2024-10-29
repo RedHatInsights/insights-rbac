@@ -596,7 +596,8 @@ objects:
         podSpec:
           image: quay.io/cloudservices/rbac:latest
           command:
-            - ./rbac/manage.py import_tenant_user_data
+            - /opt/rbac/rbac/manage.py
+            - import_tenant_user_data
             - --start_line
             - ${USER_ID_POPULATOR_START_LINE}
             - --batch_size
@@ -635,7 +636,8 @@ objects:
         podSpec:
           image: quay.io/cloudservices/rbac:latest
           command:
-            - ./rbac/manage.py seeds
+            - /opt/rbac/rbac/manage.py
+            - seeds
             - --roles
             - --force-create-relationships
           resources:
