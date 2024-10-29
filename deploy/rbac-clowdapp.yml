@@ -1034,7 +1034,7 @@ parameters:
 - name: PRINCIPAL_CLEANUP_UPDATE_ENABLED_UMB
   description: Allow cleanup job to update principals via messages from UMB
   value: 'False'
-- name: UMB_JOB_ENABLE
+- name: UMB_JOB_ENABLED
   description: Temp env to enable the UMB job
   value: 'True'
 - name: UMB_HOST
