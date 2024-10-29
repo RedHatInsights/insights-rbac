@@ -18,14 +18,14 @@
 
 import json
 from uuid import uuid4
-
+from api.models import Tenant
 from django.conf import settings
 from django.core.serializers.json import DjangoJSONEncoder
 from django.test.utils import override_settings
 from django.urls import reverse, resolve
 from rest_framework import status
 from rest_framework.test import APIClient
-
+from api.models import Tenant
 from management.cache import TenantCache
 from management.models import (
     Group,
@@ -125,6 +125,8 @@ class RoleViewsetTests(IdentityRequest):
         super().setUp()
         sys_role_config = {"name": "system_role", "display_name": "system_display", "system": True}
 
+        sys_pub_role_config = {"name": "system_public_role", "display_name": "system_public_display", "system": True}
+
         def_role_config = {"name": "default_role", "display_name": "default_display", "platform_default": True}
 
         admin_def_role_config = {
@@ -181,17 +183,20 @@ class RoleViewsetTests(IdentityRequest):
         self.platformAdminRole = Role(**platform_admin_def_role_config, tenant=self.tenant)
         self.platformAdminRole.save()
 
+        self.public_tenant = Tenant.objects.get(tenant_name="public")
+        self.sysPubRole = Role(**sys_pub_role_config, tenant=self.public_tenant)
+        self.sysPubRole.save()
+
         self.sysRole = Role(**sys_role_config, tenant=self.tenant)
         self.sysRole.save()
 
         self.defRole = Role(**def_role_config, tenant=self.tenant)
         self.defRole.save()
-        self.defRole.save()
 
         self.ext_tenant = ExtTenant.objects.create(name="foo")
         self.ext_role_relation = ExtRoleRelation.objects.create(role=self.defRole, ext_tenant=self.ext_tenant)
 
-        self.policy.roles.add(self.defRole, self.sysRole, self.adminRole, self.platformAdminRole)
+        self.policy.roles.add(self.defRole, self.sysRole, self.adminRole, self.platformAdminRole, self.sysPubRole)
         self.policy.save()
 
         self.policyTwo.roles.add(self.platformAdminRole)
@@ -651,7 +656,7 @@ class RoleViewsetTests(IdentityRequest):
         for keyname in ["meta", "links", "data"]:
             self.assertIn(keyname, response.data)
         self.assertIsInstance(response.data.get("data"), list)
-        self.assertEqual(len(response.data.get("data")), 5)
+        self.assertEqual(len(response.data.get("data")), 6)
 
         role = None
 
@@ -744,14 +749,14 @@ class RoleViewsetTests(IdentityRequest):
         url = "{}?name={}".format(URL, "role")
         client = APIClient()
         response = client.get(url, **self.headers)
-        self.assertEqual(response.data.get("meta").get("count"), 4)
+        self.assertEqual(response.data.get("meta").get("count"), 5)
 
     def test_get_role_by_partial_name_explicit(self):
         """Test that getting roles by name returns partial match when specified."""
         url = "{}?name={}&name_match={}".format(URL, "role", "partial")
         client = APIClient()
         response = client.get(url, **self.headers)
-        self.assertEqual(response.data.get("meta").get("count"), 4)
+        self.assertEqual(response.data.get("meta").get("count"), 5)
 
     def test_get_role_by_name_invalid_criteria(self):
         """Test that getting roles by name fails with invalid name_match."""
@@ -781,14 +786,14 @@ class RoleViewsetTests(IdentityRequest):
         url = "{}?display_name={}".format(URL, "display")
         client = APIClient()
         response = client.get(url, **self.headers)
-        self.assertEqual(response.data.get("meta").get("count"), 4)
+        self.assertEqual(response.data.get("meta").get("count"), 5)
 
     def test_get_role_by_partial_display_name_explicit(self):
         """Test that getting roles by display_name returns partial match when specified."""
         url = "{}?display_name={}&name_match={}".format(URL, "display", "partial")
         client = APIClient()
         response = client.get(url, **self.headers)
-        self.assertEqual(response.data.get("meta").get("count"), 4)
+        self.assertEqual(response.data.get("meta").get("count"), 5)
 
     def test_get_role_by_display_name_invalid_criteria(self):
         """Test that getting roles by display_name fails with invalid name_match."""
@@ -1107,7 +1112,6 @@ class RoleViewsetTests(IdentityRequest):
         self.assertIsInstance(response.data.get("data"), list)
 
         response_data = response.data.get("data")
-
         for iterRole in response_data:
             # fields displayed are same as defined, groupsInCount is added
             self.assertEqual(new_display_fields, set(iterRole.keys()))
@@ -1181,7 +1185,7 @@ class RoleViewsetTests(IdentityRequest):
         client = APIClient()
         response = client.get(url, **self.headers)
 
-        self.assertEqual(len(response.data.get("data")), 4)
+        self.assertEqual(len(response.data.get("data")), 5)
 
         role = response.data.get("data")[0]
         self.assertEqual(new_display_fields, set(role.keys()))
@@ -1199,7 +1203,7 @@ class RoleViewsetTests(IdentityRequest):
         client = APIClient()
         response = client.get(url, **self.headers)
 
-        self.assertEqual(len(response.data.get("data")), 4)
+        self.assertEqual(len(response.data.get("data")), 5)
 
         role = response.data.get("data")[0]
         self.assertEqual(new_display_fields, set(role.keys()))
@@ -1647,6 +1651,21 @@ class RoleViewsetTests(IdentityRequest):
         response = client.get(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
+    def test_delete_public_system_role(self):
+        """Test that public system roles are protected from deletion"""
+        url = reverse("v1_management:role-detail", kwargs={"uuid": self.sysPubRole.uuid})
+        client = APIClient()
+
+        existing_role = Role.objects.filter(uuid=self.sysPubRole.uuid, tenant=self.public_tenant).first()
+        self.assertIsNotNone(existing_role, "Public system role should exist before deletion test.")
+
+        response = client.delete(url, **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+        # verify the role still exists
+        response = client.get(url, **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
     def test_update_admin_default_role(self):
         """Test that admin default roles are protected from deletion"""
 
@@ -1690,13 +1709,13 @@ class RoleViewsetTests(IdentityRequest):
         client = APIClient()
         response = client.get(URL, **self.headers)
 
-        self.assertEqual(len(response.data.get("data")), 4)
+        self.assertEqual(len(response.data.get("data")), 5)
 
         url = f"{URL}?system=true"
         client = APIClient()
         response = client.get(url, **self.headers)
 
-        self.assertEqual(len(response.data.get("data")), 3)
+        self.assertEqual(len(response.data.get("data")), 4)
         role = response.data.get("data")[0]
         self.assertEqual(role.get("system"), True)
 
@@ -1713,7 +1732,7 @@ class RoleViewsetTests(IdentityRequest):
         client = APIClient()
         response = client.get(URL, **self.headers)
 
-        self.assertEqual(len(response.data.get("data")), 4)
+        self.assertEqual(len(response.data.get("data")), 5)
 
         url = f"{URL}?external_tenant=foo"
         client = APIClient()
@@ -1728,7 +1747,7 @@ class RoleViewsetTests(IdentityRequest):
         client = APIClient()
         response = client.get(URL, **self.headers)
 
-        self.assertEqual(len(response.data.get("data")), 4)
+        self.assertEqual(len(response.data.get("data")), 5)
 
         url = f"{URL}?display_name=platform_admin_default_display&add_fields=groups_in_count%2Cgroups_in"
         client = APIClient()

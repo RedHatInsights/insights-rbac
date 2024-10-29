@@ -46,6 +46,7 @@ from rest_framework.decorators import action
 from rest_framework.filters import OrderingFilter
 from rest_framework.response import Response
 
+from api.models import Tenant
 from rbac.env import ENVIRONMENT
 from .model import Role
 from .serializer import RoleSerializer
@@ -171,8 +172,8 @@ class RoleViewSet(
             # You would be able to remove `select_for_update` here,
             # and instead rely on REPEATABLE READ's lost update detection to abort the tx.
             # Nothing else should need to change.
-
-            base_query = Role.objects.filter(tenant=self.request.tenant).select_for_update()
+            public_tenant = Tenant.objects.get(tenant_name="public")
+            base_query = Role.objects.filter(tenant__in=[self.request.tenant, public_tenant]).select_for_update()
 
             # TODO: May be redundant with RolePermissions check but copied from querysets.py for safety
             if ENVIRONMENT.get_value("ALLOW_ANY", default=False, cast=bool):
