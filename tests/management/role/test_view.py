@@ -186,10 +186,10 @@ class RoleViewsetTests(IdentityRequest):
         self.sysPubRole = Role(**sys_pub_role_config, tenant=self.public_tenant)
         self.sysPubRole.save()
 
-        self.sysRole = Role(**sys_role_config, tenant=self.tenant)
+        self.sysRole = Role(**sys_role_config, tenant=self.public_tenant)
         self.sysRole.save()
 
-        self.defRole = Role(**def_role_config, tenant=self.tenant)
+        self.defRole = Role(**def_role_config, tenant=self.public_tenant)
         self.defRole.save()
 
         self.ext_tenant = ExtTenant.objects.create(name="foo")
