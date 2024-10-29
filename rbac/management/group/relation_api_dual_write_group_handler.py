@@ -157,8 +157,8 @@ class RelationApiDualWriteGroupHandler:
                 str(uuid4()),
                 # Assumes same role UUID for V2 system role equivalent.
                 V2role.for_system_role(str(role.uuid)),
-                V2boundresource(("rbac", "workspace"), str(self.default_workspace.uuid)),
-                groups=frozenset([str(group.uuid)]),
+                V2boundresource(("rbac", "workspace"), str(self.default_workspace.id)),
+                groups=frozenset([str(self.group.uuid)]),
             )
             mapping = BindingMapping.for_role_binding(binding, role)
             self.group_relations_to_add.extend(mapping.as_tuples())
@@ -219,7 +219,7 @@ class RelationApiDualWriteGroupHandler:
                         role=role,
                         resource_type_namespace="rbac",
                         resource_type_name="workspace",
-                        resource_id=str(self.default_workspace.uuid),
+                        resource_id=str(self.default_workspace.id),
                     )
                     .get()
                 )

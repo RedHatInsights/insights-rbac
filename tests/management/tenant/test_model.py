@@ -65,9 +65,9 @@ class V2TenantBootstrapServiceTest(TestCase):
             1,
             self.tuples.count_tuples(
                 all_of(
-                    resource("rbac", "workspace", default.uuid),
+                    resource("rbac", "workspace", default.id),
                     relation("parent"),
-                    subject("rbac", "workspace", root.uuid),
+                    subject("rbac", "workspace", root.id),
                 )
             ),
         )
@@ -75,7 +75,7 @@ class V2TenantBootstrapServiceTest(TestCase):
             1,
             self.tuples.count_tuples(
                 all_of(
-                    resource("rbac", "workspace", root.uuid),
+                    resource("rbac", "workspace", root.id),
                     relation("parent"),
                     subject("rbac", "tenant", "localhost/o1"),
                 )
@@ -206,7 +206,7 @@ class V2TenantBootstrapServiceTest(TestCase):
             1,
             self.tuples.count_tuples(
                 all_of(
-                    resource("rbac", "workspace", default_ws.uuid),
+                    resource("rbac", "workspace", default_ws.id),
                     relation("binding"),
                     subject("rbac", "role_binding", bootstrapped.mapping.default_role_binding_uuid),
                 )
@@ -242,7 +242,7 @@ class V2TenantBootstrapServiceTest(TestCase):
             1,
             self.tuples.count_tuples(
                 all_of(
-                    resource("rbac", "workspace", default_ws.uuid),
+                    resource("rbac", "workspace", default_ws.id),
                     relation("binding"),
                     subject("rbac", "role_binding", bootstrapped.mapping.default_role_binding_uuid),
                 )
@@ -394,7 +394,7 @@ class V2TenantBootstrapServiceTest(TestCase):
 
         self.assertEqual(
             default.parent_id,
-            root.uuid,
+            root.id,
             f"Expected default workspace to be child of root workspace for tenant {org_id}",
         )
 
@@ -402,9 +402,9 @@ class V2TenantBootstrapServiceTest(TestCase):
             1,
             self.tuples.count_tuples(
                 all_of(
-                    resource("rbac", "workspace", default.uuid),
+                    resource("rbac", "workspace", default.id),
                     relation("parent"),
-                    subject("rbac", "workspace", root.uuid),
+                    subject("rbac", "workspace", root.id),
                 )
             ),
             f"Expected default workspace to be child of root workspace for tenant {org_id}",
@@ -413,7 +413,7 @@ class V2TenantBootstrapServiceTest(TestCase):
             1,
             self.tuples.count_tuples(
                 all_of(
-                    resource("rbac", "workspace", root.uuid),
+                    resource("rbac", "workspace", root.id),
                     relation("parent"),
                     subject("rbac", "tenant", f"localhost/{org_id}"),
                 )
@@ -436,7 +436,7 @@ class V2TenantBootstrapServiceTest(TestCase):
             1 if custom_default_group is None else 0,
             self.tuples.count_tuples(
                 all_of(
-                    resource("rbac", "workspace", default.uuid),
+                    resource("rbac", "workspace", default.id),
                     relation("binding"),
                     subject("rbac", "role_binding", mapping.default_role_binding_uuid),
                 )
@@ -483,7 +483,7 @@ class V2TenantBootstrapServiceTest(TestCase):
             1,
             self.tuples.count_tuples(
                 all_of(
-                    resource("rbac", "workspace", default.uuid),
+                    resource("rbac", "workspace", default.id),
                     relation("binding"),
                     subject("rbac", "role_binding", mapping.default_admin_role_binding_uuid),
                 )

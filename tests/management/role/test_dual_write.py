@@ -87,7 +87,7 @@ class DualWriteTestCase(TestCase):
         """Return the default workspace ID."""
         tenant = tenant if tenant is not None else self.tenant
         default = Workspace.objects.get(tenant=tenant, type=Workspace.Types.DEFAULT)
-        return str(default.uuid)
+        return str(default.id)
 
     def dual_write_handler(self, role: Role, event_type: ReplicationEventType) -> RelationApiDualWriteHandler:
         """Create a RelationApiDualWriteHandler for the given role and event type."""

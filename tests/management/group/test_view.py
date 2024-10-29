@@ -864,9 +864,9 @@ class GroupViewsetTests(IdentityRequest):
             response = client.post(url, request_body, format="json", **self.headers)
             self.assertEqual(response.status_code, status.HTTP_200_OK)
 
-            default_workspace_uuid = str(self.default_workspace.uuid)
+            default_workspace_id = str(self.default_workspace.id)
             role_binding_id = (
-                BindingMapping.objects.filter(role=self.role, resource_id=default_workspace_uuid).get().mappings["id"]
+                BindingMapping.objects.filter(role=self.role, resource_id=default_workspace_id).get().mappings["id"]
             )
 
             url = reverse("v1_management:group-detail", kwargs={"uuid": self.group.uuid})
@@ -912,7 +912,7 @@ class GroupViewsetTests(IdentityRequest):
 
                 relation_tuple = relation_api_tuple(
                     "workspace",
-                    default_workspace_uuid,
+                    default_workspace_id,
                     "binding",
                     "role_binding",
                     str(role_binding_id),
@@ -1013,7 +1013,7 @@ class GroupViewsetTests(IdentityRequest):
         def assert_group_tuples(tuple_to_replicate):
             relation_tuple = relation_api_tuple(
                 "workspace",
-                str(self.default_workspace.uuid),
+                str(self.default_workspace.id),
                 "binding",
                 "role_binding",
                 str(tenant_mapping.default_role_binding_uuid),
@@ -1815,7 +1815,7 @@ class GroupViewsetTests(IdentityRequest):
             to_add = actual_call_arg["relations_to_add"]
 
             binding_mapping = BindingMapping.objects.get(
-                role=default_role, resource_type_name="workspace", resource_id=self.default_workspace.uuid
+                role=default_role, resource_type_name="workspace", resource_id=self.default_workspace.id
             )
 
             # New platform default role for tenant created
@@ -1830,7 +1830,7 @@ class GroupViewsetTests(IdentityRequest):
 
                 relation_tuple = relation_api_tuple(
                     "workspace",
-                    str(self.default_workspace.uuid),
+                    str(self.default_workspace.id),
                     "binding",
                     "role_binding",
                     str(binding_mapping.mappings["id"]),
@@ -1861,7 +1861,7 @@ class GroupViewsetTests(IdentityRequest):
             def assert_group_tuples(tuple_to_replicate):
                 relation_tuple = relation_api_tuple(
                     "workspace",
-                    str(self.default_workspace.uuid),
+                    str(self.default_workspace.id),
                     "binding",
                     "role_binding",
                     str(tenant_mapping.default_role_binding_uuid),
@@ -2004,7 +2004,7 @@ class GroupViewsetTests(IdentityRequest):
             binding_mapping = BindingMapping.objects.get(
                 role=default_role_to_keep_in_group,
                 resource_type_name="workspace",
-                resource_id=self.default_workspace.uuid,
+                resource_id=self.default_workspace.id,
             )
 
             def assert_group_tuples(tuple_to_replicate):
@@ -2020,7 +2020,7 @@ class GroupViewsetTests(IdentityRequest):
 
                 relation_tuple = relation_api_tuple(
                     "workspace",
-                    str(self.default_workspace.uuid),
+                    str(self.default_workspace.id),
                     "binding",
                     "role_binding",
                     str(binding_mapping.mappings["id"]),
@@ -2049,7 +2049,7 @@ class GroupViewsetTests(IdentityRequest):
             def assert_group_tuples(tuple_to_replicate):
                 relation_tuple = relation_api_tuple(
                     "workspace",
-                    str(self.default_workspace.uuid),
+                    str(self.default_workspace.id),
                     "binding",
                     "role_binding",
                     str(tenant_mapping.default_role_binding_uuid),
@@ -4015,7 +4015,7 @@ class GroupViewNonAdminTests(IdentityRequest):
         response = client.post(url, request_body, format="json", **self.headers_org_admin)
 
         binding_mapping = BindingMapping.objects.filter(
-            role=user_access_admin_role, resource_id=str(self.default_workspace.uuid)
+            role=user_access_admin_role, resource_id=str(self.default_workspace.id)
         ).get()
 
         actual_call_arg = mock_method.call_args[0][0]
@@ -4046,7 +4046,7 @@ class GroupViewNonAdminTests(IdentityRequest):
 
             relation_tuple = relation_api_tuple(
                 "workspace",
-                str(self.default_workspace.uuid),
+                str(self.default_workspace.id),
                 "binding",
                 "role_binding",
                 str(binding_mapping.mappings["id"]),

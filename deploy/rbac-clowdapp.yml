@@ -631,6 +631,20 @@ objects:
           volumeMounts:
           - mountPath: /tmp
             name: users-data
+      - name: seed-roles-perms-groups
+        podSpec:
+          image: quay.io/cloudservices/rbac:latest
+          command:
+            - ./rbac/manage.py seeds
+            - --roles
+            - --force-create-relationships
+          resources:
+            limits:
+              cpu: 300m
+              memory: 1Gi
+            requests:
+              cpu: 50m
+              memory: 512Mi
 
 - apiVersion: v1
   kind: ConfigMap

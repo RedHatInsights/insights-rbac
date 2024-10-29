@@ -58,7 +58,7 @@ def get_kessel_relation_tuples(
         # which may be implied or necessary are intentionally ignored.
         # These should come from the apps that own the resource.
         if bound_resource.resource_type == ("rbac", "workspace") and not bound_resource.resource_id == str(
-            default_workspace.uuid
+            default_workspace.id
         ):
             # This is not strictly necessary here and the relation may be a duplicate.
             # Once we have more Workspace API / Inventory Group migration progress,
@@ -69,7 +69,7 @@ def get_kessel_relation_tuples(
                     bound_resource.resource_type,
                     bound_resource.resource_id,
                     ("rbac", "workspace"),
-                    str(default_workspace.uuid),
+                    str(default_workspace.id),
                     "parent",
                 )
             )

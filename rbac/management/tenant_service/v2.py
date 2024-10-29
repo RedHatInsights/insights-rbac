@@ -1,7 +1,6 @@
 """V2 implementation of Tenant bootstrapping."""
 
 from typing import List, Optional
-from uuid import uuid4
 
 from django.conf import settings
 from django.db import transaction
@@ -243,12 +242,12 @@ class V2TenantBootstrapService:
         # By this point if there is a custom default group,
         # a TenantMapping must have already been created.
         mapping = TenantMapping.objects.create(tenant=tenant)
-        relationships.extend(self._bootstrap_default_access(tenant, mapping, str(default_workspace.uuid)))
+        relationships.extend(self._bootstrap_default_access(tenant, mapping, str(default_workspace.id)))
 
         self._replicator.replicate(
             ReplicationEvent(
                 event_type=ReplicationEventType.BOOTSTRAP_TENANT,
-                info={"org_id": tenant.org_id, "default_workspace_uuid": str(default_workspace.uuid)},
+                info={"org_id": tenant.org_id, "default_workspace_id": str(default_workspace.id)},
                 partition_key="rbactodo",
                 add=relationships,
             )
@@ -298,7 +297,7 @@ class V2TenantBootstrapService:
         workspaces = []
         relationships = []
         mappings_to_create = []
-        default_workspace_uuids = []
+        default_workspace_ids = []
         for tenant in tenants:
             kwargs = {"tenant": tenant}
             if hasattr(tenant, "platform_default_groups") and tenant.platform_default_groups:
@@ -307,7 +306,7 @@ class V2TenantBootstrapService:
 
             root, default, built_in_relationships = self._built_in_workspaces(tenant)
 
-            default_workspace_uuids.append(default.uuid)
+            default_workspace_ids.append(default.id)
             workspaces.extend([root, default])
             relationships.extend(built_in_relationships)
 
@@ -317,9 +316,9 @@ class V2TenantBootstrapService:
         tenant_mappings = {mapping.tenant_id: mapping for mapping in mappings}
         bootstrapped_tenants = []
 
-        for tenant, default_workspace_uuid in zip(tenants, default_workspace_uuids):
+        for tenant, default_workspace_id in zip(tenants, default_workspace_ids):
             mapping = tenant_mappings[tenant.id]
-            relationships.extend(self._bootstrap_default_access(tenant, mapping, str(default_workspace_uuid)))
+            relationships.extend(self._bootstrap_default_access(tenant, mapping, str(default_workspace_id)))
             bootstrapped_tenants.append(BootstrappedTenant(tenant, mapping))
         self._replicator.replicate(
             ReplicationEvent(
@@ -357,12 +356,12 @@ class V2TenantBootstrapService:
         return tuples_to_add, tuples_to_remove
 
     def _create_default_relation_tuples(
-        self, default_workspace_uuid, role_binding_uuid, default_role_uuid, default_group_uuid
+        self, default_workspace_id, role_binding_uuid, default_role_uuid, default_group_uuid
     ):
         return [
             create_relationship(
                 ("rbac", "workspace"),
-                str(default_workspace_uuid),
+                str(default_workspace_id),
                 ("rbac", "role_binding"),
                 str(role_binding_uuid),
                 "binding",
@@ -385,7 +384,7 @@ class V2TenantBootstrapService:
         ]
 
     def _bootstrap_default_access(
-        self, tenant: Tenant, mapping: TenantMapping, default_workspace_uuid: str
+        self, tenant: Tenant, mapping: TenantMapping, default_workspace_id: str
     ) -> List[Relationship]:
         """
         Bootstrap default access for a tenant's users and admins.
@@ -421,7 +420,7 @@ class V2TenantBootstrapService:
         ):
             tuples_to_add.extend(
                 self._create_default_relation_tuples(
-                    default_workspace_uuid,
+                    default_workspace_id,
                     default_user_role_binding_uuid,
                     platform_default_role_uuid,
                     str(mapping.default_group_uuid),
@@ -431,7 +430,7 @@ class V2TenantBootstrapService:
         if admin_default_role_uuid:
             tuples_to_add.extend(
                 self._create_default_relation_tuples(
-                    default_workspace_uuid,
+                    default_workspace_id,
                     default_admin_role_binding_uuid,
                     admin_default_role_uuid,
                     str(mapping.default_admin_group_uuid),
@@ -452,7 +451,7 @@ class V2TenantBootstrapService:
             logger.warning("No platform default role found for public tenant. Default access will not be set up.")
         else:
             relationships = self._create_default_relation_tuples(
-                default_workspace.uuid,
+                default_workspace.id,
                 mapping.default_role_binding_uuid,
                 platform_default_role_uuid,
                 mapping.default_group_uuid,
@@ -462,17 +461,16 @@ class V2TenantBootstrapService:
     def _built_in_workspaces(self, tenant: Tenant) -> tuple[Workspace, Workspace, list[Relationship]]:
         relationships = []
 
-        root_workspace_uuid = uuid4()
-        default_workspace_uuid = uuid4()
-
-        root = Workspace(uuid=root_workspace_uuid, tenant=tenant, type=Workspace.Types.ROOT, name="Root Workspace")
+        root = Workspace(tenant=tenant, type=Workspace.Types.ROOT, name="Root Workspace")
         default = Workspace(
-            uuid=default_workspace_uuid,
-            parent_id=root.uuid,
+            parent_id=root.id,
             tenant=tenant,
             type=Workspace.Types.DEFAULT,
             name="Default Workspace",
         )
+
+        root_workspace_id = root.id
+        default_workspace_id = default.id
 
         tenant_id = f"{self._user_domain}/{tenant.org_id}"
 
@@ -480,13 +478,13 @@ class V2TenantBootstrapService:
             [
                 create_relationship(
                     ("rbac", "workspace"),
-                    str(default_workspace_uuid),
+                    str(default_workspace_id),
                     ("rbac", "workspace"),
-                    str(root_workspace_uuid),
+                    str(root.id),
                     "parent",
                 ),
                 create_relationship(
-                    ("rbac", "workspace"), str(root_workspace_uuid), ("rbac", "tenant"), tenant_id, "parent"
+                    ("rbac", "workspace"), str(root_workspace_id), ("rbac", "tenant"), tenant_id, "parent"
                 ),
                 # Include platform for tenant
                 create_relationship(
