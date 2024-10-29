@@ -270,20 +270,22 @@ class GroupViewSet(
                                 "status": status.HTTP_400_BAD_REQUEST,
                             },
                         ]
-                    }
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
                 )
-        except IntegrityError as e:
-            return JsonResponse(
-                {
-                    "errors": [
-                        {
-                            "detail": "An unknown Integrity Error occurred while trying to add a group for this tenant",
-                            "source": f"{e.args}",
-                            "status": status.HTTP_400_BAD_REQUEST,
-                        },
-                    ]
-                }
-            )
+            else:
+                return JsonResponse(
+                    {
+                        "errors": [
+                            {
+                                "detail": "Unknown Integrity Error occurred while trying to add group for this tenant",
+                                "source": f"{e.args}",
+                                "status": status.HTTP_400_BAD_REQUEST,
+                            },
+                        ]
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
 
         if status.is_success(create_group.status_code):
             auditlog = AuditLog()

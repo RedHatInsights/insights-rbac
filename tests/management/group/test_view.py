@@ -334,21 +334,6 @@ class GroupViewsetTests(IdentityRequest):
         response = client.post(url, test_data, format="json", **self.headers)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
-    def test_create_duplicate_group(self):
-        """Test that creating a duplicate group is not allowed."""
-        group_name = "groupC"
-        test_data = {"name": group_name}
-
-        # create a group
-        with transaction.atomic():
-            url = reverse("v1_management:group-list")
-            client = APIClient()
-            response = client.post(url, test_data, format="json", **self.headers)
-            self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-            response = client.post(url, test_data, format="json", **self.headers)
-            duplicate_response_data = json.loads(response.content)
-            self.assertEqual(duplicate_response_data["errors"][0].get("status"), status.HTTP_400_BAD_REQUEST)
-
     def test_create_group_with_reserved_name(self):
         """Test that creating a group with reserved name is not allowed."""
 
@@ -5392,6 +5377,7 @@ class GroupViewNonAdminTests(IdentityRequest):
 
             # Duplicate add attempt
             duplicate_response = self.client.post(url, request_body, format="json", **self.headers_org_admin)
+            self.assertEqual(duplicate_response.status_code, status.HTTP_400_BAD_REQUEST)
 
             duplicate_response_data = json.loads(
                 duplicate_response.content
