@@ -438,26 +438,6 @@ class V2TenantBootstrapService:
             )
         return tuples_to_add
 
-    def default_bindings_from_mapping(self, bootstrapped_tenant: BootstrappedTenant):
-        """Calculate default bindings from tenant mapping."""
-        default_workspace = Workspace.objects.get(tenant=bootstrapped_tenant.tenant, type=Workspace.Types.DEFAULT)
-        mapping = bootstrapped_tenant.mapping
-        if mapping is None:
-            raise ValueError(f"Expected TenantMapping but got None. org_id: {bootstrapped_tenant.tenant.org_id}")
-
-        relationships = []
-        platform_default_role_uuid = self._get_platform_default_policy_uuid()
-        if platform_default_role_uuid is None:
-            logger.warning("No platform default role found for public tenant. Default access will not be set up.")
-        else:
-            relationships = self._create_default_relation_tuples(
-                default_workspace.id,
-                mapping.default_role_binding_uuid,
-                platform_default_role_uuid,
-                mapping.default_group_uuid,
-            )
-        return relationships
-
     def _built_in_workspaces(self, tenant: Tenant) -> tuple[Workspace, Workspace, list[Relationship]]:
         relationships = []
 

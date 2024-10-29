@@ -1041,8 +1041,8 @@ class GroupViewSet(
             if serializer.is_valid(raise_exception=True):
                 roles = request.data.pop(ROLES_KEY, [])
             with transaction.atomic():
-                group, relations = set_system_flag_before_update(group, request.tenant, request.user)
-                add_roles(group, roles, request.tenant, user=request.user, relations=relations)
+                group = set_system_flag_before_update(group, request.tenant, request.user)
+                add_roles(group, roles, request.tenant, user=request.user)
             response_data = GroupRoleSerializerIn(group)
         elif request.method == "GET":
             serialized_roles = self.obtain_roles(request, group)
@@ -1064,8 +1064,8 @@ class GroupViewSet(
             serializer = GroupRoleSerializerIn(data={"roles": role_ids})
             if serializer.is_valid(raise_exception=True):
                 with transaction.atomic():
-                    group, relations = set_system_flag_before_update(group, request.tenant, request.user)
-                    remove_roles(group, role_ids, request.tenant, request.user, relations)
+                    group = set_system_flag_before_update(group, request.tenant, request.user)
+                    remove_roles(group, role_ids, request.tenant, request.user)
 
             return Response(status=status.HTTP_204_NO_CONTENT)
 

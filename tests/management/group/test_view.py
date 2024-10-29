@@ -1810,7 +1810,7 @@ class GroupViewsetTests(IdentityRequest):
             self.assertTrue(self.defGroup.system)
             self.assertEqual(self.defGroup.roles().count(), 1)
             response = client.post(url, test_data, format="json", **self.headers)
-            actual_call_arg = mock_method.call_args[0][0]
+            actual_call_arg = mock_method.call_args_list[0][0][0]
             to_remove = actual_call_arg["relations_to_remove"]
             to_add = actual_call_arg["relations_to_add"]
 
@@ -1983,7 +1983,7 @@ class GroupViewsetTests(IdentityRequest):
             client = APIClient()
             url = "{}?roles={}".format(url, default_role.uuid)
             response = client.delete(url, format="json", **self.headers)
-            actual_call_arg = mock_method.call_args[0][0]
+            actual_call_arg = mock_method.call_args_list[0][0][0]
             to_remove = actual_call_arg["relations_to_remove"]
             to_add = actual_call_arg["relations_to_add"]
 
