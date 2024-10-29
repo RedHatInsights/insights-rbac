@@ -1651,8 +1651,8 @@ class RoleViewsetTests(IdentityRequest):
         response = client.get(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
-    def test_delete_public_system_role(self):
-        """Test that public system roles are protected from deletion"""
+    def test_delete_system_role_in_public_tenant(self):
+        """Test that system roles in public tenant are protected from deletion"""
         url = reverse("v1_management:role-detail", kwargs={"uuid": self.sysPubRole.uuid})
         client = APIClient()
 
