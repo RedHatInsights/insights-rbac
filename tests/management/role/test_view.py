@@ -18,7 +18,6 @@
 
 import json
 from uuid import uuid4
-from api.models import Tenant
 from django.conf import settings
 from django.core.serializers.json import DjangoJSONEncoder
 from django.test.utils import override_settings
