@@ -656,6 +656,18 @@ objects:
               value: ${CLOWDER_ENABLED}
             - name: REPLICATION_TO_RELATION_ENABLED
               value: "True"
+          volumes:
+            - configMap:
+                name: ${CONFIG_MAP_NAME}
+              name: default-role-config
+            - configMap:
+                name: ${MODEL_ACCESS_PERMISSIONS}
+              name: model-access-permissions
+          volumeMounts:
+            - mountPath: /opt/rbac/rbac/management/role/definitions
+              name: default-role-config
+            - mountPath: /opt/rbac/rbac/management/role/permissions
+              name: model-access-permissions
 
 - apiVersion: v1
   kind: ConfigMap
