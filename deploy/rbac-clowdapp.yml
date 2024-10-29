@@ -618,6 +618,8 @@ objects:
                 secretKeyRef:
                   name: ${S3_AWS_SECRET}
                   key: bucket
+            - name: CLOWDER_ENABLED
+              value: ${CLOWDER_ENABLED}
           resources:
             limits:
               cpu: 300m
@@ -647,6 +649,9 @@ objects:
             requests:
               cpu: 50m
               memory: 512Mi
+          env:
+            - name: CLOWDER_ENABLED
+              value: ${CLOWDER_ENABLED}
 
 - apiVersion: v1
   kind: ConfigMap
