@@ -1004,11 +1004,6 @@ class GroupViewsetTests(IdentityRequest):
         to_add = actual_call_arg["relations_to_add"]
 
         tenant_mapping = TenantMapping.objects.get(tenant=self.tenant)
-        policy_uuid = (
-            Group.objects.get(platform_default=True, system=True, tenant=Tenant.objects.get(tenant_name="public"))
-            .policies.get()
-            .uuid
-        )
 
         def assert_group_tuples(tuple_to_replicate):
             relation_tuple = relation_api_tuple(
@@ -1842,11 +1837,6 @@ class GroupViewsetTests(IdentityRequest):
             assert_group_tuples(to_add)
 
             tenant_mapping = TenantMapping.objects.get(tenant=self.tenant)
-            policy_uuid = (
-                Group.objects.get(platform_default=True, system=True, tenant=Tenant.objects.get(tenant_name="public"))
-                .policies.get()
-                .uuid
-            )
 
             def assert_group_tuples(tuple_to_replicate):
                 relation_tuple = relation_api_tuple(
@@ -2022,9 +2012,6 @@ class GroupViewsetTests(IdentityRequest):
             assert_group_tuples(to_add)
 
             tenant_mapping = TenantMapping.objects.get(tenant=self.tenant)
-            policy_uuid = (
-                Group.objects.get(platform_default=True, system=True, tenant=self.public_tenant).policies.get().uuid
-            )
 
             def assert_group_tuples(tuple_to_replicate):
                 relation_tuple = relation_api_tuple(
