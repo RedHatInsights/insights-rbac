@@ -622,6 +622,8 @@ objects:
               value: ${CLOWDER_ENABLED}
             - name: REPLICATION_TO_RELATION_ENABLED
               value: "True"
+            - name: ENV_NAME
+              value: ${ENV_NAME}
           resources:
             limits:
               cpu: 300m
