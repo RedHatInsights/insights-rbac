@@ -2,8 +2,8 @@
 apiVersion: cloud.redhat.com/v1alpha1
 kind: ClowdJobInvocation
 metadata:
-  name: populate-user-id-columns
+  name: seed-roles-perms-groups
 spec:
   appName: rbac
   jobs:
-    - user-id-populator
+    - seed-roles-perms-groups

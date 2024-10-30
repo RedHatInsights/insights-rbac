@@ -224,8 +224,6 @@ def values_from_attribute_filter(attribute_filter: dict[str, Any]) -> list[str]:
 
 def v1_perm_to_v2_perm(v1_permission: Permission):
     """Convert a V1 permission to a V2 permission."""
-    if v1_permission.application == "inventory" and v1_permission.resource_type == "groups":
-        return cleanNameForV2SchemaCompatibility(f"workspace_{v1_permission.verb}")
     return cleanNameForV2SchemaCompatibility(
         v1_permission.application + "_" + v1_permission.resource_type + "_" + v1_permission.verb
     )

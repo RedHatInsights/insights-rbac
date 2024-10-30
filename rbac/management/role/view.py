@@ -24,7 +24,7 @@ import traceback
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.db.models import Q
 from django.db.models.aggregates import Count
 from django.http import Http404
@@ -46,6 +46,7 @@ from rest_framework.decorators import action
 from rest_framework.filters import OrderingFilter
 from rest_framework.response import Response
 
+from api.models import Tenant
 from rbac.env import ENVIRONMENT
 from .model import Role
 from .serializer import RoleSerializer
@@ -70,6 +71,7 @@ LIST_ROLE_FIELDS = [
     "external_tenant",
 ]
 VALID_PATCH_FIELDS = ["name", "display_name", "description"]
+DUPLICATE_KEY_ERROR_MSG = "duplicate key value violates unique constraint"
 
 if TESTING_APP:
     settings.ROLE_CREATE_ALLOW_LIST.append(TESTING_APP)
@@ -171,8 +173,8 @@ class RoleViewSet(
             # You would be able to remove `select_for_update` here,
             # and instead rely on REPEATABLE READ's lost update detection to abort the tx.
             # Nothing else should need to change.
-
-            base_query = Role.objects.filter(tenant=self.request.tenant).select_for_update()
+            public_tenant = Tenant.objects.get(tenant_name="public")
+            base_query = Role.objects.filter(tenant__in=[self.request.tenant, public_tenant]).select_for_update()
 
             # TODO: May be redundant with RolePermissions check but copied from querysets.py for safety
             if ENVIRONMENT.get_value("ALLOW_ANY", default=False, cast=bool):
@@ -269,6 +271,12 @@ class RoleViewSet(
         try:
             with transaction.atomic():
                 return super().create(request=request, args=args, kwargs=kwargs)
+        except IntegrityError as e:
+            if DUPLICATE_KEY_ERROR_MSG in e.args[0]:
+                raise serializers.ValidationError(
+                    {"role": f"Role '{request.data.get('name')}' already exists for a tenant."}
+                )
+            raise serializers.ValidationError({"role": "An unexpected database error occurred."}) from e
         except DualWriteException as e:
             return self.dual_write_exception_response(e)
 
@@ -505,7 +513,7 @@ class RoleViewSet(
 
         Assumes concurrent updates are prevented (e.g. with atomic block and locks).
         """
-        if instance.system or instance.platform_default:
+        if instance.tenant_id == Tenant.objects.get(tenant_name="public").id:
             key = "role"
             message = "System roles cannot be deleted."
             error = {key: [_(message)]}

@@ -1735,6 +1735,9 @@
               }
             }
           },
+          "400": {
+            "description": "Bad Input"
+          },
           "401": {
             "description": "Unauthorized"
           },

@@ -123,11 +123,11 @@ class SeedingRelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
         # Is it valid to skip this? If there are no default groups, the migration isn't going to succeed.
         if role.admin_default and admin_default:
             relations.append(
-                create_relationship(("rbac", "role"), str(role.uuid), ("rbac", "role"), admin_default, "child")
+                create_relationship(("rbac", "role"), admin_default, ("rbac", "role"), str(role.uuid), "child")
             )
         if role.platform_default and platform_default:
             relations.append(
-                create_relationship(("rbac", "role"), str(role.uuid), ("rbac", "role"), platform_default, "child")
+                create_relationship(("rbac", "role"), platform_default, ("rbac", "role"), str(role.uuid), "child")
             )
 
         permissions = list()
