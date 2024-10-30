@@ -169,7 +169,6 @@ class RelationApiDualWriteGroupHandler:
             default_bindings = self._create_default_relation_tuples(
                 self.default_workspace.id,
                 remove_default_access_from.default_role_binding_uuid,
-                self._get_platform_default_policy_uuid(),
                 remove_default_access_from.default_group_uuid,
             )
             self.group_relations_to_remove.extend(default_bindings)
@@ -297,17 +296,11 @@ class RelationApiDualWriteGroupHandler:
         if mapping is None:
             raise ValueError(f"Expected TenantMapping but got None. org_id: {self.group.tenant.org_id}")
 
-        relationships = []
-        platform_default_role_uuid = self._get_platform_default_policy_uuid()
-        if platform_default_role_uuid is None:
-            logger.warning("No platform default role found for public tenant. Default access will not be set up.")
-        else:
-            relationships = self._create_default_relation_tuples(
-                self.default_workspace.id,
-                mapping.default_role_binding_uuid,
-                platform_default_role_uuid,
-                mapping.default_group_uuid,
-            )
+        relationships = self._create_default_relation_tuples(
+            self.default_workspace.id,
+            mapping.default_role_binding_uuid,
+            mapping.default_group_uuid,
+        )
         return relationships
 
     def _get_public_tenant(self) -> Optional[Tenant]:
@@ -326,9 +319,7 @@ class RelationApiDualWriteGroupHandler:
         except Group.DoesNotExist:
             return None
 
-    def _create_default_relation_tuples(
-        self, default_workspace_id, role_binding_uuid, default_role_uuid, default_group_uuid
-    ):
+    def _create_default_relation_tuples(self, default_workspace_id, role_binding_uuid, default_group_uuid):
         return [
             create_relationship(
                 ("rbac", "workspace"),
@@ -336,13 +327,6 @@ class RelationApiDualWriteGroupHandler:
                 ("rbac", "role_binding"),
                 str(role_binding_uuid),
                 "binding",
-            ),
-            create_relationship(
-                ("rbac", "role_binding"),
-                str(role_binding_uuid),
-                ("rbac", "role"),
-                str(default_role_uuid),
-                "role",
             ),
             create_relationship(
                 ("rbac", "role_binding"),

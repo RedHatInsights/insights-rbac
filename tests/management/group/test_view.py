@@ -1023,16 +1023,6 @@ class GroupViewsetTests(IdentityRequest):
             relation_tuple = relation_api_tuple(
                 "role_binding",
                 str(tenant_mapping.default_role_binding_uuid),
-                "role",
-                "role",
-                str(policy_uuid),
-            )
-
-            self.assertIsNotNone(find_relation_in_list(tuple_to_replicate, relation_tuple))
-
-            relation_tuple = relation_api_tuple(
-                "role_binding",
-                str(tenant_mapping.default_role_binding_uuid),
                 "subject",
                 "group",
                 str(tenant_mapping.default_group_uuid),
@@ -1871,16 +1861,6 @@ class GroupViewsetTests(IdentityRequest):
                 relation_tuple = relation_api_tuple(
                     "role_binding",
                     str(tenant_mapping.default_role_binding_uuid),
-                    "role",
-                    "role",
-                    str(policy_uuid),
-                )
-
-                self.assertIsNotNone(find_relation_in_list(tuple_to_replicate, relation_tuple))
-
-                relation_tuple = relation_api_tuple(
-                    "role_binding",
-                    str(tenant_mapping.default_role_binding_uuid),
                     "subject",
                     "group",
                     str(tenant_mapping.default_group_uuid),
@@ -2054,16 +2034,6 @@ class GroupViewsetTests(IdentityRequest):
                     "role_binding",
                     str(tenant_mapping.default_role_binding_uuid),
                 )
-                self.assertIsNotNone(find_relation_in_list(tuple_to_replicate, relation_tuple))
-
-                relation_tuple = relation_api_tuple(
-                    "role_binding",
-                    str(tenant_mapping.default_role_binding_uuid),
-                    "role",
-                    "role",
-                    str(policy_uuid),
-                )
-
                 self.assertIsNotNone(find_relation_in_list(tuple_to_replicate, relation_tuple))
 
                 relation_tuple = relation_api_tuple(
