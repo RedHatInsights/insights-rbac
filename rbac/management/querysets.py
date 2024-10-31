@@ -118,17 +118,20 @@ def _gather_group_querysets(request, args, kwargs):
         username = kwargs.get("principals")
     if username:
         principal = get_principal(username, request)
+
         if principal.cross_account:
             return Group.objects.none()
         return (
-            filter_queryset_by_tenant(Group.objects.filter(principals__username__iexact=username), request.tenant)
+            filter_queryset_by_tenant(
+                Group.objects.annotate(principalCount=Count("principals")), request.tenant
+            ).filter(principals__username__iexact=username)
             | default_group_set
         )
 
     if exclude_username:
         return filter_queryset_by_tenant(
-            Group.objects.exclude(principals__username__iexact=exclude_username), request.tenant
-        )
+            Group.objects.annotate(principalCount=Count("principals")), request.tenant
+        ).exclude(principals__username__iexact=exclude_username)
 
     if has_group_all_access(request):
         return filter_queryset_by_tenant(get_annotated_groups(), request.tenant) | default_group_set

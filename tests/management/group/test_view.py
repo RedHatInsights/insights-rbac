@@ -1330,7 +1330,7 @@ class GroupViewsetTests(IdentityRequest):
         url = "{}?username={}".format(url, self.test_principal.username)
         client = APIClient()
         response = client.get(url, **self.test_headers)
-        self.assertEqual(response.data.get("meta").get("count"), 4)
+        self.assertEqual(response.data.get("meta").get("count"), 2)
 
         # Return bad request when user does not exist
         url = reverse("v1_management:group-list")
@@ -1363,7 +1363,7 @@ class GroupViewsetTests(IdentityRequest):
         url = "{}?username={}".format(url, self.principalC.username)
         client = APIClient()
         response = client.get(url, **self.test_headers)
-        self.assertEqual(response.data.get("meta").get("count"), 2)
+        self.assertEqual(response.data.get("meta").get("count"), 1)
 
     @patch(
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
@@ -1419,7 +1419,7 @@ class GroupViewsetTests(IdentityRequest):
         url = "{}?username={}".format(url, username)
         client = APIClient()
         response = client.get(url, **self.test_headers)
-        self.assertEqual(response.data.get("meta").get("count"), 4)
+        self.assertEqual(response.data.get("meta").get("count"), 2)
 
     def test_get_group_roles_success(self):
         """Test that getting roles for a group returns successfully."""
