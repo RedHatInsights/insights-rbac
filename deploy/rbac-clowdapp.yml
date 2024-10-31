@@ -482,8 +482,6 @@ objects:
             value: ${V2_MIGRATION_RESOURCE_EXCLUDE_LIST}
           - name: V2_BOOTSTRAP_TENANT
             value: ${V2_BOOTSTRAP_TENANT}
-          - name: V1_BOOTSTRAP_ADD_USER_ID
-            value: ${V1_BOOTSTRAP_ADD_USER_ID}
           - name: RBAC_DESTRUCTIVE_API_ENABLED_UNTIL
             value: ${RBAC_DESTRUCTIVE_API_ENABLED_UNTIL}
           - name: RBAC_DESTRUCTIVE_SEEDING_ENABLED_UNTIL
@@ -744,8 +742,6 @@ objects:
               value: ${V2_MIGRATION_RESOURCE_EXCLUDE_LIST}
             - name: V2_BOOTSTRAP_TENANT
               value: ${V2_BOOTSTRAP_TENANT}
-            - name: V1_BOOTSTRAP_ADD_USER_ID
-              value: ${V1_BOOTSTRAP_ADD_USER_ID}
           resources:
             limits:
               cpu: 300m
@@ -892,8 +888,6 @@ objects:
               value: ${V2_MIGRATION_RESOURCE_EXCLUDE_LIST}
             - name: V2_BOOTSTRAP_TENANT
               value: ${V2_BOOTSTRAP_TENANT}
-            - name: V1_BOOTSTRAP_ADD_USER_ID
-              value: ${V1_BOOTSTRAP_ADD_USER_ID}
           volumes:
             - configMap:
                 name: ${CONFIG_MAP_NAME}
@@ -1093,11 +1087,6 @@ parameters:
 - description: Whether or not to bootstrap tenants using V2 logic (i.e. creating workspaces and relations).
   name: V2_BOOTSTRAP_TENANT
   value: 'False'
-- description: |
-    Whether or not to add user IDs to existing principals within V1 logic. Once V2 tenant bootstrapping is used,
-    this flag is ignored and user IDs will be added regardless.
-  name: V1_BOOTSTRAP_ADD_USER_ID
-  value: rbac:workspace
 - description: Timestamp expiration allowance on destructive actions through the internal RBAC API
   name: RBAC_DESTRUCTIVE_API_ENABLED_UNTIL
   value: ''
