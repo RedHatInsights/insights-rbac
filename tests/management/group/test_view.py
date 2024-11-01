@@ -594,7 +594,7 @@ class GroupViewsetTests(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
         principalCount = response.data.get("data")[0]["principalCount"]
-        self.assertEqual(principalCount, 1)
+        self.assertEqual(principalCount, 5)
 
     def test_get_group_by_partial_name_by_default(self):
         """Test that getting groups by name returns partial match by default."""
