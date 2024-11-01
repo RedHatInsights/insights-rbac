@@ -1868,6 +1868,8 @@ class GroupViewsetTests(IdentityRequest):
             self.assertEqual(self.defGroup.tenant, self.public_tenant)
             self.assertEqual(response.status_code, status.HTTP_200_OK)
 
+            custom_default_group = Group.objects.get(platform_default=True, tenant=self.tenant)
+            self.assertEqual(custom_default_group.uuid, tenant_mapping.default_group_uuid)
             self.assertEqual(custom_default_group.name, "Custom default access")
             self.assertFalse(custom_default_group.system)
             self.assertEqual(custom_default_group.tenant, self.tenant)
