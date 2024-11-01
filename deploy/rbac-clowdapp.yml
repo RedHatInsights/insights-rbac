@@ -622,6 +622,8 @@ objects:
               value: ${CLOWDER_ENABLED}
             - name: REPLICATION_TO_RELATION_ENABLED
               value: "True"
+            - name: ENV_NAME
+              value: ${ENV_NAME}
           resources:
             limits:
               cpu: 300m
@@ -1034,7 +1036,7 @@ parameters:
 - name: PRINCIPAL_CLEANUP_UPDATE_ENABLED_UMB
   description: Allow cleanup job to update principals via messages from UMB
   value: 'False'
-- name: UMB_JOB_ENABLE
+- name: UMB_JOB_ENABLED
   description: Temp env to enable the UMB job
   value: 'True'
 - name: UMB_HOST
@@ -1071,4 +1073,4 @@ parameters:
   value: '1'
 - name: USER_ID_POPULATOR_BATCH_SIZE
   description: The number of user records to process in each batch
-  value: '1000'
+  value: '90'

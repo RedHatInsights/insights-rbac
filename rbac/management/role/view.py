@@ -513,7 +513,7 @@ class RoleViewSet(
 
         Assumes concurrent updates are prevented (e.g. with atomic block and locks).
         """
-        if instance.system or instance.platform_default:
+        if instance.tenant_id == Tenant.objects.get(tenant_name="public").id:
             key = "role"
             message = "System roles cannot be deleted."
             error = {key: [_(message)]}
