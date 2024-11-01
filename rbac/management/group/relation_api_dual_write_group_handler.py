@@ -178,7 +178,7 @@ class RelationApiDualWriteGroupHandler:
             return
         self._replicate()
 
-    def replicate_removed_roles(self, roles: list[Role]):
+    def replicate_removed_roles(self, roles: Iterable[Role]):
         """Replicate removed role."""
         if not self.replication_enabled():
             return
