@@ -286,53 +286,25 @@ class RelationApiDualWriteGroupHandler:
             self.principals = self.group.principals.all()
             self.group_relations_to_remove.extend(self._generate_member_relations())
 
-    def _default_bindings_from_mapping(self):
+    def _default_binding(self, mapping: Optional[TenantMapping] = None) -> Relationship:
         """Calculate default bindings from tenant mapping."""
-        mapping = TenantMapping.objects.get(tenant=self.group.tenant)
-        if mapping is None:
-            raise ValueError(f"Expected TenantMapping but got None. org_id: {self.group.tenant.org_id}")
+        if mapping:
+            assert mapping.tenant.id == self.group.tenant_id, "Tenant mapping does not match group tenant."
+        else:
+            mapping = TenantMapping.objects.get(tenant=self.group.tenant)
 
-        relationships = self._create_default_relation_tuples(
-            self.default_workspace.id,
-            mapping.default_role_binding_uuid,
-            mapping.default_group_uuid,
+        return create_relationship(
+            ("rbac", "workspace"),
+            str(self.default_workspace.id),
+            ("rbac", "role_binding"),
+            str(mapping.default_role_binding_uuid),
+            "binding",
         )
-        return relationships
 
     def _get_public_tenant(self) -> Optional[Tenant]:
         if self._public_tenant is None:
             self._public_tenant = Tenant.objects.get(tenant_name="public")
         return self._public_tenant
-
-    def _get_platform_default_policy_uuid(self) -> Optional[str]:
-        try:
-            if self._platform_default_policy_uuid is None:
-                policy = Group.objects.get(
-                    platform_default=True, system=True, tenant=self._get_public_tenant()
-                ).policies.get()
-                self._platform_default_policy_uuid = str(policy.uuid)
-            return self._platform_default_policy_uuid
-        except Group.DoesNotExist:
-            return None
-
-    def _create_default_relation_tuples(self, default_workspace_id, role_binding_uuid, default_group_uuid):
-        return [
-            create_relationship(
-                ("rbac", "workspace"),
-                str(default_workspace_id),
-                ("rbac", "role_binding"),
-                str(role_binding_uuid),
-                "binding",
-            ),
-            create_relationship(
-                ("rbac", "role_binding"),
-                str(role_binding_uuid),
-                ("rbac", "group"),
-                str(default_group_uuid),
-                "subject",
-                "member",
-            ),
-        ]
 
     def replicate_deleted_group(self):
         """Prepare for delete."""
