@@ -132,7 +132,6 @@ def clone_default_group_in_public_schema(group, tenant) -> Optional[Group]:
     return group
 
 
-@transaction.atomic
 def add_roles(group, roles_or_role_ids, tenant, user=None):
     """Process list of roles and add them to the group."""
     roles = _roles_by_query_or_ids(roles_or_role_ids)
@@ -186,7 +185,6 @@ def add_roles(group, roles_or_role_ids, tenant, user=None):
         dual_write_handler.replicate()
 
 
-@transaction.atomic
 def remove_roles(group, roles_or_role_ids, tenant, user=None):
     """Process list of roles and remove them from the group."""
     roles = _roles_by_query_or_ids(roles_or_role_ids)
