@@ -250,11 +250,11 @@ class ITService:
         if specified_usernames:
             usernames = specified_usernames.split(",")
 
-        # If "match_criteria" is specified, only the first username is taken into account if a username is provided,
-        # if no user is specified the current user is provided for username to subvert 500 error.
+        # If "match_criteria" is specified and the usernames list is not empty,
+        # only the first username is taken into account
         match_criteria = options.get("match_criteria")
-        if match_criteria:
-            username = user.username if not usernames else usernames[0]
+        if match_criteria and usernames:
+            username = usernames[0]
 
             if match_criteria == "partial":
                 service_account_principals = service_account_principals.filter(username__startswith=username)
