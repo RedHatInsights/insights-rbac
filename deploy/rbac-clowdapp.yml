@@ -222,6 +222,10 @@ objects:
             value: ${RELATION_API_SERVER}
           - name: REPLICATION_TO_RELATION_ENABLED
             value: ${REPLICATION_TO_RELATION_ENABLED}
+          - name: PRINCIPAL_CLEANUP_UPDATE_ENABLED_UMB
+            value: ${PRINCIPAL_CLEANUP_UPDATE_ENABLED_UMB}
+          - name: V2_BOOTSTRAP_TENANT
+            value: ${V2_BOOTSTRAP_TENANT}
     - name: scheduler-service
       minReplicas: ${{MIN_SCHEDULER_REPLICAS}}
       metadata:
