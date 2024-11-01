@@ -56,8 +56,7 @@ class RelationApiDualWriteGroupHandler:
         """Initialize RelationApiDualWriteGroupHandler."""
         if not self.replication_enabled():
             return
-        if group.tenant.tenant_name == "public":
-            raise DualWriteException()
+
         try:
             self.group_relations_to_add = []
             self.group_relations_to_remove = []
@@ -170,8 +169,6 @@ class RelationApiDualWriteGroupHandler:
         if not self.replication_enabled():
             return
 
-        if self.group.tenant.tenant_name == "public":
-            return
         self._replicate()
 
     def generate_relations_to_remove_roles(self, roles: Iterable[Role]):
