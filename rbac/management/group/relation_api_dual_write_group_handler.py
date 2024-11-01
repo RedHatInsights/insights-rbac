@@ -166,12 +166,8 @@ class RelationApiDualWriteGroupHandler:
             )
 
         if remove_default_access_from is not None:
-            default_bindings = self._create_default_relation_tuples(
-                self.default_workspace.id,
-                remove_default_access_from.default_role_binding_uuid,
-                remove_default_access_from.default_group_uuid,
-            )
-            self.group_relations_to_remove.extend(default_bindings)
+            default_binding = self._default_binding(mapping=remove_default_access_from)
+            self.group_relations_to_remove.append(default_binding)
 
     def replicate(self):
         """Replicate added role."""
