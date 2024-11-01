@@ -301,7 +301,7 @@ class RelationApiDualWriteGroupHandler:
             "binding",
         )
 
-    def _get_public_tenant(self) -> Optional[Tenant]:
+    def _get_public_tenant(self) -> Tenant:
         if self._public_tenant is None:
             self._public_tenant = Tenant.objects.get(tenant_name="public")
         return self._public_tenant
