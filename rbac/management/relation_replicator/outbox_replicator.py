@@ -18,6 +18,9 @@
 """RelationReplicator which writes to the outbox table."""
 
 import logging
+from dataclasses import dataclass
+from typing import Optional
+from typing import Protocol
 
 from google.protobuf import json_format
 from management.models import Outbox
@@ -29,6 +32,10 @@ logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 class OutboxReplicator(RelationReplicator):
     """Replicates relations via the outbox table."""
+
+    def __init__(self, log: Optional["OutboxLog"] = None):
+        """Initialize the OutboxReplicator with an optional OutboxLog implementation."""
+        self._log = log if log is not None else OutboxWAL()
 
     def replicate(self, event: ReplicationEvent):
         """Replicate the given event to Kessel Relations via the Outbox."""
@@ -57,10 +64,84 @@ class OutboxReplicator(RelationReplicator):
             " ".join([f"info.{key}='{str(value)}'" for key, value in event_info.items()]),
         )
         # https://debezium.io/documentation/reference/stable/transformations/outbox-event-router.html#basic-outbox-table
-        outbox_record = Outbox.objects.create(
+        self._log.log(
             aggregatetype="relations-replication-event",
             aggregateid=str(aggregateid),
             event_type=event_type,
             payload=payload,
         )
+
+
+class OutboxLog(Protocol):
+    """Protocol for logging outbox events."""
+
+    def log(self, aggregatetype: str, aggregateid: str, event_type: str, payload: dict):
+        """Log the given outbox event."""
+        ...
+
+
+class OutboxWAL:
+    """Writes to the outbox table."""
+
+    def log(self, aggregatetype: str, aggregateid: str, event_type: str, payload: dict):
+        """Log the given outbox event."""
+        outbox_record = Outbox.objects.create(
+            aggregatetype=aggregatetype,
+            aggregateid=aggregateid,
+            event_type=event_type,
+            payload=payload,
+        )
         outbox_record.delete()
+
+
+class InMemoryLog:
+    """Logs to memory."""
+
+    def __init__(self):
+        """Initialize the InMemoryLog with an empty log."""
+        self._log = []
+
+    def __len__(self):
+        """Return the number of logged events."""
+        return len(self._log)
+
+    def __iter__(self):
+        """Return an iterator over the logged events."""
+        return iter(self._log)
+
+    def __getitem__(self, index) -> "OutboxEvent":
+        """Return the logged event at the given index."""
+        return self._log[index]
+
+    def first(self) -> "OutboxEvent":
+        """Return the first logged event."""
+        if not self._log:
+            raise IndexError("No events logged")
+        return self._log[0]
+
+    def latest(self) -> "OutboxEvent":
+        """Return the latest logged event."""
+        if not self._log:
+            raise IndexError("No events logged")
+        return self._log[-1]
+
+    def log(self, aggregatetype: str, aggregateid: str, event_type: str, payload: dict):
+        """Log the given outbox event."""
+        self._log.append(
+            OutboxEvent(
+                aggregatetype=aggregatetype,
+                aggregateid=aggregateid,
+                event_type=event_type,
+                payload=payload,
+            )
+        )
+
+
+@dataclass
+class OutboxEvent:
+    """Represents a log entry for outbox events."""
+
+    aggregatetype: str
+    aggregateid: str
+    event_type: str
+    payload: dict
