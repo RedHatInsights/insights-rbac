@@ -152,9 +152,7 @@ def add_roles(group, roles_or_role_ids, tenant, user=None):
     # This should not be necessary for system roles.
     custom_roles = roles.filter(tenant=tenant).select_for_update()
 
-    dual_write_handler = None
-    if group.tenant.tenant_name != "public":
-        dual_write_handler = RelationApiDualWriteGroupHandler(group, ReplicationEventType.ASSIGN_ROLE)
+    added_roles: list[Role] = []
 
     for role in [*system_roles, *custom_roles]:
         # Only Organization administrators are allowed to add the role with RBAC permission
@@ -179,9 +177,11 @@ def add_roles(group, roles_or_role_ids, tenant, user=None):
 
         system_policy.roles.add(role)
         group_role_change_notification_handler(user, group, role, "added")
-        if dual_write_handler:
-            dual_write_handler.replicate_added_roles([role])
-    if dual_write_handler:
+        added_roles.append(role)
+
+    if tenant.tenant_name != "public":
+        dual_write_handler = RelationApiDualWriteGroupHandler(group, ReplicationEventType.ASSIGN_ROLE)
+        dual_write_handler.replicate_added_roles(added_roles)
         dual_write_handler.replicate()
 
 
@@ -196,10 +196,7 @@ def remove_roles(group, roles_or_role_ids, tenant, user=None):
     # This should not be necessary for system roles.
     custom_roles = roles.filter(tenant=tenant).select_for_update()
 
-    removed_roles = []
-    dual_write_handler = None
-    if group.tenant.tenant_name != "public":
-        dual_write_handler = RelationApiDualWriteGroupHandler(group, ReplicationEventType.UNASSIGN_ROLE)
+    removed_roles: list[Role] = []
 
     for policy in group.policies.all():
         for role in [*system_roles, *custom_roles]:
@@ -207,13 +204,14 @@ def remove_roles(group, roles_or_role_ids, tenant, user=None):
             if policy.roles.filter(pk=role.pk).exists():
                 policy.roles.remove(role)
                 logger.info(f"Removing role {role} from group {group.name} for tenant {tenant.org_id}.")
-                if dual_write_handler:
-                    dual_write_handler.replicate_removed_roles([role])
+
                 # Send notifications
                 group_role_change_notification_handler(user, group, role, "removed")
                 removed_roles.append(role)
 
-    if dual_write_handler:
+    if tenant.tenant_name != "public":
+        dual_write_handler = RelationApiDualWriteGroupHandler(group, ReplicationEventType.UNASSIGN_ROLE)
+        dual_write_handler.replicate_removed_roles(removed_roles)
         dual_write_handler.replicate()
 
 
