@@ -136,7 +136,7 @@ class RelationApiDualWriteGroupHandler:
             return
         self.group_relations_to_remove.extend(relations_to_remove)
 
-    def replicate_added_roles(self, roles: list[Role], remove_default_access_from: Optional[TenantMapping] = None):
+    def replicate_added_roles(self, roles: Iterable[Role], remove_default_access_from: Optional[TenantMapping] = None):
         """Generate group relations and binding mapping for role."""
         if not self.replication_enabled():
             return
