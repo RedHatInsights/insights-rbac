@@ -130,12 +130,6 @@ class RelationApiDualWriteGroupHandler:
         except Exception as e:
             raise DualWriteException(e)
 
-    def extend_relations_to_remove(self, relations_to_remove: list[Relationship]):
-        """Extend relations to remove in replication."""
-        if not self.replication_enabled():
-            return
-        self.group_relations_to_remove.extend(relations_to_remove)
-
     def replicate_added_roles(self, roles: Iterable[Role], remove_default_access_from: Optional[TenantMapping] = None):
         """Generate group relations and binding mapping for role."""
         if not self.replication_enabled():
@@ -280,8 +274,7 @@ class RelationApiDualWriteGroupHandler:
             custom_ids.append(role.id)
 
         if self.group.platform_default:
-            relations_to_add = self._default_bindings_from_mapping()
-            self.group_relations_to_add.extend(relations_to_add)
+            self.group_relations_to_add.append(self._default_binding())
         else:
             self.principals = self.group.principals.all()
             self.group_relations_to_remove.extend(self._generate_member_relations())

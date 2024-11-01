@@ -1015,17 +1015,6 @@ class GroupViewsetTests(IdentityRequest):
             )
             self.assertIsNotNone(find_relation_in_list(tuple_to_replicate, relation_tuple))
 
-            relation_tuple = relation_api_tuple(
-                "role_binding",
-                str(tenant_mapping.default_role_binding_uuid),
-                "subject",
-                "group",
-                str(tenant_mapping.default_group_uuid),
-                "member",
-            )
-
-            self.assertIsNotNone(find_relation_in_list(tuple_to_replicate, relation_tuple))
-
         assert_group_tuples(to_add)
 
         url = f"{reverse('v1_management:group-list')}?platform_default=true"
@@ -1848,17 +1837,6 @@ class GroupViewsetTests(IdentityRequest):
                 )
                 self.assertIsNotNone(find_relation_in_list(tuple_to_replicate, relation_tuple))
 
-                relation_tuple = relation_api_tuple(
-                    "role_binding",
-                    str(tenant_mapping.default_role_binding_uuid),
-                    "subject",
-                    "group",
-                    str(tenant_mapping.default_group_uuid),
-                    "member",
-                )
-
-                self.assertIsNotNone(find_relation_in_list(tuple_to_replicate, relation_tuple))
-
             assert_group_tuples(to_remove)
 
             # Original platform default role does not change
@@ -2023,17 +2001,6 @@ class GroupViewsetTests(IdentityRequest):
                     "role_binding",
                     str(tenant_mapping.default_role_binding_uuid),
                 )
-                self.assertIsNotNone(find_relation_in_list(tuple_to_replicate, relation_tuple))
-
-                relation_tuple = relation_api_tuple(
-                    "role_binding",
-                    str(tenant_mapping.default_role_binding_uuid),
-                    "subject",
-                    "group",
-                    str(tenant_mapping.default_group_uuid),
-                    "member",
-                )
-
                 self.assertIsNotNone(find_relation_in_list(tuple_to_replicate, relation_tuple))
 
             assert_group_tuples(to_remove)
