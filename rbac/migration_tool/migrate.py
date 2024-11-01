@@ -25,6 +25,7 @@ from management.principal.model import Principal
 from management.relation_replicator.logging_replicator import LoggingReplicator
 from management.relation_replicator.outbox_replicator import OutboxReplicator
 from management.relation_replicator.relation_replicator import (
+    PartitionKey,
     RelationReplicator,
     ReplicationEvent,
     ReplicationEventType,
@@ -114,7 +115,7 @@ def migrate_data_for_tenant(tenant: Tenant, exclude_apps: list, replicator: Rela
         ReplicationEvent(
             event_type=ReplicationEventType.MIGRATE_TENANT_GROUPS,
             info={"tenant": tenant.org_id},
-            partition_key="settings.ENV_NAME",
+            partition_key=PartitionKey.byEnvironment(),
             add=tuples,
         )
     )
@@ -144,7 +145,7 @@ def migrate_data_for_tenant(tenant: Tenant, exclude_apps: list, replicator: Rela
             ReplicationEvent(
                 event_type=ReplicationEventType.MIGRATE_CUSTOM_ROLE,
                 info={"role_uuid": str(role.uuid)},
-                partition_key="settings.ENV_NAME",
+                partition_key=PartitionKey.byEnvironment(),
                 add=tuples,
             )
         )

@@ -27,6 +27,7 @@ from management.principal.model import Principal
 from management.relation_replicator.outbox_replicator import OutboxReplicator
 from management.relation_replicator.relation_replicator import (
     DualWriteException,
+    PartitionKey,
     RelationReplicator,
     ReplicationEvent,
     ReplicationEventType,
@@ -113,7 +114,7 @@ class RelationApiDualWriteGroupHandler:
                 ReplicationEvent(
                     event_type=self.event_type,
                     info={"group_uuid": str(self.group.uuid)},
-                    partition_key="settings.ENV_NAME",
+                    partition_key=PartitionKey.byEnvironment(),
                     remove=self.group_relations_to_remove,
                     add=self.group_relations_to_add,
                 ),
