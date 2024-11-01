@@ -130,8 +130,10 @@ class RelationApiDualWriteGroupHandler:
         except Exception as e:
             raise DualWriteException(e)
 
-    def replicate_added_roles(self, roles: Iterable[Role], remove_default_access_from: Optional[TenantMapping] = None):
-        """Generate group relations and binding mapping for role."""
+    def generate_relations_to_add_roles(
+        self, roles: Iterable[Role], remove_default_access_from: Optional[TenantMapping] = None
+    ):
+        """Generate relations to add roles."""
         if not self.replication_enabled():
             return
 
@@ -172,7 +174,7 @@ class RelationApiDualWriteGroupHandler:
             return
         self._replicate()
 
-    def replicate_removed_roles(self, roles: Iterable[Role]):
+    def generate_relations_to_remove_roles(self, roles: Iterable[Role]):
         """Replicate removed role."""
         if not self.replication_enabled():
             return
@@ -299,9 +301,3 @@ class RelationApiDualWriteGroupHandler:
             self._public_tenant = Tenant.objects.get(tenant_name="public")
         assert self._public_tenant is not None
         return self._public_tenant
-
-    def replicate_deleted_group(self):
-        """Prepare for delete."""
-        if not self.replication_enabled():
-            return
-        self._replicate()
