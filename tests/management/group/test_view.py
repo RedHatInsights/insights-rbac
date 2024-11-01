@@ -1795,49 +1795,43 @@ class GroupViewsetTests(IdentityRequest):
             # New platform default role for tenant created
             custom_default_group = Group.objects.get(platform_default=True, tenant=self.tenant)
 
-            def assert_group_tuples(tuple_to_replicate):
-                relation_tuple = relation_api_tuple(
-                    "role_binding", binding_mapping.mappings["id"], "role", "role", str(default_role.uuid)
-                )
+            relation_tuple = relation_api_tuple(
+                "role_binding", binding_mapping.mappings["id"], "role", "role", str(default_role.uuid)
+            )
 
-                self.assertIsNotNone(find_relation_in_list(tuple_to_replicate, relation_tuple))
+            self.assertIsNotNone(find_relation_in_list(to_add, relation_tuple))
 
-                relation_tuple = relation_api_tuple(
-                    "workspace",
-                    str(self.default_workspace.id),
-                    "binding",
-                    "role_binding",
-                    str(binding_mapping.mappings["id"]),
-                )
+            relation_tuple = relation_api_tuple(
+                "workspace",
+                str(self.default_workspace.id),
+                "binding",
+                "role_binding",
+                str(binding_mapping.mappings["id"]),
+            )
 
-                self.assertIsNotNone(find_relation_in_list(tuple_to_replicate, relation_tuple))
+            self.assertIsNotNone(find_relation_in_list(to_add, relation_tuple))
 
-                relation_tuple = relation_api_tuple(
-                    "role_binding",
-                    binding_mapping.mappings["id"],
-                    "subject",
-                    "group",
-                    str(custom_default_group.uuid),
-                    "member",
-                )
+            relation_tuple = relation_api_tuple(
+                "role_binding",
+                binding_mapping.mappings["id"],
+                "subject",
+                "group",
+                str(custom_default_group.uuid),
+                "member",
+            )
 
-                self.assertIsNotNone(find_relation_in_list(tuple_to_replicate, relation_tuple))
-
-            assert_group_tuples(to_add)
+            self.assertIsNotNone(find_relation_in_list(to_add, relation_tuple))
 
             tenant_mapping = TenantMapping.objects.get(tenant=self.tenant)
 
-            def assert_group_tuples(tuple_to_replicate):
-                relation_tuple = relation_api_tuple(
-                    "workspace",
-                    str(self.default_workspace.id),
-                    "binding",
-                    "role_binding",
-                    str(tenant_mapping.default_role_binding_uuid),
-                )
-                self.assertIsNotNone(find_relation_in_list(tuple_to_replicate, relation_tuple))
-
-            assert_group_tuples(to_remove)
+            relation_tuple = relation_api_tuple(
+                "workspace",
+                str(self.default_workspace.id),
+                "binding",
+                "role_binding",
+                str(tenant_mapping.default_role_binding_uuid),
+            )
+            self.assertIsNotNone(find_relation_in_list(to_remove, relation_tuple))
 
             # Original platform default role does not change
             self.defGroup.refresh_from_db()
@@ -1935,7 +1929,7 @@ class GroupViewsetTests(IdentityRequest):
             response = client.delete(url, format="json", **self.headers)
             actual_call_arg = mock_method.call_args_list[0][0][0]
             to_remove = actual_call_arg["relations_to_remove"]
-            to_add = actual_call_arg["relations_to_add"]
+            tuple_to_replicate = actual_call_arg["relations_to_add"]
 
             self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
             self.defGroup.refresh_from_db()
@@ -1957,53 +1951,46 @@ class GroupViewsetTests(IdentityRequest):
                 resource_id=self.default_workspace.id,
             )
 
-            def assert_group_tuples(tuple_to_replicate):
-                relation_tuple = relation_api_tuple(
-                    "role_binding",
-                    binding_mapping.mappings["id"],
-                    "role",
-                    "role",
-                    str(default_role_to_keep_in_group.uuid),
-                )
+            relation_tuple = relation_api_tuple(
+                "role_binding",
+                binding_mapping.mappings["id"],
+                "role",
+                "role",
+                str(default_role_to_keep_in_group.uuid),
+            )
 
-                self.assertIsNotNone(find_relation_in_list(tuple_to_replicate, relation_tuple))
+            self.assertIsNotNone(find_relation_in_list(tuple_to_replicate, relation_tuple))
 
-                relation_tuple = relation_api_tuple(
-                    "workspace",
-                    str(self.default_workspace.id),
-                    "binding",
-                    "role_binding",
-                    str(binding_mapping.mappings["id"]),
-                )
+            relation_tuple = relation_api_tuple(
+                "workspace",
+                str(self.default_workspace.id),
+                "binding",
+                "role_binding",
+                str(binding_mapping.mappings["id"]),
+            )
 
-                self.assertIsNotNone(find_relation_in_list(tuple_to_replicate, relation_tuple))
+            self.assertIsNotNone(find_relation_in_list(tuple_to_replicate, relation_tuple))
 
-                relation_tuple = relation_api_tuple(
-                    "role_binding",
-                    binding_mapping.mappings["id"],
-                    "subject",
-                    "group",
-                    str(custom_default_group.uuid),
-                    "member",
-                )
-
-                self.assertIsNotNone(find_relation_in_list(tuple_to_replicate, relation_tuple))
-
-            assert_group_tuples(to_add)
+            relation_tuple = relation_api_tuple(
+                "role_binding",
+                binding_mapping.mappings["id"],
+                "subject",
+                "group",
+                str(custom_default_group.uuid),
+                "member",
+            )
+            self.assertIsNotNone(find_relation_in_list(tuple_to_replicate, relation_tuple))
 
             tenant_mapping = TenantMapping.objects.get(tenant=self.tenant)
 
-            def assert_group_tuples(tuple_to_replicate):
-                relation_tuple = relation_api_tuple(
-                    "workspace",
-                    str(self.default_workspace.id),
-                    "binding",
-                    "role_binding",
-                    str(tenant_mapping.default_role_binding_uuid),
-                )
-                self.assertIsNotNone(find_relation_in_list(tuple_to_replicate, relation_tuple))
-
-            assert_group_tuples(to_remove)
+            relation_tuple = relation_api_tuple(
+                "workspace",
+                str(self.default_workspace.id),
+                "binding",
+                "role_binding",
+                str(tenant_mapping.default_role_binding_uuid),
+            )
+            self.assertIsNotNone(find_relation_in_list(to_remove, relation_tuple))
 
             notification_messages = [
                 call(
