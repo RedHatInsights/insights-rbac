@@ -547,6 +547,7 @@ class GroupViewsetTests(IdentityRequest):
         self.assertEqual(group["principalCount"], 1)
 
     def test_get_group_principal_count_username_filter(self):
+        "Test that when filtering a group with a username filter that principalCount is returned"
         # Create test group
         group_name = "TestGroup"
         group = Group(name=group_name, tenant=self.tenant)
@@ -572,6 +573,7 @@ class GroupViewsetTests(IdentityRequest):
         self.assertEqual(principalCount, 2)
 
     def test_get_group_principal_count_exclude_username_filter(self):
+        "Test that when filtering a group with the exclude_username filter that principalCount is returned"
         # Create test group
         group_name = "TestGroup"
         group = Group(name=group_name, tenant=self.tenant)
