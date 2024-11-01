@@ -1898,7 +1898,7 @@ class GroupViewsetTests(IdentityRequest):
     @override_settings(V2_BOOTSTRAP_TENANT=True)
     @patch("management.relation_replicator.outbox_replicator.OutboxReplicator._save_replication_event")
     @patch("core.kafka.RBACProducer.send_kafka_message")
-    def test_system_flag_update_on_remove(self, send_kafka_message, mock_method):
+    def test_system_flag_update_on_remove_and_keep_one_role_in_group(self, send_kafka_message, mock_method):
         """Test that removing a role from a platform_default group flips the system flag."""
         kafka_mock = copy_call_args(send_kafka_message)
         with self.settings(NOTIFICATIONS_ENABLED=True):
@@ -1980,6 +1980,106 @@ class GroupViewsetTests(IdentityRequest):
                 "member",
             )
             self.assertIsNotNone(find_relation_in_list(tuple_to_replicate, relation_tuple))
+
+            tenant_mapping = TenantMapping.objects.get(tenant=self.tenant)
+
+            relation_tuple = relation_api_tuple(
+                "workspace",
+                str(self.default_workspace.id),
+                "binding",
+                "role_binding",
+                str(tenant_mapping.default_role_binding_uuid),
+            )
+            self.assertIsNotNone(find_relation_in_list(to_remove, relation_tuple))
+
+            notification_messages = [
+                call(
+                    settings.NOTIFICATIONS_TOPIC,
+                    {
+                        "bundle": "console",
+                        "application": "rbac",
+                        "event_type": "platform-default-group-turned-into-custom",
+                        "timestamp": ANY,
+                        "events": [
+                            {
+                                "metadata": {},
+                                "payload": {
+                                    "name": custom_default_group.name,
+                                    "username": self.user_data["username"],
+                                    "uuid": str(custom_default_group.uuid),
+                                },
+                            }
+                        ],
+                        "org_id": org_id,
+                    },
+                    ANY,
+                ),
+                call(
+                    settings.NOTIFICATIONS_TOPIC,
+                    {
+                        "bundle": "console",
+                        "application": "rbac",
+                        "event_type": "custom-default-access-updated",
+                        "timestamp": ANY,
+                        "events": [
+                            {
+                                "metadata": {},
+                                "payload": {
+                                    "name": custom_default_group.name,
+                                    "username": self.user_data["username"],
+                                    "uuid": str(custom_default_group.uuid),
+                                    "operation": "removed",
+                                    "role": {"uuid": str(default_role.uuid), "name": default_role.name},
+                                },
+                            }
+                        ],
+                        "org_id": org_id,
+                    },
+                    ANY,
+                ),
+            ]
+            kafka_mock.assert_has_calls(notification_messages, any_order=True)
+
+    @override_settings(V2_BOOTSTRAP_TENANT=True)
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator._save_replication_event")
+    @patch("core.kafka.RBACProducer.send_kafka_message")
+    def test_system_flag_update_on_remove(self, send_kafka_message, mock_method):
+        """Test that removing a role from a platform_default group flips the system flag."""
+        kafka_mock = copy_call_args(send_kafka_message)
+        with self.settings(NOTIFICATIONS_ENABLED=True):
+            default_role = Role.objects.create(
+                name="default_role",
+                description="A default role for a group.",
+                platform_default=True,
+                system=True,
+                tenant=self.public_tenant,
+            )
+            self.defGroup.policies.first().roles.add(default_role)
+            self.assertTrue(self.defGroup.system)
+
+            org_id = self.customer_data["org_id"]
+
+            url = reverse("v1_management:group-roles", kwargs={"uuid": self.defGroup.uuid})
+            client = APIClient()
+            url = "{}?roles={}".format(url, default_role.uuid)
+            response = client.delete(url, format="json", **self.headers)
+            actual_call_arg = mock_method.call_args_list[0][0][0]
+            to_remove = actual_call_arg["relations_to_remove"]
+            tuple_to_replicate = actual_call_arg["relations_to_add"]
+
+            self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+            self.defGroup.refresh_from_db()
+            self.assertEqual(self.defGroup.name, "groupDef")
+            self.assertTrue(self.defGroup.system)
+            self.assertEqual(self.defGroup.tenant, self.public_tenant)
+            self.assertEqual(self.defGroup.roles().count(), 1)
+
+            # New platform default role for tenant created
+            custom_default_group = Group.objects.get(platform_default=True, tenant=self.tenant)
+            self.assertEqual(custom_default_group.name, "Custom default access")
+            self.assertFalse(custom_default_group.system)
+            self.assertEqual(custom_default_group.tenant, self.tenant)
+            self.assertEqual(custom_default_group.roles().count(), 0)
 
             tenant_mapping = TenantMapping.objects.get(tenant=self.tenant)
 
