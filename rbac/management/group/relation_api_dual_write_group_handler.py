@@ -70,7 +70,7 @@ class RelationApiDualWriteGroupHandler:
             self.user_domain = settings.PRINCIPAL_USER_DOMAIN
             self._replicator = replicator if replicator else OutboxReplicator()
             self._platform_default_policy_uuid: Optional[str] = None
-            self._public_tenant = None
+            self._public_tenant: Optional[Tenant] = None
             self._tenant_mapping = None
         except Exception as e:
             raise DualWriteException(e)
@@ -281,10 +281,10 @@ class RelationApiDualWriteGroupHandler:
 
     def _default_binding(self, mapping: Optional[TenantMapping] = None) -> Relationship:
         """Calculate default bindings from tenant mapping."""
-        if mapping:
-            assert mapping.tenant.id == self.group.tenant_id, "Tenant mapping does not match group tenant."
-        else:
+        if mapping is None:
             mapping = TenantMapping.objects.get(tenant=self.group.tenant)
+        else:
+            assert mapping.tenant.id == self.group.tenant_id, "Tenant mapping does not match group tenant."
 
         return create_relationship(
             ("rbac", "workspace"),
@@ -297,6 +297,7 @@ class RelationApiDualWriteGroupHandler:
     def _get_public_tenant(self) -> Tenant:
         if self._public_tenant is None:
             self._public_tenant = Tenant.objects.get(tenant_name="public")
+        assert self._public_tenant is not None
         return self._public_tenant
 
     def replicate_deleted_group(self):

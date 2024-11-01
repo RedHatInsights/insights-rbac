@@ -375,7 +375,7 @@ class GroupViewSet(
 
             response = super().destroy(request=request, args=args, kwargs=kwargs)
 
-            dual_write_handler.replicate_deleted_group()
+            dual_write_handler.replicate()
 
         if response.status_code == status.HTTP_204_NO_CONTENT:
             group_obj_change_notification_handler(request.user, group, "deleted")
