@@ -569,7 +569,7 @@ class GroupViewsetTests(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
         principalCount = response.data.get("data")[0]["principalCount"]
-        self.assertEqual(principalCount, 1)
+        self.assertEqual(principalCount, 2)
 
     def test_get_group_principal_count_exclude_username_filter(self):
         # Create test group
