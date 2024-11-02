@@ -133,5 +133,5 @@ class EnvironmentPartitionKey(PartitionKey):
     """Environment partition key globally orders all events within the environment."""
 
     def __str__(self) -> str:
-        """The environment name."""
+        """Return the environment name."""
         return settings.ENV_NAME

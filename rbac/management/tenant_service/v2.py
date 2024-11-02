@@ -325,7 +325,7 @@ class V2TenantBootstrapService:
             ReplicationEvent(
                 event_type=ReplicationEventType.BULK_BOOTSTRAP_TENANT,
                 info={"num_tenants": len(tenants), "first_org_id": tenants[0].org_id if tenants else None},
-                partition_key="rbactodo",
+                partition_key=PartitionKey.byEnvironment(),
                 add=relationships,
             )
         )
