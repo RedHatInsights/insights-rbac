@@ -108,7 +108,7 @@ namespace Workspaces {
     }
 
     model Workspace {
-        @key uuid: UUID;
+        @key id: UUID;
         parent_id?: UUID;
         type: WorkspaceTypes;
         ...BasicWorkspace;
@@ -116,14 +116,14 @@ namespace Workspaces {
     }
 
     model WorkspaceAncestor {
-        @key uuid: UUID;
+        @key id: UUID;
         parent_id?: UUID;
         name: string;
     }
 
     model CreateWorkspaceRequest extends BasicWorkspace{
-        @doc("Parent UUID of Workspace A")
-        parent_id: UUID = "Parent UUID of Workspace A";
+        @doc("Parent ID of Workspace A")
+        parent_id: UUID = "Parent ID of Workspace A";
     }
 
     model CreateWorkspaceResponse extends Workspace{
@@ -144,7 +144,7 @@ namespace Workspaces {
         @doc("Description of Workspace A")
         description: string = "Description of Workspace A";
         @doc("Description of Workspace A")
-        parent_id: UUID = "Parent UUID of Workspace A";
+        parent_id: UUID = "Parent ID of Workspace A";
     }
 
     model PatchWorkspaceRequest {
@@ -234,10 +234,10 @@ namespace Workspaces {
 
     @doc("Get a workspace in tenant")
     @summary("Get a workspace in tenant")
-    @route("{uuid}/")
+    @route("{id}/")
     @get op read(
         @doc("Unique identification")
-        @path uuid: UUID;
+        @path id: UUID;
 
         @doc("When true, the response will include the ancestry of the workspace.")
         @query include_ancestry?: boolean;
@@ -245,25 +245,25 @@ namespace Workspaces {
 
     @doc("Edit a workspace")
     @summary("Edit the workspace name or description")
-    @route("{uuid}/")
+    @route("{id}/")
     @put op update(
         @doc("Unique identification")
-        @path uuid: UUID;
+        @path id: UUID;
         @body body: UpdateWorkspaceRequest
     ): UpdateWorkspaceResponse | Problems.CommonProblems | Problems.Problem400AlreadyExists ;
 
-    @route("{uuid}/")
+    @route("{id}/")
     @patch op patch(
         @doc("Unique identification")
-        @path uuid: UUID;
+        @path id: UUID;
         @body body: PatchWorkspaceRequest
     ): PatchWorkspaceResponse | Problems.CommonProblems | Problems.Problem400AlreadyExists ;
 
     @doc("Delete a workspace")
     @summary("Delete the workspace")
-    @route("{uuid}/")
+    @route("{id}/")
     @delete op delete(
         @doc("Unique identification")
-        @path uuid: UUID;
+        @path id: UUID;
     ): DeleteWorkspaceResponse | Problems.CommonProblems | Problems.Workspace.Problem400WorkspaceNotEmpty;
 }

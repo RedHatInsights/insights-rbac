@@ -44,7 +44,6 @@ class WorkspaceViewSet(BaseV2ViewSet):
 
     permission_classes = (WorkspaceAccessPermission,)
     queryset = Workspace.objects.annotate()
-    lookup_field = "uuid"
     serializer_class = WorkspaceSerializer
     ordering_fields = ("name",)
     ordering = ("name",)
@@ -115,8 +114,8 @@ class WorkspaceViewSet(BaseV2ViewSet):
         """Validate a workspace for update."""
         instance = self.get_object()
         parent_id = request.data.get("parent_id")
-        if str(instance.uuid) == parent_id:
-            message = "Parent ID and UUID can't be same"
+        if str(instance.id) == parent_id:
+            message = "Parent ID and ID can't be same"
             error = {"workspace": [_(message)]}
             raise serializers.ValidationError(error)
 
@@ -142,7 +141,7 @@ class WorkspaceViewSet(BaseV2ViewSet):
                 raise serializers.ValidationError(error)
         if parent_id:
             validate_uuid(parent_id)
-            if not Workspace.objects.filter(uuid=parent_id, tenant=tenant).exists():
+            if not Workspace.objects.filter(id=parent_id, tenant=tenant).exists():
                 message = f"Parent workspace '{parent_id}' doesn't exist in tenant"
                 error = {"workspace": [message]}
                 raise serializers.ValidationError(error)

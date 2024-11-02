@@ -869,9 +869,9 @@ class GroupViewsetTests(IdentityRequest):
             response = client.post(url, request_body, format="json", **self.headers)
             self.assertEqual(response.status_code, status.HTTP_200_OK)
 
-            default_workspace_uuid = str(self.default_workspace.uuid)
+            default_workspace_id = str(self.default_workspace.id)
             role_binding_id = (
-                BindingMapping.objects.filter(role=self.role, resource_id=default_workspace_uuid).get().mappings["id"]
+                BindingMapping.objects.filter(role=self.role, resource_id=default_workspace_id).get().mappings["id"]
             )
 
             url = reverse("v1_management:group-detail", kwargs={"uuid": self.group.uuid})
@@ -917,7 +917,7 @@ class GroupViewsetTests(IdentityRequest):
 
                 relation_tuple = relation_api_tuple(
                     "workspace",
-                    default_workspace_uuid,
+                    default_workspace_id,
                     "binding",
                     "role_binding",
                     str(role_binding_id),
@@ -3802,7 +3802,7 @@ class GroupViewNonAdminTests(IdentityRequest):
         response = client.post(url, request_body, format="json", **self.headers_org_admin)
 
         binding_mapping = BindingMapping.objects.filter(
-            role=user_access_admin_role, resource_id=str(self.default_workspace.uuid)
+            role=user_access_admin_role, resource_id=str(self.default_workspace.id)
         ).get()
 
         actual_call_arg = mock_method.call_args[0][0]
@@ -3833,7 +3833,7 @@ class GroupViewNonAdminTests(IdentityRequest):
 
             relation_tuple = relation_api_tuple(
                 "workspace",
-                str(self.default_workspace.uuid),
+                str(self.default_workspace.id),
                 "binding",
                 "role_binding",
                 str(binding_mapping.mappings["id"]),

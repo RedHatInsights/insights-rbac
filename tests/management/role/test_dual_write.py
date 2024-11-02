@@ -87,7 +87,7 @@ class DualWriteTestCase(TestCase):
         """Return the default workspace ID."""
         tenant = tenant if tenant is not None else self.tenant
         default = Workspace.objects.get(tenant=tenant, type=Workspace.Types.DEFAULT)
-        return str(default.uuid)
+        return str(default.id)
 
     def dual_write_handler(self, role: Role, event_type: ReplicationEventType) -> RelationApiDualWriteHandler:
         """Create a RelationApiDualWriteHandler for the given role and event type."""
@@ -620,7 +620,7 @@ class DualWriteSystemRolesTestCase(DualWriteTestCase):
         tuples = self.tuples.find_tuples(predicate=resource_type("rbac", "role"))
         self.assertEquals(len(tuples), 4)
 
-        parents = [rel.subject_id for rel in tuples if rel.relation == "child" and rel.resource_id == str(role.uuid)]
+        parents = [rel.resource_id for rel in tuples if rel.relation == "child" and rel.subject_id == str(role.uuid)]
         self.assertSetEqual(set([admin_default, platform_default]), set(parents))
 
         dual_write_handler = SeedingRelationApiDualWriteHandler(replicator=InMemoryRelationReplicator(self.tuples))
@@ -635,7 +635,7 @@ class DualWriteSystemRolesTestCase(DualWriteTestCase):
         # check if only 2 relations exists in replicator.
         tuples = self.tuples.find_tuples(predicate=resource_type("rbac", "role"))
         self.assertEquals(len(tuples), 2)
-        parents = [rel.subject_id for rel in tuples if rel.relation == "child" and rel.resource_id == str(role.uuid)]
+        parents = [rel.resource_id for rel in tuples if rel.relation == "child" and rel.subject_id == str(role.uuid)]
         self.assertSetEqual(set([platform_default]), set(parents))
 
         # ensure no relations exist in replicator.
@@ -662,7 +662,7 @@ class DualWriteSystemRolesTestCase(DualWriteTestCase):
         # check if relations exist in replicator.
         tuples = self.tuples.find_tuples(predicate=resource_type("rbac", "role"))
         self.assertEquals(len(tuples), 4)
-        parents = [rel.subject_id for rel in tuples if rel.relation == "child" and rel.resource_id == str(role.uuid)]
+        parents = [rel.resource_id for rel in tuples if rel.relation == "child" and rel.subject_id == str(role.uuid)]
         self.assertSetEqual(set([admin_default, platform_default]), set(parents))
 
         dual_write_handler = SeedingRelationApiDualWriteHandler(replicator=InMemoryRelationReplicator(self.tuples))
@@ -677,7 +677,7 @@ class DualWriteSystemRolesTestCase(DualWriteTestCase):
         # Check that it was created as platform default
         tuples = self.tuples.find_tuples(predicate=resource_type("rbac", "role"))
         self.assertEquals(len(tuples), 1)
-        parents = [rel.subject_id for rel in tuples if rel.relation == "child" and rel.resource_id == str(role.uuid)]
+        parents = [rel.resource_id for rel in tuples if rel.relation == "child" and rel.subject_id == str(role.uuid)]
         self.assertSetEqual(set([platform_default]), set(parents))
 
         # Delete system role
@@ -693,7 +693,7 @@ class DualWriteSystemRolesTestCase(DualWriteTestCase):
         # Check that it was created as platform default
         tuples = self.tuples.find_tuples(predicate=resource_type("rbac", "role"))
         self.assertEquals(len(tuples), 1)
-        parents = [rel.subject_id for rel in tuples if rel.relation == "child" and rel.resource_id == str(role.uuid)]
+        parents = [rel.resource_id for rel in tuples if rel.relation == "child" and rel.subject_id == str(role.uuid)]
         self.assertSetEqual(set([admin_default]), set(parents))
 
         # Delete system role

@@ -46,7 +46,9 @@ class ReplicationEventType(str, Enum):
     ADD_PRINCIPALS_TO_GROUP = "add_principals_to_group"
     REMOVE_PRINCIPALS_FROM_GROUP = "remove_principals_from_group"
     BOOTSTRAP_TENANT = "bootstrap_tenant"
+    BULK_BOOTSTRAP_TENANT = "bulk_bootstrap_tenant"
     EXTERNAL_USER_UPDATE = "external_user_update"
+    BULK_EXTERNAL_USER_UPDATE = "bulk_external_user_update"
     MIGRATE_CUSTOM_ROLE = "migrate_custom_role"
     MIGRATE_TENANT_GROUPS = "migrate_tenant_groups"
 

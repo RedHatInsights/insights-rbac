@@ -1,0 +1,9 @@
+---
+apiVersion: cloud.redhat.com/v1alpha1
+kind: ClowdJobInvocation
+metadata:
+  name: seed-roles-perms-groups
+spec:
+  appName: rbac
+  jobs:
+    - seed-roles-perms-groups
