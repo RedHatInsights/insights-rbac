@@ -18,7 +18,6 @@
 """RelationReplicator which writes to the outbox table."""
 
 import logging
-from dataclasses import dataclass
 from typing import Optional
 from typing import Protocol
 
@@ -64,18 +63,19 @@ class OutboxReplicator(RelationReplicator):
             " ".join([f"info.{key}='{str(value)}'" for key, value in event_info.items()]),
         )
         # https://debezium.io/documentation/reference/stable/transformations/outbox-event-router.html#basic-outbox-table
-        self._log.log(
+        outbox = Outbox(
             aggregatetype="relations-replication-event",
             aggregateid=str(aggregateid),
             event_type=event_type,
             payload=payload,
         )
+        self._log.log(outbox)
 
 
 class OutboxLog(Protocol):
     """Protocol for logging outbox events."""
 
-    def log(self, aggregatetype: str, aggregateid: str, event_type: str, payload: dict):
+    def log(self, outbox: Outbox):
         """Log the given outbox event."""
         ...
 
@@ -83,15 +83,13 @@ class OutboxLog(Protocol):
 class OutboxWAL:
     """Writes to the outbox table."""
 
-    def log(self, aggregatetype: str, aggregateid: str, event_type: str, payload: dict):
+    def log(self, outbox: Outbox):
         """Log the given outbox event."""
-        outbox_record = Outbox.objects.create(
-            aggregatetype=aggregatetype,
-            aggregateid=aggregateid,
-            event_type=event_type,
-            payload=payload,
-        )
-        outbox_record.delete()
+        outbox.save(force_insert=True)
+        # Immediately deleted to avoid filling up the table.
+        # Keeping outbox records around is not as useful as it may seem,
+        # because they will not necessarily be sorted in the order they appear in the WAL.
+        outbox.delete()
 
 
 class InMemoryLog:
@@ -109,39 +107,22 @@ class InMemoryLog:
         """Return an iterator over the logged events."""
         return iter(self._log)
 
-    def __getitem__(self, index) -> "OutboxEvent":
+    def __getitem__(self, index) -> Outbox:
         """Return the logged event at the given index."""
         return self._log[index]
 
-    def first(self) -> "OutboxEvent":
+    def first(self) -> Outbox:
         """Return the first logged event."""
         if not self._log:
             raise IndexError("No events logged")
         return self._log[0]
 
-    def latest(self) -> "OutboxEvent":
+    def latest(self) -> Outbox:
         """Return the latest logged event."""
         if not self._log:
             raise IndexError("No events logged")
         return self._log[-1]
 
-    def log(self, aggregatetype: str, aggregateid: str, event_type: str, payload: dict):
+    def log(self, outbox: Outbox):
         """Log the given outbox event."""
-        self._log.append(
-            OutboxEvent(
-                aggregatetype=aggregatetype,
-                aggregateid=aggregateid,
-                event_type=event_type,
-                payload=payload,
-            )
-        )
-
-
-@dataclass
-class OutboxEvent:
-    """Represents a log entry for outbox events."""
-
-    aggregatetype: str
-    aggregateid: str
-    event_type: str
-    payload: dict
+        self._log.append(outbox)
