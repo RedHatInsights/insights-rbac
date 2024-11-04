@@ -19,6 +19,7 @@
 from abc import ABC, abstractmethod
 from enum import Enum
 
+from django.conf import settings
 from kessel.relations.v1beta1 import common_pb2
 
 
@@ -57,14 +58,14 @@ class ReplicationEvent:
 
     event_type: ReplicationEventType
     event_info: dict[str, object]
-    partition_key: str
+    partition_key: "PartitionKey"
     add: list[common_pb2.Relationship]
     remove: list[common_pb2.Relationship]
 
     def __init__(
         self,
         event_type: ReplicationEventType,
-        partition_key: str,
+        partition_key: "PartitionKey",
         add: list[common_pb2.Relationship] = [],
         remove: list[common_pb2.Relationship] = [],
         info: dict[str, object] = {},
@@ -84,3 +85,53 @@ class RelationReplicator(ABC):
     def replicate(self, event: ReplicationEvent):
         """Replicate the given event to Kessel Relations."""
         pass
+
+
+class PartitionKey(ABC):
+    """
+    Parent type for all partition keys.
+
+    Partition keys define the partitions in which replication events are ordered.
+    """
+
+    @staticmethod
+    def byEnvironment() -> "PartitionKey":
+        """
+        Order all events within the environment.
+
+        This makes all changes follow the same order as the database (assuming one database per environment),
+        however it means all events can only be processed by a single consumer at a time.
+        """
+        return EnvironmentPartitionKey()
+
+    # TODO: Eventually we may want to scale out replication via more partitions.
+    # To do this we will need a procedure like this:
+    # 1. Add a field to the outbox table that can control the topic
+    # 3. Add configuration for `route.by.field` in Debezium
+    # 4. Start writing events with the new partition key, with a new value for this field.
+    #    Events in the WAL with the global key will be routed to the "old" topic,
+    #    while events with the new partition key(s) will be routed to a new topic.
+    # 5. Let the "old" topic be consumed entirely by the sink.
+    #    This maintains order for those with respect to anything new.
+    # 6. Once that is empty, switch the sink to the new topic.
+    # This just introduces some delay in new access, but otherwise doesn't introduce an outage.
+
+    # Example: byTenant(tenant: Tenant) -> "PartitionKey":
+    # ...
+
+    # When partitioning by another key, be mindful of causal relationships between events,
+    # and other operations which may change the same tuples.
+    # The same tuples MUST only ever be changed with the same partition.
+
+    @abstractmethod
+    def __str__(self) -> str:
+        """Return the string value of the partition key."""
+        pass
+
+
+class EnvironmentPartitionKey(PartitionKey):
+    """Environment partition key globally orders all events within the environment."""
+
+    def __str__(self) -> str:
+        """Return the environment name."""
+        return settings.ENV_NAME
