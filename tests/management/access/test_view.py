@@ -178,7 +178,7 @@ class AccessViewTests(IdentityRequest):
         self.assertIsNotNone(response.data.get("data"))
         self.assertIsInstance(response.data.get("data"), list)
         self.assertEqual(len(response.data.get("data")), 2)
-        self.assertEqual(response.data.get("meta").get("limit"), 2)
+        self.assertEqual(response.data.get("meta").get("limit"), 10)
         self.assertEqual(self.access_data, response.data.get("data")[0])
 
         # the platform default permission could also be retrieved
@@ -215,7 +215,7 @@ class AccessViewTests(IdentityRequest):
         self.assertIsNotNone(response.data.get("data"))
         self.assertIsInstance(response.data.get("data"), list)
         self.assertEqual(len(response.data.get("data")), 2)
-        self.assertEqual(response.data.get("meta").get("limit"), 2)
+        self.assertEqual(response.data.get("meta").get("limit"), 10)
         for access_data in response.data.get("data"):
             if access_data.get("resourceDefinitions"):
                 self.assertEqual(self.access_data, access_data)
@@ -314,7 +314,7 @@ class AccessViewTests(IdentityRequest):
         self.assertIsNotNone(response.data.get("data"))
         self.assertIsInstance(response.data.get("data"), list)
         self.assertEqual(len(response.data.get("data")), 2)
-        self.assertEqual(response.data.get("meta").get("limit"), 2)
+        self.assertEqual(response.data.get("meta").get("limit"), 10)
 
     @patch(
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
@@ -396,7 +396,7 @@ class AccessViewTests(IdentityRequest):
         self.assertIsNotNone(response.data.get("data"))
         self.assertIsInstance(response.data.get("data"), list)
         self.assertEqual(len(response.data.get("data")), 0)
-        self.assertEqual(response.data.get("meta").get("limit"), 0)
+        self.assertEqual(response.data.get("meta").get("limit"), 10)
 
     @patch(
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
@@ -439,7 +439,7 @@ class AccessViewTests(IdentityRequest):
         self.assertIsNotNone(response.data.get("data"))
         self.assertIsInstance(response.data.get("data"), list)
         self.assertEqual(len(response.data.get("data")), 0)
-        self.assertEqual(response.data.get("meta").get("limit"), 0)
+        self.assertEqual(response.data.get("meta").get("limit"), 10)
 
     @patch("management.cache.AccessCache.save_policy", return_value=None)
     @patch("management.cache.AccessCache.get_policy", return_value=None)
@@ -616,7 +616,7 @@ class AccessViewTests(IdentityRequest):
         self.assertIsNotNone(response.data.get("data"))
         self.assertIsInstance(response.data.get("data"), list)
         self.assertEqual(len(response.data.get("data")), 0)
-        self.assertEqual(response.data.get("meta").get("limit"), 0)
+        self.assertEqual(response.data.get("meta").get("limit"), 10)
 
     @patch(
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
