@@ -37,20 +37,22 @@ class WorkspaceModelTests(IdentityRequest):
 
     def test_child_parent_relations(self):
         """Test that workspaces can add/have parents as well as children"""
-        parent = Workspace.objects.create(name="Parent", tenant=self.tenant)
-        child = Workspace.objects.create(name="Child", tenant=self.tenant, parent=parent)
+        tenant = Tenant.objects.create(tenant_name="Child/Parent Relations")
+        parent = Workspace.objects.create(name="Parent", tenant=tenant, type=Workspace.Types.ROOT)
+        child = Workspace.objects.create(name="Child", tenant=tenant, parent=parent, type=Workspace.Types.DEFAULT)
         self.assertEqual(child.parent, parent)
         self.assertEqual(list(parent.children.all()), [child])
 
     def test_delete_fails_when_children(self):
         """Test that workspaces will not be deleted when children exist"""
-        parent = Workspace.objects.create(name="Parent", tenant=self.tenant)
-        child = Workspace.objects.create(name="Child", tenant=self.tenant, parent=parent)
+        tenant = Tenant.objects.create(tenant_name="Delete Fails With Children")
+        parent = Workspace.objects.create(name="Parent", tenant=tenant, type=Workspace.Types.ROOT)
+        child = Workspace.objects.create(name="Child", tenant=tenant, parent=parent, type=Workspace.Types.DEFAULT)
         self.assertRaises(ProtectedError, parent.delete)
 
     def test_ancestors(self):
         """Test ancestors on a workspace"""
-        root = Workspace.objects.create(name="Root", tenant=self.tenant, parent=None)
+        root = Workspace.objects.create(name="Root", tenant=self.tenant, parent=None, type=Workspace.Types.ROOT)
         level_1 = Workspace.objects.create(name="Level 1", tenant=self.tenant, parent=root)
         level_2 = Workspace.objects.create(name="Level 2", tenant=self.tenant, parent=level_1)
         level_3 = Workspace.objects.create(name="Level 3", tenant=self.tenant, parent=level_2)
@@ -58,21 +60,31 @@ class WorkspaceModelTests(IdentityRequest):
         self.assertCountEqual(level_3.ancestors(), [root, level_1, level_2])
 
 
-class Types(WorkspaceModelTests):
+class Types(IdentityRequest):
     """Test types on a workspace."""
 
     def setUp(self):
         """Set up the workspace model tests."""
-        self.tenant_2 = Tenant.objects.create(tenant_name="foo")
-
         self.tenant_1_root_workspace = Workspace.objects.create(
-            name="T1 Root Workspace", tenant=self.tenant, type="root"
+            name="T1 Root Workspace", tenant=self.tenant, type=Workspace.Types.ROOT
         )
         self.tenant_1_default_workspace = Workspace.objects.create(
-            name="T1 Default Workspace", tenant=self.tenant, type="default"
+            name="T1 Default Workspace",
+            tenant=self.tenant,
+            type=Workspace.Types.DEFAULT,
+            parent=self.tenant_1_root_workspace,
         )
-        self.tenant_1_standard_workspace = Workspace.objects.create(name="T1 Standard Workspace", tenant=self.tenant)
+        self.tenant_1_standard_workspace = Workspace.objects.create(
+            name="T1 Standard Workspace",
+            tenant=self.tenant,
+            parent=self.tenant_1_default_workspace,
+        )
         super().setUp()
+
+    def tearDown(self):
+        """Tear down workspace model tests."""
+        Workspace.objects.update(parent=None)
+        Workspace.objects.all().delete()
 
     def test_default_value(self):
         """Test the default value of a workspace type when not supplied"""
@@ -81,7 +93,7 @@ class Types(WorkspaceModelTests):
     def test_single_root_per_tenant(self):
         """Test tenant can only have one root workspace"""
         with self.assertRaises(ValidationError) as assertion:
-            Workspace.objects.create(name="T1 Root Workspace Number 2", type="root", tenant=self.tenant)
+            Workspace.objects.create(name="T1 Root Workspace Number 2", type=Workspace.Types.ROOT, tenant=self.tenant)
         error_messages = assertion.exception.messages
         self.assertEqual(len(error_messages), 1)
         self.assertIn("unique_default_root_workspace_per_tenant", error_messages[0])
@@ -89,30 +101,40 @@ class Types(WorkspaceModelTests):
     def test_single_default_per_tenant(self):
         """Test tenant can only have one default workspace"""
         with self.assertRaises(ValidationError) as assertion:
-            Workspace.objects.create(name="T1 Default Workspace Number 2", type="default", tenant=self.tenant)
+            Workspace.objects.create(
+                name="T1 Default Workspace Number 2",
+                type=Workspace.Types.DEFAULT,
+                tenant=self.tenant,
+                parent=self.tenant_1_root_workspace,
+            )
         error_messages = assertion.exception.messages
         self.assertEqual(len(error_messages), 1)
         self.assertIn("unique_default_root_workspace_per_tenant", error_messages[0])
 
-    def test_multiple_root_multiple_tenants(self):
-        """Test that multiple tenants can have more than one root workspace"""
+    def test_multiple_root_and_default_multiple_tenants(self):
+        """Test that multiple tenants can have more than one root and default workspace"""
         try:
-            Workspace.objects.create(name="T2 Root Workspace Number 2", type="root", tenant=self.tenant_2)
+            tenant_2 = Tenant.objects.create(tenant_name="Tenant 2")
+            root = Workspace.objects.create(name="Root Workspace Number 2", type=Workspace.Types.ROOT, tenant=tenant_2)
+            default = Workspace.objects.create(
+                name="Default Workspace Number 2",
+                type=Workspace.Types.DEFAULT,
+                tenant=tenant_2,
+                parent=root,
+            )
         except ValidationError as e:
-            self.fail("test_multiple_root_multiple_tenants raised ValidationError unexpectedly")
-
-    def test_multiple_default_multiple_tenants(self):
-        """Test that multiple tenants can have more than one default workspace"""
-        try:
-            Workspace.objects.create(name="T2 Default Workspace Number 2", type="default", tenant=self.tenant_2)
-        except ValidationError as e:
-            self.fail("test_multiple_default_multiple_tenants raised ValidationError unexpectedly")
+            self.fail("test_multiple_root_and_default_multiple_tenants raised ValidationError unexpectedly")
 
     def test_multiple_standard_per_tenant(self):
         """Test tenant can have multiple standard workspaces"""
         try:
             for n in ["1", "2", "3"]:
-                Workspace.objects.create(name=f"T1 Standard Workspace Number {n}", type="standard", tenant=self.tenant)
+                Workspace.objects.create(
+                    name=f"T1 Standard Workspace Number {n}",
+                    type=Workspace.Types.STANDARD,
+                    tenant=self.tenant,
+                    parent=self.tenant_1_default_workspace,
+                )
         except ValidationError as e:
             self.fail("test_multiple_standard_per_tenant raised ValidationError unexpectedly")
 
@@ -120,7 +142,19 @@ class Types(WorkspaceModelTests):
         """Test invalid workspace type"""
         invalid_type = "foo"
         with self.assertRaises(ValidationError) as assertion:
-            Workspace.objects.create(name="Invalid Type Workspace", type=invalid_type, tenant=self.tenant)
+            Workspace.objects.create(
+                name="Invalid Type Workspace",
+                type=invalid_type,
+                tenant=self.tenant,
+                parent=self.tenant_1_default_workspace,
+            )
         error_messages = assertion.exception.messages
         self.assertEqual(len(error_messages), 1)
         self.assertEqual(f"Value '{invalid_type}' is not a valid choice.", error_messages[0])
+
+    def test_default_no_parent(self):
+        """Test default workspace creation with no parent"""
+        tenant = Tenant.objects.create(tenant_name="Default no parent")
+        with self.assertRaises(ValidationError) as assertion:
+            Workspace.objects.create(name="Default", type=Workspace.Types.DEFAULT, tenant=tenant)
+        self.assertEqual({"parent_id": ["This field cannot be blank."]}, assertion.exception.message_dict)

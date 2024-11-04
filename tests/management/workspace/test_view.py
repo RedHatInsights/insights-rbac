@@ -41,13 +41,6 @@ class WorkspaceViewTests(IdentityRequest):
         reload(urls)
         clear_url_caches()
         super().setUp()
-        self.parent_workspace = Workspace.objects.create(name="Parent Workspace", tenant=self.tenant)
-        self.init_workspace = Workspace.objects.create(
-            name="Init Workspace",
-            description="Init Workspace - description",
-            tenant=self.tenant,
-            parent=self.parent_workspace,
-        )
 
     def tearDown(self):
         """Tear down group model tests."""
@@ -57,13 +50,34 @@ class WorkspaceViewTests(IdentityRequest):
 
 @override_settings(V2_APIS_ENABLED=True)
 class WorkspaceViewTestsV2Enabled(WorkspaceViewTests):
+    def setUp(self):
+        super().setUp()
+        self.root_workspace = Workspace.objects.create(
+            name="Root Workspace",
+            tenant=self.tenant,
+            type=Workspace.Types.ROOT,
+        )
+        self.default_workspace = Workspace.objects.create(
+            tenant=self.tenant,
+            type=Workspace.Types.DEFAULT,
+            name="Default Workspace",
+            parent_id=self.root_workspace.id,
+        )
+        self.standard_workspace = Workspace.objects.create(
+            name="Standard Workspace",
+            description="Standard Workspace - description",
+            tenant=self.tenant,
+            parent=self.default_workspace,
+            type=Workspace.Types.STANDARD,
+        )
+
     def test_create_workspace(self):
         """Test for creating a workspace."""
         workspace_data = {
             "name": "New Workspace",
             "description": "New Workspace - description",
             "tenant_id": self.tenant.id,
-            "parent_id": self.init_workspace.id,
+            "parent_id": self.standard_workspace.id,
         }
 
         parent_workspace = Workspace.objects.create(**workspace_data)
@@ -142,12 +156,12 @@ class WorkspaceViewTestsV2Enabled(WorkspaceViewTests):
             "name": "New Workspace",
             "description": "New Workspace - description",
             "tenant_id": self.tenant.id,
-            "parent_id": self.init_workspace.id,
+            "parent_id": self.standard_workspace.id,
         }
 
         Workspace.objects.create(**workspace_data)
 
-        test_data = {"name": "New Workspace", "parent_id": self.init_workspace.id}
+        test_data = {"name": "New Workspace", "parent_id": self.standard_workspace.id}
 
         url = reverse("v2_management:workspace-list")
         client = APIClient()
@@ -161,7 +175,7 @@ class WorkspaceViewTestsV2Enabled(WorkspaceViewTests):
             "name": "New Workspace",
             "description": "New Workspace - description",
             "tenant_id": self.tenant.id,
-            "parent_id": self.init_workspace.id,
+            "parent_id": self.standard_workspace.id,
         }
 
         workspace = Workspace.objects.create(**workspace_data)
@@ -194,7 +208,7 @@ class WorkspaceViewTestsV2Enabled(WorkspaceViewTests):
             "name": "New Workspace",
             "description": "New Workspace - description",
             "tenant_id": self.tenant.id,
-            "parent_id": self.init_workspace.id,
+            "parent_id": self.standard_workspace.id,
         }
 
         workspace = Workspace.objects.create(**workspace_data)
@@ -248,7 +262,7 @@ class WorkspaceViewTestsV2Enabled(WorkspaceViewTests):
             "name": "New Workspace",
             "description": "New Workspace - description",
             "tenant_id": self.tenant.id,
-            "parent_id": self.init_workspace.id,
+            "parent_id": self.standard_workspace.id,
         }
 
         parent_workspace = Workspace.objects.create(**parent_workspace_data)
@@ -284,6 +298,7 @@ class WorkspaceViewTestsV2Enabled(WorkspaceViewTests):
             "name": "New Workspace",
             "description": "New Workspace - description",
             "tenant_id": self.tenant.id,
+            "parent_id": self.root_workspace.id,
         }
 
         workspace = Workspace.objects.create(**workspace_data)
@@ -316,6 +331,7 @@ class WorkspaceViewTestsV2Enabled(WorkspaceViewTests):
             "name": "New Workspace",
             "description": "New Workspace - description",
             "tenant_id": self.tenant.id,
+            "parent_id": self.root_workspace.id,
         }
 
         workspace = Workspace.objects.create(**workspace_data)
@@ -362,7 +378,7 @@ class WorkspaceViewTestsV2Enabled(WorkspaceViewTests):
         """Test for updating a workspace with empty body"""
         workspace = {}
 
-        url = reverse("v2_management:workspace-detail", kwargs={"pk": self.init_workspace.id})
+        url = reverse("v2_management:workspace-detail", kwargs={"pk": self.standard_workspace.id})
         client = APIClient()
         response = client.put(url, workspace, format="json", **self.headers)
 
@@ -381,7 +397,7 @@ class WorkspaceViewTestsV2Enabled(WorkspaceViewTests):
             "name": "New Duplicate Workspace",
             "description": "New Duplicate Workspace - description",
             "tenant_id": self.tenant.id,
-            "parent_id": self.init_workspace.id,
+            "parent_id": self.standard_workspace.id,
         }
 
         Workspace.objects.create(**workspace_data)
@@ -390,7 +406,7 @@ class WorkspaceViewTestsV2Enabled(WorkspaceViewTests):
             "name": "New Duplicate Workspace for Update",
             "description": "New Duplicate Workspace - description",
             "tenant_id": self.tenant.id,
-            "parent_id": self.init_workspace.id,
+            "parent_id": self.standard_workspace.id,
         }
 
         workspace_for_update = Workspace.objects.create(**workspace_data_for_update)
@@ -401,7 +417,7 @@ class WorkspaceViewTestsV2Enabled(WorkspaceViewTests):
         workspace_data_for_put = {
             "name": "New Duplicate Workspace",
             "description": "New Duplicate Workspace - description",
-            "parent_id": self.init_workspace.id,
+            "parent_id": self.standard_workspace.id,
         }
 
         response = client.put(url, workspace_data_for_put, format="json", **self.headers)
@@ -416,7 +432,7 @@ class WorkspaceViewTestsV2Enabled(WorkspaceViewTests):
         request = request_context["request"]
         headers = request.META
 
-        url = reverse("v2_management:workspace-detail", kwargs={"pk": self.init_workspace.id})
+        url = reverse("v2_management:workspace-detail", kwargs={"pk": self.standard_workspace.id})
         client = APIClient()
         response = client.put(url, workspace, format="json", **headers)
 
@@ -429,14 +445,14 @@ class WorkspaceViewTestsV2Enabled(WorkspaceViewTests):
         self.assertEqual(response.get("content-type"), "application/problem+json")
 
     def test_get_workspace(self):
-        url = reverse("v2_management:workspace-detail", kwargs={"pk": self.init_workspace.id})
+        url = reverse("v2_management:workspace-detail", kwargs={"pk": self.standard_workspace.id})
         client = APIClient()
         response = client.get(url, None, format="json", **self.headers)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         data = response.data
-        self.assertEqual(data.get("name"), "Init Workspace")
-        self.assertEquals(data.get("description"), "Init Workspace - description")
+        self.assertEqual(data.get("name"), "Standard Workspace")
+        self.assertEquals(data.get("description"), "Standard Workspace - description")
         self.assertNotEquals(data.get("id"), "")
         self.assertIsNotNone(data.get("id"))
         self.assertNotEquals(data.get("created"), "")
@@ -447,44 +463,51 @@ class WorkspaceViewTestsV2Enabled(WorkspaceViewTests):
         self.assertEqual(response.get("content-type"), "application/json")
 
     def test_get_workspace_with_ancestry(self):
-        base_url = reverse("v2_management:workspace-detail", kwargs={"pk": self.init_workspace.id})
+        base_url = reverse("v2_management:workspace-detail", kwargs={"pk": self.standard_workspace.id})
         url = f"{base_url}?include_ancestry=true"
         client = APIClient()
         response = client.get(url, None, format="json", **self.headers)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         data = response.data
-        self.assertEqual(data.get("name"), "Init Workspace")
-        self.assertEquals(data.get("description"), "Init Workspace - description")
+        self.assertEqual(data.get("name"), "Standard Workspace")
+        self.assertEquals(data.get("description"), "Standard Workspace - description")
         self.assertNotEquals(data.get("id"), "")
         self.assertIsNotNone(data.get("id"))
         self.assertNotEquals(data.get("created"), "")
         self.assertNotEquals(data.get("modified"), "")
         self.assertEqual(
             data.get("ancestry"),
-            [{"name": self.parent_workspace.name, "id": str(self.parent_workspace.id), "parent_id": None}],
+            [{"name": self.root_workspace.name, "id": str(self.root_workspace.id), "parent_id": None}],
         )
         self.assertEquals(data.get("type"), "standard")
         self.assertEqual(response.get("content-type"), "application/json")
         self.assertEqual(data.get("ancestry"), None)
 
     def test_get_workspace_with_ancestry(self):
-        base_url = reverse("v2_management:workspace-detail", kwargs={"pk": self.init_workspace.id})
+        base_url = reverse("v2_management:workspace-detail", kwargs={"pk": self.standard_workspace.id})
         url = f"{base_url}?include_ancestry=true"
         client = APIClient()
         response = client.get(url, None, format="json", **self.headers)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         data = response.data
-        self.assertEqual(data.get("name"), "Init Workspace")
-        self.assertEquals(data.get("description"), "Init Workspace - description")
+        self.assertEqual(data.get("name"), "Standard Workspace")
+        self.assertEquals(data.get("description"), "Standard Workspace - description")
         self.assertNotEquals(data.get("id"), "")
         self.assertIsNotNone(data.get("id"))
         self.assertNotEquals(data.get("created"), "")
         self.assertNotEquals(data.get("modified"), "")
-        self.assertEqual(
+        self.assertCountEqual(
             data.get("ancestry"),
-            [{"name": self.parent_workspace.name, "id": str(self.parent_workspace.id), "parent_id": None}],
+            [
+                {"name": self.root_workspace.name, "id": str(self.root_workspace.id), "parent_id": None},
+                {
+                    "name": self.default_workspace.name,
+                    "id": str(self.default_workspace.id),
+                    "parent_id": str(self.root_workspace.id),
+                },
+            ],
         )
         self.assertEquals(data.get("type"), "standard")
         self.assertEqual(response.get("content-type"), "application/json")
@@ -508,7 +531,7 @@ class WorkspaceViewTestsV2Enabled(WorkspaceViewTests):
         request = request_context["request"]
         headers = request.META
 
-        url = reverse("v2_management:workspace-detail", kwargs={"pk": self.init_workspace.id})
+        url = reverse("v2_management:workspace-detail", kwargs={"pk": self.standard_workspace.id})
         client = APIClient()
         response = client.get(url, None, format="json", **headers)
 
@@ -525,6 +548,7 @@ class WorkspaceViewTestsV2Enabled(WorkspaceViewTests):
             "name": "Workspace for delete",
             "description": "Workspace for delete - description",
             "tenant_id": self.tenant.id,
+            "parent_id": self.root_workspace.id,
         }
 
         workspace = Workspace.objects.create(**workspace_data)
@@ -558,7 +582,7 @@ class WorkspaceViewTestsV2Enabled(WorkspaceViewTests):
         request = request_context["request"]
         headers = request.META
 
-        url = reverse("v2_management:workspace-detail", kwargs={"pk": self.init_workspace.id})
+        url = reverse("v2_management:workspace-detail", kwargs={"pk": self.standard_workspace.id})
         client = APIClient()
         response = client.delete(url, None, format="json", **headers)
 
@@ -578,7 +602,18 @@ class TestsList(WorkspaceViewTests):
         """Set up the workspace model list tests."""
         super().setUp()
         self.root_workspace = Workspace.objects.create(name="Root Workspace", tenant=self.tenant, type="root")
-        self.default_workspace = Workspace.objects.create(name="Default Workspace", tenant=self.tenant, type="default")
+        self.default_workspace = Workspace.objects.create(
+            name="Default Workspace",
+            tenant=self.tenant,
+            type="default",
+            parent_id=self.root_workspace.id,
+        )
+        self.standard_workspace = Workspace.objects.create(
+            name="Standard Workspace",
+            tenant=self.tenant,
+            type="standard",
+            parent_id=self.default_workspace.id,
+        )
 
     def assertSuccessfulList(self, response, payload):
         """Common list success assertions."""
