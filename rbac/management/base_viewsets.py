@@ -34,5 +34,6 @@ class BaseV2ViewSet(
     renderer_classes = api_settings.DEFAULT_RENDERER_CLASSES + [ProblemJSONRenderer]
 
     def get_queryset(self):
+        """Dynamic override of the default queryset for v2 APIs."""
         model = apps.get_model("management", self.basename)
         return model.objects.filter(tenant=self.request.tenant)
