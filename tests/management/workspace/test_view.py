@@ -27,6 +27,7 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.test import APIClient
 
+from api.models import Tenant
 from management.models import Workspace
 from rbac import urls
 from tests.identity_request import IdentityRequest
@@ -604,6 +605,21 @@ class TestsList(WorkspaceViewTests):
         self.assertEqual(payload.get("meta").get("count"), 1)
         self.assertEqual(payload.get("data")[0]["id"], str(self.default_workspace.id))
         self.assertType(payload, "default")
+
+    def test_workspace_list_queryset_by_tenant(self):
+        """List workspaces only for the request tenant."""
+        tenant = Tenant.objects.create(tenant_name="Tenant 2")
+        t2_root_workspace = Workspace.objects.create(name="Tenant 2 Root", type="root", tenant=tenant)
+
+        url = reverse("v2_management:workspace-list")
+        client = APIClient()
+        response = client.get(f"{url}?type=root", None, format="json", **self.headers)
+        payload = response.data
+
+        self.assertSuccessfulList(response, payload)
+        self.assertEqual(payload.get("meta").get("count"), 1)
+        self.assertEqual(payload.get("data")[0]["id"], str(self.root_workspace.id))
+        self.assertType(payload, "root")
 
 
 class WorkspaceViewTestsV2Disabled(WorkspaceViewTests):
