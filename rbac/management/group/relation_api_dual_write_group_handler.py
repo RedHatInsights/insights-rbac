@@ -129,6 +129,20 @@ class RelationApiDualWriteGroupHandler:
         except Exception as e:
             raise DualWriteException(e)
 
+    def _create_default_mapping_for_system_role(self, system_role: Role):
+        """Create default mapping."""
+        assert system_role.system is True, "Expected system role. Mappings for custom roles must already be created."
+        binding = V2rolebinding(
+            str(uuid4()),
+            # Assumes same role UUID for V2 system role equivalent.
+            V2role.for_system_role(str(system_role.uuid)),
+            V2boundresource(("rbac", "workspace"), str(self.default_workspace.id)),
+            groups=frozenset([str(self.group.uuid)]),
+        )
+        mapping = BindingMapping.for_role_binding(binding, system_role)
+        self.group_relations_to_add.extend(mapping.as_tuples())
+        return mapping
+
     def generate_relations_to_add_roles(
         self, roles: Iterable[Role], remove_default_access_from: Optional[TenantMapping] = None
     ):
@@ -139,25 +153,11 @@ class RelationApiDualWriteGroupHandler:
         def add_group_to_binding(mapping: BindingMapping):
             self.group_relations_to_add.append(mapping.add_group_to_bindings(str(self.group.uuid)))
 
-        def create_default_mapping(system_role):
-            assert system_role.system is True, "Expected system role. Mappings for custom roles must already be created."
-            binding = V2rolebinding(
-                str(uuid4()),
-                # Assumes same role UUID for V2 system role equivalent.
-                V2role.for_system_role(str(system_role.uuid)),
-                V2boundresource(("rbac", "workspace"), str(self.default_workspace.id)),
-                groups=frozenset([str(self.group.uuid)]),
-            )
-            mapping = BindingMapping.for_role_binding(binding, system_role)
-            self.group_relations_to_add.extend(mapping.as_tuples())
-            return mapping
-
         for role in roles:
-
             self._update_mapping_for_role(
                 role,
                 update_mapping=add_group_to_binding,
-                create_default_mapping_for_system_role=lambda: create_default_mapping(role),
+                create_default_mapping_for_system_role=lambda: self._create_default_mapping_for_system_role(role),
             )
 
         if remove_default_access_from is not None:
