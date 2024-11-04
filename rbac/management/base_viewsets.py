@@ -14,6 +14,7 @@
 #    along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Base viewset for v2 APIs."""
+from django.apps import apps
 from rest_framework import mixins, viewsets
 from rest_framework.settings import api_settings
 
@@ -31,3 +32,7 @@ class BaseV2ViewSet(
     """Base views to be inhertied for v2 API views."""
 
     renderer_classes = api_settings.DEFAULT_RENDERER_CLASSES + [ProblemJSONRenderer]
+
+    def get_queryset(self):
+        model = apps.get_model("management", self.basename)
+        return model.objects.filter(tenant=self.request.tenant)
