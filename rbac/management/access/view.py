@@ -143,8 +143,6 @@ class AccessView(APIView):
         """Return a single page of results, or `None` if pagination is disabled."""
         if self.paginator is None:
             return None
-        if "limit" not in self.request.query_params:
-            self.paginator.default_limit = len(queryset)
         return self.paginator.paginate_queryset(queryset, self.request, view=self)
 
     def get_paginated_response(self, data):
