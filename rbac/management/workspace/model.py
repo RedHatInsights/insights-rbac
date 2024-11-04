@@ -16,6 +16,7 @@
 #
 """Model for workspace management."""
 import uuid_utils.compat as uuid
+from django.core.exceptions import ValidationError
 from django.db import models
 from django.db.models import Q, UniqueConstraint
 from django.utils import timezone
@@ -54,6 +55,11 @@ class Workspace(TenantAwareModel):
         """Override save on model to enforce validations."""
         self.full_clean()
         super().save(*args, **kwargs)
+
+    def clean(self):
+        """Validate the model."""
+        if self.type != self.Types.ROOT and self.parent_id is None:
+            raise ValidationError({"parent_id": ("This field cannot be blank.")})
 
     def ancestors(self):
         """Return a list of ancestors for a Workspace instance."""
