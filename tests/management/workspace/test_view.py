@@ -290,7 +290,6 @@ class WorkspaceViewTestsV2Enabled(WorkspaceViewTests):
             "name": "New Workspace",
             "description": "New Workspace - description",
             "tenant_id": self.tenant.id,
-            "parent_id": None,
         }
 
         workspace = Workspace.objects.create(**workspace_data)
@@ -312,6 +311,26 @@ class WorkspaceViewTestsV2Enabled(WorkspaceViewTests):
         update_workspace = Workspace.objects.filter(id=workspace.id).first()
         self.assertEquals(update_workspace.name, "Updated name")
         self.assertEqual(response.get("content-type"), "application/json")
+
+    def test_partial_update_workspace_wrong_tenant_parent_id(self):
+        """Test for updating a workspace with a parent in a different tenant."""
+        tenant = Tenant.objects.create(tenant_name="Acme")
+        root_workspace = Workspace.objects.create(name="Root", tenant=tenant, type=Workspace.Types.ROOT)
+        workspace_data = {
+            "name": "New Workspace",
+            "description": "New Workspace - description",
+            "tenant_id": self.tenant.id,
+        }
+
+        workspace = Workspace.objects.create(**workspace_data)
+
+        url = reverse("v2_management:workspace-detail", kwargs={"pk": workspace.id})
+        client = APIClient()
+
+        workspace_data = {"parent_id": root_workspace.id}
+        response = client.patch(url, workspace_data, format="json", **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data["detail"], f"Parent workspace '{root_workspace.id}' doesn't exist in tenant")
 
     def test_update_workspace_empty_body(self):
         """Test for updating a workspace with empty body"""
