@@ -216,6 +216,32 @@ class WorkspaceViewTestsV2Enabled(WorkspaceViewTests):
         self.assertEqual(instance, url)
         self.assertEqual(response.get("content-type"), "application/problem+json")
 
+    def test_partial_update_empty(self):
+        """Test for updating a workspace with empty body."""
+        workspace_data = {
+            "name": "New Workspace",
+            "description": "New Workspace - description",
+            "tenant_id": self.tenant.id,
+        }
+
+        workspace = Workspace.objects.create(**workspace_data)
+
+        url = reverse("v2_management:workspace-detail", kwargs={"pk": workspace.id})
+        client = APIClient()
+        response = client.patch(url, {}, format="json", **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.get("content-type"), "application/json")
+        data = response.data
+        self.assertEqual(data.get("name"), "New Workspace")
+        self.assertEqual(data.get("description"), "New Workspace - description")
+        self.assertEqual(data.get("id"), str(workspace.id))
+        self.assertNotEquals(data.get("created"), "")
+        self.assertNotEquals(data.get("modified"), "")
+        self.assertEquals(data.get("type"), "standard")
+
+        update_workspace = Workspace.objects.filter(id=workspace.id).first()
+        self.assertEquals(update_workspace.name, "New Workspace")
+
     def test_update_workspace_same_parent(self):
         """Test for updating a workspace."""
         parent_workspace_data = {

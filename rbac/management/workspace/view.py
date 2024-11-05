@@ -98,7 +98,7 @@ class WorkspaceViewSet(BaseV2ViewSet):
     def partial_update(self, request, *args, **kwargs):
         """Patch a workspace."""
         self.validate_workspace(request, "patch")
-        payload = request.data or "{}"
+        payload = request.data or {}
         for field in payload:
             if field not in VALID_PATCH_FIELDS:
                 message = f"Field '{field}' is not supported. Please use one or more of: {VALID_PATCH_FIELDS}."
