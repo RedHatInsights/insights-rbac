@@ -226,6 +226,7 @@ class RelationApiDualWriteGroupHandler:
                 else:
                     mapping.save(force_update=True)
             except BindingMapping.DoesNotExist:
+                # create_default_mapping_for_system_role returns None for removing system roles
                 mapping = create_default_mapping_for_system_role()
                 if mapping is not None:
                     mapping.save(force_insert=True)
