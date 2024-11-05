@@ -46,6 +46,7 @@ class Command(BaseCommand):
 
         if options["roles"] or seed_all:
             logger.info("*** Seeding roles... ***")
+            logger.info(f"Running with force-create-relationships: {options.get('force_create_relationships', False)}")
             role_seeding(options.get("force_create_relationships", False))
             logger.info("*** Role seeding completed. ***\n")
 
