@@ -220,6 +220,8 @@ objects:
             value: ${UMB_PORT}
           - name: SA_NAME
             value: ${SA_NAME}
+          - name: RELATION_API_SERVER
+            value: ${RELATION_API_SERVER}
           - name: REPLICATION_TO_RELATION_ENABLED
             value: ${REPLICATION_TO_RELATION_ENABLED}
           - name: PRINCIPAL_CLEANUP_UPDATE_ENABLED_UMB
@@ -439,7 +441,7 @@ objects:
           - name: EXTERNAL_CHROME_TOPIC
             value: ${EXTERNAL_CHROME_TOPIC}
           - name: MIGRATE_AND_SEED_ON_INIT
-            value: ${WORKER_MIGRATE_AND_SEED_ON_INIT}
+            value: ${SERVICE_MIGRATE_AND_SEED_ON_INIT}
           - name: UMB_HOST
             value: ${UMB_HOST}
           - name: UMB_PORT
@@ -497,6 +499,7 @@ objects:
           - name: RBAC_DESTRUCTIVE_API_ENABLED_UNTIL
             value: ${RBAC_DESTRUCTIVE_API_ENABLED_UNTIL}
           - name: RBAC_DESTRUCTIVE_SEEDING_ENABLED_UNTIL
+            value: ${RBAC_DESTRUCTIVE_SEEDING_ENABLED_UNTIL}
           - name: REDIS_MAX_CONNECTIONS
             value: ${REDIS_MAX_CONNECTIONS}
           - name: REDIS_SOCKET_CONNECT_TIMEOUT
