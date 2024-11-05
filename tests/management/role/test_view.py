@@ -1773,6 +1773,33 @@ class RoleViewsetTests(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(response.data.get("errors")[0].get("detail"), f"Role '{name}' already exists for a tenant.")
 
+    def test_create_custom_role_with_same_name_as_system_role(self):
+        """Test that trying to create a custom role with the same name as a system role is not possible"""
+        client = APIClient()
+        name = "system_display"
+        test_data = {"name": name, "access": []}
+
+        # Attempt to create custom role with the same name as system role
+        response = client.post(URL, test_data, format="json", **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+        # Assert output message is correct
+        self.assertEqual(response.data.get("Error"), f"The role name '{name}' is reserved, please use another name")
+
+    def test_update_custom_role_with_same_name_as_system_role(self):
+        """Test that trying to update a custom role with the same name as a system role is not possible"""
+        url = reverse("v1_management:role-detail", kwargs={"uuid": self.defRole.uuid})
+        client = APIClient()
+        name = "system_display"
+        test_data = {"name": name, "access": []}
+
+        # Attempt to create custom role with the same name as system role
+        response = client.put(url, test_data, format="json", **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+        # Assert output message is correct
+        self.assertEqual(response.data.get("Error"), f"The role name '{name}' is reserved, please use another name")
+
 
 class RoleViewNonAdminTests(IdentityRequest):
     """Test the role view for nonadmin user."""
