@@ -51,6 +51,7 @@ class ReplicationEventType(str, Enum):
     BULK_EXTERNAL_USER_UPDATE = "bulk_external_user_update"
     MIGRATE_CUSTOM_ROLE = "migrate_custom_role"
     MIGRATE_TENANT_GROUPS = "migrate_tenant_groups"
+    CUSTOMIZE_DEFAULT_GROUP = "customize_default_group"
 
 
 class ReplicationEvent:

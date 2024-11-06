@@ -473,7 +473,6 @@ class V2TenantBootstrapService:
                 ),
             ]
         )
-
         return root, default, relationships
 
     def _get_platform_default_policy_uuid(self) -> Optional[str]:
