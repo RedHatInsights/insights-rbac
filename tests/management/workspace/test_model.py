@@ -138,6 +138,19 @@ class Types(IdentityRequest):
         except ValidationError as e:
             self.fail("test_multiple_standard_per_tenant raised ValidationError unexpectedly")
 
+    def test_standard_can_belong_to_root(self):
+        """Test that a standard workspace can belong to a root workspace"""
+        try:
+            workspace = Workspace.objects.create(
+                name=f"T1 Standard Workspace",
+                type=Workspace.Types.STANDARD,
+                tenant=self.tenant,
+                parent=self.tenant_1_root_workspace,
+            )
+            self.assertEqual(workspace.parent, self.tenant_1_root_workspace)
+        except ValidationError as e:
+            self.fail("test_standard_can_belong_to_root raised ValidationError unexpectedly")
+
     def test_invalid_type(self):
         """Test invalid workspace type"""
         invalid_type = "foo"
