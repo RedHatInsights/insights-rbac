@@ -261,11 +261,11 @@ class GroupViewSet(
         except IntegrityError as e:
             if "unique constraint" in str(e.args):
                 raise serializers.ValidationError(
-                    {"detail": f"A group with the name '{request.data.get('name')}' exists for this tenant"}
+                    {"group": f"A group with the name '{request.data.get('name')}' exists for this tenant"}
                 )
             else:
                 raise serializers.ValidationError(
-                    {"detail": "Unknown Integrity Error occurred while trying to add group for this tenant"}
+                    {"group": "Unknown Integrity Error occurred while trying to add group for this tenant"}
                 )
 
         if status.is_success(create_group.status_code):
