@@ -26,8 +26,7 @@ import pytz
 import json
 
 from api.models import User, Tenant
-from management.models import Group, Permission, Policy, Role, Workspace
-from management.role.model import BindingMapping
+from management.models import BindingMapping, Group, Permission, Policy, Role, Workspace
 from management.workspace.model import Workspace
 from management.tenant_mapping.model import TenantMapping
 from tests.identity_request import IdentityRequest
@@ -652,91 +651,50 @@ class InternalViewsetTests(IdentityRequest):
             f"/_private/api/utils/migration_resources/?resource=mapping&org_id={org_id}",
             **self.request.META,
         )
-        self.assertEqual(set(json.loads(response.getvalue())), {str(tenant_mappings[1].id)})
+        self.assertEqual(json.loads(response.getvalue()), [str(tenant_mappings[1].id)])
+
+        # List bindingmappings
+        # Delete bindingmappings
+        tenant_role = Role.objects.create(
+            name="role",
+            tenant=self.tenant,
+        )
+        another_role = Role.objects.create(
+            name="role",
+            tenant=another_tenant,
+        )
+        binding = BindingMapping.objects.create(
+            role=tenant_role,
+        )
+        another_binding = BindingMapping.objects.create(
+            role=another_role,
+        )
+        response = self.client.get(
+            "/_private/api/utils/migration_resources/?resource=mapping",
+            **self.request.META,
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(set(json.loads(response.getvalue())), {str(binding.id), str(another_binding.id)})
+
+        response = self.client.get(
+            f"/_private/api/utils/migration_resources/?resource=mapping&org_id={org_id}",
+            **self.request.META,
+        )
+        self.assertEqual(json.loads(response.getvalue()), [str(another_binding.id)])
 
     @override_settings(INTERNAL_DESTRUCTIVE_API_OK_UNTIL=valid_destructive_time())
-    def test_deleting_migration_resources(self):
+    @patch("api.tasks.run_migration_resource_deletion.delay")
+    def test_deleting_migration_resources(self, delay_mock):
         """Test that we can delete migration resources."""
         org_id = "12345678"
-        another_tenant = Tenant.objects.create(
-            org_id=org_id,
-        )
-        root_workspaces = Workspace.objects.bulk_create(
-            [
-                Workspace(
-                    name="Test Tenant Root Workspace",
-                    type=Workspace.Types.ROOT,
-                    tenant=self.tenant,
-                ),
-                Workspace(
-                    name="Test Tenant Root Workspace",
-                    type=Workspace.Types.ROOT,
-                    tenant=another_tenant,
-                ),
-            ]
-        )
-        default_workspaces = Workspace.objects.bulk_create(
-            [
-                Workspace(
-                    name="Test Tenant Default Workspace",
-                    type=Workspace.Types.DEFAULT,
-                    tenant=self.tenant,
-                    parent=root_workspaces[0],
-                ),
-                Workspace(
-                    name="Test Tenant Default Workspace",
-                    type=Workspace.Types.DEFAULT,
-                    tenant=another_tenant,
-                    parent=root_workspaces[1],
-                ),
-            ]
-        )
         response = self.client.delete(
             f"/_private/api/utils/migration_resources/?resource=workspace&org_id={org_id}",
             **self.request.META,
         )
-        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
-        self.assertFalse(Workspace.objects.filter(tenant=another_tenant).exists())
-        self.assertEqual(Workspace.objects.filter(tenant=self.tenant).count(), 2)
-        root = Workspace.objects.create(
-            name="Test Tenant Root Workspace",
-            type=Workspace.Types.ROOT,
-            tenant=another_tenant,
+        self.assertEqual(response.status_code, status.HTTP_202_ACCEPTED)
+        delay_mock.assert_called_once_with(
+            {
+                "resource": "workspace",
+                "org_id": org_id,
+            }
         )
-        Workspace.objects.create(
-            name="Test Tenant Default Workspace",
-            type=Workspace.Types.DEFAULT,
-            tenant=another_tenant,
-            parent=root,
-        )
-        
-        response = self.client.delete(
-            f"/_private/api/utils/migration_resources/?resource=workspace",
-            **self.request.META,
-        )
-        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
-        self.assertFalse(Workspace.objects.exists())
-
-        # Delete tenantmappings
-        tenant_mappings = TenantMapping.objects.bulk_create(
-            [
-                TenantMapping(
-                    tenant=self.tenant,
-                ),
-                TenantMapping(
-                    tenant=another_tenant,
-                ),
-            ]
-        )
-        response = self.client.delete(
-            f"/_private/api/utils/migration_resources/?resource=mapping&org_id={org_id}",
-            **self.request.META,
-        )
-        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
-        self.assertFalse(TenantMapping.objects.filter(tenant=another_tenant).exists())
-
-        response = self.client.delete(
-            "/_private/api/utils/migration_resources/?resource=mapping",
-            **self.request.META,
-        )
-        self.assertFalse(TenantMapping.objects.exists())

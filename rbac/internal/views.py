@@ -29,7 +29,7 @@ from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from django.utils.html import escape
 from management.cache import TenantCache
-from management.models import BindingMapping, Group, Permission, Role, Workspace
+from management.models import Group, Permission, Role
 from management.principal.proxy import (
     API_TOKEN_HEADER,
     CLIENT_ID_HEADER,
@@ -50,20 +50,16 @@ from management.tasks import (
     run_sync_schemas_in_worker,
 )
 from management.tenant_service.v2 import V2TenantBootstrapService
-from management.tenant_mapping.model import TenantMapping
 from rest_framework import status
 
 from api.common.pagination import StandardResultsSetPagination
 from api.models import Tenant
-from api.tasks import cross_account_cleanup, populate_tenant_account_id_in_worker
+from api.tasks import cross_account_cleanup, populate_tenant_account_id_in_worker, run_migration_resource_deletion
+from api.utils import RESOURCE_MODEL_MAPPING
 
 
 logger = logging.getLogger(__name__)
 TENANTS = TenantCache()
-RESOURCE_MODEL_MAPPING = {
-    "workspace": Workspace,
-    "mapping": TenantMapping,
-}
 
 
 def tenant_is_modified(tenant_name=None, org_id=None):
@@ -554,6 +550,7 @@ def migration_resources(request):
     """View or delete specific resources related to migration.
     DELETE /_private/api/utils/migration_resources/?resource=xxx&org_id=xxx
     GET /_private/api/utils/migration_resources/?resource=xxx&org_id=xxx&limit=1000
+    optinos of resource: workspace, mapping(tenantmapping), binding(bindingmapping)
     """
     resource = request.GET.get("resource")
     if not resource:
@@ -562,34 +559,32 @@ def migration_resources(request):
             status=400,
         )
     resource = resource.lower()
-    resource_model = RESOURCE_MODEL_MAPPING.get(resource.lower())
+    resource_model = RESOURCE_MODEL_MAPPING.get(resource)
     if not resource_model:
         return HttpResponse(
-            f"Invalid request, resource '{resource}' is not supported.",
+            f"Invalid request, resource should be in '{RESOURCE_MODEL_MAPPING.keys()}'.",
             status=400,
         )
     
-    resource_objs = resource_model.objects.all()
-    if request.GET.get("org_id"):
-        org_id = request.GET.get("org_id")
-        tenant = get_object_or_404(Tenant, org_id=org_id)
-        resource_objs = resource_objs.filter(tenant=tenant)
+    org_id = request.GET.get("org_id")
+
     if request.method == "DELETE":
         if not destructive_ok("api"):
             return HttpResponse("Destructive operations disallowed.", status=400)
-        try:
-            logger.info(f"Deleting resources of type {resource}. Requested by '{request.user.username}'")
-            if resource == "workspace":
-                # Have to delete the ones without references (default workspaces)
-                logger.info("Deleting default workspaces.")
-                resource_objs.exclude(parent=None).delete()
-                # Get all the root workspaces
-                resource_objs = resource_objs.filter(parent=None)
-            resource_objs.delete()
-            return HttpResponse(f"Resources of type {resource} deleted.", status=204)
-        except Exception:
-            return HttpResponse("Resources cannot be deleted.", status=400)
+        run_migration_resource_deletion.delay({"resource": resource, "org_id": org_id})
+        logger.info(f"Deleting resources of type {resource}. Requested by '{request.user.username}'")
+        return HttpResponse("Resource deletion is running in a background worker.", status=202)
+
     elif request.method == "GET":
+        resource_objs = resource_model.objects.all()
+        if org_id:
+            tenant = get_object_or_404(Tenant, org_id=org_id)
+            if tenant.tenant_name == "public":
+                return HttpResponse("Invalid request, tenant cannot be the public one.", status=400)
+            if resource == "binding":
+                resource_objs = resource_objs.filter(role__tenant=tenant)
+            else:
+                resource_objs = resource_objs.filter(tenant=tenant)
         limit = request.GET.get("limit", 1000)
         resource_list = [str(resource_obj.id) for resource_obj in resource_objs[:limit]]
         return HttpResponse(json.dumps(resource_list), content_type="application/json", status=200)
