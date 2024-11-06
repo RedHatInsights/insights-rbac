@@ -76,3 +76,22 @@ class OutboxReplicatorTest(TestCase):
         self.assertIn("Skipping empty replication event.", logs.output[0])
         self.assertIn("info.key='value'", logs.output[0])
         self.assertIn(str(ReplicationEventType.ADD_PRINCIPALS_TO_GROUP), logs.output[0])
+
+    def test_does_not_warn_if_not_empty_payload(self):
+        """Test replicate with non-empty payload."""
+        principal_to_group = create_relationship(
+            ("rbac", "group"), "g1", ("rbac", "principal"), "localhost/p1", "member"
+        )
+        event = ReplicationEvent(
+            add=[principal_to_group],
+            remove=[],
+            event_type=ReplicationEventType.ADD_PRINCIPALS_TO_GROUP,
+            info={"key": "value"},
+            partition_key=PartitionKey.byEnvironment(),
+        )
+
+        with self.assertLogs("management.relation_replicator.outbox_replicator") as logs:
+            self.replicator.replicate(event)
+
+        self.assertEqual(len(self.log), 1)
+        self.assertFalse(any(record.levelname == "WARNING" for record in logs.records))
