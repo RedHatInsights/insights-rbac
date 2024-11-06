@@ -685,7 +685,7 @@ class V2RbacTenantMiddlewareTest(RbacTenantMiddlewareTest):
                 1,
                 self._tuples.count_tuples(
                     all_of(
-                        resource("rbac", "workspace", default.uuid),
+                        resource("rbac", "workspace", default.id),
                         relation("binding"),
                         subject("rbac", "role_binding", mapping.default_role_binding_uuid),
                     )
@@ -716,7 +716,7 @@ class V2RbacTenantMiddlewareTest(RbacTenantMiddlewareTest):
                 1,
                 self._tuples.count_tuples(
                     all_of(
-                        resource("rbac", "workspace", default.uuid),
+                        resource("rbac", "workspace", default.id),
                         relation("binding"),
                         subject("rbac", "role_binding", mapping.default_admin_role_binding_uuid),
                     )
