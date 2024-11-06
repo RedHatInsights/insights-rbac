@@ -25,7 +25,6 @@ from django.conf import settings
 from django.db import IntegrityError, transaction
 from django.db.models import Q
 from django.db.models.aggregates import Count
-from django.http import JsonResponse
 from django.utils.translation import gettext as _
 from django_filters import rest_framework as filters
 from management.authorization.scope_claims import ScopeClaims
@@ -261,30 +260,12 @@ class GroupViewSet(
             create_group = super().create(request=request, args=args, kwargs=kwargs)
         except IntegrityError as e:
             if "unique constraint" in str(e.args):
-                return JsonResponse(
-                    {
-                        "errors": [
-                            {
-                                "detail": f"A group with the name '{request.data.get('name')}' exists for this tenant",
-                                "source": "Group unique constraint violation error",
-                                "status": status.HTTP_400_BAD_REQUEST,
-                            },
-                        ]
-                    },
-                    status=status.HTTP_400_BAD_REQUEST,
+                raise serializers.ValidationError(
+                    {"detail": f"A group with the name '{request.data.get('name')}' exists for this tenant"}
                 )
             else:
-                return JsonResponse(
-                    {
-                        "errors": [
-                            {
-                                "detail": "Unknown Integrity Error occurred while trying to add group for this tenant",
-                                "source": f"{e.args}",
-                                "status": status.HTTP_400_BAD_REQUEST,
-                            },
-                        ]
-                    },
-                    status=status.HTTP_400_BAD_REQUEST,
+                raise serializers.ValidationError(
+                    {"detail": "Unknown Integrity Error occurred while trying to add group for this tenant"}
                 )
 
         if status.is_success(create_group.status_code):
