@@ -59,7 +59,7 @@ class Workspace(TenantAwareModel):
     def clean(self):
         """Validate the model."""
         if self.type != self.Types.ROOT and self.parent_id is None:
-            raise ValidationError({"parent_id": ("This field cannot be blank.")})
+            raise ValidationError({"parent_id": ("This field cannot be blank for non-root type workspaces.")})
 
     def ancestors(self):
         """Return a list of ancestors for a Workspace instance."""

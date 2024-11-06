@@ -170,4 +170,7 @@ class Types(IdentityRequest):
         tenant = Tenant.objects.create(tenant_name="Default no parent")
         with self.assertRaises(ValidationError) as assertion:
             Workspace.objects.create(name="Default", type=Workspace.Types.DEFAULT, tenant=tenant)
-        self.assertEqual({"parent_id": ["This field cannot be blank."]}, assertion.exception.message_dict)
+        self.assertEqual(
+            {"parent_id": ["This field cannot be blank for non-root type workspaces."]},
+            assertion.exception.message_dict,
+        )
