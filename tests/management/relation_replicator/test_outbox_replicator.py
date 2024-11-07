@@ -66,11 +66,11 @@ class OutboxReplicatorTest(TestCase):
             {
                 "relations_to_add": [
                     json_format.MessageToDict(principal_to_group_add1),
-                    json_format.MessageToDict(principal_to_group_add2)
+                    json_format.MessageToDict(principal_to_group_add2),
                 ],
                 "relations_to_remove": [
                     json_format.MessageToDict(principal_to_group_remove1),
-                    json_format.MessageToDict(principal_to_group_remove2)
+                    json_format.MessageToDict(principal_to_group_remove2),
                 ],
             },
         )
