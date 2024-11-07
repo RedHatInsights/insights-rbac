@@ -118,6 +118,7 @@ class PrincipalProxy:  # pylint: disable=too-few-public-methods
             "is_active": item.get("is_active"),
             "is_org_admin": item.get("is_org_admin"),
             "external_source_id": item.get("id"),
+            "org_id": item.get("org_id"),
         }
 
         if return_id:

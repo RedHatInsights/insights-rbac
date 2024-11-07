@@ -9,6 +9,7 @@ from kessel.relations.v1beta1.common_pb2 import Relationship
 from management.group.model import Group
 from management.principal.model import Principal
 from management.relation_replicator.relation_replicator import (
+    PartitionKey,
     RelationReplicator,
     ReplicationEvent,
     ReplicationEventType,
@@ -96,7 +97,7 @@ class V2TenantBootstrapService:
             ReplicationEvent(
                 event_type=ReplicationEventType.EXTERNAL_USER_UPDATE,
                 info={"user_id": user_id},
-                partition_key="rbactodo",
+                partition_key=PartitionKey.byEnvironment(),
                 add=tuples_to_add,
                 remove=tuples_to_remove,
             )
@@ -170,7 +171,7 @@ class V2TenantBootstrapService:
             ReplicationEvent(
                 event_type=ReplicationEventType.BULK_EXTERNAL_USER_UPDATE,
                 info={"num_users": len(users), "first_user_id": users[0].user_id if users else None},
-                partition_key="rbactodo",
+                partition_key=PartitionKey.byEnvironment(),
                 add=tuples_to_add,
                 remove=tuples_to_remove,
             )
@@ -208,7 +209,7 @@ class V2TenantBootstrapService:
             ReplicationEvent(
                 event_type=ReplicationEventType.EXTERNAL_USER_UPDATE,
                 info={"user_id": user_id},
-                partition_key="rbactodo",
+                partition_key=PartitionKey.byEnvironment(),
                 remove=tuples_to_remove,
             )
         )
@@ -248,7 +249,7 @@ class V2TenantBootstrapService:
             ReplicationEvent(
                 event_type=ReplicationEventType.BOOTSTRAP_TENANT,
                 info={"org_id": tenant.org_id, "default_workspace_id": str(default_workspace.id)},
-                partition_key="rbactodo",
+                partition_key=PartitionKey.byEnvironment(),
                 add=relationships,
             )
         )
@@ -324,7 +325,7 @@ class V2TenantBootstrapService:
             ReplicationEvent(
                 event_type=ReplicationEventType.BULK_BOOTSTRAP_TENANT,
                 info={"num_tenants": len(tenants), "first_org_id": tenants[0].org_id if tenants else None},
-                partition_key="rbactodo",
+                partition_key=PartitionKey.byEnvironment(),
                 add=relationships,
             )
         )
@@ -472,7 +473,6 @@ class V2TenantBootstrapService:
                 ),
             ]
         )
-
         return root, default, relationships
 
     def _get_platform_default_policy_uuid(self) -> Optional[str]:

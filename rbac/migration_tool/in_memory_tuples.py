@@ -307,4 +307,6 @@ class InMemoryRelationReplicator(RelationReplicator):
 
     def replicate(self, event):
         """Replicate the event to the in-memory store."""
+        # TODO: should also track the partition that each event was written to
+        # in order to test partitioning logic
         self.store.write(event.add, event.remove)

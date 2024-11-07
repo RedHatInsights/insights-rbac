@@ -27,6 +27,7 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.test import APIClient
 
+from api.models import Tenant
 from management.models import Workspace
 from rbac import urls
 from tests.identity_request import IdentityRequest
@@ -215,6 +216,32 @@ class WorkspaceViewTestsV2Enabled(WorkspaceViewTests):
         self.assertEqual(instance, url)
         self.assertEqual(response.get("content-type"), "application/problem+json")
 
+    def test_partial_update_empty(self):
+        """Test for updating a workspace with empty body."""
+        workspace_data = {
+            "name": "New Workspace",
+            "description": "New Workspace - description",
+            "tenant_id": self.tenant.id,
+        }
+
+        workspace = Workspace.objects.create(**workspace_data)
+
+        url = reverse("v2_management:workspace-detail", kwargs={"pk": workspace.id})
+        client = APIClient()
+        response = client.patch(url, {}, format="json", **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.get("content-type"), "application/json")
+        data = response.data
+        self.assertEqual(data.get("name"), "New Workspace")
+        self.assertEqual(data.get("description"), "New Workspace - description")
+        self.assertEqual(data.get("id"), str(workspace.id))
+        self.assertNotEquals(data.get("created"), "")
+        self.assertNotEquals(data.get("modified"), "")
+        self.assertEquals(data.get("type"), "standard")
+
+        update_workspace = Workspace.objects.filter(id=workspace.id).first()
+        self.assertEquals(update_workspace.name, "New Workspace")
+
     def test_update_workspace_same_parent(self):
         """Test for updating a workspace."""
         parent_workspace_data = {
@@ -289,7 +316,6 @@ class WorkspaceViewTestsV2Enabled(WorkspaceViewTests):
             "name": "New Workspace",
             "description": "New Workspace - description",
             "tenant_id": self.tenant.id,
-            "parent_id": None,
         }
 
         workspace = Workspace.objects.create(**workspace_data)
@@ -311,6 +337,26 @@ class WorkspaceViewTestsV2Enabled(WorkspaceViewTests):
         update_workspace = Workspace.objects.filter(id=workspace.id).first()
         self.assertEquals(update_workspace.name, "Updated name")
         self.assertEqual(response.get("content-type"), "application/json")
+
+    def test_partial_update_workspace_wrong_tenant_parent_id(self):
+        """Test for updating a workspace with a parent in a different tenant."""
+        tenant = Tenant.objects.create(tenant_name="Acme")
+        root_workspace = Workspace.objects.create(name="Root", tenant=tenant, type=Workspace.Types.ROOT)
+        workspace_data = {
+            "name": "New Workspace",
+            "description": "New Workspace - description",
+            "tenant_id": self.tenant.id,
+        }
+
+        workspace = Workspace.objects.create(**workspace_data)
+
+        url = reverse("v2_management:workspace-detail", kwargs={"pk": workspace.id})
+        client = APIClient()
+
+        workspace_data = {"parent_id": root_workspace.id}
+        response = client.patch(url, workspace_data, format="json", **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data["detail"], f"Parent workspace '{root_workspace.id}' doesn't exist in tenant")
 
     def test_update_workspace_empty_body(self):
         """Test for updating a workspace with empty body"""
@@ -604,6 +650,21 @@ class TestsList(WorkspaceViewTests):
         self.assertEqual(payload.get("meta").get("count"), 1)
         self.assertEqual(payload.get("data")[0]["id"], str(self.default_workspace.id))
         self.assertType(payload, "default")
+
+    def test_workspace_list_queryset_by_tenant(self):
+        """List workspaces only for the request tenant."""
+        tenant = Tenant.objects.create(tenant_name="Tenant 2")
+        t2_root_workspace = Workspace.objects.create(name="Tenant 2 Root", type="root", tenant=tenant)
+
+        url = reverse("v2_management:workspace-list")
+        client = APIClient()
+        response = client.get(f"{url}?type=root", None, format="json", **self.headers)
+        payload = response.data
+
+        self.assertSuccessfulList(response, payload)
+        self.assertEqual(payload.get("meta").get("count"), 1)
+        self.assertEqual(payload.get("data")[0]["id"], str(self.root_workspace.id))
+        self.assertType(payload, "root")
 
 
 class WorkspaceViewTestsV2Disabled(WorkspaceViewTests):

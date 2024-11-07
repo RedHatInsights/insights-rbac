@@ -23,7 +23,7 @@ from rest_framework.routers import DefaultRouter
 
 
 ROUTER = DefaultRouter()
-ROUTER.register(r"workspaces", WorkspaceViewSet)
+ROUTER.register(r"workspaces", WorkspaceViewSet, basename="workspace")
 
 # pylint: disable=invalid-name
 urlpatterns = [
