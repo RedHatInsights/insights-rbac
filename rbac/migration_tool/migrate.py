@@ -18,6 +18,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 import logging
 from typing import Iterable
 
+from django.conf import settings
 from django.db import transaction
 from kessel.relations.v1beta1 import common_pb2
 from management.group.relation_api_dual_write_group_handler import RelationApiDualWriteGroupHandler
@@ -154,6 +155,10 @@ def migrate_data_for_tenant(tenant: Tenant, exclude_apps: list, replicator: Rela
 
 def migrate_data(exclude_apps: list = [], orgs: list = [], write_relationships: str = "False"):
     """Migrate all data for all tenants."""
+    if not settings.READ_ONLY_API_MODE:
+        logger.info("Read-only API mode is required. READ_ONLY_API_MODE must be set to true.")
+        return
+
     count = 0
     tenants = Tenant.objects.exclude(tenant_name="public")
     replicator = _get_replicator(write_relationships)

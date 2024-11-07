@@ -127,7 +127,7 @@ class MigrateTests(TestCase):
         tenant_default_policy.roles.add(self.system_role_2)
         self.custom_default_group = group
 
-    @override_settings(REPLICATION_TO_RELATION_ENABLED=True, PRINCIPAL_USER_DOMAIN="redhat")
+    @override_settings(REPLICATION_TO_RELATION_ENABLED=True, PRINCIPAL_USER_DOMAIN="redhat", READ_ONLY_API_MODE=True)
     @patch("management.relation_replicator.logging_replicator.logger")
     def test_migration_of_data(self, logger_mock):
         """Test that we get the correct access for a principal."""
