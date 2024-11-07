@@ -47,7 +47,7 @@ class CrossAccountRequestUtilTests(CrossAccountRequestTest):
     """Test the cross access util module."""
 
     def test_expired_cross_account_requests_remove_bindings(self):
-        """Test that there are no more bindings after a CAR expires."""
+        """Test that there are no bindings after a CAR expires."""
 
         # Start by approving a CAR with roles
 
