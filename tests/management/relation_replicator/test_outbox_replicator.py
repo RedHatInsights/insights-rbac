@@ -16,6 +16,8 @@
 #
 """Test OutboxReplicator."""
 
+import logging
+
 from django.test import TestCase, override_settings
 from google.protobuf import json_format
 from management.relation_replicator.outbox_replicator import InMemoryLog, OutboxReplicator
@@ -28,8 +30,15 @@ class OutboxReplicatorTest(TestCase):
 
     def setUp(self):
         """Set up."""
+        super().setUp()
         self.log = InMemoryLog()
         self.replicator = OutboxReplicator(self.log)
+        self._prior_logging_disabled = logging.root.disabled
+        logging.disable(logging.NOTSET)
+
+    def tearDown(self) -> None:
+        super().tearDown()
+        logging.disable(self._prior_logging_disabled)
 
     @override_settings(ENV_NAME="test-env")
     def test_replicate_sends_event_to_log_as_json(self):
