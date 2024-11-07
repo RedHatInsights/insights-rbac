@@ -20,10 +20,8 @@ from typing import Iterable
 
 from django.db import transaction
 from kessel.relations.v1beta1 import common_pb2
-from management.group.model import Group
 from management.group.relation_api_dual_write_group_handler import RelationApiDualWriteGroupHandler
 from management.models import Workspace
-from management.principal.model import Principal
 from management.relation_replicator.logging_replicator import LoggingReplicator
 from management.relation_replicator.outbox_replicator import OutboxReplicator
 from management.relation_replicator.relation_replicator import (
@@ -97,58 +95,21 @@ def migrate_role(
     return relationships, v2_role_bindings
 
 
-def migrate_system_role_assignments_for_groups(groups: list[Group]) -> list[common_pb2.Relationship]:
-    """Generate system role assignments for groups."""
-    with transaction.atomic():
-        dual_write_handler = None
-        relationships: list[common_pb2.Relationship] = []
-        for group in groups:
-            if group.system is False and group.admin_default is False:
-                if dual_write_handler is None:
-                    dual_write_handler = RelationApiDualWriteGroupHandler(group, None)
-                else:
-                    dual_write_handler.group = group
-                system_roles = group.roles().filter(system=True)
-                if system_roles.exists() > 0:
-                    dual_write_handler.generate_relations_to_add_roles(system_roles)
-                    relationships.extend(dual_write_handler.group_relations_to_add)
-    return relationships
-
-
 def migrate_groups_for_tenant(tenant: Tenant, replicator: RelationReplicator):
     """Generate user relationships and system role assignments for groups in a tenant."""
     groups = tenant.group_set.all()
-    user_relationships = migrate_user_relationships_for_groups(groups)
-    replicator.replicate(
-        ReplicationEvent(
-            event_type=ReplicationEventType.MIGRATE_TENANT_GROUPS,
-            info={"tenant": tenant.org_id},
-            partition_key=PartitionKey.byEnvironment(),
-            add=user_relationships,
-        )
-    )
-
-    system_role_relationships = migrate_system_role_assignments_for_groups(groups)
-    replicator.replicate(
-        ReplicationEvent(
-            event_type=ReplicationEventType.MIGRATE_SYSTEM_ROLE_ASSIGMENT,
-            info={"tenant": tenant.org_id},
-            partition_key=PartitionKey.byEnvironment(),
-            add=system_role_relationships,
-        )
-    )
-
-
-def migrate_user_relationships_for_groups(groups: list[Group]) -> list[common_pb2.Relationship]:
-    """Write user relationships to groups."""
-    relationships: list[common_pb2.Relationship] = []
     for group in groups:
-        if not group.platform_default:
-            user_set: Iterable[Principal] = group.principals.all()
-            for user in user_set:
-                if (relationship := group.relationship_to_principal(user)) is not None:
-                    relationships.append(relationship)
-    return relationships
+        with transaction.atomic():
+            dual_write_handler = RelationApiDualWriteGroupHandler(
+                group, ReplicationEventType.MIGRATE_TENANT_GROUPS, replicator=replicator
+            )
+            if not group.platform_default:
+                dual_write_handler.generate_relations_to_add_principals(group.principals.all())
+            if group.system is False and group.admin_default is False:
+                system_roles = group.roles().filter(system=True)
+                if system_roles.exists() > 0:
+                    dual_write_handler.generate_relations_to_add_roles(system_roles)
+            dual_write_handler.replicate()
 
 
 def migrate_data_for_tenant(tenant: Tenant, exclude_apps: list, replicator: RelationReplicator):
