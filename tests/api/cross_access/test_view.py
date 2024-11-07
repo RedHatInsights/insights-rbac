@@ -933,13 +933,13 @@ class CrossAccountRequestViewTests(IdentityRequest):
             # Tuples which are...
             # grouped by resource
             group_by=lambda t: (t.resource_type_namespace, t.resource_type_name, t.resource_id),
-            # where the resource is a role binding...
-            group_filter=lambda group: group[0] == "rbac" and group[1] == "role_binding",
-            # and where one of the tuples for that binding is...
+            # where the resource is one of the default role bindings...
+            group_filter=lambda group: group[0] == "rbac"
+            and group[1] == "role_binding"
+            and group[2] in {str(binding.resource_id) for binding in default_bindings},
+            # and where one of the tuples from that binding has...
             predicates=all_of(
-                # from one of the default workspace bindings
-                one_of(*[resource_id(binding.resource_id) for binding in default_bindings]),
-                # with a subject relation
+                # a subject relation
                 relation("subject"),
                 # to the user in the CAR
                 subject("rbac", "principal", "localhost/2222222"),
