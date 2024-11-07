@@ -639,11 +639,12 @@ class PrincipalUMBTestsWithV2TenantBootstrap(PrincipalUMBTests):
         platform_default_policy = Policy.objects.get(group=Group.objects.get(platform_default=True))
         admin_default_policy = Policy.objects.get(group=Group.objects.get(admin_default=True))
 
+        self.assertEqual(default.parent_id, root.id)
         self.assertEqual(
             1,
             self._tuples.count_tuples(
                 all_of(
-                    resource("rbac", "workspace", default.uuid),
+                    resource("rbac", "workspace", default.id),
                     relation("binding"),
                     subject("rbac", "role_binding", mapping.default_role_binding_uuid),
                 )
@@ -674,7 +675,7 @@ class PrincipalUMBTestsWithV2TenantBootstrap(PrincipalUMBTests):
             1,
             self._tuples.count_tuples(
                 all_of(
-                    resource("rbac", "workspace", default.uuid),
+                    resource("rbac", "workspace", default.id),
                     relation("binding"),
                     subject("rbac", "role_binding", mapping.default_admin_role_binding_uuid),
                 )

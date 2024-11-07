@@ -15,8 +15,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Model for workspace management."""
-from uuid import uuid4
-
+import uuid_utils.compat as uuid
 from django.db import models
 from django.db.models import Q, UniqueConstraint
 from django.utils import timezone
@@ -33,11 +32,9 @@ class Workspace(TenantAwareModel):
         DEFAULT = "default"
         ROOT = "root"
 
+    id = models.UUIDField(primary_key=True, default=uuid.uuid7, editable=False, unique=True, null=False)
     name = models.CharField(max_length=255)
-    uuid = models.UUIDField(default=uuid4, editable=False, unique=True, null=False)
-    parent = models.ForeignKey(
-        "self", to_field="uuid", on_delete=models.PROTECT, related_name="children", null=True, blank=True
-    )
+    parent = models.ForeignKey("self", on_delete=models.PROTECT, related_name="children", null=True, blank=True)
     description = models.CharField(max_length=255, null=True, blank=True, editable=True)
     type = models.CharField(choices=Types.choices, default=Types.STANDARD, null=False)
     created = models.DateTimeField(default=timezone.now)
@@ -60,8 +57,8 @@ class Workspace(TenantAwareModel):
 
     def ancestors(self):
         """Return a list of ancestors for a Workspace instance."""
-        ancestor_ids = [a.uuid for a in self._ancestry_queryset() if a.uuid != self.uuid]
-        ancestors = Workspace.objects.filter(uuid__in=ancestor_ids)
+        ancestor_ids = [a.id for a in self._ancestry_queryset() if a.id != self.id]
+        ancestors = Workspace.objects.filter(id__in=ancestor_ids)
         return ancestors
 
     def _ancestry_queryset(self):
@@ -69,17 +66,16 @@ class Workspace(TenantAwareModel):
         return Workspace.objects.raw(
             """
             WITH RECURSIVE ancestors AS
-              (SELECT uuid,
+              (SELECT id,
                       parent_id
                FROM management_workspace
-               WHERE uuid = %s
-               UNION SELECT w.uuid,
+               WHERE id = %s
+               UNION SELECT w.id,
                                 w.parent_id
                FROM management_workspace w
-               JOIN ancestors a ON w.uuid = a.parent_id)
-            SELECT uuid AS uuid,
-                   uuid AS id
+               JOIN ancestors a ON w.id = a.parent_id)
+            SELECT id
             FROM ancestors
         """,
-            [self.uuid],
+            [self.id],
         )

@@ -44,6 +44,8 @@ from management.models import (
 )
 from management.relation_replicator.noop_replicator import NoopReplicator
 from management.tenant_service.v2 import V2TenantBootstrapService
+from management.tenant_mapping.model import TenantMapping
+
 from tests.core.test_kafka import copy_call_args
 from tests.identity_request import IdentityRequest
 from tests.management.role.test_view import find_in_list, relation_api_tuple
@@ -219,17 +221,10 @@ class GroupViewsetTests(IdentityRequest):
         self.group.principals.add(*self.service_accounts)
         self.group.save()
 
-        self.root_workspace = Workspace.objects.create(
-            type=Workspace.Types.ROOT,
-            name="Root",
-            tenant=self.tenant,
-        )
-        self.default_workspace = Workspace.objects.create(
-            type=Workspace.Types.DEFAULT,
-            name="Default",
-            tenant=self.tenant,
-            parent=self.root_workspace,
-        )
+        self.bootstrap_service = V2TenantBootstrapService(NoopReplicator())
+        bootstrapped = self.bootstrap_service.bootstrap_tenant(self.tenant)
+        self.default_workspace = bootstrapped.default_workspace
+        self.root_workspace = bootstrapped.root_workspace
 
     def tearDown(self):
         """Tear down group viewset tests."""
@@ -869,9 +864,9 @@ class GroupViewsetTests(IdentityRequest):
             response = client.post(url, request_body, format="json", **self.headers)
             self.assertEqual(response.status_code, status.HTTP_200_OK)
 
-            default_workspace_uuid = str(self.default_workspace.uuid)
+            default_workspace_id = str(self.default_workspace.id)
             role_binding_id = (
-                BindingMapping.objects.filter(role=self.role, resource_id=default_workspace_uuid).get().mappings["id"]
+                BindingMapping.objects.filter(role=self.role, resource_id=default_workspace_id).get().mappings["id"]
             )
 
             url = reverse("v1_management:group-detail", kwargs={"uuid": self.group.uuid})
@@ -917,7 +912,7 @@ class GroupViewsetTests(IdentityRequest):
 
                 relation_tuple = relation_api_tuple(
                     "workspace",
-                    default_workspace_uuid,
+                    default_workspace_id,
                     "binding",
                     "role_binding",
                     str(role_binding_id),
@@ -981,7 +976,8 @@ class GroupViewsetTests(IdentityRequest):
         response = client.delete(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
-    def test_delete_custom_default_group(self):
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator._save_replication_event")
+    def test_delete_custom_default_group(self, mock_method):
         """
         Test that custom platform_default groups can be deleted and the public default group
         becomes default for the tenant
@@ -1002,6 +998,24 @@ class GroupViewsetTests(IdentityRequest):
         url = reverse("v1_management:group-detail", kwargs={"uuid": customDefGroup.uuid})
         response = client.delete(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+
+        actual_call_arg = mock_method.call_args[0][0]
+
+        to_add = actual_call_arg["relations_to_add"]
+
+        tenant_mapping = TenantMapping.objects.get(tenant=self.tenant)
+
+        def assert_group_tuples(tuple_to_replicate):
+            relation_tuple = relation_api_tuple(
+                "workspace",
+                str(self.default_workspace.id),
+                "binding",
+                "role_binding",
+                str(tenant_mapping.default_role_binding_uuid),
+            )
+            self.assertIsNotNone(find_relation_in_list(tuple_to_replicate, relation_tuple))
+
+        assert_group_tuples(to_add)
 
         url = f"{reverse('v1_management:group-list')}?platform_default=true"
         response = client.get(url, **self.headers)
@@ -1746,8 +1760,10 @@ class GroupViewsetTests(IdentityRequest):
         self.assertEqual(system_policy.tenant, self.tenant)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
+    @override_settings(V2_BOOTSTRAP_TENANT=True)
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator._save_replication_event")
     @patch("core.kafka.RBACProducer.send_kafka_message")
-    def test_system_flag_update_on_add(self, send_kafka_message):
+    def test_system_flag_update_on_add(self, send_kafka_message, mock_method):
         """Test that adding a role to a platform_default group flips the system flag."""
         kafka_mock = copy_call_args(send_kafka_message)
         with self.settings(NOTIFICATIONS_ENABLED=True):
@@ -1768,6 +1784,54 @@ class GroupViewsetTests(IdentityRequest):
             self.assertTrue(self.defGroup.system)
             self.assertEqual(self.defGroup.roles().count(), 1)
             response = client.post(url, test_data, format="json", **self.headers)
+            actual_call_arg = mock_method.call_args_list[0][0][0]
+            to_remove = actual_call_arg["relations_to_remove"]
+            to_add = actual_call_arg["relations_to_add"]
+
+            binding_mapping = BindingMapping.objects.get(
+                role=default_role, resource_type_name="workspace", resource_id=self.default_workspace.id
+            )
+
+            # New platform default role for tenant created
+            custom_default_group = Group.objects.get(platform_default=True, tenant=self.tenant)
+
+            relation_tuple = relation_api_tuple(
+                "role_binding", binding_mapping.mappings["id"], "role", "role", str(default_role.uuid)
+            )
+
+            self.assertIsNotNone(find_relation_in_list(to_add, relation_tuple))
+
+            relation_tuple = relation_api_tuple(
+                "workspace",
+                str(self.default_workspace.id),
+                "binding",
+                "role_binding",
+                str(binding_mapping.mappings["id"]),
+            )
+
+            self.assertIsNotNone(find_relation_in_list(to_add, relation_tuple))
+
+            relation_tuple = relation_api_tuple(
+                "role_binding",
+                binding_mapping.mappings["id"],
+                "subject",
+                "group",
+                str(custom_default_group.uuid),
+                "member",
+            )
+
+            self.assertIsNotNone(find_relation_in_list(to_add, relation_tuple))
+
+            tenant_mapping = TenantMapping.objects.get(tenant=self.tenant)
+
+            relation_tuple = relation_api_tuple(
+                "workspace",
+                str(self.default_workspace.id),
+                "binding",
+                "role_binding",
+                str(tenant_mapping.default_role_binding_uuid),
+            )
+            self.assertIsNotNone(find_relation_in_list(to_remove, relation_tuple))
 
             # Original platform default role does not change
             self.defGroup.refresh_from_db()
@@ -1776,8 +1840,8 @@ class GroupViewsetTests(IdentityRequest):
             self.assertEqual(self.defGroup.tenant, self.public_tenant)
             self.assertEqual(response.status_code, status.HTTP_200_OK)
 
-            # New platform default role for tenant created
             custom_default_group = Group.objects.get(platform_default=True, tenant=self.tenant)
+            self.assertEqual(custom_default_group.uuid, tenant_mapping.default_group_uuid)
             self.assertEqual(custom_default_group.name, "Custom default access")
             self.assertFalse(custom_default_group.system)
             self.assertEqual(custom_default_group.tenant, self.tenant)
@@ -1831,8 +1895,155 @@ class GroupViewsetTests(IdentityRequest):
             ]
             kafka_mock.assert_has_calls(notification_messages, any_order=True)
 
+    @override_settings(V2_BOOTSTRAP_TENANT=True)
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator._save_replication_event")
     @patch("core.kafka.RBACProducer.send_kafka_message")
-    def test_system_flag_update_on_remove(self, send_kafka_message):
+    def test_system_flag_update_on_remove_and_keep_one_role_in_group(self, send_kafka_message, mock_method):
+        """Test that removing a role from a platform_default group flips the system flag."""
+        kafka_mock = copy_call_args(send_kafka_message)
+        with self.settings(NOTIFICATIONS_ENABLED=True):
+            default_role = Role.objects.create(
+                name="default_role",
+                description="A default role for a group.",
+                platform_default=True,
+                system=True,
+                tenant=self.public_tenant,
+            )
+            default_role_to_keep_in_group = Role.objects.create(
+                name="default_role_to_keep_in_group",
+                description="A default role for a group that is kept within the group.",
+                platform_default=True,
+                system=True,
+                tenant=self.public_tenant,
+            )
+            self.defGroup.policies.first().roles.add(default_role)
+            self.defGroup.policies.first().roles.add(default_role_to_keep_in_group)
+
+            self.assertTrue(self.defGroup.system)
+
+            org_id = self.customer_data["org_id"]
+
+            url = reverse("v1_management:group-roles", kwargs={"uuid": self.defGroup.uuid})
+            client = APIClient()
+            url = "{}?roles={}".format(url, default_role.uuid)
+            response = client.delete(url, format="json", **self.headers)
+            actual_call_arg = mock_method.call_args_list[0][0][0]
+            to_remove = actual_call_arg["relations_to_remove"]
+            tuple_to_replicate = actual_call_arg["relations_to_add"]
+
+            self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+            self.defGroup.refresh_from_db()
+            self.assertEqual(self.defGroup.name, "groupDef")
+            self.assertTrue(self.defGroup.system)
+            self.assertEqual(self.defGroup.tenant, self.public_tenant)
+            self.assertEqual(self.defGroup.roles().count(), 2)
+
+            # New platform default role for tenant created
+            custom_default_group = Group.objects.get(platform_default=True, tenant=self.tenant)
+            self.assertEqual(custom_default_group.name, "Custom default access")
+            self.assertFalse(custom_default_group.system)
+            self.assertEqual(custom_default_group.tenant, self.tenant)
+            self.assertEqual(custom_default_group.roles().count(), 1)
+
+            binding_mapping = BindingMapping.objects.get(
+                role=default_role_to_keep_in_group,
+                resource_type_name="workspace",
+                resource_id=self.default_workspace.id,
+            )
+
+            relation_tuple = relation_api_tuple(
+                "role_binding",
+                binding_mapping.mappings["id"],
+                "role",
+                "role",
+                str(default_role_to_keep_in_group.uuid),
+            )
+
+            self.assertIsNotNone(find_relation_in_list(tuple_to_replicate, relation_tuple))
+
+            relation_tuple = relation_api_tuple(
+                "workspace",
+                str(self.default_workspace.id),
+                "binding",
+                "role_binding",
+                str(binding_mapping.mappings["id"]),
+            )
+
+            self.assertIsNotNone(find_relation_in_list(tuple_to_replicate, relation_tuple))
+
+            relation_tuple = relation_api_tuple(
+                "role_binding",
+                binding_mapping.mappings["id"],
+                "subject",
+                "group",
+                str(custom_default_group.uuid),
+                "member",
+            )
+            self.assertIsNotNone(find_relation_in_list(tuple_to_replicate, relation_tuple))
+
+            tenant_mapping = TenantMapping.objects.get(tenant=self.tenant)
+
+            relation_tuple = relation_api_tuple(
+                "workspace",
+                str(self.default_workspace.id),
+                "binding",
+                "role_binding",
+                str(tenant_mapping.default_role_binding_uuid),
+            )
+            self.assertIsNotNone(find_relation_in_list(to_remove, relation_tuple))
+
+            notification_messages = [
+                call(
+                    settings.NOTIFICATIONS_TOPIC,
+                    {
+                        "bundle": "console",
+                        "application": "rbac",
+                        "event_type": "platform-default-group-turned-into-custom",
+                        "timestamp": ANY,
+                        "events": [
+                            {
+                                "metadata": {},
+                                "payload": {
+                                    "name": custom_default_group.name,
+                                    "username": self.user_data["username"],
+                                    "uuid": str(custom_default_group.uuid),
+                                },
+                            }
+                        ],
+                        "org_id": org_id,
+                    },
+                    ANY,
+                ),
+                call(
+                    settings.NOTIFICATIONS_TOPIC,
+                    {
+                        "bundle": "console",
+                        "application": "rbac",
+                        "event_type": "custom-default-access-updated",
+                        "timestamp": ANY,
+                        "events": [
+                            {
+                                "metadata": {},
+                                "payload": {
+                                    "name": custom_default_group.name,
+                                    "username": self.user_data["username"],
+                                    "uuid": str(custom_default_group.uuid),
+                                    "operation": "removed",
+                                    "role": {"uuid": str(default_role.uuid), "name": default_role.name},
+                                },
+                            }
+                        ],
+                        "org_id": org_id,
+                    },
+                    ANY,
+                ),
+            ]
+            kafka_mock.assert_has_calls(notification_messages, any_order=True)
+
+    @override_settings(V2_BOOTSTRAP_TENANT=True)
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator._save_replication_event")
+    @patch("core.kafka.RBACProducer.send_kafka_message")
+    def test_system_flag_update_on_remove(self, send_kafka_message, mock_method):
         """Test that removing a role from a platform_default group flips the system flag."""
         kafka_mock = copy_call_args(send_kafka_message)
         with self.settings(NOTIFICATIONS_ENABLED=True):
@@ -1852,12 +2063,16 @@ class GroupViewsetTests(IdentityRequest):
             client = APIClient()
             url = "{}?roles={}".format(url, default_role.uuid)
             response = client.delete(url, format="json", **self.headers)
+            actual_call_arg = mock_method.call_args_list[0][0][0]
+            to_remove = actual_call_arg["relations_to_remove"]
+            tuple_to_replicate = actual_call_arg["relations_to_add"]
+
             self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
             self.defGroup.refresh_from_db()
             self.assertEqual(self.defGroup.name, "groupDef")
             self.assertTrue(self.defGroup.system)
-            self.assertTrue(self.defGroup.tenant, self.tenant)
-            self.assertTrue(self.defGroup.roles(), 1)
+            self.assertEqual(self.defGroup.tenant, self.public_tenant)
+            self.assertEqual(self.defGroup.roles().count(), 1)
 
             # New platform default role for tenant created
             custom_default_group = Group.objects.get(platform_default=True, tenant=self.tenant)
@@ -1865,6 +2080,17 @@ class GroupViewsetTests(IdentityRequest):
             self.assertFalse(custom_default_group.system)
             self.assertEqual(custom_default_group.tenant, self.tenant)
             self.assertEqual(custom_default_group.roles().count(), 0)
+
+            tenant_mapping = TenantMapping.objects.get(tenant=self.tenant)
+
+            relation_tuple = relation_api_tuple(
+                "workspace",
+                str(self.default_workspace.id),
+                "binding",
+                "role_binding",
+                str(tenant_mapping.default_role_binding_uuid),
+            )
+            self.assertIsNotNone(find_relation_in_list(to_remove, relation_tuple))
 
             notification_messages = [
                 call(
@@ -3802,7 +4028,7 @@ class GroupViewNonAdminTests(IdentityRequest):
         response = client.post(url, request_body, format="json", **self.headers_org_admin)
 
         binding_mapping = BindingMapping.objects.filter(
-            role=user_access_admin_role, resource_id=str(self.default_workspace.uuid)
+            role=user_access_admin_role, resource_id=str(self.default_workspace.id)
         ).get()
 
         actual_call_arg = mock_method.call_args[0][0]
@@ -3833,7 +4059,7 @@ class GroupViewNonAdminTests(IdentityRequest):
 
             relation_tuple = relation_api_tuple(
                 "workspace",
-                str(self.default_workspace.uuid),
+                str(self.default_workspace.id),
                 "binding",
                 "role_binding",
                 str(binding_mapping.mappings["id"]),
