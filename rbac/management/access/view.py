@@ -25,7 +25,6 @@ from management.utils import (
     get_principal_from_request,
     validate_and_get_key,
     validate_key,
-    validate_limit_and_offset,
 )
 from rest_framework import status
 from rest_framework.permissions import AllowAny
@@ -156,7 +155,6 @@ class AccessView(APIView):
 
     def validate_and_get_param(self, params):
         """Validate input parameters and get ordering and sub_key."""
-        validate_limit_and_offset(params)
         app = params.get(APPLICATION_KEY)
         sub_key = app
         ordering = validate_and_get_key(params, ORDER_FIELD, VALID_ORDER_VALUES, required=False)
