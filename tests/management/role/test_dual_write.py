@@ -187,8 +187,8 @@ class DualWriteTestCase(TestCase):
         policy: Policy
         for role in roles:
             policy = self.fixture.add_role_to_group(role, group, self.tenant)
-            dual_write_handler.replicate_added_role(role)
-
+            dual_write_handler.generate_relations_to_add_roles([role])
+        dual_write_handler.replicate()
         return policy
 
     def given_roles_unassigned_from_group(self, group: Group, roles: list[Role]) -> Policy:
@@ -203,7 +203,8 @@ class DualWriteTestCase(TestCase):
         policy: Policy
         for role in roles:
             policy = self.fixture.remove_role_from_group(role, group, self.tenant)
-            dual_write_handler.replicate_removed_role(role)
+            dual_write_handler.generate_relations_to_remove_roles([role])
+        dual_write_handler.replicate()
         return policy
 
     def given_group_removed(self, group: Group):
@@ -215,7 +216,7 @@ class DualWriteTestCase(TestCase):
         )
         dual_write_handler.prepare_to_delete_group()
         group.delete()
-        dual_write_handler.replicate_deleted_group()
+        dual_write_handler.replicate()
 
     def expect_1_v2_role_with_permissions(self, permissions: list[str]) -> str:
         """Assert there is a role matching the given permissions and return its ID."""
