@@ -2,7 +2,7 @@
 
 import re
 from collections import defaultdict
-from typing import Callable, Hashable, Iterable, List, NamedTuple, Set, Tuple, TypeVar
+from typing import Callable, Hashable, Iterable, List, NamedTuple, Set, Tuple, TypeVar, Union
 
 from kessel.relations.v1beta1.common_pb2 import Relationship
 from management.relation_replicator.relation_replicator import RelationReplicator
@@ -107,7 +107,7 @@ class InMemoryTuples:
 
     def find_group_with_tuples(
         self,
-        predicates: List[Callable[[RelationTuple], bool]],
+        predicates: Union[Callable[[RelationTuple], bool], List[Callable[[RelationTuple], bool]]],
         group_by: Callable[[RelationTuple], T],
         group_filter: Callable[[T], bool] = lambda _: True,
         require_full_match: bool = False,
@@ -159,9 +159,10 @@ class InMemoryTuples:
         unmatched_groups: dict[T, List[RelationTuple]] = {}
 
         # Iterate over each group
+        predicate_list = predicates if isinstance(predicates, list) else [predicates]
         for key, group_tuples in grouped_tuples.items():
             remaining_tuples = set(group_tuples)
-            remaining_predicates = list(predicates) if match_once else predicates
+            remaining_predicates = list(predicate_list) if match_once else predicate_list
             i = 0
             matching_tuples = []
             success = True

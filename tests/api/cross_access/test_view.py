@@ -38,6 +38,7 @@ from migration_tool.in_memory_tuples import (
     one_of,
     relation,
     resource,
+    resource_id,
     subject,
 )
 from tests.identity_request import IdentityRequest
@@ -928,18 +929,21 @@ class CrossAccountRequestViewTests(IdentityRequest):
         )
 
         # Of these bindings, look for the ones that are for the user 2222222
-        cross_account_bindings = self.relations.find_tuples_grouped(
+        cross_account_bindings, _ = self.relations.find_group_with_tuples(
             # Tuples which are...
-            all_of(
-                # One of the default workspace bindings
-                one_of(*[resource("rbac", "role_binding", binding) for binding in default_bindings]),
+            # grouped by resource
+            group_by=lambda t: (t.resource_type_namespace, t.resource_type_name, t.resource_id),
+            # where the resource is a role binding...
+            group_filter=lambda group: group[0] == "rbac" and group[1] == "role_binding",
+            # and where one of the tuples for that binding is...
+            predicates=all_of(
+                # from one of the default workspace bindings
+                one_of(*[resource_id(binding.resource_id) for binding in default_bindings]),
                 # with a subject relation
                 relation("subject"),
                 # to the user in the CAR
                 subject("rbac", "principal", "localhost/2222222"),
             ),
-            # grouped by role binding
-            group_by=lambda t: t.resource_id,
         )
 
         # Assert the roles are correct for these bindings – one per role that was included in the request,
