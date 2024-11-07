@@ -25,6 +25,17 @@ from management.relation_replicator.relation_replicator import PartitionKey, Rep
 from migration_tool.utils import create_relationship
 
 
+@override_settings(
+    LOGGING={
+        "version": 1,
+        "disable_existing_loggers": False,
+        "loggers": {
+            "management.relation_replicator.outbox_replicator": {
+                "level": "INFO",
+            },
+        },
+    },
+)
 class OutboxReplicatorTest(TestCase):
     """Test OutboxReplicator."""
 
