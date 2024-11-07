@@ -16,7 +16,6 @@
 #
 """Test tuple changes for RBAC operations."""
 
-import unittest
 from typing import Optional, Tuple
 from django.test import TestCase, override_settings
 from django.db.models import Q
@@ -28,7 +27,7 @@ from management.permission.model import Permission
 from management.policy.model import Policy
 from management.principal.model import Principal
 from management.relation_replicator.noop_replicator import NoopReplicator
-from management.relation_replicator.relation_replicator import ReplicationEventType
+from management.relation_replicator.relation_replicator import DualWriteException, ReplicationEventType
 from management.role.model import Access, ResourceDefinition, Role, BindingMapping
 from management.role.relation_api_dual_write_handler import (
     RelationApiDualWriteHandler,
@@ -88,7 +87,7 @@ class DualWriteTestCase(TestCase):
         """Return the default workspace ID."""
         tenant = tenant if tenant is not None else self.tenant
         default = Workspace.objects.get(tenant=tenant, type=Workspace.Types.DEFAULT)
-        return str(default.uuid)
+        return str(default.id)
 
     def dual_write_handler(self, role: Role, event_type: ReplicationEventType) -> RelationApiDualWriteHandler:
         """Create a RelationApiDualWriteHandler for the given role and event type."""
@@ -158,7 +157,7 @@ class DualWriteTestCase(TestCase):
         principals = self.fixture.add_members_to_group(group, users, service_accounts, group.tenant)
         dual_write = RelationApiDualWriteGroupHandler(
             group,
-            ReplicationEventType.CREATE_GROUP,
+            ReplicationEventType.ADD_PRINCIPALS_TO_GROUP,
             replicator=InMemoryRelationReplicator(self.tuples),
         )
         dual_write.replicate_new_principals(principals)
@@ -171,7 +170,7 @@ class DualWriteTestCase(TestCase):
         principals = self.fixture.remove_members_from_group(group, users, service_accounts, group.tenant)
         dual_write = RelationApiDualWriteGroupHandler(
             group,
-            ReplicationEventType.CREATE_GROUP,
+            ReplicationEventType.REMOVE_PRINCIPALS_FROM_GROUP,
             replicator=InMemoryRelationReplicator(self.tuples),
         )
         dual_write.replicate_removed_principals(principals)
@@ -188,8 +187,8 @@ class DualWriteTestCase(TestCase):
         policy: Policy
         for role in roles:
             policy = self.fixture.add_role_to_group(role, group, self.tenant)
-            dual_write_handler.replicate_added_role(role)
-
+            dual_write_handler.generate_relations_to_add_roles([role])
+        dual_write_handler.replicate()
         return policy
 
     def given_roles_unassigned_from_group(self, group: Group, roles: list[Role]) -> Policy:
@@ -204,7 +203,8 @@ class DualWriteTestCase(TestCase):
         policy: Policy
         for role in roles:
             policy = self.fixture.remove_role_from_group(role, group, self.tenant)
-            dual_write_handler.replicate_removed_role(role)
+            dual_write_handler.generate_relations_to_remove_roles([role])
+        dual_write_handler.replicate()
         return policy
 
     def given_group_removed(self, group: Group):
@@ -216,7 +216,7 @@ class DualWriteTestCase(TestCase):
         )
         dual_write_handler.prepare_to_delete_group()
         group.delete()
-        dual_write_handler.replicate_deleted_group()
+        dual_write_handler.replicate()
 
     def expect_1_v2_role_with_permissions(self, permissions: list[str]) -> str:
         """Assert there is a role matching the given permissions and return its ID."""
@@ -310,6 +310,16 @@ class DualWriteTestCase(TestCase):
 
 class DualWriteGroupTestCase(DualWriteTestCase):
     """Test dual write logic for group modifications."""
+
+    def test_cannot_replicate_group_for_public_tenant(self):
+        """Do not replicate group changes for the public tenant groups (system groups)."""
+        platform_default, admin_default = seed_group()
+
+        with self.assertRaises(DualWriteException):
+            RelationApiDualWriteGroupHandler(platform_default, ReplicationEventType.CREATE_GROUP)
+
+        with self.assertRaises(DualWriteException):
+            RelationApiDualWriteGroupHandler(admin_default, ReplicationEventType.CREATE_GROUP)
 
     def test_create_group_tuples(self):
         """Create a group and add users to it."""
@@ -611,7 +621,7 @@ class DualWriteSystemRolesTestCase(DualWriteTestCase):
         tuples = self.tuples.find_tuples(predicate=resource_type("rbac", "role"))
         self.assertEquals(len(tuples), 4)
 
-        parents = [rel.subject_id for rel in tuples if rel.relation == "child" and rel.resource_id == str(role.uuid)]
+        parents = [rel.resource_id for rel in tuples if rel.relation == "child" and rel.subject_id == str(role.uuid)]
         self.assertSetEqual(set([admin_default, platform_default]), set(parents))
 
         dual_write_handler = SeedingRelationApiDualWriteHandler(replicator=InMemoryRelationReplicator(self.tuples))
@@ -626,7 +636,7 @@ class DualWriteSystemRolesTestCase(DualWriteTestCase):
         # check if only 2 relations exists in replicator.
         tuples = self.tuples.find_tuples(predicate=resource_type("rbac", "role"))
         self.assertEquals(len(tuples), 2)
-        parents = [rel.subject_id for rel in tuples if rel.relation == "child" and rel.resource_id == str(role.uuid)]
+        parents = [rel.resource_id for rel in tuples if rel.relation == "child" and rel.subject_id == str(role.uuid)]
         self.assertSetEqual(set([platform_default]), set(parents))
 
         # ensure no relations exist in replicator.
@@ -653,7 +663,7 @@ class DualWriteSystemRolesTestCase(DualWriteTestCase):
         # check if relations exist in replicator.
         tuples = self.tuples.find_tuples(predicate=resource_type("rbac", "role"))
         self.assertEquals(len(tuples), 4)
-        parents = [rel.subject_id for rel in tuples if rel.relation == "child" and rel.resource_id == str(role.uuid)]
+        parents = [rel.resource_id for rel in tuples if rel.relation == "child" and rel.subject_id == str(role.uuid)]
         self.assertSetEqual(set([admin_default, platform_default]), set(parents))
 
         dual_write_handler = SeedingRelationApiDualWriteHandler(replicator=InMemoryRelationReplicator(self.tuples))
@@ -668,7 +678,7 @@ class DualWriteSystemRolesTestCase(DualWriteTestCase):
         # Check that it was created as platform default
         tuples = self.tuples.find_tuples(predicate=resource_type("rbac", "role"))
         self.assertEquals(len(tuples), 1)
-        parents = [rel.subject_id for rel in tuples if rel.relation == "child" and rel.resource_id == str(role.uuid)]
+        parents = [rel.resource_id for rel in tuples if rel.relation == "child" and rel.subject_id == str(role.uuid)]
         self.assertSetEqual(set([platform_default]), set(parents))
 
         # Delete system role
@@ -684,7 +694,7 @@ class DualWriteSystemRolesTestCase(DualWriteTestCase):
         # Check that it was created as platform default
         tuples = self.tuples.find_tuples(predicate=resource_type("rbac", "role"))
         self.assertEquals(len(tuples), 1)
-        parents = [rel.subject_id for rel in tuples if rel.relation == "child" and rel.resource_id == str(role.uuid)]
+        parents = [rel.resource_id for rel in tuples if rel.relation == "child" and rel.subject_id == str(role.uuid)]
         self.assertSetEqual(set([admin_default]), set(parents))
 
         # Delete system role

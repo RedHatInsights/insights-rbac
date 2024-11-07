@@ -24,12 +24,14 @@ from unittest.mock import Mock, patch
 from django.conf import settings
 from django.http import QueryDict
 from django.test.utils import override_settings
+from importlib import reload
 
-from django.test import TestCase
+from django.test import TestCase, RequestFactory
 from django.urls import reverse
 
 from rest_framework import status
 from rest_framework.test import APIClient
+from django.urls import clear_url_caches, get_resolver
 
 from api.models import Tenant, User
 from api.serializers import create_tenant_name
@@ -46,6 +48,7 @@ from migration_tool.in_memory_tuples import (
     subject,
 )
 from tests.identity_request import IdentityRequest
+from rbac import urls
 from rbac.middleware import HttpResponseUnauthorizedRequest, IdentityHeaderMiddleware, ReadOnlyApiMiddleware
 from management.models import Access, Group, Permission, Principal, Policy, ResourceDefinition, Role
 
@@ -215,7 +218,7 @@ class IdentityHeaderMiddlewareTest(IdentityRequest):
 
     def test_process_response(self):
         """Test that the process response functions correctly."""
-        mock_request = Mock(path="/api/v1/status/")
+        mock_request = Mock(path="/api/rbac/v1/status/")
         mock_response = Mock(status_code=200)
         middleware = IdentityHeaderMiddleware(get_response=IdentityHeaderMiddleware.process_response)
         response = middleware.process_response(mock_request, mock_response)
@@ -366,7 +369,7 @@ class ServiceToService(IdentityRequest):
         }
 
     def test_no_identity_or_service_headers_returns_401(self):
-        url = reverse("group-list")
+        url = reverse("v1_management:group-list")
         client = APIClient()
         self.service_headers = {}
         response = client.get(url, {})
@@ -378,7 +381,7 @@ class ServiceToService(IdentityRequest):
         t.ready = True
         t.save()
 
-        url = reverse("group-list")
+        url = reverse("v1_management:group-list")
         client = APIClient()
         self.service_headers["HTTP_X_RH_RBAC_PSK"] = "xyz"
         response = client.get(url, **self.service_headers)
@@ -389,7 +392,7 @@ class ServiceToService(IdentityRequest):
         t = Tenant.objects.create(tenant_name=f"acct{self.account_id}", account_id=self.account_id, org_id=self.org_id)
         t.ready = True
         t.save()
-        url = reverse("group-list")
+        url = reverse("v1_management:group-list")
         client = APIClient()
         self.service_headers["HTTP_X_RH_RBAC_ORG_ID"] = "1212"
         response = client.get(url, **self.service_headers)
@@ -400,7 +403,7 @@ class ServiceToService(IdentityRequest):
         t = Tenant.objects.create(tenant_name=f"acct{self.account_id}", account_id=self.account_id, org_id=self.org_id)
         t.ready = True
         t.save()
-        url = reverse("group-list")
+        url = reverse("v1_management:group-list")
         client = APIClient()
         self.service_headers["HTTP_X_RH_RBAC_CLIENT_ID"] = "bad-service"
         response = client.get(url, **self.service_headers)
@@ -411,7 +414,7 @@ class ServiceToService(IdentityRequest):
         t = Tenant.objects.create(tenant_name=f"acct{self.account_id}", account_id=self.account_id, org_id=self.org_id)
         t.ready = True
         t.save()
-        url = reverse("group-list")
+        url = reverse("v1_management:group-list")
         client = APIClient()
         response = client.get(url, **self.service_headers)
 
@@ -597,8 +600,8 @@ class RBACReadOnlyApiMiddleware(IdentityRequest):
     def setUp(self):
         """Set up middleware tests."""
         super().setUp()
-        self.request = Mock()
-        self.request.path = "/api/rbac/v1/roles/"
+        self.factory = RequestFactory()
+        self.request = self.factory.get("/api/rbac/v1/roles/")
         self.write_methods = ["POST", "PUT", "PATCH", "DELETE"]
 
     def assertReadOnlyFailure(self, resp):
@@ -682,7 +685,7 @@ class V2RbacTenantMiddlewareTest(RbacTenantMiddlewareTest):
                 1,
                 self._tuples.count_tuples(
                     all_of(
-                        resource("rbac", "workspace", default.uuid),
+                        resource("rbac", "workspace", default.id),
                         relation("binding"),
                         subject("rbac", "role_binding", mapping.default_role_binding_uuid),
                     )
@@ -713,7 +716,7 @@ class V2RbacTenantMiddlewareTest(RbacTenantMiddlewareTest):
                 1,
                 self._tuples.count_tuples(
                     all_of(
-                        resource("rbac", "workspace", default.uuid),
+                        resource("rbac", "workspace", default.id),
                         relation("binding"),
                         subject("rbac", "role_binding", mapping.default_admin_role_binding_uuid),
                     )
@@ -746,3 +749,57 @@ class V2IdentityHeaderMiddlewareTest(IdentityHeaderMiddlewareTest):
     """Run all the same tests with v2 tenant bootstrap enabled plus additional."""
 
     pass
+
+
+@override_settings(V2_APIS_ENABLED=True)
+class RBACReadOnlyApiMiddlewareV2(RBACReadOnlyApiMiddleware):
+    """Tests against the read-only API middleware for v2."""
+
+    def setUp(self):
+        """Set up middleware tests."""
+        reload(urls)
+        clear_url_caches()
+        super().setUp()
+        self.request = self.factory.get("/api/rbac/v2/workspaces/")
+
+    @override_settings(V2_READ_ONLY_API_MODE=True)
+    def test_get_read_only_v2_true(self):
+        """Test GET and V2_READ_ONLY_API_MODE=True."""
+        self.request.method = "GET"
+        middleware = ReadOnlyApiMiddleware(get_response=Mock())
+        resp = middleware.process_request(self.request)
+        self.assertEqual(resp, None)
+
+    @override_settings(V2_READ_ONLY_API_MODE=True)
+    def test_write_methods_read_only_v2_true(self):
+        """Test write methods and V2_READ_ONLY_API_MODE=True."""
+        for method in self.write_methods:
+            self.request.method = method
+            middleware = ReadOnlyApiMiddleware(get_response=Mock())
+            resp = middleware.process_request(self.request)
+            self.assertReadOnlyFailure(resp)
+
+    def test_get_read_only_v2_false(self):
+        """Test GET and V2_READ_ONLY_API_MODE=False."""
+        self.request.method = "GET"
+        middleware = ReadOnlyApiMiddleware(get_response=Mock())
+        resp = middleware.process_request(self.request)
+        self.assertEqual(resp, None)
+
+    def test_write_methods_read_only_v2_false(self):
+        """Test write methods and V2_READ_ONLY_API_MODE=False."""
+        for method in self.write_methods:
+            self.request.method = method
+            middleware = ReadOnlyApiMiddleware(get_response=Mock())
+            resp = middleware.process_request(self.request)
+            self.assertEqual(resp, None)
+
+    @override_settings(V2_READ_ONLY_API_MODE=True)
+    def test_write_methods_read_only_v2_true_v1_path(self):
+        """Test write methods and V2_READ_ONLY_API_MODE=False with a v1 API path succeeds."""
+        for method in self.write_methods:
+            self.request.method = method
+            self.request.path = "/api/rbac/v1/roles/"
+            middleware = ReadOnlyApiMiddleware(get_response=Mock())
+            resp = middleware.process_request(self.request)
+            self.assertEqual(resp, None)

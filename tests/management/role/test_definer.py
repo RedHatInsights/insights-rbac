@@ -16,12 +16,13 @@
 #
 """Test the role definer."""
 from django.conf import settings
-from unittest.mock import ANY, call, patch
+from unittest.mock import ANY, call, patch, mock_open
 from management.role.definer import seed_roles, seed_permissions
 from api.models import Tenant
 from tests.core.test_kafka import copy_call_args
 from tests.identity_request import IdentityRequest
 from management.models import Access, ExtRoleRelation, Permission, ResourceDefinition, Role
+from management.relation_replicator.relation_replicator import ReplicationEvent, ReplicationEventType
 
 
 class RoleDefinerTests(IdentityRequest):
@@ -240,3 +241,156 @@ class RoleDefinerTests(IdentityRequest):
         self.assertEqual(permission.first().description, "Approval local test templates read.")
         # Previous string verb still works
         self.assertEqual(Permission.objects.filter(permission="inventory:*:*").count(), 1)
+
+    def is_create_event(self, relation: str, evt: ReplicationEvent) -> bool:
+        return evt.event_type == ReplicationEventType.CREATE_SYSTEM_ROLE and any(
+            t.relation == relation for t in evt.add
+        )
+
+    def is_remove_event(self, relation: str, evt: ReplicationEvent) -> bool:
+        return evt.event_type == ReplicationEventType.DELETE_SYSTEM_ROLE and any(
+            t.relation == relation for t in evt.remove
+        )
+
+    def is_update_event(self, relation: str, evt: ReplicationEvent) -> bool:
+        return evt.event_type == ReplicationEventType.UPDATE_SYSTEM_ROLE and any(
+            t.relation == relation for t in evt.add
+        )
+
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
+    def test_seed_roles_new_role(self, mock_replicate):
+        seed_roles()
+        self.assertTrue(
+            any(self.is_create_event("inventory_hosts_read", args[0]) for args, _ in mock_replicate.call_args_list)
+        )
+
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
+    @patch("management.role.definer.destructive_ok")
+    @patch("builtins.open", new_callable=mock_open, read_data='{"roles": []}')
+    @patch("os.listdir")
+    @patch("os.path.isfile")
+    def test_seed_roles_delete_role(
+        self,
+        mock_isfile,
+        mock_listdir,
+        mock_open,
+        mock_destructive_ok,
+        mock_replicate,
+    ):
+        mock_destructive_ok.return_value = True
+        # mock files
+        mock_listdir.return_value = ["role.json"]
+        mock_isfile.return_value = True
+
+        # create a role in the database that's not in config
+        role_to_delete = Role.objects.create(name="dummy_role_delete", system=True, tenant=self.public_tenant)
+        permission, _ = Permission.objects.get_or_create(permission="inventory:hosts:read", tenant=self.public_tenant)
+        _ = Access.objects.create(permission=permission, role=role_to_delete, tenant=self.public_tenant)
+
+        role_to_delete.save()
+
+        seed_roles()
+
+        self.assertTrue(
+            any(self.is_remove_event("inventory_hosts_read", args[0]) for args, _ in mock_replicate.call_args_list)
+        )
+
+        # verify role was deleted from the database
+        self.assertFalse(Role.objects.filter(id=role_to_delete.id).exists())
+
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
+    @patch(
+        "builtins.open",
+        new_callable=mock_open,
+        read_data='{"roles": [{"name": "dummy_role_update", "system": true, "version": 3, "access": [{"permission": "dummy:hosts:read"}]}]}',
+    )
+    @patch("os.listdir")
+    @patch("os.path.isfile")
+    def test_seed_roles_update_role(
+        self,
+        mock_isfile,
+        mock_listdir,
+        mock_open,
+        mock_replicate,
+    ):
+        # mock files
+        mock_listdir.return_value = ["role.json"]
+        mock_isfile.return_value = True
+
+        # create a role in the database that exists in config
+        Role.objects.create(name="dummy_role_update", system=True, version=1, tenant=self.public_tenant)
+
+        seed_roles()
+
+        self.assertTrue(
+            any(self.is_update_event("dummy_hosts_read", args[0]) for args, _ in mock_replicate.call_args_list)
+        )
+
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
+    def test_seed_roles_create_and_delete_role(
+        self,
+        mock_replicate,
+    ):
+        # seed to create role
+        seed_roles()
+        self.assertTrue(
+            any(self.is_create_event("inventory_hosts_read", args[0]) for args, _ in mock_replicate.call_args_list)
+        )
+
+        # seed to remove role
+        with (
+            patch("os.path.isfile") as mock_isfile,
+            patch("os.listdir") as mock_listdir,
+            patch("builtins.open", mock_open(read_data='{"roles": []}')) as mock_file,
+            patch("management.role.definer.destructive_ok") as mock_destructive_ok,
+        ):
+            # mock files
+            mock_destructive_ok.return_value = True
+            mock_listdir.return_value = ["role.json"]
+            mock_isfile.return_value = True
+
+            seed_roles()
+
+            self.assertTrue(
+                any(self.is_remove_event("inventory_hosts_read", args[0]) for args, _ in mock_replicate.call_args_list)
+            )
+
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
+    @patch(
+        "builtins.open",
+        new_callable=mock_open,
+        read_data='{"roles": [{"name": "existing_system_role", "system": true, "version": 1, "access": [{"permission": "dummy:hosts:read"}]}, {"name": "role_wants_update", "system": true, "version": 3, "access": [{"permission": "dummy:hosts:write"}]}]}',
+    )
+    @patch("os.listdir")
+    @patch("os.path.isfile")
+    def test_seed_roles_existing_role_add_tuples(
+        self,
+        mock_isfile,
+        mock_listdir,
+        mock_open,
+        mock_replicate,
+    ):
+        # mock files
+        mock_listdir.return_value = ["role.json"]
+        mock_isfile.return_value = True
+
+        # create a role in the database that exists in config with no changes.
+        existing_role = Role.objects.create(
+            name="existing_system_role", system=True, version=1, tenant=self.public_tenant
+        )
+        permission, _ = Permission.objects.get_or_create(permission="dummy:hosts:read", tenant=self.public_tenant)
+        _ = Access.objects.create(permission=permission, role=existing_role, tenant=self.public_tenant)
+
+        existing_role.save()
+
+        # create a role in the database that exists in config with changes.
+        Role.objects.create(name="role_wants_update", system=True, version=1, tenant=self.public_tenant)
+
+        seed_roles(force_create_relationships=True)
+
+        self.assertTrue(
+            any(self.is_create_event("dummy_hosts_read", args[0]) for args, _ in mock_replicate.call_args_list)
+        )
+        self.assertTrue(
+            any(self.is_update_event("dummy_hosts_write", args[0]) for args, _ in mock_replicate.call_args_list)
+        )

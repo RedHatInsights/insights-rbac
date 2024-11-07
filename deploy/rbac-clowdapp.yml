@@ -222,6 +222,10 @@ objects:
             value: ${RELATION_API_SERVER}
           - name: REPLICATION_TO_RELATION_ENABLED
             value: ${REPLICATION_TO_RELATION_ENABLED}
+          - name: PRINCIPAL_CLEANUP_UPDATE_ENABLED_UMB
+            value: ${PRINCIPAL_CLEANUP_UPDATE_ENABLED_UMB}
+          - name: V2_BOOTSTRAP_TENANT
+            value: ${V2_BOOTSTRAP_TENANT}
     - name: scheduler-service
       minReplicas: ${{MIN_SCHEDULER_REPLICAS}}
       metadata:
@@ -530,6 +534,8 @@ objects:
             value: ${IT_TOKEN_JKWS_CACHE_LIFETIME}
           - name: V2_APIS_ENABLED
             value: ${V2_APIS_ENABLED}
+          - name: V2_READ_ONLY_API_MODE
+            value: ${V2_READ_ONLY_API_MODE}
           - name: READ_ONLY_API_MODE
             value: ${READ_ONLY_API_MODE}
 
@@ -590,6 +596,85 @@ objects:
             requests:
               cpu: 50m
               memory: 512Mi
+      - name: user-id-populator
+        podSpec:
+          image: quay.io/cloudservices/rbac:latest
+          command:
+            - /opt/rbac/rbac/manage.py
+            - import_tenant_user_data
+            - --start_line
+            - ${USER_ID_POPULATOR_START_LINE}
+            - --batch_size
+            - ${USER_ID_POPULATOR_BATCH_SIZE}
+          env:
+            - name: S3_AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: ${S3_AWS_SECRET}
+                  key: aws_access_key_id
+            - name: S3_AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: ${S3_AWS_SECRET}
+                  key: aws_secret_access_key
+            - name: S3_AWS_BUCKET
+              valueFrom:
+                secretKeyRef:
+                  name: ${S3_AWS_SECRET}
+                  key: bucket
+            - name: CLOWDER_ENABLED
+              value: ${CLOWDER_ENABLED}
+            - name: REPLICATION_TO_RELATION_ENABLED
+              value: "True"
+            - name: ENV_NAME
+              value: ${ENV_NAME}
+          resources:
+            limits:
+              cpu: 300m
+              memory: 1Gi
+            requests:
+              cpu: 50m
+              memory: 512Mi
+          volumes:
+          - name: users-data
+            persistentVolumeClaim:
+              claimName: users-data
+          volumeMounts:
+          - mountPath: /tmp
+            name: users-data
+      - name: seed-roles-perms-groups
+        podSpec:
+          image: quay.io/cloudservices/rbac:latest
+          command:
+            - /opt/rbac/rbac/manage.py
+            - seeds
+            - --roles
+            - --force-create-relationships
+          resources:
+            limits:
+              cpu: 300m
+              memory: 1Gi
+            requests:
+              cpu: 50m
+              memory: 512Mi
+          env:
+            - name: CLOWDER_ENABLED
+              value: ${CLOWDER_ENABLED}
+            - name: REPLICATION_TO_RELATION_ENABLED
+              value: "True"
+          volumes:
+            - configMap:
+                name: ${CONFIG_MAP_NAME}
+              name: default-role-config
+            - configMap:
+                name: ${MODEL_ACCESS_PERMISSIONS}
+              name: model-access-permissions
+          volumeMounts:
+            - mountPath: /opt/rbac/rbac/management/role/definitions
+              name: default-role-config
+            - mountPath: /opt/rbac/rbac/management/role/permissions
+              name: model-access-permissions
+
 - apiVersion: v1
   kind: ConfigMap
   metadata:
@@ -656,6 +741,19 @@ objects:
     cert: MTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTE=
     key: MjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMg==
   type: Opaque
+
+- kind: PersistentVolumeClaim
+  apiVersion: v1
+  metadata:
+    labels:
+      app: rbac
+    name: users-data
+  spec:
+    accessModes:
+    - ReadWriteOnce
+    resources:
+      requests:
+        storage: 2Gi
 
 parameters:
 - description: Image name
@@ -763,7 +861,7 @@ parameters:
 - description: Whether or not to bootstrap tenants using V2 logic (i.e. creating workspaces and relations).
   name: V2_BOOTSTRAP_TENANT
   value: 'False'
-- description: | 
+- description: |
     Whether or not to add user IDs to existing principals within V1 logic. Once V2 tenant bootstrapping is used,
     this flag is ignored and user IDs will be added regardless.
   name: V1_BOOTSTRAP_ADD_USER_ID
@@ -942,7 +1040,7 @@ parameters:
 - name: PRINCIPAL_CLEANUP_UPDATE_ENABLED_UMB
   description: Allow cleanup job to update principals via messages from UMB
   value: 'False'
-- name: UMB_JOB_ENABLE
+- name: UMB_JOB_ENABLED
   description: Temp env to enable the UMB job
   value: 'True'
 - name: UMB_HOST
@@ -965,6 +1063,18 @@ parameters:
   value: "False"
 - name: V2_APIS_ENABLED
   description: Flag to explicitly enable v2 API endpoints
+- name: V2_READ_ONLY_API_MODE
+  description: Enforce GET only on RBAC v2 APIs only
+  value: 'False'
 - name: READ_ONLY_API_MODE
   description: Enforce GET only on RBAC APIs
   value: 'False'
+- name: S3_AWS_SECRET
+  description: The AWS secret for S3
+  value: 'crc-rbac-s3'
+- name: USER_ID_POPULATOR_START_LINE
+  description: The line of the data file to start reading user IDs from
+  value: '1'
+- name: USER_ID_POPULATOR_BATCH_SIZE
+  description: The number of user records to process in each batch
+  value: '90'

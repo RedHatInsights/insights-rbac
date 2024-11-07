@@ -31,7 +31,7 @@ class CrossAccountRequestAccessPermission(permissions.BasePermission):
 
     def has_permission(self, request, view):
         """Check permission based on identity and query by."""
-        if request._request.path.startswith(reverse("cross-list")):
+        if request._request.path.startswith(reverse("v1_api:cross-list")):
             if request.method == "POST":
                 # Only allow associates create the request
                 return request.user.internal

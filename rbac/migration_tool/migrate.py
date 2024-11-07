@@ -24,6 +24,7 @@ from management.principal.model import Principal
 from management.relation_replicator.logging_replicator import LoggingReplicator
 from management.relation_replicator.outbox_replicator import OutboxReplicator
 from management.relation_replicator.relation_replicator import (
+    PartitionKey,
     RelationReplicator,
     ReplicationEvent,
     ReplicationEventType,
@@ -58,7 +59,7 @@ def get_kessel_relation_tuples(
         # which may be implied or necessary are intentionally ignored.
         # These should come from the apps that own the resource.
         if bound_resource.resource_type == ("rbac", "workspace") and not bound_resource.resource_id == str(
-            default_workspace.uuid
+            default_workspace.id
         ):
             # This is not strictly necessary here and the relation may be a duplicate.
             # Once we have more Workspace API / Inventory Group migration progress,
@@ -69,7 +70,7 @@ def get_kessel_relation_tuples(
                     bound_resource.resource_type,
                     bound_resource.resource_id,
                     ("rbac", "workspace"),
-                    str(default_workspace.uuid),
+                    str(default_workspace.id),
                     "parent",
                 )
             )
@@ -113,7 +114,7 @@ def migrate_data_for_tenant(tenant: Tenant, exclude_apps: list, replicator: Rela
         ReplicationEvent(
             event_type=ReplicationEventType.MIGRATE_TENANT_GROUPS,
             info={"tenant": tenant.org_id},
-            partition_key="rbactodo",
+            partition_key=PartitionKey.byEnvironment(),
             add=tuples,
         )
     )
@@ -143,7 +144,7 @@ def migrate_data_for_tenant(tenant: Tenant, exclude_apps: list, replicator: Rela
             ReplicationEvent(
                 event_type=ReplicationEventType.MIGRATE_CUSTOM_ROLE,
                 info={"role_uuid": str(role.uuid)},
-                partition_key="rbactodo",
+                partition_key=PartitionKey.byEnvironment(),
                 add=tuples,
             )
         )

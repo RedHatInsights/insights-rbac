@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 class TenantMapping(models.Model):
     """Tenant mappings to V2 domain concepts."""
 
-    tenant = models.OneToOneField(Tenant, on_delete=models.CASCADE)
+    tenant = models.OneToOneField(Tenant, on_delete=models.CASCADE, related_name="tenant_mapping")
 
     # Default group UUID specific to a Tenant. This is used for adding members of the Tenant to the access graph.
     # It is also used for custom default group UUID, so that the custom roles get bound to the default group
