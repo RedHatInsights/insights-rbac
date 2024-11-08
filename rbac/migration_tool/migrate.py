@@ -110,7 +110,7 @@ def migrate_groups_for_tenant(tenant: Tenant, replicator: RelationReplicator):
                 dual_write_handler.generate_relations_to_add_principals(group.principals.all())
             if group.system is False and group.admin_default is False:
                 system_roles = group.roles().filter(system=True)
-                if system_roles.exists() > 0:
+                if any(True for _ in system_roles):
                     dual_write_handler.generate_relations_to_add_roles(system_roles)
             dual_write_handler.replicate()
 
