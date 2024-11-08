@@ -40,6 +40,7 @@ from management.principal.proxy import (
     bop_request_status_count,
     bop_request_time_tracking,
 )
+from management.relation_replicator.outbox_replicator import OutboxReplicator
 from management.role.serializer import BindingMappingSerializer
 from management.tasks import (
     migrate_data_in_worker,
@@ -48,11 +49,13 @@ from management.tasks import (
     run_seeds_in_worker,
     run_sync_schemas_in_worker,
 )
+from management.tenant_service.v2 import V2TenantBootstrapService
 from rest_framework import status
 
 from api.common.pagination import StandardResultsSetPagination
 from api.models import Tenant
 from api.tasks import cross_account_cleanup, populate_tenant_account_id_in_worker
+
 
 logger = logging.getLogger(__name__)
 TENANTS = TenantCache()
@@ -497,6 +500,26 @@ def data_migration(request):
     }
     migrate_data_in_worker.delay(args)
     return HttpResponse("Data migration from V1 to V2 are running in a background worker.", status=202)
+
+
+def bootstrap_tenant(request):
+    """View method for bootstrapping a tenant.
+
+    POST /_private/api/utils/bootstrap_tenant/?org_id=12345&acct=98765
+    org_id is required,
+    acct is the account number which is optional
+    """
+    if request.method != "POST":
+        return HttpResponse('Invalid method, only "POST" is allowed.', status=405)
+    logger.info("Running bootstrap tenant.")
+
+    org_id = request.GET.get("org_id")
+    if not org_id:
+        return HttpResponse('Invalid request, must supply the "org_id" query parameter.', status=400)
+    acct = request.GET.get("acct", "")
+    bootstrap_service = V2TenantBootstrapService(OutboxReplicator())
+    bootstrap_service._get_or_bootstrap_tenant(org_id, acct)
+    return HttpResponse("Bootstrap tenant finished.", status=200)
 
 
 class SentryDiagnosticError(Exception):
