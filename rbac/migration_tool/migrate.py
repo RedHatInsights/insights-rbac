@@ -158,7 +158,7 @@ def migrate_data_for_tenant(tenant: Tenant, exclude_apps: list, replicator: Rela
 def migrate_data(exclude_apps: list = [], orgs: list = [], write_relationships: str = "False"):
     """Migrate all data for all tenants."""
     if not settings.READ_ONLY_API_MODE:
-        logger.info("Read-only API mode is required. READ_ONLY_API_MODE must be set to true.")
+        logger.fatal("Read-only API mode is required. READ_ONLY_API_MODE must be set to true.")
         return
 
     count = 0
