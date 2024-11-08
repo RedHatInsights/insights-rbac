@@ -27,6 +27,7 @@ import json
 
 from api.models import User, Tenant
 from management.models import Group, Permission, Policy, Role
+from management.role.model import BindingMapping
 from tests.identity_request import IdentityRequest
 
 
@@ -526,3 +527,31 @@ class InternalViewsetTests(IdentityRequest):
             response.content.decode(),
             "Data migration from V1 to V2 are running in a background worker.",
         )
+
+    def test_list_bindings_by_role(self):
+        """Test that we can list bindingmapping by role."""
+        response = self.client.get(
+            f"/_private/api/utils/bindings/?role_uuid={self.role.uuid}",
+            **self.request.META,
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.content.decode(), "[]")
+
+        binding_attrs = {
+            "resource_id": "123456",
+            "resource_type_namespace": "rbac",
+            "resource_type_name": "workspace",
+            "mappings": {"foo": "bar"},
+        }
+        # Create a binding mapping
+        binding_mapping = BindingMapping.objects.create(
+            role=self.role,
+            **binding_attrs,
+        )
+        response = self.client.get(
+            f"/_private/api/utils/bindings/?role_uuid={self.role.uuid}",
+            **self.request.META,
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        binding_attrs.update({"id": binding_mapping.id, "role": self.role.id})
+        self.assertEqual(json.loads(response.content.decode()), [binding_attrs])

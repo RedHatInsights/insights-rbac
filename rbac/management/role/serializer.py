@@ -23,7 +23,7 @@ from management.utils import filter_queryset_by_tenant, get_principal, validate_
 from rest_framework import serializers
 
 from api.models import Tenant
-from .model import Access, Permission, ResourceDefinition, Role
+from .model import Access, BindingMapping, Permission, ResourceDefinition, Role
 from ..querysets import ORG_ID_SCOPE, PRINCIPAL_SCOPE, SCOPE_KEY, VALID_SCOPES
 
 ALLOWED_OPERATIONS = ["in", "equal"]
@@ -314,6 +314,16 @@ class RolePatchSerializer(RoleSerializer):
 
         instance = update_role(role_name, update_data, tenant, clear_access=False)
         return instance
+
+
+class BindingMappingSerializer(serializers.ModelSerializer):
+    """Serializer for the binding mapping."""
+
+    class Meta:
+        """Metadata for the serializer."""
+
+        model = BindingMapping
+        fields = "__all__"
 
 
 def obtain_applications(obj):

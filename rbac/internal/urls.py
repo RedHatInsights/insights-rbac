@@ -79,6 +79,7 @@ urlpatterns = [
     path("api/utils/role/", views.role_removal),
     path("api/utils/permission/", views.permission_removal),
     path("api/utils/data_migration/", views.data_migration),
+    path("api/utils/bindings/", views.list_bindings_for_role),
 ]
 
 urlpatterns.extend(integration_urlpatterns)
