@@ -1,4 +1,3 @@
-
 from django.test import TestCase
 
 
@@ -9,7 +8,6 @@ from management.tenant_mapping.model import TenantMapping
 
 
 class TestAPIUtils(TestCase):
-
     def test_migration_resource_deletion(self):
         org_id_1 = "12345678"
         org_id_2 = "87654321"
@@ -63,7 +61,7 @@ class TestAPIUtils(TestCase):
             tenant=another_tenant,
             parent=root,
         )
-        
+
         migration_resource_deletion("workspace", None)
         self.assertFalse(Workspace.objects.exists())
 
@@ -104,11 +102,11 @@ class TestAPIUtils(TestCase):
         BindingMapping.objects.create(
             role=another_role,
         )
-        system_role_binding = BindingMapping.objects.create(
+        BindingMapping.objects.create(
             role=system_role,
         )
         migration_resource_deletion("binding", org_id_2)
         self.assertFalse(BindingMapping.objects.filter(role=another_role).exists())
 
         migration_resource_deletion("binding", None)
-        self.assertEqual(list(BindingMapping.objects.values_list("id", flat=True)), [system_role_binding.id])
+        self.assertFalse(BindingMapping.objects.exists())
