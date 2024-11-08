@@ -18,7 +18,7 @@
 import random
 from unittest.mock import call, patch, ANY, Mock
 from uuid import uuid4
-
+import json
 from django.db import transaction
 from django.conf import settings
 from django.urls import reverse, resolve
@@ -328,21 +328,6 @@ class GroupViewsetTests(IdentityRequest):
         client = APIClient()
         response = client.post(url, test_data, format="json", **self.headers)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-
-    def test_create_duplicate_group(self):
-        """Test that creating a duplicate group is not allowed."""
-        group_name = "groupC"
-        test_data = {"name": group_name}
-
-        # create a group
-        with transaction.atomic():
-            url = reverse("v1_management:group-list")
-            client = APIClient()
-            response = client.post(url, test_data, format="json", **self.headers)
-            self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-
-            response = client.post(url, test_data, format="json", **self.headers)
-            self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
     def test_create_group_with_reserved_name(self):
         """Test that creating a group with reserved name is not allowed."""
@@ -5602,3 +5587,25 @@ class GroupViewNonAdminTests(IdentityRequest):
 
         response = client.put(url, request_body, format="json", **self.headers_service_account_principal)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+    def test_duplicate_group_creation(self):
+        """
+        Test that when a duplicate group is added for a tenant the correct error response is being returned
+        """
+        # Initial group creation
+        request_body = {"name": "duplicateEntry"}
+        url = reverse("v1_management:group-list")
+
+        with transaction.atomic():
+            # Initial group creation
+            response = self.client.post(url, request_body, format="json", **self.headers_org_admin)
+            self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+            # Duplicate add attempt
+            duplicate_response = self.client.post(url, request_body, format="json", **self.headers_org_admin)
+            self.assertEqual(duplicate_response.status_code, status.HTTP_400_BAD_REQUEST)
+
+            self.assertEqual(
+                duplicate_response.data.get("errors")[0]["detail"],
+                "A group with the name 'duplicateEntry' exists for this tenant",
+            )
