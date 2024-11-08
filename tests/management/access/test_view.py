@@ -754,3 +754,27 @@ class AccessViewTests(IdentityRequest):
         response = client.get(url, **self.test_headers)
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_get_access_with_invalid_limit(self):
+        """Test that we get expected value of limit when invalid limit value is provided in the request."""
+        # Create platform default group with default roles
+        self.create_platform_default_resource()
+
+        client = APIClient()
+        default_limit = 10
+        expected_count = 1
+
+        # Request query without 'limit' query param => default value 'limit=10' in the response
+        url = f"{reverse('v1_management:access')}?application="
+        response = client.get(url, **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data.get("meta").get("limit"), expected_count)
+        self.assertEqual(response.data.get("meta").get("count"), expected_count)
+
+        # Request query with invalid value of 'limit' query param => default value 'limit=10 'in the response
+        for limit in ["", 0, -10, "xxxxx"]:
+            url = f"{reverse('v1_management:access')}?application=&limit={limit}"
+            response = client.get(url, **self.headers)
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            self.assertEqual(response.data.get("meta").get("limit"), default_limit)
+            self.assertEqual(response.data.get("meta").get("count"), expected_count)
