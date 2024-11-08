@@ -55,7 +55,7 @@ from rest_framework import status
 from api.common.pagination import StandardResultsSetPagination
 from api.models import Tenant
 from api.tasks import cross_account_cleanup, populate_tenant_account_id_in_worker, run_migration_resource_deletion
-from api.utils import RESOURCE_MODEL_MAPPING
+from api.utils import RESOURCE_MODEL_MAPPING, get_resources
 
 
 logger = logging.getLogger(__name__)
@@ -548,9 +548,11 @@ def list_bindings_for_role(request):
 
 def migration_resources(request):
     """View or delete specific resources related to migration.
+
     DELETE /_private/api/utils/migration_resources/?resource=xxx&org_id=xxx
     GET /_private/api/utils/migration_resources/?resource=xxx&org_id=xxx&limit=1000
     optinos of resource: workspace, mapping(tenantmapping), binding(bindingmapping)
+    org_id does not work for bindingmapping
     """
     resource = request.GET.get("resource")
     if not resource:
@@ -559,13 +561,12 @@ def migration_resources(request):
             status=400,
         )
     resource = resource.lower()
-    resource_model = RESOURCE_MODEL_MAPPING.get(resource)
-    if not resource_model:
+    if resource not in RESOURCE_MODEL_MAPPING:
         return HttpResponse(
             f"Invalid request, resource should be in '{RESOURCE_MODEL_MAPPING.keys()}'.",
             status=400,
         )
-    
+
     org_id = request.GET.get("org_id")
 
     if request.method == "DELETE":
@@ -574,17 +575,8 @@ def migration_resources(request):
         run_migration_resource_deletion.delay({"resource": resource, "org_id": org_id})
         logger.info(f"Deleting resources of type {resource}. Requested by '{request.user.username}'")
         return HttpResponse("Resource deletion is running in a background worker.", status=202)
-
     elif request.method == "GET":
-        resource_objs = resource_model.objects.all()
-        if org_id:
-            tenant = get_object_or_404(Tenant, org_id=org_id)
-            if tenant.tenant_name == "public":
-                return HttpResponse("Invalid request, tenant cannot be the public one.", status=400)
-            if resource == "binding":
-                resource_objs = resource_objs.filter(role__tenant=tenant)
-            else:
-                resource_objs = resource_objs.filter(tenant=tenant)
+        resource_objs = get_resources(resource, org_id)
         limit = request.GET.get("limit", 1000)
         resource_list = [str(resource_obj.id) for resource_obj in resource_objs[:limit]]
         return HttpResponse(json.dumps(resource_list), content_type="application/json", status=200)

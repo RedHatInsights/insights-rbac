@@ -622,13 +622,14 @@ class InternalViewsetTests(IdentityRequest):
             id_set.add(str(workspace.id))
         self.assertEqual(set(json.loads(response.getvalue())), id_set)
 
-
         response = self.client.get(
             f"/_private/api/utils/migration_resources/?resource=workspace&org_id={org_id}",
             **self.request.META,
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(set(json.loads(response.getvalue())), {str(default_workspaces[1].id), str(root_workspaces[1].id)})
+        self.assertEqual(
+            set(json.loads(response.getvalue())), {str(default_workspaces[1].id), str(root_workspaces[1].id)}
+        )
 
         # Listing tenantmappings
         tenant_mappings = TenantMapping.objects.bulk_create(
@@ -646,7 +647,9 @@ class InternalViewsetTests(IdentityRequest):
             **self.request.META,
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(set(json.loads(response.getvalue())), {str(tenant_mapping.id) for tenant_mapping in tenant_mappings})
+        self.assertEqual(
+            set(json.loads(response.getvalue())), {str(tenant_mapping.id) for tenant_mapping in tenant_mappings}
+        )
         response = self.client.get(
             f"/_private/api/utils/migration_resources/?resource=mapping&org_id={org_id}",
             **self.request.META,
@@ -654,7 +657,6 @@ class InternalViewsetTests(IdentityRequest):
         self.assertEqual(json.loads(response.getvalue()), [str(tenant_mappings[1].id)])
 
         # List bindingmappings
-        # Delete bindingmappings
         tenant_role = Role.objects.create(
             name="role",
             tenant=self.tenant,
@@ -670,17 +672,11 @@ class InternalViewsetTests(IdentityRequest):
             role=another_role,
         )
         response = self.client.get(
-            "/_private/api/utils/migration_resources/?resource=mapping",
+            "/_private/api/utils/migration_resources/?resource=binding",
             **self.request.META,
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(set(json.loads(response.getvalue())), {str(binding.id), str(another_binding.id)})
-
-        response = self.client.get(
-            f"/_private/api/utils/migration_resources/?resource=mapping&org_id={org_id}",
-            **self.request.META,
-        )
-        self.assertEqual(json.loads(response.getvalue()), [str(another_binding.id)])
 
     @override_settings(INTERNAL_DESTRUCTIVE_API_OK_UNTIL=valid_destructive_time())
     @patch("api.tasks.run_migration_resource_deletion.delay")
