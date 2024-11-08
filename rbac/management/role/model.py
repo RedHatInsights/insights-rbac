@@ -29,7 +29,13 @@ from kessel.relations.v1beta1.common_pb2 import Relationship
 from management.cache import AccessCache
 from management.models import Permission, Principal
 from management.rbac_fields import AutoDateTimeField
-from migration_tool.models import V2boundresource, V2role, V2rolebinding, role_binding_group_subject_tuple, role_binding_user_subject_tuple
+from migration_tool.models import (
+    V2boundresource,
+    V2role,
+    V2rolebinding,
+    role_binding_group_subject_tuple,
+    role_binding_user_subject_tuple,
+)
 
 from api.models import TenantAwareModel
 
