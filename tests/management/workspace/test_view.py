@@ -236,6 +236,7 @@ class WorkspaceViewTestsV2Enabled(WorkspaceViewTests):
             "name": "New Workspace",
             "description": "New Workspace - description",
             "tenant_id": self.tenant.id,
+            "parent_id": self.root_workspace.id,
         }
 
         workspace = Workspace.objects.create(**workspace_data)
@@ -362,6 +363,7 @@ class WorkspaceViewTestsV2Enabled(WorkspaceViewTests):
             "name": "New Workspace",
             "description": "New Workspace - description",
             "tenant_id": self.tenant.id,
+            "parent_id": self.root_workspace.id,
         }
 
         workspace = Workspace.objects.create(**workspace_data)
