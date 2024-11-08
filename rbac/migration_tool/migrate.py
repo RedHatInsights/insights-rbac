@@ -100,6 +100,8 @@ def migrate_groups_for_tenant(tenant: Tenant, replicator: RelationReplicator):
     """Generate user relationships and system role assignments for groups in a tenant."""
     groups = tenant.group_set.all()
     for group in groups:
+        # The migrator does not generally deal with concurrency control,
+        # but we require an atomic block due to use of select_for_update in the dual write handler.
         with transaction.atomic():
             dual_write_handler = RelationApiDualWriteGroupHandler(
                 group, ReplicationEventType.MIGRATE_TENANT_GROUPS, replicator=replicator
