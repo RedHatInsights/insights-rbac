@@ -25,8 +25,7 @@ from django.test import TestCase, override_settings
 from api.models import Tenant
 from management.models import *
 from migration_tool.migrate import migrate_data
-from management.utils import clear_pk
-from setuptools.command.easy_install import sys_executable
+from management.group.definer import seed_group, clone_default_group_in_public_schema
 
 
 class MigrateTests(TestCase):
@@ -35,12 +34,31 @@ class MigrateTests(TestCase):
     def setUp(self):
         """Set up the utils tests."""
         super().setUp()
+        # public tenant
         public_tenant = Tenant.objects.get(tenant_name="public")
-        default_group = Group.objects.create(name="default", tenant=public_tenant, platform_default=True, system=True)
+
+        # system roles
+        self.system_role_1 = Role.objects.create(
+            name="System Role 1", platform_default=True, tenant=public_tenant, system=True
+        )
+        self.system_role_2 = Role.objects.create(
+            name="System Role 2", platform_default=True, system=True, tenant=public_tenant
+        )
+        # default group
+        default_group, _ = seed_group()
+        # permissions
         # This would be skipped
         permission1 = Permission.objects.create(permission="app1:hosts:read", tenant=public_tenant)
         permission2 = Permission.objects.create(permission="inventory:hosts:write", tenant=public_tenant)
-        # Two organization
+        Access.objects.bulk_create(
+            [
+                Access(permission=permission1, role=self.system_role_2, tenant=public_tenant),
+                Access(permission=permission2, role=self.system_role_2, tenant=public_tenant),
+            ]
+        )
+
+        # two organizations
+        # tenant 1 - org_id=1234567
         self.tenant = Tenant.objects.create(org_id="1234567", tenant_name="tenant")
         self.root_workspace = Workspace.objects.create(
             type=Workspace.Types.ROOT, tenant=self.tenant, name="Root Workspace"
@@ -48,12 +66,10 @@ class MigrateTests(TestCase):
         self.default_workspace = Workspace.objects.create(
             type=Workspace.Types.DEFAULT, tenant=self.tenant, name="Default Workspace", parent=self.root_workspace
         )
-
-        another_tenant = Tenant.objects.create(org_id="7654321")
-
         # setup data for organization 1234567
         self.workspace_id_1 = "123456"
         self.workspace_id_2 = "654321"
+
         # This role will be skipped because it contains permission with skipping application
         self.role_a1 = Role.objects.create(name="role_a1", tenant=self.tenant)
         self.access_a11 = Access.objects.create(permission=permission1, role=self.role_a1, tenant=self.tenant)
@@ -88,44 +104,18 @@ class MigrateTests(TestCase):
         self.policy_a2 = Policy.objects.create(name="System Policy_a2", group=self.group_a2, tenant=self.tenant)
         self.policy_a2.roles.add(self.role_a2)
 
-        self.system_role_1 = Role.objects.create(
-            name="System Role 1", platform_default=True, tenant=public_tenant, system=True
-        )
-        self.policy_a2.roles.add(self.system_role_1)
-        self.policy_a2.save()
+        # tenant 2 - org_id=7654321
+        another_tenant = Tenant.objects.create(org_id="7654321")
 
         # setup data for another tenant 7654321
         self.role_b = Role.objects.create(name="role_b", tenant=another_tenant)
         self.access_b = Access.objects.create(permission=permission2, role=self.role_b, tenant=another_tenant)
-        self.system_role_2 = Role.objects.create(name="System Role 2", system=True, tenant=public_tenant)
-        Access.objects.bulk_create(
-            [
-                Access(permission=permission1, role=self.system_role_2, tenant=public_tenant),
-                Access(permission=permission2, role=self.system_role_2, tenant=public_tenant),
-            ]
-        )
+
+        self.policy_a2.roles.add(self.system_role_1)
+        self.policy_a2.save()
 
         # create custom default group
-        group = default_group
-        default_policy = Policy.objects.create(
-            system=True, name=f"System Policy for Group {group.uuid}", group=group, tenant=self.tenant
-        )
-        group.policies.add(default_policy)
-        tenant_default_policy = group.policies.get(system=True)
-        group.name = "Custom default access"
-        group.system = False
-        group.tenant = self.tenant
-        group.uuid = uuid4()
-        clear_pk(group)
-        clear_pk(tenant_default_policy)
-        tenant_default_policy.uuid = uuid4()
-        tenant_default_policy.name = "System Policy for Group {}".format(group.uuid)
-        tenant_default_policy.tenant = self.tenant
-        group.save()
-        tenant_default_policy.group = group
-        tenant_default_policy.save()
-        tenant_default_policy.roles.add(self.system_role_2)
-        self.custom_default_group = group
+        self.custom_default_group = clone_default_group_in_public_schema(default_group, self.tenant)
 
     @override_settings(REPLICATION_TO_RELATION_ENABLED=True, PRINCIPAL_USER_DOMAIN="redhat", READ_ONLY_API_MODE=True)
     @patch("management.relation_replicator.logging_replicator.logger")
@@ -173,7 +163,11 @@ class MigrateTests(TestCase):
             resource_type_namespace="rbac",
             resource_id=self.default_workspace.id,
         ).get()
-        self.assertEqual(binding_mapping_system_role_1.mappings["groups"][0], str(self.group_a2.uuid))
+
+        self.assertEqual(
+            binding_mapping_system_role_1.mappings["groups"],
+            [str(self.custom_default_group.uuid), str(self.group_a2.uuid)],
+        )
 
         role_binding_system_role_1_uuid = binding_mapping_system_role_1.mappings["id"]
 
@@ -183,6 +177,7 @@ class MigrateTests(TestCase):
             resource_type_namespace="rbac",
             resource_id=self.default_workspace.id,
         ).get()
+
         self.assertEqual(binding_mapping_system_role_2.mappings["groups"][0], str(self.custom_default_group.uuid))
 
         role_binding_system_role_2_uuid = binding_mapping_system_role_2.mappings["id"]
