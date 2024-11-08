@@ -804,7 +804,7 @@ class CrossAccountRequestViewTests(CrossAccountRequestTest):
         # and not any not included in the request
         self.assertEqual(len(cross_account_bindings), 2, f"Expected 2 bindings but got {cross_account_bindings}")
 
-        # Collect all the bound roles but iterating over the bindings and getting the subjects of the role relation
+        # Collect all the bound roles by iterating over the bindings and getting the subjects of the role relation
         bound_roles = {
             t.subject_id for _, tuples in cross_account_bindings.items() for t in tuples if t.relation == "role"
         }
