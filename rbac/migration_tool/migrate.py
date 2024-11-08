@@ -23,6 +23,7 @@ from django.db import transaction
 from kessel.relations.v1beta1 import common_pb2
 from management.group.relation_api_dual_write_group_handler import RelationApiDualWriteGroupHandler
 from management.models import Workspace
+from management.principal.model import Principal
 from management.relation_replicator.logging_replicator import LoggingReplicator
 from management.relation_replicator.outbox_replicator import OutboxReplicator
 from management.relation_replicator.relation_replicator import (
@@ -100,19 +101,22 @@ def migrate_groups_for_tenant(tenant: Tenant, replicator: RelationReplicator):
     """Generate user relationships and system role assignments for groups in a tenant."""
     groups = tenant.group_set.all()
     for group in groups:
-        # The migrator does not generally deal with concurrency control,
-        # but we require an atomic block due to use of select_for_update in the dual write handler.
-        with transaction.atomic():
-            dual_write_handler = RelationApiDualWriteGroupHandler(
-                group, ReplicationEventType.MIGRATE_TENANT_GROUPS, replicator=replicator
-            )
-            if not group.platform_default:
-                dual_write_handler.generate_relations_to_add_principals(group.principals.all())
-            if group.system is False and group.admin_default is False:
-                system_roles = group.roles().filter(system=True)
-                if any(True for _ in system_roles):
-                    dual_write_handler.generate_relations_to_add_roles(system_roles)
-            dual_write_handler.replicate()
+        principals: list[Principal] = []
+        system_roles: list[Role] = []
+        if not group.platform_default:
+            principals = group.principals.all()
+        if group.system is False and group.admin_default is False:
+            system_roles = group.roles().filter(system=True)
+        if any(True for _ in system_roles) or any(True for _ in principals):
+            # The migrator does not generally deal with concurrency control,
+            # but we require an atomic block due to use of select_for_update in the dual write handler.
+            with transaction.atomic():
+                dual_write_handler = RelationApiDualWriteGroupHandler(
+                    group, ReplicationEventType.MIGRATE_TENANT_GROUPS, replicator=replicator
+                )
+                dual_write_handler.generate_relations_to_add_principals(principals)
+                dual_write_handler.generate_relations_to_add_roles(system_roles)
+                dual_write_handler.replicate()
 
 
 def migrate_data_for_tenant(tenant: Tenant, exclude_apps: list, replicator: RelationReplicator):
