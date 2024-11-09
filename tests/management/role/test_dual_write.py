@@ -109,7 +109,7 @@ class DualWriteTestCase(TestCase):
         role = self.fixture.new_custom_role(
             name=name,
             tenant=self.tenant,
-            resource_access=self._workspace_access_to_resource_definition(default, **kwargs),
+            resource_access=self.fixture.workspace_access(default, **kwargs),
         )
         dual_write = self.dual_write_handler(role, ReplicationEventType.CREATE_CUSTOM_ROLE)
         dual_write.replicate_new_or_updated_role(role)
@@ -121,19 +121,10 @@ class DualWriteTestCase(TestCase):
         dual_write.prepare_for_update()
         role = self.fixture.update_custom_role(
             role,
-            resource_access=self._workspace_access_to_resource_definition(default, **kwargs),
+            resource_access=self.fixture.workspace_access(default, **kwargs),
         )
         dual_write.replicate_new_or_updated_role(role)
         return role
-
-    def _workspace_access_to_resource_definition(self, default: list[str], **kwargs: list[str]):
-        return [
-            (default, {}),
-            *[
-                (permissions, {"key": "group.id", "operation": "equal", "value": workspace})
-                for workspace, permissions in kwargs.items()
-            ],
-        ]
 
     def given_group(
         self, name: str, users: list[str] = [], service_accounts: list[str] = []
@@ -186,7 +177,7 @@ class DualWriteTestCase(TestCase):
         )
         policy: Policy
         for role in roles:
-            policy = self.fixture.add_role_to_group(role, group, self.tenant)
+            policy = self.fixture.add_role_to_group(role, group)
             dual_write_handler.generate_relations_to_add_roles([role])
         dual_write_handler.replicate()
         return policy
@@ -194,7 +185,7 @@ class DualWriteTestCase(TestCase):
     def given_roles_unassigned_from_group(self, group: Group, roles: list[Role]) -> Policy:
         """Unassign the [roles] to the [group]."""
         assert roles, "Roles must not be empty"
-        policy = self.fixture.remove_role_from_group(roles[0], group, self.tenant)
+        policy = self.fixture.remove_role_from_group(roles[0], group)
         dual_write_handler = RelationApiDualWriteGroupHandler(
             group,
             ReplicationEventType.UNASSIGN_ROLE,
@@ -202,7 +193,7 @@ class DualWriteTestCase(TestCase):
         )
         policy: Policy
         for role in roles:
-            policy = self.fixture.remove_role_from_group(role, group, self.tenant)
+            policy = self.fixture.remove_role_from_group(role, group)
             dual_write_handler.generate_relations_to_remove_roles([role])
         dual_write_handler.replicate()
         return policy
@@ -976,7 +967,7 @@ class RbacFixture:
         for permissions, attribute_filter in resource_access:
             access_list = [
                 Access(
-                    permission=Permission.objects.get_or_create(permission=permission, tenant=role.tenant)[0],
+                    permission=Permission.objects.get_or_create(permission=permission, tenant=self.public_tenant)[0],
                     role=role,
                     tenant=role.tenant,
                 )
@@ -999,8 +990,29 @@ class RbacFixture:
             Principal.objects.get_or_create(username=user_id, tenant=tenant, user_id=user_id)[0] for user_id in users
         ]
 
+    def workspace_access(self, default: list[str] = [], **kwargs: list[str]):
+        """
+        Generate a list of tuples representing workspace access permissions.
+
+        Args:
+            default (list[str]): A list of default permissions.
+            **kwargs (list[str]): Additional keyword arguments where the key is the workspace
+                                  and the value is a list of permissions for that workspace.
+
+        Returns:
+            list[tuple]: A list of tuples where each tuple contains a list of permissions and
+                         a dictionary describing an attribute filter.
+        """
+        return [
+            (default, {}),
+            *[
+                (permissions, {"key": "group.id", "operation": "equal", "value": workspace})
+                for workspace, permissions in kwargs.items()
+            ],
+        ]
+
     def new_group(
-        self, name: str, users: list[str], service_accounts: list[str], tenant: Tenant
+        self, name: str, tenant: Tenant, users: list[str] = [], service_accounts: list[str] = []
     ) -> Tuple[Group, list[Principal]]:
         """Create a new group with the given name, users, and tenant."""
         group = Group.objects.create(name=name, tenant=tenant)
@@ -1016,19 +1028,22 @@ class RbacFixture:
     def default_workspace(self, tenant: Tenant) -> Workspace:
         return Workspace.objects.get(type=Workspace.Types.DEFAULT, tenant=tenant)
 
-    def add_role_to_group(self, role: Role, group: Group, tenant: Tenant) -> Policy:
+    def add_role_to_group(self, role: Role, group: Group) -> Policy:
         """Add a role to a group for a given tenant and return the policy."""
         policy, _ = Policy.objects.get_or_create(
-            name=f"System Policy for Group {group.uuid}", group=group, tenant=tenant
+            name=f"System Policy for Group {group.uuid}", system=True, group=group, tenant=group.tenant
         )
         policy.roles.add(role)
         policy.save()
         return policy
 
-    def remove_role_from_group(self, role: Role, group: Group, tenant: Tenant) -> Policy:
+    def remove_role_from_group(self, role: Role, group: Group) -> Policy:
         """Remove a role to a group for a given tenant and return the policy."""
         policy, _ = Policy.objects.get_or_create(
-            name=f"System Policy_{group.name}_{tenant.tenant_name}", group=group, tenant=tenant
+            name=f"System Policy for Group {group.uuid}",
+            system=True,
+            group=group,
+            tenant=group.tenant,
         )
         policy.roles.remove(role)
         policy.save()

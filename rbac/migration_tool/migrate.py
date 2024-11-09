@@ -16,7 +16,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 
 import logging
-from typing import Iterable
+from typing import Iterable, Union
 
 from django.conf import settings
 from django.db import transaction
@@ -188,7 +188,10 @@ def migrate_cross_account_requests(tenant: Tenant, replicator: RelationReplicato
 
 
 def migrate_data(
-    exclude_apps: list = [], orgs: list = [], write_relationships: str = "False", skip_roles: bool = False
+    exclude_apps: list = [],
+    orgs: list = [],
+    write_relationships: Union[str, RelationReplicator] = "False",
+    skip_roles: bool = False
 ):
     """Migrate all data for all tenants."""
     # Only run this in maintanence mode or
@@ -220,7 +223,10 @@ def migrate_data(
     logger.info("Finished migrating data for all tenants")
 
 
-def _get_replicator(write_relationships: str) -> RelationReplicator:
+def _get_replicator(write_relationships: Union[str, RelationReplicator]) -> RelationReplicator:
+    if isinstance(write_relationships, RelationReplicator):
+        return write_relationships
+
     option = write_relationships.lower()
 
     if option == "true" or option == "relations-api":
