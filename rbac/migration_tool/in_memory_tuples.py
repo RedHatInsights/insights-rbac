@@ -33,35 +33,6 @@ class RelationTuple(NamedTuple):
             f"@{subject_part}"
         )
 
-    @staticmethod
-    def from_string(s: str) -> "RelationTuple":
-        """
-        Construct a RelationTuple from a string in the format:
-        resource#relation@subject
-        Where resource and subject are both object IDs in the format of object_type_namespace/object_type_name:object_id
-        """
-        resource_part, subject_part = s.split("@")
-        resource, relation = resource_part.split("#")
-        resource_type_namespace, resource_type_name, resource_id = re.match(r"([^/]+)/([^:]+):(.+)", resource).groups()
-
-        if "#" in subject_part:
-            subject, subject_relation = subject_part.split("#")
-        else:
-            subject, subject_relation = subject_part, ""
-
-        subject_type_namespace, subject_type_name, subject_id = re.match(r"([^/]+)/([^:]+):(.+)", subject).groups()
-
-        return RelationTuple(
-            resource_type_namespace=resource_type_namespace,
-            resource_type_name=resource_type_name,
-            resource_id=resource_id,
-            relation=relation,
-            subject_type_namespace=subject_type_namespace,
-            subject_type_name=subject_type_name,
-            subject_id=subject_id,
-            subject_relation=subject_relation,
-        )
-
 
 RelationPredicate = Callable[["RelationTuple"], bool]
 T = TypeVar("T", bound=Hashable)
