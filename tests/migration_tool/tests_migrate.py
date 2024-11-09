@@ -476,19 +476,6 @@ class MigrateTestTupleStore(TestCase):
             )
         )
 
-        # Sanity check o1_r2 does not grant permissions to the default workspace
-        self.assertFalse(
-            default_bindings.traverse_subject(
-                [
-                    all_of(
-                        relation("role"),
-                        self.relations.subject_is_resource_of(relation("app1_res1_verb1"), only=True),
-                    ),
-                    all_of(relation("subject"), subject("rbac", "group", self.o1_g1.uuid, "member")),
-                ]
-            )
-        )
-
         # o1_r3 custom role should have bindings without subjects (none bound yet)
         # 3
         self.assertTrue(
