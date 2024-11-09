@@ -17,7 +17,7 @@
 """Test the utils module."""
 from unittest.mock import Mock, call, patch
 
-from django.test import TestCase
+from django.test import TestCase, override_settings
 
 from api.models import Tenant
 from management.models import *
