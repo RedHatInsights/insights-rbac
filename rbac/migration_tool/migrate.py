@@ -16,7 +16,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 
 import logging
-from typing import Iterable
+from typing import Iterable, Union
 
 from kessel.relations.v1beta1 import common_pb2
 from management.models import Workspace
@@ -153,7 +153,9 @@ def migrate_data_for_tenant(tenant: Tenant, exclude_apps: list, replicator: Rela
     logger.info(f"Migrated {roles.count()} roles for tenant: {tenant.org_id}")
 
 
-def migrate_data(exclude_apps: list = [], orgs: list = [], write_relationships: str = "False"):
+def migrate_data(
+    exclude_apps: list = [], orgs: list = [], write_relationships: Union[str, RelationReplicator] = "False"
+):
     """Migrate all data for all tenants."""
     count = 0
     tenants = Tenant.objects.exclude(tenant_name="public")
@@ -173,7 +175,10 @@ def migrate_data(exclude_apps: list = [], orgs: list = [], write_relationships: 
     logger.info("Finished migrating data for all tenants")
 
 
-def _get_replicator(write_relationships: str) -> RelationReplicator:
+def _get_replicator(write_relationships: Union[str, RelationReplicator]) -> RelationReplicator:
+    if isinstance(write_relationships, RelationReplicator):
+        return write_relationships
+
     option = write_relationships.lower()
 
     if option == "true" or option == "relations-api":
