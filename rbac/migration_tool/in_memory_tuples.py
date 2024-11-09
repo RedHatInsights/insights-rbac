@@ -206,8 +206,6 @@ class TupleSet:
                 resource(tuple.subject_type_namespace, tuple.subject_type_name, tuple.subject_id)
             )
             # Now match these if those found match the predicates.
-            # Each tuple in the traversed list should be matched by at least one predicate
-            # And each predicate must be matched at least once.
             matching, _ = traversed.find_group_with_tuples(
                 predicates,
                 group_by=lambda t: (t.resource_type_namespace, t.resource_type_name, t.resource_id),
