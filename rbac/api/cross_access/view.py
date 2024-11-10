@@ -152,11 +152,8 @@ class CrossAccountRequestViewSet(
     def perform_update(self, serializer):
         current = serializer.instance
         request = self.request
-        if serializer.partial:
-            if request.data.get("status"):
-                self.update_status(current, request.data.get("status"))
-            else:
-                serializer.save()
+        if serializer.partial and request.data.get("status"):
+            self.update_status(current, request.data.get("status"))
         else:
             serializer.save()
 
