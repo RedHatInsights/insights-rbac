@@ -147,7 +147,7 @@ class CrossAccountRequestViewSet(
     def update(self, request, *args, **kwargs):
         """Update a cross-account request. TAM requestor use it to update their requesters."""
         validate_uuid(kwargs.get("pk"), "cross-account request uuid validation")
-        return super().update(request=request, args=args, kwargs=kwargs)
+        return super().update(request=request, *args, **kwargs)
 
     def perform_update(self, serializer):
         current = serializer.instance
