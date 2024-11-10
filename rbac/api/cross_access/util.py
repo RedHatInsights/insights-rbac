@@ -38,6 +38,7 @@ def check_cross_request_expiry():
             logger.info("Expiring cross-account request with uuid: %s", car.pk)
             car.status = "expired"
             expired_cars.append(car.pk)
+            # TODO: remove role binding tuples for roles and user here
             car.save()
 
     logger.info("Completed clean up of %d cross-account requests, %d expired.", len(cars), len(expired_cars))

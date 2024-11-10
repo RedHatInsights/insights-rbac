@@ -256,7 +256,7 @@ class CrossAccountRequestViewSet(
         car.status = status
         if status == "approved":
             create_cross_principal(car.user_id, target_org=car.target_org)
-
+            # TODO: create role binding tuples for roles and user here
         car.save()
 
     def check_patch_permission(self, request, update_obj):
