@@ -16,6 +16,7 @@
 #
 
 """View for cross access request."""
+from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
 from django_filters import rest_framework as filters
@@ -104,7 +105,7 @@ class CrossAccountRequestViewSet(
     def get_queryset(self):
         """Get query set based on the queryBy key word."""
         if self.request.method in ["PATCH", "PUT"]:
-            return CrossAccountRequest.objects.all()
+            return CrossAccountRequest.objects.all().select_for_update()
 
         if validate_and_get_key(self.request.query_params, QUERY_BY_KEY, VALID_QUERY_BY_KEY, ORG_ID) == ORG_ID:
             return CrossAccountRequest.objects.filter(target_org=self.request.user.org_id)
@@ -140,33 +141,24 @@ class CrossAccountRequestViewSet(
 
     def partial_update(self, request, *args, **kwargs):
         """Patch a cross-account request. Target account admin use it to update status of the request."""
-        validate_uuid(kwargs.get("pk"), "cross-account request uuid validation")
+        return super().partial_update(request=request, *args, **kwargs)
 
-        current = self.get_object()
-        self.check_patch_permission(request, current)
-
-        self.validate_and_format_patch_input(request.data)
-
-        kwargs["partial"] = True
-        response = super().update(request=request, *args, **kwargs)
-        if response.status_code and response.status_code is http_status.HTTP_200_OK:
-            if request.data.get("status"):
-                self.update_status(current, request.data.get("status"))
-                return Response(CrossAccountRequestDetailSerializer(current).data)
-        return response
-
+    @transaction.atomic
     def update(self, request, *args, **kwargs):
         """Update a cross-account request. TAM requestor use it to update their requesters."""
         validate_uuid(kwargs.get("pk"), "cross-account request uuid validation")
-
-        current = self.get_object()
-        self.check_update_permission(request, current)
-
-        request.data["target_org"] = current.target_org
-
-        self.validate_and_format_input(request.data)
-
         return super().update(request=request, args=args, kwargs=kwargs)
+
+    def perform_update(self, serializer):
+        current = serializer.instance
+        request = self.request
+        if serializer.partial:
+            if request.data.get("status"):
+                self.update_status(current, request.data.get("status"))
+            else:
+                serializer.save()
+        else:
+            serializer.save()
 
     def retrieve(self, request, *args, **kwargs):
         """Retrieve cross account requests by request_id."""

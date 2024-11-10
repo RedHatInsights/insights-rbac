@@ -52,3 +52,15 @@ class CrossAccountRequestAccessPermission(permissions.BasePermission):
             return False
 
         return True
+
+    def has_object_permission(self, request, view, obj):
+        """Check permission based on identity and object."""
+        if request.method == "PUT":
+            view.check_update_permission(request, obj)
+            request.data["target_org"] = obj.target_org
+            view.validate_and_format_input(request.data)
+        elif request.method == "PATCH":
+            view.check_patch_permission(request, obj)
+            view.validate_and_format_patch_input(request.data)
+
+        return True
