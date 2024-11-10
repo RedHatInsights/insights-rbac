@@ -91,8 +91,8 @@ class V2rolebinding:
     id: str
     role: V2role
     resource: V2boundresource
-    groups: frozenset[str]
-    users: frozenset[str]
+    groups: frozenset[str] = frozenset()
+    users: frozenset[str] = frozenset()
 
     def as_minimal_dict(self) -> dict:
         """Convert the V2 role binding to a dictionary, excluding resource and original role."""
