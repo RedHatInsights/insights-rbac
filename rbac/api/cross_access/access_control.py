@@ -37,7 +37,7 @@ class CrossAccountRequestAccessPermission(permissions.BasePermission):
                 return request.user.internal
 
             if request.method in ["PUT", "PATCH"]:
-                # The permission depends on the object to be updated, strict permission check in view.
+                # The permission depends on the object to be updated, see has_object_permission
                 return True
 
             # For list
