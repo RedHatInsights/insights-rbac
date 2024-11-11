@@ -52,7 +52,7 @@ from management.tasks import (
 from management.tenant_service.v2 import V2TenantBootstrapService
 from rest_framework import status
 
-from api.common.pagination import StandardResultsSetPagination
+from api.common.pagination import StandardResultsSetPagination, WSGIRequestResultsSetPagination
 from api.models import Tenant
 from api.tasks import cross_account_cleanup, populate_tenant_account_id_in_worker, run_migration_resource_deletion
 from api.utils import RESOURCE_MODEL_MAPPING, get_resources
@@ -577,9 +577,10 @@ def migration_resources(request):
         return HttpResponse("Resource deletion is running in a background worker.", status=202)
     elif request.method == "GET":
         resource_objs = get_resources(resource, org_id)
-        limit = request.GET.get("limit", 1000)
-        resource_list = [str(resource_obj.id) for resource_obj in resource_objs[:limit]]
-        return HttpResponse(json.dumps(resource_list), content_type="application/json", status=200)
+        pg = WSGIRequestResultsSetPagination()
+        page = pg.paginate_queryset(resource_objs, request)
+        page = [str(record.id) for record in page]
+        return HttpResponse(json.dumps(page), content_type="application/json", status=200)
     return HttpResponse(f"Invalid method, {request.method}", status=405)
 
 

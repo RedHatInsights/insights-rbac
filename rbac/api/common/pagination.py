@@ -91,3 +91,12 @@ class StandardResultsSetPagination(LimitOffsetPagination):
                 "data": data,
             }
         )
+
+
+class WSGIRequestResultsSetPagination(StandardResultsSetPagination):
+    """Create pagination class with page size and internal flag."""
+
+    def get_limit(self, request):
+        """Get limit from query params."""
+        request.query_params = request.GET
+        return super().get_limit(request)
