@@ -35,9 +35,12 @@ from migration_tool.in_memory_tuples import (
     resource,
     resource_id,
     subject,
+    InMemoryRelationReplicator,
 )
 from tests.api.cross_access.fixtures import CrossAccountRequestTest
 
+from django.test.utils import override_settings
+from functools import partial
 
 URL_LIST = reverse("v1_api:cross-list")
 
@@ -306,17 +309,26 @@ class CrossAccountRequestViewTests(CrossAccountRequestTest):
 
     def test_create_requests_fail_for_no_account(self):
         """Test the creation of cross account request fails when the account doesn't exist."""
-        self.data4create["target_account"] = self.another_account
-        self.data4create["target_org"] = self.another_org_id
+
+        cross_account_request_with_missing_account = {
+            "target_account": "9999111",
+            "target_org": "9999",
+            "start_date": self.format_date(self.ref_time),
+            "end_date": self.format_date(self.ref_time + timedelta(90)),
+            "roles": ["role_1", "role_2"],
+        }
+
         client = APIClient()
         response = client.post(
-            f"{URL_LIST}?", self.data4create, format="json", **self.associate_non_admin_request.META
+            f"{URL_LIST}?",
+            cross_account_request_with_missing_account,
+            format="json",
+            **self.associate_non_admin_request.META,
         )
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertEqual(
-            response.data.get("errors")[0].get("detail"), f"Org ID '{self.another_org_id}' does not exist."
-        )
+        data = cross_account_request_with_missing_account["target_org"]
+        self.assertEqual(response.data.get("errors")[0].get("detail"), f"Org ID '{data}' does not exist.")
 
     def test_create_requests_towards_their_own_account_fail(self):
         """Test the creation of cross account request towards their own account fails."""
@@ -760,6 +772,7 @@ class CrossAccountRequestViewTests(CrossAccountRequestTest):
         self.assertEqual(response.data.get("target_org"), self.org_id)
         self.assertEqual(len(response.data.get("roles")), 2)
 
+    @override_settings(PRINCIPAL_USER_DOMAIN="localhost")
     def test_approval_replicates_bindings(self):
         """Test that when cross account access is approved, role bindings are replicated to Relations."""
         # Modify pending request such that it includes roles
@@ -768,17 +781,20 @@ class CrossAccountRequestViewTests(CrossAccountRequestTest):
         # Should not include this one
         self.fixture.new_system_role("NotGranted", ["app1:resource1:action1"])
 
-        # Assume tenant bootstrapped for v2
-        self.fixture.bootstrap_tenant(self.tenant)
-
         # Add roles to request for user 2222222 and approve it.
         self.add_roles_to_request(self.request_4, [farmer, fisher])
-        self.approve_request(self.request_4)
+
+        with patch(
+            "api.cross_access.relation_api_dual_write_cross_access_handler.OutboxReplicator",
+            new=partial(InMemoryRelationReplicator, self.relations),
+        ):
+            # generated relations to approve request
+            self.approve_request(self.request_4)
 
         # Check that the roles are now bound to the user in the target account (default workspace)
         default_workspace_id = Workspace.objects.get(tenant__org_id=self.org_id, type=Workspace.Types.DEFAULT).id
         default_bindings = self.relations.find_tuples(
-            # Tuples for bindings to the deafult workspace
+            # Tuples for bindings to the default workspace
             all_of(resource("rbac", "workspace", default_workspace_id), relation("binding"))
         )
 
@@ -790,19 +806,22 @@ class CrossAccountRequestViewTests(CrossAccountRequestTest):
             # where the resource is one of the default role bindings...
             group_filter=lambda group: group[0] == "rbac"
             and group[1] == "role_binding"
-            and group[2] in {str(binding.resource_id) for binding in default_bindings},
+            and group[2] in {str(binding.subject_id) for binding in default_bindings},
             # and where one of the tuples from that binding has...
-            predicates=all_of(
-                # a subject relation
-                relation("subject"),
-                # to the user in the CAR
-                subject("rbac", "principal", "localhost/2222222"),
-            ),
+            predicates=[
+                all_of(
+                    # a subject relation
+                    relation("subject"),
+                    # to the user in the CAR
+                    subject("rbac", "principal", "localhost/2222222"),
+                ),
+                relation("role"),
+            ],
         )
 
         # Assert the roles are correct for these bindings – one per role that was included in the request,
         # and not any not included in the request
-        self.assertEqual(len(cross_account_bindings), 2, f"Expected 2 bindings but got {cross_account_bindings}")
+        self.assertEqual(len(cross_account_bindings), 2, f"Expected 2 bindings but got {len(cross_account_bindings)}")
 
         # Collect all the bound roles by iterating over the bindings and getting the subjects of the role relation
         bound_roles = {

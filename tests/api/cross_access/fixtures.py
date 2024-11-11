@@ -25,10 +25,8 @@ from rest_framework.test import APIClient
 
 from datetime import timedelta
 from management.tenant_service.v2 import V2TenantBootstrapService
-from migration_tool.in_memory_tuples import (
-    InMemoryRelationReplicator,
-    InMemoryTuples,
-)
+from migration_tool.in_memory_tuples import InMemoryRelationReplicator, InMemoryTuples
+
 from tests.identity_request import IdentityRequest
 from tests.management.role.test_dual_write import RbacFixture
 
@@ -86,6 +84,7 @@ class CrossAccountRequestTest(IdentityRequest):
             |     xxxxxx     | 2222222 |    now     | now+10day | expired  |       |
             |     123456     | 1111111 |    now     | now_10day | pending  |       |
         """
+
         self.another_account = "123456"
         self.another_org_id = "54321"
 
@@ -99,13 +98,14 @@ class CrossAccountRequestTest(IdentityRequest):
 
         public_tenant = Tenant.objects.get(tenant_name="public")
 
-        t = Tenant.objects.create(
+        tenant_for_target_account = Tenant.objects.create(
             tenant_name=f"acct{self.data4create['target_account']}",
             account_id=self.data4create["target_account"],
             org_id=self.data4create["target_org"],
         )
-        t.ready = True
-        t.save()
+        tenant_for_target_account.ready = True
+        tenant_for_target_account.save()
+        self.fixture.bootstrap_tenant(tenant_for_target_account)
 
         self.role_1 = Role.objects.create(name="role_1", system=True, tenant=public_tenant)
         self.role_2 = Role.objects.create(name="role_2", system=True, tenant=public_tenant)
@@ -162,6 +162,16 @@ class CrossAccountRequestTest(IdentityRequest):
             end_date=self.ref_time + timedelta(10),
             status="approved",
         )
+        # Assume tenant bootstrapped for v2
+        self.fixture.bootstrap_tenant(self.tenant)
+
+        not_anemic_tenant = Tenant.objects.create(
+            tenant_name=f"acct{self.not_anemic_account}",
+            account_id=self.not_anemic_account,
+            org_id=self.not_anemic_org_id,
+        )
+
+        self.fixture.bootstrap_tenant(not_anemic_tenant)
 
     def tearDown(self):
         """Tear down cross account request model tests."""

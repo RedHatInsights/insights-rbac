@@ -23,17 +23,18 @@ from django_filters import rest_framework as filters
 from management.filters import CommonFilters
 from management.models import Role
 from management.principal.proxy import PrincipalProxy
+from management.relation_replicator.relation_replicator import ReplicationEventType
 from management.utils import validate_and_get_key, validate_limit_and_offset, validate_uuid
 from rest_framework import mixins, viewsets
-from rest_framework import status as http_status
 from rest_framework.filters import OrderingFilter
-from rest_framework.response import Response
 from rest_framework.serializers import ValidationError
 
 from api.cross_access.access_control import CrossAccountRequestAccessPermission
+from api.cross_access.relation_api_dual_write_cross_access_handler import RelationApiDualWriteCrossAccessHandler
 from api.cross_access.serializer import CrossAccountRequestDetailSerializer, CrossAccountRequestSerializer
 from api.cross_access.util import create_cross_principal
 from api.models import CrossAccountRequest, Tenant
+
 
 QUERY_BY_KEY = "query_by"
 ORG_ID = "target_org"
@@ -150,6 +151,7 @@ class CrossAccountRequestViewSet(
         return super().update(request=request, *args, **kwargs)
 
     def perform_update(self, serializer):
+        """Update the cross account request and publish outbox when cross account request is approved."""
         current = serializer.instance
         request = self.request
         if serializer.partial and request.data.get("status"):
@@ -252,8 +254,14 @@ class CrossAccountRequestViewSet(
         """Update the status of a cross-account-request."""
         car.status = status
         if status == "approved":
-            create_cross_principal(car.user_id, target_org=car.target_org)
-            # TODO: create role binding tuples for roles and user here
+            cross_principal = create_cross_principal(car.user_id, target_org=car.target_org)
+            cross_account_roles = car.roles.all()
+            if any(True for _ in cross_account_roles):
+                dual_write_handler = RelationApiDualWriteCrossAccessHandler(
+                    cross_principal, ReplicationEventType.APPROVE_CROSS_ACCOUNT_REQUEST
+                )
+                dual_write_handler.generate_relations_to_add_roles(cross_account_roles)
+                dual_write_handler.replicate()
         car.save()
 
     def check_patch_permission(self, request, update_obj):

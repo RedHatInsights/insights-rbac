@@ -53,6 +53,8 @@ class ReplicationEventType(str, Enum):
     MIGRATE_TENANT_GROUPS = "migrate_tenant_groups"
     CUSTOMIZE_DEFAULT_GROUP = "customize_default_group"
     MIGRATE_SYSTEM_ROLE_ASSIGMENT = "migrate_system_role_assignment"
+    APPROVE_CROSS_ACCOUNT_REQUEST = "approve_cross_account_request"
+    EXPIRE_CROSS_ACCOUNT_REQUEST = "expire_cross_account_request"
 
 
 class ReplicationEvent:

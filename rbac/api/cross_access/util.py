@@ -21,7 +21,9 @@ import logging
 from django.db.models import Q
 from django.utils import timezone
 from management.models import Principal
+from management.relation_replicator.relation_replicator import ReplicationEventType
 
+from api.cross_access.relation_api_dual_write_cross_access_handler import RelationApiDualWriteCrossAccessHandler
 from api.models import CrossAccountRequest, Tenant
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
@@ -38,7 +40,14 @@ def check_cross_request_expiry():
             logger.info("Expiring cross-account request with uuid: %s", car.pk)
             car.status = "expired"
             expired_cars.append(car.pk)
-            # TODO: remove role binding tuples for roles and user here
+            principal = create_cross_principal(car.user_id, car.target_org)
+            cross_account_roles = car.roles.all()
+            if any(True for _ in cross_account_roles):
+                dual_write_handler = RelationApiDualWriteCrossAccessHandler(
+                    principal, ReplicationEventType.EXPIRE_CROSS_ACCOUNT_REQUEST
+                )
+                dual_write_handler.generate_relations_to_remove_roles(cross_account_roles)
+                dual_write_handler.replicate()
             car.save()
 
     logger.info("Completed clean up of %d cross-account requests, %d expired.", len(cars), len(expired_cars))
@@ -51,7 +60,7 @@ def create_cross_principal(user_id, target_org=None):
     associate_tenant = Tenant.objects.get(org_id=target_org)
 
     # Create the principal in public schema
-    cross_account_principal = create_principal_with_tenant(principal_name, associate_tenant)
+    cross_account_principal = create_principal_with_tenant(principal_name, associate_tenant, user_id)
 
     return cross_account_principal
 
@@ -61,9 +70,9 @@ def get_cross_principal_name(target_org, user_id):
     return f"{target_org}-{user_id}"
 
 
-def create_principal_with_tenant(principal_name, associate_tenant):
+def create_principal_with_tenant(principal_name, associate_tenant, user_id):
     """Create cross-account principal in tenant."""
     cross_account_principal, _ = Principal.objects.get_or_create(
-        username=principal_name, cross_account=True, tenant=associate_tenant
+        username=principal_name, cross_account=True, tenant=associate_tenant, user_id=user_id
     )
     return cross_account_principal

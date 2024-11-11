@@ -18,8 +18,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 from dataclasses import dataclass
 from typing import Tuple
 
+from django.conf import settings
 from kessel.relations.v1beta1.common_pb2 import Relationship
-from management.principal.model import Principal
 from migration_tool.utils import create_relationship
 
 
@@ -146,7 +146,7 @@ def role_binding_group_subject_tuple(role_binding_id: str, group_uuid: str) -> R
 
 def role_binding_user_subject_tuple(role_binding_id: str, user_id: str) -> Relationship:
     """Create a relationship tuple for a role binding and a user."""
-    id = f"redhat/{user_id}"
+    id = f"{settings.PRINCIPAL_USER_DOMAIN}/{user_id}"
     return create_relationship(
         ("rbac", "role_binding"),
         role_binding_id,

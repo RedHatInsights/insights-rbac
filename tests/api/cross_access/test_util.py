@@ -36,9 +36,12 @@ from migration_tool.in_memory_tuples import (
     resource,
     resource_id,
     subject,
+    InMemoryRelationReplicator,
 )
 from tests.api.cross_access.fixtures import CrossAccountRequestTest
 
+from django.test.utils import override_settings
+from functools import partial
 
 URL_LIST = reverse("v1_api:cross-list")
 
@@ -46,31 +49,53 @@ URL_LIST = reverse("v1_api:cross-list")
 class CrossAccountRequestUtilTests(CrossAccountRequestTest):
     """Test the cross access util module."""
 
+    def setUp(self):
+        """Set up the cross account request for tests."""
+        super().setUp()
+
+        self.another_tenant_data = {
+            "target_account": self.another_account,
+            "target_org": self.another_org_id,
+            "start_date": self.format_date(self.ref_time),
+            "end_date": self.format_date(self.ref_time + timedelta(90)),
+            "roles": ["role_1", "role_2"],
+        }
+
+        self.another_tenant = Tenant.objects.create(
+            tenant_name=f"acct{self.another_tenant_data['target_account']}",
+            account_id=self.another_tenant_data["target_account"],
+            org_id=self.another_tenant_data["target_org"],
+        )
+        self.another_tenant.ready = True
+        self.another_tenant.save()
+        self.fixture.bootstrap_tenant(self.another_tenant)
+
+    @override_settings(PRINCIPAL_USER_DOMAIN="localhost")
     def test_expired_cross_account_requests_remove_bindings(self):
         """Test that there are no bindings after a CAR expires."""
-
-        # Start by approving a CAR with roles
 
         # Modify pending request such that it includes roles
         farmer = self.fixture.new_system_role("Farmer", ["farm:soil:rake"])
         fisher = self.fixture.new_system_role("Fisher", ["stream:fish:catch"])
 
-        # Assume tenant bootstrapped for v2
-        self.fixture.bootstrap_tenant(self.tenant)
-
         # Add roles to request for user 2222222 and approve it.
         self.add_roles_to_request(self.request_4, [farmer, fisher])
-        self.approve_request(self.request_4)
+        with patch(
+            "api.cross_access.relation_api_dual_write_cross_access_handler.OutboxReplicator",
+            new=partial(InMemoryRelationReplicator, self.relations),
+        ):
+            self.approve_request(self.request_4)
 
-        after_expiration = self.request_4.end_date + timedelta(seconds=1)
-        with patch("django.utils.timezone.now", return_value=after_expiration):
-            util.check_cross_request_expiry()
+            after_expiration = self.request_4.end_date + timedelta(seconds=1)
+
+            with patch("django.utils.timezone.now", return_value=after_expiration):
+                util.check_cross_request_expiry()
 
         # Check that the bindings for the tenant's resources are gone
         # Check that the roles are now bound to the user in the target account (default workspace)
         default_workspace_id = Workspace.objects.get(tenant__org_id=self.org_id, type=Workspace.Types.DEFAULT).id
         default_bindings = self.relations.find_tuples(
-            # Tuples for bindings to the deafult workspace
+            # Tuples for bindings to the default workspace
             all_of(resource("rbac", "workspace", default_workspace_id), relation("binding"))
         )
 
@@ -81,16 +106,24 @@ class CrossAccountRequestUtilTests(CrossAccountRequestTest):
             # where the resource is one of the default role bindings...
             group_filter=lambda group: group[0] == "rbac"
             and group[1] == "role_binding"
-            and group[2] in {str(binding.resource_id) for binding in default_bindings},
+            and group[2] in {str(binding.subject_id) for binding in default_bindings},
             # and where one of the tuples from that binding has...
-            predicates=all_of(
-                # a subject relation
-                relation("subject"),
-                # to the user in the CAR
-                subject("rbac", "principal", "localhost/2222222"),
-            ),
+            predicates=[
+                all_of(
+                    # a subject relation
+                    relation("subject"),
+                    # to the user in the CAR
+                    subject("rbac", "principal", "localhost/2222222"),
+                ),
+                relation("role"),
+            ],
         )
 
         self.assertEqual(
-            len(cross_account_bindings), 0, f"Expected no cross account bindings, found {cross_account_bindings}"
+            len(cross_account_bindings),
+            0,
+            f"Expected no cross account bindings, found {len(cross_account_bindings)}",
         )
+
+    def tearDown(self):
+        """Tear down cross account request model tests."""
