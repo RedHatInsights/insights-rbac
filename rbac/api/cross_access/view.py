@@ -22,7 +22,7 @@ from django_filters import rest_framework as filters
 from management.filters import CommonFilters
 from management.models import Role
 from management.principal.proxy import PrincipalProxy
-from management.utils import validate_and_get_key, validate_limit_and_offset, validate_uuid
+from management.utils import validate_and_get_key, validate_uuid
 from rest_framework import mixins, viewsets
 from rest_framework import status as http_status
 from rest_framework.filters import OrderingFilter
@@ -130,8 +130,6 @@ class CrossAccountRequestViewSet(
 
     def list(self, request, *args, **kwargs):
         """List cross account requests for account/user_id."""
-        validate_limit_and_offset(self.request.query_params)
-
         result = super().list(request=request, args=args, kwargs=kwargs)
         # The approver's view requires requester's info such as first name, last name, email address.
         if validate_and_get_key(self.request.query_params, QUERY_BY_KEY, VALID_QUERY_BY_KEY, ORG_ID) == ORG_ID:
