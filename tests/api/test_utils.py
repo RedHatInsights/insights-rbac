@@ -4,78 +4,29 @@ from django.test import TestCase
 from api.models import Tenant
 from api.utils import migration_resource_deletion
 from management.models import BindingMapping, Role, Workspace
+from management.relation_replicator.noop_replicator import NoopReplicator
 from management.tenant_mapping.model import TenantMapping
+from management.tenant_service.v2 import V2TenantBootstrapService
 
 
 class TestAPIUtils(TestCase):
     def test_migration_resource_deletion(self):
         org_id_1 = "12345678"
         org_id_2 = "87654321"
-        tenant = Tenant.objects.create(
-            org_id=org_id_1,
-        )
-        another_tenant = Tenant.objects.create(
-            org_id=org_id_2,
-        )
-        root_workspaces = Workspace.objects.bulk_create(
-            [
-                Workspace(
-                    name="Test Tenant Root Workspace",
-                    type=Workspace.Types.ROOT,
-                    tenant=tenant,
-                ),
-                Workspace(
-                    name="Test Tenant Root Workspace",
-                    type=Workspace.Types.ROOT,
-                    tenant=another_tenant,
-                ),
-            ]
-        )
-        Workspace.objects.bulk_create(
-            [
-                Workspace(
-                    name="Test Tenant Default Workspace",
-                    type=Workspace.Types.DEFAULT,
-                    tenant=tenant,
-                    parent=root_workspaces[0],
-                ),
-                Workspace(
-                    name="Test Tenant Default Workspace",
-                    type=Workspace.Types.DEFAULT,
-                    tenant=another_tenant,
-                    parent=root_workspaces[1],
-                ),
-            ]
-        )
+        bootstrap_service = V2TenantBootstrapService(NoopReplicator())
+        bootstrapped_tenant_1 = bootstrap_service.new_bootstrapped_tenant(org_id_1)
+        bootstrapped_tenant_2 = bootstrap_service.new_bootstrapped_tenant(org_id_2)
+        tenant = bootstrapped_tenant_1.tenant
+        another_tenant = bootstrapped_tenant_2.tenant
+
         migration_resource_deletion("workspace", org_id_2)
         self.assertFalse(Workspace.objects.filter(tenant=another_tenant).exists())
         self.assertEqual(Workspace.objects.filter(tenant=tenant).count(), 2)
-        root = Workspace.objects.create(
-            name="Test Tenant Root Workspace",
-            type=Workspace.Types.ROOT,
-            tenant=another_tenant,
-        )
-        Workspace.objects.create(
-            name="Test Tenant Default Workspace",
-            type=Workspace.Types.DEFAULT,
-            tenant=another_tenant,
-            parent=root,
-        )
 
         migration_resource_deletion("workspace", None)
         self.assertFalse(Workspace.objects.exists())
 
         # Delete tenantmappings
-        TenantMapping.objects.bulk_create(
-            [
-                TenantMapping(
-                    tenant=tenant,
-                ),
-                TenantMapping(
-                    tenant=another_tenant,
-                ),
-            ]
-        )
         migration_resource_deletion("mapping", org_id_2)
         self.assertFalse(TenantMapping.objects.filter(tenant=another_tenant).exists())
 
@@ -105,8 +56,8 @@ class TestAPIUtils(TestCase):
         BindingMapping.objects.create(
             role=system_role,
         )
-        migration_resource_deletion("binding", org_id_2)
-        self.assertFalse(BindingMapping.objects.filter(role=another_role).exists())
+        with self.assertRaises(ValueError):
+            migration_resource_deletion("binding", org_id_2)
 
         migration_resource_deletion("binding", None)
         self.assertFalse(BindingMapping.objects.exists())

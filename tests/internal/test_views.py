@@ -27,8 +27,9 @@ import json
 
 from api.models import User, Tenant
 from management.models import BindingMapping, Group, Permission, Policy, Role, Workspace
+from management.relation_replicator.noop_replicator import NoopReplicator
+from management.tenant_service.v2 import V2TenantBootstrapService
 from management.workspace.model import Workspace
-from management.tenant_mapping.model import TenantMapping
 from tests.identity_request import IdentityRequest
 
 
@@ -579,39 +580,31 @@ class InternalViewsetTests(IdentityRequest):
     def test_listing_migration_resources(self):
         """Test that we can list migration resources."""
         org_id = "12345678"
-        another_tenant = Tenant.objects.create(
-            org_id=org_id,
+        bootstrap_service = V2TenantBootstrapService(NoopReplicator())
+        bootstrapped_tenant = bootstrap_service.bootstrap_tenant(self.tenant)
+        another_bootstrapped_tenant = bootstrap_service.new_bootstrapped_tenant(org_id)
+        another_tenant = another_bootstrapped_tenant.tenant
+        root_workspaces = [bootstrapped_tenant.root_workspace, another_bootstrapped_tenant.root_workspace]
+        default_workspaces = [
+            bootstrapped_tenant.default_workspace,
+            another_bootstrapped_tenant.default_workspace,
+        ]
+
+        # Test limit and offset
+        response = self.client.get(
+            "/_private/api/utils/migration_resources/?resource=workspace&limit=1",
+            **self.request.META,
         )
-        root_workspaces = Workspace.objects.bulk_create(
-            [
-                Workspace(
-                    name="Test Tenant Root Workspace",
-                    type=Workspace.Types.ROOT,
-                    tenant=self.tenant,
-                ),
-                Workspace(
-                    name="Test Tenant Root Workspace",
-                    type=Workspace.Types.ROOT,
-                    tenant=another_tenant,
-                ),
-            ]
+        workspace_list_1 = json.loads(response.getvalue())
+        self.assertEqual(len(workspace_list_1), 1)
+        response = self.client.get(
+            "/_private/api/utils/migration_resources/?resource=workspace&limit=1&offset=1",
+            **self.request.META,
         )
-        default_workspaces = Workspace.objects.bulk_create(
-            [
-                Workspace(
-                    name="Test Tenant Default Workspace",
-                    type=Workspace.Types.DEFAULT,
-                    tenant=self.tenant,
-                    parent=root_workspaces[0],
-                ),
-                Workspace(
-                    name="Test Tenant Default Workspace",
-                    type=Workspace.Types.DEFAULT,
-                    tenant=another_tenant,
-                    parent=root_workspaces[1],
-                ),
-            ]
-        )
+        workspace_list_2 = json.loads(response.getvalue())
+        self.assertEqual(len(workspace_list_2), 1)
+        self.assertNotEqual(workspace_list_1, workspace_list_2)
+
         response = self.client.get(
             "/_private/api/utils/migration_resources/?resource=workspace",
             **self.request.META,
@@ -632,16 +625,7 @@ class InternalViewsetTests(IdentityRequest):
         )
 
         # Listing tenantmappings
-        tenant_mappings = TenantMapping.objects.bulk_create(
-            [
-                TenantMapping(
-                    tenant=self.tenant,
-                ),
-                TenantMapping(
-                    tenant=another_tenant,
-                ),
-            ]
-        )
+        tenant_mappings = [bootstrapped_tenant.mapping, another_bootstrapped_tenant.mapping]
         response = self.client.get(
             "/_private/api/utils/migration_resources/?resource=mapping",
             **self.request.META,
