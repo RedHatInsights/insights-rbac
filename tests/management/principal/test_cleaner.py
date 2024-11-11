@@ -400,7 +400,7 @@ class PrincipalUMBTests(IdentityRequest):
         },
     )
     @patch("management.principal.cleaner.UMB_CLIENT")
-    @override_settings(PRINCIPAL_CLEANUP_UPDATE_ENABLED_UMB=True, V1_BOOTSTRAP_ADD_USER_ID=True)
+    @override_settings(PRINCIPAL_CLEANUP_UPDATE_ENABLED_UMB=True)
     def test_principal_creation_event_does_not_create_principal(self, client_mock, proxy_mock):
         """Test that we can run principal creation event."""
         public_tenant = Tenant.objects.get(tenant_name="public")
@@ -435,7 +435,7 @@ class PrincipalUMBTests(IdentityRequest):
         },
     )
     @patch("management.principal.cleaner.UMB_CLIENT")
-    @override_settings(PRINCIPAL_CLEANUP_UPDATE_ENABLED_UMB=True, V1_BOOTSTRAP_ADD_USER_ID=True)
+    @override_settings(PRINCIPAL_CLEANUP_UPDATE_ENABLED_UMB=True)
     def test_principal_creation_event_updates_existing_principal(self, client_mock, proxy_mock):
         """Test that we can run principal creation event."""
         public_tenant = Tenant.objects.get(tenant_name="public")
