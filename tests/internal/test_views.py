@@ -28,6 +28,7 @@ import json
 from api.models import User, Tenant
 from management.models import Group, Permission, Policy, Role
 from management.role.model import BindingMapping
+from management.workspace.model import Workspace
 from tests.identity_request import IdentityRequest
 
 
@@ -555,3 +556,22 @@ class InternalViewsetTests(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         binding_attrs.update({"id": binding_mapping.id, "role": self.role.id})
         self.assertEqual(json.loads(response.content.decode()), [binding_attrs])
+
+    def test_bootstrapping_tenant(self):
+        """Test that we can bootstrap a tenant."""
+        org_id = "12345"
+        response = self.client.post(
+            f"/_private/api/utils/bootstrap_tenant/?org_id={org_id}",
+            **self.request.META,
+        )
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+        tenant = Tenant.objects.create(org_id=org_id)
+        response = self.client.post(
+            f"/_private/api/utils/bootstrap_tenant/?org_id={org_id}",
+            **self.request.META,
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        Workspace.objects.filter(tenant=tenant, type=Workspace.Types.ROOT).exists()
+        Workspace.objects.filter(tenant=tenant, type=Workspace.Types.DEFAULT).exists()
+        self.assertTrue(getattr(tenant, "tenant_mapping"))
