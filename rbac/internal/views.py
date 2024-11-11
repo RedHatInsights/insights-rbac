@@ -505,9 +505,8 @@ def data_migration(request):
 def bootstrap_tenant(request):
     """View method for bootstrapping a tenant.
 
-    POST /_private/api/utils/bootstrap_tenant/?org_id=12345&acct=98765
+    POST /_private/api/utils/bootstrap_tenant/?org_id=12345
     org_id is required,
-    acct is the account number which is optional
     """
     if request.method != "POST":
         return HttpResponse('Invalid method, only "POST" is allowed.', status=405)
@@ -516,10 +515,10 @@ def bootstrap_tenant(request):
     org_id = request.GET.get("org_id")
     if not org_id:
         return HttpResponse('Invalid request, must supply the "org_id" query parameter.', status=400)
-    acct = request.GET.get("acct", "")
+    tenant = get_object_or_404(Tenant, org_id=org_id)
     bootstrap_service = V2TenantBootstrapService(OutboxReplicator())
-    bootstrap_service._get_or_bootstrap_tenant(org_id, acct)
-    return HttpResponse("Bootstrap tenant finished.", status=200)
+    bootstrap_service.bootstrap_tenant(tenant)
+    return HttpResponse(f"Bootstrap tenant with org_id {org_id} finished.", status=200)
 
 
 class SentryDiagnosticError(Exception):

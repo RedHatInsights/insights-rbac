@@ -27,12 +27,8 @@ import json
 
 from api.models import User, Tenant
 from management.models import Group, Permission, Policy, Role
-<<<<<<< HEAD
 from management.role.model import BindingMapping
-=======
-from management.tenant_mapping.model import TenantMapping
 from management.workspace.model import Workspace
->>>>>>> 47a8259f (Add internal admin endpoint to bootstrap tenant)
 from tests.identity_request import IdentityRequest
 
 
@@ -564,21 +560,13 @@ class InternalViewsetTests(IdentityRequest):
     def test_bootstrapping_tenant(self):
         """Test that we can bootstrap a tenant."""
         org_id = "12345"
-        acct = "6789"
         response = self.client.post(
-            f"/_private/api/utils/bootstrap_tenant/?org_id={org_id}&acct={acct}",
+            f"/_private/api/utils/bootstrap_tenant/?org_id={org_id}",
             **self.request.META,
         )
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        tenant = Tenant.objects.get(org_id=org_id)
-        self.assertEqual(tenant.account_id, acct)
-        Workspace.objects.filter(tenant=tenant, type=Workspace.Types.ROOT).exists()
-        Workspace.objects.filter(tenant=tenant, type=Workspace.Types.DEFAULT).exists()
-        self.assertTrue(getattr(tenant, "tenant_mapping"))
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
-        Workspace.objects.exclude(parent=None).delete()
-        Workspace.objects.all().delete()
-        TenantMapping.objects.all().delete()
+        tenant = Tenant.objects.create(org_id=org_id)
         response = self.client.post(
             f"/_private/api/utils/bootstrap_tenant/?org_id={org_id}",
             **self.request.META,
