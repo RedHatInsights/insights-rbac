@@ -40,6 +40,7 @@ from management.principal.proxy import (
     bop_request_status_count,
     bop_request_time_tracking,
 )
+from management.role.serializer import BindingMappingSerializer
 from management.tasks import (
     migrate_data_in_worker,
     run_migrations_in_worker,
@@ -502,6 +503,24 @@ class SentryDiagnosticError(Exception):
     """Raise this to create an event in Sentry."""
 
     pass
+
+
+def list_bindings_for_role(request):
+    """View method for listing bindings for a role.
+
+    GET /_private/api/utils/bindings/?role_uuid=xxx
+    """
+    role_uuid = request.GET.get("role_uuid")
+    if not role_uuid:
+        return HttpResponse(
+            'Invalid request, must supply the "role_uuid" query parameter.',
+            status=400,
+        )
+    role = get_object_or_404(Role, uuid=role_uuid)
+    bindings = role.binding_mappings.all()
+    serializer = BindingMappingSerializer(bindings, many=True)
+    result = serializer.data or []
+    return HttpResponse(json.dumps(result), content_type="application/json", status=200)
 
 
 def trigger_error(request):

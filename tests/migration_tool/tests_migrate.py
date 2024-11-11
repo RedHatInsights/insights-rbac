@@ -15,13 +15,17 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Test the utils module."""
+from platform import system
 from unittest.mock import Mock, call, patch
 
-from django.test import TestCase
+from uuid import uuid4
+
+from django.test import TestCase, override_settings
 
 from api.models import Tenant
 from management.models import *
 from migration_tool.migrate import migrate_data
+from management.group.definer import seed_group, clone_default_group_in_public_schema
 
 
 class MigrateTests(TestCase):
@@ -30,12 +34,31 @@ class MigrateTests(TestCase):
     def setUp(self):
         """Set up the utils tests."""
         super().setUp()
+        # public tenant
         public_tenant = Tenant.objects.get(tenant_name="public")
-        Group.objects.create(name="default", tenant=public_tenant, platform_default=True)
+
+        # system roles
+        self.system_role_1 = Role.objects.create(
+            name="System Role 1", platform_default=True, tenant=public_tenant, system=True
+        )
+        self.system_role_2 = Role.objects.create(
+            name="System Role 2", platform_default=True, system=True, tenant=public_tenant
+        )
+        # default group
+        default_group, _ = seed_group()
+        # permissions
         # This would be skipped
         permission1 = Permission.objects.create(permission="app1:hosts:read", tenant=public_tenant)
         permission2 = Permission.objects.create(permission="inventory:hosts:write", tenant=public_tenant)
-        # Two organization
+        Access.objects.bulk_create(
+            [
+                Access(permission=permission1, role=self.system_role_2, tenant=public_tenant),
+                Access(permission=permission2, role=self.system_role_2, tenant=public_tenant),
+            ]
+        )
+
+        # two organizations
+        # tenant 1 - org_id=1234567
         self.tenant = Tenant.objects.create(org_id="1234567", tenant_name="tenant")
         self.root_workspace = Workspace.objects.create(
             type=Workspace.Types.ROOT, tenant=self.tenant, name="Root Workspace"
@@ -43,12 +66,10 @@ class MigrateTests(TestCase):
         self.default_workspace = Workspace.objects.create(
             type=Workspace.Types.DEFAULT, tenant=self.tenant, name="Default Workspace", parent=self.root_workspace
         )
-
-        another_tenant = Tenant.objects.create(org_id="7654321")
-
         # setup data for organization 1234567
         self.workspace_id_1 = "123456"
         self.workspace_id_2 = "654321"
+
         # This role will be skipped because it contains permission with skipping application
         self.role_a1 = Role.objects.create(name="role_a1", tenant=self.tenant)
         self.access_a11 = Access.objects.create(permission=permission1, role=self.role_a1, tenant=self.tenant)
@@ -82,19 +103,21 @@ class MigrateTests(TestCase):
         self.group_a2.principals.add(self.principal1, self.principal2)
         self.policy_a2 = Policy.objects.create(name="System Policy_a2", group=self.group_a2, tenant=self.tenant)
         self.policy_a2.roles.add(self.role_a2)
-        self.policy_a2.save()
+
+        # tenant 2 - org_id=7654321
+        another_tenant = Tenant.objects.create(org_id="7654321")
 
         # setup data for another tenant 7654321
         self.role_b = Role.objects.create(name="role_b", tenant=another_tenant)
         self.access_b = Access.objects.create(permission=permission2, role=self.role_b, tenant=another_tenant)
-        self.system_role = Role.objects.create(name="system_role", system=True, tenant=public_tenant)
-        Access.objects.bulk_create(
-            [
-                Access(permission=permission1, role=self.system_role, tenant=public_tenant),
-                Access(permission=permission2, role=self.system_role, tenant=public_tenant),
-            ]
-        )
 
+        self.policy_a2.roles.add(self.system_role_1)
+        self.policy_a2.save()
+
+        # create custom default group
+        self.custom_default_group = clone_default_group_in_public_schema(default_group, self.tenant)
+
+    @override_settings(REPLICATION_TO_RELATION_ENABLED=True, PRINCIPAL_USER_DOMAIN="redhat", READ_ONLY_API_MODE=True)
     @patch("management.relation_replicator.logging_replicator.logger")
     def test_migration_of_data(self, logger_mock):
         """Test that we get the correct access for a principal."""
@@ -134,6 +157,30 @@ class MigrateTests(TestCase):
         ):
             workspace_1, workspace_2 = workspace_2, workspace_1
 
+        binding_mapping_system_role_1 = BindingMapping.objects.filter(
+            role=self.system_role_1,
+            resource_type_name="workspace",
+            resource_type_namespace="rbac",
+            resource_id=self.default_workspace.id,
+        ).get()
+
+        self.assertEqual(
+            binding_mapping_system_role_1.mappings["groups"],
+            [str(self.custom_default_group.uuid), str(self.group_a2.uuid)],
+        )
+
+        role_binding_system_role_1_uuid = binding_mapping_system_role_1.mappings["id"]
+
+        binding_mapping_system_role_2 = BindingMapping.objects.filter(
+            role=self.system_role_2,
+            resource_type_name="workspace",
+            resource_type_namespace="rbac",
+            resource_id=self.default_workspace.id,
+        ).get()
+
+        self.assertEqual(binding_mapping_system_role_2.mappings["groups"][0], str(self.custom_default_group.uuid))
+
+        role_binding_system_role_2_uuid = binding_mapping_system_role_2.mappings["id"]
         tuples = [
             # Org relationships of self.tenant
             # the other org is not included since it is not specified in the orgs parameter
@@ -155,5 +202,13 @@ class MigrateTests(TestCase):
             call(f"role:{v2_role_a32}#inventory_hosts_write@principal:*"),
             call(f"workspace:{workspace_2}#parent@workspace:{default_workspace_id}"),
             call(f"workspace:{workspace_2}#binding@role_binding:{rolebinding_a32}"),
+            ## System role 1 assigment to custom group
+            call(f"workspace:{self.default_workspace.id}#binding@role_binding:{role_binding_system_role_1_uuid}"),
+            call(f"role_binding:{role_binding_system_role_1_uuid}#subject@group:{self.group_a2.uuid}"),
+            call(f"role_binding:{role_binding_system_role_1_uuid}#role@role:{self.system_role_1.uuid}"),
+            ## System role 2 assigment to custom default group
+            call(f"workspace:{self.default_workspace.id}#binding@role_binding:{role_binding_system_role_2_uuid}"),
+            call(f"role_binding:{role_binding_system_role_2_uuid}#subject@group:{self.custom_default_group.uuid}"),
+            call(f"role_binding:{role_binding_system_role_2_uuid}#role@role:{self.system_role_2.uuid}"),
         ]
         logger_mock.info.assert_has_calls(tuples, any_order=True)
