@@ -52,6 +52,7 @@ class ReplicationEventType(str, Enum):
     MIGRATE_CUSTOM_ROLE = "migrate_custom_role"
     MIGRATE_TENANT_GROUPS = "migrate_tenant_groups"
     CUSTOMIZE_DEFAULT_GROUP = "customize_default_group"
+    MIGRATE_SYSTEM_ROLE_ASSIGMENT = "migrate_system_role_assignment"
 
 
 class ReplicationEvent:
