@@ -17,12 +17,14 @@
 """Test OutboxReplicator."""
 
 import logging
+import time
 
 from django.test import TestCase, override_settings
 from google.protobuf import json_format
-from management.relation_replicator.outbox_replicator import InMemoryLog, OutboxReplicator
+from management.relation_replicator.outbox_replicator import InMemoryLog, OutboxReplicator, OutboxWAL
 from management.relation_replicator.relation_replicator import PartitionKey, ReplicationEvent, ReplicationEventType
 from migration_tool.utils import create_relationship
+from prometheus_client import REGISTRY
 
 
 @override_settings(
@@ -184,3 +186,59 @@ class OutboxReplicatorTest(TestCase):
 
         self.replicator.replicate(event)
         self.assertEqual(len(self.log), 1)
+
+@override_settings(
+    LOGGING={
+        "version": 1,
+        "disable_existing_loggers": False,
+        "loggers": {
+            "management.relation_replicator.outbox_replicator": {
+                "level": "INFO",
+            },
+        },
+    },
+)
+class OutboxReplicatorPrometheusTest(TestCase):
+    """Test OutboxReplicator Prometheus Metrics."""
+
+    def setUp(self):
+        """Set up."""
+        super().setUp()
+        self.log = OutboxWAL()
+        self.replicator = OutboxReplicator(self.log)
+        self._prior_logging_disabled = logging.root.disabled
+        logging.disable(logging.NOTSET)
+
+    def tearDown(self) -> None:
+        super().tearDown()
+        logging.disable(self._prior_logging_disabled)
+
+    def test_replicate_sends_event_to_log_as_json(self):
+        """Test replicate uses partition key from settings.ENV_NAME."""
+        before = REGISTRY.get_sample_value('relations_replication_event_total')
+        with self.captureOnCommitCallbacks(execute=True) as callbacks:
+            principal_to_group_add1 = create_relationship(
+                ("rbac", "group"), "g1", ("rbac", "principal"), "localhost/p1", "member"
+            )
+            principal_to_group_add2 = create_relationship(
+                ("rbac", "group"), "g1", ("rbac", "principal"), "localhost/p2", "member"
+            )
+            principal_to_group_remove1 = create_relationship(
+                ("rbac", "group"), "g1", ("rbac", "principal"), "localhost/p3", "member"
+            )
+            principal_to_group_remove2 = create_relationship(
+                ("rbac", "group"), "g1", ("rbac", "principal"), "localhost/p4", "member"
+            )
+            event = ReplicationEvent(
+                add=[principal_to_group_add1, principal_to_group_add2],
+                remove=[principal_to_group_remove1, principal_to_group_remove2],
+                event_type=ReplicationEventType.ADD_PRINCIPALS_TO_GROUP,
+                info={"key": "value"},
+                partition_key=PartitionKey.byEnvironment(),
+            )
+            self.replicator.replicate(event)
+        
+        self.assertEqual(len(callbacks), 1)
+
+        after = REGISTRY.get_sample_value('relations_replication_event_total')
+        self.assertEqual(1, after - before)
