@@ -17,7 +17,6 @@
 """Test OutboxReplicator."""
 
 import logging
-import time
 
 from django.test import TestCase, override_settings
 from google.protobuf import json_format
