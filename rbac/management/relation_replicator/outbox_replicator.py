@@ -98,9 +98,9 @@ class OutboxReplicator(RelationReplicator):
             event_type,
             logged_info,
         )
-        
+
         transaction.on_commit(relations_replication_event_total.inc)
-        
+
         # https://debezium.io/documentation/reference/stable/transformations/outbox-event-router.html#basic-outbox-table
         outbox = Outbox(
             aggregatetype="relations-replication-event",

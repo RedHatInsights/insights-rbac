@@ -186,6 +186,7 @@ class OutboxReplicatorTest(TestCase):
         self.replicator.replicate(event)
         self.assertEqual(len(self.log), 1)
 
+
 @override_settings(
     LOGGING={
         "version": 1,
@@ -214,7 +215,7 @@ class OutboxReplicatorPrometheusTest(TestCase):
 
     def test_replicate_sends_event_to_log_as_json(self):
         """Test replicate uses partition key from settings.ENV_NAME."""
-        before = REGISTRY.get_sample_value('relations_replication_event_total')
+        before = REGISTRY.get_sample_value("relations_replication_event_total")
         with self.captureOnCommitCallbacks(execute=True) as callbacks:
             principal_to_group_add1 = create_relationship(
                 ("rbac", "group"), "g1", ("rbac", "principal"), "localhost/p1", "member"
@@ -236,8 +237,8 @@ class OutboxReplicatorPrometheusTest(TestCase):
                 partition_key=PartitionKey.byEnvironment(),
             )
             self.replicator.replicate(event)
-        
+
         self.assertEqual(len(callbacks), 1)
 
-        after = REGISTRY.get_sample_value('relations_replication_event_total')
+        after = REGISTRY.get_sample_value("relations_replication_event_total")
         self.assertEqual(1, after - before)
