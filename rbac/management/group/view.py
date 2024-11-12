@@ -22,7 +22,7 @@ from uuid import UUID
 
 import requests
 from django.conf import settings
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.db.models import Q
 from django.db.models.aggregates import Count
 from django.utils.translation import gettext as _
@@ -256,7 +256,17 @@ class GroupViewSet(
             }
         """
         validate_group_name(request.data.get("name"))
-        create_group = super().create(request=request, args=args, kwargs=kwargs)
+        try:
+            create_group = super().create(request=request, args=args, kwargs=kwargs)
+        except IntegrityError as e:
+            if "unique constraint" in str(e.args):
+                raise serializers.ValidationError(
+                    {"group": f"A group with the name '{request.data.get('name')}' exists for this tenant"}
+                )
+            else:
+                raise serializers.ValidationError(
+                    {"group": "Unknown Integrity Error occurred while trying to add group for this tenant"}
+                )
 
         if status.is_success(create_group.status_code):
             auditlog = AuditLog()
@@ -375,7 +385,7 @@ class GroupViewSet(
 
             response = super().destroy(request=request, args=args, kwargs=kwargs)
 
-            dual_write_handler.replicate_deleted_group()
+            dual_write_handler.replicate()
 
         if response.status_code == status.HTTP_204_NO_CONTENT:
             group_obj_change_notification_handler(request.user, group, "deleted")
@@ -1040,8 +1050,9 @@ class GroupViewSet(
             serializer = GroupRoleSerializerIn(data=request.data)
             if serializer.is_valid(raise_exception=True):
                 roles = request.data.pop(ROLES_KEY, [])
-            group = set_system_flag_before_update(group, request.tenant, request.user)
-            add_roles(group, roles, request.tenant, user=request.user)
+            with transaction.atomic():
+                group = set_system_flag_before_update(group, request.tenant, request.user)
+                add_roles(group, roles, request.tenant, user=request.user)
             response_data = GroupRoleSerializerIn(group)
         elif request.method == "GET":
             serialized_roles = self.obtain_roles(request, group)
@@ -1062,8 +1073,9 @@ class GroupViewSet(
             role_ids = request.query_params.get(ROLES_KEY, "").split(",")
             serializer = GroupRoleSerializerIn(data={"roles": role_ids})
             if serializer.is_valid(raise_exception=True):
-                group = set_system_flag_before_update(group, request.tenant, request.user)
-                remove_roles(group, role_ids, request.tenant, request.user)
+                with transaction.atomic():
+                    group = set_system_flag_before_update(group, request.tenant, request.user)
+                    remove_roles(group, role_ids, request.tenant, request.user)
 
             return Response(status=status.HTTP_204_NO_CONTENT)
 

@@ -57,7 +57,7 @@ parameters:
   description: How many tasks the Kafka Connect instance can create to process this Connector's work
 - name: TABLE_LIST
   value: public.management_outbox
-  description: The list of tables from which the connector captures change events. 
+  description: The list of tables from which the connector captures change events.
 - name: PAYLOAD_NAME
   value: payload
   description: Specify the field that contains the message payload in the outbox table
