@@ -160,13 +160,17 @@ def retrieve_user_info(message) -> User:
         user.user_id = user_id
         user.is_active = False
         user.username = message_user["Person"]["Credentials"]["Login"]
-        for id in identifiers["Reference"]:
-            if id["@system"] == "WEB" and id["@entity-name"] == "Customer" and id["@qualifier"] == "id":
-                user.org_id = id["#text"]
+        # identifiers["Reference"] might be a dict
+        if not isinstance((refs := identifiers["Reference"]), list):
+            refs = [identifiers["Reference"]]
+        for ref in refs:
+            if ref["@system"] == "WEB" and ref["@entity-name"] == "Customer" and ref["@qualifier"] == "id":
+                user.org_id = ref["#text"]
                 break
-            if id["@system"] == "EBS" and id["@entity-name"] == "Account" and id["@qualifier"] == "number":
-                user.account = id["#text"]
+            if ref["@system"] == "EBS" and ref["@entity-name"] == "Account" and ref["@qualifier"] == "number":
+                user.account = ref["#text"]
                 break
+
         return user
 
     user_data = bop_resp["data"][0]

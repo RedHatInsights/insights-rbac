@@ -250,6 +250,44 @@ FRAME_BODY_CREATION = (
     b"</UserPrivilege>\n            </User>\n        </Sync>\n    </Payload>\n</CanonicalMessage>\n"
 )
 
+FRAME_BODY_SPECIAL = (
+    b'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<CanonicalMessage xmlns="http://esb.redhat.com/Canonical/6">\n   '
+    b"<Header>\n        <System>WEB</System>\n        <Operation>insert</Operation>\n        <Type>User</Type>\n        "
+    b"<InstanceId>666a018a6d336076b5b57fff</InstanceId>\n        <Timestamp>2024-11-12T09:48:18.260</Timestamp>\n    </Header>\n    "
+    b"<Payload>\n        <Sync>\n            <User>\n                <CreatedDate>2024-11-12T09:48:12.978</CreatedDate>\n                "
+    b"<LastUpdatedDate>2024-11-12T09:48:14.336</LastUpdatedDate>\n                <Identifiers>\n                    "
+    b'<Identifier system="WEB" entity-name="User" qualifier="id">56780000</Identifier>\n                    '
+    b'<Reference system="WEB" entity-name="Customer" qualifier="id">17685860</Reference>\n                </Identifiers>\n                '
+    b'<Status primary="true">\n                    <State>Inactive</State>\n                </Status>\n                '
+    b"<Person>\n                    <FirstName>Teamnado</FirstName>\n                    <LastName>Test Automation</LastName>\n                    "
+    b"<Title>Test User</Title>\n                    <Credentials>\n                        "
+    b"<Login>principal-test</Login>\n                    </Credentials>\n                "
+    b"</Person>\n                <Company>\n                    <Name>Test organzation</Name>\n                "
+    b"</Company>\n                <Address>\n                    <Identifiers>\n                        <AuthoringOperatingUnit>\n"
+    b"                            <Number>103</Number>\n                        </AuthoringOperatingUnit>\n                        "
+    b'<Identifier system="WEB" entity-name="Address" entity-type="Customer Site" qualifier="id">33333333_SITE</Identifier>\n                    '
+    b'</Identifiers>\n                    <Status primary="true">\n                        <State>Active</State>\n                    '
+    b'</Status>\n                    <Line number="1">100 st</Line>\n                    <City>Raleigh</City>\n                    '
+    b'<Subdivision type="County">Nowhere</Subdivision>\n                    <State>NC</State>\n                    <CountryISO2Code>US</CountryISO2Code>\n'
+    b"                    <PostalCode>12345</PostalCode>\n                    <DunsNumber>999999999</DunsNumber>\n                "
+    b'</Address>\n                <Phone type="Gen" primary="true">\n                    <Identifiers>\n                        '
+    b'<Identifier system="WEB" entity-name="Phone" qualifier="id">56780000_IPHONE_IPHONE</Identifier>\n                    '
+    b"</Identifiers>\n                    <Number>5555551234</Number>\n                    <RawNumber>5555555555</RawNumber>\n                "
+    b'</Phone>\n                <Email primary="true">\n                    <Identifiers>\n                        '
+    b'<Identifier system="WEB" entity-name="Email" qualifier="id">56780000_IPHONE_IEMAIL</Identifier>\n                    '
+    b"</Identifiers>\n                    <EmailAddress>noreply@test.com</EmailAddress>\n                "
+    b"</Email>\n                <UserMembership>\n                    <Name>admin:org:all</Name>\n                </UserMembership>\n                "
+    b"<UserPrivilege>\n                    <Label>portal_system_management</Label>\n                    "
+    b"<Description>Customer Portal: System Management</Description>\n                    <Privileged>Y</Privileged>\n                "
+    b"</UserPrivilege>\n                <UserPrivilege>\n                    <Label>portal_download</Label>\n                    "
+    b"<Description>Customer Portal: Download Software and Updates</Description>\n                    <Privileged>Y</Privileged>\n                "
+    b"</UserPrivilege>\n                <UserPrivilege>\n                    <Label>portal_manage_subscriptions</Label>\n                    "
+    b"<Description>Customer Portal: Manage Subscriptions</Description>\n                    <Privileged>Y</Privileged>\n                "
+    b"</UserPrivilege>\n                <UserPrivilege>\n                    <Label>portal_manage_cases</Label>\n                    "
+    b"<Description>Customer Portal: Manage Support Cases</Description>\n                    <Privileged>Y</Privileged>\n                "
+    b"</UserPrivilege>\n            </User>\n        </Sync>\n    </Payload>\n</CanonicalMessage>\n"
+)
+
 
 class PrincipalUMBTests(IdentityRequest):
     """Test the principal processor functions."""
@@ -333,6 +371,13 @@ class PrincipalUMBTests(IdentityRequest):
 
         client_mock.ack.assert_called_once()
         self.assertTrue(Principal.objects.filter(username=principal_name).exists())
+
+        client_mock.reset_mock()
+        client_mock.canRead.side_effect = [True, False]
+        client_mock.receiveFrame.return_value = MagicMock(body=FRAME_BODY_SPECIAL)
+        process_principal_events_from_umb()
+
+        client_mock.ack.assert_called_once()
 
     @patch(
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
