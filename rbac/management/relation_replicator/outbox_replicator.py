@@ -20,6 +20,7 @@
 import logging
 from typing import Any, Dict, List, Optional, Protocol, TypedDict
 
+from django.db import transaction
 from google.protobuf import json_format
 from kessel.relations.v1beta1.common_pb2 import Relationship
 from management.models import Outbox
@@ -105,7 +106,7 @@ class OutboxReplicator(RelationReplicator):
             payload=payload,
         )
 
-        relations_replication_event_total.inc()
+        transaction.on_commit(relations_replication_event_total.inc)
 
         self._log.log(outbox)
 
