@@ -28,9 +28,14 @@ from management.relation_replicator.relation_replicator import (
     ReplicationEvent,
     ReplicationEventType,
 )
+from prometheus_client import Counter
 
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
+
+relations_replication_event_total = Counter(
+    "relations_replication_event_total", "Total count of relations replication events"
+)
 
 
 class ReplicationEventPayload(TypedDict):
@@ -99,6 +104,9 @@ class OutboxReplicator(RelationReplicator):
             event_type=event_type,
             payload=payload,
         )
+
+        relations_replication_event_total.inc()
+
         self._log.log(outbox)
 
 
