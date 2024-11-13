@@ -182,7 +182,16 @@ class GroupViewSet(
 
     def get_queryset(self):
         """Obtain queryset for requesting user based on access."""
-        return get_group_queryset(self.request, self.args, self.kwargs)
+        add_principals_method = self.action == "principals" and self.request.method == "POST"
+        destroy_method = self.action == "destroy"
+
+        if add_principals_method or destroy_method:
+            # FOR UPDATE statement cannot be used with GROUP BY statement
+            group_ids = [group.id for group in get_group_queryset(self.request, self.args, self.kwargs)]
+            group_query_set = Group.objects.filter(id__in=group_ids).select_for_update()
+        else:
+            group_query_set = get_group_queryset(self.request, self.args, self.kwargs)
+        return group_query_set
 
     def get_serializer_class(self):
         """Get serializer based on route."""
@@ -374,12 +383,13 @@ class GroupViewSet(
             HTTP/1.1 204 NO CONTENT
         """
         validate_uuid(kwargs.get("uuid"), "group uuid validation")
-        self.protect_system_groups("delete")
-        group = self.get_object()
-        if not request.user.admin:
-            self.protect_group_with_user_access_admin_role(group.roles_with_access(), "remove_group")
 
         with transaction.atomic():
+            self.protect_system_groups("delete")
+            group = self.get_object()
+            if not request.user.admin:
+                self.protect_group_with_user_access_admin_role(group.roles_with_access(), "remove_group")
+
             dual_write_handler = RelationApiDualWriteGroupHandler(group, ReplicationEventType.DELETE_GROUP)
             dual_write_handler.prepare_to_delete_group()
 
@@ -663,7 +673,6 @@ class GroupViewSet(
         validate_uuid(uuid, "group uuid validation")
 
         org_id = self.request.user.org_id
-        group = self.get_object()
         if request.method == "POST":
             serializer = GroupPrincipalInputSerializer(data=request.data)
 
@@ -681,7 +690,9 @@ class GroupViewSet(
                 else:
                     principals.append(specified_principal)
 
-            self.protect_system_groups("add principals", group)
+            with transaction.atomic():
+                group = self.get_object()
+                self.protect_system_groups("add principals", group)
 
             if not request.user.admin:
                 self.protect_group_with_user_access_admin_role(group.roles_with_access(), "add principals")
@@ -742,6 +753,7 @@ class GroupViewSet(
             output = GroupSerializer(group)
             response = Response(status=status.HTTP_200_OK, data=output.data)
         elif request.method == "GET":
+            group = self.get_object()
             # Check if the request comes with a bunch of service account client IDs that we need to check. Since this
             # query parameter is incompatible with any other query parameter, we make the checks first. That way if any
             # other query parameter was specified, we simply return early.
@@ -906,6 +918,8 @@ class GroupViewSet(
             page = self.paginate_queryset(resp.get("data"))
             response = self.get_paginated_response(page)
         else:
+            group = self.get_object()
+
             self.protect_system_groups("remove principals")
 
             if not request.user.admin:
