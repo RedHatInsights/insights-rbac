@@ -195,12 +195,6 @@ class OutboxReplicatorPrometheusTest(TestCase):
         super().setUp()
         self.log = OutboxWAL()
         self.replicator = OutboxReplicator(self.log)
-        self._prior_logging_disabled = logging.root.disabled
-        logging.disable(logging.NOTSET)
-
-    def tearDown(self) -> None:
-        super().tearDown()
-        logging.disable(self._prior_logging_disabled)
 
     def test_replicate_sends_event_to_log_as_json(self):
         """Test replicate uses partition key from settings.ENV_NAME."""
