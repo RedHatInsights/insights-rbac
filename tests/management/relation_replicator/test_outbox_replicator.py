@@ -187,17 +187,6 @@ class OutboxReplicatorTest(TestCase):
         self.assertEqual(len(self.log), 1)
 
 
-@override_settings(
-    LOGGING={
-        "version": 1,
-        "disable_existing_loggers": False,
-        "loggers": {
-            "management.relation_replicator.outbox_replicator": {
-                "level": "INFO",
-            },
-        },
-    },
-)
 class OutboxReplicatorPrometheusTest(TestCase):
     """Test OutboxReplicator Prometheus Metrics."""
 
