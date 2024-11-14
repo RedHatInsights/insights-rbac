@@ -74,7 +74,11 @@ class RelationApiDualWriteCrossAccessHandler:
             self._replicator.replicate(
                 ReplicationEvent(
                     event_type=self.event_type,
-                    info={"user_id": str(self.cross_account_request.user_id)},
+                    info={
+                        "user_id": str(self.cross_account_request.user_id),
+                        "roles": [role.uuid for role in self.cross_account_request.roles.all()],
+                        "target_org": self.cross_account_request.target_org,
+                    },
                     partition_key=PartitionKey.byEnvironment(),
                     remove=self.relations_to_remove,
                     add=self.relations_to_add,
