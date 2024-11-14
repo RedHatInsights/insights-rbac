@@ -533,6 +533,8 @@ def list_bindings_for_role(request):
 
     GET /_private/api/utils/bindings/?role_uuid=xxx
     """
+    if request.method != "GET":
+        return HttpResponse('Invalid method, only "GET" is allowed.', status=405)
     role_uuid = request.GET.get("role_uuid")
     if not role_uuid:
         return HttpResponse(
@@ -551,7 +553,7 @@ def migration_resources(request):
 
     DELETE /_private/api/utils/migration_resources/?resource=xxx&org_id=xxx
     GET /_private/api/utils/migration_resources/?resource=xxx&org_id=xxx&limit=1000
-    optinos of resource: workspace, mapping(tenantmapping), binding(bindingmapping)
+    options of resource: workspace, mapping(tenantmapping), binding(bindingmapping)
     org_id does not work for bindingmapping
     """
     resource = request.GET.get("resource")
