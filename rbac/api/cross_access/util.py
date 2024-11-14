@@ -66,7 +66,7 @@ def create_cross_principal(user_id, target_org=None):
     associate_tenant = Tenant.objects.get(org_id=target_org)
 
     # Create the principal in public schema
-    cross_account_principal = create_principal_with_tenant(principal_name, associate_tenant, user_id)
+    cross_account_principal = create_principal_with_tenant(principal_name, associate_tenant)
 
     return cross_account_principal
 
@@ -76,9 +76,9 @@ def get_cross_principal_name(target_org, user_id):
     return f"{target_org}-{user_id}"
 
 
-def create_principal_with_tenant(principal_name, associate_tenant, user_id):
+def create_principal_with_tenant(principal_name, associate_tenant):
     """Create cross-account principal in tenant."""
     cross_account_principal, _ = Principal.objects.get_or_create(
-        username=principal_name, cross_account=True, tenant=associate_tenant, user_id=user_id
+        username=principal_name, cross_account=True, tenant=associate_tenant
     )
     return cross_account_principal
