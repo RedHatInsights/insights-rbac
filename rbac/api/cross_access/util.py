@@ -18,6 +18,7 @@
 """Handler for cross-account request clean up."""
 import logging
 
+from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
 from management.models import Principal
@@ -35,22 +36,25 @@ def check_cross_request_expiry():
     cars = CrossAccountRequest.objects.filter(Q(status="pending") | Q(status="approved"))
     logger.info("Running expiry check on %d cross-account requests.", len(cars))
     for car in cars:
-        logger.debug("Checking for expiration of cross-account request %s.", car.pk)
-        if car.end_date < timezone.now():
-            logger.info("Expiring cross-account request with uuid: %s", car.pk)
-            create_cross_principal(car.user_id, car.target_org)
-            cross_account_roles = car.roles.all()
-            if any(True for _ in cross_account_roles) and car.status == "approved":
-                dual_write_handler = RelationApiDualWriteCrossAccessHandler(
-                    car, ReplicationEventType.EXPIRE_CROSS_ACCOUNT_REQUEST
-                )
-                dual_write_handler.generate_relations_to_remove_roles(cross_account_roles)
-                dual_write_handler.replicate()
+        with transaction.atomic():
+            logger.debug("Checking for expiration of cross-account request %s.", car.pk)
+            # Lock CAR so that the status and roles do not concurrently change
+            car = CrossAccountRequest.objects.select_for_update().get(pk=car.pk)
+            if car.end_date < timezone.now():
+                logger.info("Expiring cross-account request with uuid: %s", car.pk)
+                create_cross_principal(car.user_id, car.target_org)
+                cross_account_roles = car.roles.all()
+                if any(True for _ in cross_account_roles) and car.status == "approved":
+                    dual_write_handler = RelationApiDualWriteCrossAccessHandler(
+                        car, ReplicationEventType.EXPIRE_CROSS_ACCOUNT_REQUEST
+                    )
+                    dual_write_handler.generate_relations_to_remove_roles(cross_account_roles)
+                    dual_write_handler.replicate()
 
-            car.status = "expired"
-            expired_cars.append(car.pk)
+                car.status = "expired"
+                expired_cars.append(car.pk)
 
-            car.save()
+                car.save()
 
     logger.info("Completed clean up of %d cross-account requests, %d expired.", len(cars), len(expired_cars))
 
