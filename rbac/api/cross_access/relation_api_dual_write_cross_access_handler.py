@@ -41,8 +41,6 @@ logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 class RelationApiDualWriteCrossAccessHandler:
     """Class to handle Dual Write API related operations."""
 
-    principal: Principal
-
     def __init__(
         self,
         cross_account_request: CrossAccountRequest,
@@ -76,7 +74,7 @@ class RelationApiDualWriteCrossAccessHandler:
             self._replicator.replicate(
                 ReplicationEvent(
                     event_type=self.event_type,
-                    info={"user_uuid": str(self.cross_account_request.user_id)},
+                    info={"user_id": str(self.cross_account_request.user_id)},
                     partition_key=PartitionKey.byEnvironment(),
                     remove=self.relations_to_remove,
                     add=self.relations_to_add,
@@ -140,7 +138,8 @@ class RelationApiDualWriteCrossAccessHandler:
         update_mapping: Callable[[BindingMapping], None],
         create_default_mapping_for_system_role: Callable[[], Optional[BindingMapping]],
     ):
-        assert role.system is True, "Expected system role."
+        if role.system is False:
+            raise DualWriteException("System roles cannot be replicated for a cross-account request.")
 
         try:
             # We lock the binding here because we cannot lock the Role for system roles,
