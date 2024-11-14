@@ -15,6 +15,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Test the group viewset."""
+from datetime import timedelta
 import random
 from unittest.mock import call, patch, ANY, Mock
 from uuid import uuid4
@@ -22,11 +23,13 @@ import json
 from django.db import transaction
 from django.conf import settings
 from django.urls import reverse, resolve
+from django.utils import timezone
 from django.test.utils import override_settings
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.test import APIClient
 
+from api.cross_access.model import CrossAccountRequest
 from api.models import Tenant, User
 from management.cache import TenantCache
 from management.group.serializer import GroupInputSerializer
@@ -46,8 +49,18 @@ from management.relation_replicator.noop_replicator import NoopReplicator
 from management.tenant_service.v2 import V2TenantBootstrapService
 from management.tenant_mapping.model import TenantMapping
 
+from migration_tool.in_memory_tuples import (
+    InMemoryRelationReplicator,
+    InMemoryTuples,
+    all_of,
+    relation,
+    resource,
+    subject,
+)
+from rbac.settings import REPLICATION_TO_RELATION_ENABLED
 from tests.core.test_kafka import copy_call_args
 from tests.identity_request import IdentityRequest
+from tests.management.role.test_dual_write import RbacFixture
 from tests.management.role.test_view import find_in_list, relation_api_tuple
 
 
@@ -837,7 +850,7 @@ class GroupViewsetTests(IdentityRequest):
         response = client.put(url, {}, format="json", **self.headers)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
-    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator._save_replication_event")
+    @patch("management.relation_replicator._replicator.Replicator._save_replication_event")
     @patch("core.kafka.RBACProducer.send_kafka_message")
     def test_delete_group_success(self, send_kafka_message, mock_method):
         """Test that we can delete an existing group."""
@@ -961,7 +974,7 @@ class GroupViewsetTests(IdentityRequest):
         response = client.delete(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
-    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator._save_replication_event")
+    @patch("management.relation_replicator._replicator.Replicator._save_replication_event")
     def test_delete_custom_default_group(self, mock_method):
         """
         Test that custom platform_default groups can be deleted and the public default group
@@ -1061,7 +1074,7 @@ class GroupViewsetTests(IdentityRequest):
         response = client.post(url, test_data, format="json", **self.headers)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
-    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator._save_replication_event")
+    @patch("management.relation_replicator._replicator.Replicator._save_replication_event")
     @patch(
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
         return_value={"status_code": 200, "data": []},
@@ -1076,7 +1089,7 @@ class GroupViewsetTests(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
         self.assertIsNone(mock_method.call_args)
 
-    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator._save_replication_event")
+    @patch("management.relation_replicator._replicator.Replicator._save_replication_event")
     @patch(
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
         return_value={"status_code": 200, "data": [{"username": "test_add_user", "user_id": -448717}]},
@@ -1220,7 +1233,7 @@ class GroupViewsetTests(IdentityRequest):
         self.assertEqual(len(response.data.get("data")), 1)
         self.assertEqual(response.data.get("data")[0].get("username"), "test_user")
 
-    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator._save_replication_event")
+    @patch("management.relation_replicator._replicator.Replicator._save_replication_event")
     @patch(
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
         return_value={"status_code": 200, "data": [{"username": "test_user"}]},
@@ -1717,7 +1730,7 @@ class GroupViewsetTests(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(principals, None)
 
-    @patch("management.group.relation_api_dual_write_group_handler.OutboxReplicator._save_replication_event")
+    @patch("management.group.relation_api_dual_write_group_handler.Replicator._save_replication_event")
     def test_add_group_roles_system_policy_create_success(self, mock_method):
         """Test that adding a role to a group without a system policy returns successfully."""
         url = reverse("v1_management:group-roles", kwargs={"uuid": self.group.uuid})
@@ -1746,7 +1759,7 @@ class GroupViewsetTests(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
     @override_settings(V2_BOOTSTRAP_TENANT=True)
-    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator._save_replication_event")
+    @patch("management.relation_replicator._replicator.Replicator._save_replication_event")
     @patch("core.kafka.RBACProducer.send_kafka_message")
     def test_system_flag_update_on_add(self, send_kafka_message, mock_method):
         """Test that adding a role to a platform_default group flips the system flag."""
@@ -1881,7 +1894,7 @@ class GroupViewsetTests(IdentityRequest):
             kafka_mock.assert_has_calls(notification_messages, any_order=True)
 
     @override_settings(V2_BOOTSTRAP_TENANT=True)
-    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator._save_replication_event")
+    @patch("management.relation_replicator._replicator.Replicator._save_replication_event")
     @patch("core.kafka.RBACProducer.send_kafka_message")
     def test_system_flag_update_on_remove_and_keep_one_role_in_group(self, send_kafka_message, mock_method):
         """Test that removing a role from a platform_default group flips the system flag."""
@@ -2026,7 +2039,7 @@ class GroupViewsetTests(IdentityRequest):
             kafka_mock.assert_has_calls(notification_messages, any_order=True)
 
     @override_settings(V2_BOOTSTRAP_TENANT=True)
-    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator._save_replication_event")
+    @patch("management.relation_replicator._replicator.Replicator._save_replication_event")
     @patch("core.kafka.RBACProducer.send_kafka_message")
     def test_system_flag_update_on_remove(self, send_kafka_message, mock_method):
         """Test that removing a role from a platform_default group flips the system flag."""
@@ -3936,7 +3949,7 @@ class GroupViewNonAdminTests(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.json()["name"], new_name_sa)
 
-    @patch("management.group.relation_api_dual_write_group_handler.OutboxReplicator._save_replication_event")
+    @patch("management.group.relation_api_dual_write_group_handler.Replicator._save_replication_event")
     def test_add_and_remove_role_to_group(self, mock_method):
         Permission.objects.create(permission="app:inventory:read", tenant=self.tenant)
 
@@ -3995,7 +4008,7 @@ class GroupViewNonAdminTests(IdentityRequest):
         assert_group_tuples(to_remove)
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
 
-    @patch("management.group.relation_api_dual_write_group_handler.OutboxReplicator._save_replication_event")
+    @patch("management.group.relation_api_dual_write_group_handler.Replicator._save_replication_event")
     def test_add_and_remove_system_role_to_group(self, mock_method):
         # Create a group with 'User Access administrator' role and add principals we use in headers
         group_with_admin = self._create_group_with_user_access_administrator_role(self.tenant)
@@ -4106,7 +4119,7 @@ class GroupViewNonAdminTests(IdentityRequest):
         response = client.put(url, request_body, format="json", **self.headers_org_admin)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
-    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator._save_replication_event")
+    @patch("management.relation_replicator._replicator.Replicator._save_replication_event")
     def test_remove_group_without_User_Access_Admin_fail(self, mock_method):
         """Test that non org admin without 'User Access administrator' role cannot remove a group."""
         test_group = Group(name="test group", tenant=self.tenant)
@@ -4367,7 +4380,7 @@ class GroupViewNonAdminTests(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
     @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
-    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator._save_replication_event")
+    @patch("management.relation_replicator._replicator.Replicator._save_replication_event")
     @patch("management.principal.it_service.ITService.request_service_accounts")
     def test_add_service_account_principal_in_group_without_User_Access_Admin_fail(self, mock_request, mock_method):
         """
@@ -4424,7 +4437,7 @@ class GroupViewNonAdminTests(IdentityRequest):
             generate_replication_event_to_add_principals(str(test_group.uuid), "redhat/2345"), actual_call_arg
         )
 
-    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator._save_replication_event")
+    @patch("management.relation_replicator._replicator.Replicator._save_replication_event")
     @patch(
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
         return_value={"status_code": 200, "data": []},
@@ -4465,7 +4478,7 @@ class GroupViewNonAdminTests(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
     @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
-    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator._save_replication_event")
+    @patch("management.relation_replicator._replicator.Replicator._save_replication_event")
     @patch("management.principal.it_service.ITService.request_service_accounts")
     def test_add_service_account_principal_in_group_with_User_Access_Admin_success(self, mock_request, mock_method):
         """
@@ -4735,7 +4748,7 @@ class GroupViewNonAdminTests(IdentityRequest):
         response = client.delete(url, format="json", **self.headers_service_account_principal)
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
 
-    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator._save_replication_event")
+    @patch("management.relation_replicator._replicator.Replicator._save_replication_event")
     @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
     def test_remove_service_account_principal_from_group_with_User_Access_Admin_success(self, mock_method):
         """
@@ -5609,3 +5622,141 @@ class GroupViewNonAdminTests(IdentityRequest):
                 duplicate_response.data.get("errors")[0]["detail"],
                 "A group with the name 'duplicateEntry' exists for this tenant",
             )
+
+
+@override_settings(REPLICATION_TO_RELATION_ENABLED=True)
+class GroupReplicationTests(IdentityRequest):
+    def setUp(self):
+        super().setUp()
+        self.fixture = RbacFixture()
+        self.relations = InMemoryTuples()
+        self.in_memory_replicator = InMemoryRelationReplicator(self.relations)
+
+        self.org_admin = Principal(username="org_admin", tenant=self.tenant)
+        self.org_admin.save()
+
+        customer_data = {
+            "account_id": self.tenant.account_id,
+            "tenant_name": self.tenant.tenant_name,
+            "org_id": self.tenant.org_id,
+        }
+        request_context_org_admin = self._create_request_context(
+            customer_data=customer_data,
+            user_data={"username": self.org_admin.username, "email": "test@email.com"},
+            is_org_admin=True,
+        )
+        self.headers_org_admin = request_context_org_admin["request"].META
+
+        self.associate_admin_request_context = self._create_request_context(
+            self.customer_data, self.user_data, is_org_admin=True, is_internal=True
+        )
+        self.associate_admin_request = self.associate_admin_request_context["request"]
+
+        self.fixture.bootstrap_tenant(self.tenant)
+
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
+    def test_remove_role_does_not_remove_binding_if_cross_account_granted(self, replicate):
+        replicate.side_effect = self.in_memory_replicator.replicate
+
+        self.sr1 = self.fixture.new_system_role("sr1", ["app:*:*"])
+
+        # Create a group and give it the system role
+        test_group = Group(name="test group", tenant=self.tenant)
+        test_group.save()
+
+        request_body = {"roles": [self.sr1.uuid]}
+
+        url = reverse("v1_management:group-roles", kwargs={"uuid": test_group.uuid})
+        client = APIClient()
+        response = client.post(url, request_body, format="json", **self.headers_org_admin)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        # Now approve a CAR for the tenant and the same role
+        request = CrossAccountRequest.objects.create(
+            target_account=self.tenant.account_id,
+            target_org=self.tenant.org_id,
+            user_id="2222222",
+            end_date=timezone.now() + timedelta(10),
+            status="pending",
+        )
+        request.roles.add(self.sr1)
+        update_data = {"status": "approved"}
+        car_uuid = request.request_id
+        url = reverse("v1_api:cross-detail", kwargs={"pk": str(car_uuid)})
+        client = APIClient()
+        response = client.patch(url, update_data, format="json", **self.associate_admin_request.META)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        # Check that the roles are now bound to the user in the target account (default workspace)
+        # and the group
+        default_workspace_id = Workspace.objects.get(
+            tenant__org_id=self.tenant.org_id, type=Workspace.Types.DEFAULT
+        ).id
+        default_bindings = self.relations.find_tuples(
+            # Tuples for bindings to the default workspace
+            all_of(resource("rbac", "workspace", default_workspace_id), relation("binding"))
+        )
+
+        # Of these bindings, look for the ones that are for the role
+        sr1_bindings, _ = self.relations.find_group_with_tuples(
+            # Tuples which are...
+            # grouped by resource
+            group_by=lambda t: (t.resource_type_namespace, t.resource_type_name, t.resource_id),
+            # where the resource is one of the default role bindings...
+            group_filter=lambda group: group[0] == "rbac"
+            and group[1] == "role_binding"
+            and group[2] in {str(binding.subject_id) for binding in default_bindings},
+            # and where one of the tuples from that binding has...
+            predicates=[
+                # a subject relation
+                relation("subject"),
+                all_of(
+                    # for the sr1 role
+                    relation("role"),
+                    subject("rbac", "role", str(self.sr1.uuid)),
+                ),
+            ],
+        )
+
+        self.assertEqual(len(sr1_bindings), 1, f"Expected 1 binding but got {len(sr1_bindings)}")
+
+        subjects = {t.subject_id for _, tuples in sr1_bindings.items() for t in tuples if t.relation == "subject"}
+
+        # Assert the bindings are to both subjects
+        self.assertCountEqual(subjects, [str(test_group.uuid), "redhat/222222"])
+
+        url = reverse("v1_management:group-roles", kwargs={"uuid": test_group.uuid})
+        url = "{}?roles={}".format(url, self.sr1.uuid)
+        client = APIClient()
+        response = client.delete(url, format="json", **self.headers_org_admin)
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+
+        # Now check the binding is still there and only to the user
+        sr1_bindings, _ = self.relations.find_group_with_tuples(
+            # Tuples which are...
+            # grouped by resource
+            group_by=lambda t: (t.resource_type_namespace, t.resource_type_name, t.resource_id),
+            # where the resource is one of the default role bindings...
+            group_filter=lambda group: group[0] == "rbac"
+            and group[1] == "role_binding"
+            and group[2] in {str(binding.subject_id) for binding in default_bindings},
+            # and where one of the tuples from that binding has...
+            predicates=[
+                # a subject relation
+                relation("subject"),
+                all_of(
+                    # for the sr1 role
+                    relation("role"),
+                    subject("rbac", "role", str(self.sr1.uuid)),
+                ),
+            ],
+        )
+
+        # Assert the roles are correct for these bindings – one per role that was included in the request,
+        # and not any not included in the request
+        self.assertEqual(len(sr1_bindings), 1, f"Expected 1 binding but got {len(sr1_bindings)}")
+
+        # Collect all the bound roles by iterating over the bindings and getting the subjects of the role relation
+        subjects = {t.subject_id for _, tuples in sr1_bindings.items() for t in tuples if t.relation == "subject"}
+
+        self.assertCountEqual(subjects, [str(self.sr1.uuid)], f"Expected role {self.sr1.uuid}")
