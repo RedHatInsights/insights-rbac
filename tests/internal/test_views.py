@@ -27,6 +27,8 @@ import json
 
 from api.models import User, Tenant
 from management.models import Group, Permission, Policy, Role
+from management.role.model import BindingMapping
+from management.workspace.model import Workspace
 from tests.identity_request import IdentityRequest
 
 
@@ -526,3 +528,50 @@ class InternalViewsetTests(IdentityRequest):
             response.content.decode(),
             "Data migration from V1 to V2 are running in a background worker.",
         )
+
+    def test_list_bindings_by_role(self):
+        """Test that we can list bindingmapping by role."""
+        response = self.client.get(
+            f"/_private/api/utils/bindings/?role_uuid={self.role.uuid}",
+            **self.request.META,
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.content.decode(), "[]")
+
+        binding_attrs = {
+            "resource_id": "123456",
+            "resource_type_namespace": "rbac",
+            "resource_type_name": "workspace",
+            "mappings": {"foo": "bar"},
+        }
+        # Create a binding mapping
+        binding_mapping = BindingMapping.objects.create(
+            role=self.role,
+            **binding_attrs,
+        )
+        response = self.client.get(
+            f"/_private/api/utils/bindings/?role_uuid={self.role.uuid}",
+            **self.request.META,
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        binding_attrs.update({"id": binding_mapping.id, "role": self.role.id})
+        self.assertEqual(json.loads(response.content.decode()), [binding_attrs])
+
+    def test_bootstrapping_tenant(self):
+        """Test that we can bootstrap a tenant."""
+        org_id = "12345"
+        response = self.client.post(
+            f"/_private/api/utils/bootstrap_tenant/?org_id={org_id}",
+            **self.request.META,
+        )
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+        tenant = Tenant.objects.create(org_id=org_id)
+        response = self.client.post(
+            f"/_private/api/utils/bootstrap_tenant/?org_id={org_id}",
+            **self.request.META,
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        Workspace.objects.filter(tenant=tenant, type=Workspace.Types.ROOT).exists()
+        Workspace.objects.filter(tenant=tenant, type=Workspace.Types.DEFAULT).exists()
+        self.assertTrue(getattr(tenant, "tenant_mapping"))

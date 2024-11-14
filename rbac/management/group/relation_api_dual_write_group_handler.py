@@ -21,19 +21,22 @@ from typing import Callable, Iterable, Optional
 from uuid import uuid4
 
 from django.conf import settings
+from kessel.relations.v1beta1.common_pb2 import Relationship
 from management.group.model import Group
 from management.models import Workspace
 from management.principal.model import Principal
 from management.relation_replicator.outbox_replicator import OutboxReplicator
 from management.relation_replicator.relation_replicator import (
     DualWriteException,
+    PartitionKey,
     RelationReplicator,
     ReplicationEvent,
     ReplicationEventType,
 )
 from management.role.model import BindingMapping, Role
+from management.tenant_mapping.model import TenantMapping
 from migration_tool.models import V2boundresource, V2role, V2rolebinding
-
+from migration_tool.utils import create_relationship
 
 from api.models import Tenant
 
@@ -54,6 +57,7 @@ class RelationApiDualWriteGroupHandler:
         """Initialize RelationApiDualWriteGroupHandler."""
         if not self.replication_enabled():
             return
+
         try:
             self.group_relations_to_add = []
             self.group_relations_to_remove = []
@@ -65,6 +69,9 @@ class RelationApiDualWriteGroupHandler:
             self.event_type = event_type
             self.user_domain = settings.PRINCIPAL_USER_DOMAIN
             self._replicator = replicator if replicator else OutboxReplicator()
+            self._platform_default_policy_uuid: Optional[str] = None
+            self._public_tenant: Optional[Tenant] = None
+            self._tenant_mapping = None
         except Exception as e:
             raise DualWriteException(e)
 
@@ -86,13 +93,19 @@ class RelationApiDualWriteGroupHandler:
 
         return relations
 
-    def replicate_new_principals(self, principals: list[Principal]):
-        """Replicate new principals into group."""
+    def generate_relations_to_add_principals(self, principals: list[Principal]):
+        """Generate relations to add principals."""
         if not self.replication_enabled():
             return
         logger.info("[Dual Write] Generate new relations from Group(%s): '%s'", self.group.uuid, self.group.name)
         self.principals = principals
         self.group_relations_to_add = self._generate_member_relations()
+
+    def replicate_new_principals(self, principals: list[Principal]):
+        """Replicate new principals into group."""
+        if not self.replication_enabled():
+            return
+        self.generate_relations_to_add_principals(principals)
         self._replicate()
 
     def replicate_removed_principals(self, principals: list[Principal]):
@@ -113,9 +126,7 @@ class RelationApiDualWriteGroupHandler:
                 ReplicationEvent(
                     event_type=self.event_type,
                     info={"group_uuid": str(self.group.uuid)},
-                    # TODO: need to think about partitioning
-                    # Maybe resource id
-                    partition_key="rbactodo",
+                    partition_key=PartitionKey.byEnvironment(),
                     remove=self.group_relations_to_remove,
                     add=self.group_relations_to_add,
                 ),
@@ -123,39 +134,55 @@ class RelationApiDualWriteGroupHandler:
         except Exception as e:
             raise DualWriteException(e)
 
-    def replicate_added_role(self, role: Role):
-        """Replicate added role."""
+    def _create_default_mapping_for_system_role(self, system_role: Role):
+        """Create default mapping."""
+        assert system_role.system is True, "Expected system role. Mappings for custom roles must already be created."
+        binding = V2rolebinding(
+            str(uuid4()),
+            # Assumes same role UUID for V2 system role equivalent.
+            V2role.for_system_role(str(system_role.uuid)),
+            V2boundresource(("rbac", "workspace"), str(self.default_workspace.id)),
+            groups=frozenset([str(self.group.uuid)]),
+        )
+        mapping = BindingMapping.for_role_binding(binding, system_role)
+        self.group_relations_to_add.extend(mapping.as_tuples())
+        return mapping
+
+    def generate_relations_to_add_roles(
+        self, roles: Iterable[Role], remove_default_access_from: Optional[TenantMapping] = None
+    ):
+        """Generate relations to add roles."""
         if not self.replication_enabled():
             return
 
         def add_group_to_binding(mapping: BindingMapping):
             self.group_relations_to_add.append(mapping.add_group_to_bindings(str(self.group.uuid)))
 
-        def create_default_mapping():
-            assert role.system is True, "Expected system role. Mappings for custom roles must already be created."
-            binding = V2rolebinding(
-                str(uuid4()),
-                # Assumes same role UUID for V2 system role equivalent.
-                V2role.for_system_role(str(role.uuid)),
-                V2boundresource(("rbac", "workspace"), str(self.default_workspace.id)),
-                groups=frozenset([str(self.group.uuid)]),
+        for role in roles:
+            self._update_mapping_for_role(
+                role,
+                update_mapping=add_group_to_binding,
+                create_default_mapping_for_system_role=lambda: self._create_default_mapping_for_system_role(role),
             )
-            mapping = BindingMapping.for_role_binding(binding, role)
-            self.group_relations_to_add.extend(mapping.as_tuples())
-            return mapping
 
-        self._update_mapping_for_role(
-            role, update_mapping=add_group_to_binding, create_default_mapping_for_system_role=create_default_mapping
-        )
+        if remove_default_access_from is not None:
+            default_binding = self._default_binding(mapping=remove_default_access_from)
+            self.group_relations_to_remove.append(default_binding)
+
+    def replicate(self):
+        """Replicate added role."""
+        if not self.replication_enabled():
+            return
+
         self._replicate()
 
-    def replicate_removed_role(self, role: Role):
+    def generate_relations_to_remove_roles(self, roles: Iterable[Role]):
         """Replicate removed role."""
         if not self.replication_enabled():
             return
 
-        self._update_mapping_for_role_removal(role)
-        self._replicate()
+        for role in roles:
+            self._update_mapping_for_role_removal(role)
 
     def _update_mapping_for_role_removal(self, role: Role):
         def remove_group_from_binding(mapping: BindingMapping):
@@ -205,6 +232,7 @@ class RelationApiDualWriteGroupHandler:
                 else:
                     mapping.save(force_update=True)
             except BindingMapping.DoesNotExist:
+                # create_default_mapping_for_system_role returns None for removing system roles
                 mapping = create_default_mapping_for_system_role()
                 if mapping is not None:
                     mapping.save(force_insert=True)
@@ -225,7 +253,6 @@ class RelationApiDualWriteGroupHandler:
                     role.uuid,
                     role.name,
                 )
-
             for mapping in bindings:
                 update_mapping(mapping)
                 mapping.save(force_update=True)
@@ -236,7 +263,7 @@ class RelationApiDualWriteGroupHandler:
             return
         roles = Role.objects.filter(policies__group=self.group)
 
-        system_roles = roles.filter(tenant=Tenant.objects.get(tenant_name="public"))
+        system_roles = roles.filter(tenant=self._get_public_tenant())
 
         # Custom roles are locked to prevent resources from being added/removed concurrently,
         # in the case that the Roles had _no_ resources specified to begin with.
@@ -252,13 +279,28 @@ class RelationApiDualWriteGroupHandler:
             custom_ids.append(role.id)
 
         if self.group.platform_default:
-            pass  # TODO: create default bindings,
+            self.group_relations_to_add.append(self._default_binding())
         else:
             self.principals = self.group.principals.all()
             self.group_relations_to_remove.extend(self._generate_member_relations())
 
-    def replicate_deleted_group(self):
-        """Prepare for delete."""
-        if not self.replication_enabled():
-            return
-        self._replicate()
+    def _default_binding(self, mapping: Optional[TenantMapping] = None) -> Relationship:
+        """Calculate default bindings from tenant mapping."""
+        if mapping is None:
+            mapping = TenantMapping.objects.get(tenant=self.group.tenant)
+        else:
+            assert mapping.tenant.id == self.group.tenant_id, "Tenant mapping does not match group tenant."
+
+        return create_relationship(
+            ("rbac", "workspace"),
+            str(self.default_workspace.id),
+            ("rbac", "role_binding"),
+            str(mapping.default_role_binding_uuid),
+            "binding",
+        )
+
+    def _get_public_tenant(self) -> Tenant:
+        if self._public_tenant is None:
+            self._public_tenant = Tenant.objects.get(tenant_name="public")
+        assert self._public_tenant is not None
+        return self._public_tenant

@@ -55,7 +55,9 @@ class IdentityRequest(TestCase):
     @classmethod
     def tearDownClass(cls):
         """Tear down the class."""
-        cls.tenant.delete()
+        # TODO: avoid deletion of cls.tenant tests ?
+        if cls.tenant.id is not None:
+            cls.tenant.delete()
         super().tearDownClass()
 
     @classmethod

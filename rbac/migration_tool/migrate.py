@@ -18,12 +18,16 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 import logging
 from typing import Iterable
 
+from django.conf import settings
+from django.db import transaction
 from kessel.relations.v1beta1 import common_pb2
+from management.group.relation_api_dual_write_group_handler import RelationApiDualWriteGroupHandler
 from management.models import Workspace
 from management.principal.model import Principal
 from management.relation_replicator.logging_replicator import LoggingReplicator
 from management.relation_replicator.outbox_replicator import OutboxReplicator
 from management.relation_replicator.relation_replicator import (
+    PartitionKey,
     RelationReplicator,
     ReplicationEvent,
     ReplicationEventType,
@@ -93,30 +97,33 @@ def migrate_role(
     return relationships, v2_role_bindings
 
 
-def migrate_users_for_groups(tenant: Tenant) -> list[common_pb2.Relationship]:
-    """Write users relationship to groups."""
-    relationships: list[common_pb2.Relationship] = []
-    for group in tenant.group_set.exclude(platform_default=True):
-        user_set: Iterable[Principal] = group.principals.all()
-        for user in user_set:
-            if (relationship := group.relationship_to_principal(user)) is not None:
-                relationships.append(relationship)
-    return relationships
+def migrate_groups_for_tenant(tenant: Tenant, replicator: RelationReplicator):
+    """Generate user relationships and system role assignments for groups in a tenant."""
+    groups = tenant.group_set.all()
+    for group in groups:
+        principals: list[Principal] = []
+        system_roles: list[Role] = []
+        if not group.platform_default:
+            principals = group.principals.all()
+        if group.system is False and group.admin_default is False:
+            system_roles = group.roles().filter(system=True)
+        if any(True for _ in system_roles) or any(True for _ in principals):
+            # The migrator does not generally deal with concurrency control,
+            # but we require an atomic block due to use of select_for_update in the dual write handler.
+            with transaction.atomic():
+                dual_write_handler = RelationApiDualWriteGroupHandler(
+                    group, ReplicationEventType.MIGRATE_TENANT_GROUPS, replicator=replicator
+                )
+                dual_write_handler.generate_relations_to_add_principals(principals)
+                dual_write_handler.generate_relations_to_add_roles(system_roles)
+                dual_write_handler.replicate()
 
 
 def migrate_data_for_tenant(tenant: Tenant, exclude_apps: list, replicator: RelationReplicator):
     """Migrate all data for a given tenant."""
     logger.info("Migrating relations of group and user.")
 
-    tuples = migrate_users_for_groups(tenant)
-    replicator.replicate(
-        ReplicationEvent(
-            event_type=ReplicationEventType.MIGRATE_TENANT_GROUPS,
-            info={"tenant": tenant.org_id},
-            partition_key="rbactodo",
-            add=tuples,
-        )
-    )
+    migrate_groups_for_tenant(tenant, replicator)
 
     logger.info("Finished migrating relations of group and user.")
 
@@ -143,7 +150,7 @@ def migrate_data_for_tenant(tenant: Tenant, exclude_apps: list, replicator: Rela
             ReplicationEvent(
                 event_type=ReplicationEventType.MIGRATE_CUSTOM_ROLE,
                 info={"role_uuid": str(role.uuid)},
-                partition_key="rbactodo",
+                partition_key=PartitionKey.byEnvironment(),
                 add=tuples,
             )
         )
@@ -154,6 +161,10 @@ def migrate_data_for_tenant(tenant: Tenant, exclude_apps: list, replicator: Rela
 
 def migrate_data(exclude_apps: list = [], orgs: list = [], write_relationships: str = "False"):
     """Migrate all data for all tenants."""
+    if not settings.READ_ONLY_API_MODE:
+        logger.fatal("Read-only API mode is required. READ_ONLY_API_MODE must be set to true.")
+        return
+
     count = 0
     tenants = Tenant.objects.exclude(tenant_name="public")
     replicator = _get_replicator(write_relationships)
