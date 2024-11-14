@@ -141,6 +141,13 @@ class PrincipalView(APIView):
                 query_params, USERNAME_ONLY_KEY, VALID_BOOLEAN_VALUE, required=False
             )
             options["usernames"] = query_params.get(USERNAMES_KEY)
+            options["sort_order"] = validate_and_get_key(query_params, SORTORDER_KEY, VALID_SORTORDER_VALUE, "asc")
+            # Optional query parameters for service account specific filtering
+            options["name"] = query_params.get("name")
+            options["description"] = query_params.get("description")
+            options["clientId"] = query_params.get("clientId")
+            options["owner"] = query_params.get("owner")
+            options["time_created"] = query_params.get("time_created")
 
             # Fetch the service accounts from IT.
             token_validator = ITSSOTokenValidator()
@@ -151,6 +158,7 @@ class PrincipalView(APIView):
             try:
                 it_service = ITService()
                 service_accounts, sa_count = it_service.get_service_accounts(user=user, options=options)
+
             except (requests.exceptions.ConnectionError, UnexpectedStatusCodeFromITError):
                 return Response(
                     status=status.HTTP_500_INTERNAL_SERVER_ERROR,
