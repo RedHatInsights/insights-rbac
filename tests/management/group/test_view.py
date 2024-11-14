@@ -30,6 +30,7 @@ from rest_framework.response import Response
 from rest_framework.test import APIClient
 
 from api.cross_access.model import CrossAccountRequest
+from api.cross_access.util import check_cross_request_expiry
 from api.models import Tenant, User
 from management.cache import TenantCache
 from management.group.serializer import GroupInputSerializer
@@ -5762,3 +5763,111 @@ class GroupReplicationTests(IdentityRequest):
         subjects = {t.subject_id for _, tuples in sr1_bindings.items() for t in tuples if t.relation == "subject"}
 
         self.assertCountEqual(subjects, ["redhat/2222222"])
+
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
+    def test_expire_cross_account_does_not_remove_binding_if_role_granted_to_group(self, replicate):
+        replicate.side_effect = self.in_memory_replicator.replicate
+
+        self.sr1 = self.fixture.new_system_role("sr1", ["app:*:*"])
+
+        # Create a group and give it the system role
+        test_group = Group(name="test group", tenant=self.tenant)
+        test_group.save()
+
+        request_body = {"roles": [self.sr1.uuid]}
+
+        url = reverse("v1_management:group-roles", kwargs={"uuid": test_group.uuid})
+        client = APIClient()
+        response = client.post(url, request_body, format="json", **self.headers_org_admin)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        # Now approve a CAR for the tenant and the same role
+        request = CrossAccountRequest.objects.create(
+            target_account=self.tenant.account_id,
+            target_org=self.tenant.org_id,
+            user_id="2222222",
+            end_date=timezone.now() + timedelta(10),
+            status="pending",
+        )
+        request.roles.add(self.sr1)
+        update_data = {"status": "approved"}
+        car_uuid = request.request_id
+        url = reverse("v1_api:cross-detail", kwargs={"pk": str(car_uuid)})
+        client = APIClient()
+        response = client.patch(url, update_data, format="json", **self.associate_admin_request.META)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        # Check that the roles are now bound to the user in the target account (default workspace)
+        # and the group
+        default_workspace_id = Workspace.objects.get(
+            tenant__org_id=self.tenant.org_id, type=Workspace.Types.DEFAULT
+        ).id
+        default_bindings = self.relations.find_tuples(
+            # Tuples for bindings to the default workspace
+            all_of(resource("rbac", "workspace", default_workspace_id), relation("binding"))
+        )
+
+        # Of these bindings, look for the ones that are for the role
+        sr1_bindings, _ = self.relations.find_group_with_tuples(
+            # Tuples which are...
+            # grouped by resource
+            group_by=lambda t: (t.resource_type_namespace, t.resource_type_name, t.resource_id),
+            # where the resource is one of the default role bindings...
+            group_filter=lambda group: group[0] == "rbac"
+            and group[1] == "role_binding"
+            and group[2] in {str(binding.subject_id) for binding in default_bindings},
+            # and where one of the tuples from that binding has...
+            predicates=[
+                # a subject relation
+                relation("subject"),
+                all_of(
+                    # for the sr1 role
+                    relation("role"),
+                    subject("rbac", "role", str(self.sr1.uuid)),
+                ),
+            ],
+            match_once=False,
+        )
+
+        self.assertEqual(len(sr1_bindings), 1, f"Expected 1 binding but got {len(sr1_bindings)}")
+
+        subjects = {t.subject_id for _, tuples in sr1_bindings.items() for t in tuples if t.relation == "subject"}
+
+        # Assert the bindings are to both subjects
+        self.assertCountEqual(subjects, [str(test_group.uuid), "redhat/2222222"])
+
+        # Now expire the CAR
+        after_expiration = request.end_date + timedelta(seconds=1)
+        with patch("django.utils.timezone.now", return_value=after_expiration):
+            check_cross_request_expiry()
+
+        # Now check the binding is still there and only to the group
+        sr1_bindings, _ = self.relations.find_group_with_tuples(
+            # Tuples which are...
+            # grouped by resource
+            group_by=lambda t: (t.resource_type_namespace, t.resource_type_name, t.resource_id),
+            # where the resource is one of the default role bindings...
+            group_filter=lambda group: group[0] == "rbac"
+            and group[1] == "role_binding"
+            and group[2] in {str(binding.subject_id) for binding in default_bindings},
+            # and where one of the tuples from that binding has...
+            predicates=[
+                # a subject relation
+                relation("subject"),
+                all_of(
+                    # for the sr1 role
+                    relation("role"),
+                    subject("rbac", "role", str(self.sr1.uuid)),
+                ),
+            ],
+            match_once=False,
+        )
+
+        # Assert the roles are correct for these bindings – one per role that was included in the request,
+        # and not any not included in the request
+        self.assertEqual(len(sr1_bindings), 1, f"Expected 1 binding but got {len(sr1_bindings)}")
+
+        # Collect all the bound roles by iterating over the bindings and getting the subjects of the role relation
+        subjects = {t.subject_id for _, tuples in sr1_bindings.items() for t in tuples if t.relation == "subject"}
+
+        self.assertCountEqual(subjects, [str(test_group.uuid)])
