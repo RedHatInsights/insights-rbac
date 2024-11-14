@@ -21,6 +21,7 @@ import os
 import boto3
 from botocore.exceptions import ClientError
 from django.db import IntegrityError
+from management.principal.model import Principal
 from management.role.relation_api_dual_write_handler import OutboxReplicator
 from management.tenant_mapping.model import logger
 from management.tenant_service.v2 import V2TenantBootstrapService
@@ -28,9 +29,12 @@ from management.tenant_service.v2 import V2TenantBootstrapService
 from api.models import User
 
 
-FILE_NAME = "data_user.csv"
-FILE_PATH = f"/tmp/{FILE_NAME}"
 BOOT_STRAP_SERVICE = V2TenantBootstrapService(OutboxReplicator())
+
+
+def get_file_path(file_name):
+    """Get the file path for the users data."""
+    return f"/tmp/{file_name}"
 
 
 def get_s3_client():
@@ -42,24 +46,26 @@ def get_s3_client():
     )
 
 
-def download_tenant_user_data():
+def download_data_from_S3(file_name):
     """Download users data from S3."""
     s3_client = get_s3_client()
-    if os.path.exists(FILE_PATH):
-        os.remove(FILE_PATH)
-        logger.info(f"Removed existing user data file: {FILE_PATH}")
+    file_path = get_file_path(file_name)
+
+    if os.path.exists(file_path):
+        os.remove(file_path)
+        logger.info(f"Removed existing user data file: {file_path}")
 
     bucket = os.environ.get("S3_AWS_BUCKET")
     logger.info(f"Downloading file from S3 bucket: {bucket}")
     try:
-        s3_client.download_file(f"{bucket}", f"users_data/{FILE_NAME}", FILE_PATH)
+        s3_client.download_file(f"{bucket}", f"users_data/{file_name}", file_path)
         logger.info("File downloaded successfully.")
     except ClientError as e:
         logger.info(f"Error downloading file: {e}")
         raise
 
 
-def populate_tenant_user_data(start_line=1, batch_size=1000):
+def populate_tenant_user_data(file_name, start_line=1, batch_size=1000):
     """
     Populate tenant and user data from the downloaded file.
 
@@ -67,7 +73,8 @@ def populate_tenant_user_data(start_line=1, batch_size=1000):
         batch_size (int): Number of records to process in each batch.
         start(int): Line number to start processing from (1).
     """
-    with open(FILE_PATH, "r") as file:
+    file_path = get_file_path(file_name)
+    with open(file_path, "r") as file:
         csv_reader = csv.reader(file)
         # Skip lines until start
         for _ in range(start_line):
@@ -105,3 +112,18 @@ def process_batch(batch_data):
         """Retry once if there is creation conflict."""
         logger.info(f"IntegrityError: {e.__cause__}. Retrying import.")
         BOOT_STRAP_SERVICE.import_bulk_users(users)
+
+
+def populate_service_account_data(file_name):
+    """Populate service account data from the downloaded file."""
+    file_path = get_file_path(file_name)
+    id_mapping = {}
+    with open(file_path, "r") as file:
+        csv_reader = csv.reader(file)
+        next(csv_reader, None)  # Skip header
+        for row in csv_reader:
+            user_id, client_id = row
+            id_mapping[client_id] = user_id
+    for principal in Principal.objects.filter(type=Principal.Types.SERVICE_ACCOUNT):
+        principal.user_id = id_mapping.get(principal.service_account_id)
+        principal.save()
