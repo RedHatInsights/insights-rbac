@@ -161,7 +161,7 @@ class InMemoryTuples:
         # Iterate over each group
         predicate_list = predicates if isinstance(predicates, list) else [predicates]
         for key, group_tuples in grouped_tuples.items():
-            remaining_tuples = set(group_tuples)
+            remaining_tuples = list(group_tuples)
             remaining_predicates = list(predicate_list) if match_once else predicate_list
             i = 0
             matching_tuples = []
@@ -172,12 +172,18 @@ class InMemoryTuples:
             while remaining_predicates and i < len(remaining_predicates):
                 predicate = remaining_predicates[i]
                 found = False
-                for rel in remaining_tuples:
+                
+                j = 0
+                while j < len(remaining_tuples):
+                    rel = remaining_tuples[j]
                     if predicate(rel):
                         matching_tuples.append(rel)
-                        remaining_tuples.remove(rel)
+                        remaining_tuples.pop(j)
                         found = True
-                        break  # Move to next predicate
+                        if match_once:
+                            break  # Move to next predicate
+                    else:
+                        j += 1
                 if not found:
                     success = False
                     break  # Predicate not satisfied in this group

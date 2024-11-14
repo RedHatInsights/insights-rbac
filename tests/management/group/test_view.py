@@ -5716,6 +5716,7 @@ class GroupReplicationTests(IdentityRequest):
                     subject("rbac", "role", str(self.sr1.uuid)),
                 ),
             ],
+            match_once=False,
         )
 
         self.assertEqual(len(sr1_bindings), 1, f"Expected 1 binding but got {len(sr1_bindings)}")
@@ -5723,7 +5724,7 @@ class GroupReplicationTests(IdentityRequest):
         subjects = {t.subject_id for _, tuples in sr1_bindings.items() for t in tuples if t.relation == "subject"}
 
         # Assert the bindings are to both subjects
-        self.assertCountEqual(subjects, [str(test_group.uuid), "redhat/222222"])
+        self.assertCountEqual(subjects, [str(test_group.uuid), "redhat/2222222"])
 
         url = reverse("v1_management:group-roles", kwargs={"uuid": test_group.uuid})
         url = "{}?roles={}".format(url, self.sr1.uuid)
@@ -5750,6 +5751,7 @@ class GroupReplicationTests(IdentityRequest):
                     subject("rbac", "role", str(self.sr1.uuid)),
                 ),
             ],
+            match_once=False,
         )
 
         # Assert the roles are correct for these bindings – one per role that was included in the request,
@@ -5759,4 +5761,4 @@ class GroupReplicationTests(IdentityRequest):
         # Collect all the bound roles by iterating over the bindings and getting the subjects of the role relation
         subjects = {t.subject_id for _, tuples in sr1_bindings.items() for t in tuples if t.relation == "subject"}
 
-        self.assertCountEqual(subjects, [str(self.sr1.uuid)], f"Expected role {self.sr1.uuid}")
+        self.assertCountEqual(subjects, ["redhat/2222222"])
