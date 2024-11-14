@@ -252,11 +252,11 @@ class CrossAccountRequestViewSet(
         """Update the status of a cross-account-request."""
         car.status = status
         if status == "approved":
-            cross_principal = create_cross_principal(car.user_id, target_org=car.target_org)
+            create_cross_principal(car.user_id, target_org=car.target_org)
             cross_account_roles = car.roles.all()
             if any(True for _ in cross_account_roles):
                 dual_write_handler = RelationApiDualWriteCrossAccessHandler(
-                    cross_principal, ReplicationEventType.APPROVE_CROSS_ACCOUNT_REQUEST
+                    car, ReplicationEventType.APPROVE_CROSS_ACCOUNT_REQUEST
                 )
                 dual_write_handler.generate_relations_to_add_roles(cross_account_roles)
                 dual_write_handler.replicate()

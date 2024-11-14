@@ -38,11 +38,11 @@ def check_cross_request_expiry():
         logger.debug("Checking for expiration of cross-account request %s.", car.pk)
         if car.end_date < timezone.now():
             logger.info("Expiring cross-account request with uuid: %s", car.pk)
-            principal = create_cross_principal(car.user_id, car.target_org)
+            create_cross_principal(car.user_id, car.target_org)
             cross_account_roles = car.roles.all()
             if any(True for _ in cross_account_roles) and car.status == "approved":
                 dual_write_handler = RelationApiDualWriteCrossAccessHandler(
-                    principal, ReplicationEventType.EXPIRE_CROSS_ACCOUNT_REQUEST
+                    car, ReplicationEventType.EXPIRE_CROSS_ACCOUNT_REQUEST
                 )
                 dual_write_handler.generate_relations_to_remove_roles(cross_account_roles)
                 dual_write_handler.replicate()

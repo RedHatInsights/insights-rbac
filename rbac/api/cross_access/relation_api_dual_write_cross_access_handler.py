@@ -33,6 +33,8 @@ from management.relation_replicator.relation_replicator import (
 from management.role.model import BindingMapping, Role
 from migration_tool.models import V2boundresource, V2role, V2rolebinding
 
+from api.models import CrossAccountRequest
+
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 
@@ -43,7 +45,7 @@ class RelationApiDualWriteCrossAccessHandler:
 
     def __init__(
         self,
-        principal,
+        cross_account_request: CrossAccountRequest,
         event_type: ReplicationEventType,
         replicator: Optional[RelationReplicator] = None,
     ):
@@ -51,17 +53,14 @@ class RelationApiDualWriteCrossAccessHandler:
         if not self.replication_enabled():
             return
 
-        assert principal.cross_account, "Cross account principal is required."
-
         try:
             self.relations_to_add = []
             self.relations_to_remove = []
-            self.cross_account_principal = principal
+            self.cross_account_request = cross_account_request
             self.default_workspace = Workspace.objects.get(
-                tenant_id=self.cross_account_principal.tenant_id, type=Workspace.Types.DEFAULT
+                tenant__org_id=self.cross_account_request.target_org, type=Workspace.Types.DEFAULT
             )
             self.event_type = event_type
-            self.cross_account_principal_domain = settings.PRINCIPAL_USER_DOMAIN
             self._replicator = replicator if replicator else OutboxReplicator()
         except Exception as e:
             raise DualWriteException(e)
@@ -77,7 +76,7 @@ class RelationApiDualWriteCrossAccessHandler:
             self._replicator.replicate(
                 ReplicationEvent(
                     event_type=self.event_type,
-                    info={"user_uuid": str(self.cross_account_principal.user_id)},
+                    info={"user_uuid": str(self.cross_account_request.user_id)},
                     partition_key=PartitionKey.byEnvironment(),
                     remove=self.relations_to_remove,
                     add=self.relations_to_add,
@@ -94,7 +93,7 @@ class RelationApiDualWriteCrossAccessHandler:
             # Assumes same role UUID for V2 system role equivalent.
             V2role.for_system_role(str(system_role.uuid)),
             V2boundresource(("rbac", "workspace"), str(self.default_workspace.id)),
-            users=frozenset([str(self.cross_account_principal.user_id)]),
+            users=frozenset([str(self.cross_account_request.user_id)]),
         )
         mapping = BindingMapping.for_role_binding(binding, system_role)
         self.relations_to_add.extend(mapping.as_tuples())
@@ -106,7 +105,7 @@ class RelationApiDualWriteCrossAccessHandler:
             return
 
         def add_principal_to_binding(mapping: BindingMapping):
-            self.relations_to_add.append(mapping.add_user_to_bindings(str(self.cross_account_principal.user_id)))
+            self.relations_to_add.append(mapping.add_user_to_bindings(str(self.cross_account_request.user_id)))
 
         for role in roles:
             self._update_mapping_for_system_role(
@@ -128,9 +127,7 @@ class RelationApiDualWriteCrossAccessHandler:
             return
 
         def remove_principal_from_binding(mapping: BindingMapping):
-            self.relations_to_remove.append(
-                mapping.remove_user_from_bindings(str(self.cross_account_principal.user_id))
-            )
+            self.relations_to_remove.append(mapping.remove_user_from_bindings(str(self.cross_account_request.user_id)))
 
         for role in roles:
             self._update_mapping_for_system_role(
