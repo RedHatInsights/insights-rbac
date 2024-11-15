@@ -339,9 +339,37 @@ class InMemoryTuples:
         require_full_match: bool = True,
         match_once: bool = True,
     ) -> "TupleSet":
+        """
+        Traverse through the tuples to find and match tuples where the subject is the resource of the current tuple.
+
+        The returned set contains all tuples that match the predicates
+        and have a resource that is the subject of a tuple in this set.
+
+        Args:
+            predicates (List[RelationPredicate]):
+                A list of predicate functions that take a RelationTuple
+                and return a boolean indicating if the tuple matches the condition.
+            require_full_match (bool, optional):
+                If True, each predicate must be matched at least once. Defaults to True.
+            match_once (bool, optional):
+                If True, each tuple in the traversed list should be matched by at least one predicate. Defaults to True.
+        Returns:
+            TupleSet: A set of matched RelationTuples.
+        """
         return TupleSet(self, self._tuples).traverse_subject(predicates, require_full_match, match_once)
 
     def resource_is_subject_of(self, tuple_matching: RelationPredicate) -> RelationPredicate:
+        """
+        Create a predicate to test if a tuple's resource is a subject of stored tuples matching the given predicate.
+
+        Args:
+            tuple_matching (RelationPredicate): A function that matches a relation tuple.
+
+        Returns:
+            RelationPredicate: A predicate function that takes a RelationTuple and returns a boolean
+                               indicating if the resource is a subject of the given relation tuple.
+        """
+
         def predicate(rel: RelationTuple) -> bool:
             count = self.count_tuples(
                 all_of(tuple_matching, subject(rel.resource_type_namespace, rel.resource_type_name, rel.resource_id))
@@ -356,8 +384,7 @@ class InMemoryTuples:
         only: bool = False,
     ) -> RelationPredicate:
         """
-        Create a predicate that tests for tuples whose subject is a resource
-        in another tuple matching the given predicate or predicates.
+        Create a predicate to test if a tuple's subject is a resource of stored tuples matching the given predicate.
 
         If [only] is True, the predicate will return True
         only if the matched tuples are the only subjects related to the tested subject.
@@ -369,9 +396,8 @@ class InMemoryTuples:
 
         Returns:
             RelationPredicate: A predicate function that takes a RelationTuple and returns a boolean
-                                             indicating if the subject is a resource of the given relation tuple.
+                               indicating if the subject is a resource of the given relation tuple.
         """
-
         predicates = [tuple_matching] if not isinstance(tuple_matching, list) else tuple_matching
 
         def predicate(rel: RelationTuple) -> bool:
