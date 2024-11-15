@@ -31,7 +31,12 @@ class WorkspaceSerializerTest(TestCase):
     def setUp(self):
         """Set up workspace serializer tests."""
         tenant = Tenant.objects.get(tenant_name="public")
-        self.parent = Workspace.objects.create(name="Parent", description="Parent desc", tenant=tenant)
+        self.parent = Workspace.objects.create(
+            name="Parent",
+            description="Parent desc",
+            tenant=tenant,
+            type=Workspace.Types.ROOT,
+        )
         self.child = Workspace.objects.create(
             name="Child", description="Child desc", tenant=tenant, parent=self.parent
         )
