@@ -45,12 +45,12 @@ class OutboxReplicatorTest(TestCase):
         super().setUp()
         self.log = InMemoryLog()
         self.replicator = OutboxReplicator(self.log)
-        self._prior_logging_disabled = logging.root.disabled
+        self._prior_logging_disable_level = logging.root.manager.disable
         logging.disable(logging.NOTSET)
 
     def tearDown(self) -> None:
         super().tearDown()
-        logging.disable(self._prior_logging_disabled)
+        logging.disable(self._prior_logging_disable_level)
 
     @override_settings(ENV_NAME="test-env")
     def test_replicate_sends_event_to_log_as_json(self):
