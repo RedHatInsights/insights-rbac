@@ -23,6 +23,7 @@ from uuid import uuid4
 from django.conf import settings
 from kessel.relations.v1beta1.common_pb2 import Relationship
 from management.group.model import Group
+from management.group.relation_api_dual_write_subject_handler import RelationApiDualWriteSubjectHandler
 from management.models import Workspace
 from management.principal.model import Principal
 from management.relation_replicator.outbox_replicator import OutboxReplicator
@@ -43,7 +44,7 @@ from api.models import Tenant
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 
-class RelationApiDualWriteGroupHandler:
+class RelationApiDualWriteGroupHandler(RelationApiDualWriteSubjectHandler):
     """Class to handle Dual Write API related operations."""
 
     group: Group
@@ -59,25 +60,16 @@ class RelationApiDualWriteGroupHandler:
             return
 
         try:
-            self.group_relations_to_add = []
-            self.group_relations_to_remove = []
-            self.principals = []
             self.group = group
-            self.default_workspace = Workspace.objects.get(
-                tenant_id=self.group.tenant_id, type=Workspace.Types.DEFAULT
-            )
-            self.event_type = event_type
-            self.user_domain = settings.PRINCIPAL_USER_DOMAIN
-            self._replicator = replicator if replicator else OutboxReplicator()
+            self.principals = []
             self._platform_default_policy_uuid: Optional[str] = None
             self._public_tenant: Optional[Tenant] = None
             self._tenant_mapping = None
+
+            default_workspace = Workspace.objects.get(tenant_id=self.group.tenant_id, type=Workspace.Types.DEFAULT)
+            super().__init__(default_workspace, event_type, replicator)
         except Exception as e:
             raise DualWriteException(e)
-
-    def replication_enabled(self):
-        """Check whether replication enabled."""
-        return settings.REPLICATION_TO_RELATION_ENABLED is True
 
     def _generate_member_relations(self):
         """Generate user-groups relations."""
@@ -99,7 +91,7 @@ class RelationApiDualWriteGroupHandler:
             return
         logger.info("[Dual Write] Generate new relations from Group(%s): '%s'", self.group.uuid, self.group.name)
         self.principals = principals
-        self.group_relations_to_add = self._generate_member_relations()
+        self.relations_to_add = self._generate_member_relations()
 
     def replicate_new_principals(self, principals: list[Principal]):
         """Replicate new principals into group."""
@@ -114,7 +106,7 @@ class RelationApiDualWriteGroupHandler:
             return
         logger.info("[Dual Write] Generate new relations from Group(%s): '%s'", self.group.uuid, self.group.name)
         self.principals = principals
-        self.group_relations_to_remove = self._generate_member_relations()
+        self.relations_to_remove = self._generate_member_relations()
 
         self._replicate()
 
@@ -127,8 +119,8 @@ class RelationApiDualWriteGroupHandler:
                     event_type=self.event_type,
                     info={"group_uuid": str(self.group.uuid)},
                     partition_key=PartitionKey.byEnvironment(),
-                    remove=self.group_relations_to_remove,
-                    add=self.group_relations_to_add,
+                    remove=self.relations_to_remove,
+                    add=self.relations_to_add,
                 ),
             )
         except Exception as e:
@@ -136,17 +128,7 @@ class RelationApiDualWriteGroupHandler:
 
     def _create_default_mapping_for_system_role(self, system_role: Role):
         """Create default mapping."""
-        assert system_role.system is True, "Expected system role. Mappings for custom roles must already be created."
-        binding = V2rolebinding(
-            str(uuid4()),
-            # Assumes same role UUID for V2 system role equivalent.
-            V2role.for_system_role(str(system_role.uuid)),
-            V2boundresource(("rbac", "workspace"), str(self.default_workspace.id)),
-            groups=frozenset([str(self.group.uuid)]),
-        )
-        mapping = BindingMapping.for_role_binding(binding, system_role)
-        self.group_relations_to_add.extend(mapping.as_tuples())
-        return mapping
+        return super()._create_default_mapping_for_system_role(system_role, groups=frozenset([str(self.group.uuid)]))
 
     def generate_relations_to_add_roles(
         self, roles: Iterable[Role], remove_default_access_from: Optional[TenantMapping] = None
@@ -156,7 +138,7 @@ class RelationApiDualWriteGroupHandler:
             return
 
         def add_group_to_binding(mapping: BindingMapping):
-            self.group_relations_to_add.append(mapping.add_group_to_bindings(str(self.group.uuid)))
+            self.relations_to_add.append(mapping.add_group_to_bindings(str(self.group.uuid)))
 
         for role in roles:
             self._update_mapping_for_role(
@@ -167,7 +149,7 @@ class RelationApiDualWriteGroupHandler:
 
         if remove_default_access_from is not None:
             default_binding = self._default_binding(mapping=remove_default_access_from)
-            self.group_relations_to_remove.append(default_binding)
+            self.relations_to_remove.append(default_binding)
 
     def replicate(self):
         """Replicate added role."""
@@ -186,76 +168,11 @@ class RelationApiDualWriteGroupHandler:
 
     def _update_mapping_for_role_removal(self, role: Role):
         def remove_group_from_binding(mapping: BindingMapping):
-            self.group_relations_to_remove.append(mapping.remove_group_from_bindings(str(self.group.uuid)))
+            self.relations_to_remove.append(mapping.remove_group_from_bindings(str(self.group.uuid)))
 
         self._update_mapping_for_role(
-            role, update_mapping=remove_group_from_binding, create_default_mapping_for_system_role=lambda: None
+            role, update_mapping=remove_group_from_binding, create_default_mapping_for_system_role=None
         )
-
-    def _update_mapping_for_role(
-        self,
-        role: Role,
-        update_mapping: Callable[[BindingMapping], None],
-        create_default_mapping_for_system_role: Callable[[], Optional[BindingMapping]],
-    ):
-        """
-        Update mapping for role using callbacks based on current state.
-
-        Callbacks are expected to modify [self.group_relations_to_add] and [self.group_relations_to_remove].
-        This method handles persistence and locking itself.
-        """
-        if not self.replication_enabled():
-            return
-
-        if role.system:
-            try:
-                # We lock the binding here because we cannot lock the Role for system roles,
-                # as they are used platform-wide,
-                # and their permissions do not refer to specific resources,
-                # so they can be changed concurrently safely.
-                mapping = (
-                    BindingMapping.objects.select_for_update()
-                    .filter(
-                        role=role,
-                        resource_type_namespace="rbac",
-                        resource_type_name="workspace",
-                        resource_id=str(self.default_workspace.id),
-                    )
-                    .get()
-                )
-
-                update_mapping(mapping)
-
-                if mapping.is_unassigned():
-                    self.group_relations_to_remove.extend(mapping.as_tuples())
-                    mapping.delete()
-                else:
-                    mapping.save(force_update=True)
-            except BindingMapping.DoesNotExist:
-                # create_default_mapping_for_system_role returns None for removing system roles
-                mapping = create_default_mapping_for_system_role()
-                if mapping is not None:
-                    mapping.save(force_insert=True)
-        else:
-            # NOTE: The custom Role MUST be locked before this point in Read Committed isolation.
-            # There is a risk of write skew here otherwise, in the case that permissions are added
-            # to a custom role that currently has no permissions.
-            # In that case there would be no bindings to lock.
-            # We must lock something to prevent concurrent updates, so we lock the Role.
-            # Because custom roles must be locked already by this point,
-            # we don't need to lock the binding here.
-            bindings: Iterable[BindingMapping] = role.binding_mappings.all()
-            if not bindings:
-                logger.warning(
-                    "[Dual Write] Binding mappings not found for role(%s): '%s'. "
-                    "Assuming no current relations exist. "
-                    "If this is NOT the case, relations are inconsistent!",
-                    role.uuid,
-                    role.name,
-                )
-            for mapping in bindings:
-                update_mapping(mapping)
-                mapping.save(force_update=True)
 
     def prepare_to_delete_group(self):
         """Generate relations to delete."""
@@ -279,10 +196,10 @@ class RelationApiDualWriteGroupHandler:
             custom_ids.append(role.id)
 
         if self.group.platform_default:
-            self.group_relations_to_add.append(self._default_binding())
+            self.relations_to_add.append(self._default_binding())
         else:
             self.principals = self.group.principals.all()
-            self.group_relations_to_remove.extend(self._generate_member_relations())
+            self.relations_to_remove.extend(self._generate_member_relations())
 
     def _default_binding(self, mapping: Optional[TenantMapping] = None) -> Relationship:
         """Calculate default bindings from tenant mapping."""

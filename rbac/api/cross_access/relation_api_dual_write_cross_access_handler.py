@@ -21,6 +21,7 @@ from typing import Callable, Iterable, Optional
 from uuid import uuid4
 
 from django.conf import settings
+from management.group.relation_api_dual_write_subject_handler import RelationApiDualWriteSubjectHandler
 from management.models import Workspace
 from management.relation_replicator.outbox_replicator import OutboxReplicator
 from management.relation_replicator.relation_replicator import (
@@ -38,7 +39,7 @@ from api.models import CrossAccountRequest
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 
-class RelationApiDualWriteCrossAccessHandler:
+class RelationApiDualWriteCrossAccessHandler(RelationApiDualWriteSubjectHandler):
     """Class to handle Dual Write API related operations."""
 
     def __init__(
@@ -52,20 +53,13 @@ class RelationApiDualWriteCrossAccessHandler:
             return
 
         try:
-            self.relations_to_add = []
-            self.relations_to_remove = []
             self.cross_account_request = cross_account_request
-            self.default_workspace = Workspace.objects.get(
+            default_workspace = Workspace.objects.get(
                 tenant__org_id=self.cross_account_request.target_org, type=Workspace.Types.DEFAULT
             )
-            self.event_type = event_type
-            self._replicator = replicator if replicator else OutboxReplicator()
+            super().__init__(default_workspace, event_type, replicator)
         except Exception as e:
             raise DualWriteException(e)
-
-    def replication_enabled(self):
-        """Check whether replication enabled."""
-        return settings.REPLICATION_TO_RELATION_ENABLED is True
 
     def _replicate(self):
         if not self.replication_enabled():
@@ -89,17 +83,9 @@ class RelationApiDualWriteCrossAccessHandler:
 
     def _create_default_mapping_for_system_role(self, system_role: Role):
         """Create default mapping."""
-        assert system_role.system is True, "Expected system role. Mappings for custom roles must already be created."
-        binding = V2rolebinding(
-            str(uuid4()),
-            # Assumes same role UUID for V2 system role equivalent.
-            V2role.for_system_role(str(system_role.uuid)),
-            V2boundresource(("rbac", "workspace"), str(self.default_workspace.id)),
-            users=frozenset([str(self.cross_account_request.user_id)]),
+        return super()._create_default_mapping_for_system_role(
+            system_role, users=frozenset([str(self.cross_account_request.user_id)])
         )
-        mapping = BindingMapping.for_role_binding(binding, system_role)
-        self.relations_to_add.extend(mapping.as_tuples())
-        return mapping
 
     def generate_relations_to_add_roles(self, roles: Iterable[Role]):
         """Generate relations to add roles."""
@@ -133,43 +119,5 @@ class RelationApiDualWriteCrossAccessHandler:
 
         for role in roles:
             self._update_mapping_for_system_role(
-                role, update_mapping=remove_principal_from_binding, create_default_mapping_for_system_role=lambda: None
+                role, update_mapping=remove_principal_from_binding, create_default_mapping_for_system_role=None
             )
-
-    def _update_mapping_for_system_role(
-        self,
-        role: Role,
-        update_mapping: Callable[[BindingMapping], None],
-        create_default_mapping_for_system_role: Callable[[], Optional[BindingMapping]],
-    ):
-        if role.system is False:
-            raise DualWriteException("System roles cannot be replicated for a cross-account request.")
-
-        try:
-            # We lock the binding here because we cannot lock the Role for system roles,
-            # as they are used platform-wide,
-            # and their permissions do not refer to specific resources,
-            # so they can be changed concurrently safely.
-            mapping = (
-                BindingMapping.objects.select_for_update()
-                .filter(
-                    role=role,
-                    resource_type_namespace="rbac",
-                    resource_type_name="workspace",
-                    resource_id=str(self.default_workspace.id),
-                )
-                .get()
-            )
-
-            update_mapping(mapping)
-
-            if mapping.is_unassigned():
-                self.relations_to_remove.extend(mapping.as_tuples())
-                mapping.delete()
-            else:
-                mapping.save(force_update=True)
-        except BindingMapping.DoesNotExist:
-            # create_default_mapping_for_system_role returns None for removing system roles
-            mapping = create_default_mapping_for_system_role()
-            if mapping is not None:
-                mapping.save(force_insert=True)

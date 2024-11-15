@@ -45,6 +45,7 @@ class CrossAccountRequestTest(IdentityRequest):
         super().setUp()
 
         self.relations = InMemoryTuples()
+        self.replicator = InMemoryRelationReplicator(self.relations)
         self.fixture = RbacFixture(V2TenantBootstrapService(InMemoryRelationReplicator(self.relations)))
 
         self.ref_time = timezone.now()

@@ -773,8 +773,11 @@ class CrossAccountRequestViewTests(CrossAccountRequestTest):
         self.assertEqual(len(response.data.get("roles")), 2)
 
     @override_settings(PRINCIPAL_USER_DOMAIN="localhost")
-    def test_approval_replicates_bindings(self):
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
+    def test_approval_replicates_bindings(self, replicate):
         """Test that when cross account access is approved, role bindings are replicated to Relations."""
+        replicate.side_effect = self.replicator.replicate
+
         # Modify pending request such that it includes roles
         farmer = self.fixture.new_system_role("Farmer", ["farm:soil:rake"])
         fisher = self.fixture.new_system_role("Fisher", ["stream:fish:catch"])
@@ -784,12 +787,8 @@ class CrossAccountRequestViewTests(CrossAccountRequestTest):
         # Add roles to request for user 2222222 and approve it.
         self.add_roles_to_request(self.request_4, [farmer, fisher])
 
-        with patch(
-            "api.cross_access.relation_api_dual_write_cross_access_handler.OutboxReplicator",
-            new=partial(InMemoryRelationReplicator, self.relations),
-        ):
-            # generated relations to approve request
-            self.approve_request(self.request_4)
+        # generated relations to approve request
+        self.approve_request(self.request_4)
 
         # Check that the roles are now bound to the user in the target account (default workspace)
         default_workspace_id = Workspace.objects.get(tenant__org_id=self.org_id, type=Workspace.Types.DEFAULT).id
@@ -821,7 +820,7 @@ class CrossAccountRequestViewTests(CrossAccountRequestTest):
 
         # Assert the roles are correct for these bindings – one per role that was included in the request,
         # and not any not included in the request
-        self.assertEqual(len(cross_account_bindings), 2, f"Expected 2 bindings but got {len(cross_account_bindings)}")
+        self.assertEqual(len(cross_account_bindings), 2, "Missing bindings for cross access request roles")
 
         # Collect all the bound roles by iterating over the bindings and getting the subjects of the role relation
         bound_roles = {
