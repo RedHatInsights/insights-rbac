@@ -148,6 +148,7 @@ class PrincipalView(APIView):
             options["clientId"] = query_params.get("clientId")
             options["owner"] = query_params.get("owner")
             options["time_created"] = query_params.get("time_created")
+            options["order_by"] = query_params.get("order_by")
 
             # Fetch the service accounts from IT.
             token_validator = ITSSOTokenValidator()

@@ -327,6 +327,11 @@ class ITService:
                     filtered_service_accounts.append(sa)
             return filtered_service_accounts, count
 
+        # If any order_by parameter is passed then sort the service accounts by that field either asc or desc
+        if order_by in ["time_created", "name", "description", "clientId", "owner"]:
+            service_accounts.sort(reverse=order_by.startswith("-"), key=lambda sa: sa.get(order_by, float("inf")))
+        print(service_accounts)
+
         return service_accounts, count
 
     def get_service_accounts_group(self, group: Group, user: User, options: dict[str, Any] = {}) -> list[dict]:
