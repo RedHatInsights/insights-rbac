@@ -18,7 +18,6 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 from dataclasses import dataclass
 from typing import Tuple
 
-from django.conf import settings
 from kessel.relations.v1beta1.common_pb2 import Relationship
 from management.principal.model import Principal
 from migration_tool.utils import create_relationship

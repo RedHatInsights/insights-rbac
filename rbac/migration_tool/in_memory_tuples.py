@@ -172,7 +172,6 @@ class InMemoryTuples:
             while remaining_predicates and i < len(remaining_predicates):
                 predicate = remaining_predicates[i]
                 found = False
-                
                 j = 0
                 while j < len(remaining_tuples):
                     rel = remaining_tuples[j]

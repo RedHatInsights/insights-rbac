@@ -21,7 +21,7 @@ from typing import Callable, Iterable, Optional
 from uuid import uuid4
 
 from django.conf import settings
-from management.models import Principal, Workspace
+from management.models import Workspace
 from management.relation_replicator.outbox_replicator import OutboxReplicator
 from management.relation_replicator.relation_replicator import (
     DualWriteException,
