@@ -95,6 +95,8 @@ class RelationApiDualWriteGroupHandler:
 
     def generate_relations_to_add_principals(self, principals: list[Principal]):
         """Generate relations to add principals."""
+        if not self.replication_enabled():
+            return
         logger.info("[Dual Write] Generate new relations from Group(%s): '%s'", self.group.uuid, self.group.name)
         self.principals = principals
         self.group_relations_to_add = self._generate_member_relations()

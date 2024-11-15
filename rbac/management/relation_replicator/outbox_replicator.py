@@ -20,6 +20,7 @@
 import logging
 from typing import Any, Dict, List, Optional, Protocol, TypedDict
 
+from django.db import transaction
 from google.protobuf import json_format
 from kessel.relations.v1beta1.common_pb2 import Relationship
 from management.models import Outbox
@@ -28,9 +29,14 @@ from management.relation_replicator.relation_replicator import (
     ReplicationEvent,
     ReplicationEventType,
 )
+from prometheus_client import Counter
 
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
+
+relations_replication_event_total = Counter(
+    "relations_replication_event_total", "Total count of relations replication events"
+)
 
 
 class ReplicationEventPayload(TypedDict):
@@ -92,6 +98,9 @@ class OutboxReplicator(RelationReplicator):
             event_type,
             logged_info,
         )
+
+        transaction.on_commit(relations_replication_event_total.inc)
+
         # https://debezium.io/documentation/reference/stable/transformations/outbox-event-router.html#basic-outbox-table
         outbox = Outbox(
             aggregatetype="relations-replication-event",
@@ -99,6 +108,7 @@ class OutboxReplicator(RelationReplicator):
             event_type=event_type,
             payload=payload,
         )
+
         self._log.log(outbox)
 
 

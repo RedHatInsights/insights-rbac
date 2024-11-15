@@ -876,3 +876,59 @@ class CrossAccountRequestViewTests(IdentityRequest):
         self.assertEqual(response.data.get("email"), "test_user@email.com")
         self.assertEqual(response.data.get("target_org"), self.org_id)
         self.assertEqual(len(response.data.get("roles")), 2)
+
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={
+            "status_code": 200,
+            "data": [
+                {
+                    "username": "test_user",
+                    "email": "test_user@email.com",
+                    "first_name": "user",
+                    "last_name": "test",
+                    "account_number": "567890",
+                    "user_id": "1111111",
+                },
+                {
+                    "username": "test_user_2",
+                    "email": "test_user_2@email.com",
+                    "first_name": "user_2",
+                    "last_name": "test",
+                    "account_number": "123456",
+                    "user_id": "2222222",
+                },
+            ],
+        },
+    )
+    def test_list_requests_query_limit_offset(self, mock_request):
+        """Test limit and offset when listing the cross account requests."""
+        client = APIClient()
+        default_limit = 10
+        default_offset = 0
+        # Test that default values for limit and offset are returned for
+        # query with no limit and offset
+        response = client.get(URL_LIST, **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 4)
+        self.assertEqual(response.data.get("meta").get("limit"), default_limit)
+        self.assertEqual(response.data.get("meta").get("offset"), default_offset)
+
+        # Test that default values for limit and offset are returned for
+        # query with invalid limit or offset
+        for limit, offset in [("xxx", "xxx"), ("", "")]:
+            url = f"{URL_LIST}?limit={limit}&offset={offset}"
+            response = client.get(url, **self.headers)
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            self.assertEqual(len(response.data["data"]), 4)
+            self.assertEqual(response.data.get("meta").get("limit"), default_limit)
+            self.assertEqual(response.data.get("meta").get("offset"), default_offset)
+
+        # Test that correct values for limit and offset are returned for
+        # query with specific limit or offset
+        url = f"{URL_LIST}?limit={2}&offset={2}"
+        response = client.get(url, **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 2)
+        self.assertEqual(response.data.get("meta").get("limit"), 2)
+        self.assertEqual(response.data.get("meta").get("offset"), 2)

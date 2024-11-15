@@ -97,6 +97,7 @@ objects:
         - name: umb-certs
           secret:
             secretName: service-accounts
+            optional: true
             items:
             - key: umb-cert
               path: cert.pem

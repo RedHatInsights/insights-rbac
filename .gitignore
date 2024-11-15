@@ -134,3 +134,6 @@ dev/*
 /scripts/ephemeral/config.yaml
 docs/source/specs/typespec/node_modules/
 docs/source/specs/typespec/tsp-output/
+
+# umb certs
+rbac/management/principal/umb_certs/
