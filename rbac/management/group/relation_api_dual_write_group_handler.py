@@ -45,7 +45,7 @@ logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 
 class RelationApiDualWriteGroupHandler(RelationApiDualWriteSubjectHandler):
-    """Class to handle Dual Write API related operations."""
+    """Class to handle Dual Write for group bindings and membership."""
 
     group: Group
 

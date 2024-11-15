@@ -40,7 +40,7 @@ logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 
 class RelationApiDualWriteCrossAccessHandler(RelationApiDualWriteSubjectHandler):
-    """Class to handle Dual Write API related operations."""
+    """Class to handle Dual Write for cross account access bindings."""
 
     def __init__(
         self,
@@ -48,7 +48,7 @@ class RelationApiDualWriteCrossAccessHandler(RelationApiDualWriteSubjectHandler)
         event_type: ReplicationEventType,
         replicator: Optional[RelationReplicator] = None,
     ):
-        """Initialize RelationApiDualWriteGroupHandler."""
+        """Initialize RelationApiDualWriteCrossAccessHandler."""
         if not self.replication_enabled():
             return
 

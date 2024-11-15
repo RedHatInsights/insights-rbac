@@ -35,7 +35,7 @@ logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 
 class RelationApiDualWriteSubjectHandler:
-    """Class to handle Dual Write API related operations."""
+    """Base class to handle dual write algorithm for bindings to subjects."""
 
     def __init__(
         self,
@@ -43,7 +43,7 @@ class RelationApiDualWriteSubjectHandler:
         event_type: ReplicationEventType,
         replicator: Optional[RelationReplicator] = None,
     ):
-        """Initialize RelationApiDualWriteGroupHandler."""
+        """Initialize RelationApiDualWriteSubjectHandler."""
         if not self.replication_enabled():
             return
 
