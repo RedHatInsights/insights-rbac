@@ -103,14 +103,14 @@ class RelationApiDualWriteCrossAccessHandler(RelationApiDualWriteSubjectHandler)
             )
 
     def replicate(self):
-        """Replicate added role."""
+        """Replicate generated relations."""
         if not self.replication_enabled():
             return
 
         self._replicate()
 
     def generate_relations_to_remove_roles(self, roles: Iterable[Role]):
-        """Replicate removed role."""
+        """Generate relations to remove roles."""
         if not self.replication_enabled():
             return
 

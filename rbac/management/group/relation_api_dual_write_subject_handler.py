@@ -152,17 +152,25 @@ class RelationApiDualWriteSubjectHandler:
             else:
                 mapping.save(force_update=True)
         except BindingMapping.DoesNotExist:
-            # create_default_mapping_for_system_role returns None for removing system roles
+            # create_default_mapping_for_system_role is None if e.g. the role is being removed.
             if create_default_mapping_for_system_role is not None:
                 if not default_workspace_locked:
                     # Lock the workspace to prevent concurrent creation of the same mapping.
                     Workspace.objects.select_for_update().get(pk=self.default_workspace.pk)
+                    # Recurse in case the workspace was locked by another process
+                    # and now the mapping exists.
+                    # We need to query and also lock the existing mapping in that case,
+                    # just like normal.
                     self._update_mapping_for_system_role(
                         role,
                         update_mapping=update_mapping,
                         create_default_mapping_for_system_role=create_default_mapping_for_system_role,
+                        # This prevents infinite recursion.
                         default_workspace_locked=True,
                     )
                 else:
+                    # Workspace is locked, so it's safe to create the mapping.
+                    # This method must only be called here,
+                    # otherwise we can end up with extra untracked mapping tuples.
                     mapping = create_default_mapping_for_system_role()
                     mapping.save(force_insert=True)

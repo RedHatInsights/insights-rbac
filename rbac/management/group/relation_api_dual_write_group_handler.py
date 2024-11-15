@@ -152,14 +152,14 @@ class RelationApiDualWriteGroupHandler(RelationApiDualWriteSubjectHandler):
             self.relations_to_remove.append(default_binding)
 
     def replicate(self):
-        """Replicate added role."""
+        """Replicate generated relations."""
         if not self.replication_enabled():
             return
 
         self._replicate()
 
     def generate_relations_to_remove_roles(self, roles: Iterable[Role]):
-        """Replicate removed role."""
+        """Generate relations to removed roles."""
         if not self.replication_enabled():
             return
 
