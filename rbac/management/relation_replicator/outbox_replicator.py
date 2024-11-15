@@ -72,6 +72,7 @@ class OutboxReplicator(RelationReplicator):
 
         return {"relations_to_add": add_json, "relations_to_remove": remove_json}
 
+    @transaction.atomic
     def _save_replication_event(
         self,
         payload: ReplicationEventPayload,
