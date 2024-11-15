@@ -4,7 +4,6 @@ from migration_tool.in_memory_tuples import InMemoryTuples, RelationTuple
 
 
 class TestInMemoryTuples(unittest.TestCase):
-
     def setUp(self):
         self.store = InMemoryTuples()
 
