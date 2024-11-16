@@ -81,7 +81,7 @@ class CrossAccountRequestUtilTests(CrossAccountRequestTest):
         # Add roles to request for user 2222222 and approve it.
         self.add_roles_to_request(self.request_4, [farmer, fisher])
         with patch(
-            "api.cross_access.relation_api_dual_write_cross_access_handler.OutboxReplicator",
+            "management.group.relation_api_dual_write_subject_handler.OutboxReplicator",
             new=partial(InMemoryRelationReplicator, self.relations),
         ):
             self.approve_request(self.request_4)
