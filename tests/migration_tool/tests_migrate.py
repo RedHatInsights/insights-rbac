@@ -311,6 +311,7 @@ class MigrateTests(TestCase):
         role_migrator.assert_not_called()
         car_migrator.assert_called_once()
 
+
 @override_settings(REPLICATION_TO_RELATION_ENABLED=True, PRINCIPAL_USER_DOMAIN="redhat", READ_ONLY_API_MODE=True)
 class MigrateTestTupleStore(TestCase):
     """Test migrator."""
@@ -371,6 +372,10 @@ class MigrateTestTupleStore(TestCase):
 
     def test_migrate_no_exclusions(self):
         self.relations.clear()
+        self.o1.tenant.ready = True
+        self.o1.tenant.save()
+        self.o2.tenant.ready = True
+        self.o2.tenant.save()
 
         migrate_data(write_relationships=InMemoryRelationReplicator(self.relations))
 

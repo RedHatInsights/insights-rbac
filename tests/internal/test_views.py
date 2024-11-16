@@ -19,7 +19,6 @@ import logging
 
 from rest_framework import status
 from rest_framework.test import APIClient
-from django.conf import settings
 from django.test import override_settings
 from datetime import datetime, timedelta
 from unittest.mock import MagicMock
@@ -33,7 +32,6 @@ from management.audit_log.model import AuditLog
 from management.models import BindingMapping, Group, Permission, Policy, Role, Workspace
 from management.principal.model import Principal
 from management.relation_replicator.noop_replicator import NoopReplicator
-from management.relation_replicator.relation_replicator import PartitionKey, ReplicationEvent, ReplicationEventType
 from management.role.model import Access, ResourceDefinition
 from management.tenant_mapping.model import TenantMapping
 from management.tenant_service.v1 import V1TenantBootstrapService
@@ -41,7 +39,6 @@ from management.tenant_service.v2 import V2TenantBootstrapService
 from management.workspace.model import Workspace
 from migration_tool.in_memory_tuples import InMemoryRelationReplicator, InMemoryTuples
 from migration_tool.utils import create_relationship
-from rbac.settings import REPLICATION_TO_RELATION_ENABLED
 from tests.identity_request import IdentityRequest
 from tests.management.role.test_dual_write import RbacFixture
 
@@ -648,7 +645,7 @@ class InternalViewsetTests(IdentityRequest):
         with self.assertRaises(BindingMapping.DoesNotExist):
             binding_mappings[0].refresh_from_db()
         binding_mappings[1].refresh_from_db()
-        self.assertEqual(self._tuples.find_tuples(), [])
+        self.assertEqual(self._tuples.count_tuples(), 0)
 
     def test_bootstrapping_tenant(self):
         """Test that we can bootstrap a tenant."""

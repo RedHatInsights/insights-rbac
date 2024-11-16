@@ -191,7 +191,7 @@ def migrate_data(
     exclude_apps: list = [],
     orgs: list = [],
     write_relationships: Union[str, RelationReplicator] = "False",
-    skip_roles: bool = False
+    skip_roles: bool = False,
 ):
     """Migrate all data for all tenants."""
     # Only run this in maintanence mode or

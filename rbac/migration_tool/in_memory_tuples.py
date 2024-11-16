@@ -66,6 +66,13 @@ class TupleSet:
         """Return a representation of the store."""
         return f"TupleSet({repr(self._set)})"
 
+    @property
+    def only(self) -> RelationTuple:
+        """Return the only tuple in the set or raises an error if there is not exactly one tuple."""
+        if len(self._set) != 1:
+            raise ValueError(f"Expected only 1 tuple but found {len(self._set)}")
+        return next(iter(self._set))
+
     def count_tuples(self, predicate: RelationPredicate = lambda _: True) -> int:
         """Count tuples matching the given predicate."""
         return len(self.find_tuples(predicate))
@@ -140,7 +147,7 @@ class TupleSet:
 
         # Iterate over each group
         for key, group_tuples in grouped_tuples.items():
-            remaining_tuples = set(group_tuples)
+            remaining_tuples = list(group_tuples)
             remaining_predicates = list(predicates) if match_once else predicates
             i = 0
             matching_tuples = set()
@@ -151,12 +158,17 @@ class TupleSet:
             while remaining_predicates and i < len(remaining_predicates):
                 predicate = remaining_predicates[i]
                 found = False
-                for rel in remaining_tuples:
+                j = 0
+                while j < len(remaining_tuples):
+                    rel = remaining_tuples[j]
                     if predicate(rel):
                         matching_tuples.add(rel)
-                        remaining_tuples.remove(rel)
+                        remaining_tuples.pop(j)
                         found = True
-                        break  # Move to next predicate
+                        if match_once:
+                            break  # Move to next predicate
+                    else:
+                        j += 1
                 if not found:
                     success = False
                     break  # Predicate not satisfied in this group
@@ -217,146 +229,6 @@ class TupleSet:
                 matched.update(in_memory_tuple)
 
         return TupleSet(self._full_set, matched)
-
-
-class InMemoryTuples:
-    """In-memory store for relation tuples."""
-
-    def __init__(self, tuples=None):
-        """Initialize the store."""
-        self._tuples: Set[RelationTuple] = set(tuples) if tuples is not None else set()
-
-    def _relationship_key(self, relationship: Relationship):
-        return RelationTuple(
-            resource_type_namespace=relationship.resource.type.namespace,
-            resource_type_name=relationship.resource.type.name,
-            resource_id=relationship.resource.id,
-            relation=relationship.relation,
-            subject_type_namespace=relationship.subject.subject.type.namespace,
-            subject_type_name=relationship.subject.subject.type.name,
-            subject_id=relationship.subject.subject.id,
-            subject_relation=relationship.subject.relation,
-        )
-
-    def add(self, tuple: Relationship):
-        """Add a tuple to the store."""
-        key = self._relationship_key(tuple)
-
-        invalid_resource_id = not re.match(_OBJECT_ID_REGEX, key.resource_id)
-        invalid_subject_id = not re.match(_OBJECT_ID_REGEX, key.subject_id)
-
-        if invalid_resource_id or invalid_subject_id:
-            invalid_fields = []
-            if invalid_resource_id:
-                invalid_fields.append(f"resource_id: {key.resource_id}")
-            if invalid_subject_id:
-                invalid_fields.append(f"subject_id: {key.subject_id}")
-            raise ValueError(f"Invalid format for: {', '.join(invalid_fields)}.")
-
-        self._tuples.add(key)
-
-    def remove(self, tuple: Relationship):
-        """Remove a tuple from the store."""
-        key = self._relationship_key(tuple)
-        self._tuples.discard(key)
-
-    def write(self, add: Iterable[Relationship], remove: Iterable[Relationship]):
-        """Add / remove tuples."""
-        for tuple in remove:
-            self.remove(tuple)
-        for tuple in add:
-            self.add(tuple)
-
-    def clear(self):
-        """Clear all tuples from the store."""
-        self._tuples.clear()
-
-    def count_tuples(self, predicate: RelationPredicate = lambda _: True) -> int:
-        """Count tuples matching the given predicate."""
-        return len(self.find_tuples(predicate))
-
-    def find_tuples(self, predicate: RelationPredicate = lambda _: True) -> "TupleSet":
-        """Find tuples matching the given predicate."""
-        return TupleSet(self, self._tuples).find_tuples(predicate)
-
-    def find_tuples_grouped(
-        self, predicate: RelationPredicate, group_by: Callable[[RelationTuple], T]
-    ) -> dict[T, TupleSet]:
-        """Filter tuples and group them by a key."""
-        return TupleSet(self, self._tuples).find_tuples_grouped(predicate, group_by)
-
-    def find_group_with_tuples(
-        self,
-        predicates: List[RelationPredicate],
-        group_by: Callable[[RelationTuple], T],
-        group_filter: Callable[[T], bool] = lambda _: True,
-        require_full_match: bool = False,
-        match_once: bool = True,
-    ) -> Tuple[dict[T, "TupleSet"], dict[T, "TupleSet"]]:
-        """
-        Find groups of tuples matching given predicates, grouped by a key.
-
-        Groups the tuples using the provided `group_by` function and tests the
-        predicates against each group independently.
-
-        For each group, this method attempts to find tuples that match all the
-        predicates, ensuring that no tuple is used for more than one predicate
-        within the group.
-
-        If `require_full_match` is True, the method also ensures that all tuples
-        in the group are matched by the predicates (i.e., no unmatched tuples
-        remain in the group). If any group does not meet the criteria, it is
-        excluded from the results.
-
-        Args:
-            predicates: A list of predicates (functions) that each accept a
-                RelationTuple and return a bool indicating a match.
-            group_by: A function that takes a RelationTuple and returns a key
-                to group by (e.g., a resource ID).
-            require_full_match: If True, only groups where all tuples are matched
-                by the predicates (i.e. there are no remaining unmatched tuples)
-                are included in the results.
-            group_filter: A predicate that filters the groups to include in the
-                results. Useful when you only want to test a subset of tuples e.g.
-                a specific resource type.
-            match_once: If True, each predicate is only used once in the matching process.
-                Otherwise, each tuple in the group will be tested by each predicate until
-                one predicate matches the tuple.
-
-        Returns:
-            A tuple containing two dictionaries:
-            - The first dictionary contains the groups that matched all predicates.
-            - The second dictionary contains the groups that did not match all predicates.
-        """
-        # Group the tuples by the specified key
-        return TupleSet(self, self._tuples).find_group_with_tuples(
-            predicates, group_by, group_filter, require_full_match, match_once
-        )
-
-    def traverse_subject(
-        self,
-        predicates: List[RelationPredicate],
-        require_full_match: bool = True,
-        match_once: bool = True,
-    ) -> "TupleSet":
-        """
-        Traverse through the tuples to find and match tuples where the subject is the resource of the current tuple.
-
-        The returned set contains all tuples that match the predicates
-        and have a resource that is the subject of a tuple in this set.
-
-        Args:
-            predicates (List[RelationPredicate]):
-                A list of predicate functions that take a RelationTuple
-                and return a boolean indicating if the tuple matches the condition.
-            require_full_match (bool, optional):
-                If True, each predicate must be matched at least once. Defaults to True.
-            match_once (bool, optional):
-                If True, each tuple in the traversed list should be matched by at least one predicate. Defaults to True.
-        Returns:
-            TupleSet: A set of matched RelationTuples.
-        """
-        return TupleSet(self, self._tuples).traverse_subject(predicates, require_full_match, match_once)
 
     def resource_is_subject_of(self, tuple_matching: RelationPredicate) -> RelationPredicate:
         """
@@ -422,17 +294,59 @@ class InMemoryTuples:
 
         return TuplePredicate(predicate, f"subject_is_resource_of({predicate}, only={only})")
 
-    def __len__(self):
-        """Return the number of tuples in the list."""
-        return len(self._tuples)
 
-    def __iter__(self):
-        """Return an iterator over the tuples."""
-        return iter(self._tuples)
+class InMemoryTuples(TupleSet):
+    """In-memory store for relation tuples."""
 
-    def __contains__(self, item: RelationTuple):
-        """Check if a tuple is in the list."""
-        return item in self._tuples
+    def __init__(self, tuples=None):
+        """Initialize the store."""
+        self._tuples: Set[RelationTuple] = set(tuples) if tuples is not None else set()
+        super().__init__(self, self._tuples)
+
+    def _relationship_key(self, relationship: Relationship):
+        return RelationTuple(
+            resource_type_namespace=relationship.resource.type.namespace,
+            resource_type_name=relationship.resource.type.name,
+            resource_id=relationship.resource.id,
+            relation=relationship.relation,
+            subject_type_namespace=relationship.subject.subject.type.namespace,
+            subject_type_name=relationship.subject.subject.type.name,
+            subject_id=relationship.subject.subject.id,
+            subject_relation=relationship.subject.relation,
+        )
+
+    def add(self, tuple: Relationship):
+        """Add a tuple to the store."""
+        key = self._relationship_key(tuple)
+
+        invalid_resource_id = not re.match(_OBJECT_ID_REGEX, key.resource_id)
+        invalid_subject_id = not re.match(_OBJECT_ID_REGEX, key.subject_id)
+
+        if invalid_resource_id or invalid_subject_id:
+            invalid_fields = []
+            if invalid_resource_id:
+                invalid_fields.append(f"resource_id: {key.resource_id}")
+            if invalid_subject_id:
+                invalid_fields.append(f"subject_id: {key.subject_id}")
+            raise ValueError(f"Invalid format for: {', '.join(invalid_fields)}.")
+
+        self._tuples.add(key)
+
+    def remove(self, tuple: Relationship):
+        """Remove a tuple from the store."""
+        key = self._relationship_key(tuple)
+        self._tuples.discard(key)
+
+    def write(self, add: Iterable[Relationship], remove: Iterable[Relationship]):
+        """Add / remove tuples."""
+        for tuple in remove:
+            self.remove(tuple)
+        for tuple in add:
+            self.add(tuple)
+
+    def clear(self):
+        """Clear all tuples from the store."""
+        self._tuples.clear()
 
     def __str__(self):
         """Return a string representation of the store."""
