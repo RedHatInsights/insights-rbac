@@ -373,7 +373,7 @@ class DualWriteGroupTestCase(DualWriteTestCase):
                     )
                 )
                 self.assertEquals(len(tuples), 1)
-                self.assertEquals(tuples[0].subject_id, mapping["groups"][0])
+                self.assertEquals(tuples.only.subject_id, mapping["groups"][0])
 
         self.given_roles_unassigned_from_group(group, [role_1, role_2])
 
@@ -620,7 +620,7 @@ class DualWriteSystemRolesTestCase(DualWriteTestCase):
         role.admin_default = False
         role = self.fixture.update_custom_role(
             role,
-            resource_access=self._workspace_access_to_resource_definition(default=["inventory:hosts:write"]),
+            resource_access=self.fixture.workspace_access(default=["inventory:hosts:write"]),
         )
         dual_write_handler.replicate_update_system_role(role)
 
@@ -635,7 +635,7 @@ class DualWriteSystemRolesTestCase(DualWriteTestCase):
         role.platform_default = False
         role = self.fixture.update_custom_role(
             role,
-            resource_access=self._workspace_access_to_resource_definition(default=[]),
+            resource_access=self.fixture.workspace_access(default=[]),
         )
         dual_write_handler.replicate_update_system_role(role)
 
