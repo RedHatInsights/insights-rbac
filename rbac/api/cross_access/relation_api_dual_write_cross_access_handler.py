@@ -17,13 +17,10 @@
 
 """Class to handle Dual Write API related operations."""
 import logging
-from typing import Callable, Iterable, Optional
-from uuid import uuid4
+from typing import Iterable, Optional
 
-from django.conf import settings
 from management.group.relation_api_dual_write_subject_handler import RelationApiDualWriteSubjectHandler
 from management.models import Workspace
-from management.relation_replicator.outbox_replicator import OutboxReplicator
 from management.relation_replicator.relation_replicator import (
     DualWriteException,
     PartitionKey,
@@ -32,7 +29,6 @@ from management.relation_replicator.relation_replicator import (
     ReplicationEventType,
 )
 from management.role.model import BindingMapping, Role
-from migration_tool.models import V2boundresource, V2role, V2rolebinding
 
 from api.models import CrossAccountRequest
 
@@ -81,12 +77,6 @@ class RelationApiDualWriteCrossAccessHandler(RelationApiDualWriteSubjectHandler)
         except Exception as e:
             raise DualWriteException(e)
 
-    def _create_default_mapping_for_system_role(self, system_role: Role):
-        """Create default mapping."""
-        return super()._create_default_mapping_for_system_role(
-            system_role, users=frozenset([str(self.cross_account_request.user_id)])
-        )
-
     def generate_relations_to_add_roles(self, roles: Iterable[Role]):
         """Generate relations to add roles."""
         if not self.replication_enabled():
@@ -99,7 +89,9 @@ class RelationApiDualWriteCrossAccessHandler(RelationApiDualWriteSubjectHandler)
             self._update_mapping_for_system_role(
                 role,
                 update_mapping=add_principal_to_binding,
-                create_default_mapping_for_system_role=lambda: self._create_default_mapping_for_system_role(role),
+                create_default_mapping_for_system_role=lambda: self._create_default_mapping_for_system_role(
+                    role, users=frozenset([str(self.cross_account_request.user_id)])
+                ),
             )
 
     def replicate(self):

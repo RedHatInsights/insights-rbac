@@ -17,16 +17,13 @@
 
 """Class to handle Dual Write API related operations."""
 import logging
-from typing import Callable, Iterable, Optional
-from uuid import uuid4
+from typing import Iterable, Optional
 
-from django.conf import settings
 from kessel.relations.v1beta1.common_pb2 import Relationship
 from management.group.model import Group
 from management.group.relation_api_dual_write_subject_handler import RelationApiDualWriteSubjectHandler
 from management.models import Workspace
 from management.principal.model import Principal
-from management.relation_replicator.outbox_replicator import OutboxReplicator
 from management.relation_replicator.relation_replicator import (
     DualWriteException,
     PartitionKey,
@@ -36,7 +33,6 @@ from management.relation_replicator.relation_replicator import (
 )
 from management.role.model import BindingMapping, Role
 from management.tenant_mapping.model import TenantMapping
-from migration_tool.models import V2boundresource, V2role, V2rolebinding
 from migration_tool.utils import create_relationship
 
 from api.models import Tenant
@@ -126,10 +122,6 @@ class RelationApiDualWriteGroupHandler(RelationApiDualWriteSubjectHandler):
         except Exception as e:
             raise DualWriteException(e)
 
-    def _create_default_mapping_for_system_role(self, system_role: Role):
-        """Create default mapping."""
-        return super()._create_default_mapping_for_system_role(system_role, groups=frozenset([str(self.group.uuid)]))
-
     def generate_relations_to_add_roles(
         self, roles: Iterable[Role], remove_default_access_from: Optional[TenantMapping] = None
     ):
@@ -144,7 +136,9 @@ class RelationApiDualWriteGroupHandler(RelationApiDualWriteSubjectHandler):
             self._update_mapping_for_role(
                 role,
                 update_mapping=add_group_to_binding,
-                create_default_mapping_for_system_role=lambda: self._create_default_mapping_for_system_role(role),
+                create_default_mapping_for_system_role=lambda: self._create_default_mapping_for_system_role(
+                    role, groups=frozenset([str(self.group.uuid)])
+                ),
             )
 
         if remove_default_access_from is not None:
