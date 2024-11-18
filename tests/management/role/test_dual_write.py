@@ -924,6 +924,14 @@ class RbacFixture:
         """Create a new tenant with the given name and organization ID."""
         return Tenant.objects.create(tenant_name=f"org{org_id}", org_id=org_id)
 
+    def bootstrap_tenant(self, tenant: Tenant) -> Optional[BootstrappedTenant]:
+        """Bootstrap the tenant."""
+        if isinstance(self.bootstrap_service, V2TenantBootstrapService):
+            return self.bootstrap_service.bootstrap_tenant(tenant)
+        else:
+            # Nothing to do if not using V2 bootstrapping
+            return None
+
     def new_system_role(self, name: str, permissions: list[str], platform_default=False, admin_default=False) -> Role:
         """Create a new system role with the given name and permissions."""
         role = Role.objects.create(

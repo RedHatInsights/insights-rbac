@@ -16,23 +16,25 @@
 #
 
 """View for cross access request."""
+from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
 from django_filters import rest_framework as filters
 from management.filters import CommonFilters
 from management.models import Role
 from management.principal.proxy import PrincipalProxy
+from management.relation_replicator.relation_replicator import ReplicationEventType
 from management.utils import validate_and_get_key, validate_uuid
 from rest_framework import mixins, viewsets
-from rest_framework import status as http_status
 from rest_framework.filters import OrderingFilter
-from rest_framework.response import Response
 from rest_framework.serializers import ValidationError
 
 from api.cross_access.access_control import CrossAccountRequestAccessPermission
+from api.cross_access.relation_api_dual_write_cross_access_handler import RelationApiDualWriteCrossAccessHandler
 from api.cross_access.serializer import CrossAccountRequestDetailSerializer, CrossAccountRequestSerializer
 from api.cross_access.util import create_cross_principal
 from api.models import CrossAccountRequest, Tenant
+
 
 QUERY_BY_KEY = "query_by"
 ORG_ID = "target_org"
@@ -104,7 +106,7 @@ class CrossAccountRequestViewSet(
     def get_queryset(self):
         """Get query set based on the queryBy key word."""
         if self.request.method in ["PATCH", "PUT"]:
-            return CrossAccountRequest.objects.all()
+            return CrossAccountRequest.objects.all().select_for_update()
 
         if validate_and_get_key(self.request.query_params, QUERY_BY_KEY, VALID_QUERY_BY_KEY, ORG_ID) == ORG_ID:
             return CrossAccountRequest.objects.filter(target_org=self.request.user.org_id)
@@ -138,33 +140,22 @@ class CrossAccountRequestViewSet(
 
     def partial_update(self, request, *args, **kwargs):
         """Patch a cross-account request. Target account admin use it to update status of the request."""
-        validate_uuid(kwargs.get("pk"), "cross-account request uuid validation")
+        return super().partial_update(request=request, *args, **kwargs)
 
-        current = self.get_object()
-        self.check_patch_permission(request, current)
-
-        self.validate_and_format_patch_input(request.data)
-
-        kwargs["partial"] = True
-        response = super().update(request=request, *args, **kwargs)
-        if response.status_code and response.status_code is http_status.HTTP_200_OK:
-            if request.data.get("status"):
-                self.update_status(current, request.data.get("status"))
-                return Response(CrossAccountRequestDetailSerializer(current).data)
-        return response
-
+    @transaction.atomic
     def update(self, request, *args, **kwargs):
         """Update a cross-account request. TAM requestor use it to update their requesters."""
         validate_uuid(kwargs.get("pk"), "cross-account request uuid validation")
+        return super().update(request=request, *args, **kwargs)
 
-        current = self.get_object()
-        self.check_update_permission(request, current)
-
-        request.data["target_org"] = current.target_org
-
-        self.validate_and_format_input(request.data)
-
-        return super().update(request=request, args=args, kwargs=kwargs)
+    def perform_update(self, serializer):
+        """Update the cross account request and publish outbox when cross account request is approved."""
+        current = serializer.instance
+        request = self.request
+        if serializer.partial and request.data.get("status"):
+            self.update_status(current, request.data.get("status"))
+        else:
+            serializer.save()
 
     def retrieve(self, request, *args, **kwargs):
         """Retrieve cross account requests by request_id."""
@@ -262,7 +253,13 @@ class CrossAccountRequestViewSet(
         car.status = status
         if status == "approved":
             create_cross_principal(car.user_id, target_org=car.target_org)
-
+            cross_account_roles = car.roles.all()
+            if any(True for _ in cross_account_roles):
+                dual_write_handler = RelationApiDualWriteCrossAccessHandler(
+                    car, ReplicationEventType.APPROVE_CROSS_ACCOUNT_REQUEST
+                )
+                dual_write_handler.generate_relations_to_add_roles(cross_account_roles)
+                dual_write_handler.replicate()
         car.save()
 
     def check_patch_permission(self, request, update_obj):

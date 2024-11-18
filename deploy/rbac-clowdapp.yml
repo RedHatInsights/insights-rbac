@@ -782,6 +782,27 @@ objects:
               name: default-role-config
             - mountPath: /opt/rbac/rbac/management/role/permissions
               name: model-access-permissions
+      - name: sa-id-populator
+        podSpec:
+          image: quay.io/cloudservices/rbac:latest
+          command:
+            - /opt/rbac/rbac/manage.py
+            - import_service_account_data
+          env: *job_common_env_vars
+          resources:
+            limits:
+              cpu: 300m
+              memory: 1Gi
+            requests:
+              cpu: 50m
+              memory: 512Mi
+          volumes:
+          - name: users-data
+            persistentVolumeClaim:
+              claimName: users-data
+          volumeMounts:
+          - mountPath: /tmp
+            name: users-data
 
 - apiVersion: v1
   kind: ConfigMap
