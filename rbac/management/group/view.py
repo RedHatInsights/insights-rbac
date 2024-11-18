@@ -694,45 +694,56 @@ class GroupViewSet(
                 group = self.get_object()
                 self.protect_system_groups("add principals", group)
 
-            if not request.user.admin:
-                self.protect_group_with_user_access_admin_role(group.roles_with_access(), "add principals")
+                if not request.user.admin:
+                    self.protect_group_with_user_access_admin_role(group.roles_with_access(), "add principals")
 
-            # Process the service accounts and add them to the group.
-            if len(service_accounts) > 0:
-                token_validator = ITSSOTokenValidator()
-                request.user.bearer_token = token_validator.validate_token(
-                    request=request,
-                    additional_scopes_to_validate=set[ScopeClaims]([ScopeClaims.SERVICE_ACCOUNTS_CLAIM]),
-                )
-                try:
-                    self.ensure_id_for_service_accounts_exists(user=request.user, service_accounts=service_accounts)
-                except InsufficientPrivilegesError as ipe:
-                    return Response(
-                        status=status.HTTP_403_FORBIDDEN,
-                        data={
-                            "errors": [{"detail": str(ipe), "status": status.HTTP_403_FORBIDDEN, "source": "groups"}]
-                        },
+                # Process the service accounts and add them to the group.
+                if len(service_accounts) > 0:
+                    token_validator = ITSSOTokenValidator()
+                    request.user.bearer_token = token_validator.validate_token(
+                        request=request,
+                        additional_scopes_to_validate=set[ScopeClaims]([ScopeClaims.SERVICE_ACCOUNTS_CLAIM]),
                     )
-                except ServiceAccountNotFoundError as sanfe:
-                    return Response(
-                        status=status.HTTP_400_BAD_REQUEST,
-                        data={
-                            "errors": [
-                                {"detail": str(sanfe), "source": "group", "status": str(status.HTTP_400_BAD_REQUEST)}
-                            ]
-                        },
-                    )
+                    try:
+                        self.ensure_id_for_service_accounts_exists(
+                            user=request.user, service_accounts=service_accounts
+                        )
+                    except InsufficientPrivilegesError as ipe:
+                        return Response(
+                            status=status.HTTP_403_FORBIDDEN,
+                            data={
+                                "errors": [
+                                    {
+                                        "detail": str(ipe),
+                                        "status": status.HTTP_403_FORBIDDEN,
+                                        "source": "groups",
+                                    }
+                                ]
+                            },
+                        )
+                    except ServiceAccountNotFoundError as sanfe:
+                        return Response(
+                            status=status.HTTP_400_BAD_REQUEST,
+                            data={
+                                "errors": [
+                                    {
+                                        "detail": str(sanfe),
+                                        "source": "group",
+                                        "status": str(status.HTTP_400_BAD_REQUEST),
+                                    }
+                                ]
+                            },
+                        )
 
-            # Process user principals and add them to the group.
-            principals_from_response = []
-            if len(principals) > 0:
-                proxy_response = self.validate_principals_in_proxy_request(principals, org_id=org_id)
-                if len(proxy_response.get("data", [])) > 0:
-                    principals_from_response = proxy_response.get("data", [])
-                if isinstance(proxy_response, dict) and "errors" in proxy_response:
-                    return Response(status=proxy_response["status_code"], data=proxy_response["errors"])
+                # Process user principals and add them to the group.
+                principals_from_response = []
+                if len(principals) > 0:
+                    proxy_response = self.validate_principals_in_proxy_request(principals, org_id=org_id)
+                    if len(proxy_response.get("data", [])) > 0:
+                        principals_from_response = proxy_response.get("data", [])
+                    if isinstance(proxy_response, dict) and "errors" in proxy_response:
+                        return Response(status=proxy_response["status_code"], data=proxy_response["errors"])
 
-            with transaction.atomic():
                 new_service_accounts = []
                 if len(service_accounts) > 0:
                     group, new_service_accounts = self.add_service_accounts(
