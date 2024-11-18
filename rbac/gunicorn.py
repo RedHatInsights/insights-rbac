@@ -23,4 +23,5 @@ limit_request_field_size = 16380
 
 def child_exit(server, worker):
     """Watches for workers to exit and marks them as dead in prometheus."""
+    # See: https://prometheus.github.io/client_python/multiprocess/
     multiprocess.mark_process_dead(worker.pid)
