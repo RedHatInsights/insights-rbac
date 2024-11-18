@@ -147,7 +147,7 @@ class TupleSet:
 
         # Iterate over each group
         for key, group_tuples in grouped_tuples.items():
-            remaining_tuples = set(group_tuples)
+            remaining_tuples = list(group_tuples)
             remaining_predicates = list(predicates) if match_once else predicates
             i = 0
             matching_tuples = set()
@@ -158,12 +158,17 @@ class TupleSet:
             while remaining_predicates and i < len(remaining_predicates):
                 predicate = remaining_predicates[i]
                 found = False
-                for rel in remaining_tuples:
+                j = 0
+                while j < len(remaining_tuples):
+                    rel = remaining_tuples[j]
                     if predicate(rel):
                         matching_tuples.add(rel)
-                        remaining_tuples.remove(rel)
+                        remaining_tuples.pop(j)
                         found = True
-                        break  # Move to next predicate
+                        if match_once:
+                            break  # Move to next predicate
+                    else:
+                        j += 1
                 if not found:
                     success = False
                     break  # Predicate not satisfied in this group

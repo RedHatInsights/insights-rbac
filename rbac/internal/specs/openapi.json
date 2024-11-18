@@ -1111,6 +1111,256 @@
         }
       }
     },
+    "/api/utils/bootstrap_tenant/": {
+      "post": {
+        "tags": [
+          "Tenant bootstrap"
+        ],
+        "summary": "Bootstrap a tennat by org id",
+        "description": "Bootstrap a tenant by org id",
+        "operationId": "TenantBootstrap",
+        "parameters": [
+          {
+            "name": "org_id",
+            "in": "query",
+            "required": true,
+            "description": "Defines the org id of the tenant to bootstrap.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Bootstrap tenant with org_id finished."
+          },
+          "400": {
+            "description": "Invalid request, must supply the 'org_id' query parameter.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Invalid method, only 'POST' is allowed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/utils/bindings/": {
+      "get": {
+        "tags": [
+          "Binding list for a role"
+        ],
+        "summary": "List bindingmappings for a role",
+        "description": "List bindingmappings for a role.",
+        "operationId": "ListBinding",
+        "parameters": [
+          {
+            "name": "role_uuid",
+            "in": "query",
+            "required": true,
+            "description": "Defines the uuid of the role.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of bindingmappings for a role."
+          },
+          "400": {
+            "description": "Invalid request, must supply the 'role_uuid' query parameter.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Invalid method, only 'GET' is allowed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/utils/migration_resources/": {
+      "delete": {
+        "tags": [
+          "Delete migration resources"
+        ],
+        "summary": "Delete migration resources",
+        "description": "Delete migration resources, including binding mappings, tenant mappings, and workspaces.",
+        "operationId": "DeleteMigrationResources",
+        "parameters": [
+          {
+            "name": "resource",
+            "in": "query",
+            "required": true,
+            "description": "The resource type to be deleted.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "binding",
+                "mapping",
+                "workspace"
+              ]
+            }
+          },
+          {
+            "name": "org_id",
+            "in": "query",
+            "required": false,
+            "description": "The org id identifies deleting the resource within which org. But it can not be used for binding.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Resource deletion is running in a background worker."
+          },
+          "400": {
+            "description": "Invalid request, must supply the 'resource' query parameter.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Invalid method.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "List migration resources"
+        ],
+        "summary": "List migration resources",
+        "description": "List migration resources, including binding mappings, tenant mappings, and workspaces.",
+        "operationId": "ListMigrationResources",
+        "parameters": [
+          {
+            "name": "resource",
+            "in": "query",
+            "required": true,
+            "description": "The resource type to be listed.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "binding",
+                "mapping",
+                "workspace"
+              ]
+            }
+          },
+          {
+            "name": "org_id",
+            "in": "query",
+            "required": false,
+            "description": "The org id identifies listing the resource within which org. But it can not be used for binding.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Listing the list of resource ids."
+          },
+          "400": {
+            "description": "Invalid request, must supply the 'resource' query parameter.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Invalid method.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/openapi.json": {
       "get": {
         "tags": [

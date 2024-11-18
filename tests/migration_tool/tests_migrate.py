@@ -15,12 +15,13 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Test the utils module."""
-from unittest.mock import Mock, call, patch
+from datetime import timedelta
+from unittest.mock import call, patch
 
 from django.test import TestCase, override_settings
-from management.group.definer import seed_group, clone_default_group_in_public_schema
+from django.utils import timezone
+from management.group.definer import clone_default_group_in_public_schema, seed_group
 from management.models import *
-from management.role.definer import seed_roles
 from management.tenant_service.tenant_service import BootstrappedTenant
 from management.tenant_service.v2 import V2TenantBootstrapService
 from migration_tool.in_memory_tuples import (
@@ -38,7 +39,7 @@ from migration_tool.in_memory_tuples import (
 from migration_tool.migrate import migrate_data
 from tests.management.role.test_dual_write import RbacFixture
 
-from api.models import Tenant
+from api.models import CrossAccountRequest, Tenant
 
 
 class MigrateTests(TestCase):
@@ -120,6 +121,19 @@ class MigrateTests(TestCase):
         # tenant 2 - org_id=7654321
         another_tenant = Tenant.objects.create(org_id="7654321")
 
+        root_workspace_another_tenant = Workspace.objects.create(
+            type=Workspace.Types.ROOT, tenant=another_tenant, name="Root Workspace"
+        )
+        self.default_workspace_for_another_tenant = Workspace.objects.create(
+            type=Workspace.Types.DEFAULT,
+            tenant=another_tenant,
+            name="Default Workspace",
+            parent=root_workspace_another_tenant,
+        )
+        self.another_tenant = another_tenant
+
+        Group.objects.create(name="another_group", tenant=another_tenant)
+
         # setup data for another tenant 7654321
         self.role_b = Role.objects.create(name="role_b", tenant=another_tenant)
         self.access_b = Access.objects.create(permission=permission2, role=self.role_b, tenant=another_tenant)
@@ -129,6 +143,17 @@ class MigrateTests(TestCase):
 
         # create custom default group
         self.custom_default_group = clone_default_group_in_public_schema(default_group, self.tenant)
+
+        # Setup cross account request to migrate
+        self.ref_time = timezone.now()
+        self.cross_account_request = CrossAccountRequest.objects.create(
+            target_account="098765",
+            target_org="7654321",
+            user_id="1111111",
+            end_date=self.ref_time + timedelta(10),
+            status="approved",
+        )
+        self.cross_account_request.roles.add(self.system_role_2)
 
     @override_settings(REPLICATION_TO_RELATION_ENABLED=True, PRINCIPAL_USER_DOMAIN="redhat", READ_ONLY_API_MODE=True)
     @patch("management.relation_replicator.logging_replicator.logger")
@@ -223,6 +248,34 @@ class MigrateTests(TestCase):
             call(f"workspace:{self.default_workspace.id}#binding@role_binding:{role_binding_system_role_2_uuid}"),
             call(f"role_binding:{role_binding_system_role_2_uuid}#subject@group:{self.custom_default_group.uuid}"),
             call(f"role_binding:{role_binding_system_role_2_uuid}#role@role:{self.system_role_2.uuid}"),
+        ]
+        logger_mock.info.assert_has_calls(tuples, any_order=True)
+
+    @override_settings(REPLICATION_TO_RELATION_ENABLED=True, PRINCIPAL_USER_DOMAIN="redhat", READ_ONLY_API_MODE=True)
+    @patch("management.relation_replicator.logging_replicator.logger")
+    def test_migration_of_cross_account_requests(self, logger_mock):
+        """Test that we get the correct access for a principal."""
+        kwargs = {"exclude_apps": ["app1"], "orgs": ["7654321"]}
+        migrate_data(**kwargs)
+
+        binding_mapping_system_role_2 = BindingMapping.objects.filter(
+            role=self.system_role_2,
+            resource_type_name="workspace",
+            resource_type_namespace="rbac",
+            resource_id=self.default_workspace_for_another_tenant.id,
+        ).get()
+
+        role_binding_system_role_2_uuid = binding_mapping_system_role_2.mappings["id"]
+
+        tuples = [
+            ## Cross account request for system role 2
+            call(
+                f"role_binding:{role_binding_system_role_2_uuid}#subject@principal:redhat/{self.cross_account_request.user_id}"
+            ),
+            call(f"role_binding:{role_binding_system_role_2_uuid}#role@role:{self.system_role_2.uuid}"),
+            call(
+                f"workspace:{self.default_workspace_for_another_tenant.id}#binding@role_binding:{role_binding_system_role_2_uuid}"
+            ),
         ]
         logger_mock.info.assert_has_calls(tuples, any_order=True)
 

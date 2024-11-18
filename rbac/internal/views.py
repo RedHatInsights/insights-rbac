@@ -52,9 +52,10 @@ from management.tasks import (
 from management.tenant_service.v2 import V2TenantBootstrapService
 from rest_framework import status
 
-from api.common.pagination import StandardResultsSetPagination
+from api.common.pagination import StandardResultsSetPagination, WSGIRequestResultsSetPagination
 from api.models import Tenant
-from api.tasks import cross_account_cleanup, populate_tenant_account_id_in_worker
+from api.tasks import cross_account_cleanup, populate_tenant_account_id_in_worker, run_migration_resource_deletion
+from api.utils import RESOURCE_MODEL_MAPPING, get_resources
 
 
 logger = logging.getLogger(__name__)
@@ -532,6 +533,8 @@ def list_bindings_for_role(request):
 
     GET /_private/api/utils/bindings/?role_uuid=xxx
     """
+    if request.method != "GET":
+        return HttpResponse('Invalid method, only "GET" is allowed.', status=405)
     role_uuid = request.GET.get("role_uuid")
     if not role_uuid:
         return HttpResponse(
@@ -543,6 +546,44 @@ def list_bindings_for_role(request):
     serializer = BindingMappingSerializer(bindings, many=True)
     result = serializer.data or []
     return HttpResponse(json.dumps(result), content_type="application/json", status=200)
+
+
+def migration_resources(request):
+    """View or delete specific resources related to migration.
+
+    DELETE /_private/api/utils/migration_resources/?resource=xxx&org_id=xxx
+    GET /_private/api/utils/migration_resources/?resource=xxx&org_id=xxx&limit=1000
+    options of resource: workspace, mapping(tenantmapping), binding(bindingmapping)
+    org_id does not work for bindingmapping
+    """
+    resource = request.GET.get("resource")
+    if not resource:
+        return HttpResponse(
+            'Invalid request, must supply the "resource" query parameter.',
+            status=400,
+        )
+    resource = resource.lower()
+    if resource not in RESOURCE_MODEL_MAPPING:
+        return HttpResponse(
+            f"Invalid request, resource should be in '{RESOURCE_MODEL_MAPPING.keys()}'.",
+            status=400,
+        )
+
+    org_id = request.GET.get("org_id")
+
+    if request.method == "DELETE":
+        if not destructive_ok("api"):
+            return HttpResponse("Destructive operations disallowed.", status=400)
+        run_migration_resource_deletion.delay({"resource": resource, "org_id": org_id})
+        logger.info(f"Deleting resources of type {resource}. Requested by '{request.user.username}'")
+        return HttpResponse("Resource deletion is running in a background worker.", status=202)
+    elif request.method == "GET":
+        resource_objs = get_resources(resource, org_id)
+        pg = WSGIRequestResultsSetPagination()
+        page = pg.paginate_queryset(resource_objs, request)
+        page = [str(record.id) for record in page]
+        return HttpResponse(json.dumps(page), content_type="application/json", status=200)
+    return HttpResponse(f"Invalid method, {request.method}", status=405)
 
 
 def trigger_error(request):

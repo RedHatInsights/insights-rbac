@@ -29,7 +29,13 @@ from kessel.relations.v1beta1.common_pb2 import Relationship
 from management.cache import AccessCache
 from management.models import Permission, Principal
 from management.rbac_fields import AutoDateTimeField
-from migration_tool.models import V2boundresource, V2role, V2rolebinding, role_binding_group_subject_tuple
+from migration_tool.models import (
+    V2boundresource,
+    V2role,
+    V2rolebinding,
+    role_binding_group_subject_tuple,
+    role_binding_user_subject_tuple,
+)
 
 from api.models import TenantAwareModel
 
@@ -156,8 +162,8 @@ class BindingMapping(models.Model):
         return v2_role_binding.as_tuples()
 
     def is_unassigned(self):
-        """Return true if mapping is not assigned to any groups."""
-        return len(self.mappings["groups"]) == 0
+        """Return true if mapping is not assigned to any groups or users."""
+        return len(self.mappings.get("groups", [])) == 0 and len(self.mappings.get("users", [])) == 0
 
     def remove_group_from_bindings(self, group_uuid: str) -> Relationship:
         """Remove group from mappings."""
@@ -168,6 +174,18 @@ class BindingMapping(models.Model):
         """Add group to mappings."""
         self.mappings["groups"].append(group_uuid)
         return role_binding_group_subject_tuple(self.mappings["id"], group_uuid)
+
+    def remove_user_from_bindings(self, user_id: str) -> Relationship:
+        """Remove user from mappings."""
+        self.mappings["users"] = [user for user in self.mappings.get("users", []) if user != user_id]
+        return role_binding_user_subject_tuple(self.mappings["id"], user_id)
+
+    def add_user_to_bindings(self, user_id: str) -> Relationship:
+        """Add user to mappings."""
+        if "users" not in self.mappings:
+            self.mappings["users"] = []
+        self.mappings["users"].append(user_id)
+        return role_binding_user_subject_tuple(self.mappings["id"], user_id)
 
     def update_mappings_from_role_binding(self, role_binding: V2rolebinding):
         """Set mappings."""
@@ -198,6 +216,7 @@ class BindingMapping(models.Model):
             permissions=frozenset(args["role"]["permissions"]),
         )
         args["groups"] = frozenset(args["groups"])
+        args["users"] = frozenset(args["users"])
         return V2rolebinding(**args)
 
 
