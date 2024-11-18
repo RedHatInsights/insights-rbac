@@ -20,7 +20,7 @@ from __future__ import absolute_import, unicode_literals
 from celery import shared_task
 
 from api.cross_access.util import check_cross_request_expiry
-from api.utils import populate_tenant_account_id
+from api.utils import migration_resource_deletion, populate_tenant_account_id
 
 
 @shared_task
@@ -33,3 +33,9 @@ def cross_account_cleanup():
 def populate_tenant_account_id_in_worker():
     """Celery task to populate Tenant#account_id."""
     populate_tenant_account_id()
+
+
+@shared_task
+def run_migration_resource_deletion(kwargs):
+    """Celery task to run migration resource deletion."""
+    migration_resource_deletion(**kwargs)
