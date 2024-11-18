@@ -21,10 +21,11 @@ from unittest.mock import Mock, call, patch
 from uuid import uuid4
 
 from django.test import TestCase, override_settings
+from functools import partial
 
 from api.models import Tenant
 from management.models import *
-from migration_tool.migrate import migrate_data
+from migration_tool.migrate import migrate_data, migrate_groups_for_tenant
 from management.group.definer import seed_group, clone_default_group_in_public_schema
 
 
@@ -107,6 +108,18 @@ class MigrateTests(TestCase):
         # tenant 2 - org_id=7654321
         another_tenant = Tenant.objects.create(org_id="7654321")
 
+        root_workspace_another_tenant = Workspace.objects.create(
+            type=Workspace.Types.ROOT, tenant=another_tenant, name="Root Workspace"
+        )
+        Workspace.objects.create(
+            type=Workspace.Types.DEFAULT,
+            tenant=another_tenant,
+            name="Default Workspace",
+            parent=root_workspace_another_tenant,
+        )
+
+        Group.objects.create(name="another_group", tenant=another_tenant)
+
         # setup data for another tenant 7654321
         self.role_b = Role.objects.create(name="role_b", tenant=another_tenant)
         self.access_b = Access.objects.create(permission=permission2, role=self.role_b, tenant=another_tenant)
@@ -116,6 +129,14 @@ class MigrateTests(TestCase):
 
         # create custom default group
         self.custom_default_group = clone_default_group_in_public_schema(default_group, self.tenant)
+
+    @override_settings(REPLICATION_TO_RELATION_ENABLED=True, PRINCIPAL_USER_DOMAIN="redhat", READ_ONLY_API_MODE=True)
+    @patch("migration_tool.migrate.RelationApiDualWriteGroupHandler.replicate")
+    def test_migration_of_data_no_replication_event_to_migrate_groups(self, replicate_method):
+        """Test that we get the correct access for a principal."""
+        kwargs = {"exclude_apps": ["app1"], "orgs": ["7654321"]}
+        migrate_data(**kwargs)
+        replicate_method.assert_not_called()
 
     @override_settings(REPLICATION_TO_RELATION_ENABLED=True, PRINCIPAL_USER_DOMAIN="redhat", READ_ONLY_API_MODE=True)
     @patch("management.relation_replicator.logging_replicator.logger")
