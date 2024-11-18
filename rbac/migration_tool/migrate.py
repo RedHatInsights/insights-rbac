@@ -158,7 +158,9 @@ def migrate_data_for_tenant(tenant: Tenant, exclude_apps: list, replicator: Rela
         logger.info(f"Migration completed for role: {role.name} with UUID {role.uuid}.")
     logger.info(f"Migrated {roles.count()} roles for tenant: {tenant.org_id}")
 
+    logger.info("Migrating relations of cross account requests.")
     migrate_cross_account_requests(tenant, replicator)
+    logger.info("Finished relations of cross account requests.")
 
 
 # The migrator does not generally deal with concurrency control,
