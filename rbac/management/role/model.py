@@ -184,7 +184,8 @@ class BindingMapping(models.Model):
         """Add user to mappings."""
         if "users" not in self.mappings:
             self.mappings["users"] = []
-        self.mappings["users"].append(user_id)
+        if user_id not in self.mappings["users"]:
+            self.mappings["users"].append(user_id)
         return role_binding_user_subject_tuple(self.mappings["id"], user_id)
 
     def update_mappings_from_role_binding(self, role_binding: V2rolebinding):
