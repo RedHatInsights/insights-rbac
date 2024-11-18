@@ -38,8 +38,8 @@ from migration_tool.models import V2rolebinding
 from migration_tool.sharedSystemRolesReplicatedRoleBindings import v1_role_to_v2_bindings
 from migration_tool.utils import create_relationship
 
-from api.models import Tenant
-
+from api.cross_access.relation_api_dual_write_cross_access_handler import RelationApiDualWriteCrossAccessHandler
+from api.models import CrossAccountRequest, Tenant
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
@@ -157,6 +157,26 @@ def migrate_data_for_tenant(tenant: Tenant, exclude_apps: list, replicator: Rela
 
         logger.info(f"Migration completed for role: {role.name} with UUID {role.uuid}.")
     logger.info(f"Migrated {roles.count()} roles for tenant: {tenant.org_id}")
+
+    logger.info("Migrating relations of cross account requests.")
+    migrate_cross_account_requests(tenant, replicator)
+    logger.info("Finished relations of cross account requests.")
+
+
+# The migrator does not generally deal with concurrency control,
+# but we require an atomic block due to use of select_for_update in the dual write handler.
+def migrate_cross_account_requests(tenant: Tenant, replicator: RelationReplicator):
+    """Migrate approved account requests."""
+    cross_account_requests = CrossAccountRequest.objects.filter(status="approved", target_org=tenant.org_id)
+    for cross_account_request in cross_account_requests:
+        with transaction.atomic():
+            cross_account_roles = cross_account_request.roles.all()
+            if any(True for _ in cross_account_roles):
+                dual_write_handler = RelationApiDualWriteCrossAccessHandler(
+                    cross_account_request, ReplicationEventType.MIGRATE_CROSS_ACCOUNT_REQUEST, replicator
+                )
+                dual_write_handler.generate_relations_to_add_roles(cross_account_request.roles.all())
+                dual_write_handler.replicate()
 
 
 def migrate_data(exclude_apps: list = [], orgs: list = [], write_relationships: str = "False"):
