@@ -15,8 +15,8 @@ You should have received a copy of the GNU Affero General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 
-from dataclasses import dataclass
-from typing import Tuple
+from dataclasses import dataclass, field
+from typing import Iterable, Tuple
 
 from kessel.relations.v1beta1.common_pb2 import Relationship
 from management.principal.model import Principal
@@ -91,8 +91,30 @@ class V2rolebinding:
     id: str
     role: V2role
     resource: V2boundresource
-    groups: frozenset[str] = frozenset()
-    users: frozenset[str] = frozenset()
+    groups: tuple[str] = tuple()
+    users: tuple[str] = tuple()
+
+    def __init__(
+        self,
+        id: str,
+        role: V2role,
+        resource: V2boundresource,
+        groups: Iterable[str] = [],
+        users: Iterable[str] = [],
+    ):
+        """
+        Initialize a V2 role binding.
+
+        [groups] and [users] allow multiple in the case there are multiple sources of bindings
+        for the same role and resource, though in the graph these occur only once.
+        """
+        # Need to use setattr due to frozen dataclass
+        # Fields are allowed to be any iterable for compatibility with existing code.
+        object.__setattr__(self, "id", id)
+        object.__setattr__(self, "role", role)
+        object.__setattr__(self, "resource", resource)
+        object.__setattr__(self, "groups", tuple(groups))
+        object.__setattr__(self, "users", tuple(users))
 
     def as_minimal_dict(self) -> dict:
         """Convert the V2 role binding to a dictionary, excluding resource and original role."""
@@ -112,11 +134,11 @@ class V2rolebinding:
         for perm in self.role.permissions:
             tuples.append(create_relationship(("rbac", "role"), self.role.id, ("rbac", "principal"), "*", perm))
 
-        for group in self.groups:
+        for group in set(self.groups):
             # These might be duplicate but it is OK, spiceDB will handle duplication through touch
             tuples.append(role_binding_group_subject_tuple(self.id, group))
 
-        for user in self.users:
+        for user in set(self.users):
             tuples.append(role_binding_user_subject_tuple(self.id, user))
 
         tuples.append(
