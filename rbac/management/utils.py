@@ -26,7 +26,7 @@ from management.models import Access, Group, Policy, Principal, Role
 from management.permissions.principal_access import PrincipalAccessPermission
 from management.principal.it_service import ITService
 from management.principal.proxy import PrincipalProxy
-from rest_framework import serializers, status
+from rest_framework import serializers
 from rest_framework.request import Request
 
 from api.models import CrossAccountRequest, Tenant
@@ -277,17 +277,6 @@ def validate_group_name(name):
         key = "Group name Validation"
         message = f"{name} is reserved, please use another name."
         raise serializers.ValidationError({key: _(message)})
-
-
-def validate_limit_and_offset(query_params):
-    """Limit and offset should not be negative number."""
-    if (int(query_params.get("limit", 10)) < 0) | (int(query_params.get("offset", 0)) < 0):
-        error = {
-            "detail": "Values for limit and offset must be positive numbers.",
-            "source": "CrossAccountRequest",
-            "status": str(status.HTTP_400_BAD_REQUEST),
-        }
-        return {"errors": [error]}
 
 
 def roles_for_cross_account_principal(principal):

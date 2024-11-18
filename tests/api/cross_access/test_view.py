@@ -18,8 +18,6 @@
 
 from api.models import CrossAccountRequest, Tenant
 from api.cross_access.util import get_cross_principal_name
-from api.serializers import create_tenant_name
-from django.conf import settings
 from django.urls import reverse
 from django.utils import timezone
 from management.models import Role, Principal
@@ -29,138 +27,26 @@ from rest_framework.test import APIClient
 
 from datetime import timedelta
 from unittest.mock import patch
-from tests.identity_request import IdentityRequest
+from management.workspace.model import Workspace
+from migration_tool.in_memory_tuples import (
+    all_of,
+    one_of,
+    relation,
+    resource,
+    resource_id,
+    subject,
+    InMemoryRelationReplicator,
+)
+from tests.api.cross_access.fixtures import CrossAccountRequestTest
 
+from django.test.utils import override_settings
+from functools import partial
 
 URL_LIST = reverse("v1_api:cross-list")
 
 
-class CrossAccountRequestViewTests(IdentityRequest):
+class CrossAccountRequestViewTests(CrossAccountRequestTest):
     """Test the cross account request view."""
-
-    def format_date(self, date):
-        return date.strftime("%m/%d/%Y")
-
-    def setUp(self):
-        """Set up the cross account request for tests."""
-        super().setUp()
-        self.ref_time = timezone.now()
-        self.account = self.customer_data["account_id"]
-        self.org_id = self.customer_data["org_id"]
-        self.associate_non_admin_request_context = self._create_request_context(
-            self.customer_data, self.user_data, is_org_admin=False, is_internal=True
-        )
-        self.associate_non_admin_request = self.associate_non_admin_request_context["request"]
-
-        self.not_anemic_customer_data = self._create_customer_data()
-        self.not_anemic_account = "21112"
-        self.not_anemic_org_id = self.not_anemic_customer_data["org_id"]
-        self.not_anemic_customer_data["account_id"] = self.not_anemic_account
-        self.not_anemic_customer_data["tenant_name"] = f"acct{self.not_anemic_account}"
-        self.associate_not_anemic_request_context = self._create_request_context(
-            self.not_anemic_customer_data, self.user_data, is_org_admin=False, is_internal=True
-        )
-        self.associate_not_anemic_request = self.associate_not_anemic_request_context["request"]
-        self.not_anemic_headers = self.associate_not_anemic_request_context["request"].META
-
-        self.associate_admin_request_context = self._create_request_context(
-            self.customer_data, self.user_data, is_org_admin=True, is_internal=True
-        )
-        self.associate_admin_request = self.associate_admin_request_context["request"]
-
-        """
-            Create cross account requests 1 to 6: request_1 to request_6
-            self.associate_admin_request has user_id 1111111, and account number xxxxxx
-            It would be approver for request_1, request_2, request_5;
-            It would be requestor for request_3, request_6
-            | target_account | user_id | start_date | end_date  |  status  | roles |
-            |     xxxxxx     | 1111111 |    now     | now+10day | approved |       |
-            |     xxxxxx     | 2222222 |    now     | now+10day | pending  |       |
-            |     123456     | 1111111 |    now     | now+10day | approved |       |
-            |     123456     | 2222222 |    now     | now+10day | pending  |       |
-            |     xxxxxx     | 2222222 |    now     | now+10day | expired  |       |
-            |     123456     | 1111111 |    now     | now_10day | pending  |       |
-        """
-        self.another_account = "123456"
-        self.another_org_id = "54321"
-
-        self.data4create = {
-            "target_account": "012345",
-            "target_org": "054321",
-            "start_date": self.format_date(self.ref_time),
-            "end_date": self.format_date(self.ref_time + timedelta(90)),
-            "roles": ["role_1", "role_2"],
-        }
-
-        public_tenant = Tenant.objects.get(tenant_name="public")
-
-        t = Tenant.objects.create(
-            tenant_name=f"acct{self.data4create['target_account']}",
-            account_id=self.data4create["target_account"],
-            org_id=self.data4create["target_org"],
-        )
-        t.ready = True
-        t.save()
-
-        self.role_1 = Role.objects.create(name="role_1", system=True, tenant=public_tenant)
-        self.role_2 = Role.objects.create(name="role_2", system=True, tenant=public_tenant)
-        self.role_9 = Role.objects.create(name="role_9", system=True, tenant=public_tenant)
-        self.role_8 = Role.objects.create(name="role_8", system=True, tenant=public_tenant)
-
-        self.request_1 = CrossAccountRequest.objects.create(
-            target_account=self.account,
-            target_org=self.org_id,
-            user_id="1111111",
-            end_date=self.ref_time + timedelta(10),
-            status="approved",
-        )
-        self.request_1.roles.add(*(self.role_1, self.role_2))
-        self.request_2 = CrossAccountRequest.objects.create(
-            target_account=self.account,
-            target_org=self.org_id,
-            user_id="2222222",
-            end_date=self.ref_time + timedelta(10),
-        )
-        self.request_2.roles.add(*(self.role_1, self.role_2))
-        self.request_3 = CrossAccountRequest.objects.create(
-            target_account=self.another_account,
-            target_org=self.another_org_id,
-            user_id="1111111",
-            end_date=self.ref_time + timedelta(10),
-            status="approved",
-        )
-        self.request_4 = CrossAccountRequest.objects.create(
-            target_account=self.account,
-            target_org=self.org_id,
-            user_id="2222222",
-            end_date=self.ref_time + timedelta(10),
-            status="pending",
-        )
-        self.request_5 = CrossAccountRequest.objects.create(
-            target_account=self.account,
-            target_org=self.org_id,
-            user_id="2222222",
-            end_date=self.ref_time + timedelta(10),
-            status="expired",
-        )
-        self.request_6 = CrossAccountRequest.objects.create(
-            target_account=self.another_account,
-            target_org=self.another_org_id,
-            user_id="1111111",
-            end_date=self.ref_time + timedelta(10),
-            status="pending",
-        )
-        self.not_anemic_request_1 = CrossAccountRequest.objects.create(
-            target_account=self.not_anemic_account,
-            target_org=self.not_anemic_org_id,
-            user_id="1111111",
-            end_date=self.ref_time + timedelta(10),
-            status="approved",
-        )
-
-    def tearDown(self):
-        """Tear down cross account request model tests."""
-        CrossAccountRequest.objects.all().delete()
 
     @patch(
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
@@ -423,17 +309,26 @@ class CrossAccountRequestViewTests(IdentityRequest):
 
     def test_create_requests_fail_for_no_account(self):
         """Test the creation of cross account request fails when the account doesn't exist."""
-        self.data4create["target_account"] = self.another_account
-        self.data4create["target_org"] = self.another_org_id
+
+        cross_account_request_with_missing_account = {
+            "target_account": "9999111",
+            "target_org": "9999",
+            "start_date": self.format_date(self.ref_time),
+            "end_date": self.format_date(self.ref_time + timedelta(90)),
+            "roles": ["role_1", "role_2"],
+        }
+
         client = APIClient()
         response = client.post(
-            f"{URL_LIST}?", self.data4create, format="json", **self.associate_non_admin_request.META
+            f"{URL_LIST}?",
+            cross_account_request_with_missing_account,
+            format="json",
+            **self.associate_non_admin_request.META,
         )
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertEqual(
-            response.data.get("errors")[0].get("detail"), f"Org ID '{self.another_org_id}' does not exist."
-        )
+        data = cross_account_request_with_missing_account["target_org"]
+        self.assertEqual(response.data.get("errors")[0].get("detail"), f"Org ID '{data}' does not exist.")
 
     def test_create_requests_towards_their_own_account_fail(self):
         """Test the creation of cross account request towards their own account fails."""
@@ -876,3 +771,121 @@ class CrossAccountRequestViewTests(IdentityRequest):
         self.assertEqual(response.data.get("email"), "test_user@email.com")
         self.assertEqual(response.data.get("target_org"), self.org_id)
         self.assertEqual(len(response.data.get("roles")), 2)
+
+    @override_settings(PRINCIPAL_USER_DOMAIN="localhost")
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
+    def test_approval_replicates_bindings(self, replicate):
+        """Test that when cross account access is approved, role bindings are replicated to Relations."""
+        replicate.side_effect = self.replicator.replicate
+
+        # Modify pending request such that it includes roles
+        farmer = self.fixture.new_system_role("Farmer", ["farm:soil:rake"])
+        fisher = self.fixture.new_system_role("Fisher", ["stream:fish:catch"])
+        # Should not include this one
+        self.fixture.new_system_role("NotGranted", ["app1:resource1:action1"])
+
+        # Add roles to request for user 2222222 and approve it.
+        self.add_roles_to_request(self.request_4, [farmer, fisher])
+
+        # generated relations to approve request
+        self.approve_request(self.request_4)
+
+        # Check that the roles are now bound to the user in the target account (default workspace)
+        default_workspace_id = Workspace.objects.get(tenant__org_id=self.org_id, type=Workspace.Types.DEFAULT).id
+        default_bindings = self.relations.find_tuples(
+            # Tuples for bindings to the default workspace
+            all_of(resource("rbac", "workspace", default_workspace_id), relation("binding"))
+        )
+
+        # Of these bindings, look for the ones that are for the user 2222222
+        cross_account_bindings, _ = self.relations.find_group_with_tuples(
+            # Tuples which are...
+            # grouped by resource
+            group_by=lambda t: (t.resource_type_namespace, t.resource_type_name, t.resource_id),
+            # where the resource is one of the default role bindings...
+            group_filter=lambda group: group[0] == "rbac"
+            and group[1] == "role_binding"
+            and group[2] in {str(binding.subject_id) for binding in default_bindings},
+            # and where one of the tuples from that binding has...
+            predicates=[
+                all_of(
+                    # a subject relation
+                    relation("subject"),
+                    # to the user in the CAR
+                    subject("rbac", "principal", "localhost/2222222"),
+                ),
+                relation("role"),
+            ],
+        )
+
+        # Assert the roles are correct for these bindings – one per role that was included in the request,
+        # and not any not included in the request
+        self.assertEqual(len(cross_account_bindings), 2, "Missing bindings for cross access request roles")
+
+        # Collect all the bound roles by iterating over the bindings and getting the subjects of the role relation
+        bound_roles = {
+            t.subject_id for _, tuples in cross_account_bindings.items() for t in tuples if t.relation == "role"
+        }
+
+        # Assert the bindings are to roles with the same ID
+        self.assertEqual(
+            bound_roles,
+            {str(farmer.uuid), str(fisher.uuid)},
+            f"Expected roles {farmer.uuid} and {fisher.uuid} but got {bound_roles}",
+        )
+
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={
+            "status_code": 200,
+            "data": [
+                {
+                    "username": "test_user",
+                    "email": "test_user@email.com",
+                    "first_name": "user",
+                    "last_name": "test",
+                    "account_number": "567890",
+                    "user_id": "1111111",
+                },
+                {
+                    "username": "test_user_2",
+                    "email": "test_user_2@email.com",
+                    "first_name": "user_2",
+                    "last_name": "test",
+                    "account_number": "123456",
+                    "user_id": "2222222",
+                },
+            ],
+        },
+    )
+    def test_list_requests_query_limit_offset(self, mock_request):
+        """Test limit and offset when listing the cross account requests."""
+        client = APIClient()
+        default_limit = 10
+        default_offset = 0
+        # Test that default values for limit and offset are returned for
+        # query with no limit and offset
+        response = client.get(URL_LIST, **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 4)
+        self.assertEqual(response.data.get("meta").get("limit"), default_limit)
+        self.assertEqual(response.data.get("meta").get("offset"), default_offset)
+
+        # Test that default values for limit and offset are returned for
+        # query with invalid limit or offset
+        for limit, offset in [("xxx", "xxx"), ("", "")]:
+            url = f"{URL_LIST}?limit={limit}&offset={offset}"
+            response = client.get(url, **self.headers)
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            self.assertEqual(len(response.data["data"]), 4)
+            self.assertEqual(response.data.get("meta").get("limit"), default_limit)
+            self.assertEqual(response.data.get("meta").get("offset"), default_offset)
+
+        # Test that correct values for limit and offset are returned for
+        # query with specific limit or offset
+        url = f"{URL_LIST}?limit={2}&offset={2}"
+        response = client.get(url, **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 2)
+        self.assertEqual(response.data.get("meta").get("limit"), 2)
+        self.assertEqual(response.data.get("meta").get("offset"), 2)

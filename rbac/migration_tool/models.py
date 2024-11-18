@@ -19,6 +19,7 @@ from dataclasses import dataclass
 from typing import Tuple
 
 from kessel.relations.v1beta1.common_pb2 import Relationship
+from management.principal.model import Principal
 from migration_tool.utils import create_relationship
 
 
@@ -90,14 +91,16 @@ class V2rolebinding:
     id: str
     role: V2role
     resource: V2boundresource
-    groups: frozenset[str]
+    groups: frozenset[str] = frozenset()
+    users: frozenset[str] = frozenset()
 
     def as_minimal_dict(self) -> dict:
-        """Convert the V2 role binding to a dictionary, excluding resource, original role, and users."""
+        """Convert the V2 role binding to a dictionary, excluding resource and original role."""
         return {
             "id": self.id,
             "role": self.role.as_dict(),
             "groups": [g for g in self.groups],
+            "users": [u for u in self.users],
         }
 
     def as_tuples(self):
@@ -112,6 +115,9 @@ class V2rolebinding:
         for group in self.groups:
             # These might be duplicate but it is OK, spiceDB will handle duplication through touch
             tuples.append(role_binding_group_subject_tuple(self.id, group))
+
+        for user in self.users:
+            tuples.append(role_binding_user_subject_tuple(self.id, user))
 
         tuples.append(
             create_relationship(
@@ -135,6 +141,18 @@ def role_binding_group_subject_tuple(role_binding_id: str, group_uuid: str) -> R
         group_uuid,
         "subject",
         subject_relation="member",
+    )
+
+
+def role_binding_user_subject_tuple(role_binding_id: str, user_id: str) -> Relationship:
+    """Create a relationship tuple for a role binding and a user."""
+    id = Principal.user_id_to_principal_resource_id(user_id)
+    return create_relationship(
+        ("rbac", "role_binding"),
+        role_binding_id,
+        ("rbac", "principal"),
+        id,
+        "subject",
     )
 
 
