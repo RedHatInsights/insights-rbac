@@ -19,6 +19,7 @@ from __future__ import absolute_import, unicode_literals
 
 import os
 
+from app_common_python import LoadedConfig
 from celery import Celery
 from celery.schedules import crontab
 from celery.signals import worker_ready
@@ -75,4 +76,4 @@ def start_metrics_server(sender=None, **kwargs):
     registry = CollectorRegistry()
     multiprocess.MultiProcessCollector(registry)
     generate_latest(registry)
-    start_http_server(6543, addr="0.0.0.0", registry=registry)
+    start_http_server(LoadedConfig.metricsPort, addr="0.0.0.0", registry=registry)

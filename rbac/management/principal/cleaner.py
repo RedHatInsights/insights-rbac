@@ -45,7 +45,7 @@ CERT_LOC = "/opt/rbac/rbac/management/principal/umb_certs/cert.pem"
 KEY_LOC = "/opt/rbac/rbac/management/principal/umb_certs/key.pem"
 
 umb_message_processed_count = Counter(
-    "rbac_umb_message_processed_count", "Number of UMB messages processed",
+    "rbac_umb_message_total", "Number of UMB messages processed",
 )
 
 
