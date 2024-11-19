@@ -15,7 +15,7 @@ You should have received a copy of the GNU Affero General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Iterable, Tuple
 
 from kessel.relations.v1beta1.common_pb2 import Relationship
@@ -91,8 +91,8 @@ class V2rolebinding:
     id: str
     role: V2role
     resource: V2boundresource
-    groups: tuple[str] = tuple()
-    users: tuple[str] = tuple()
+    groups: tuple[str]
+    users: tuple[str]
 
     def __init__(
         self,
