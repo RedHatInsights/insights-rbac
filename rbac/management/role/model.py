@@ -17,7 +17,7 @@
 
 """Model for role management."""
 import logging
-from typing import Union
+from typing import Optional, Union
 from uuid import uuid4
 
 from django.conf import settings
@@ -165,9 +165,11 @@ class BindingMapping(models.Model):
         """Return true if mapping is not assigned to any groups or users."""
         return len(self.mappings.get("groups", [])) == 0 and len(self.mappings.get("users", [])) == 0
 
-    def remove_group_from_bindings(self, group_uuid: str) -> Relationship:
+    def remove_group_from_bindings(self, group_uuid: str) -> Optional[Relationship]:
         """Remove group from mappings."""
-        self.mappings["groups"] = [group for group in self.mappings["groups"] if group != group_uuid]
+        self.mappings["groups"].remove(group_uuid)
+        if group_uuid in self.mappings["groups"]:
+            return None
         return role_binding_group_subject_tuple(self.mappings["id"], group_uuid)
 
     def add_group_to_bindings(self, group_uuid: str) -> Relationship:
@@ -175,15 +177,15 @@ class BindingMapping(models.Model):
         self.mappings["groups"].append(group_uuid)
         return role_binding_group_subject_tuple(self.mappings["id"], group_uuid)
 
-    def remove_user_from_bindings(self, user_id: str) -> Relationship:
+    def remove_user_from_bindings(self, user_id: str) -> Optional[Relationship]:
         """Remove user from mappings."""
-        self.mappings["users"] = [user for user in self.mappings.get("users", []) if user != user_id]
+        self.mappings["users"].remove(user_id)
+        if user_id in self.mappings["users"]:
+            return None
         return role_binding_user_subject_tuple(self.mappings["id"], user_id)
 
     def add_user_to_bindings(self, user_id: str) -> Relationship:
         """Add user to mappings."""
-        if "users" not in self.mappings:
-            self.mappings["users"] = []
         self.mappings["users"].append(user_id)
         return role_binding_user_subject_tuple(self.mappings["id"], user_id)
 
@@ -215,8 +217,6 @@ class BindingMapping(models.Model):
             is_system=args["role"]["is_system"],
             permissions=frozenset(args["role"]["permissions"]),
         )
-        args["groups"] = frozenset(args["groups"])
-        args["users"] = frozenset(args["users"])
         return V2rolebinding(**args)
 
 

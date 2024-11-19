@@ -162,7 +162,9 @@ class RelationApiDualWriteGroupHandler(RelationApiDualWriteSubjectHandler):
 
     def _update_mapping_for_role_removal(self, role: Role):
         def remove_group_from_binding(mapping: BindingMapping):
-            self.relations_to_remove.append(mapping.remove_group_from_bindings(str(self.group.uuid)))
+            removal = mapping.remove_group_from_bindings(str(self.group.uuid))
+            if removal is not None:
+                self.relations_to_remove.append(removal)
 
         self._update_mapping_for_role(
             role, update_mapping=remove_group_from_binding, create_default_mapping_for_system_role=None
