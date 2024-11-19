@@ -21,6 +21,7 @@ import os
 import ssl
 from typing import Optional
 
+from prometheus_client import Counter
 import xmltodict
 from django.conf import settings
 from management.principal.model import Principal
@@ -42,6 +43,10 @@ logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 PROXY = PrincipalProxy()  # pylint: disable=invalid-name
 CERT_LOC = "/opt/rbac/rbac/management/principal/umb_certs/cert.pem"
 KEY_LOC = "/opt/rbac/rbac/management/principal/umb_certs/key.pem"
+
+umb_message_processed_count = Counter(
+    "rbac_umb_message_processed_count", "Number of UMB messages processed",
+)
 
 
 def clean_tenant_principals(tenant):
@@ -214,5 +219,6 @@ def process_principal_events_from_umb(bootstrap_service: Optional[TenantBootstra
     while UMB_CLIENT.canRead(2):  # Check if queue is empty, two sec timeout
         frame = UMB_CLIENT.receiveFrame()
         process_umb_event(frame, UMB_CLIENT, bootstrap_service)
+        umb_message_processed_count.inc()
     UMB_CLIENT.disconnect()
     logger.info("process_tenant_principal_events: Principal event processing finished.")
