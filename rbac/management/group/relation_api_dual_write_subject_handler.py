@@ -61,7 +61,7 @@ class RelationApiDualWriteSubjectHandler:
         """Check whether replication enabled."""
         return settings.REPLICATION_TO_RELATION_ENABLED is True
 
-    def _create_default_mapping_for_system_role(self, system_role: Role, **subject: frozenset[str]) -> BindingMapping:
+    def _create_default_mapping_for_system_role(self, system_role: Role, **subject: Iterable[str]) -> BindingMapping:
         """Create default mapping."""
         assert system_role.system is True, "Expected system role. Mappings for custom roles must already be created."
         binding = V2rolebinding(
