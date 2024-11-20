@@ -459,6 +459,7 @@ class InternalViewsetTests(IdentityRequest):
         )
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
 
+    @override_settings(READ_ONLY_API_MODE=True)
     @patch("management.tasks.migrate_data_in_worker.delay")
     def test_run_migrations_of_data(self, migration_mock):
         """Test that we can trigger migrations of data to migrate from V1 to V2."""
@@ -466,6 +467,7 @@ class InternalViewsetTests(IdentityRequest):
             f"/_private/api/utils/data_migration/?exclude_apps=rbac,costmanagement&orgs=acct00001,acct00002",
             **self.request.META,
         )
+        self.assertEqual(response.status_code, status.HTTP_202_ACCEPTED)
         migration_mock.assert_called_once_with(
             {
                 "exclude_apps": ["rbac", "costmanagement"],
@@ -473,7 +475,6 @@ class InternalViewsetTests(IdentityRequest):
                 "write_relationships": "False",
             }
         )
-        self.assertEqual(response.status_code, status.HTTP_202_ACCEPTED)
         self.assertEqual(
             response.content.decode(),
             "Data migration from V1 to V2 are running in a background worker.",

@@ -5871,3 +5871,83 @@ class GroupReplicationTests(IdentityRequest):
         subjects = {t.subject_id for _, tuples in sr1_bindings.items() for t in tuples if t.relation == "subject"}
 
         self.assertCountEqual(subjects, [str(test_group.uuid)])
+
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
+    def test_add_role_already_added_is_noop(self, replicate):
+        replicate.side_effect = self.in_memory_replicator.replicate
+
+        self.sr1 = self.fixture.new_system_role("sr1", ["app:*:*"])
+
+        groupC = Group.objects.create(name="groupC", tenant=self.tenant)
+        url = reverse("v1_management:group-roles", kwargs={"uuid": groupC.uuid})
+        client = APIClient()
+        test_data = {"roles": [self.sr1.uuid]}
+
+        self.assertCountEqual([], list(groupC.roles()))
+
+        response = client.post(url, test_data, format="json", **self.headers)
+
+        self.assertCountEqual([self.sr1], list(groupC.roles()))
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        # Reset relations to see only new tuples
+        self.relations.clear()
+
+        # Add role again
+        response = client.post(url, test_data, format="json", **self.headers)
+
+        # Expect no new tuples
+        self.assertEquals(0, self.relations.count_tuples())
+
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
+    def test_remove_role_added_twice_removes_role(self, replicate):
+        replicate.side_effect = self.in_memory_replicator.replicate
+
+        sr1 = self.fixture.new_system_role("sr1", ["app:*:*"])
+
+        group = Group.objects.create(name="groupC", tenant=self.tenant)
+        url = reverse("v1_management:group-roles", kwargs={"uuid": group.uuid})
+        client = APIClient()
+        test_data = {"roles": [sr1.uuid]}
+
+        self.assertCountEqual([], list(group.roles()))
+
+        response = client.post(url, test_data, format="json", **self.headers)
+
+        self.assertCountEqual([sr1], list(group.roles()))
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        # Add role again
+        response = client.post(url, test_data, format="json", **self.headers)
+
+        self.assertCountEqual([sr1], list(group.roles()))
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        # Now remove the role
+        url = reverse("v1_management:group-roles", kwargs={"uuid": group.uuid})
+        client = APIClient()
+        url = "{}?roles={}".format(url, sr1.uuid)
+
+        response = client.delete(url, format="json", **self.headers)
+
+        # Expect no binding anywhere for the sr1 role
+        sr1_bindings, _ = self.relations.find_group_with_tuples(
+            # Tuples which are...
+            # grouped by resource
+            group_by=lambda t: (t.resource_type_namespace, t.resource_type_name, t.resource_id),
+            # where the resource is ...
+            group_filter=lambda group: group[0] == "rbac" and group[1] == "role_binding",
+            # and where one of the tuples from that binding has...
+            predicates=[
+                # a subject relation
+                relation("subject"),
+                all_of(
+                    # for the sr1 role
+                    relation("role"),
+                    subject("rbac", "role", str(sr1.uuid)),
+                ),
+            ],
+            match_once=False,
+        )
+
+        self.assertEqual(len(sr1_bindings), 0)
