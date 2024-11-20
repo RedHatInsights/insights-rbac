@@ -181,7 +181,9 @@ def migrate_cross_account_requests(tenant: Tenant, replicator: RelationReplicato
 
 def migrate_data(exclude_apps: list = [], orgs: list = [], write_relationships: str = "False"):
     """Migrate all data for all tenants."""
-    if not settings.READ_ONLY_API_MODE:
+    # Only run this in maintanence mode or
+    # if we don't write relationships (testing out the migration and clean up the created bindingmappings)
+    if not settings.READ_ONLY_API_MODE and write_relationships != "False":
         logger.fatal("Read-only API mode is required. READ_ONLY_API_MODE must be set to true.")
         return
 
