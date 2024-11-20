@@ -1,13 +1,19 @@
----
-apiVersion: cloud.redhat.com/v1alpha1
-kind: ClowdJobInvocation
+apiVersion: template.openshift.io/v1
+kind: Template
 metadata:
-  name: populate-user-id-columns-#{RUN_NUMBER}
-spec:
-  appName: rbac
-  jobs:
-    - user-id-populator
+  name: populate-user-id-columns-cji
+objects:
+- apiVersion: cloud.redhat.com/v1alpha1
+  kind: ClowdJobInvocation
+  metadata:
+    labels:
+      app: rbac
+    name: populate-user-id-columns-${RUN_NUMBER}
+  spec:
+    appName: rbac
+    jobs:
+      - user-id-populator
 parameters:
-  - name: RUN_NUMBER
-    description: Used to track and re-run the job
-    value: '1'
+- name: RUN_NUMBER
+  description: Used to track and re-run the job
+  value: '1'
