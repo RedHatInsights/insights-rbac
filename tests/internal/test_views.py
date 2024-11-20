@@ -26,8 +26,9 @@ import pytz
 import json
 
 from api.models import User, Tenant
-from management.models import Group, Permission, Policy, Role
-from management.role.model import BindingMapping
+from management.models import BindingMapping, Group, Permission, Policy, Role, Workspace
+from management.relation_replicator.noop_replicator import NoopReplicator
+from management.tenant_service.v2 import V2TenantBootstrapService
 from management.workspace.model import Workspace
 from tests.identity_request import IdentityRequest
 
@@ -458,6 +459,7 @@ class InternalViewsetTests(IdentityRequest):
         )
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
 
+    @override_settings(READ_ONLY_API_MODE=True)
     @patch("management.tasks.migrate_data_in_worker.delay")
     def test_run_migrations_of_data(self, migration_mock):
         """Test that we can trigger migrations of data to migrate from V1 to V2."""
@@ -465,6 +467,7 @@ class InternalViewsetTests(IdentityRequest):
             f"/_private/api/utils/data_migration/?exclude_apps=rbac,costmanagement&orgs=acct00001,acct00002",
             **self.request.META,
         )
+        self.assertEqual(response.status_code, status.HTTP_202_ACCEPTED)
         migration_mock.assert_called_once_with(
             {
                 "exclude_apps": ["rbac", "costmanagement"],
@@ -472,7 +475,6 @@ class InternalViewsetTests(IdentityRequest):
                 "write_relationships": "False",
             }
         )
-        self.assertEqual(response.status_code, status.HTTP_202_ACCEPTED)
         self.assertEqual(
             response.content.decode(),
             "Data migration from V1 to V2 are running in a background worker.",
@@ -575,3 +577,105 @@ class InternalViewsetTests(IdentityRequest):
         Workspace.objects.filter(tenant=tenant, type=Workspace.Types.ROOT).exists()
         Workspace.objects.filter(tenant=tenant, type=Workspace.Types.DEFAULT).exists()
         self.assertTrue(getattr(tenant, "tenant_mapping"))
+
+    def test_listing_migration_resources(self):
+        """Test that we can list migration resources."""
+        org_id = "12345678"
+        bootstrap_service = V2TenantBootstrapService(NoopReplicator())
+        bootstrapped_tenant = bootstrap_service.bootstrap_tenant(self.tenant)
+        another_bootstrapped_tenant = bootstrap_service.new_bootstrapped_tenant(org_id)
+        another_tenant = another_bootstrapped_tenant.tenant
+        root_workspaces = [bootstrapped_tenant.root_workspace, another_bootstrapped_tenant.root_workspace]
+        default_workspaces = [
+            bootstrapped_tenant.default_workspace,
+            another_bootstrapped_tenant.default_workspace,
+        ]
+
+        # Test limit and offset
+        response = self.client.get(
+            "/_private/api/utils/migration_resources/?resource=workspace&limit=1",
+            **self.request.META,
+        )
+        workspace_list_1 = json.loads(response.getvalue())
+        self.assertEqual(len(workspace_list_1), 1)
+        response = self.client.get(
+            "/_private/api/utils/migration_resources/?resource=workspace&limit=1&offset=1",
+            **self.request.META,
+        )
+        workspace_list_2 = json.loads(response.getvalue())
+        self.assertEqual(len(workspace_list_2), 1)
+        self.assertNotEqual(workspace_list_1, workspace_list_2)
+
+        response = self.client.get(
+            "/_private/api/utils/migration_resources/?resource=workspace",
+            **self.request.META,
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        id_set = {str(workspace.id) for workspace in default_workspaces}
+        for workspace in root_workspaces:
+            id_set.add(str(workspace.id))
+        self.assertEqual(set(json.loads(response.getvalue())), id_set)
+
+        response = self.client.get(
+            f"/_private/api/utils/migration_resources/?resource=workspace&org_id={org_id}",
+            **self.request.META,
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            set(json.loads(response.getvalue())), {str(default_workspaces[1].id), str(root_workspaces[1].id)}
+        )
+
+        # Listing tenantmappings
+        tenant_mappings = [bootstrapped_tenant.mapping, another_bootstrapped_tenant.mapping]
+        response = self.client.get(
+            "/_private/api/utils/migration_resources/?resource=mapping",
+            **self.request.META,
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            set(json.loads(response.getvalue())), {str(tenant_mapping.id) for tenant_mapping in tenant_mappings}
+        )
+        response = self.client.get(
+            f"/_private/api/utils/migration_resources/?resource=mapping&org_id={org_id}",
+            **self.request.META,
+        )
+        self.assertEqual(json.loads(response.getvalue()), [str(tenant_mappings[1].id)])
+
+        # List bindingmappings
+        tenant_role = Role.objects.create(
+            name="role",
+            tenant=self.tenant,
+        )
+        another_role = Role.objects.create(
+            name="role",
+            tenant=another_tenant,
+        )
+        binding = BindingMapping.objects.create(
+            role=tenant_role,
+        )
+        another_binding = BindingMapping.objects.create(
+            role=another_role,
+        )
+        response = self.client.get(
+            "/_private/api/utils/migration_resources/?resource=binding",
+            **self.request.META,
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(set(json.loads(response.getvalue())), {str(binding.id), str(another_binding.id)})
+
+    @override_settings(INTERNAL_DESTRUCTIVE_API_OK_UNTIL=valid_destructive_time())
+    @patch("api.tasks.run_migration_resource_deletion.delay")
+    def test_deleting_migration_resources(self, delay_mock):
+        """Test that we can delete migration resources."""
+        org_id = "12345678"
+        response = self.client.delete(
+            f"/_private/api/utils/migration_resources/?resource=workspace&org_id={org_id}",
+            **self.request.META,
+        )
+        self.assertEqual(response.status_code, status.HTTP_202_ACCEPTED)
+        delay_mock.assert_called_once_with(
+            {
+                "resource": "workspace",
+                "org_id": org_id,
+            }
+        )

@@ -81,6 +81,7 @@ urlpatterns = [
     path("api/utils/data_migration/", views.data_migration),
     path("api/utils/bindings/", views.list_bindings_for_role),
     path("api/utils/bootstrap_tenant/", views.bootstrap_tenant),
+    path("api/utils/migration_resources/", views.migration_resources),
 ]
 
 urlpatterns.extend(integration_urlpatterns)

@@ -452,7 +452,9 @@ class ReadOnlyApiMiddleware(MiddlewareMixin):  # pylint: disable=too-few-public-
 
     def _should_deny_all_writes(self, request):
         """Determine whether or not to deny all API writes."""
-        return settings.READ_ONLY_API_MODE and self._is_write_request(request)
+        resolver = resolve(request.path)
+        api_namespace = resolver.app_name if resolver else ""
+        return settings.READ_ONLY_API_MODE and self._is_write_request(request) and api_namespace != "internal"
 
     def _should_deny_v2_writes(self, request):
         """Determine whether or not to deny v2 writes."""
