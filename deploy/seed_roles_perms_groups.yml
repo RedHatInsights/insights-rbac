@@ -2,8 +2,12 @@
 apiVersion: cloud.redhat.com/v1alpha1
 kind: ClowdJobInvocation
 metadata:
-  name: seed-roles-perms-groups
+  name: seed-roles-perms-groups-#{RUN_NUMBER}
 spec:
   appName: rbac
   jobs:
     - seed-roles-perms-groups
+parameters:
+  - name: RUN_NUMBER
+    description: Used to track and re-run the job
+    value: '1'
