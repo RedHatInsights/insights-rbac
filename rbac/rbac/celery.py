@@ -24,7 +24,6 @@ from celery import Celery
 from celery.schedules import crontab
 from celery.signals import worker_ready
 from django.conf import settings
-
 from prometheus_client import CollectorRegistry, generate_latest, multiprocess, start_http_server
 
 # set the default Django settings module for the 'celery' program.
@@ -72,7 +71,6 @@ app.autodiscover_tasks()
 @worker_ready.connect
 def start_metrics_server(sender=None, **kwargs):
     """Start the metrics server."""
-
     registry = CollectorRegistry()
     multiprocess.MultiProcessCollector(registry)
     generate_latest(registry)
