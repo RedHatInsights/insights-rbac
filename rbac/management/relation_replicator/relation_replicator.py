@@ -77,11 +77,17 @@ class ReplicationEvent:
         info: dict[str, object] = {},
     ):
         """Initialize ReplicationEvent."""
-        add_set = set(add)
-        remove_set = set(remove)
-        intersection = add_set.intersection(remove_set)
-        self.add = list(add_set.difference(intersection))
-        self.remove = list(remove_set.difference(intersection))
+        add_set = {rel.relation: rel for rel in add}
+        remove_set = {rel.relation: rel for rel in remove}
+
+        # remove duplicates
+        intersection = set(add_set.keys()).intersection(set(remove_set.keys()))
+        for key in intersection:
+            del add_set[key]
+            del remove_set[key]
+
+        self.add = list(add_set.values())
+        self.remove = list(remove_set.values())
 
         self.partition_key = partition_key
         self.event_type = event_type
