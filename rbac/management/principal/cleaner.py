@@ -201,23 +201,25 @@ def process_umb_event(frame, umb_client: Stomp, bootstrap_service: TenantBootstr
 
         data_dict = xmltodict.parse(frame.body)
         canonical_message = data_dict.get("CanonicalMessage")
-        if not canonical_message:
+        if canonical_message:
+            try:
+                user = retrieve_user_info(canonical_message)
+            except Exception as e:  # Skip processing and leave the it to be processed later
+                logger.error("process_umb_event: Error retrieving user info: %s", str(e))
+                return True
+
+            # By default, only process disabled users.
+            # If the setting is enabled, process all users.
+            if not user.is_active or settings.PRINCIPAL_CLEANUP_UPDATE_ENABLED_UMB:
+                bootstrap_service.update_user(user)
+        else:
             # Message is malformed.
             # Ensure we dont block the entire queue by discarding it.
-            umb_client.ack(frame)
-            return True
-        try:
-            user = retrieve_user_info(canonical_message)
-        except Exception as e:  # Skip processing and leave the it to be processed later
-            logger.error("process_umb_event: Error retrieving user info: %s", str(e))
-            return True
-
-        # By default, only process disabled users.
-        # If the setting is enabled, process all users.
-        if not user.is_active or settings.PRINCIPAL_CLEANUP_UPDATE_ENABLED_UMB:
-            bootstrap_service.update_user(user)
+            # TODO: this is not the only way a message can be malformed
+            pass
 
     umb_client.ack(frame)
+    umb_message_processed_count.inc()
     return True
 
 
@@ -238,7 +240,6 @@ def process_principal_events_from_umb(bootstrap_service: Optional[TenantBootstra
             frame = UMB_CLIENT.receiveFrame()
             if not process_umb_event(frame, UMB_CLIENT, bootstrap_service):
                 break
-            umb_message_processed_count.inc()
     finally:
         UMB_CLIENT.disconnect()
         logger.info("process_tenant_principal_events: Principal event processing finished.")
