@@ -24,7 +24,7 @@ from celery import Celery
 from celery.schedules import crontab
 from celery.signals import worker_ready
 from django.conf import settings
-from prometheus_client import CollectorRegistry, generate_latest, multiprocess, start_http_server
+from prometheus_client import CollectorRegistry, multiprocess, start_http_server
 
 # set the default Django settings module for the 'celery' program.
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "rbac.settings")
@@ -73,5 +73,4 @@ def start_metrics_server(sender=None, **kwargs):
     """Start the metrics server."""
     registry = CollectorRegistry()
     multiprocess.MultiProcessCollector(registry)
-    generate_latest(registry)
     start_http_server(LoadedConfig.metricsPort, addr="0.0.0.0", registry=registry)

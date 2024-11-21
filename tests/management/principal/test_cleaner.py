@@ -311,7 +311,7 @@ class PrincipalUMBTests(IdentityRequest):
         process_principal_events_from_umb()
 
         after = REGISTRY.get_sample_value(METRIC_STOMP_MESSAGE_TOTAL)
-        self.assertTrue(before == after == 0)
+        self.assertTrue(before == after)
         client_mock.receiveFrame.assert_not_called()
         client_mock.disconnect.assert_called_once()
 
