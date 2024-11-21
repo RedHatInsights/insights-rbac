@@ -228,7 +228,7 @@ def process_principal_events_from_umb(bootstrap_service: Optional[TenantBootstra
     while UMB_CLIENT.canRead(15):  # Check if queue is empty, 15 sec timeout
         frame = UMB_CLIENT.receiveFrame()
         if not process_umb_event(frame, UMB_CLIENT, bootstrap_service):
-            return
+            break
     UMB_CLIENT.disconnect()
     logger.info("process_tenant_principal_events: Principal event processing finished.")
 
