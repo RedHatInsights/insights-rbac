@@ -23,11 +23,13 @@ from typing import Optional
 
 import xmltodict
 from django.conf import settings
+from django.db import connection, transaction
 from management.principal.model import Principal
 from management.principal.proxy import PrincipalProxy, external_principal_to_user
 from management.relation_replicator.outbox_replicator import OutboxReplicator
 from management.tenant_service import get_tenant_bootstrap_service
 from management.tenant_service.tenant_service import TenantBootstrapService
+from prometheus_client import Counter
 from rest_framework import status
 from stompest.config import StompConfig
 from stompest.error import StompConnectionError
@@ -42,6 +44,13 @@ logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 PROXY = PrincipalProxy()  # pylint: disable=invalid-name
 CERT_LOC = "/opt/rbac/rbac/management/principal/umb_certs/cert.pem"
 KEY_LOC = "/opt/rbac/rbac/management/principal/umb_certs/key.pem"
+LOCK_ID = 42  # For Keith, with Love
+
+METRIC_STOMP_MESSAGE_TOTAL = "stomp_messages_total"
+umb_message_processed_count = Counter(
+    METRIC_STOMP_MESSAGE_TOTAL,
+    "Number of stomp UMB messages processed",
+)
 
 
 def clean_tenant_principals(tenant):
@@ -177,26 +186,41 @@ def retrieve_user_info(message) -> User:
     return external_principal_to_user(user_data)
 
 
-def process_umb_event(frame, umb_client: Stomp, bootstrap_service: TenantBootstrapService):
-    """Process each umb frame."""
-    data_dict = xmltodict.parse(frame.body)
-    canonical_message = data_dict.get("CanonicalMessage")
-    if not canonical_message:
-        # Message is malformed.
-        # Ensure we dont block the entire queue by discarding it.
-        umb_client.ack(frame)
-        return
-    try:
-        user = retrieve_user_info(canonical_message)
-    except Exception as e:  # Skip processing and leave the it to be processed later
-        logger.error("process_umb_event: Error retrieving user info: %s", str(e))
-        return
+def process_umb_event(frame, umb_client: Stomp, bootstrap_service: TenantBootstrapService) -> bool:
+    """
+    Process each umb frame.
 
-    # By default, only process disabled users.
-    # If the setting is enabled, process all users.
-    if not user.is_active or settings.PRINCIPAL_CLEANUP_UPDATE_ENABLED_UMB:
-        bootstrap_service.update_user(user)
+    If the process should continue to listen for more frames, return True. Otherwise, return False.
+    """
+    with transaction.atomic():
+        # This is locked per transaction to ensure another listener process does not run concurrently.
+        if not _lock_listener():
+            # If there is another listener, let it run and abort this one.
+            logger.info("process_umb_event: Another listener is running. Aborting.")
+            return False
+
+        data_dict = xmltodict.parse(frame.body)
+        canonical_message = data_dict.get("CanonicalMessage")
+        if canonical_message:
+            try:
+                user = retrieve_user_info(canonical_message)
+            except Exception as e:  # Skip processing and leave the it to be processed later
+                logger.error("process_umb_event: Error retrieving user info: %s", str(e))
+                return True
+
+            # By default, only process disabled users.
+            # If the setting is enabled, process all users.
+            if not user.is_active or settings.PRINCIPAL_CLEANUP_UPDATE_ENABLED_UMB:
+                bootstrap_service.update_user(user)
+        else:
+            # Message is malformed.
+            # Ensure we dont block the entire queue by discarding it.
+            # TODO: this is not the only way a message can be malformed
+            pass
+
     umb_client.ack(frame)
+    umb_message_processed_count.inc()
+    return True
 
 
 def process_principal_events_from_umb(bootstrap_service: Optional[TenantBootstrapService] = None):
@@ -211,8 +235,22 @@ def process_principal_events_from_umb(bootstrap_service: Optional[TenantBootstra
         if not str(e).startswith(("Already connected", "Already subscribed")):
             raise e
 
-    while UMB_CLIENT.canRead(2):  # Check if queue is empty, two sec timeout
-        frame = UMB_CLIENT.receiveFrame()
-        process_umb_event(frame, UMB_CLIENT, bootstrap_service)
-    UMB_CLIENT.disconnect()
-    logger.info("process_tenant_principal_events: Principal event processing finished.")
+    try:
+        while UMB_CLIENT.canRead(15):  # Check if queue is empty, 15 sec timeout
+            frame = UMB_CLIENT.receiveFrame()
+            logger.info("process_tenant_principal_events: Processing frame. info=%s", frame.info())
+            if not process_umb_event(frame, UMB_CLIENT, bootstrap_service):
+                break
+    finally:
+        UMB_CLIENT.disconnect()
+        logger.info("process_tenant_principal_events: Principal event processing finished.")
+
+
+def _lock_listener() -> bool:
+    """Attempt to acquire a lock for the listener and if acquired return True, else False."""
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT pg_try_advisory_xact_lock(%s);", [LOCK_ID])
+        result = cursor.fetchone()
+    if result is None:
+        raise Exception("Advisory lock returned none, expected bool.")
+    return result[0]  # Returns True if lock acquired, False otherwise
