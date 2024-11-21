@@ -260,6 +260,15 @@ class CrossAccountRequestViewSet(
                 )
                 dual_write_handler.generate_relations_to_add_roles(cross_account_roles)
                 dual_write_handler.replicate()
+        elif status == "denied":
+            cross_account_roles = car.roles.all()
+            if any(True for _ in cross_account_roles):
+                dual_write_handler = RelationApiDualWriteCrossAccessHandler(
+                    car, ReplicationEventType.DENY_CROSS_ACCOUNT_REQUEST
+                )
+                cross_account_roles = car.roles.all()
+                dual_write_handler.generate_relations_to_remove_roles(cross_account_roles)
+                dual_write_handler.replicate()
         car.save()
 
     def check_patch_permission(self, request, update_obj):
