@@ -4528,8 +4528,8 @@ class GroupViewNonAdminTests(IdentityRequest):
                 return self._json
 
         def mock_get(url: str, params: dict, *args, **kwargs):
-            if url.endswith("/service_accounts/v1") and not (
-                (client_ids := params.get("clientId")) or sa_uuid in client_ids
+            if url.endswith("/service_accounts/v1") and (
+                not (client_ids := params.get("clientId")) or sa_uuid in client_ids
             ):
                 return MockResponse(mocked_values)
             return MockResponse([])
