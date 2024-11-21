@@ -4519,12 +4519,22 @@ class GroupViewNonAdminTests(IdentityRequest):
         ]
 
         class MockResponse:
-            def __init__(self, status_code, content, json):
-                self.status_code = status_code
-                self.content = content
-                self.json = json
+            def __init__(self, json_response):
+                self.status_code = 200
+                self._json = json_response
+                self.content = json.dumps(json_response)
 
-        mock_request.return_value = MockResponse(200, json.dumps(mocked_values), lambda: mocked_values)
+            def json(self):
+                return self._json
+
+        def mock_get(url: str, params: dict, *args, **kwargs):
+            if url.endswith("/service_accounts/v1") and not (
+                (client_ids := params.get("clientId")) or sa_uuid in client_ids
+            ):
+                return MockResponse(mocked_values)
+            return MockResponse([])
+
+        mock_request.side_effect = mock_get
         mock_request.__name__ = "request_service_accounts"
 
         url = reverse("v1_management:group-principals", kwargs={"uuid": test_group.uuid})
