@@ -29,6 +29,7 @@ from management.principal.proxy import PrincipalProxy, external_principal_to_use
 from management.relation_replicator.outbox_replicator import OutboxReplicator
 from management.tenant_service import get_tenant_bootstrap_service
 from management.tenant_service.tenant_service import TenantBootstrapService
+from prometheus_client import Counter
 from rest_framework import status
 from stompest.config import StompConfig
 from stompest.error import StompConnectionError
@@ -44,6 +45,12 @@ PROXY = PrincipalProxy()  # pylint: disable=invalid-name
 CERT_LOC = "/opt/rbac/rbac/management/principal/umb_certs/cert.pem"
 KEY_LOC = "/opt/rbac/rbac/management/principal/umb_certs/key.pem"
 LOCK_ID = 42  # For Keith, with Love
+
+METRIC_STOMP_MESSAGE_TOTAL = "stomp_messages_total"
+umb_message_processed_count = Counter(
+    METRIC_STOMP_MESSAGE_TOTAL,
+    "Number of stomp UMB messages processed",
+)
 
 
 def clean_tenant_principals(tenant):
@@ -231,6 +238,7 @@ def process_principal_events_from_umb(bootstrap_service: Optional[TenantBootstra
             frame = UMB_CLIENT.receiveFrame()
             if not process_umb_event(frame, UMB_CLIENT, bootstrap_service):
                 break
+            umb_message_processed_count.inc()
     finally:
         UMB_CLIENT.disconnect()
         logger.info("process_tenant_principal_events: Principal event processing finished.")

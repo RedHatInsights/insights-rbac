@@ -23,6 +23,7 @@ from unittest.mock import MagicMock, patch
 
 from django.db import connections, transaction
 from django.test import override_settings
+from prometheus_client import REGISTRY
 from rest_framework import status
 
 from management.group.definer import seed_group
@@ -30,7 +31,7 @@ from management.group.model import Group
 from management.policy.model import Policy
 from management.principal.cleaner import LOCK_ID, clean_tenant_principals
 from management.principal.model import Principal
-from management.principal.cleaner import process_principal_events_from_umb
+from management.principal.cleaner import process_principal_events_from_umb, METRIC_STOMP_MESSAGE_TOTAL
 from management.principal.proxy import external_principal_to_user
 from management.tenant_mapping.model import TenantMapping
 from management.tenant_service import get_tenant_bootstrap_service
@@ -307,9 +308,12 @@ class PrincipalUMBTests(IdentityRequest):
     @patch("management.principal.cleaner.UMB_CLIENT")
     def test_principal_cleanup_none(self, client_mock):
         """Test that we can run a principal clean up with no messages."""
+        before = REGISTRY.get_sample_value(METRIC_STOMP_MESSAGE_TOTAL)
         client_mock.canRead.return_value = False
         process_principal_events_from_umb()
 
+        after = REGISTRY.get_sample_value(METRIC_STOMP_MESSAGE_TOTAL)
+        self.assertTrue(before == after)
         client_mock.receiveFrame.assert_not_called()
         client_mock.disconnect.assert_called_once()
 
@@ -330,12 +334,14 @@ class PrincipalUMBTests(IdentityRequest):
         self.group.principals.add(self.principal)
         self.group.save()
 
+        before = REGISTRY.get_sample_value(METRIC_STOMP_MESSAGE_TOTAL)
         client_mock.canRead.side_effect = [True, False]
         client_mock.receiveFrame.return_value = MagicMock(body=FRAME_BODY)
         cache_mock = MagicMock()
         cache_class.return_value = cache_mock
         process_principal_events_from_umb()
 
+        after = REGISTRY.get_sample_value(METRIC_STOMP_MESSAGE_TOTAL)
         client_mock.receiveFrame.assert_called_once()
         client_mock.disconnect.assert_called_once()
         client_mock.ack.assert_called_once()
@@ -343,6 +349,7 @@ class PrincipalUMBTests(IdentityRequest):
         self.group.refresh_from_db()
         self.assertFalse(self.group.principals.all())
         cache_mock.delete_policy.assert_called_once_with(self.principal.uuid)
+        self.assertTrue(before + 1 == after)
 
         # When principal not in group
         self.principal = Principal(username=principal_name, tenant=self.tenant, user_id="56780000")
