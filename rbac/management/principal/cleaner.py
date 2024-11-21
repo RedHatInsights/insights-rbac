@@ -43,7 +43,7 @@ logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 PROXY = PrincipalProxy()  # pylint: disable=invalid-name
 CERT_LOC = "/opt/rbac/rbac/management/principal/umb_certs/cert.pem"
 KEY_LOC = "/opt/rbac/rbac/management/principal/umb_certs/key.pem"
-LOCK_ID = hash(settings.ENV_NAME)
+LOCK_ID = 42  # For Keith, with Love
 
 
 def clean_tenant_principals(tenant):
