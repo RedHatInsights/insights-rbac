@@ -455,6 +455,7 @@ class ITService:
         description = service_account_from_it_service.get("description")
         created_by = service_account_from_it_service.get("createdBy")
         created_at = service_account_from_it_service.get("createdAt")
+        user_id = service_account_from_it_service.get("userId")
 
         if client_id:
             service_account["clientId"] = client_id
@@ -470,6 +471,9 @@ class ITService:
 
         if created_at:
             service_account["time_created"] = created_at
+
+        if user_id:
+            service_account["userId"] = user_id
 
         # Hard code the type for every service account.
         service_account["type"] = "service-account"
