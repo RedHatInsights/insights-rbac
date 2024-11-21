@@ -133,7 +133,7 @@ class ITService:
 
                 # Save the metrics for the successful call. Successful does not mean that we received an OK response,
                 # but that we were able to reach IT's SSO instead and get a response from them.
-                it_request_status_count.labels(method=requests.get.__name__.upper(), status=response.status_code)
+                it_request_status_count.labels(method="GET", status=response.status_code).inc()
 
                 if not status.is_success(response.status_code):
                     LOGGER.error(
