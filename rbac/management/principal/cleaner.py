@@ -21,7 +21,6 @@ import os
 import ssl
 from typing import Optional
 
-from py import log
 import xmltodict
 from django.conf import settings
 from django.db import connection, transaction
