@@ -248,27 +248,37 @@ class CrossAccountRequestViewSet(
 
         return [{"display_name": role} for role in roles]
 
+    def with_dual_write_handler(self, car, replication_event_type, generate_relations=None):
+        """Use dual write handler."""
+        cross_account_roles = car.roles.all()
+        if any(True for _ in cross_account_roles):
+            dual_write_handler = RelationApiDualWriteCrossAccessHandler(car, replication_event_type)
+
+            if generate_relations and callable(generate_relations):
+                generate_relations(dual_write_handler, cross_account_roles)
+
+            dual_write_handler.replicate()
+
     def update_status(self, car, status):
         """Update the status of a cross-account-request."""
         car.status = status
         if status == "approved":
             create_cross_principal(car.user_id, target_org=car.target_org)
-            cross_account_roles = car.roles.all()
-            if any(True for _ in cross_account_roles):
-                dual_write_handler = RelationApiDualWriteCrossAccessHandler(
-                    car, ReplicationEventType.APPROVE_CROSS_ACCOUNT_REQUEST
-                )
+
+            def generate_relations_to_add_roles(dual_write_handler, cross_account_roles):
                 dual_write_handler.generate_relations_to_add_roles(cross_account_roles)
-                dual_write_handler.replicate()
+
+            self.with_dual_write_handler(
+                car, ReplicationEventType.APPROVE_CROSS_ACCOUNT_REQUEST, generate_relations_to_add_roles
+            )
         elif status == "denied":
-            cross_account_roles = car.roles.all()
-            if any(True for _ in cross_account_roles):
-                dual_write_handler = RelationApiDualWriteCrossAccessHandler(
-                    car, ReplicationEventType.DENY_CROSS_ACCOUNT_REQUEST
-                )
-                cross_account_roles = car.roles.all()
+
+            def generate_relations_to_remove_roles(dual_write_handler, cross_account_roles):
                 dual_write_handler.generate_relations_to_remove_roles(cross_account_roles)
-                dual_write_handler.replicate()
+
+            self.with_dual_write_handler(
+                car, ReplicationEventType.DENY_CROSS_ACCOUNT_REQUEST, generate_relations_to_remove_roles
+            )
         car.save()
 
     def check_patch_permission(self, request, update_obj):
