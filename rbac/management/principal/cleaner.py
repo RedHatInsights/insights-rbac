@@ -21,6 +21,7 @@ import os
 import ssl
 from typing import Optional
 
+from py import log
 import xmltodict
 from django.conf import settings
 from django.db import connection, transaction
@@ -189,6 +190,7 @@ def process_umb_event(frame, umb_client: Stomp, bootstrap_service: TenantBootstr
         # This is locked per transaction to ensure another listener process does not run concurrently.
         if not _lock_listener():
             # If there is another listener, let it run and abort this one.
+            logger.info("process_umb_event: Another listener is running. Aborting.")
             return False
 
         data_dict = xmltodict.parse(frame.body)
@@ -225,12 +227,14 @@ def process_principal_events_from_umb(bootstrap_service: Optional[TenantBootstra
         if not str(e).startswith(("Already connected", "Already subscribed")):
             raise e
 
-    while UMB_CLIENT.canRead(15):  # Check if queue is empty, 15 sec timeout
-        frame = UMB_CLIENT.receiveFrame()
-        if not process_umb_event(frame, UMB_CLIENT, bootstrap_service):
-            break
-    UMB_CLIENT.disconnect()
-    logger.info("process_tenant_principal_events: Principal event processing finished.")
+    try:
+        while UMB_CLIENT.canRead(15):  # Check if queue is empty, 15 sec timeout
+            frame = UMB_CLIENT.receiveFrame()
+            if not process_umb_event(frame, UMB_CLIENT, bootstrap_service):
+                break
+    finally:
+        UMB_CLIENT.disconnect()
+        logger.info("process_tenant_principal_events: Principal event processing finished.")
 
 
 def _lock_listener() -> bool:
@@ -238,4 +242,6 @@ def _lock_listener() -> bool:
     with connection.cursor() as cursor:
         cursor.execute("SELECT pg_try_advisory_xact_lock(%s);", [LOCK_ID])
         result = cursor.fetchone()
+    if result is None:
+        raise Exception("Advisory lock returned none, expected bool.")
     return result[0]  # Returns True if lock acquired, False otherwise
