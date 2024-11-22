@@ -4480,7 +4480,7 @@ class GroupViewNonAdminTests(IdentityRequest):
 
     @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
     @patch("management.relation_replicator.outbox_replicator.OutboxReplicator._save_replication_event")
-    @patch("management.principal.it_service.ITService.request_service_accounts")
+    @patch("management.principal.it_service.requests.get")
     def test_add_service_account_principal_in_group_with_User_Access_Admin_success(self, mock_request, mock_method):
         """
         Test that non org admin with 'User Access administrator' role can add
@@ -4517,7 +4517,25 @@ class GroupViewNonAdminTests(IdentityRequest):
                 "type": "service-account",
             }
         ]
-        mock_request.return_value = mocked_values
+
+        class MockResponse:
+            def __init__(self, json_response):
+                self.status_code = 200
+                self._json = json_response
+                self.content = json.dumps(json_response)
+
+            def json(self):
+                return self._json
+
+        def mock_get(url: str, params: dict, *args, **kwargs):
+            if url.endswith("/service_accounts/v1") and (
+                not (client_ids := params.get("clientId")) or sa_uuid in client_ids
+            ):
+                return MockResponse(mocked_values)
+            return MockResponse([])
+
+        mock_request.side_effect = mock_get
+        mock_request.__name__ = "request_service_accounts"
 
         url = reverse("v1_management:group-principals", kwargs={"uuid": test_group.uuid})
         client = APIClient()

@@ -16,19 +16,22 @@
 #
 """Test the principal cleaner."""
 from functools import partial
+from threading import Event, Thread
 import uuid
 
 from unittest.mock import MagicMock, patch
 
+from django.db import connections, transaction
 from django.test import override_settings
+from prometheus_client import REGISTRY
 from rest_framework import status
 
 from management.group.definer import seed_group
 from management.group.model import Group
 from management.policy.model import Policy
-from management.principal.cleaner import clean_tenant_principals
+from management.principal.cleaner import LOCK_ID, clean_tenant_principals
 from management.principal.model import Principal
-from management.principal.cleaner import process_principal_events_from_umb
+from management.principal.cleaner import process_principal_events_from_umb, METRIC_STOMP_MESSAGE_TOTAL
 from management.principal.proxy import external_principal_to_user
 from management.tenant_mapping.model import TenantMapping
 from management.tenant_service import get_tenant_bootstrap_service
@@ -305,9 +308,12 @@ class PrincipalUMBTests(IdentityRequest):
     @patch("management.principal.cleaner.UMB_CLIENT")
     def test_principal_cleanup_none(self, client_mock):
         """Test that we can run a principal clean up with no messages."""
+        before = REGISTRY.get_sample_value(METRIC_STOMP_MESSAGE_TOTAL)
         client_mock.canRead.return_value = False
         process_principal_events_from_umb()
 
+        after = REGISTRY.get_sample_value(METRIC_STOMP_MESSAGE_TOTAL)
+        self.assertTrue(before == after)
         client_mock.receiveFrame.assert_not_called()
         client_mock.disconnect.assert_called_once()
 
@@ -328,12 +334,14 @@ class PrincipalUMBTests(IdentityRequest):
         self.group.principals.add(self.principal)
         self.group.save()
 
+        before = REGISTRY.get_sample_value(METRIC_STOMP_MESSAGE_TOTAL)
         client_mock.canRead.side_effect = [True, False]
         client_mock.receiveFrame.return_value = MagicMock(body=FRAME_BODY)
         cache_mock = MagicMock()
         cache_class.return_value = cache_mock
         process_principal_events_from_umb()
 
+        after = REGISTRY.get_sample_value(METRIC_STOMP_MESSAGE_TOTAL)
         client_mock.receiveFrame.assert_called_once()
         client_mock.disconnect.assert_called_once()
         client_mock.ack.assert_called_once()
@@ -341,6 +349,7 @@ class PrincipalUMBTests(IdentityRequest):
         self.group.refresh_from_db()
         self.assertFalse(self.group.principals.all())
         cache_mock.delete_policy.assert_called_once_with(self.principal.uuid)
+        self.assertTrue(before + 1 == after)
 
         # When principal not in group
         self.principal = Principal(username=principal_name, tenant=self.tenant, user_id="56780000")
@@ -496,6 +505,69 @@ class PrincipalUMBTests(IdentityRequest):
         client_mock.ack.assert_called_once()
         self.assertTrue(Tenant.objects.filter(org_id="17685860").exists())
         self.assertTrue(Principal.objects.filter(user_id=self.principal_user_id).exists())
+
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={
+            "status_code": 200,
+            "data": [
+                {
+                    "user_id": 56780000,
+                    "org_id": "17685860",
+                    "username": "principal-test",
+                    "email": "test_user@email.com",
+                    "first_name": "user",
+                    "last_name": "test",
+                    "is_org_admin": False,
+                    "is_active": True,
+                }
+            ],
+        },
+    )
+    @patch("management.principal.cleaner.UMB_CLIENT")
+    def test_does_not_update_user_if_lock_not_acquired(self, client_mock, proxy_mock):
+        """Test that we can run principal creation event."""
+
+        def acquire_lock(ready: Event, close: Event):
+            """Simulates another process acquiring the lock."""
+            try:
+                conn = connections.create_connection("default")
+                conn.set_autocommit(False)
+                with conn.cursor() as cursor:
+                    cursor.execute("SELECT pg_try_advisory_xact_lock(%s);", [LOCK_ID])
+                    assert cursor.fetchone()[0] is True
+                    ready.set()
+                    close.wait(30)
+            finally:
+                conn.close()
+
+        ready = Event()
+        close = Event()
+
+        try:
+            # Start the parallel "process"
+            other_thread = Thread(target=acquire_lock, args=(ready, close))
+            other_thread.start()
+            ready.wait(30)
+
+            client_mock.canRead.side_effect = [True, False]
+            client_mock.receiveFrame.return_value = MagicMock(body=FRAME_BODY_CREATION)
+
+            public_tenant = Tenant.objects.get(tenant_name="public")
+            Group.objects.create(name="default", platform_default=True, tenant=public_tenant)
+            tenant = Tenant.objects.get(org_id="17685860")
+            Principal.objects.create(tenant=tenant, username="principal-test")
+
+            process_principal_events_from_umb()
+
+            client_mock.receiveFrame.assert_called_once()
+            client_mock.disconnect.assert_called_once()
+            client_mock.ack.assert_not_called()
+
+            self.assertFalse(Principal.objects.filter(user_id=self.principal_user_id).exists())
+        finally:
+            close.set()
+            other_thread.join()
 
 
 @override_settings(V2_BOOTSTRAP_TENANT=True, PRINCIPAL_CLEANUP_UPDATE_ENABLED_UMB=True)
