@@ -73,7 +73,7 @@ def purge_cache():
     from rbac.settings import MAX_SEED_THREADS
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_SEED_THREADS) as executor:
-        tenants = Tenant.objects.all()
+        tenants = Tenant.objects.filter(ready=True)
         tenant_count = tenants.count()
         for idx, tenant in enumerate(list(tenants)):
             progress = f"[{idx + 1} of {tenant_count}]."
