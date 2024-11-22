@@ -125,7 +125,7 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
                 # but there is a race condition where the user can use the service before the message is processed.
                 try:
                     with transaction.atomic():
-                        bootstrap = self.bootstrap_service.update_user(request.user, upsert=True)
+                        bootstrap = self.bootstrap_service.update_user(request.user, upsert=True, ready_tenant=True)
                     if bootstrap is None:
                         # User is inactive. Should never happen but just in case...
                         raise Http404()

@@ -211,7 +211,8 @@ def process_umb_event(frame, umb_client: Stomp, bootstrap_service: TenantBootstr
             # By default, only process disabled users.
             # If the setting is enabled, process all users.
             if not user.is_active or settings.PRINCIPAL_CLEANUP_UPDATE_ENABLED_UMB:
-                bootstrap_service.update_user(user)
+                # If Tenant is not already ready, don't ready it
+                bootstrap_service.update_user(user, ready_tenant=False)
         else:
             # Message is malformed.
             # Ensure we dont block the entire queue by discarding it.
