@@ -50,7 +50,7 @@ class TenantFilter(CommonFilters):
 class TenantViewSet(viewsets.GenericViewSet, mixins.ListModelMixin):
     """Tenant view set."""
 
-    queryset = Tenant.objects.all()
+    queryset = Tenant.objects.exclude(ready=False, tenant_name="public")
     permission_classes = (AdminAccessPermission,)
     serializer_class = TenantSerializer
     filter_backends = (filters.DjangoFilterBackend,)
