@@ -115,6 +115,9 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
             try:
                 # If the tenant already exists, we assume it must be bootstrapped if dual writes are enabled.
                 tenant = Tenant.objects.get(org_id=request.user.org_id)
+                if not tenant.ready:
+                    tenant.ready = True
+                    tenant.save(update_fields=["ready"])
             except Tenant.DoesNotExist:
                 if request.user.system:
                     raise Http404()
