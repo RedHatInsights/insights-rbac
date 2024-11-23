@@ -1,6 +1,6 @@
 alabaster==0.7.16
 amqp==5.2.0
-app-common-python==0.2.5
+app-common-python==0.2.7
 asgiref==3.7.2
 astroid==2.2.5
 async-timeout==4.0.3
