@@ -97,7 +97,10 @@ def clone_default_group_in_public_schema(group, tenant) -> Optional[Group]:
     if settings.V2_BOOTSTRAP_TENANT:
         tenant_bootstrap_service = V2TenantBootstrapService(OutboxReplicator())
         bootstrapped_tenant = tenant_bootstrap_service.bootstrap_tenant(tenant)
-        group_uuid = bootstrapped_tenant.mapping.default_group_uuid
+        mapping = bootstrapped_tenant.mapping
+        # Mapping is always present with V2
+        assert mapping is not None
+        group_uuid = mapping.default_group_uuid
     else:
         group_uuid = uuid4()
 
