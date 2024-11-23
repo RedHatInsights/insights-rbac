@@ -46,6 +46,7 @@ from functools import partial
 URL_LIST = reverse("v1_api:cross-list")
 
 
+@override_settings(PRINCIPAL_USER_DOMAIN="localhost")
 class CrossAccountRequestUtilTests(CrossAccountRequestTest):
     """Test the cross access util module."""
 
@@ -70,9 +71,11 @@ class CrossAccountRequestUtilTests(CrossAccountRequestTest):
         self.another_tenant.save()
         self.fixture.bootstrap_tenant(self.another_tenant)
 
-    @override_settings(PRINCIPAL_USER_DOMAIN="localhost")
-    def test_expired_cross_account_requests_remove_bindings(self):
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
+    def test_expired_cross_account_requests_remove_bindings(self, replicate):
         """Test that there are no bindings after a CAR expires."""
+
+        replicate.side_effect = self.replicator.replicate
 
         # Modify pending request such that it includes roles
         farmer = self.fixture.new_system_role("Farmer", ["farm:soil:rake"])
@@ -80,16 +83,12 @@ class CrossAccountRequestUtilTests(CrossAccountRequestTest):
 
         # Add roles to request for user 2222222 and approve it.
         self.add_roles_to_request(self.request_4, [farmer, fisher])
-        with patch(
-            "management.group.relation_api_dual_write_subject_handler.OutboxReplicator",
-            new=partial(InMemoryRelationReplicator, self.relations),
-        ):
-            self.approve_request(self.request_4)
+        self.approve_request(self.request_4)
 
-            after_expiration = self.request_4.end_date + timedelta(seconds=1)
+        after_expiration = self.request_4.end_date + timedelta(seconds=1)
 
-            with patch("django.utils.timezone.now", return_value=after_expiration):
-                util.check_cross_request_expiry()
+        with patch("django.utils.timezone.now", return_value=after_expiration):
+            util.check_cross_request_expiry()
 
         # Check that the bindings for the tenant's resources are gone
         # Check that the roles are now bound to the user in the target account (default workspace)
@@ -123,6 +122,134 @@ class CrossAccountRequestUtilTests(CrossAccountRequestTest):
             len(cross_account_bindings),
             0,
             f"Expected no cross account bindings, found {len(cross_account_bindings)}",
+        )
+
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
+    def test_expired_cross_account_request_does_not_remove_binding_if_granted_by_another_request(self, replicate):
+        replicate.side_effect = self.replicator.replicate
+
+        # Modify pending request such that it includes roles
+        farmer = self.fixture.new_system_role("Farmer", ["farm:soil:rake"])
+        fisher = self.fixture.new_system_role("Fisher", ["stream:fish:catch"])
+
+        # Add roles to request for user 2222222 and approve it.
+        self.add_roles_to_request(self.request_4, [farmer, fisher])
+        self.approve_request(self.request_4)
+
+        # Add one of the same roles to another request for the same user and target org and approve
+        # but this one expires later
+        additional_request = CrossAccountRequest.objects.create(
+            target_account=self.request_4.target_account,
+            target_org=self.request_4.target_org,
+            user_id="2222222",
+            end_date=self.request_4.end_date + timedelta(days=10),
+            status="pending",
+        )
+        self.add_roles_to_request(additional_request, [farmer])
+        self.approve_request(additional_request)
+
+        after_expiration = self.request_4.end_date + timedelta(seconds=1)
+
+        with patch("django.utils.timezone.now", return_value=after_expiration):
+            util.check_cross_request_expiry()
+
+        # Check that the bindings for the tenant's resources are gone
+        # Check that the roles are now bound to the user in the target account (default workspace)
+        default_workspace_id = Workspace.objects.get(tenant__org_id=self.org_id, type=Workspace.Types.DEFAULT).id
+        default_bindings = self.relations.find_tuples(
+            # Tuples for bindings to the default workspace
+            all_of(resource("rbac", "workspace", default_workspace_id), relation("binding"))
+        )
+
+        cross_account_bindings, _ = self.relations.find_group_with_tuples(
+            # Tuples which are...
+            # grouped by resource
+            group_by=lambda t: (t.resource_type_namespace, t.resource_type_name, t.resource_id),
+            # where the resource is one of the default role bindings...
+            group_filter=lambda group: group[0] == "rbac"
+            and group[1] == "role_binding"
+            and group[2] in {str(binding.subject_id) for binding in default_bindings},
+            # and where one of the tuples from that binding has...
+            predicates=[
+                all_of(
+                    # a subject relation
+                    relation("subject"),
+                    # to the user in the CAR
+                    subject("rbac", "principal", "localhost/2222222"),
+                ),
+                relation("role"),
+            ],
+        )
+
+        self.assertEqual(
+            len(cross_account_bindings),
+            1,
+            f"Expected remaining cross account binding, found {len(cross_account_bindings)}",
+        )
+
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
+    def test_expired_cross_account_request_does_not_remove_bindings_if_granted_by_another_request_multiple_roles(
+        self, replicate
+    ):
+        replicate.side_effect = self.replicator.replicate
+
+        # Modify pending request such that it includes roles
+        farmer = self.fixture.new_system_role("Farmer", ["farm:soil:rake"])
+        fisher = self.fixture.new_system_role("Fisher", ["stream:fish:catch"])
+
+        # Add roles to request for user 2222222 and approve it.
+        self.add_roles_to_request(self.request_4, [farmer, fisher])
+        self.approve_request(self.request_4)
+
+        # Add one of the same roles to another request for the same user and target org and approve
+        # but this one expires later
+        additional_request = CrossAccountRequest.objects.create(
+            target_account=self.request_4.target_account,
+            target_org=self.request_4.target_org,
+            user_id="2222222",
+            end_date=self.request_4.end_date + timedelta(days=10),
+            status="pending",
+        )
+        self.add_roles_to_request(additional_request, [farmer, fisher])
+        self.approve_request(additional_request)
+
+        after_expiration = self.request_4.end_date + timedelta(seconds=1)
+
+        with patch("django.utils.timezone.now", return_value=after_expiration):
+            util.check_cross_request_expiry()
+
+        # Check that the bindings for the tenant's resources are gone
+        # Check that the roles are now bound to the user in the target account (default workspace)
+        default_workspace_id = Workspace.objects.get(tenant__org_id=self.org_id, type=Workspace.Types.DEFAULT).id
+        default_bindings = self.relations.find_tuples(
+            # Tuples for bindings to the default workspace
+            all_of(resource("rbac", "workspace", default_workspace_id), relation("binding"))
+        )
+
+        cross_account_bindings, _ = self.relations.find_group_with_tuples(
+            # Tuples which are...
+            # grouped by resource
+            group_by=lambda t: (t.resource_type_namespace, t.resource_type_name, t.resource_id),
+            # where the resource is one of the default role bindings...
+            group_filter=lambda group: group[0] == "rbac"
+            and group[1] == "role_binding"
+            and group[2] in {str(binding.subject_id) for binding in default_bindings},
+            # and where one of the tuples from that binding has...
+            predicates=[
+                all_of(
+                    # a subject relation
+                    relation("subject"),
+                    # to the user in the CAR
+                    subject("rbac", "principal", "localhost/2222222"),
+                ),
+                relation("role"),
+            ],
+        )
+
+        self.assertEqual(
+            len(cross_account_bindings),
+            2,
+            f"Expected 2 cross account binding, found {len(cross_account_bindings)}",
         )
 
     def tearDown(self):

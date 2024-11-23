@@ -21,8 +21,8 @@ else
 	PREFIX	= sudo
 endif
 
-define HELP_TEXT =
-Please use \`make <target>' where <target> is one of:
+define HELP_TEXT
+Please use `make <target>` where <target> is one of:
 
 --- General Commands ---
   clean                    clean the project directory of any scratch files, bytecode, logs, etc.
