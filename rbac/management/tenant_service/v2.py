@@ -284,8 +284,8 @@ class V2TenantBootstrapService:
         if new_tenants:
             new_tenants = Tenant.objects.bulk_create(new_tenants)
             tenants_to_bootstrap.extend(new_tenants)
-
-        bootstrapped_list.extend(self._bootstrap_tenants(tenants_to_bootstrap))
+        if tenants_to_bootstrap:
+            bootstrapped_list.extend(self._bootstrap_tenants(tenants_to_bootstrap))
         return bootstrapped_list
 
     def _bootstrap_tenants(self, tenants: list[Tenant]) -> list[BootstrappedTenant]:
