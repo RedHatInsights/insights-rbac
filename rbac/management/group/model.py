@@ -27,7 +27,7 @@ from django.utils import timezone
 from internal.integration import chrome_handlers
 from internal.integration import sync_handlers
 from kessel.relations.v1beta1.common_pb2 import Relationship
-from management.cache import AccessCache, skip_purging_cache_for_public_tenant
+from management.cache import AccessCache
 from management.principal.model import Principal
 from management.rbac_fields import AutoDateTimeField
 from management.role.model import Role
@@ -108,8 +108,6 @@ class Group(TenantAwareModel):
 
 def group_deleted_cache_handler(sender=None, instance=None, using=None, **kwargs):
     """Signal handler to purge principal caches when a Group is deleted."""
-    if skip_purging_cache_for_public_tenant(instance.tenant):
-        return
     logger.info("Handling signal for deleted group %s - invalidating policy cache for users in group", instance)
     cache = AccessCache(instance.tenant.org_id)
     for principal in instance.principals.all():
@@ -120,8 +118,6 @@ def principals_to_groups_cache_handler(
     sender=None, instance=None, action=None, reverse=None, model=None, pk_set=None, using=None, **kwargs
 ):
     """Signal handler to purge caches when Group membership changes."""
-    if skip_purging_cache_for_public_tenant(instance.tenant):
-        return
     cache = AccessCache(instance.tenant.org_id)
     if action in ("post_add", "pre_remove"):
         logger.info("Handling signal for %s group membership change - invalidating policy cache", instance)

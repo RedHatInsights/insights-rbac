@@ -24,7 +24,7 @@ from django.db import models
 from django.db.models import signals
 from django.utils import timezone
 from internal.integration import sync_handlers
-from management.cache import AccessCache, skip_purging_cache_for_public_tenant
+from management.cache import AccessCache
 from management.group.model import Group
 from management.principal.model import Principal
 from management.rbac_fields import AutoDateTimeField
@@ -54,8 +54,6 @@ class Policy(TenantAwareModel):
 
 def policy_changed_cache_handler(sender=None, instance=None, using=None, **kwargs):
     """Signal handler for Principal cache expiry on Policy deletion."""
-    if skip_purging_cache_for_public_tenant(instance.tenant):
-        return
     logger.info("Handling signal for deleted policy %s - invalidating associated user cache keys", instance)
     cache = AccessCache(instance.tenant.org_id)
     if instance.group:
@@ -70,8 +68,6 @@ def policy_to_roles_cache_handler(
     sender=None, instance=None, action=None, reverse=None, model=None, pk_set=None, using=None, **kwargs  # noqa: C901
 ):
     """Signal handler for Principal cache expiry on Policy/Role m2m change."""
-    if skip_purging_cache_for_public_tenant(instance.tenant):
-        return
     cache = AccessCache(instance.tenant.org_id)
     if action in ("post_add", "pre_remove"):
         logger.info("Handling signal for %s roles change - invalidating policy cache", instance)
