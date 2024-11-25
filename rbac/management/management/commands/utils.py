@@ -71,7 +71,7 @@ def populate_tenant_user_data(file_name, start_line=1, batch_size=1000):
 
     Args:
         batch_size (int): Number of records to process in each batch.
-        start(int): Line number to start processing from (1).
+        start_line(int): Line number to start processing from (1).
     """
     file_path = get_file_path(file_name)
     with open(file_path, "r") as file:
