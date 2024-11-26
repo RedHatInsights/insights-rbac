@@ -252,7 +252,7 @@ class CrossAccountRequestViewSet(
     def _with_dual_write_handler(
         self,
         car: CrossAccountRequest,
-        replication_event_type: str,
+        replication_event_type: ReplicationEventType,
         generate_relations: Optional[Callable[[RelationApiDualWriteCrossAccessHandler, List], None]] = None,
     ) -> None:
         """Use dual write handler."""
