@@ -47,6 +47,7 @@ def migration_resource_deletion(resource, org_id):
     if resource == "workspace":
         # Have to delete the ones without children first or deletion will fail
         logger.info("Deleting workspaces without children.")
+        resource_objs = resource_objs.order_by("id")
         chunk_delete(resource_objs.filter(children=None))
         logger.info("All workspaces without children removed.")
     chunk_delete(resource_objs)
@@ -55,8 +56,11 @@ def migration_resource_deletion(resource, org_id):
 
 def chunk_delete(queryset):
     """Delete queryset in chunks."""
+    count = 0
     while queryset.exists():
         delimiter = list(queryset.values_list("id", flat=True)[:10000])
         if not delimiter:
             break
         queryset.filter(id__in=delimiter).delete()
+        count += len(delimiter)
+        logger.info(f"Deleted {count} records.")
