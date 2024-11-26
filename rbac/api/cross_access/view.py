@@ -16,6 +16,8 @@
 #
 
 """View for cross access request."""
+from typing import Callable, List, Optional
+
 from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
@@ -34,7 +36,6 @@ from api.cross_access.relation_api_dual_write_cross_access_handler import Relati
 from api.cross_access.serializer import CrossAccountRequestDetailSerializer, CrossAccountRequestSerializer
 from api.cross_access.util import create_cross_principal
 from api.models import CrossAccountRequest, Tenant
-
 
 QUERY_BY_KEY = "query_by"
 ORG_ID = "target_org"
@@ -248,7 +249,12 @@ class CrossAccountRequestViewSet(
 
         return [{"display_name": role} for role in roles]
 
-    def _with_dual_write_handler(self, car, replication_event_type, generate_relations=None):
+    def _with_dual_write_handler(
+        self,
+        car: CrossAccountRequest,
+        replication_event_type: str,
+        generate_relations: Optional[Callable[[RelationApiDualWriteCrossAccessHandler, List], None]] = None,
+    ) -> None:
         """Use dual write handler."""
         cross_account_roles = car.roles.all()
         if any(True for _ in cross_account_roles):

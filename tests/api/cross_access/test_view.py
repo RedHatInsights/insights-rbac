@@ -834,6 +834,123 @@ class CrossAccountRequestViewTests(CrossAccountRequestTest):
             f"Expected roles {farmer.uuid} and {fisher.uuid} but got {bound_roles}",
         )
 
+    @override_settings(PRINCIPAL_USER_DOMAIN="localhost")
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
+    def test_approval_and_deny_replicates_bindings(self, replicate):
+        """Test that when cross account access is approved, role bindings are replicated to Relations."""
+        replicate.side_effect = self.replicator.replicate
+
+        # Modify pending request such that it includes roles
+        farmer = self.fixture.new_system_role("Farmer", ["farm:soil:rake"])
+        fisher = self.fixture.new_system_role("Fisher", ["stream:fish:catch"])
+        # Should not include this one
+        self.fixture.new_system_role("NotGranted", ["app1:resource1:action1"])
+
+        # Add roles to request for user 2222222 and approve it.
+        self.add_roles_to_request(self.request_4, [farmer, fisher])
+
+        default_workspace_id = Workspace.objects.get(tenant__org_id=self.org_id, type=Workspace.Types.DEFAULT).id
+        previous_default_bindings = self.relations.find_tuples(
+            # Tuples for bindings to the default workspace
+            all_of(resource("rbac", "workspace", default_workspace_id), relation("binding"))
+        )
+
+        previous_subject_ids = {str(binding.subject_id) for binding in previous_default_bindings}
+
+        # generated relations to approve request
+        self.approve_request(self.request_4)
+
+        # Check that the roles are now bound to the user in the target account (default workspace)
+        all_default_bindings = self.relations.find_tuples(
+            # Tuples for bindings to the default workspace
+            all_of(resource("rbac", "workspace", default_workspace_id), relation("binding"))
+        )
+
+        # Collect default bindings which were added by approving request
+        default_bindings = []
+        for binding in all_default_bindings:
+            if str(binding.subject_id) not in previous_subject_ids:
+                default_bindings.append(binding)
+
+        # Of these bindings, look for the ones that are for the user 2222222
+        cross_account_bindings, _ = self.relations.find_group_with_tuples(
+            # Tuples which are...
+            # grouped by resource
+            group_by=lambda t: (t.resource_type_namespace, t.resource_type_name, t.resource_id),
+            # where the resource is one of the default role bindings...
+            group_filter=lambda group: group[0] == "rbac"
+            and group[1] == "role_binding"
+            and group[2] in {str(binding.subject_id) for binding in default_bindings},
+            # and where one of the tuples from that binding has...
+            predicates=[
+                all_of(
+                    # a subject relation
+                    relation("subject"),
+                    # to the user in the CAR
+                    subject("rbac", "principal", "localhost/2222222"),
+                ),
+                relation("role"),
+            ],
+        )
+
+        # Assert the roles are correct for these bindings – one per role that was included in the request,
+        # and not any not included in the request
+        self.assertEqual(len(cross_account_bindings), 2, "Missing bindings for cross access request roles")
+
+        # Collect all the bound roles by iterating over the bindings and getting the subjects of the role relation
+        bound_roles = {
+            t.subject_id for _, tuples in cross_account_bindings.items() for t in tuples if t.relation == "role"
+        }
+
+        # Assert the bindings are to roles with the same ID
+        self.assertEqual(
+            bound_roles,
+            {str(farmer.uuid), str(fisher.uuid)},
+            f"Expected roles {farmer.uuid} and {fisher.uuid} but got {bound_roles}",
+        )
+
+        self.deny_request(self.request_4)
+
+        # Of these bindings, look for the ones that are for the user 2222222
+        cross_account_bindings, _ = self.relations.find_group_with_tuples(
+            # Tuples which are...
+            # grouped by resource
+            group_by=lambda t: (t.resource_type_namespace, t.resource_type_name, t.resource_id),
+            # where the resource is one of the default role bindings...
+            group_filter=lambda group: group[0] == "rbac"
+            and group[1] == "role_binding"
+            and group[2] in {str(binding.subject_id) for binding in default_bindings},
+            # and where one of the tuples from that binding has...
+            predicates=[
+                all_of(
+                    # a subject relation
+                    relation("subject"),
+                    # to the user in the CAR
+                    subject("rbac", "principal", "localhost/2222222"),
+                ),
+                relation("role"),
+            ],
+        )
+
+        self.assertEqual(
+            len(cross_account_bindings),
+            0,
+            f"Expected no cross account bindings, found {len(cross_account_bindings)}",
+        )
+
+        # Check that the roles are not now bound to the user in the target account (default workspace)
+        all_default_bindings = self.relations.find_tuples(
+            # Tuples for bindings to the default workspace
+            all_of(resource("rbac", "workspace", default_workspace_id), relation("binding"))
+        )
+
+        default_bindings = []
+        for binding in all_default_bindings:
+            if str(binding.subject_id) not in previous_subject_ids:
+                default_bindings.append(binding)
+
+        self.assertEqual(len(default_bindings), 0, "Default bindings for cross access request roles still exists")
+
     @patch(
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
         return_value={
