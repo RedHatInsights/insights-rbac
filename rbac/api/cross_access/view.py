@@ -248,7 +248,7 @@ class CrossAccountRequestViewSet(
 
         return [{"display_name": role} for role in roles]
 
-    def with_dual_write_handler(self, car, replication_event_type, generate_relations=None):
+    def _with_dual_write_handler(self, car, replication_event_type, generate_relations=None):
         """Use dual write handler."""
         cross_account_roles = car.roles.all()
         if any(True for _ in cross_account_roles):
@@ -265,19 +265,21 @@ class CrossAccountRequestViewSet(
         if status == "approved":
             create_cross_principal(car.user_id, target_org=car.target_org)
 
-            def generate_relations_to_add_roles(dual_write_handler, cross_account_roles):
-                dual_write_handler.generate_relations_to_add_roles(cross_account_roles)
-
-            self.with_dual_write_handler(
-                car, ReplicationEventType.APPROVE_CROSS_ACCOUNT_REQUEST, generate_relations_to_add_roles
+            self._with_dual_write_handler(
+                car,
+                ReplicationEventType.APPROVE_CROSS_ACCOUNT_REQUEST,
+                lambda dual_write_handler, cross_account_roles: dual_write_handler.generate_relations_to_add_roles(
+                    cross_account_roles
+                ),
             )
         elif status == "denied":
 
-            def generate_relations_to_remove_roles(dual_write_handler, cross_account_roles):
-                dual_write_handler.generate_relations_to_remove_roles(cross_account_roles)
-
-            self.with_dual_write_handler(
-                car, ReplicationEventType.DENY_CROSS_ACCOUNT_REQUEST, generate_relations_to_remove_roles
+            self._with_dual_write_handler(
+                car,
+                ReplicationEventType.DENY_CROSS_ACCOUNT_REQUEST,
+                lambda dual_write_handler, cross_account_roles: dual_write_handler.generate_relations_to_remove_roles(
+                    cross_account_roles
+                ),
             )
         car.save()
 
