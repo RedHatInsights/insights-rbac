@@ -58,7 +58,10 @@ from management.principal.model import Principal
 from management.principal.proxy import PrincipalProxy
 from management.principal.serializer import ServiceAccountSerializer
 from management.principal.view import ADMIN_ONLY_KEY, USERNAME_ONLY_KEY, VALID_BOOLEAN_VALUE
-from management.querysets import get_group_queryset, get_role_queryset
+from management.querysets import (
+    get_group_queryset,
+    get_role_queryset,
+)
 from management.relation_replicator.relation_replicator import ReplicationEventType
 from management.role.view import RoleViewSet
 from management.utils import validate_and_get_key, validate_group_name, validate_uuid
@@ -186,9 +189,14 @@ class GroupViewSet(
         destroy_method = self.action == "destroy"
 
         if add_principals_method or destroy_method:
+            # In this case, the group must be locked to prevent principal changes during deletion.
+            # If not locked, replication to relations may be out of sync due to phantom reads.
+            # We have to modify the starting queryset to support locking because
             # FOR UPDATE statement cannot be used with GROUP BY statement
-            group_ids = [group.id for group in get_group_queryset(self.request, self.args, self.kwargs)]
-            group_query_set = Group.objects.filter(id__in=group_ids).select_for_update()
+            # and by default this uses GROUP BY for counts.
+            group_query_set = get_group_queryset(
+                self.request, self.args, self.kwargs, base_query=Group.objects.all()
+            ).select_for_update()
         else:
             group_query_set = get_group_queryset(self.request, self.args, self.kwargs)
         return group_query_set
