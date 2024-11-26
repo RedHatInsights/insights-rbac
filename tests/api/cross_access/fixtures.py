@@ -189,3 +189,12 @@ class CrossAccountRequestTest(IdentityRequest):
         response = client.patch(url, update_data, format="json", **self.associate_admin_request.META)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         return response
+
+    def deny_request(self, request: CrossAccountRequest):
+        update_data = {"status": "denied"}
+        car_uuid = request.request_id
+        url = reverse("v1_api:cross-detail", kwargs={"pk": str(car_uuid)})
+        client = APIClient()
+        response = client.patch(url, update_data, format="json", **self.associate_admin_request.META)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        return response
