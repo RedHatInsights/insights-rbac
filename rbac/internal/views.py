@@ -90,9 +90,11 @@ def list_unmodified_tenants(request):
     offset = int(request.GET.get("offset", 0))
 
     if limit:
-        tenant_qs = Tenant.objects.exclude(tenant_name="public", ready=False)[offset : (limit + offset)]  # noqa: E203
+        tenant_qs = Tenant.objects.filter(ready=True).exclude(tenant_name="public")[
+            offset : (limit + offset)  # noqa: E203
+        ]
     else:
-        tenant_qs = Tenant.objects.exclude(tenant_name="public", ready=False)
+        tenant_qs = Tenant.objects.filter(ready=True).exclude(tenant_name="public")
     to_return = []
     for tenant_obj in tenant_qs:
         if tenant_is_unmodified(tenant_name=tenant_obj.tenant_name, org_id=tenant_obj.org_id):

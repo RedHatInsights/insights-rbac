@@ -110,7 +110,7 @@ def clean_tenants_principals():
     """Check which principals are eligible for clean up."""
     logger.info("clean_tenant_principals: Start principal clean up.")
 
-    for tenant in list(Tenant.objects.exclude(ready=False, tenant_name="public")):
+    for tenant in list(Tenant.objects.filter(ready=True).exclude(tenant_name="public")):
         logger.info("clean_tenant_principals: Running principal clean up for tenant %s.", tenant.tenant_name)
         clean_tenant_principals(tenant)
         logger.info("clean_tenant_principals: Completed principal clean up for tenant %s.", tenant.tenant_name)
