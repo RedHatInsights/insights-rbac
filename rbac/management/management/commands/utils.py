@@ -20,7 +20,7 @@ import os
 
 import boto3
 from botocore.exceptions import ClientError
-from django.db import IntegrityError
+from django.db import IntegrityError, transaction
 from management.principal.model import Principal
 from management.role.relation_api_dual_write_handler import OutboxReplicator
 from management.tenant_mapping.model import logger
@@ -71,7 +71,7 @@ def populate_tenant_user_data(file_name, start_line=1, batch_size=1000):
 
     Args:
         batch_size (int): Number of records to process in each batch.
-        start(int): Line number to start processing from (1).
+        start_line(int): Line number to start processing from (1).
     """
     file_path = get_file_path(file_name)
     with open(file_path, "r") as file:
@@ -107,11 +107,15 @@ def process_batch(batch_data):
         user.is_active = True
         users.append(user)
     try:
-        BOOT_STRAP_SERVICE.import_bulk_users(users)
+        # In atomic block so that if anything goes wrong, the whole batch is rolled back and can be retried
+        # Otherwise we may have some partial tenant data, and a tenant may not get fully bootstrapped.
+        with transaction.atomic():
+            BOOT_STRAP_SERVICE.import_bulk_users(users)
     except IntegrityError as e:
         """Retry once if there is creation conflict."""
         logger.info(f"IntegrityError: {e.__cause__}. Retrying import.")
-        BOOT_STRAP_SERVICE.import_bulk_users(users)
+        with transaction.atomic():
+            BOOT_STRAP_SERVICE.import_bulk_users(users)
 
 
 def populate_service_account_data(file_name):

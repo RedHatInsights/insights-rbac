@@ -1,6 +1,7 @@
 """V2 implementation of Tenant bootstrapping."""
 
 from typing import List, Optional
+from uuid import UUID
 
 from django.conf import settings
 from django.db.models import Prefetch, Q
@@ -120,6 +121,7 @@ class V2TenantBootstrapService:
         org_ids = set()
         for user in users:
             if not user.is_active:
+                logger.info(f"User is not active. Skipping import. user_id={user.user_id} org_id={user.org_id}")
                 continue
             if user.org_id is None:
                 logger.warning(f"Cannot update user without org_id. Skipping. username={user.username}")
@@ -225,6 +227,7 @@ class V2TenantBootstrapService:
         )
         try:
             mapping = TenantMapping.objects.get(tenant=tenant)
+            logger.info(f"Tenant already bootstrapped. org_id={tenant.org_id}")
             return BootstrappedTenant(
                 tenant=tenant,
                 mapping=mapping,
@@ -276,12 +279,13 @@ class V2TenantBootstrapService:
         }
 
         # An existing tenant might have been bootstrapped and already has mapping and workspaces
-        tenants_to_bootstrap = []
-        bootstrapped_list = []
+        tenants_to_bootstrap: list[Tenant] = []
+        bootstrapped_list: list[BootstrappedTenant] = []
         for tenant in existing_tenants.values():
             if not hasattr(tenant, "tenant_mapping"):
                 tenants_to_bootstrap.append(tenant)
             else:
+                logger.info(f"Tenant already bootstrapped. org_id={tenant.org_id}")
                 bootstrapped_list.append(BootstrappedTenant(tenant, tenant.tenant_mapping))
         # Create new tenants
         new_tenants = [
@@ -292,20 +296,22 @@ class V2TenantBootstrapService:
         if new_tenants:
             new_tenants = Tenant.objects.bulk_create(new_tenants)
             tenants_to_bootstrap.extend(new_tenants)
-
-        bootstrapped_list.extend(self._bootstrap_tenants(tenants_to_bootstrap))
+        if tenants_to_bootstrap:
+            bootstrapped_list.extend(self._bootstrap_tenants(tenants_to_bootstrap))
         return bootstrapped_list
 
     def _bootstrap_tenants(self, tenants: list[Tenant]) -> list[BootstrappedTenant]:
         # Set up workspace hierarchy for Tenant
-        workspaces = []
-        relationships = []
-        mappings_to_create = []
-        default_workspace_ids = []
+        workspaces: list[Workspace] = []
+        relationships: list[Relationship] = []
+        mappings_to_create: list[TenantMapping] = []
+        default_workspace_ids: list[UUID] = []
         for tenant in tenants:
             kwargs = {"tenant": tenant}
             if hasattr(tenant, "platform_default_groups") and tenant.platform_default_groups:
-                kwargs["default_group_uuid"] = tenant.platform_default_groups[0].uuid
+                group_uuid = tenant.platform_default_groups[0].uuid
+                logger.info(f"Using custom default group for tenant. org_id={tenant.org_id} group_uuid={group_uuid}")
+                kwargs["default_group_uuid"] = group_uuid
             mappings_to_create.append(TenantMapping(**kwargs))
 
             root, default, built_in_relationships = self._built_in_workspaces(tenant)
@@ -430,6 +436,11 @@ class V2TenantBootstrapService:
                     str(mapping.default_group_uuid),
                 )
             )
+        else:
+            logger.info(
+                f"Not setting up default access for tenant with customized default group. org_id={tenant.org_id}"
+            )
+
         # Admin role binding is not customizable
         if admin_default_role_uuid:
             tuples_to_add.extend(

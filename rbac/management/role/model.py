@@ -26,7 +26,7 @@ from django.db.models import signals
 from django.utils import timezone
 from internal.integration import sync_handlers
 from kessel.relations.v1beta1.common_pb2 import Relationship
-from management.cache import AccessCache
+from management.cache import AccessCache, skip_purging_cache_for_public_tenant
 from management.models import Permission, Principal
 from management.rbac_fields import AutoDateTimeField
 from migration_tool.models import (
@@ -222,6 +222,8 @@ class BindingMapping(models.Model):
 
 def role_related_obj_change_cache_handler(sender=None, instance=None, using=None, **kwargs):
     """Signal handler for invalidating Principal cache on Role object change."""
+    if skip_purging_cache_for_public_tenant(instance.tenant):
+        return
     logger.info(
         "Handling signal for added/removed/changed role-related object %s - "
         "invalidating associated user cache keys",

@@ -32,7 +32,7 @@ class CrossAccountRequestModelTests(TestCase):
     def setUp(self):
         """Set up the cross account request model tests."""
         super().setUp()
-        self.tenant = Tenant.objects.create(tenant_name="foo")
+        self.tenant = Tenant.objects.create(tenant_name="foo", org_id="123321")
 
         self.ref_time = timezone.now()
         self.request = CrossAccountRequest.objects.create(
