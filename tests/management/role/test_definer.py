@@ -181,7 +181,6 @@ class RoleDefinerTests(IdentityRequest):
             kafka_mock.assert_has_calls(notification_messages, any_order=True)
 
             for call_args in kafka_mock.call_args_list:
-                # Destructure the arguments to the call
                 topic = call_args.args[0]
                 if topic != settings.NOTIFICATIONS_TOPIC:
                     continue
