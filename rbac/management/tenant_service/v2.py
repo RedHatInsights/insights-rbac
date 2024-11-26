@@ -3,7 +3,6 @@
 from typing import List, Optional
 
 from django.conf import settings
-from django.db import transaction
 from django.db.models import Prefetch, Q
 from kessel.relations.v1beta1.common_pb2 import Relationship
 from management.group.model import Group
@@ -38,13 +37,11 @@ class V2TenantBootstrapService:
         self._replicator = replicator
         self._public_tenant = public_tenant
 
-    @transaction.atomic
     def new_bootstrapped_tenant(self, org_id: str, account_number: Optional[str] = None) -> BootstrappedTenant:
         """Create a new tenant."""
         tenant = Tenant.objects.create(org_id=org_id, account_id=account_number)
         return self._bootstrap_tenant(tenant)
 
-    @transaction.atomic
     def bootstrap_tenant(self, tenant: Tenant) -> BootstrappedTenant:
         """Bootstrap an existing tenant."""
         try:
@@ -53,7 +50,6 @@ class V2TenantBootstrapService:
         except TenantMapping.DoesNotExist:
             return self._bootstrap_tenant(tenant)
 
-    @transaction.atomic
     def update_user(
         self, user: User, upsert: bool = False, bootstrapped_tenant: Optional[BootstrappedTenant] = None
     ) -> Optional[BootstrappedTenant]:
@@ -105,7 +101,6 @@ class V2TenantBootstrapService:
 
         return bootstrapped_tenant
 
-    @transaction.atomic
     def import_bulk_users(self, users: list[User]):
         """
         Bootstrap multiple users in a tenant.
@@ -289,8 +284,8 @@ class V2TenantBootstrapService:
         if new_tenants:
             new_tenants = Tenant.objects.bulk_create(new_tenants)
             tenants_to_bootstrap.extend(new_tenants)
-
-        bootstrapped_list.extend(self._bootstrap_tenants(tenants_to_bootstrap))
+        if tenants_to_bootstrap:
+            bootstrapped_list.extend(self._bootstrap_tenants(tenants_to_bootstrap))
         return bootstrapped_list
 
     def _bootstrap_tenants(self, tenants: list[Tenant]) -> list[BootstrappedTenant]:

@@ -23,7 +23,7 @@ from json.decoder import JSONDecodeError
 
 from django.conf import settings
 from django.core.handlers.wsgi import WSGIRequest
-from django.db import IntegrityError
+from django.db import IntegrityError, transaction
 from django.http import Http404, HttpResponse, QueryDict
 from django.urls import resolve
 from django.utils.deprecation import MiddlewareMixin
@@ -121,7 +121,8 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
                 # Tenants are normally bootstrapped via principal job,
                 # but there is a race condition where the user can use the service before the message is processed.
                 try:
-                    bootstrap = self.bootstrap_service.update_user(request.user, upsert=True)
+                    with transaction.atomic():
+                        bootstrap = self.bootstrap_service.update_user(request.user, upsert=True)
                     if bootstrap is None:
                         # User is inactive. Should never happen but just in case...
                         raise Http404()
