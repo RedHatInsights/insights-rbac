@@ -34,7 +34,14 @@ class V1TenantBootstrapService:
             return None
 
     def _update_active_user(self, user: User, upsert: bool, ready_tenant: bool) -> Optional[BootstrappedTenant]:
-        bootstrapped = self._get_or_bootstrap_tenant(user.org_id, user.account, ready=ready_tenant)
+        if upsert:
+            bootstrapped = self._get_or_bootstrap_tenant(user.org_id, user.account, ready=ready_tenant)
+        else:
+            try:
+                tenant = Tenant.objects.get(org_id=user.org_id)
+                bootstrapped = BootstrappedTenant(tenant=tenant, mapping=None)
+            except Tenant.DoesNotExist:
+                return None
 
         _ensure_principal_with_user_id_in_tenant(user, bootstrapped.tenant, upsert=upsert)
 

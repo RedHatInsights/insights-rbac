@@ -455,41 +455,6 @@ class PrincipalUMBTests(IdentityRequest):
     )
     @patch("management.principal.cleaner.UMB_CLIENT")
     @override_settings(PRINCIPAL_CLEANUP_UPDATE_ENABLED_UMB=True)
-    def test_principal_creation_event_does_not_create_principal(self, client_mock, proxy_mock):
-        """Test that we can run principal creation event."""
-        public_tenant = Tenant.objects.get(tenant_name="public")
-        Group.objects.create(name="default", platform_default=True, tenant=public_tenant)
-        client_mock.canRead.side_effect = [True, False]
-        client_mock.receiveFrame.return_value = MagicMock(body=FRAME_BODY_CREATION)
-        Tenant.objects.get(org_id="17685860").delete()
-        process_principal_events_from_umb()
-
-        client_mock.receiveFrame.assert_called_once()
-        client_mock.disconnect.assert_called_once()
-        client_mock.ack.assert_called_once()
-        self.assertTrue(Tenant.objects.filter(org_id="17685860").exists())
-        self.assertFalse(Principal.objects.filter(user_id=self.principal_user_id).exists())
-
-    @patch(
-        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
-        return_value={
-            "status_code": 200,
-            "data": [
-                {
-                    "user_id": 56780000,
-                    "org_id": "17685860",
-                    "username": "principal-test",
-                    "email": "test_user@email.com",
-                    "first_name": "user",
-                    "last_name": "test",
-                    "is_org_admin": False,
-                    "is_active": True,
-                }
-            ],
-        },
-    )
-    @patch("management.principal.cleaner.UMB_CLIENT")
-    @override_settings(PRINCIPAL_CLEANUP_UPDATE_ENABLED_UMB=True)
     def test_principal_creation_event_updates_existing_principal(self, client_mock, proxy_mock):
         """Test that we can run principal creation event."""
         public_tenant = Tenant.objects.get(tenant_name="public")
@@ -620,6 +585,40 @@ class PrincipalUMBTestsWithV2TenantBootstrap(PrincipalUMBTests):
             "status_code": 200,
             "data": [
                 {
+                    "user_id": 56780000,
+                    "org_id": "17685860",
+                    "username": "principal-test",
+                    "email": "test_user@email.com",
+                    "first_name": "user",
+                    "last_name": "test",
+                    "is_org_admin": False,
+                    "is_active": True,
+                }
+            ],
+        },
+    )
+    @patch("management.principal.cleaner.UMB_CLIENT")
+    def test_principal_creation_event_does_not_create_principal(self, client_mock, proxy_mock):
+        """Test that we can run principal creation event."""
+        public_tenant = Tenant.objects.get(tenant_name="public")
+        Group.objects.create(name="default", platform_default=True, tenant=public_tenant)
+        client_mock.canRead.side_effect = [True, False]
+        client_mock.receiveFrame.return_value = MagicMock(body=FRAME_BODY_CREATION)
+        Tenant.objects.get(org_id="17685860").delete()
+        process_principal_events_from_umb()
+
+        client_mock.receiveFrame.assert_called_once()
+        client_mock.disconnect.assert_called_once()
+        client_mock.ack.assert_called_once()
+        self.assertTrue(Tenant.objects.filter(org_id="17685860").exists())
+        self.assertFalse(Principal.objects.filter(user_id=self.principal_user_id).exists())
+
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={
+            "status_code": 200,
+            "data": [
+                {
                     "user_id": "56780000",
                     "org_id": "17685860",
                     "username": "principal-test",
@@ -648,6 +647,7 @@ class PrincipalUMBTestsWithV2TenantBootstrap(PrincipalUMBTests):
             client_mock.ack.assert_called_once()
 
             self.assertTenantBootstrappedByOrgId("17685860")
+            self.assertFalse(Tenant.objects.get(org_id="17685860").ready)
 
     @patch(
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
@@ -682,6 +682,77 @@ class PrincipalUMBTestsWithV2TenantBootstrap(PrincipalUMBTests):
             client_mock.ack.assert_called_once()
 
             self.assertTenantBootstrappedByOrgId("17685860")
+
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={
+            "status_code": 200,
+            "data": [
+                {
+                    "user_id": "56780000",
+                    "org_id": "17685860",
+                    "username": "principal-test",
+                    "email": "test_user@email.com",
+                    "first_name": "user",
+                    "last_name": "test",
+                    "is_org_admin": False,
+                    "is_active": True,
+                }
+            ],
+        },
+    )
+    @patch("management.principal.cleaner.UMB_CLIENT")
+    def test_same_tenant_keeps_unready(self, client_mock, proxy_mock):
+        """Test that a tenant that is not ready stays that way."""
+        tenant = Tenant.objects.get(org_id="17685860")
+        tenant.ready = False
+        tenant.save()
+
+        client_mock.canRead.side_effect = [True, True, False]
+        client_mock.receiveFrame.return_value = MagicMock(body=FRAME_BODY)
+
+        with patch(
+            "management.principal.cleaner.OutboxReplicator", new=partial(InMemoryRelationReplicator, self._tuples)
+        ):
+            process_principal_events_from_umb()
+
+            self.assertFalse(Tenant.objects.get(org_id="17685860").ready)
+
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={
+            "status_code": 200,
+            "data": [
+                {
+                    "user_id": "56780000",
+                    "org_id": "17685860",
+                    "username": "principal-test",
+                    "email": "test_user@email.com",
+                    "first_name": "user",
+                    "last_name": "test",
+                    "is_org_admin": False,
+                    "is_active": True,
+                }
+            ],
+        },
+    )
+    @patch("management.principal.cleaner.UMB_CLIENT")
+    def test_same_tenant_keeps_ready(self, client_mock, proxy_mock):
+        """Test that a tenant that is already ready stays that way."""
+        tenant = Tenant.objects.get(org_id="17685860")
+        tenant.ready = True
+        tenant.save()
+
+        client_mock.canRead.side_effect = [True, True, False]
+        client_mock.receiveFrame.return_value = MagicMock(body=FRAME_BODY)
+
+        with patch(
+            "management.principal.cleaner.OutboxReplicator", new=partial(InMemoryRelationReplicator, self._tuples)
+        ):
+            process_principal_events_from_umb()
+
+            self.assertTenantBootstrappedByOrgId("17685860")
+            self.assertTrue(Tenant.objects.get(org_id="17685860").ready)
 
     @patch(
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
@@ -818,3 +889,51 @@ class PrincipalUMBTestsWithV2TenantBootstrap(PrincipalUMBTests):
                 )
             ),
         )
+
+
+@override_settings(V2_BOOTSTRAP_TENANT=False)
+class PrincipalUMBTestsWithV1TenantBootstrap(IdentityRequest):
+    def setUp(self):
+        """Set up the principal processor tests."""
+        super().setUp()
+        self.principal_name = "principal-test"
+        self.principal_user_id = "56780000"
+        self.tenant.org_id = "17685860"
+        self.tenant.save()
+        self.group = Group(name="groupA", tenant=self.tenant)
+        self.group.save()
+
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={
+            "status_code": 200,
+            "data": [
+                {
+                    "user_id": 56780000,
+                    "org_id": "17685860",
+                    "username": "principal-test",
+                    "email": "test_user@email.com",
+                    "first_name": "user",
+                    "last_name": "test",
+                    "is_org_admin": False,
+                    "is_active": True,
+                }
+            ],
+        },
+    )
+    @patch("management.principal.cleaner.UMB_CLIENT")
+    @override_settings(PRINCIPAL_CLEANUP_UPDATE_ENABLED_UMB=True)
+    def test_principal_creation_event_does_not_create_principal_nor_tenant(self, client_mock, proxy_mock):
+        """Test that we can run principal creation event."""
+        public_tenant = Tenant.objects.get(tenant_name="public")
+        Group.objects.create(name="default", platform_default=True, tenant=public_tenant)
+        client_mock.canRead.side_effect = [True, False]
+        client_mock.receiveFrame.return_value = MagicMock(body=FRAME_BODY_CREATION)
+        Tenant.objects.get(org_id="17685860").delete()
+        process_principal_events_from_umb()
+
+        client_mock.receiveFrame.assert_called_once()
+        client_mock.disconnect.assert_called_once()
+        client_mock.ack.assert_called_once()
+        self.assertFalse(Tenant.objects.filter(org_id="17685860").exists())
+        self.assertFalse(Principal.objects.filter(user_id=self.principal_user_id).exists())
