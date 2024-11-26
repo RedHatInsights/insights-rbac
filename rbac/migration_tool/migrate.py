@@ -16,7 +16,6 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 
 import logging
-from os import read
 from typing import Iterable
 
 from django.conf import settings
@@ -189,7 +188,7 @@ def migrate_data(exclude_apps: list = [], orgs: list = [], write_relationships: 
         return
 
     count = 0
-    tenants = Tenant.objects.exclude(tenant_name="public", ready=False)
+    tenants = Tenant.objects.filter(ready=True).exclude(tenant_name="public")
     replicator = _get_replicator(write_relationships)
     if orgs:
         tenants = tenants.filter(org_id__in=orgs)
