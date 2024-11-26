@@ -93,20 +93,9 @@ class TestProcessBatch(TestCase):
         self.assertFalse(Tenant.objects.get(org_id="10000001").ready)
         self.assertFalse(Tenant.objects.get(org_id="10000002").ready)
 
-        try:
-            TenantMapping.objects.get(tenant__org_id="1000000")
-        except TenantMapping.DoesNotExist:
-            self.fail("TenantMapping not created for existing tenant")
-
-        try:
-            TenantMapping.objects.get(tenant__org_id="10000001")
-        except TenantMapping.DoesNotExist:
-            self.fail("TenantMapping not created for existing tenant")
-
-        try:
-            TenantMapping.objects.get(tenant__org_id="10000002")
-        except TenantMapping.DoesNotExist:
-            self.fail("TenantMapping not created for existing tenant")
+        self.assertTrue(TenantMapping.objects.filter(tenant__org_id="1000000").exists())
+        self.assertTrue(TenantMapping.objects.filter(tenant__org_id="10000001").exists())
+        self.assertTrue(TenantMapping.objects.filter(tenant__org_id="10000002").exists())
 
     def test_existing_ready_tenants_are_kept_ready_but_still_bootstrapped(self):
         Tenant.objects.create(org_id="1000000", ready=True)
@@ -123,20 +112,9 @@ class TestProcessBatch(TestCase):
         self.assertTrue(Tenant.objects.get(org_id="10000001").ready)
         self.assertFalse(Tenant.objects.get(org_id="10000002").ready)
 
-        try:
-            TenantMapping.objects.get(tenant__org_id="1000000")
-        except TenantMapping.DoesNotExist:
-            self.fail("TenantMapping not created for existing tenant")
-
-        try:
-            TenantMapping.objects.get(tenant__org_id="10000001")
-        except TenantMapping.DoesNotExist:
-            self.fail("TenantMapping not created for existing tenant")
-
-        try:
-            TenantMapping.objects.get(tenant__org_id="10000002")
-        except TenantMapping.DoesNotExist:
-            self.fail("TenantMapping not created for existing tenant")
+        self.assertTrue(TenantMapping.objects.filter(tenant__org_id="1000000").exists())
+        self.assertTrue(TenantMapping.objects.filter(tenant__org_id="10000001").exists())
+        self.assertTrue(TenantMapping.objects.filter(tenant__org_id="10000002").exists())
 
     def test_import_service_account_data(self):
         client_id_1 = "8c22358-c2ab-40cc-bbc1-e4eff3exxb37xx"
