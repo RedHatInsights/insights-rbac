@@ -26,6 +26,7 @@ import pytz
 import json
 
 from api.models import User, Tenant
+from api.utils import reset_imported_tenants
 from management.audit_log.model import AuditLog
 from management.models import BindingMapping, Group, Permission, Policy, Role, Workspace
 from management.principal.model import Principal
@@ -700,17 +701,22 @@ class InternalViewsetTests(IdentityRequest):
         self.assertEqual(response.content.decode(), "0 tenants would be deleted")
 
     @override_settings(INTERNAL_DESTRUCTIVE_API_OK_UNTIL=valid_destructive_time())
-    def test_reset_imported_tenants_does_not_delete_public_tenant(self):
+    @patch("api.tasks.run_reset_imported_tenants.delay")
+    def test_reset_imported_tenants_does_not_delete_public_tenant(self, delay):
+        delay.side_effect = lambda args: reset_imported_tenants(**args)
         self.assertTrue(Tenant.objects.filter(tenant_name="public").exists())
 
-        response = self.client.delete("/_private/api/utils/reset_imported_tenants/", **self.request.META)
+        with self.assertLogs("api.utils", level="INFO") as logs:
+            response = self.client.delete("/_private/api/utils/reset_imported_tenants/", **self.request.META)
 
+        self.assertIn("Deleted 0 tenants.", logs.output[0])
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.content.decode(), "Tenants deleted: 0")
         self.assertTrue(Tenant.objects.filter(tenant_name="public").exists())
 
     @override_settings(INTERNAL_DESTRUCTIVE_API_OK_UNTIL=valid_destructive_time())
-    def test_reset_imported_tenants_removes_tenants_without_tenanted_objects(self):
+    @patch("api.tasks.run_reset_imported_tenants.delay")
+    def test_reset_imported_tenants_removes_tenants_without_tenanted_objects(self, delay):
+        delay.side_effect = lambda args: reset_imported_tenants(**args)
         self.fixture = RbacFixture(V1TenantBootstrapService())
         o1 = self.fixture.new_tenant("o1")
         o2 = self.fixture.new_tenant("o2")
@@ -719,25 +725,31 @@ class InternalViewsetTests(IdentityRequest):
         self.fixture.new_principals_in_tenant(["u1"], o1.tenant)
         self.fixture.new_principals_in_tenant(["u2"], o2.tenant)
 
-        response = self.client.delete("/_private/api/utils/reset_imported_tenants/", **self.request.META)
+        with self.assertLogs("api.utils", level="INFO") as logs:
+            response = self.client.delete("/_private/api/utils/reset_imported_tenants/", **self.request.META)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.content.decode(), "Tenants deleted: 2")
+        self.assertIn("Deleted 2 tenants.", logs.output[0])
         self.assertTrue(Tenant.objects.filter(org_id="o1").exists())
         self.assertTrue(Tenant.objects.filter(org_id="o2").exists())
         self.assertFalse(Tenant.objects.filter(org_id="o3").exists())
         self.assertFalse(Tenant.objects.filter(org_id="o4").exists())
 
     @override_settings(INTERNAL_DESTRUCTIVE_API_OK_UNTIL=valid_destructive_time())
-    def test_reset_imported_tenants_removes_up_to_limit(self):
+    @patch("api.tasks.run_reset_imported_tenants.delay")
+    def test_reset_imported_tenants_removes_up_to_limit(self, delay):
+        delay.side_effect = lambda args: reset_imported_tenants(**args)
+
         self.fixture = RbacFixture(V1TenantBootstrapService())
         for i in range(10):
             self.fixture.new_tenant(f"o{i}")
 
-        response = self.client.delete("/_private/api/utils/reset_imported_tenants/?limit=3", **self.request.META)
+        with self.assertLogs("api.utils", level="INFO") as logs:
+            response = self.client.delete("/_private/api/utils/reset_imported_tenants/?limit=3", **self.request.META)
+
+        self.assertIn("Deleted 3 tenants.", logs.output[0])
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.content.decode(), "Tenants deleted: 3")
         # two extra tenants for test tenant and public tenant
         self.assertEqual(Tenant.objects.count(), 9)
 
@@ -757,7 +769,9 @@ class InternalViewsetTests(IdentityRequest):
         self.assertEqual(response.content.decode(), "100 tenants would be deleted")
 
     @override_settings(INTERNAL_DESTRUCTIVE_API_OK_UNTIL=valid_destructive_time())
-    def test_reset_imported_tenants_no_tenanted_objects_allow_tenant_to_be_deleted(self):
+    @patch("api.tasks.run_reset_imported_tenants.delay")
+    def test_reset_imported_tenants_no_tenanted_objects_allow_tenant_to_be_deleted(self, delay):
+        delay.side_effect = lambda args: reset_imported_tenants(**args)
         self.fixture = RbacFixture(V1TenantBootstrapService())
 
         for object in [
@@ -784,10 +798,11 @@ class InternalViewsetTests(IdentityRequest):
         self.fixture.new_tenant("o_no_objects3")
         self.fixture.new_tenant("o_no_objects4")
 
-        response = self.client.delete("/_private/api/utils/reset_imported_tenants/", **self.request.META)
+        with self.assertLogs("api.utils", level="INFO") as logs:
+            response = self.client.delete("/_private/api/utils/reset_imported_tenants/", **self.request.META)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.content.decode(), "Tenants deleted: 4")
+        self.assertIn("Deleted 4 tenants.", logs.output[0])
         # two extra tenants for test tenant and public tenant
         self.assertEqual(Tenant.objects.count(), 12)
         self.assertFalse(Tenant.objects.filter(org_id="o_no_objects1").exists())
@@ -796,7 +811,9 @@ class InternalViewsetTests(IdentityRequest):
         self.assertFalse(Tenant.objects.filter(org_id="o_no_objects4").exists())
 
     @override_settings(INTERNAL_DESTRUCTIVE_API_OK_UNTIL=valid_destructive_time())
-    def test_reset_imported_tenants_no_tenanted_objects_allow_tenant_to_be_deleted_with_limit(self):
+    @patch("api.tasks.run_reset_imported_tenants.delay")
+    def test_reset_imported_tenants_no_tenanted_objects_allow_tenant_to_be_deleted_with_limit(self, delay):
+        delay.side_effect = lambda args: reset_imported_tenants(**args)
         self.fixture = RbacFixture(V1TenantBootstrapService())
 
         for object in [
@@ -823,10 +840,11 @@ class InternalViewsetTests(IdentityRequest):
         self.fixture.new_tenant("o_no_objects3")
         self.fixture.new_tenant("o_no_objects4")
 
-        response = self.client.delete("/_private/api/utils/reset_imported_tenants/?limit=1", **self.request.META)
+        with self.assertLogs("api.utils", level="INFO") as logs:
+            response = self.client.delete("/_private/api/utils/reset_imported_tenants/?limit=1", **self.request.META)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.content.decode(), "Tenants deleted: 1")
+        self.assertIn("Deleted 1 tenants.", logs.output[0])
         # two extra tenants for test tenant and public tenant
         self.assertEqual(Tenant.objects.count(), 15)
         self.assertFalse(Tenant.objects.filter(org_id="o_no_objects1").exists())

@@ -54,7 +54,12 @@ from rest_framework import status
 
 from api.common.pagination import StandardResultsSetPagination, WSGIRequestResultsSetPagination
 from api.models import Tenant
-from api.tasks import cross_account_cleanup, populate_tenant_account_id_in_worker, run_migration_resource_deletion
+from api.tasks import (
+    cross_account_cleanup,
+    populate_tenant_account_id_in_worker,
+    run_migration_resource_deletion,
+    run_reset_imported_tenants,
+)
 from api.utils import RESOURCE_MODEL_MAPPING, get_resources
 
 
@@ -667,22 +672,9 @@ def reset_imported_tenants(request: HttpRequest) -> HttpResponse:
         if not destructive_ok("api"):
             return HttpResponse("Destructive operations disallowed.", status=400)
 
-        with connection.cursor() as cursor:
-            if limit > 0:
-                subquery = f"SELECT id {query}"
-                cursor.execute(
-                    "WITH delete_batch AS (" + subquery + ") "
-                    "DELETE FROM api_tenant as t USING delete_batch as del where t.id = del.id",
-                    (tuple(excluded),),
-                )
-            else:
-                cursor.execute(
-                    "DELETE " + query,
-                    (tuple(excluded),),
-                )
-            result = cursor.rowcount
+        run_reset_imported_tenants.delay({"query": query, "limit": limit, "excluded": excluded})
 
-        return HttpResponse(f"Tenants deleted: {result}", status=200)
+        return HttpResponse("Tenants deleting in worker.", status=200)
 
     return HttpResponse("Invalid method", status=405)
 
