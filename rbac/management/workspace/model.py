@@ -35,7 +35,7 @@ class Workspace(TenantAwareModel):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid7, editable=False, unique=True, null=False)
     name = models.CharField(max_length=255)
-    parent = models.ForeignKey("self", on_delete=models.DO_NOTHING, related_name="children", null=True, blank=True)
+    parent = models.ForeignKey("self", on_delete=models.PROTECT, related_name="children", null=True, blank=True)
     description = models.CharField(max_length=255, null=True, blank=True, editable=True)
     type = models.CharField(choices=Types.choices, default=Types.STANDARD, null=False)
     created = models.DateTimeField(default=timezone.now)

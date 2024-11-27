@@ -43,12 +43,12 @@ class WorkspaceModelTests(IdentityRequest):
         self.assertEqual(child.parent, parent)
         self.assertEqual(list(parent.children.all()), [child])
 
-    # def test_delete_fails_when_children(self):
-    #     """Test that workspaces will not be deleted when children exist"""
-    #     tenant = Tenant.objects.create(tenant_name="Delete Fails With Children")
-    #     parent = Workspace.objects.create(name="Parent", tenant=tenant, type=Workspace.Types.ROOT)
-    #     child = Workspace.objects.create(name="Child", tenant=tenant, parent=parent, type=Workspace.Types.DEFAULT)
-    #     self.assertRaises(ProtectedError, parent.delete)
+    def test_delete_fails_when_children(self):
+        """Test that workspaces will not be deleted when children exist"""
+        tenant = Tenant.objects.create(tenant_name="Delete Fails With Children")
+        parent = Workspace.objects.create(name="Parent", tenant=tenant, type=Workspace.Types.ROOT)
+        child = Workspace.objects.create(name="Child", tenant=tenant, parent=parent, type=Workspace.Types.DEFAULT)
+        self.assertRaises(ProtectedError, parent.delete)
 
     def test_ancestors(self):
         """Test ancestors on a workspace"""
