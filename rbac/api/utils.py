@@ -57,7 +57,7 @@ def migration_resource_deletion(resource, org_id):
 def chunk_delete(queryset):
     """Delete queryset in chunks."""
     count = 0
-    while queryset.exists():
+    while True:
         delimiter = list(queryset.values_list("id", flat=True)[:10000])
         if not delimiter:
             break
