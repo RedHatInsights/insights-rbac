@@ -11,6 +11,7 @@ from management.management.commands.utils import (
     process_batch,
 )
 from management.models import Principal
+from management.tenant_mapping.model import TenantMapping
 
 
 class TestProcessBatch(TestCase):
@@ -64,6 +65,56 @@ class TestProcessBatch(TestCase):
         batch = [("o1", True, "test_user", "u1")]
         process_batch(batch)
         self.assertEqual(mock_bss.import_bulk_users.call_count, 2)
+
+    def test_new_tenants_are_not_ready(self):
+        mock_file_content = """orgs_info[0].id,orgs_info[0].perm[0],principals[0],_id
+1000000,admin:org:all,test_user_1,1
+10000001,admin:org:all,test_user_2,2
+"""
+        with patch("builtins.open", mock_open(read_data=mock_file_content)):
+            populate_tenant_user_data("file_name")
+
+        self.assertFalse(Tenant.objects.get(org_id="1000000").ready)
+        self.assertFalse(Tenant.objects.get(org_id="10000001").ready)
+        self.assertEquals(2, Tenant.objects.exclude(tenant_name="public").count())
+
+    def test_existing_unready_tenants_are_kept_unready_but_still_bootstrapped(self):
+        Tenant.objects.create(org_id="1000000", ready=False)
+        Tenant.objects.create(org_id="10000001", ready=False)
+        mock_file_content = """orgs_info[0].id,orgs_info[0].perm[0],principals[0],_id
+1000000,admin:org:all,test_user_1,1
+10000001,admin:org:all,test_user_2,2
+10000002,,test_user_3,3
+"""
+        with patch("builtins.open", mock_open(read_data=mock_file_content)):
+            populate_tenant_user_data("file_name")
+
+        self.assertFalse(Tenant.objects.get(org_id="1000000").ready)
+        self.assertFalse(Tenant.objects.get(org_id="10000001").ready)
+        self.assertFalse(Tenant.objects.get(org_id="10000002").ready)
+
+        self.assertTrue(TenantMapping.objects.filter(tenant__org_id="1000000").exists())
+        self.assertTrue(TenantMapping.objects.filter(tenant__org_id="10000001").exists())
+        self.assertTrue(TenantMapping.objects.filter(tenant__org_id="10000002").exists())
+
+    def test_existing_ready_tenants_are_kept_ready_but_still_bootstrapped(self):
+        Tenant.objects.create(org_id="1000000", ready=True)
+        Tenant.objects.create(org_id="10000001", ready=True)
+        mock_file_content = """orgs_info[0].id,orgs_info[0].perm[0],principals[0],_id
+1000000,admin:org:all,test_user_1,1
+10000001,admin:org:all,test_user_2,2
+10000002,,test_user_3,3
+"""
+        with patch("builtins.open", mock_open(read_data=mock_file_content)):
+            populate_tenant_user_data("file_name")
+
+        self.assertTrue(Tenant.objects.get(org_id="1000000").ready)
+        self.assertTrue(Tenant.objects.get(org_id="10000001").ready)
+        self.assertFalse(Tenant.objects.get(org_id="10000002").ready)
+
+        self.assertTrue(TenantMapping.objects.filter(tenant__org_id="1000000").exists())
+        self.assertTrue(TenantMapping.objects.filter(tenant__org_id="10000001").exists())
+        self.assertTrue(TenantMapping.objects.filter(tenant__org_id="10000002").exists())
 
     def test_import_service_account_data(self):
         client_id_1 = "8c22358-c2ab-40cc-bbc1-e4eff3exxb37xx"

@@ -294,7 +294,7 @@ class V2TenantBootstrapServiceTest(TestCase):
 
         # And also bootstraps the second tenant only once
         # And adds users to default group
-        _, mapping, _, _ = self.assertTenantBootstrapped("o2")  # 9
+        _, mapping, _, _ = self.assertTenantBootstrapped("o2", existing=False)  # 9
         self.assertAddedToDefaultGroup("localhost/u2", mapping)  # 1
         self.assertAddedToDefaultGroup("localhost/u3", mapping, and_admin_group=True)  # 2
 
@@ -303,7 +303,7 @@ class V2TenantBootstrapServiceTest(TestCase):
         self.assertAddedToDefaultGroup("localhost/u5", mapping)  # 1
 
         # Bootstraps fourth tenant with new default group
-        _, mapping, _, _ = self.assertTenantBootstrapped("o4")  # 9
+        _, mapping, _, _ = self.assertTenantBootstrapped("o4", existing=True)  # 9
         self.assertAddedToDefaultGroup("localhost/u6", mapping)  # 1
 
     def test_bulk_import_updates_user_ids_on_principals_but_does_not_add_principals(self):
@@ -375,7 +375,7 @@ class V2TenantBootstrapServiceTest(TestCase):
         )
 
     def assertTenantBootstrapped(
-        self, org_id: str, with_custom_default_group: Optional[Group] = None
+        self, org_id: str, with_custom_default_group: Optional[Group] = None, existing: bool = False
     ) -> Tuple[Tenant, TenantMapping, Workspace, Workspace]:
         tenant = Tenant.objects.get(org_id=org_id)
         mapping = TenantMapping.objects.get(tenant=tenant)
@@ -391,6 +391,12 @@ class V2TenantBootstrapServiceTest(TestCase):
             group=Group.objects.get(admin_default=True, tenant=self.fixture.public_tenant)
         )
         custom_default_group = with_custom_default_group
+
+        # If custom default group, must be existing
+        if existing or custom_default_group:
+            self.assertTrue(tenant.ready, f"Expected existing tenant {org_id} to be ready")
+        else:
+            self.assertFalse(tenant.ready, f"Expected new tenant {org_id} to not be ready")
 
         self.assertEqual(
             default.parent_id,

@@ -49,6 +49,11 @@ class Tenant(models.Model):
         """Get string representation of Tenant."""
         return f"Tenant ({self.org_id})"
 
+    class Meta:
+        indexes = [
+            models.Index(fields=["ready"]),
+        ]
+
 
 class TenantAwareModel(models.Model):
     """Abstract model for inheriting `Tenant`."""

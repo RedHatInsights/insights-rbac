@@ -63,7 +63,7 @@ class MigrateTests(TestCase):
 
         # two organizations
         # tenant 1 - org_id=1234567
-        self.tenant = Tenant.objects.create(org_id="1234567", tenant_name="tenant")
+        self.tenant = Tenant.objects.create(org_id="1234567", tenant_name="tenant", ready=True)
         self.root_workspace = Workspace.objects.create(
             type=Workspace.Types.ROOT, tenant=self.tenant, name="Root Workspace"
         )
@@ -109,7 +109,7 @@ class MigrateTests(TestCase):
         self.policy_a2.roles.add(self.role_a2)
 
         # tenant 2 - org_id=7654321
-        another_tenant = Tenant.objects.create(org_id="7654321")
+        another_tenant = Tenant.objects.create(org_id="7654321", ready=True)
 
         root_workspace_another_tenant = Workspace.objects.create(
             type=Workspace.Types.ROOT, tenant=another_tenant, name="Root Workspace"

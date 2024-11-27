@@ -52,7 +52,11 @@ class V2TenantBootstrapService:
             return self._bootstrap_tenant(tenant)
 
     def update_user(
-        self, user: User, upsert: bool = False, bootstrapped_tenant: Optional[BootstrappedTenant] = None
+        self,
+        user: User,
+        upsert: bool = False,
+        bootstrapped_tenant: Optional[BootstrappedTenant] = None,
+        ready_tenant: bool = True,
     ) -> Optional[BootstrappedTenant]:
         """
         Bootstrap a user in a tenant.
@@ -72,7 +76,9 @@ class V2TenantBootstrapService:
             self._disable_user_in_tenant(user)
             return None
 
-        bootstrapped_tenant = bootstrapped_tenant or self._get_or_bootstrap_tenant(user.org_id, user.account)
+        bootstrapped_tenant = bootstrapped_tenant or self._get_or_bootstrap_tenant(
+            user.org_id, ready_tenant, user.account
+        )
         mapping = bootstrapped_tenant.mapping
         if mapping is None:
             raise ValueError(f"Expected TenantMapping but got None. org_id: {bootstrapped_tenant.tenant.org_id}")
@@ -102,7 +108,7 @@ class V2TenantBootstrapService:
 
         return bootstrapped_tenant
 
-    def import_bulk_users(self, users: list[User]):
+    def import_bulk_users(self, users: list[User], ready_tenants: bool = False):
         """
         Bootstrap multiple users in a tenant.
 
@@ -121,7 +127,7 @@ class V2TenantBootstrapService:
                 logger.warning(f"Cannot update user without org_id. Skipping. username={user.username}")
                 continue
             org_ids.add(user.org_id)
-        bootstrapped_list = self._get_or_bootstrap_tenants(org_ids)
+        bootstrapped_list = self._get_or_bootstrap_tenants(org_ids, ready_tenants)
         bootstrapped_mapping = {bootstrapped.tenant.org_id: bootstrapped for bootstrapped in bootstrapped_list}
 
         tuples_to_add = []
@@ -211,11 +217,13 @@ class V2TenantBootstrapService:
             )
         )
 
-    def _get_or_bootstrap_tenant(self, org_id: str, account_number: Optional[str] = None) -> BootstrappedTenant:
+    def _get_or_bootstrap_tenant(
+        self, org_id: str, ready: bool, account_number: Optional[str] = None
+    ) -> BootstrappedTenant:
         tenant_name = f"org{org_id}"
         tenant, _ = Tenant.objects.get_or_create(
             org_id=org_id,
-            defaults={"ready": True, "account_id": account_number, "tenant_name": tenant_name},
+            defaults={"ready": ready, "account_id": account_number, "tenant_name": tenant_name},
         )
         try:
             mapping = TenantMapping.objects.get(tenant=tenant)
@@ -254,7 +262,7 @@ class V2TenantBootstrapService:
 
         return BootstrappedTenant(tenant, mapping, default_workspace=default_workspace, root_workspace=root_workspace)
 
-    def _get_or_bootstrap_tenants(self, org_ids: set) -> list[BootstrappedTenant]:
+    def _get_or_bootstrap_tenants(self, org_ids: set, ready: bool) -> list[BootstrappedTenant]:
         """Bootstrap list of tenants, used by import_bulk_users."""
         # Fetch existing tenants
         existing_tenants = {
@@ -281,7 +289,7 @@ class V2TenantBootstrapService:
                 bootstrapped_list.append(BootstrappedTenant(tenant, tenant.tenant_mapping))
         # Create new tenants
         new_tenants = [
-            Tenant(tenant_name=f"org{org_id}", org_id=org_id, ready=True)
+            Tenant(tenant_name=f"org{org_id}", org_id=org_id, ready=ready)
             for org_id in org_ids
             if org_id not in existing_tenants
         ]

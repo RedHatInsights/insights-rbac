@@ -43,7 +43,11 @@ class TenantBootstrapService(Protocol):
     """Service for bootstrapping users in tenants."""
 
     def update_user(
-        self, user: User, upsert: bool = False, bootstrapped_tenant: Optional[BootstrappedTenant] = None
+        self,
+        user: User,
+        upsert: bool = False,
+        bootstrapped_tenant: Optional[BootstrappedTenant] = None,
+        ready_tenant: bool = True,
     ) -> Optional[BootstrappedTenant]:
         """Bootstrap a user in a tenant."""
         ...
