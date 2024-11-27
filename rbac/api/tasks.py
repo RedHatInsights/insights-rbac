@@ -40,6 +40,7 @@ def run_migration_resource_deletion(kwargs):
     """Celery task to run migration resource deletion."""
     migration_resource_deletion(**kwargs)
 
+
 @shared_task
 def run_reset_imported_tenants(kwargs):
     """Celery task to run reset imported tenants."""

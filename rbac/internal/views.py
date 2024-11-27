@@ -600,7 +600,6 @@ def reset_imported_tenants(request: HttpRequest) -> HttpResponse:
     GET /_private/api/utils/reset_imported_tenants/?exclude_id=1&exclude_id=2
     DELETE /_private/api/utils/reset_imported_tenants/?exclude_id=1&exclude_id=2
     """
-
     # If GET: return a count of how many tenants would be deleted
     # If DELETE: delete the tenants
     # Request should accept a query parameter to exclude certain tenants so we can exclude the ~129
