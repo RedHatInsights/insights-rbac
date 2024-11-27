@@ -338,7 +338,7 @@ objects:
           requests:
             cpu: ${CPU_REQUEST}
             memory: ${MEMORY_REQUEST}
-        env: 
+        env:
           - name: APP_NAMESPACE
             valueFrom:
               fieldRef:
