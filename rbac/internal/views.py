@@ -23,9 +23,9 @@ import logging
 import requests
 from core.utils import destructive_ok
 from django.conf import settings
-from django.db import transaction
+from django.db import connection, transaction
 from django.db.migrations.recorder import MigrationRecorder
-from django.http import HttpResponse
+from django.http import HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404
 from django.utils.html import escape
 from management.cache import TenantCache
@@ -54,7 +54,12 @@ from rest_framework import status
 
 from api.common.pagination import StandardResultsSetPagination, WSGIRequestResultsSetPagination
 from api.models import Tenant
-from api.tasks import cross_account_cleanup, populate_tenant_account_id_in_worker, run_migration_resource_deletion
+from api.tasks import (
+    cross_account_cleanup,
+    populate_tenant_account_id_in_worker,
+    run_migration_resource_deletion,
+    run_reset_imported_tenants,
+)
 from api.utils import RESOURCE_MODEL_MAPPING, get_resources
 
 
@@ -587,6 +592,90 @@ def migration_resources(request):
         page = [str(record.id) for record in page]
         return HttpResponse(json.dumps(page), content_type="application/json", status=200)
     return HttpResponse(f"Invalid method, {request.method}", status=405)
+
+
+def reset_imported_tenants(request: HttpRequest) -> HttpResponse:
+    """Reset tenants imported via user import job.
+
+    GET /_private/api/utils/reset_imported_tenants/?exclude_id=1&exclude_id=2
+    DELETE /_private/api/utils/reset_imported_tenants/?exclude_id=1&exclude_id=2
+    """
+    # If GET: return a count of how many tenants would be deleted
+    # If DELETE: delete the tenants
+    # Request should accept a query parameter to exclude certain tenants so we can exclude the ~129
+    excluded = request.GET.getlist("exclude_id", [])
+
+    query = "FROM api_tenant WHERE tenant_name <> 'public' "
+
+    if excluded:
+        query += "AND id NOT IN %s "
+
+    query += (
+        "AND NOT EXISTS (SELECT 1 FROM management_principal WHERE management_principal.tenant_id = api_tenant.id) "
+    )
+    query += """AND NOT (
+              EXISTS    (SELECT 1
+                         FROM   management_tenantmapping
+                         WHERE  management_tenantmapping.tenant_id = api_tenant.id)
+              OR EXISTS (SELECT 1
+                         FROM   management_access
+                         WHERE  management_access.tenant_id = api_tenant.id)
+              OR EXISTS (SELECT 1
+                         FROM   management_group
+                         WHERE  management_group.tenant_id = api_tenant.id)
+              OR EXISTS (SELECT 1
+                         FROM   management_permission
+                         WHERE  management_permission.tenant_id = api_tenant.id)
+              OR EXISTS (SELECT 1
+                         FROM   management_policy
+                         WHERE  management_policy.tenant_id = api_tenant.id)
+              OR EXISTS (SELECT 1
+                         FROM   management_resourcedefinition
+                         WHERE  management_resourcedefinition.tenant_id =
+                        api_tenant.id)
+              OR EXISTS (SELECT 1
+                         FROM   management_role
+                         WHERE  management_role.tenant_id = api_tenant.id)
+              OR EXISTS (SELECT 1
+                         FROM   management_auditlog
+                         WHERE  management_auditlog.tenant_id = api_tenant.id)
+              OR EXISTS (SELECT 1
+                         FROM   management_workspace
+                         WHERE  management_workspace.tenant_id = api_tenant.id)
+              )"""
+
+    try:
+        limit = int(request.GET.get("limit", "-1"))
+    except ValueError:
+        return HttpResponse("Invalid limit parameter, must be an integer.", status=400)
+
+    if limit > 0:
+        query += f" LIMIT {limit}"
+    elif limit == 0:
+        return HttpResponse("Limit is 0, nothing to do", status=200)
+
+    if request.method == "GET":
+        with connection.cursor() as cursor:
+            if limit > 0:
+                cursor.execute("SELECT COUNT(*) FROM (SELECT 1 " + query + ") subquery", (tuple(excluded),))
+            else:
+                cursor.execute(
+                    "SELECT COUNT(*) " + query,
+                    (tuple(excluded),),
+                )
+            count = cursor.fetchone()[0]
+
+        return HttpResponse(f"{count} tenants would be deleted", status=200)
+
+    if request.method == "DELETE":
+        if not destructive_ok("api"):
+            return HttpResponse("Destructive operations disallowed.", status=400)
+
+        run_reset_imported_tenants.delay({"query": query, "limit": limit, "excluded": excluded})
+
+        return HttpResponse("Tenants deleting in worker.", status=200)
+
+    return HttpResponse("Invalid method", status=405)
 
 
 def trigger_error(request):

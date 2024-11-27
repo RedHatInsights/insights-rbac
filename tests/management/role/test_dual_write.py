@@ -993,6 +993,12 @@ class RbacFixture:
 
         return role
 
+    def new_principals_in_tenant(self, users: list[str], tenant: Tenant) -> list[Principal]:
+        """Create new principals in the tenant."""
+        return [
+            Principal.objects.get_or_create(username=user_id, tenant=tenant, user_id=user_id)[0] for user_id in users
+        ]
+
     def new_group(
         self, name: str, users: list[str], service_accounts: list[str], tenant: Tenant
     ) -> Tuple[Group, list[Principal]]:

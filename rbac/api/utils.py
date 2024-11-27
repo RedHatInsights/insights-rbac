@@ -2,7 +2,7 @@
 
 import logging
 
-from django.db import transaction
+from django.db import connection, transaction
 from django.shortcuts import get_object_or_404
 from management.models import BindingMapping
 from management.tenant_mapping.model import TenantMapping
@@ -64,3 +64,33 @@ def chunk_delete(queryset):
         queryset.filter(id__in=delimiter).delete()
         count += len(delimiter)
         logger.info(f"Deleted {count} records.")
+
+
+def reset_imported_tenants(query: str, limit: int, excluded: list[str]):
+    """Reset (delete) imported tenants based on the given query, limit, and excluded list.
+
+    Args:
+        query (str): The SQL query to select tenants.
+        limit (int): The limit on the number of tenants to delete.
+        excluded (list[str]): The list of tenant IDs to exclude from deletion.
+    """
+    if limit == 0:
+        logger.info("Limit is 0, nothing to do.")
+        return
+
+    with connection.cursor() as cursor:
+        if limit > 0:
+            subquery = f"SELECT id {query}"
+            cursor.execute(
+                "WITH delete_batch AS (" + subquery + ") "
+                "DELETE FROM api_tenant as t USING delete_batch as del where t.id = del.id",
+                (tuple(excluded),),
+            )
+        else:
+            cursor.execute(
+                "DELETE " + query,
+                (tuple(excluded),),
+            )
+        result = cursor.rowcount
+
+    logger.info(f"Deleted {result} tenants.")

@@ -15,6 +15,8 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Test the internal viewset."""
+import logging
+
 from rest_framework import status
 from rest_framework.test import APIClient
 from django.conf import settings
@@ -26,13 +28,31 @@ import pytz
 import json
 
 from api.models import User, Tenant
+from api.utils import reset_imported_tenants
+from management.audit_log.model import AuditLog
 from management.models import BindingMapping, Group, Permission, Policy, Role, Workspace
+from management.principal.model import Principal
 from management.relation_replicator.noop_replicator import NoopReplicator
+from management.role.model import Access, ResourceDefinition
+from management.tenant_mapping.model import TenantMapping
+from management.tenant_service.v1 import V1TenantBootstrapService
 from management.tenant_service.v2 import V2TenantBootstrapService
 from management.workspace.model import Workspace
 from tests.identity_request import IdentityRequest
+from tests.management.role.test_dual_write import RbacFixture
 
 
+@override_settings(
+    LOGGING={
+        "version": 1,
+        "disable_existing_loggers": False,
+        "loggers": {
+            "management.relation_replicator.outbox_replicator": {
+                "level": "INFO",
+            },
+        },
+    },
+)
 class InternalViewsetTests(IdentityRequest):
     """Test the internal viewset."""
 
@@ -70,11 +90,15 @@ class InternalViewsetTests(IdentityRequest):
         self.group.save()
         self.public_tenant = Tenant.objects.get(tenant_name="public")
 
+        self._prior_logging_disable_level = logging.root.manager.disable
+        logging.disable(logging.NOTSET)
+
     def tearDown(self):
         """Tear down internal viewset tests."""
         Group.objects.all().delete()
         Role.objects.all().delete()
         Policy.objects.all().delete()
+        logging.disable(self._prior_logging_disable_level)
 
     def test_delete_tenant_disallowed(self):
         """Test that we cannot delete a tenant when disallowed."""
@@ -679,3 +703,298 @@ class InternalViewsetTests(IdentityRequest):
                 "org_id": org_id,
             }
         )
+
+    def test_reset_imported_tenants_get_does_not_include_sample_tenant_with_tenanted_resources(self):
+        response = self.client.get("/_private/api/utils/reset_imported_tenants/", **self.request.META)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.content.decode(), "0 tenants would be deleted")
+
+    def test_reset_imported_tenants_get_does_not_include_tenant_with_principals(self):
+        self.fixture = RbacFixture(V1TenantBootstrapService())
+        o1 = self.fixture.new_tenant("o1")
+        self.fixture.new_principals_in_tenant(["u1"], o1.tenant)
+        response = self.client.get("/_private/api/utils/reset_imported_tenants/", **self.request.META)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.content.decode(), "0 tenants would be deleted")
+
+    @override_settings(INTERNAL_DESTRUCTIVE_API_OK_UNTIL=valid_destructive_time())
+    @patch("api.tasks.run_reset_imported_tenants.delay")
+    def test_reset_imported_tenants_does_not_delete_public_tenant(self, delay):
+        delay.side_effect = lambda args: reset_imported_tenants(**args)
+        self.assertTrue(Tenant.objects.filter(tenant_name="public").exists())
+
+        with self.assertLogs("api.utils", level="INFO") as logs:
+            response = self.client.delete("/_private/api/utils/reset_imported_tenants/", **self.request.META)
+
+        self.assertIn("Deleted 0 tenants.", logs.output[0])
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertTrue(Tenant.objects.filter(tenant_name="public").exists())
+
+    @override_settings(INTERNAL_DESTRUCTIVE_API_OK_UNTIL=valid_destructive_time())
+    @patch("api.tasks.run_reset_imported_tenants.delay")
+    def test_reset_imported_tenants_removes_tenants_without_tenanted_objects(self, delay):
+        delay.side_effect = lambda args: reset_imported_tenants(**args)
+        self.fixture = RbacFixture(V1TenantBootstrapService())
+        o1 = self.fixture.new_tenant("o1")
+        o2 = self.fixture.new_tenant("o2")
+        self.fixture.new_tenant("o3")
+        self.fixture.new_tenant("o4")
+        self.fixture.new_principals_in_tenant(["u1"], o1.tenant)
+        self.fixture.new_principals_in_tenant(["u2"], o2.tenant)
+
+        with self.assertLogs("api.utils", level="INFO") as logs:
+            response = self.client.delete("/_private/api/utils/reset_imported_tenants/", **self.request.META)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn("Deleted 2 tenants.", logs.output[0])
+        self.assertTrue(Tenant.objects.filter(org_id="o1").exists())
+        self.assertTrue(Tenant.objects.filter(org_id="o2").exists())
+        self.assertFalse(Tenant.objects.filter(org_id="o3").exists())
+        self.assertFalse(Tenant.objects.filter(org_id="o4").exists())
+
+    @override_settings(INTERNAL_DESTRUCTIVE_API_OK_UNTIL=valid_destructive_time())
+    @patch("api.tasks.run_reset_imported_tenants.delay")
+    def test_reset_imported_tenants_removes_up_to_limit(self, delay):
+        delay.side_effect = lambda args: reset_imported_tenants(**args)
+
+        self.fixture = RbacFixture(V1TenantBootstrapService())
+        for i in range(10):
+            self.fixture.new_tenant(f"o{i}")
+
+        with self.assertLogs("api.utils", level="INFO") as logs:
+            response = self.client.delete("/_private/api/utils/reset_imported_tenants/?limit=3", **self.request.META)
+
+        self.assertIn("Deleted 3 tenants.", logs.output[0])
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        # two extra tenants for test tenant and public tenant
+        self.assertEqual(Tenant.objects.count(), 9)
+
+    def test_reset_imported_tenants_get_counts_all_tenants_to_be_deleted(self):
+        self.fixture = RbacFixture(V1TenantBootstrapService())
+        o1 = self.fixture.new_tenant("o1")
+        o2 = self.fixture.new_tenant("o2")
+        self.fixture.new_principals_in_tenant(["u1"], o1.tenant)
+        self.fixture.new_principals_in_tenant(["u2"], o2.tenant)
+
+        for i in range(100):
+            self.fixture.new_tenant(f"o{i + 3}")
+
+        response = self.client.get("/_private/api/utils/reset_imported_tenants/", **self.request.META)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.content.decode(), "100 tenants would be deleted")
+
+    @override_settings(INTERNAL_DESTRUCTIVE_API_OK_UNTIL=valid_destructive_time())
+    @patch("api.tasks.run_reset_imported_tenants.delay")
+    def test_reset_imported_tenants_no_tenanted_objects_allow_tenant_to_be_deleted(self, delay):
+        delay.side_effect = lambda args: reset_imported_tenants(**args)
+        self.fixture = RbacFixture(V1TenantBootstrapService())
+
+        for object in [
+            (Principal, {"username": "u1"}),
+            (TenantMapping, {}),
+            (Access, {}),
+            (Group, {}),
+            (Permission, {"permission": "test:app:foo"}),
+            (Policy, {}),
+            (ResourceDefinition, {}),
+            (Role, {}),
+            (AuditLog, {}),
+            (Workspace, {"name": "Root", "type": Workspace.Types.ROOT}),
+        ]:
+            model, kwargs = object
+            # Create a new tenant
+            t = self.fixture.new_tenant(f"o_{model.__name__}")
+            # Create an object that references the tenant
+            model.objects.create(tenant=t.tenant, **kwargs)
+
+        # Now create some tenants that don't have any of these
+        self.fixture.new_tenant("o_no_objects1")
+        self.fixture.new_tenant("o_no_objects2")
+        self.fixture.new_tenant("o_no_objects3")
+        self.fixture.new_tenant("o_no_objects4")
+
+        with self.assertLogs("api.utils", level="INFO") as logs:
+            response = self.client.delete("/_private/api/utils/reset_imported_tenants/", **self.request.META)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn("Deleted 4 tenants.", logs.output[0])
+        # two extra tenants for test tenant and public tenant
+        self.assertEqual(Tenant.objects.count(), 12)
+        self.assertFalse(Tenant.objects.filter(org_id="o_no_objects1").exists())
+        self.assertFalse(Tenant.objects.filter(org_id="o_no_objects2").exists())
+        self.assertFalse(Tenant.objects.filter(org_id="o_no_objects3").exists())
+        self.assertFalse(Tenant.objects.filter(org_id="o_no_objects4").exists())
+
+    @override_settings(INTERNAL_DESTRUCTIVE_API_OK_UNTIL=valid_destructive_time())
+    @patch("api.tasks.run_reset_imported_tenants.delay")
+    def test_reset_imported_tenants_no_tenanted_objects_allow_tenant_to_be_deleted_with_limit(self, delay):
+        delay.side_effect = lambda args: reset_imported_tenants(**args)
+        self.fixture = RbacFixture(V1TenantBootstrapService())
+
+        for object in [
+            (Principal, {"username": "u1"}),
+            (TenantMapping, {}),
+            (Access, {}),
+            (Group, {}),
+            (Permission, {"permission": "test:app:foo"}),
+            (Policy, {}),
+            (ResourceDefinition, {}),
+            (Role, {}),
+            (AuditLog, {}),
+            (Workspace, {"name": "Root", "type": Workspace.Types.ROOT}),
+        ]:
+            model, kwargs = object
+            # Create a new tenant
+            t = self.fixture.new_tenant(f"o_{model.__name__}")
+            # Create an object that references the tenant
+            model.objects.create(tenant=t.tenant, **kwargs)
+
+        # Now create some tenants that don't have any of these
+        self.fixture.new_tenant("o_no_objects1")
+        self.fixture.new_tenant("o_no_objects2")
+        self.fixture.new_tenant("o_no_objects3")
+        self.fixture.new_tenant("o_no_objects4")
+
+        with self.assertLogs("api.utils", level="INFO") as logs:
+            response = self.client.delete("/_private/api/utils/reset_imported_tenants/?limit=1", **self.request.META)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn("Deleted 1 tenants.", logs.output[0])
+        # two extra tenants for test tenant and public tenant
+        self.assertEqual(Tenant.objects.count(), 15)
+        self.assertFalse(Tenant.objects.filter(org_id="o_no_objects1").exists())
+        self.assertTrue(Tenant.objects.filter(org_id="o_no_objects2").exists())
+        self.assertTrue(Tenant.objects.filter(org_id="o_no_objects3").exists())
+        self.assertTrue(Tenant.objects.filter(org_id="o_no_objects4").exists())
+
+    def test_reset_imported_tenants_get_also_excludes_tenants_with_objects(self):
+        self.fixture = RbacFixture(V1TenantBootstrapService())
+
+        for object in [
+            (Principal, {"username": "u1"}),
+            (TenantMapping, {}),
+            (Access, {}),
+            (Group, {}),
+            (Permission, {"permission": "test:app:foo"}),
+            (Policy, {}),
+            (ResourceDefinition, {}),
+            (Role, {}),
+            (AuditLog, {}),
+            (Workspace, {"name": "Root", "type": Workspace.Types.ROOT}),
+        ]:
+            model, kwargs = object
+            # Create a new tenant
+            t = self.fixture.new_tenant(f"o_{model.__name__}")
+            # Create an object that references the tenant
+            model.objects.create(tenant=t.tenant, **kwargs)
+
+        # Now create some tenants that don't have any of these
+        self.fixture.new_tenant("o_no_objects1")
+        self.fixture.new_tenant("o_no_objects2")
+        self.fixture.new_tenant("o_no_objects3")
+        self.fixture.new_tenant("o_no_objects4")
+
+        response = self.client.get("/_private/api/utils/reset_imported_tenants/", **self.request.META)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.content.decode(), "4 tenants would be deleted")
+
+    def test_reset_imported_tenants_get_also_excludes_tenants_with_objects_up_to_limit(self):
+        self.fixture = RbacFixture(V1TenantBootstrapService())
+
+        for object in [
+            (Principal, {"username": "u1"}),
+            (TenantMapping, {}),
+            (Access, {}),
+            (Group, {}),
+            (Permission, {"permission": "test:app:foo"}),
+            (Policy, {}),
+            (ResourceDefinition, {}),
+            (Role, {}),
+            (AuditLog, {}),
+            (Workspace, {"name": "Root", "type": Workspace.Types.ROOT}),
+        ]:
+            model, kwargs = object
+            # Create a new tenant
+            t = self.fixture.new_tenant(f"o_{model.__name__}")
+            # Create an object that references the tenant
+            model.objects.create(tenant=t.tenant, **kwargs)
+
+        # Now create some tenants that don't have any of these
+        self.fixture.new_tenant("o_no_objects1")
+        self.fixture.new_tenant("o_no_objects2")
+        self.fixture.new_tenant("o_no_objects3")
+        self.fixture.new_tenant("o_no_objects4")
+
+        response = self.client.get("/_private/api/utils/reset_imported_tenants/?limit=1", **self.request.META)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.content.decode(), "1 tenants would be deleted")
+
+    @override_settings(INTERNAL_DESTRUCTIVE_API_OK_UNTIL=valid_destructive_time())
+    def test_reset_imported_tenants_does_nothing_if_zero_limit(self):
+        self.fixture = RbacFixture(V1TenantBootstrapService())
+
+        self.fixture.new_tenant("o_no_objects1")
+        self.fixture.new_tenant("o_no_objects2")
+        self.fixture.new_tenant("o_no_objects3")
+        self.fixture.new_tenant("o_no_objects4")
+
+        self.assertEqual(6, Tenant.objects.count())
+
+        response = self.client.delete("/_private/api/utils/reset_imported_tenants/?limit=0", **self.request.META)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(6, Tenant.objects.count())
+
+    @override_settings(INTERNAL_DESTRUCTIVE_API_OK_UNTIL=valid_destructive_time())
+    def test_reset_imported_tenants_rejects_invalid_limit(self):
+        response = self.client.delete("/_private/api/utils/reset_imported_tenants/?limit=foo", **self.request.META)
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_reset_imported_tenants_excludes_get(self):
+        # Create some tenants that would be deleted but exclude some
+        self.fixture = RbacFixture(V1TenantBootstrapService())
+
+        t1 = self.fixture.new_tenant("o_no_objects1").tenant
+        self.fixture.new_tenant("o_no_objects2")
+        t3 = self.fixture.new_tenant("o_no_objects3").tenant
+        self.fixture.new_tenant("o_no_objects4")
+
+        self.assertEqual(6, Tenant.objects.count())
+
+        response = self.client.get(
+            f"/_private/api/utils/reset_imported_tenants/?exclude_id={t1.id}&exclude_id={t3.id}",
+            **self.request.META,
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.content.decode(), "2 tenants would be deleted")
+
+    @override_settings(INTERNAL_DESTRUCTIVE_API_OK_UNTIL=valid_destructive_time())
+    @patch("api.tasks.run_reset_imported_tenants.delay")
+    def test_reset_imported_tenants_excludes_delete(self, delay):
+        delay.side_effect = lambda args: reset_imported_tenants(**args)
+
+        # Create some tenants that would be deleted but exclude some
+        self.fixture = RbacFixture(V1TenantBootstrapService())
+
+        t1 = self.fixture.new_tenant("o_no_objects1").tenant
+        self.fixture.new_tenant("o_no_objects2")
+        t3 = self.fixture.new_tenant("o_no_objects3").tenant
+        self.fixture.new_tenant("o_no_objects4")
+
+        self.assertEqual(6, Tenant.objects.count())
+
+        with self.assertLogs("api.utils", level="INFO") as logs:
+            response = self.client.delete(
+                f"/_private/api/utils/reset_imported_tenants/?exclude_id={t1.id}&exclude_id={t3.id}",
+                **self.request.META,
+            )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn("Deleted 2 tenants.", logs.output[0])
+        self.assertEqual(4, Tenant.objects.count())
