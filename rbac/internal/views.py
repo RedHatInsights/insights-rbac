@@ -640,7 +640,11 @@ def reset_imported_tenants(request: HttpRequest) -> HttpResponse:
                          WHERE  management_workspace.tenant_id = api_tenant.id)
               )"""
 
-    limit = int(request.GET.get("limit", "-1"))
+    try:
+        limit = int(request.GET.get("limit", "-1"))
+    except ValueError:
+        return HttpResponse("Invalid limit parameter, must be an integer.", status=400)
+
     if limit > 0:
         query += f" LIMIT {limit}"
     elif limit == 0:

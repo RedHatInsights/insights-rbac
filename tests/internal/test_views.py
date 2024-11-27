@@ -913,3 +913,9 @@ class InternalViewsetTests(IdentityRequest):
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(6, Tenant.objects.count())
+
+    @override_settings(INTERNAL_DESTRUCTIVE_API_OK_UNTIL=valid_destructive_time())
+    def test_reset_imported_tenants_rejects_invalid_limit(self):
+        response = self.client.delete("/_private/api/utils/reset_imported_tenants/?limit=foo", **self.request.META)
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
