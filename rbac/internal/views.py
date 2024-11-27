@@ -23,9 +23,9 @@ import logging
 import requests
 from core.utils import destructive_ok
 from django.conf import settings
-from django.db import transaction
+from django.db import connection, transaction
 from django.db.migrations.recorder import MigrationRecorder
-from django.http import HttpResponse
+from django.http import HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404
 from django.utils.html import escape
 from management.cache import TenantCache
@@ -587,6 +587,95 @@ def migration_resources(request):
         page = [str(record.id) for record in page]
         return HttpResponse(json.dumps(page), content_type="application/json", status=200)
     return HttpResponse(f"Invalid method, {request.method}", status=405)
+
+
+def reset_imported_tenants(request: HttpRequest) -> HttpResponse:
+    """Reset tenants imported via user import job.
+
+    GET /_private/api/utils/reset_imported_tenants/?exclude_id=1&exclude_id=2
+    DELETE /_private/api/utils/reset_imported_tenants/?exclude_id=1&exclude_id=2
+    """
+
+    # If GET: return a count of how many tenants would be deleted
+    # If DELETE: delete the tenants
+    # Request should accept a query parameter to exclude certain tenants so we can exclude the ~129
+    excluded = request.GET.getlist("exclude_id", [])
+
+    query = "FROM api_tenant WHERE tenant_name <> 'public' "
+
+    if excluded:
+        query += "AND id NOT IN %s "
+
+    query += (
+        "AND NOT EXISTS (SELECT 1 FROM management_principal WHERE management_principal.tenant_id = api_tenant.id) "
+    )
+    query += """AND NOT (
+              EXISTS    (SELECT 1
+                         FROM   management_tenantmapping
+                         WHERE  management_tenantmapping.tenant_id = api_tenant.id)
+              OR EXISTS (SELECT 1
+                         FROM   management_access
+                         WHERE  management_access.tenant_id = api_tenant.id)
+              OR EXISTS (SELECT 1
+                         FROM   management_group
+                         WHERE  management_group.tenant_id = api_tenant.id)
+              OR EXISTS (SELECT 1
+                         FROM   management_permission
+                         WHERE  management_permission.tenant_id = api_tenant.id)
+              OR EXISTS (SELECT 1
+                         FROM   management_policy
+                         WHERE  management_policy.tenant_id = api_tenant.id)
+              OR EXISTS (SELECT 1
+                         FROM   management_resourcedefinition
+                         WHERE  management_resourcedefinition.tenant_id =
+                        api_tenant.id)
+              OR EXISTS (SELECT 1
+                         FROM   management_role
+                         WHERE  management_role.tenant_id = api_tenant.id)
+              OR EXISTS (SELECT 1
+                         FROM   management_auditlog
+                         WHERE  management_auditlog.tenant_id = api_tenant.id)
+              OR EXISTS (SELECT 1
+                         FROM   management_workspace
+                         WHERE  management_workspace.tenant_id = api_tenant.id)
+              )"""
+
+    limit = int(request.GET.get("limit", "-1"))
+    if limit > 0:
+        query += f" LIMIT {limit}"
+
+    if request.method == "GET":
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT COUNT(*) " + query,
+                (tuple(excluded),),
+            )
+            count = cursor.fetchone()[0]
+
+        return HttpResponse(f"{count} tenants would be deleted", status=200)
+
+    if request.method == "DELETE":
+        if not destructive_ok("api"):
+            return HttpResponse("Destructive operations disallowed.", status=400)
+
+        with connection.cursor() as cursor:
+            if limit > 0:
+                subquery = f"SELECT id {query}"
+                cursor.execute(
+                    "WITH delete_batch AS (" + subquery + ") "
+                    "DELETE FROM api_tenant as t USING delete_batch as del where t.id = del.id",
+                    (tuple(excluded),),
+                )
+            else:
+                cursor.execute(
+                    "DELETE " + query,
+                    (tuple(excluded),),
+                )
+            result = cursor.rowcount
+
+        return HttpResponse(f"Tenants deleted: {result}", status=200)
+
+    return HttpResponse("Invalid method", status=405)
 
 
 def trigger_error(request):

@@ -82,6 +82,7 @@ urlpatterns = [
     path("api/utils/bindings/", views.list_bindings_for_role),
     path("api/utils/bootstrap_tenant/", views.bootstrap_tenant),
     path("api/utils/migration_resources/", views.migration_resources),
+    path("api/utils/reset_imported_tenants/", views.reset_imported_tenants),
 ]
 
 urlpatterns.extend(integration_urlpatterns)
