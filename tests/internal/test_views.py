@@ -820,3 +820,61 @@ class InternalViewsetTests(IdentityRequest):
         self.assertEqual(Tenant.objects.count(), 12)
         self.assertFalse(Tenant.objects.filter(org_id="o_no_objects1").exists())
         self.assertTrue(Tenant.objects.filter(org_id="o_no_objects2").exists())
+
+    def test_reset_imported_tenants_get_also_excludes_tenants_with_objects(self):
+        self.fixture = RbacFixture(V1TenantBootstrapService())
+
+        for object in [
+            (TenantMapping, {}),
+            (Access, {}),
+            (Group, {}),
+            (Permission, {"permission": "test:app:foo"}),
+            (Policy, {}),
+            (ResourceDefinition, {}),
+            (Role, {}),
+            (AuditLog, {}),
+            (Workspace, {"name": "Root", "type": Workspace.Types.ROOT}),
+        ]:
+            model, kwargs = object
+            # Create a new tenant
+            t = self.fixture.new_tenant(f"o_{model.__name__}")
+            # Create an object that references the tenant
+            model.objects.create(tenant=t.tenant, **kwargs)
+
+        # Now create two tenants that doesn't have any of these
+        self.fixture.new_tenant("o_no_objects1")
+        self.fixture.new_tenant("o_no_objects2")
+
+        response = self.client.get("/_private/api/utils/reset_imported_tenants/", **self.request.META)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.content.decode(), "2 tenants would be deleted")
+
+    def test_reset_imported_tenants_get_also_excludes_tenants_with_objects_up_to_limit(self):
+        self.fixture = RbacFixture(V1TenantBootstrapService())
+
+        for object in [
+            (TenantMapping, {}),
+            (Access, {}),
+            (Group, {}),
+            (Permission, {"permission": "test:app:foo"}),
+            (Policy, {}),
+            (ResourceDefinition, {}),
+            (Role, {}),
+            (AuditLog, {}),
+            (Workspace, {"name": "Root", "type": Workspace.Types.ROOT}),
+        ]:
+            model, kwargs = object
+            # Create a new tenant
+            t = self.fixture.new_tenant(f"o_{model.__name__}")
+            # Create an object that references the tenant
+            model.objects.create(tenant=t.tenant, **kwargs)
+
+        # Now create two tenants that doesn't have any of these
+        self.fixture.new_tenant("o_no_objects1")
+        self.fixture.new_tenant("o_no_objects2")
+
+        response = self.client.get("/_private/api/utils/reset_imported_tenants/?limit=1", **self.request.META)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.content.decode(), "1 tenants would be deleted")

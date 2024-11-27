@@ -646,10 +646,13 @@ def reset_imported_tenants(request: HttpRequest) -> HttpResponse:
 
     if request.method == "GET":
         with connection.cursor() as cursor:
-            cursor.execute(
-                "SELECT COUNT(*) " + query,
-                (tuple(excluded),),
-            )
+            if limit > 0:
+                cursor.execute("SELECT COUNT(*) FROM (SELECT 1 " + query + ") subquery", (tuple(excluded),))
+            else:
+                cursor.execute(
+                    "SELECT COUNT(*) " + query,
+                    (tuple(excluded),),
+                )
             count = cursor.fetchone()[0]
 
         return HttpResponse(f"{count} tenants would be deleted", status=200)
