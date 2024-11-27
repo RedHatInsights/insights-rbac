@@ -937,3 +937,47 @@ class InternalViewsetTests(IdentityRequest):
         response = self.client.delete("/_private/api/utils/reset_imported_tenants/?limit=foo", **self.request.META)
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_reset_imported_tenants_excludes_get(self):
+        # Create some tenants that would be deleted but exclude some
+        self.fixture = RbacFixture(V1TenantBootstrapService())
+
+        t1 = self.fixture.new_tenant("o_no_objects1").tenant
+        self.fixture.new_tenant("o_no_objects2")
+        t3 = self.fixture.new_tenant("o_no_objects3").tenant
+        self.fixture.new_tenant("o_no_objects4")
+
+        self.assertEqual(6, Tenant.objects.count())
+
+        response = self.client.get(
+            f"/_private/api/utils/reset_imported_tenants/?exclude_id={t1.id}&exclude_id={t3.id}",
+            **self.request.META,
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.content.decode(), "2 tenants would be deleted")
+
+    @override_settings(INTERNAL_DESTRUCTIVE_API_OK_UNTIL=valid_destructive_time())
+    @patch("api.tasks.run_reset_imported_tenants.delay")
+    def test_reset_imported_tenants_excludes_delete(self, delay):
+        delay.side_effect = lambda args: reset_imported_tenants(**args)
+
+        # Create some tenants that would be deleted but exclude some
+        self.fixture = RbacFixture(V1TenantBootstrapService())
+
+        t1 = self.fixture.new_tenant("o_no_objects1").tenant
+        self.fixture.new_tenant("o_no_objects2")
+        t3 = self.fixture.new_tenant("o_no_objects3").tenant
+        self.fixture.new_tenant("o_no_objects4")
+
+        self.assertEqual(6, Tenant.objects.count())
+
+        with self.assertLogs("api.utils", level="INFO") as logs:
+            response = self.client.delete(
+                f"/_private/api/utils/reset_imported_tenants/?exclude_id={t1.id}&exclude_id={t3.id}",
+                **self.request.META,
+            )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn("Deleted 2 tenants.", logs.output[0])
+        self.assertEqual(4, Tenant.objects.count())
