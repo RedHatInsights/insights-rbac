@@ -26,8 +26,11 @@ import pytz
 import json
 
 from api.models import User, Tenant
+from management.audit_log.model import AuditLog
 from management.models import BindingMapping, Group, Permission, Policy, Role, Workspace
 from management.relation_replicator.noop_replicator import NoopReplicator
+from management.role.model import Access, ResourceDefinition
+from management.tenant_mapping.model import TenantMapping
 from management.tenant_service.v1 import V1TenantBootstrapService
 from management.tenant_service.v2 import V2TenantBootstrapService
 from management.workspace.model import Workspace
@@ -682,7 +685,7 @@ class InternalViewsetTests(IdentityRequest):
             }
         )
 
-    def test_reset_imported_tenants_get_does_not_include_tenant_with_tenanted_resources(self):
+    def test_reset_imported_tenants_get_does_not_include_sample_tenant_with_tenanted_resources(self):
         response = self.client.get("/_private/api/utils/reset_imported_tenants/", **self.request.META)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.content.decode(), "0 tenants would be deleted")
@@ -751,3 +754,69 @@ class InternalViewsetTests(IdentityRequest):
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.content.decode(), "100 tenants would be deleted")
+
+    @override_settings(INTERNAL_DESTRUCTIVE_API_OK_UNTIL=valid_destructive_time())
+    def test_reset_imported_tenants_no_tenanted_objects_allow_tenant_to_be_deleted(self):
+        self.fixture = RbacFixture(V1TenantBootstrapService())
+
+        for object in [
+            (TenantMapping, {}),
+            (Access, {}),
+            (Group, {}),
+            (Permission, {"permission": "test:app:foo"}),
+            (Policy, {}),
+            (ResourceDefinition, {}),
+            (Role, {}),
+            (AuditLog, {}),
+            (Workspace, {"name": "Root", "type": Workspace.Types.ROOT}),
+        ]:
+            model, kwargs = object
+            # Create a new tenant
+            t = self.fixture.new_tenant(f"o_{model.__name__}")
+            # Create an object that references the tenant
+            model.objects.create(tenant=t.tenant, **kwargs)
+
+        # Now create one tenant that doesn't have any of these
+        self.fixture.new_tenant("o_no_objects")
+
+        response = self.client.delete("/_private/api/utils/reset_imported_tenants/", **self.request.META)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.content.decode(), "Tenants deleted: 1")
+        # two extra tenants for test tenant and public tenant
+        self.assertEqual(Tenant.objects.count(), 11)
+        self.assertFalse(Tenant.objects.filter(org_id="o_no_objects").exists())
+
+    @override_settings(INTERNAL_DESTRUCTIVE_API_OK_UNTIL=valid_destructive_time())
+    def test_reset_imported_tenants_no_tenanted_objects_allow_tenant_to_be_deleted_with_limit(self):
+        self.fixture = RbacFixture(V1TenantBootstrapService())
+
+        for object in [
+            (TenantMapping, {}),
+            (Access, {}),
+            (Group, {}),
+            (Permission, {"permission": "test:app:foo"}),
+            (Policy, {}),
+            (ResourceDefinition, {}),
+            (Role, {}),
+            (AuditLog, {}),
+            (Workspace, {"name": "Root", "type": Workspace.Types.ROOT}),
+        ]:
+            model, kwargs = object
+            # Create a new tenant
+            t = self.fixture.new_tenant(f"o_{model.__name__}")
+            # Create an object that references the tenant
+            model.objects.create(tenant=t.tenant, **kwargs)
+
+        # Now create two tenants that doesn't have any of these
+        self.fixture.new_tenant("o_no_objects1")
+        self.fixture.new_tenant("o_no_objects2")
+
+        response = self.client.delete("/_private/api/utils/reset_imported_tenants/?limit=1", **self.request.META)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.content.decode(), "Tenants deleted: 1")
+        # two extra tenants for test tenant and public tenant
+        self.assertEqual(Tenant.objects.count(), 12)
+        self.assertFalse(Tenant.objects.filter(org_id="o_no_objects1").exists())
+        self.assertTrue(Tenant.objects.filter(org_id="o_no_objects2").exists())
