@@ -15,6 +15,8 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Test the internal viewset."""
+import logging
+
 from rest_framework import status
 from rest_framework.test import APIClient
 from django.conf import settings
@@ -40,6 +42,17 @@ from tests.identity_request import IdentityRequest
 from tests.management.role.test_dual_write import RbacFixture
 
 
+@override_settings(
+    LOGGING={
+        "version": 1,
+        "disable_existing_loggers": False,
+        "loggers": {
+            "management.relation_replicator.outbox_replicator": {
+                "level": "INFO",
+            },
+        },
+    },
+)
 class InternalViewsetTests(IdentityRequest):
     """Test the internal viewset."""
 
@@ -77,11 +90,15 @@ class InternalViewsetTests(IdentityRequest):
         self.group.save()
         self.public_tenant = Tenant.objects.get(tenant_name="public")
 
+        self._prior_logging_disable_level = logging.root.manager.disable
+        logging.disable(logging.NOTSET)
+
     def tearDown(self):
         """Tear down internal viewset tests."""
         Group.objects.all().delete()
         Role.objects.all().delete()
         Policy.objects.all().delete()
+        logging.disable(self._prior_logging_disable_level)
 
     def test_delete_tenant_disallowed(self):
         """Test that we cannot delete a tenant when disallowed."""
