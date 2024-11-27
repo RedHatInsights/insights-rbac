@@ -643,6 +643,8 @@ def reset_imported_tenants(request: HttpRequest) -> HttpResponse:
     limit = int(request.GET.get("limit", "-1"))
     if limit > 0:
         query += f" LIMIT {limit}"
+    elif limit == 0:
+        return HttpResponse("Limit is 0, nothing to do", status=200)
 
     if request.method == "GET":
         with connection.cursor() as cursor:

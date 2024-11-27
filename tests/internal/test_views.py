@@ -897,3 +897,19 @@ class InternalViewsetTests(IdentityRequest):
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.content.decode(), "1 tenants would be deleted")
+
+    @override_settings(INTERNAL_DESTRUCTIVE_API_OK_UNTIL=valid_destructive_time())
+    def test_reset_imported_tenants_does_nothing_if_zero_limit(self):
+        self.fixture = RbacFixture(V1TenantBootstrapService())
+
+        self.fixture.new_tenant("o_no_objects1")
+        self.fixture.new_tenant("o_no_objects2")
+        self.fixture.new_tenant("o_no_objects3")
+        self.fixture.new_tenant("o_no_objects4")
+
+        self.assertEqual(6, Tenant.objects.count())
+
+        response = self.client.delete("/_private/api/utils/reset_imported_tenants/?limit=0", **self.request.META)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(6, Tenant.objects.count())
