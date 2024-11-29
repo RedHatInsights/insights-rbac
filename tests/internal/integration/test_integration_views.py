@@ -424,10 +424,11 @@ class IntegrationViewsTests(IdentityRequest):
         self.assertEqual(response.data.get("meta").get("count"), 4)
 
         response = self.client.get(
-            f"/_private/api/v1/integrations/tenant/{self.tenant.org_id}/roles/?username=isolated_principal",
+            f"/_private/api/v1/integrations/tenant/{self.tenant.org_id}/roles/?username=isolated_role",
             **self.request.META,
             follow=True,
         )
+
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data.get("meta").get("count"), 1)
 

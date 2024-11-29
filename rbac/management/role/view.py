@@ -25,7 +25,7 @@ import traceback
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
-from django.db.models import Q
+from django.db.models import F, Q
 from django.db.models.aggregates import Count
 from django.http import Http404
 from django.utils.translation import gettext as _
@@ -48,7 +48,7 @@ from rest_framework.response import Response
 
 from api.models import Tenant
 from rbac.env import ENVIRONMENT
-from .model import Role
+from .model import ExtTenant, Role
 from .serializer import RoleSerializer
 
 TESTING_APP = os.getenv("TESTING_APPLICATION")
@@ -324,7 +324,67 @@ class RoleViewSet(
             }
 
         """
-        return super().list(request=request, args=args, kwargs=kwargs)
+        public_tenant = Tenant.objects.get(tenant_name="public")
+        base_queryset = Role.objects.filter(tenant__in=[request.tenant, public_tenant]).annotate(
+            policyCount=Count("policies", distinct=True), accessCount=Count("access", distinct=True)
+        )
+        # Metadata
+        meta = {
+            "count": base_queryset.count(),
+        }
+
+        # Filtering
+        # Query parameters
+        external_tenant_filter = request.query_params.get("external_tenant", None)
+        username_filter = request.query_params.get("username", None)
+        system_filter = request.query_params.get("system", None)
+        application_filter = request.query_params.get("application", None)
+
+        if username_filter:
+            username_queryset = base_queryset.filter(name=username_filter)
+            # Metadata
+            meta = {
+                "count": username_queryset.count(),
+            }
+            return Response({"meta": meta, "data": username_queryset.values()})
+        # System filter
+        elif system_filter in ["true", "false"]:
+            system_roles_queryset = base_queryset.filter(system__icontains=system_filter)
+
+            # Metadata
+            meta = {
+                "count": system_roles_queryset.count(),
+            }
+            return Response({"meta": meta, "data": system_roles_queryset.values()})
+        # External tenant roles filter
+        elif external_tenant_filter:
+            # Get the specific external tenant
+            ext_tenant = ExtTenant.objects.get(name=external_tenant_filter)
+
+            # Get roles associated with this external tenant
+            ext_roles = Role.objects.filter(ext_relation__ext_tenant=ext_tenant).annotate(
+                external_tenant=F("ext_relation__ext_tenant__name")
+            )
+            return Response({"meta": meta, "data": ext_roles.values()})
+
+        # Application filter
+        elif application_filter:
+            applications = application_filter.split(",")
+
+            # Filter roles based on the list of applications
+            application_roles = base_queryset.filter(access__permission__application__in=applications)
+
+            # Metadata
+            meta = {
+                "count": application_roles.count(),
+            }
+
+            return Response({"meta": meta, "data": application_roles.values()})
+        else:
+            meta = {
+                "count": base_queryset.count(),
+            }
+            return Response({"meta": meta, "data": base_queryset.values()})
 
     def retrieve(self, request, *args, **kwargs):
         """Get a role.

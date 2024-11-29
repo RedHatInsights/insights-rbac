@@ -1732,13 +1732,13 @@ class RoleViewsetTests(IdentityRequest):
         response = client.get(URL, **self.headers)
 
         self.assertEqual(len(response.data.get("data")), 5)
-
         url = f"{URL}?external_tenant=foo"
         client = APIClient()
         response = client.get(url, **self.headers)
 
         self.assertEqual(len(response.data.get("data")), 1)
         role = response.data.get("data")[0]
+        print(role)
         self.assertEqual(role.get("external_tenant"), "foo")
 
     def test_list_role_admin_platform_default_groups(self):
@@ -2057,6 +2057,7 @@ class RoleViewNonAdminTests(IdentityRequest):
 
         # Org Admin can list the roles
         response = client.get(url, **self.headers_org_admin)
+        print(response.data)
         expected_count = self.system_roles_count + self.non_system_roles_count
         self.assertEqual(len(response.data.get("data")), expected_count)
 
