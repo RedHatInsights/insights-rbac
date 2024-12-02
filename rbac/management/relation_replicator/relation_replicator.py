@@ -77,10 +77,10 @@ class ReplicationEvent:
         info: dict[str, object] = {},
     ):
         """Initialize ReplicationEvent."""
-        add_set = {rel.relation: rel for rel in add}
-        remove_set = {rel.relation: rel for rel in remove}
+        add_set = {RelationshipWrapper(rel.resource, rel.relation, rel.subject): rel for rel in add}
+        remove_set = {RelationshipWrapper(rel.resource, rel.relation, rel.subject): rel for rel in remove}
 
-        # remove duplicates
+        # remove intersection of add and remove
         intersection = set(add_set.keys()).intersection(set(remove_set.keys()))
         for key in intersection:
             del add_set[key]
@@ -102,6 +102,25 @@ class RelationReplicator(ABC):
         """Replicate the given event to Kessel Relations."""
         pass
 
+class RelationshipWrapper:
+    def __init__(self, resource=None, relation=None, subject=None):
+        self._relationship = common_pb2.Relationship(
+            resource=resource, relation=relation, subject=subject
+        )
+
+    def __eq__(self, value):
+        if isinstance(value, RelationshipWrapper):
+            return all([self._relationship.relation == value._relationship.relation, \
+            self._relationship.resource.id == value._relationship.resource.id, self._relationship.resource.type.namespace == value._relationship.resource.type.namespace, \
+            self._relationship.resource.type.name == value._relationship.resource.type.name, self._relationship.subject.relation == value._relationship.subject.relation, \
+            self._relationship.subject.subject.id == value._relationship.subject.subject.id, self._relationship.subject.subject.type.name == value._relationship.subject.subject.type.name, \
+            self._relationship.subject.subject.type.namespace == value._relationship.subject.subject.type.namespace])
+        return False
+
+    def __hash__(self):
+        return hash((self._relationship.relation, self._relationship.resource.id, self._relationship.resource.type.namespace,
+            self._relationship.resource.type.name, self._relationship.subject.relation, self._relationship.subject.subject.id,
+            self._relationship.subject.subject.type.name, self._relationship.subject.subject.type.namespace ))
 
 class PartitionKey(ABC):
     """
