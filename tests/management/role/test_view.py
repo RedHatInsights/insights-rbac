@@ -663,6 +663,7 @@ class RoleViewsetTests(IdentityRequest):
             self.assertIsNotNone(iterRole.get("name"))
             # fields displayed are same as defined
             self.assertEqual(self.display_fields, set(iterRole.keys()))
+
             if iterRole.get("name") == role_name:
                 self.assertEqual(iterRole.get("accessCount"), 2)
                 role = iterRole
@@ -674,6 +675,7 @@ class RoleViewsetTests(IdentityRequest):
         url = "{}?application={}".format(URL, "app")
         client = APIClient()
         response = client.get(url, **self.headers)
+
         self.assertEqual(response.data.get("meta").get("count"), 1)
         self.assertEqual(response.data.get("data")[0].get("name"), self.defRole.name)
 
@@ -682,6 +684,7 @@ class RoleViewsetTests(IdentityRequest):
         url = "{}?application={}".format(URL, "foo")
         client = APIClient()
         response = client.get(url, **self.headers)
+
         self.assertEqual(response.data.get("meta").get("count"), 1)
         self.assertEqual(response.data.get("data")[0].get("name"), self.defRole.name)
 

@@ -334,57 +334,54 @@ class RoleViewSet(
         }
 
         # Filtering
-        # Query parameters
-        external_tenant_filter = request.query_params.get("external_tenant", None)
-        username_filter = request.query_params.get("username", None)
-        system_filter = request.query_params.get("system", None)
-        application_filter = request.query_params.get("application", None)
+        # Query params dictionary
+        query_params = {
+            "external_tenant": request.query_params.get("external_tenant", None),
+            "username": request.query_params.get("username", None),
+            "system": request.query_params.get("system", None),
+            "application": request.query_params.get("application", None),
+            "display_name": request.query_params.get("display_name", None),
+            "name_match": request.query_params.get("name_match", None),
+        }
 
-        if username_filter:
-            username_queryset = base_queryset.filter(name=username_filter)
+        if query_params:
+            filtered_queryset = base_queryset
+            system_value = str(query_params["system"]).lower()
+            if query_params["username"]:
+                filtered_queryset = filtered_queryset.filter(name=query_params["username"])
+            if query_params["external_tenant"]:
+                ext_tenant = ExtTenant.objects.get(name=query_params["external_tenant"])
+                filtered_queryset = filtered_queryset.filter(ext_relation__ext_tenant=ext_tenant).annotate(
+                    external_tenant=F("ext_relation__ext_tenant__name")
+                )
+            if system_value == "false":
+                filtered_queryset = filtered_queryset.filter(system=False)
+            elif system_value == "true":
+                filtered_queryset = filtered_queryset.filter(system=True)
+            if query_params["application"]:
+                applications = query_params["application"].split(",")
+                external_tenant = (
+                    ExtTenant.objects.get(name=query_params["application"])
+                    if applications and ExtTenant.objects.filter(name=query_params["application"]).exists()
+                    else None
+                )
+                filtered_queryset = filtered_queryset.filter(access__permission__application__in=applications)
+                # If a external tenant exists with the name passed to application query parameter
+                # return the roles for that external tenant
+                if external_tenant:
+                    ext_tenant = ExtTenant.objects.get(name=query_params["application"])
+                    filtered_queryset = base_queryset.filter(ext_relation__ext_tenant=ext_tenant).annotate(
+                        external_tenant=F("ext_relation__ext_tenant__name")
+                    )
+            if query_params["display_name"]:
+                filtered_queryset = filtered_queryset.filter(display_name=query_params["display_name"])
+                # if query_params["name_match"] ==
+
             # Metadata
             meta = {
-                "count": username_queryset.count(),
+                "count": filtered_queryset.count(),
             }
-            return Response({"meta": meta, "data": username_queryset.values()})
-        # System filter
-        elif system_filter in ["true", "false"]:
-            system_roles_queryset = base_queryset.filter(system__icontains=system_filter)
-
-            # Metadata
-            meta = {
-                "count": system_roles_queryset.count(),
-            }
-            return Response({"meta": meta, "data": system_roles_queryset.values()})
-        # External tenant roles filter
-        elif external_tenant_filter:
-            # Get the specific external tenant
-            ext_tenant = ExtTenant.objects.get(name=external_tenant_filter)
-
-            # Get roles associated with this external tenant
-            ext_roles = Role.objects.filter(ext_relation__ext_tenant=ext_tenant).annotate(
-                external_tenant=F("ext_relation__ext_tenant__name")
-            )
-            return Response({"meta": meta, "data": ext_roles.values()})
-
-        # Application filter
-        elif application_filter:
-            applications = application_filter.split(",")
-
-            # Filter roles based on the list of applications
-            application_roles = base_queryset.filter(access__permission__application__in=applications)
-
-            # Metadata
-            meta = {
-                "count": application_roles.count(),
-            }
-
-            return Response({"meta": meta, "data": application_roles.values()})
-        else:
-            meta = {
-                "count": base_queryset.count(),
-            }
-            return Response({"meta": meta, "data": base_queryset.values()})
+            return Response({"meta": meta, "data": filtered_queryset.values()})
 
     def retrieve(self, request, *args, **kwargs):
         """Get a role.
