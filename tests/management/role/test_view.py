@@ -1156,7 +1156,8 @@ class RoleViewsetTests(IdentityRequest):
         url = "{}?username={}".format(URL, "foo")
         client = APIClient()
         response = client.get(url, **self.headers)
-
+        print(response.data)
+        print(response.headers)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
     @patch("management.principal.proxy.PrincipalProxy.request_filtered_principals")
@@ -1741,7 +1742,6 @@ class RoleViewsetTests(IdentityRequest):
 
         self.assertEqual(len(response.data.get("data")), 1)
         role = response.data.get("data")[0]
-        print(role)
         self.assertEqual(role.get("external_tenant"), "foo")
 
     def test_list_role_admin_platform_default_groups(self):
@@ -1757,6 +1757,7 @@ class RoleViewsetTests(IdentityRequest):
 
         self.assertEqual(len(response.data.get("data")), 1)
         role = response.data.get("data")[0]
+        print(response.data)
         self.assertEqual(role.get("groups_in_count"), 2)
 
     def test_create_duplicate_role_fail(self):
@@ -1957,6 +1958,7 @@ class RoleViewNonAdminTests(IdentityRequest):
         response = client.get(url, **self.headers_user_based_principal)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         expected_count = self.system_roles_count + self.non_system_roles_count + 1
+
         self.assertEqual(len(response.data.get("data")), expected_count)
 
         response = client.get(url, **self.headers_service_account_principal)
@@ -2060,7 +2062,6 @@ class RoleViewNonAdminTests(IdentityRequest):
 
         # Org Admin can list the roles
         response = client.get(url, **self.headers_org_admin)
-        print(response.data)
         expected_count = self.system_roles_count + self.non_system_roles_count
         self.assertEqual(len(response.data.get("data")), expected_count)
 

@@ -328,10 +328,6 @@ class RoleViewSet(
         base_queryset = Role.objects.filter(tenant__in=[request.tenant, public_tenant]).annotate(
             policyCount=Count("policies", distinct=True), accessCount=Count("access", distinct=True)
         )
-        # Metadata
-        meta = {
-            "count": base_queryset.count(),
-        }
 
         # Filtering
         # Query params dictionary
@@ -342,22 +338,45 @@ class RoleViewSet(
             "application": request.query_params.get("application", None),
             "display_name": request.query_params.get("display_name", None),
             "name_match": request.query_params.get("name_match", None),
+            "permission": request.query_params.get("permission", None),
+            "name": request.query_params.get("name", None),
+            "platform_default": request.query_params.get("platform_default", None),
+            "admin_default": request.query_params.get("admin_default", None),
         }
 
         if query_params:
             filtered_queryset = base_queryset
             system_value = str(query_params["system"]).lower()
-            if query_params["username"]:
+
+            if query_params["username"] and request.user.admin is True:
                 filtered_queryset = filtered_queryset.filter(name=query_params["username"])
+                print(filtered_queryset)
+            else:
+                return Response(
+                    status=status.HTTP_400_BAD_REQUEST,
+                    data={
+                        "errors": [
+                            {
+                                "detail": "Invalid query parameter username",
+                                "source": "username filtering not allowed",
+                                "status": status.HTTP_400_BAD_REQUEST,
+                            }
+                        ]
+                    },
+                )
+
+            # External tenant filter
             if query_params["external_tenant"]:
                 ext_tenant = ExtTenant.objects.get(name=query_params["external_tenant"])
                 filtered_queryset = filtered_queryset.filter(ext_relation__ext_tenant=ext_tenant).annotate(
                     external_tenant=F("ext_relation__ext_tenant__name")
                 )
+            # System value filter
             if system_value == "false":
                 filtered_queryset = filtered_queryset.filter(system=False)
             elif system_value == "true":
                 filtered_queryset = filtered_queryset.filter(system=True)
+            # Application filter
             if query_params["application"]:
                 applications = query_params["application"].split(",")
                 external_tenant = (
@@ -373,15 +392,61 @@ class RoleViewSet(
                     filtered_queryset = base_queryset.filter(ext_relation__ext_tenant=ext_tenant).annotate(
                         external_tenant=F("ext_relation__ext_tenant__name")
                     )
+            # Display_name & name_match filter
             if query_params["display_name"]:
-                filtered_queryset = filtered_queryset.filter(display_name=query_params["display_name"])
-                # if query_params["name_match"] ==
+                if query_params["name_match"] == "partial":
+                    filtered_queryset = filtered_queryset.filter(display_name__contains=query_params["display_name"])
+                elif query_params["name_match"] == "exact":
+                    filtered_queryset = filtered_queryset.filter(display_name__exact=query_params["display_name"])
+                elif not query_params["name_match"]:
+                    filtered_queryset = filtered_queryset.filter(display_name__contains=query_params["display_name"])
+                else:
+                    return Response(
+                        status=status.HTTP_400_BAD_REQUEST,
+                        data={
+                            "errors": [
+                                {
+                                    "detail": "Invalid name match value provided",
+                                    "source": "name_match query parameter",
+                                    "status": status.HTTP_400_BAD_REQUEST,
+                                }
+                            ]
+                        },
+                    )
+            # name & name_match filter
+            if query_params["name"]:
+                if query_params["name_match"] == "partial":
+                    filtered_queryset = filtered_queryset.filter(name__contains=query_params["name"])
+                elif query_params["name_match"] == "exact":
+                    filtered_queryset = filtered_queryset.filter(name__exact=query_params["name"])
+                elif not query_params["name_match"]:
+                    filtered_queryset = filtered_queryset.filter(name__contains=query_params["name"])
+                else:
+                    return Response(
+                        status=status.HTTP_400_BAD_REQUEST,
+                        data={
+                            "errors": [
+                                {
+                                    "detail": "Invalid name match value provided",
+                                    "source": "name_match query parameter",
+                                    "status": status.HTTP_400_BAD_REQUEST,
+                                }
+                            ]
+                        },
+                    )
+            # Permission filter
+            if query_params["permission"]:
+                permissions = query_params["permission"].split(",")
+                filtered_queryset = filtered_queryset.filter(access__permission__permission__in=permissions)
+
+            # Serialize the queryset for response
+            serializer = RoleSerializer(filtered_queryset, many=True, context={"request": request})
 
             # Metadata
             meta = {
                 "count": filtered_queryset.count(),
             }
-            return Response({"meta": meta, "data": filtered_queryset.values()})
+            return Response({"meta": meta, "data": serializer.data})
 
     def retrieve(self, request, *args, **kwargs):
         """Get a role.
