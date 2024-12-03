@@ -25,7 +25,7 @@ objects:
       transforms.outbox.type: io.debezium.transforms.outbox.EventRouter
       transforms.outbox.table.field.payload: ${PAYLOAD_NAME}
       plugin.name: pgoutput
-      heartbeat.interval.ms: 300000
+      heartbeat.interval.ms: ${DEBEZIUM_HEARTBEAT_INTERVAL}
       heartbeat.action.query: ${DEBEZIUM_ACTION_QUERY}
       topic.heartbeat.prefix: ${TOPIC_HEARTBEAT_PREFIX}
 parameters:
@@ -71,6 +71,6 @@ parameters:
 - name: DEBEZIUM_ACTION_QUERY
   value: "CREATE TABLE IF NOT EXISTS _debezium_heartbeat (id SERIAL PRIMARY KEY, ts TIMESTAMP WITH TIME ZONE);INSERT INTO _debezium_heartbeat (id, ts) VALUES (1, NOW()) ON CONFLICT(id) DO UPDATE SET ts=EXCLUDED.ts;"
   description: Query action that runs for each heartbeat event
-- DEBEZIUM_HEARTBEAT_INTERVAL:
+- name: DEBEZIUM_HEARTBEAT_INTERVAL
   value: 300000
   description: The interval for the Debezium heartbeat in ms
