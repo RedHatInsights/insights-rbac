@@ -69,7 +69,7 @@ parameters:
   value: debezium-heartbeat
   description: Prefix for the connector heartbeat topic
 - name: DEBEZIUM_ACTION_QUERY
-  value: "CREATE TABLE IF NOT EXISTS _debezium_heartbeat (id SERIAL PRIMARY KEY, ts TIMESTAMP WITH TIME ZONE);INSERT INTO _debezium_heartbeat (id, ts) VALUES (1, NOW()) ON CONFLICT(id) DO UPDATE SET ts=EXCLUDED.ts;"
+  value: "SELECT pg_logical_emit_message(false, 'heartbeat', now()::varchar);"
   description: Query action that runs for each heartbeat event
 - name: DEBEZIUM_HEARTBEAT_INTERVAL
   value: 300000
