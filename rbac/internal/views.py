@@ -521,12 +521,13 @@ def bootstrap_tenant(request):
     logger.info("Running bootstrap tenant.")
 
     org_id = request.GET.get("org_id")
+    force = bool(request.GET.get("force", "false"))
     if not org_id:
         return HttpResponse('Invalid request, must supply the "org_id" query parameter.', status=400)
     with transaction.atomic():
         tenant = get_object_or_404(Tenant, org_id=org_id)
         bootstrap_service = V2TenantBootstrapService(OutboxReplicator())
-        bootstrap_service.bootstrap_tenant(tenant)
+        bootstrap_service.bootstrap_tenant(tenant, force=force)
     return HttpResponse(f"Bootstrap tenant with org_id {org_id} finished.", status=200)
 
 

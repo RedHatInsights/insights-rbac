@@ -38,6 +38,7 @@ from management.tenant_mapping.model import TenantMapping
 from management.tenant_service.v1 import V1TenantBootstrapService
 from management.tenant_service.v2 import V2TenantBootstrapService
 from management.workspace.model import Workspace
+from migration_tool.in_memory_tuples import InMemoryRelationReplicator, InMemoryTuples
 from tests.identity_request import IdentityRequest
 from tests.management.role.test_dual_write import RbacFixture
 
@@ -601,6 +602,26 @@ class InternalViewsetTests(IdentityRequest):
         Workspace.objects.filter(tenant=tenant, type=Workspace.Types.ROOT).exists()
         Workspace.objects.filter(tenant=tenant, type=Workspace.Types.DEFAULT).exists()
         self.assertTrue(getattr(tenant, "tenant_mapping"))
+
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
+    def test_force_bootstrapping_tenant(self, replicate):
+        tuples = InMemoryTuples()
+        replicator = InMemoryRelationReplicator(tuples)
+        replicate.side_effect = replicator.replicate
+        fixture = RbacFixture(V2TenantBootstrapService(replicator))
+
+        org_id = "12345"
+
+        fixture.new_tenant(org_id)
+        tuples.clear()
+
+        response = self.client.post(
+            f"/_private/api/utils/bootstrap_tenant/?org_id={org_id}&force=true",
+            **self.request.META,
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(tuples), 9)
 
     def test_listing_migration_resources(self):
         """Test that we can list migration resources."""

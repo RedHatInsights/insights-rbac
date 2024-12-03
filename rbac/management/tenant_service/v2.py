@@ -43,10 +43,17 @@ class V2TenantBootstrapService:
         tenant = Tenant.objects.create(org_id=org_id, account_id=account_number)
         return self._bootstrap_tenant(tenant)
 
-    def bootstrap_tenant(self, tenant: Tenant) -> BootstrappedTenant:
-        """Bootstrap an existing tenant."""
+    def bootstrap_tenant(self, tenant: Tenant, force: bool = False) -> BootstrappedTenant:
+        """
+        Bootstrap an existing tenant.
+
+        If [force] is True, will re-bootstrap the tenant if already bootstrapped.
+        This does not change the RBAC data that already exists, but will replicate to Relations.
+        """
         try:
             mapping = TenantMapping.objects.get(tenant=tenant)
+            if force:
+                self._replicate_bootstrap(tenant, mapping)
             return BootstrappedTenant(tenant=tenant, mapping=mapping)
         except TenantMapping.DoesNotExist:
             return self._bootstrap_tenant(tenant)
@@ -262,6 +269,27 @@ class V2TenantBootstrapService:
 
         return BootstrappedTenant(tenant, mapping, default_workspace=default_workspace, root_workspace=root_workspace)
 
+    def _replicate_bootstrap(self, tenant: Tenant, mapping: TenantMapping):
+        """Replicate the bootstrapping of a tenant."""
+        built_in_workspaces = Workspace.objects.filter(
+            tenant=tenant, type__in=[Workspace.Types.ROOT, Workspace.Types.DEFAULT]
+        )
+        root = next(ws for ws in built_in_workspaces if ws.type == Workspace.Types.ROOT)
+        default = next(ws for ws in built_in_workspaces if ws.type == Workspace.Types.DEFAULT)
+
+        relationships = []
+        relationships.extend(self._built_in_hierarchy_tuples(default.id, root.id, tenant.org_id))
+        relationships.extend(self._bootstrap_default_access(tenant, mapping, str(default.id)))
+
+        self._replicator.replicate(
+            ReplicationEvent(
+                event_type=ReplicationEventType.BOOTSTRAP_TENANT,
+                info={"org_id": tenant.org_id, "internal": True},
+                partition_key=PartitionKey.byEnvironment(),
+                add=relationships,
+            )
+        )
+
     def _get_or_bootstrap_tenants(self, org_ids: set, ready: bool) -> list[BootstrappedTenant]:
         """Bootstrap list of tenants, used by import_bulk_users."""
         # Fetch existing tenants
@@ -365,9 +393,34 @@ class V2TenantBootstrapService:
 
         return tuples_to_add, tuples_to_remove
 
-    def _create_default_relation_tuples(
+    def _built_in_hierarchy_tuples(self, default_workspace_id, root_workspace_id, org_id) -> List[Relationship]:
+        """Create the tuples used to bootstrap the hierarchy of default->root->tenant->platform."""
+        tenant_id = f"{self._user_domain}/{org_id}"
+
+        return [
+            create_relationship(
+                ("rbac", "workspace"),
+                str(default_workspace_id),
+                ("rbac", "workspace"),
+                str(root_workspace_id),
+                "parent",
+            ),
+            create_relationship(
+                ("rbac", "workspace"), str(root_workspace_id), ("rbac", "tenant"), tenant_id, "parent"
+            ),
+            # Include platform for tenant
+            create_relationship(("rbac", "tenant"), tenant_id, ("rbac", "platform"), settings.ENV_NAME, "platform"),
+        ]
+
+    def _default_binding_tuples(
         self, default_workspace_id, role_binding_uuid, default_role_uuid, default_group_uuid
-    ):
+    ) -> List[Relationship]:
+        """
+        Create the tuples used to bootstrap default access for a Workspace.
+
+        Can be used for both default access and admin access as long as the correct arguments are provided.
+        Each of role binding, role, and group must refer to admin or default versions.
+        """
         return [
             create_relationship(
                 ("rbac", "workspace"),
@@ -429,7 +482,7 @@ class V2TenantBootstrapService:
             hasattr(tenant, "platform_default_groups") and tenant.platform_default_groups
         ):
             tuples_to_add.extend(
-                self._create_default_relation_tuples(
+                self._default_binding_tuples(
                     default_workspace_id,
                     default_user_role_binding_uuid,
                     platform_default_role_uuid,
@@ -444,7 +497,7 @@ class V2TenantBootstrapService:
         # Admin role binding is not customizable
         if admin_default_role_uuid:
             tuples_to_add.extend(
-                self._create_default_relation_tuples(
+                self._default_binding_tuples(
                     default_workspace_id,
                     default_admin_role_binding_uuid,
                     admin_default_role_uuid,
@@ -467,26 +520,8 @@ class V2TenantBootstrapService:
         root_workspace_id = root.id
         default_workspace_id = default.id
 
-        tenant_id = f"{self._user_domain}/{tenant.org_id}"
+        relationships.extend(self._built_in_hierarchy_tuples(default_workspace_id, root_workspace_id, tenant.org_id))
 
-        relationships.extend(
-            [
-                create_relationship(
-                    ("rbac", "workspace"),
-                    str(default_workspace_id),
-                    ("rbac", "workspace"),
-                    str(root.id),
-                    "parent",
-                ),
-                create_relationship(
-                    ("rbac", "workspace"), str(root_workspace_id), ("rbac", "tenant"), tenant_id, "parent"
-                ),
-                # Include platform for tenant
-                create_relationship(
-                    ("rbac", "tenant"), tenant_id, ("rbac", "platform"), settings.ENV_NAME, "platform"
-                ),
-            ]
-        )
         return root, default, relationships
 
     def _get_platform_default_policy_uuid(self) -> Optional[str]:
