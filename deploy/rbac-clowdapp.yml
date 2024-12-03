@@ -238,6 +238,9 @@ objects:
             value: ${PRINCIPAL_CLEANUP_DELETION_ENABLED_UMB}
           - name: UMB_JOB_ENABLED
             value: ${UMB_JOB_ENABLED}
+          - name: READ_ONLY_API_MODE
+            value: ${READ_ONLY_API_MODE}
+
     - name: scheduler-service
       minReplicas: ${{MIN_SCHEDULER_REPLICAS}}
       metadata:
