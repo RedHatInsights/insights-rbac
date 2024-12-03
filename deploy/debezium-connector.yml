@@ -71,6 +71,6 @@ parameters:
 - name: DEBEZIUM_ACTION_QUERY
   value: "SELECT pg_logical_emit_message(false, 'heartbeat', now()::varchar);"
   description: Query action that runs for each heartbeat event
-- name: DEBEZIUM_HEARTBEAT_INTERVAL
+- name: DEBEZIUM_HEARTBEAT_INTERVAL_MS
   value: 300000
   description: The interval for the Debezium heartbeat in ms
