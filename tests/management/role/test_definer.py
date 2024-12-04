@@ -32,7 +32,7 @@ class RoleDefinerTests(IdentityRequest):
     def setUp(self):
         """Set up the role definer tests."""
         super().setUp()
-        self.public_tenant = Tenant.objects.get(tenant_name="public")
+        self.public_tenant = Tenant.objects.get_public_tenant()
 
     @patch("core.kafka.RBACProducer.send_kafka_message")
     def test_role_create(self, send_kafka_message):

@@ -28,7 +28,7 @@ class TenantModelTests(TestCase):
         """Set up the tenant model tests."""
         super().setUp()
         self.tenant = Tenant.objects.create(tenant_name="acct1234", org_id="1234")
-        self.public_tenant = Tenant.objects.get(tenant_name="public")
+        self.public_tenant = Tenant.objects.get_public_tenant()
 
     def tearDown(self):
         """Tear down tenant model tests."""

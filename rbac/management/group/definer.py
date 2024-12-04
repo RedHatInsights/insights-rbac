@@ -47,7 +47,7 @@ logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 def seed_group() -> Tuple[Group, Group]:
     """Create or update default group."""
-    public_tenant = Tenant.objects.get(tenant_name="public")
+    public_tenant = Tenant.objects.get_public_tenant()
     with transaction.atomic():
         name = "Default access"
         group_description = (
@@ -104,7 +104,7 @@ def clone_default_group_in_public_schema(group, tenant) -> Optional[Group]:
     else:
         group_uuid = uuid4()
 
-    public_tenant = Tenant.objects.get(tenant_name="public")
+    public_tenant = Tenant.objects.get_public_tenant()
     tenant_default_policy = group.policies.get(system=True)
     group.name = "Custom default access"
     group.system = False
@@ -148,7 +148,7 @@ def add_roles(group, roles_or_role_ids, tenant, user=None):
     if system_policy_created:
         logger.info(f"Created new system policy for tenant {tenant.org_id}.")
 
-    system_roles = roles.filter(tenant=Tenant.objects.get(tenant_name="public"))
+    system_roles = roles.filter(tenant=Tenant.objects.get_public_tenant())
 
     # Custom roles are locked to prevent resources from being added/removed concurrently,
     # in the case that the Roles had _no_ resources specified to begin with.
@@ -192,7 +192,7 @@ def remove_roles(group, roles_or_role_ids, tenant, user=None):
     """Process list of roles and remove them from the group."""
     roles = _roles_by_query_or_ids(roles_or_role_ids)
     group = Group.objects.get(name=group.name, tenant=tenant)
-    system_roles = roles.filter(tenant=Tenant.objects.get(tenant_name="public"))
+    system_roles = roles.filter(tenant=Tenant.objects.get_public_tenant())
 
     # Custom roles are locked to prevent resources from being added/removed concurrently,
     # in the case that the Roles had _no_ resources specified to begin with.

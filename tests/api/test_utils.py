@@ -44,7 +44,7 @@ class TestAPIUtils(TestCase):
         )
         system_role = Role.objects.create(
             name="role",
-            tenant=Tenant.objects.get(tenant_name="public"),
+            tenant=Tenant.objects.get_public_tenant(),
             system=True,
         )
         BindingMapping.objects.create(

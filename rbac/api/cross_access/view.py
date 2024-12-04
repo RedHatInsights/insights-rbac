@@ -236,7 +236,7 @@ class CrossAccountRequestViewSet(
 
     def format_roles(self, roles):
         """Format role list as expected for cross-account-request."""
-        public_tenant = Tenant.objects.get(tenant_name="public")
+        public_tenant = Tenant.objects.get_public_tenant()
         for role_name in roles:
             try:
                 role = Role.objects.get(tenant=public_tenant, display_name=role_name)

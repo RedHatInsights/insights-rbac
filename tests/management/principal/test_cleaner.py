@@ -457,7 +457,7 @@ class PrincipalUMBTests(IdentityRequest):
     @override_settings(PRINCIPAL_CLEANUP_UPDATE_ENABLED_UMB=True)
     def test_principal_creation_event_updates_existing_principal(self, client_mock, proxy_mock):
         """Test that we can run principal creation event."""
-        public_tenant = Tenant.objects.get(tenant_name="public")
+        public_tenant = Tenant.objects.get_public_tenant()
         Group.objects.create(name="default", platform_default=True, tenant=public_tenant)
         client_mock.canRead.side_effect = [True, False]
         client_mock.receiveFrame.return_value = MagicMock(body=FRAME_BODY_CREATION)
@@ -518,7 +518,7 @@ class PrincipalUMBTests(IdentityRequest):
             client_mock.canRead.side_effect = [True, False]
             client_mock.receiveFrame.return_value = MagicMock(body=FRAME_BODY_CREATION)
 
-            public_tenant = Tenant.objects.get(tenant_name="public")
+            public_tenant = Tenant.objects.get_public_tenant()
             Group.objects.create(name="default", platform_default=True, tenant=public_tenant)
             tenant = Tenant.objects.get(org_id="17685860")
             Principal.objects.create(tenant=tenant, username="principal-test")
@@ -600,7 +600,7 @@ class PrincipalUMBTestsWithV2TenantBootstrap(PrincipalUMBTests):
     @patch("management.principal.cleaner.UMB_CLIENT")
     def test_principal_creation_event_does_not_create_principal(self, client_mock, proxy_mock):
         """Test that we can run principal creation event."""
-        public_tenant = Tenant.objects.get(tenant_name="public")
+        public_tenant = Tenant.objects.get_public_tenant()
         Group.objects.create(name="default", platform_default=True, tenant=public_tenant)
         client_mock.canRead.side_effect = [True, False]
         client_mock.receiveFrame.return_value = MagicMock(body=FRAME_BODY_CREATION)
@@ -925,7 +925,7 @@ class PrincipalUMBTestsWithV1TenantBootstrap(IdentityRequest):
     @override_settings(PRINCIPAL_CLEANUP_UPDATE_ENABLED_UMB=True)
     def test_principal_creation_event_does_not_create_principal_nor_tenant(self, client_mock, proxy_mock):
         """Test that we can run principal creation event."""
-        public_tenant = Tenant.objects.get(tenant_name="public")
+        public_tenant = Tenant.objects.get_public_tenant()
         Group.objects.create(name="default", platform_default=True, tenant=public_tenant)
         client_mock.canRead.side_effect = [True, False]
         client_mock.receiveFrame.return_value = MagicMock(body=FRAME_BODY_CREATION)

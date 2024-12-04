@@ -90,7 +90,7 @@ class InternalViewsetTests(IdentityRequest):
         self.policy.save()
         self.group.policies.add(self.policy)
         self.group.save()
-        self.public_tenant = Tenant.objects.get(tenant_name="public")
+        self.public_tenant = Tenant.objects.get_public_tenant()
 
         self._prior_logging_disable_level = logging.root.manager.disable
         logging.disable(logging.NOTSET)
@@ -126,7 +126,7 @@ class InternalViewsetTests(IdentityRequest):
     @patch.object(Tenant, "delete")
     def test_delete_tenant_no_schema(self, mock):
         """Test that we can delete a tenant with no schema."""
-        public_tenant = Tenant.objects.get(tenant_name="public")
+        public_tenant = Tenant.objects.get_public_tenant()
         Group.objects.create(name="Custom Group", tenant=public_tenant)
 
         tenant_no_schema = Tenant.objects.create(tenant_name="no_schema", org_id="1234")

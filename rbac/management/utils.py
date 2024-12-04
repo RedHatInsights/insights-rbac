@@ -164,7 +164,7 @@ def groups_for_principal(principal: Principal, tenant, **kwargs):
     if principal.cross_account:
         return set()
     assigned_group_set = principal.group.all()
-    public_tenant = Tenant.objects.get(tenant_name="public")
+    public_tenant = Tenant.objects.get_public_tenant()
 
     # Only user principals should be able to get permissions from the default groups. For service accounts, customers
     # need to explicitly add the service accounts to a group.
