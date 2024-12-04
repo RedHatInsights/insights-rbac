@@ -268,3 +268,16 @@ class MigrateTests(TestCase):
             ),
         ]
         logger_mock.info.assert_has_calls(tuples, any_order=True)
+
+    @override_settings(REPLICATION_TO_RELATION_ENABLED=True, PRINCIPAL_USER_DOMAIN="redhat", READ_ONLY_API_MODE=True)
+    def test_skips_orgs_without_org_ids(self):
+        # Create a tenant without an org id
+        Tenant.objects.create(tenant_name="tenant", ready=True)
+
+        # Migrate without limiting org
+        kwargs = {"exclude_apps": ["app1"]}
+
+        try:
+            migrate_data(**kwargs)
+        except Exception:
+            self.fail("migrate_data raised an exception when migrating tenant without org_id")
