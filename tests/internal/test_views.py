@@ -39,6 +39,7 @@ from management.tenant_service.v1 import V1TenantBootstrapService
 from management.tenant_service.v2 import V2TenantBootstrapService
 from management.workspace.model import Workspace
 from migration_tool.in_memory_tuples import InMemoryRelationReplicator, InMemoryTuples
+from rbac.settings import REPLICATION_TO_RELATION_ENABLED
 from tests.identity_request import IdentityRequest
 from tests.management.role.test_dual_write import RbacFixture
 
@@ -604,6 +605,35 @@ class InternalViewsetTests(IdentityRequest):
         self.assertTrue(getattr(tenant, "tenant_mapping"))
 
     @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
+    def test_bootstrapping_existing_tenant_without_force_does_nothing(self, replicate):
+        tuples = InMemoryTuples()
+        replicator = InMemoryRelationReplicator(tuples)
+        replicate.side_effect = replicator.replicate
+        fixture = RbacFixture(V2TenantBootstrapService(replicator))
+
+        org_id = "12345"
+
+        fixture.new_tenant(org_id)
+        tuples.clear()
+
+        response = self.client.post(
+            f"/_private/api/utils/bootstrap_tenant/?org_id={org_id}",
+            **self.request.META,
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(tuples), 0)
+
+        response = self.client.post(
+            f"/_private/api/utils/bootstrap_tenant/?org_id={org_id}&force=false",
+            **self.request.META,
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(tuples), 0)
+
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
+    @override_settings(REPLICATION_TO_RELATION_ENABLED=False)
     def test_force_bootstrapping_tenant(self, replicate):
         tuples = InMemoryTuples()
         replicator = InMemoryRelationReplicator(tuples)
@@ -622,6 +652,14 @@ class InternalViewsetTests(IdentityRequest):
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(tuples), 9)
+
+    def test_cannot_force_bootstrapping_while_replication_enabled(self):
+        org_id = "12345"
+        response = self.client.post(
+            f"/_private/api/utils/bootstrap_tenant/?org_id={org_id}&force=true",
+            **self.request.META,
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
     def test_listing_migration_resources(self):
         """Test that we can list migration resources."""
