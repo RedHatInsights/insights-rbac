@@ -22,6 +22,7 @@ from django.db.models import Q
 
 from api.cross_access.model import CrossAccountRequest  # noqa: F401
 from api.status.model import Status  # noqa: F401
+from management.cache import PublicTenantCache
 
 
 class TenantModifiedQuerySet(models.QuerySet):
@@ -35,6 +36,15 @@ class TenantModifiedQuerySet(models.QuerySet):
             .distinct()
         )
 
+    def get_public_tenant(self):
+        """Return the public tenant."""
+        cache = PublicTenantCache()
+        tenant = cache.get_tenant(Tenant.PUBLIC_TENANT_NAME)
+        if tenant is None:
+            tenant = self.get(tenant_name=Tenant.PUBLIC_TENANT_NAME)
+            cache.save_tenant(tenant)
+        return tenant
+
 
 class Tenant(models.Model):
     """The model used to create a tenant schema."""
@@ -44,6 +54,8 @@ class Tenant(models.Model):
     account_id = models.CharField(max_length=36, default=None, null=True)
     org_id = models.CharField(max_length=36, unique=True, default=None, db_index=True, null=True)
     objects = TenantModifiedQuerySet.as_manager()
+
+    PUBLIC_TENANT_NAME = "public"
 
     def __str__(self):
         """Get string representation of Tenant."""
