@@ -194,7 +194,12 @@ def migrate_data(exclude_apps: list = [], orgs: list = [], write_relationships: 
         tenants = tenants.filter(org_id__in=orgs)
     total = tenants.count()
     for tenant in tenants.iterator():
-        logger.info(f"Migrating data for tenant: {tenant.org_id}")
+        if tenant.org_id is None:
+            logger.warning(f"Not migrating tenant, no org id: pk={tenant.id}")
+            continue
+        else:
+            logger.info(f"Migrating data for tenant: {tenant.org_id}")
+
         try:
             migrate_data_for_tenant(tenant, exclude_apps, replicator)
         except Exception as e:
