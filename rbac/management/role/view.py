@@ -269,6 +269,11 @@ class RoleViewSet(
         """
         self.validate_role(request)
         try:
+            if Role.objects.filter(display_name=request.data.get("name"), system=True).exists():
+                return Response(
+                    {"Error": f"The role name '{request.data.get('name')}' is reserved, please use another name"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
             with transaction.atomic():
                 return super().create(request=request, args=args, kwargs=kwargs)
         except IntegrityError as e:
@@ -465,6 +470,11 @@ class RoleViewSet(
         self.validate_role(request)
 
         try:
+            if Role.objects.filter(display_name=request.data.get("name"), system=True).exists():
+                return Response(
+                    {"Error": f"The role name '{request.data.get('name')}' is reserved, please use another name"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
             with transaction.atomic():
                 return super().update(request=request, args=args, kwargs=kwargs)
         except DualWriteException as e:
