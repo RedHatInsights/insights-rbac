@@ -540,6 +540,58 @@ class GroupViewsetTests(IdentityRequest):
         group = response.data.get("data")[0]
         self.assertEqual(group["principalCount"], 1)
 
+    def test_get_group_principal_count_username_filter(self):
+        "Test that when filtering a group with a username filter that principalCount is returned"
+        # Create test group
+        group_name = "TestGroup"
+        group = Group(name=group_name, tenant=self.tenant)
+        group.save()
+
+        # Create user principal
+        principal_name = "username_filter_test"
+        user_principal = Principal(username=principal_name, tenant=self.test_tenant)
+        user_principal.save()
+
+        # Add principal to group
+        group.principals.add(user_principal)
+        group.save()
+
+        # Test that principal count exists & is correct when filtering groups for a user
+        url = f"{reverse('v1_management:group-list')}"
+        url = "{}?usernames={}".format(url, "username_filter_test")
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        principalCount = response.data.get("data")[0]["principalCount"]
+        self.assertEqual(principalCount, 2)
+
+    def test_get_group_principal_count_exclude_username_filter(self):
+        "Test that when filtering a group with the exclude_username filter that principalCount is returned"
+        # Create test group
+        group_name = "TestGroup"
+        group = Group(name=group_name, tenant=self.tenant)
+        group.save()
+
+        # Create user principal
+        principal_name = "username_filter_test"
+        user_principal = Principal(username=principal_name, tenant=self.test_tenant)
+        user_principal.save()
+
+        # Add principal to group
+        group.principals.add(user_principal)
+        group.save()
+
+        # Test that principal count exists & is correct when filtering groups when excluding user
+        url = f"{reverse('v1_management:group-list')}"
+        url = "{}?exclude_username={}".format(url, "True")
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        principalCount = response.data.get("data")[0]["principalCount"]
+        self.assertEqual(principalCount, 5)
+
     def test_get_group_by_partial_name_by_default(self):
         """Test that getting groups by name returns partial match by default."""
         url = reverse("v1_management:group-list")
@@ -1343,7 +1395,7 @@ class GroupViewsetTests(IdentityRequest):
         url = "{}?username={}".format(url, self.test_principal.username)
         client = APIClient()
         response = client.get(url, **self.test_headers)
-        self.assertEqual(response.data.get("meta").get("count"), 4)
+        self.assertEqual(response.data.get("meta").get("count"), 2)
 
         # Return bad request when user does not exist
         url = reverse("v1_management:group-list")
@@ -1376,7 +1428,7 @@ class GroupViewsetTests(IdentityRequest):
         url = "{}?username={}".format(url, self.principalC.username)
         client = APIClient()
         response = client.get(url, **self.test_headers)
-        self.assertEqual(response.data.get("meta").get("count"), 2)
+        self.assertEqual(response.data.get("meta").get("count"), 1)
 
     @patch(
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
@@ -1432,7 +1484,7 @@ class GroupViewsetTests(IdentityRequest):
         url = "{}?username={}".format(url, username)
         client = APIClient()
         response = client.get(url, **self.test_headers)
-        self.assertEqual(response.data.get("meta").get("count"), 4)
+        self.assertEqual(response.data.get("meta").get("count"), 2)
 
     def test_get_group_roles_success(self):
         """Test that getting roles for a group returns successfully."""
