@@ -34,6 +34,7 @@ from management.filters import CommonFilters
 from management.models import AuditLog, Permission
 from management.notifications.notification_handlers import role_obj_change_notification_handler
 from management.permissions import RoleAccessPermission
+from management.principal.proxy import PrincipalProxy
 from management.querysets import get_role_queryset, user_has_perm
 from management.relation_replicator.relation_replicator import DualWriteException, ReplicationEventType
 from management.role.relation_api_dual_write_handler import (
@@ -46,7 +47,7 @@ from rest_framework.decorators import action
 from rest_framework.filters import OrderingFilter
 from rest_framework.response import Response
 
-from api.models import Tenant
+from api.models import Tenant, User
 from rbac.env import ENVIRONMENT
 from .model import ExtTenant, Role
 from .serializer import RoleSerializer
@@ -333,7 +334,6 @@ class RoleViewSet(
         # Query params dictionary
         query_params = {
             "external_tenant": request.query_params.get("external_tenant", None),
-            "username": request.query_params.get("username", None),
             "system": request.query_params.get("system", None),
             "application": request.query_params.get("application", None),
             "display_name": request.query_params.get("display_name", None),
@@ -342,28 +342,40 @@ class RoleViewSet(
             "name": request.query_params.get("name", None),
             "platform_default": request.query_params.get("platform_default", None),
             "admin_default": request.query_params.get("admin_default", None),
+            "username": request.query_params.get("username", None),
+            "limit": request.query_params.get("limit", None),
+            "offset": request.query_params.get("offset", None),
         }
 
         if query_params:
             filtered_queryset = base_queryset
             system_value = str(query_params["system"]).lower()
-
-            if query_params["username"] and request.user.admin is True:
-                filtered_queryset = filtered_queryset.filter(name=query_params["username"])
-                print(filtered_queryset)
-            else:
-                return Response(
-                    status=status.HTTP_400_BAD_REQUEST,
-                    data={
-                        "errors": [
-                            {
-                                "detail": "Invalid query parameter username",
-                                "source": "username filtering not allowed",
-                                "status": status.HTTP_400_BAD_REQUEST,
-                            }
-                        ]
-                    },
+            # Use principal proxy here
+            if query_params["username"]:
+                proxy = PrincipalProxy
+                results = proxy.request_filtered_principals(
+                    query_params["username"],
+                    org_id=request.user.org_id,
                 )
+                # Accessing the first item in the 'data' list
+                principal = results["data"][0]
+
+                # Convert from principal to User Model to add to request object
+                org_id = principal.get("org_id")
+                user_id = principal.get("user_id")
+                username = principal.get("username")
+                account_number = principal.get("account_number")
+                is_active = principal.get("is_active")
+
+                # Map principal fields to User fields
+                user = User()
+                user.org_id = org_id
+                user.user_id = user_id
+                user.username = username
+                user.account = account_number
+                user.is_active = is_active
+                print(user)
+                request.user_from_query = user
 
             # External tenant filter
             if query_params["external_tenant"]:
@@ -446,7 +458,10 @@ class RoleViewSet(
             meta = {
                 "count": filtered_queryset.count(),
             }
-            return Response({"meta": meta, "data": serializer.data})
+
+            # Pagination
+            links = {}
+            return Response({"meta": meta, "links": links, "data": serializer.data})
 
     def retrieve(self, request, *args, **kwargs):
         """Get a role.

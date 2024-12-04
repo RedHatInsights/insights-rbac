@@ -101,6 +101,7 @@ class RoleSerializer(serializers.ModelSerializer):
     external_role_id = serializers.SerializerMethodField()
     external_tenant = serializers.SerializerMethodField()
     groups_in_count = serializers.SerializerMethodField()
+    groups_in = serializers.SerializerMethodField()
 
     class Meta:
         """Metadata for the serializer."""
@@ -123,6 +124,7 @@ class RoleSerializer(serializers.ModelSerializer):
             "external_role_id",
             "external_tenant",
             "groups_in_count",
+            "groups_in",
         )
 
     def get_applications(self, obj):

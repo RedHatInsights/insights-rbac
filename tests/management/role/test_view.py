@@ -158,6 +158,9 @@ class RoleViewsetTests(IdentityRequest):
             "admin_default",
             "external_role_id",
             "external_tenant",
+            "groups_in_count",
+            "groups_in",
+            "access",
         }
 
         self.principal = Principal(username=self.user_data["username"], tenant=self.tenant)
@@ -911,9 +914,10 @@ class RoleViewsetTests(IdentityRequest):
         # make sure all roles are from:
         #       * custom group 'NewGroupForJohn' or
         #       * 'Default access' group
-        groups = [default_access_group_name, custom_group_name]
+        groups = [default_access_group_name, custom_group_name, default_admin_access_group_name]
         for role in response_data:
             for group in role[groups_in]:
+                print(group)
                 self.assertIn(group["name"], groups)
 
     @patch("management.principal.proxy.PrincipalProxy.request_filtered_principals")
@@ -1156,8 +1160,7 @@ class RoleViewsetTests(IdentityRequest):
         url = "{}?username={}".format(URL, "foo")
         client = APIClient()
         response = client.get(url, **self.headers)
-        print(response.data)
-        print(response.headers)
+
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
     @patch("management.principal.proxy.PrincipalProxy.request_filtered_principals")
@@ -1191,6 +1194,8 @@ class RoleViewsetTests(IdentityRequest):
         self.assertEqual(len(response.data.get("data")), 5)
 
         role = response.data.get("data")[0]
+        print(role.keys())
+        print(new_display_fields)
         self.assertEqual(new_display_fields, set(role.keys()))
         self.assertEqual(role["groups_in_count"], 1)
 
@@ -1209,6 +1214,7 @@ class RoleViewsetTests(IdentityRequest):
         self.assertEqual(len(response.data.get("data")), 5)
 
         role = response.data.get("data")[0]
+
         self.assertEqual(new_display_fields, set(role.keys()))
         self.assertEqual(role["groups_in_count"], 1)
 
@@ -1757,7 +1763,6 @@ class RoleViewsetTests(IdentityRequest):
 
         self.assertEqual(len(response.data.get("data")), 1)
         role = response.data.get("data")[0]
-        print(response.data)
         self.assertEqual(role.get("groups_in_count"), 2)
 
     def test_create_duplicate_role_fail(self):
