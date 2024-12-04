@@ -1128,6 +1128,16 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "force",
+            "in": "query",
+            "required": false,
+            "description": "Whether or not to force replication to happen, even if the Tenant is already bootstrapped. Cannot be 'true' if replication is on, due to inconsistency risk.",
+            "schema": {
+              "default": false,
+              "type": "boolean"
+            }
           }
         ],
         "responses": {
@@ -1752,7 +1762,7 @@
           }
         }
       },
-            "ServiceAccount": {
+      "ServiceAccount": {
         "required": [
           "clientId",
           "username",

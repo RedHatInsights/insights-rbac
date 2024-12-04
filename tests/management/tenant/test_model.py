@@ -352,6 +352,42 @@ class V2TenantBootstrapServiceTest(TestCase):
         # Assert no extra principals created
         self.assertEqual(4, Principal.objects.count())
 
+    def test_force_bootstrap_replicates_already_bootstrapped_unready_tenants(self):
+        bootstrapped = self.fixture.new_tenant(org_id="o1")
+        self.tuples.clear()
+
+        original_mapping = TenantMapping.objects.get(tenant=bootstrapped.tenant)
+        original_workspaces = list(Workspace.objects.filter(tenant=bootstrapped.tenant))
+
+        self.service.bootstrap_tenant(bootstrapped.tenant, force=True)
+
+        self.assertTenantBootstrapped("o1", existing=False)
+
+        new_mapping = TenantMapping.objects.get(tenant=bootstrapped.tenant)
+        new_workspaces = list(Workspace.objects.filter(tenant=bootstrapped.tenant))
+
+        self.assertEqual(original_mapping, new_mapping)
+        self.assertCountEqual(original_workspaces, new_workspaces)
+
+    def test_force_bootstrap_replicates_already_bootstrapped_ready_tenants(self):
+        bootstrapped = self.fixture.new_tenant(org_id="o1")
+        bootstrapped.tenant.ready = True
+        bootstrapped.tenant.save()
+        self.tuples.clear()
+
+        original_mapping = TenantMapping.objects.get(tenant=bootstrapped.tenant)
+        original_workspaces = list(Workspace.objects.filter(tenant=bootstrapped.tenant))
+
+        self.service.bootstrap_tenant(bootstrapped.tenant, force=True)
+
+        self.assertTenantBootstrapped("o1", existing=True)
+
+        new_mapping = TenantMapping.objects.get(tenant=bootstrapped.tenant)
+        new_workspaces = list(Workspace.objects.filter(tenant=bootstrapped.tenant))
+
+        self.assertEqual(original_mapping, new_mapping)
+        self.assertCountEqual(original_workspaces, new_workspaces)
+
     def assertAddedToDefaultGroup(self, user_id: str, tenant_mapping: TenantMapping, and_admin_group: bool = False):
         self.assertEqual(
             1,

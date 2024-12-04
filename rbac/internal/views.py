@@ -513,20 +513,33 @@ def data_migration(request):
 def bootstrap_tenant(request):
     """View method for bootstrapping a tenant.
 
-    POST /_private/api/utils/bootstrap_tenant/?org_id=12345
-    org_id is required,
+    POST /_private/api/utils/bootstrap_tenant/?org_id=12345&force=false
+
+    org_id:
+        (required) The org_id of the Tenant to bootstrap.
+
+    force:
+        Whether or not to force replication to happen, even if the Tenant is already bootstrapped.
+        Cannot be 'true' if replication is on, due to inconsistency risk.
     """
     if request.method != "POST":
         return HttpResponse('Invalid method, only "POST" is allowed.', status=405)
     logger.info("Running bootstrap tenant.")
 
     org_id = request.GET.get("org_id")
+    force = request.GET.get("force", "false").lower() == "true"
     if not org_id:
         return HttpResponse('Invalid request, must supply the "org_id" query parameter.', status=400)
+    if force and settings.REPLICATION_TO_RELATION_ENABLED:
+        return HttpResponse(
+            "Forcing replication is not allowed when replication is on, "
+            "due to race condition with default group customization.",
+            status=400,
+        )
     with transaction.atomic():
         tenant = get_object_or_404(Tenant, org_id=org_id)
         bootstrap_service = V2TenantBootstrapService(OutboxReplicator())
-        bootstrap_service.bootstrap_tenant(tenant)
+        bootstrap_service.bootstrap_tenant(tenant, force=force)
     return HttpResponse(f"Bootstrap tenant with org_id {org_id} finished.", status=200)
 
 

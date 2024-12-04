@@ -113,7 +113,7 @@ class RelationApiDualWriteGroupHandler(RelationApiDualWriteSubjectHandler):
             self._replicator.replicate(
                 ReplicationEvent(
                     event_type=self.event_type,
-                    info={"group_uuid": str(self.group.uuid)},
+                    info={"group_uuid": str(self.group.uuid), "org_id": str(self.group.tenant.org_id)},
                     partition_key=PartitionKey.byEnvironment(),
                     remove=self.relations_to_remove,
                     add=self.relations_to_add,
