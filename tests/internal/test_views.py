@@ -653,6 +653,7 @@ class InternalViewsetTests(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(tuples), 9)
 
+    @override_settings(REPLICATION_TO_RELATION_ENABLED=True)
     def test_cannot_force_bootstrapping_while_replication_enabled(self):
         org_id = "12345"
         response = self.client.post(
