@@ -1756,7 +1756,6 @@ class RoleViewsetTests(IdentityRequest):
         url = f"{URL}?display_name=platform_admin_default_display&add_fields=groups_in_count%2Cgroups_in"
         client = APIClient()
         response = client.get(url, **self.headers)
-        print(response.data)
         self.assertEqual(len(response.data.get("data")), 1)
         role = response.data.get("data")[0]
         self.assertEqual(role.get("groups_in_count"), 2)
