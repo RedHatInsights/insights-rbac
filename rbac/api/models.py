@@ -19,10 +19,10 @@ from typing import Optional
 
 from django.db import models
 from django.db.models import Q
+from management.cache import PublicTenantCache
 
 from api.cross_access.model import CrossAccountRequest  # noqa: F401
 from api.status.model import Status  # noqa: F401
-from management.cache import PublicTenantCache
 
 
 class TenantModifiedQuerySet(models.QuerySet):
