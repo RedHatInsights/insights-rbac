@@ -17,7 +17,7 @@ org_id=$1
 filename="reset_org_spicedb_${org_id}_$(date +%s).txt"
 
 tenant_to_platform=$(zed relationship read rbac/tenant:redhat/$org_id)
-root_to_tenant=$(zed relationship read rbac/workspace t_parent rbac/tenant:redhat/$org_id | egrep -o "^\S+")
+root_to_tenant=$(zed relationship read rbac/workspace t_parent rbac/tenant:redhat/$org_id)
 root_ws=$(echo $root_to_tenant | egrep -o "^\S+")
 default_to_root=$(zed relationship read rbac/workspace t_parent $root_ws)
 default_ws=$(echo $default_to_root | egrep -o "^\S+")
