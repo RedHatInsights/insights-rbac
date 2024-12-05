@@ -159,7 +159,7 @@ class GroupViewsetTests(IdentityRequest):
         test_request = test_request_context["request"]
         self.test_headers = test_request.META
 
-        self.public_tenant = Tenant.objects.get(tenant_name="public")
+        self.public_tenant = Tenant.objects.get_public_tenant()
         self.principal = Principal(username=self.user_data["username"], tenant=self.tenant, user_id="1")
         self.principal.save()
         self.principalB = Principal(username="mock_user", tenant=self.tenant, user_id="2")

@@ -106,7 +106,7 @@ def _gather_group_querysets(request, args, kwargs, base_query: Optional[QuerySet
     if scope != ORG_ID_SCOPE and not username:
         return get_object_principal_queryset(request, scope, Group)
 
-    public_tenant = Tenant.objects.get(tenant_name="public")
+    public_tenant = Tenant.objects.get_public_tenant()
     default_group_set = Group.platform_default_set().filter(
         tenant=request.tenant
     ) or Group.platform_default_set().filter(tenant=public_tenant)
@@ -155,7 +155,7 @@ def annotate_roles_with_counts(queryset):
 def get_role_queryset(request) -> QuerySet:
     """Obtain the queryset for roles."""
     scope = validate_and_get_key(request.query_params, SCOPE_KEY, VALID_SCOPES, ORG_ID_SCOPE)
-    public_tenant = Tenant.objects.get(tenant_name="public")
+    public_tenant = Tenant.objects.get_public_tenant()
     base_query = annotate_roles_with_counts(Role.objects.prefetch_related("access")).filter(
         tenant__in=[request.tenant, public_tenant]
     )
@@ -292,7 +292,7 @@ def _filter_admin_default(request: Request, queryset: QuerySet):
 
     # If the principal is an org admin, make sure they get any and all admin_default groups
     if is_org_admin:
-        public_tenant = Tenant.objects.get(tenant_name="public")
+        public_tenant = Tenant.objects.get_public_tenant()
         admin_default_group_set = Group.admin_default_set().filter(
             tenant=request.tenant
         ) or Group.admin_default_set().filter(tenant=public_tenant)

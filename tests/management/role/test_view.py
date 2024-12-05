@@ -182,7 +182,7 @@ class RoleViewsetTests(IdentityRequest):
         self.platformAdminRole = Role(**platform_admin_def_role_config, tenant=self.tenant)
         self.platformAdminRole.save()
 
-        self.public_tenant = Tenant.objects.get(tenant_name="public")
+        self.public_tenant = Tenant.objects.get_public_tenant()
         self.sysPubRole = Role(**sys_pub_role_config, tenant=self.public_tenant)
         self.sysPubRole.save()
 

@@ -390,7 +390,7 @@ def invalid_default_admin_groups(request):
     DELETE /_private/api/utils/invalid_default_admin_groups/
     """
     logger.info(f"Invalid default admin groups: {request.method} {request.user.username}")
-    public_tenant = Tenant.objects.get(tenant_name="public")
+    public_tenant = Tenant.objects.get_public_tenant()
     invalid_default_admin_groups_list = Group.objects.filter(
         admin_default=True, system=False, platform_default=False
     ).exclude(tenant=public_tenant)
@@ -431,7 +431,7 @@ def role_removal(request):
             )
         role_name = escape(role_name)
         # Add tenant public to prevent deletion of custom roles
-        role_obj = get_object_or_404(Role, name=role_name, tenant=Tenant.objects.get(tenant_name="public"))
+        role_obj = get_object_or_404(Role, name=role_name, tenant=Tenant.objects.get_public_tenant())
         with transaction.atomic():
             try:
                 logger.warning(f"Deleting role '{role_name}'. Requested by '{request.user.username}'")

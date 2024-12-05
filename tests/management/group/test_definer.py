@@ -32,7 +32,7 @@ class GroupDefinerTests(IdentityRequest):
     def setUp(self):
         """Set up the group definer tests."""
         super().setUp()
-        self.public_tenant = Tenant.objects.get(tenant_name="public")
+        self.public_tenant = Tenant.objects.get_public_tenant()
         seed_roles()
         seed_group()
 
