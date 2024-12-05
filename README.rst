@@ -165,7 +165,7 @@ Generating v2 openAPI specification
 
 
 
-OpenAPI v2 specification is located in `docs/source/specs/v2/openapi.v2.yaml`.
+OpenAPI v2 specification is located in `docs/source/specs/v2/openapi.yaml`.
 This OpenAPI v2 specification is generated from TypeSpec file which is located in `docs/source/specs/typespec/main.tsp`
 
 Command to generate OpenAPI v2 specification from TypeSpec file:
