@@ -917,7 +917,6 @@ class RoleViewsetTests(IdentityRequest):
         groups = [default_access_group_name, custom_group_name, default_admin_access_group_name]
         for role in response_data:
             for group in role[groups_in]:
-                print(group)
                 self.assertIn(group["name"], groups)
 
     @patch("management.principal.proxy.PrincipalProxy.request_filtered_principals")
@@ -1190,12 +1189,9 @@ class RoleViewsetTests(IdentityRequest):
         url = "{}?add_fields={},{}&username={}".format(URL, field_1, field_2, self.principal.username)
         client = APIClient()
         response = client.get(url, **self.headers)
-
         self.assertEqual(len(response.data.get("data")), 5)
 
         role = response.data.get("data")[0]
-        print(role.keys())
-        print(new_display_fields)
         self.assertEqual(new_display_fields, set(role.keys()))
         self.assertEqual(role["groups_in_count"], 1)
 
@@ -1760,7 +1756,7 @@ class RoleViewsetTests(IdentityRequest):
         url = f"{URL}?display_name=platform_admin_default_display&add_fields=groups_in_count%2Cgroups_in"
         client = APIClient()
         response = client.get(url, **self.headers)
-
+        print(response.data)
         self.assertEqual(len(response.data.get("data")), 1)
         role = response.data.get("data")[0]
         self.assertEqual(role.get("groups_in_count"), 2)

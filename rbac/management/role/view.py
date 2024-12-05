@@ -331,7 +331,7 @@ class RoleViewSet(
         )
 
         # Filtering
-        # Query params dictionary
+
         query_params = {
             "external_tenant": request.query_params.get("external_tenant", None),
             "system": request.query_params.get("system", None),
@@ -345,57 +345,77 @@ class RoleViewSet(
             "username": request.query_params.get("username", None),
             "limit": request.query_params.get("limit", None),
             "offset": request.query_params.get("offset", None),
+            "add_fields": request.query_params.get("add_fields", None),
         }
+
+        filters = []
 
         if query_params:
             filtered_queryset = base_queryset
             system_value = str(query_params["system"]).lower()
-            # Use principal proxy here
+
+            # Check if 'add_fields' is a valid field
+            additional_fields = ["access", "groups_in", "groups_in_count"]
+            if query_params["add_fields"]:
+                split_fields = query_params["add_fields"].split(",")
+                invalid_field = [field for field in split_fields if field not in additional_fields]
+                if invalid_field:
+                    return Response(
+                        status=status.HTTP_400_BAD_REQUEST,
+                        data={
+                            "errors": [
+                                {
+                                    "detail": "Invalid additional field passed in query",
+                                    "source": "add_fields invalid value",
+                                    "status": status.HTTP_400_BAD_REQUEST,
+                                }
+                            ]
+                        },
+                    )
+
+            # Username filter
             if query_params["username"]:
                 proxy = PrincipalProxy
                 results = proxy.request_filtered_principals(
                     query_params["username"],
                     org_id=request.user.org_id,
                 )
-                # Accessing the first item in the 'data' list
-                principal = results["data"][0]
+                results_exist = results["data"]
+                if results_exist:
+                    principal = results["data"][0]
 
-                # Convert from principal to User Model to add to request object
-                org_id = principal.get("org_id")
-                user_id = principal.get("user_id")
-                username = principal.get("username")
-                account_number = principal.get("account_number")
-                is_active = principal.get("is_active")
+                    # Convert from principal to User Model to add to request object
+                    org_id = principal.get("org_id")
+                    user_id = principal.get("user_id")
+                    username = principal.get("username")
+                    account_number = principal.get("account_number")
+                    is_active = principal.get("is_active")
 
-                # Map principal fields to User fields
-                user = User()
-                user.org_id = org_id
-                user.user_id = user_id
-                user.username = username
-                user.account = account_number
-                user.is_active = is_active
-                print(user)
-                request.user_from_query = user
+                    # Map principal fields to User fields
+                    user = User()
+                    user.org_id = org_id
+                    user.user_id = user_id
+                    user.username = username
+                    user.account = account_number
+                    user.is_active = is_active
+                    request.user_from_query = user
 
             # External tenant filter
             if query_params["external_tenant"]:
                 ext_tenant = ExtTenant.objects.get(name=query_params["external_tenant"])
-                filtered_queryset = filtered_queryset.filter(ext_relation__ext_tenant=ext_tenant).annotate(
-                    external_tenant=F("ext_relation__ext_tenant__name")
-                )
+                if ext_tenant:
+                    filters.append(Q(ext_relation__ext_tenant=ext_tenant))
             # System value filter
             if system_value == "false":
-                filtered_queryset = filtered_queryset.filter(system=False)
+                filters.append(Q(system=False))
             elif system_value == "true":
-                filtered_queryset = filtered_queryset.filter(system=True)
+                filters.append(Q(system=True))
             # Application filter
             if query_params["application"]:
                 applications = query_params["application"].split(",")
-                external_tenant = (
-                    ExtTenant.objects.get(name=query_params["application"])
-                    if applications and ExtTenant.objects.filter(name=query_params["application"]).exists()
-                    else None
-                )
+
+                external_tenant = ExtTenant.objects.filter(name=query_params["application"]).first()
+
                 filtered_queryset = filtered_queryset.filter(access__permission__application__in=applications)
                 # If a external tenant exists with the name passed to application query parameter
                 # return the roles for that external tenant
@@ -407,11 +427,11 @@ class RoleViewSet(
             # Display_name & name_match filter
             if query_params["display_name"]:
                 if query_params["name_match"] == "partial":
-                    filtered_queryset = filtered_queryset.filter(display_name__contains=query_params["display_name"])
+                    filters.append(Q(display_name__contains=query_params["display_name"]))
                 elif query_params["name_match"] == "exact":
-                    filtered_queryset = filtered_queryset.filter(display_name__exact=query_params["display_name"])
+                    filters.append(Q(display_name__exact=query_params["display_name"]))
                 elif not query_params["name_match"]:
-                    filtered_queryset = filtered_queryset.filter(display_name__contains=query_params["display_name"])
+                    filters.append(Q(display_name__contains=query_params["display_name"]))
                 else:
                     return Response(
                         status=status.HTTP_400_BAD_REQUEST,
@@ -428,11 +448,11 @@ class RoleViewSet(
             # name & name_match filter
             if query_params["name"]:
                 if query_params["name_match"] == "partial":
-                    filtered_queryset = filtered_queryset.filter(name__contains=query_params["name"])
+                    filters.append(Q(name__contains=query_params["name"]))
                 elif query_params["name_match"] == "exact":
-                    filtered_queryset = filtered_queryset.filter(name__exact=query_params["name"])
+                    filters.append(Q(name__exact=query_params["name"]))
                 elif not query_params["name_match"]:
-                    filtered_queryset = filtered_queryset.filter(name__contains=query_params["name"])
+                    filters.append(Q(name__contains=query_params["name"]))
                 else:
                     return Response(
                         status=status.HTTP_400_BAD_REQUEST,
@@ -449,7 +469,10 @@ class RoleViewSet(
             # Permission filter
             if query_params["permission"]:
                 permissions = query_params["permission"].split(",")
-                filtered_queryset = filtered_queryset.filter(access__permission__permission__in=permissions)
+                filters.append(Q(access__permission__permission__in=permissions))
+
+            # Apply the filters
+            filtered_queryset = filtered_queryset.filter(*filters)
 
             # Serialize the queryset for response
             serializer = RoleSerializer(filtered_queryset, many=True, context={"request": request})
