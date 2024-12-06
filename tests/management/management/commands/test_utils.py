@@ -154,3 +154,25 @@ a210f23c-f2d2-40c6-b47c-43fa1bgg814a,0dffe7e11-c56e-4fcb-b7a6-66db2e013983
         for principal in principals:
             principal.refresh_from_db()
             self.assertEqual(id_mapping[principal.service_account_id], principal.user_id)
+
+    def test_import_uppercase_username_matches_lowercase_principal_username(self):
+        mock_file_content = """orgs_info[0].id,orgs_info[0].perm[0],principals[0],_id
+1000000,admin:org:all,TEST_USER_1,1
+10000001,admin:org:all,TEST_USER_2,2
+"""
+
+        # Create existing users with lowercased usernames
+        tenant_1 = Tenant.objects.create(org_id="1000000", tenant_name="test_tenant_1", ready=True)
+        tenant_2 = Tenant.objects.create(org_id="10000001", tenant_name="test_tenant_2", ready=True)
+        Principal.objects.bulk_create(
+            [
+                Principal(username="test_user_1", tenant=tenant_1),
+                Principal(username="test_user_2", tenant=tenant_2),
+            ]
+        )
+
+        with patch("builtins.open", mock_open(read_data=mock_file_content)):
+            populate_tenant_user_data("file_name")
+
+        self.assertEqual(Principal.objects.get(username="test_user_1").user_id, "1")
+        self.assertEqual(Principal.objects.get(username="test_user_2").user_id, "2")

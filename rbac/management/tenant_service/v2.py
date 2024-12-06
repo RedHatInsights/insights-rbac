@@ -155,7 +155,6 @@ class V2TenantBootstrapService:
             if not user.is_active:
                 continue
             if user.org_id is None:
-                logger.warning(f"Cannot update user without org_id. Skipping. username={user.username}")
                 continue
             bootstrapped = bootstrapped_mapping[user.org_id]
             key = (user.org_id, user.username)

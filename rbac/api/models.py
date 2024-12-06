@@ -67,7 +67,22 @@ class TenantAwareModel(models.Model):
 class User:
     """A request User. Might also represent a service account."""
 
-    username: Optional[str] = None
+    _username: Optional[str] = None
+
+    @property
+    def username(self) -> Optional[str]:
+        """Return the username."""
+        return self._username
+
+    @username.setter
+    def username(self, value: Optional[str]) -> None:
+        """
+        Set the username.
+
+        Lower-cases the username due to case insensitivity.
+        """
+        self._username = value.lower() if value else None
+
     account: Optional[str] = None
     admin: bool = False
     access = {}
