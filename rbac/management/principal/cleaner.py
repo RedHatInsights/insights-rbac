@@ -21,6 +21,7 @@ import os
 import ssl
 from typing import Optional
 
+from sentry_sdk import capture_exception
 import xmltodict
 from django.conf import settings
 from django.db import connection, transaction
@@ -212,7 +213,14 @@ def process_umb_event(frame, umb_client: Stomp, bootstrap_service: TenantBootstr
             # If the setting is enabled, process all users.
             if not user.is_active or settings.PRINCIPAL_CLEANUP_UPDATE_ENABLED_UMB:
                 # If Tenant is not already ready, don't ready it
-                bootstrap_service.update_user(user, ready_tenant=False)
+                try:
+                    bootstrap_service.update_user(user, ready_tenant=False)
+                except ValueError as e:
+                    logger.error("process_umb_event: Error updating user: %s", str(e))
+                    capture_exception(e)
+                    umb_client.nack(frame)
+                    umb_message_processed_count.inc()
+                    return True
         else:
             # Message is malformed.
             # Ensure we dont block the entire queue by discarding it.
