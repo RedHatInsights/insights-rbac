@@ -129,5 +129,6 @@ def populate_service_account_data(file_name):
             user_id, client_id = row
             id_mapping[client_id] = user_id
     for principal in Principal.objects.filter(type=Principal.Types.SERVICE_ACCOUNT):
-        principal.user_id = id_mapping.get(principal.service_account_id)
-        principal.save()
+        if user_id := id_mapping.get(principal.service_account_id):
+            principal.user_id = user_id
+            principal.save()
