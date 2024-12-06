@@ -119,9 +119,10 @@ class TestProcessBatch(TestCase):
     def test_import_service_account_data(self):
         client_id_1 = "8c22358-c2ab-40cc-bbc1-e4eff3exxb37xx"
         client_id_2 = "1421687f3-2bc0-4128-9d52-b92b9a22a631"
+        client_id_not_in_file = "1421cc7f3-2bc0-4128-9d52-b92bddd2a631"
         user_id_1 = "b6333341-f028-4f29-852e-375132644bcc"
         user_id_2 = "181sdf16-414d-48dd-80a1-264df5d4ffd1"
-        id_mapping = {client_id_1: user_id_1, client_id_2: user_id_2}
+        user_id_3 = "18xx2f16-414d-48dd-80a1-24df5cccffd1"
         tenant_1 = Tenant.objects.create(tenant_name="test_tenant_1")
         tenant_2 = Tenant.objects.create(tenant_name="test_tenant_2")
         mock_file_content = f"""user_id,client_id
@@ -131,7 +132,7 @@ a210f23c-f2d2-40c6-b47c-43fa1bgg814a,0dffe7e11-c56e-4fcb-b7a6-66db2e013983
 212cdcfe-e332-445c-bc35-4cc0xx8391d2,164x0f206-1161-446c-8bfd-b05039feec71
 {user_id_2},{client_id_2}
 """
-        principals = Principal.objects.bulk_create(
+        Principal.objects.bulk_create(
             [
                 Principal(
                     username=SERVICE_ACCOUNT_USERNAME_FORMAT.format(clientId=client_id_1),
@@ -146,14 +147,21 @@ a210f23c-f2d2-40c6-b47c-43fa1bgg814a,0dffe7e11-c56e-4fcb-b7a6-66db2e013983
                     type=Principal.Types.SERVICE_ACCOUNT,
                     tenant=tenant_2,
                 ),
+                Principal(
+                    username=SERVICE_ACCOUNT_USERNAME_FORMAT.format(clientId=client_id_not_in_file),
+                    service_account_id=client_id_not_in_file,
+                    user_id=user_id_3,
+                    type=Principal.Types.SERVICE_ACCOUNT,
+                    tenant=tenant_2,
+                ),
             ]
         )
         with patch("builtins.open", mock_open(read_data=mock_file_content)):
             populate_service_account_data("file_name")
 
-        for principal in principals:
-            principal.refresh_from_db()
-            self.assertEqual(id_mapping[principal.service_account_id], principal.user_id)
+        self.assertEqual(Principal.objects.get(service_account_id=client_id_1).user_id, user_id_1)
+        self.assertEqual(Principal.objects.get(service_account_id=client_id_2).user_id, user_id_2)
+        self.assertEqual(Principal.objects.get(service_account_id=client_id_not_in_file).user_id, user_id_3)
 
     def test_import_uppercase_username_matches_lowercase_principal_username(self):
         mock_file_content = """orgs_info[0].id,orgs_info[0].perm[0],principals[0],_id
