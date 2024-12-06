@@ -206,6 +206,7 @@ class V2TenantBootstrapService:
         # Get tenant mapping if present but no need to create if not
         tuples_to_remove = []
         user_id = user.user_id
+        error_message = None
 
         if user_id is None:
             raise ValueError(f"User {user.username} has no user_id.")
@@ -221,7 +222,11 @@ class V2TenantBootstrapService:
 
             for group in principal.group.all():
                 group.principals.remove(principal)
-                tuples_to_remove.append(group.relationship_to_principal(principal))
+                tupple = group.relationship_to_principal(principal)
+                if tupple is None:
+                    error_message = f"principal {principal.username} has no user id."
+                else:
+                    tuples_to_remove.append(tupple)
 
             principal.delete()
         except Principal.DoesNotExist:
@@ -235,6 +240,8 @@ class V2TenantBootstrapService:
                 remove=tuples_to_remove,
             )
         )
+        if error_message:
+            raise ValueError(error_message)
 
     def _get_or_bootstrap_tenant(
         self, org_id: str, ready: bool, account_number: Optional[str] = None

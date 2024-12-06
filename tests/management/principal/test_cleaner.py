@@ -890,6 +890,62 @@ class PrincipalUMBTestsWithV2TenantBootstrap(PrincipalUMBTests):
             ),
         )
 
+    @patch(
+        "management.principal.proxy.PrincipalProxy._request_principals",
+        return_value={
+            "status_code": status.HTTP_200_OK,
+            "data": [],
+        },
+    )
+    @patch("management.group.model.AccessCache")
+    @patch("management.principal.cleaner.UMB_CLIENT")
+    def test_cleanup_disabled_principal_in_or_not_in_group(self, client_mock, cache_class, proxy_mock):
+        """Run a principal clean up on a tenant with a principal either in or not in a group."""
+        principal_name = "principal-test"
+        self.principal = Principal(username=principal_name, tenant=self.tenant, user_id="56780000")
+        self.principal.save()
+        self.group.principals.add(self.principal)
+        self.group.save()
+
+        before = REGISTRY.get_sample_value(METRIC_STOMP_MESSAGE_TOTAL)
+        client_mock.canRead.side_effect = [True, False]
+        client_mock.receiveFrame.return_value = MagicMock(body=FRAME_BODY)
+        cache_mock = MagicMock()
+        cache_class.return_value = cache_mock
+        process_principal_events_from_umb()
+
+        after = REGISTRY.get_sample_value(METRIC_STOMP_MESSAGE_TOTAL)
+        client_mock.receiveFrame.assert_called_once()
+        client_mock.disconnect.assert_called_once()
+        client_mock.ack.assert_called_once()
+        self.assertFalse(Principal.objects.filter(username=principal_name).exists())
+        self.group.refresh_from_db()
+        self.assertFalse(self.group.principals.all())
+        cache_mock.delete_policy.assert_called_once_with(self.principal.uuid)
+        self.assertTrue(before + 1 == after)
+
+        # when principal does not have user id set
+        principal = Principal.objects.create(username=principal_name, tenant=self.tenant)
+        self.group.principals.add(principal)
+        self.group.save()
+        client_mock.canRead.side_effect = [True, False]
+        client_mock.ack.reset_mock()
+
+        process_principal_events_from_umb()
+
+        client_mock.nack.assert_called_once()
+        self.assertFalse(Principal.objects.filter(username=principal_name).exists())
+        client_mock.ack.assert_not_called()
+
+        # When principal not in group
+        self.principal = Principal(username=principal_name, tenant=self.tenant, user_id="56780000")
+        self.principal.save()
+        client_mock.canRead.side_effect = [True, False]
+        client_mock.ack.reset_mock()
+        process_principal_events_from_umb()
+        self.assertFalse(Principal.objects.filter(username=principal_name).exists())
+        client_mock.ack.assert_called_once()
+
 
 @override_settings(V2_BOOTSTRAP_TENANT=False)
 class PrincipalUMBTestsWithV1TenantBootstrap(IdentityRequest):
