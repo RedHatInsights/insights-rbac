@@ -112,10 +112,10 @@ class CrossAccountRequestDetailSerializer(serializers.ModelSerializer):
         display_names = [role["display_name"] for role in role_data]
         request = CrossAccountRequest.objects.create(**validated_data)
         cross_account_access_handler(request, self.context["user"])
-
-        roles = Role.objects.filter(display_name__in=display_names)
+        roles = Role.objects.filter(display_name__in=display_names, system=True)
         for role in roles:
             request.roles.add(role)
+
         return request
 
     @transaction.atomic
