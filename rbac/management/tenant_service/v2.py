@@ -133,6 +133,11 @@ class V2TenantBootstrapService:
             if user.org_id is None:
                 logger.warning(f"Cannot update user without org_id. Skipping. username={user.username}")
                 continue
+            if user.username is None:
+                logger.warning(
+                    "Cannot update user without username. Will bootstrap tenant but cannot update user. "
+                    f"org_id={user.org_id}"
+                )
             org_ids.add(user.org_id)
         bootstrapped_list = self._get_or_bootstrap_tenants(org_ids, ready_tenants)
         bootstrapped_mapping = {bootstrapped.tenant.org_id: bootstrapped for bootstrapped in bootstrapped_list}
@@ -149,7 +154,11 @@ class V2TenantBootstrapService:
             .prefetch_related("tenant")
         )
         # Mapping of (org_id, username) -> principal
+        # This is important because usernames are only unique by tenant
+        # We don't want to match a user just by username; we could end up picking the wrong one.
         existing_principal_dict = {(p.tenant.org_id, p.username): p for p in existing_principals}
+
+        logger.info(f"Bulk import users. found_users={len(existing_principal_dict)} total_users_in_batch={len(users)}")
 
         for user in users:
             if not user.is_active:
@@ -174,6 +183,10 @@ class V2TenantBootstrapService:
             tuples_to_remove.extend(sub_tuples_to_remove)
         # Bulk update existing principals
         if principals_to_update:
+            logger.info(
+                f"Add user ids. missing_user_ids={len(principals_to_update)} "
+                f"found_users={len(existing_principal_dict)} total_users_in_batch={len(users)}"
+            )
             Principal.objects.bulk_update(principals_to_update, ["user_id"])
 
         self._replicator.replicate(

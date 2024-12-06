@@ -352,6 +352,45 @@ class V2TenantBootstrapServiceTest(TestCase):
         # Assert no extra principals created
         self.assertEqual(4, Principal.objects.count())
 
+    def test_bulk_import_does_not_update_usernames_in_the_wrong_tenant(self):
+        """Principals are only unique by Tenant and username. We cannot look up by just username."""
+        # Set up another org with custom default group but not bootstrapped
+        o3_tenant = self.fixture.new_unbootstrapped_tenant(org_id="o3")
+        o4_tenant = self.fixture.new_unbootstrapped_tenant(org_id="o4")
+        o5_tenant = self.fixture.new_unbootstrapped_tenant(org_id="o5")
+
+        # Another principal with the same username but different tenant
+        Principal.objects.create(username="username5", tenant=o5_tenant)
+
+        # Existing bootstrapped tenant with existing user with id
+        Principal.objects.create(username="username5", tenant=o3_tenant)
+        Principal.objects.create(username="username6", tenant=o4_tenant, user_id="u6")
+
+        users = []
+        for user_id, username, org_id, admin in [
+            ("u5", "username5", "o3", False),  # Unbootstrapped tenant, existing user without ID
+            ("u6", "username6", "o4", False),  # Unbootstrapped tenant, existing user with ID
+            # o5 tenant should be in the batch, but with a different user
+            ("u7", "username6", "o5", False),
+        ]:
+            user = User()
+            user.user_id = user_id
+            user.username = username
+            user.org_id = org_id
+            user.admin = admin
+            user.is_active = True
+            users.append(user)
+
+        self.service.import_bulk_users(users)
+
+        # Assert username5 in o3 gets the user ID, not the one in o5
+        self.assertEqual("u5", Principal.objects.get(username="username5", tenant=o3_tenant).user_id)
+        self.assertIsNone(Principal.objects.get(username="username5", tenant=o5_tenant).user_id)
+        self.assertEqual("u6", Principal.objects.get(username="username6").user_id)
+
+        # Assert no extra principals created
+        self.assertEqual(3, Principal.objects.count())
+
     def test_force_bootstrap_replicates_already_bootstrapped_unready_tenants(self):
         bootstrapped = self.fixture.new_tenant(org_id="o1")
         self.tuples.clear()
