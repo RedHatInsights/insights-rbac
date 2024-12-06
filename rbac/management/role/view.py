@@ -34,6 +34,7 @@ from management.filters import CommonFilters
 from management.models import AuditLog, Permission
 from management.notifications.notification_handlers import role_obj_change_notification_handler
 from management.permissions import RoleAccessPermission
+from management.principal.model import Principal
 from management.principal.proxy import PrincipalProxy
 from management.querysets import get_role_queryset, user_has_perm
 from management.relation_replicator.relation_replicator import DualWriteException, ReplicationEventType
@@ -331,7 +332,6 @@ class RoleViewSet(
         )
 
         # Filtering
-
         query_params = {
             "external_tenant": request.query_params.get("external_tenant", None),
             "system": request.query_params.get("system", None),
@@ -354,7 +354,7 @@ class RoleViewSet(
             filtered_queryset = base_queryset
             system_value = str(query_params["system"]).lower()
 
-            # Check if 'add_fields' is a valid field
+            # Check if "add_fields" is a valid field
             additional_fields = ["access", "groups_in", "groups_in_count"]
             if query_params["add_fields"]:
                 split_fields = query_params["add_fields"].split(",")
@@ -375,6 +375,22 @@ class RoleViewSet(
 
             # Username filter
             if query_params["username"]:
+                try:
+                    princ = Principal.objects.get(username=query_params["username"])
+                except Principal.DoesNotExist:
+                    return Response(
+                        status=status.HTTP_400_BAD_REQUEST,
+                        data={
+                            "errors": [
+                                {
+                                    "detail": "Principal not found for this username",
+                                    "source": "Invalid username query parameter",
+                                    "status": status.HTTP_400_BAD_REQUEST,
+                                }
+                            ]
+                        },
+                    )
+
                 proxy = PrincipalProxy
                 results = proxy.request_filtered_principals(
                     query_params["username"],
@@ -477,13 +493,15 @@ class RoleViewSet(
             # Serialize the queryset for response
             serializer = RoleSerializer(filtered_queryset, many=True, context={"request": request})
 
-            # Metadata
-            meta = {
-                "count": filtered_queryset.count(),
-            }
+            meta = {}
+            if query_params.get("username"):
+                meta["count"] = sum(len(group.roles()) for group in princ.group.all())
+            else:
+                meta["count"] = filtered_queryset.count()
 
             # Pagination
             links = {}
+
             return Response({"meta": meta, "links": links, "data": serializer.data})
 
     def retrieve(self, request, *args, **kwargs):

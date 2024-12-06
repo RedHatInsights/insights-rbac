@@ -424,7 +424,7 @@ class IntegrationViewsTests(IdentityRequest):
         self.assertEqual(response.data.get("meta").get("count"), 4)
 
         response = self.client.get(
-            f"/_private/api/v1/integrations/tenant/{self.tenant.org_id}/roles/?username=isolated_role",
+            f"/_private/api/v1/integrations/tenant/{self.tenant.org_id}/roles/?username=isolated_principal",
             **self.request.META,
             follow=True,
         )
