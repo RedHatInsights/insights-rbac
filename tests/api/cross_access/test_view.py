@@ -307,6 +307,31 @@ class CrossAccountRequestViewTests(CrossAccountRequestTest):
             self.data4create["target_org"],
         )
 
+    @patch("management.notifications.notification_handlers.notify")
+    def test_create_requests_success_with_same_name_or_roles(self, notify_mock):
+        """Test the creation of cross account request success."""
+        Role.objects.create(name="role_1", system=False, tenant=self.tenant)
+        client = APIClient()
+        with self.settings(NOTIFICATIONS_ENABLED=True):
+            response = client.post(
+                f"{URL_LIST}?", self.data4create, format="json", **self.associate_non_admin_request.META
+            )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["target_account"], self.data4create["target_account"])
+        self.assertEqual(response.data["status"], "pending")
+        self.assertEqual(response.data["start_date"], self.data4create["start_date"])
+        self.assertEqual(response.data["end_date"], self.data4create["end_date"])
+        self.assertEqual(len(response.data["roles"]), 2)
+        notify_mock.assert_called_once_with(
+            EVENT_TYPE_RH_TAM_REQUEST_CREATED,
+            {
+                "username": self.user_data["username"],
+                "request_id": response.data["request_id"],
+            },
+            self.data4create["target_org"],
+        )
+
     def test_create_requests_fail_for_no_account(self):
         """Test the creation of cross account request fails when the account doesn't exist."""
 
