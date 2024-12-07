@@ -57,7 +57,7 @@ flake8-import-order = "==0.18.2"
 flake8-quotes = "==3.3.2"
 mypy = "==1.11.2"
 types-pyyaml = "==6.0.12.12"
-cryptography = "==43.0.1"
+cryptography = "==43.0.3"
 
 [requires]
 python_version = "3.9"
