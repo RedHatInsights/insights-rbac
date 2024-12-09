@@ -48,6 +48,7 @@ from rest_framework.decorators import action
 from rest_framework.filters import OrderingFilter
 from rest_framework.response import Response
 
+from api.common.pagination import StandardResultsSetPagination
 from api.models import Tenant, User
 from rbac.env import ENVIRONMENT
 from .model import ExtTenant, Role
@@ -143,6 +144,7 @@ class RoleViewSet(
     filterset_class = RoleFilter
     ordering_fields = ("name", "display_name", "modified", "policyCount")
     ordering = ("name",)
+    default_limit = StandardResultsSetPagination.default_limit
 
     def get_queryset(self):
         """Obtain queryset for requesting user based on access and action."""
@@ -327,8 +329,10 @@ class RoleViewSet(
 
         """
         public_tenant = Tenant.objects.get(tenant_name="public")
-        base_queryset = Role.objects.filter(tenant__in=[request.tenant, public_tenant]).annotate(
-            policyCount=Count("policies", distinct=True), accessCount=Count("access", distinct=True)
+        base_queryset = (
+            Role.objects.only("name", "uuid")
+            .filter(tenant__in=[request.tenant, public_tenant])
+            .annotate(policyCount=Count("policies", distinct=True), accessCount=Count("access", distinct=True))
         )
 
         # Filtering
@@ -343,12 +347,19 @@ class RoleViewSet(
             "platform_default": request.query_params.get("platform_default", None),
             "admin_default": request.query_params.get("admin_default", None),
             "username": request.query_params.get("username", None),
-            "limit": request.query_params.get("limit", None),
-            "offset": request.query_params.get("offset", None),
+            "limit": request.query_params.get("limit", 10),
+            "offset": request.query_params.get("offset", 0),
             "add_fields": request.query_params.get("add_fields", None),
         }
 
         filters = []
+        limit = query_params["limit"]
+        offset = int(query_params["offset"])
+        path = request.path
+
+        previous_offset = 0
+        if offset - limit > 0:
+            previous_offset = offset - limit
 
         if query_params:
             filtered_queryset = base_queryset
@@ -366,7 +377,7 @@ class RoleViewSet(
                             "errors": [
                                 {
                                     "detail": "Invalid additional field passed in query",
-                                    "source": "add_fields invalid value",
+                                    "source": "add_fields invalid parameter",
                                     "status": status.HTTP_400_BAD_REQUEST,
                                 }
                             ]
@@ -493,14 +504,22 @@ class RoleViewSet(
             # Serialize the queryset for response
             serializer = RoleSerializer(filtered_queryset, many=True, context={"request": request})
 
+            # Metadata
             meta = {}
             if query_params.get("username"):
                 meta["count"] = sum(len(group.roles()) for group in princ.group.all())
             else:
                 meta["count"] = filtered_queryset.count()
 
+            count = filtered_queryset.count()
+
             # Pagination
-            links = {}
+            links = {
+                "first": f"{path}?limit={limit}&offset=0",
+                "next": f"{path}?limit={limit}&offset={offset + limit}",
+                "previous": f"{path}?limit={limit}&offset={previous_offset}",
+                "last": f"{path}?limit={limit}&offset={count - limit if (count - limit) >= 0 else 0}",
+            }
 
             return Response({"meta": meta, "links": links, "data": serializer.data})
 
