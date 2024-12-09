@@ -31,7 +31,11 @@ from management.group.model import Group
 from management.policy.model import Policy
 from management.principal.cleaner import LOCK_ID, clean_tenant_principals
 from management.principal.model import Principal
-from management.principal.cleaner import process_principal_events_from_umb, METRIC_STOMP_MESSAGE_TOTAL
+from management.principal.cleaner import (
+    process_principal_events_from_umb,
+    METRIC_STOMP_MESSAGES_ACK_TOTAL,
+    METRIC_STOMP_MESSAGES_NACK_TOTAL,
+)
 from management.principal.proxy import external_principal_to_user
 from management.tenant_mapping.model import TenantMapping
 from management.tenant_service import get_tenant_bootstrap_service
@@ -308,11 +312,11 @@ class PrincipalUMBTests(IdentityRequest):
     @patch("management.principal.cleaner.UMB_CLIENT")
     def test_principal_cleanup_none(self, client_mock):
         """Test that we can run a principal clean up with no messages."""
-        before = REGISTRY.get_sample_value(METRIC_STOMP_MESSAGE_TOTAL)
+        before = REGISTRY.get_sample_value(METRIC_STOMP_MESSAGES_ACK_TOTAL)
         client_mock.canRead.return_value = False
         process_principal_events_from_umb()
 
-        after = REGISTRY.get_sample_value(METRIC_STOMP_MESSAGE_TOTAL)
+        after = REGISTRY.get_sample_value(METRIC_STOMP_MESSAGES_ACK_TOTAL)
         self.assertTrue(before == after)
         client_mock.receiveFrame.assert_not_called()
         client_mock.disconnect.assert_called_once()
@@ -334,14 +338,14 @@ class PrincipalUMBTests(IdentityRequest):
         self.group.principals.add(self.principal)
         self.group.save()
 
-        before = REGISTRY.get_sample_value(METRIC_STOMP_MESSAGE_TOTAL)
+        before = REGISTRY.get_sample_value(METRIC_STOMP_MESSAGES_ACK_TOTAL)
         client_mock.canRead.side_effect = [True, False]
         client_mock.receiveFrame.return_value = MagicMock(body=FRAME_BODY)
         cache_mock = MagicMock()
         cache_class.return_value = cache_mock
         process_principal_events_from_umb()
 
-        after = REGISTRY.get_sample_value(METRIC_STOMP_MESSAGE_TOTAL)
+        after = REGISTRY.get_sample_value(METRIC_STOMP_MESSAGES_ACK_TOTAL)
         client_mock.receiveFrame.assert_called_once()
         client_mock.disconnect.assert_called_once()
         client_mock.ack.assert_called_once()
@@ -899,22 +903,21 @@ class PrincipalUMBTestsWithV2TenantBootstrap(PrincipalUMBTests):
     )
     @patch("management.group.model.AccessCache")
     @patch("management.principal.cleaner.UMB_CLIENT")
-    def test_cleanup_disabled_principal_in_or_not_in_group(self, client_mock, cache_class, proxy_mock):
-        """Run a principal clean up on a tenant with a principal either in or not in a group."""
+    def test_disable_principal_which_is_in_or_not_in_group(self, client_mock, cache_class, proxy_mock):
+        """Process a umb message to disable a principal which is either in or not in a group."""
         principal_name = "principal-test"
-        self.principal = Principal(username=principal_name, tenant=self.tenant, user_id="56780000")
-        self.principal.save()
+        self.principal = Principal.objects.create(username=principal_name, tenant=self.tenant, user_id="56780000")
         self.group.principals.add(self.principal)
         self.group.save()
 
-        before = REGISTRY.get_sample_value(METRIC_STOMP_MESSAGE_TOTAL)
+        before = REGISTRY.get_sample_value(METRIC_STOMP_MESSAGES_ACK_TOTAL)
         client_mock.canRead.side_effect = [True, False]
         client_mock.receiveFrame.return_value = MagicMock(body=FRAME_BODY)
         cache_mock = MagicMock()
         cache_class.return_value = cache_mock
         process_principal_events_from_umb()
 
-        after = REGISTRY.get_sample_value(METRIC_STOMP_MESSAGE_TOTAL)
+        after = REGISTRY.get_sample_value(METRIC_STOMP_MESSAGES_ACK_TOTAL)
         client_mock.receiveFrame.assert_called_once()
         client_mock.disconnect.assert_called_once()
         client_mock.ack.assert_called_once()
@@ -924,19 +927,6 @@ class PrincipalUMBTestsWithV2TenantBootstrap(PrincipalUMBTests):
         cache_mock.delete_policy.assert_called_once_with(self.principal.uuid)
         self.assertTrue(before + 1 == after)
 
-        # when principal does not have user id set
-        principal = Principal.objects.create(username=principal_name, tenant=self.tenant)
-        self.group.principals.add(principal)
-        self.group.save()
-        client_mock.canRead.side_effect = [True, False]
-        client_mock.ack.reset_mock()
-
-        process_principal_events_from_umb()
-
-        client_mock.nack.assert_called_once()
-        self.assertFalse(Principal.objects.filter(username=principal_name).exists())
-        client_mock.ack.assert_not_called()
-
         # When principal not in group
         self.principal = Principal(username=principal_name, tenant=self.tenant, user_id="56780000")
         self.principal.save()
@@ -945,6 +935,69 @@ class PrincipalUMBTestsWithV2TenantBootstrap(PrincipalUMBTests):
         process_principal_events_from_umb()
         self.assertFalse(Principal.objects.filter(username=principal_name).exists())
         client_mock.ack.assert_called_once()
+
+    @patch(
+        "management.principal.proxy.PrincipalProxy._request_principals",
+        return_value={
+            "status_code": status.HTTP_200_OK,
+            "data": [],
+        },
+    )
+    @patch("management.group.model.AccessCache")
+    @patch("management.principal.cleaner.UMB_CLIENT")
+    def test_disable_principal_without_user_id_in_group(self, client_mock, cache_class, proxy_mock):
+        """Process a umb message to disable a principal which does not have user id."""
+        principal_name = "principal-test"
+        principal = Principal.objects.create(username=principal_name, tenant=self.tenant)
+        principal.save()
+        self.group.principals.add(principal)
+        self.group.save()
+
+        before = REGISTRY.get_sample_value(METRIC_STOMP_MESSAGES_ACK_TOTAL)
+        client_mock.canRead.side_effect = [True, False]
+        client_mock.receiveFrame.return_value = MagicMock(body=FRAME_BODY)
+        cache_mock = MagicMock()
+        cache_class.return_value = cache_mock
+        process_principal_events_from_umb()
+
+        after = REGISTRY.get_sample_value(METRIC_STOMP_MESSAGES_ACK_TOTAL)
+        client_mock.receiveFrame.assert_called_once()
+        client_mock.disconnect.assert_called_once()
+        client_mock.ack.assert_called_once()
+        self.assertFalse(Principal.objects.filter(username=principal_name).exists())
+        self.group.refresh_from_db()
+        self.assertFalse(self.group.principals.all())
+        cache_mock.delete_policy.assert_called_once_with(principal.uuid)
+        self.assertTrue(before + 1 == after)
+
+    @patch("management.principal.cleaner.retrieve_user_info")
+    @patch("management.principal.cleaner.UMB_CLIENT")
+    def test_failure_processing_message(self, client_mock, retrieve_user_mock):
+        """Test."""
+        principal_name = "principal-test"
+        principal = Principal.objects.create(username=principal_name, tenant=self.tenant)
+        principal.save()
+        self.group.principals.add(principal)
+        self.group.save()
+
+        before = REGISTRY.get_sample_value(METRIC_STOMP_MESSAGES_NACK_TOTAL)
+        ack_before = REGISTRY.get_sample_value(METRIC_STOMP_MESSAGES_ACK_TOTAL)
+        client_mock.canRead.side_effect = [True, False]
+        client_mock.receiveFrame.return_value = MagicMock(body=FRAME_BODY)
+        retrieve_user_mock.side_effect = Exception("Something went wrong")
+        process_principal_events_from_umb()
+
+        after = REGISTRY.get_sample_value(METRIC_STOMP_MESSAGES_NACK_TOTAL)
+        ack_after = REGISTRY.get_sample_value(METRIC_STOMP_MESSAGES_ACK_TOTAL)
+        client_mock.receiveFrame.assert_called_once()
+        client_mock.disconnect.assert_called_once()
+        client_mock.nack.assert_called_once()
+        client_mock.ack.assert_not_called()
+        self.assertTrue(Principal.objects.filter(username=principal_name).exists())
+        self.group.refresh_from_db()
+        self.assertTrue(self.group.principals.all())
+        self.assertEqual(before + 1, after)
+        self.assertEqual(ack_before, ack_after)
 
 
 @override_settings(V2_BOOTSTRAP_TENANT=False)
