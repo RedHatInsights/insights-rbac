@@ -47,10 +47,15 @@ CERT_LOC = "/opt/rbac/rbac/management/principal/umb_certs/cert.pem"
 KEY_LOC = "/opt/rbac/rbac/management/principal/umb_certs/key.pem"
 LOCK_ID = 42  # For Keith, with Love
 
-METRIC_STOMP_MESSAGE_TOTAL = "stomp_messages_total"
-umb_message_processed_count = Counter(
-    METRIC_STOMP_MESSAGE_TOTAL,
+METRIC_STOMP_MESSAGES_ACK_TOTAL = "stomp_messages_ack_total"
+METRIC_STOMP_MESSAGES_NACK_TOTAL = "stomp_messages_nack_total"
+stomp_messages_ack_total = Counter(
+    METRIC_STOMP_MESSAGES_ACK_TOTAL,
     "Number of stomp UMB messages processed",
+)
+stomp_messages_nack_total = Counter(
+    METRIC_STOMP_MESSAGES_NACK_TOTAL,
+    "Number of stomp UMB messages that failed to be processed",
 )
 
 
@@ -200,35 +205,24 @@ def process_umb_event(frame, umb_client: Stomp, bootstrap_service: TenantBootstr
             logger.info("process_umb_event: Another listener is running. Aborting.")
             return False
 
-        data_dict = xmltodict.parse(frame.body)
-        canonical_message = data_dict.get("CanonicalMessage")
-        if canonical_message:
-            try:
-                user = retrieve_user_info(canonical_message)
-            except Exception as e:  # Skip processing and leave the it to be processed later
-                logger.error("process_umb_event: Error retrieving user info: %s", str(e))
-                return True
+        try:
+            data_dict = xmltodict.parse(frame.body)
+            canonical_message = data_dict.get("CanonicalMessage")
 
+            user = retrieve_user_info(canonical_message)
             # By default, only process disabled users.
             # If the setting is enabled, process all users.
             if not user.is_active or settings.PRINCIPAL_CLEANUP_UPDATE_ENABLED_UMB:
                 # If Tenant is not already ready, don't ready it
-                try:
-                    bootstrap_service.update_user(user, ready_tenant=False)
-                except ValueError as e:
-                    logger.error("process_umb_event: Error updating user: %s", str(e))
-                    capture_exception(e)
-                    umb_client.nack(frame)
-                    umb_message_processed_count.inc()
-                    return True
-        else:
-            # Message is malformed.
-            # Ensure we dont block the entire queue by discarding it.
-            # TODO: this is not the only way a message can be malformed
-            pass
+                bootstrap_service.update_user(user, ready_tenant=False)
+            umb_client.ack(frame)
+            stomp_messages_ack_total.inc()
+        except Exception as e:
+            logger.error("process_umb_event: Error processing umb message : %s", str(e))
+            capture_exception(e)
+            umb_client.nack(frame)
+            stomp_messages_nack_total.inc()
 
-    umb_client.ack(frame)
-    umb_message_processed_count.inc()
     return True
 
 
