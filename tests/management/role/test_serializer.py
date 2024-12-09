@@ -27,7 +27,7 @@ class RoleSerializerTest(TestCase):
     def prepare_serializer(self, role_data):
         serializer = RoleSerializer(data=role_data)
         serializer.is_valid()
-        tenant = Tenant.objects.get(tenant_name="public")
+        tenant = Tenant.objects.get_public_tenant()
         request = Mock()
         request.tenant = tenant
         serializer.context["request"] = request
@@ -72,7 +72,7 @@ class RoleSerializerTest(TestCase):
 
         # Serialize the input
         serializer = self.prepare_serializer(role_data)
-        Permission.objects.create(permission="app:*:read", tenant=Tenant.objects.get(tenant_name="public"))
+        Permission.objects.create(permission="app:*:read", tenant=Tenant.objects.get_public_tenant())
 
         # Create the role
         role = serializer.create(serializer.validated_data)

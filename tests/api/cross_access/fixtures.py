@@ -97,7 +97,7 @@ class CrossAccountRequestTest(IdentityRequest):
             "roles": ["role_1", "role_2"],
         }
 
-        public_tenant = Tenant.objects.get(tenant_name="public")
+        public_tenant = Tenant.objects.get_public_tenant()
 
         tenant_for_target_account = Tenant.objects.create(
             tenant_name=f"acct{self.data4create['target_account']}",

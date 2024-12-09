@@ -347,7 +347,7 @@ def obtain_groups_in(obj, request):
     else:
         assigned_groups = filter_queryset_by_tenant(Group.objects.filter(policies__in=policy_ids), request.tenant)
 
-    public_tenant = Tenant.objects.get(tenant_name="public")
+    public_tenant = Tenant.objects.get_public_tenant()
 
     platform_default_groups = Group.platform_default_set().filter(tenant=request.tenant).filter(
         policies__in=policy_ids

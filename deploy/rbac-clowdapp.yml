@@ -538,6 +538,8 @@ objects:
             value: ${V2_READ_ONLY_API_MODE}
           - name: READ_ONLY_API_MODE
             value: ${READ_ONLY_API_MODE}
+          - name: PUBLIC_TENANT_CACHE_LIFETIME
+            value: ${PUBLIC_TENANT_CACHE_LIFETIME}
 
     jobs:
       - name: tenant-org-id-populator
@@ -1205,3 +1207,6 @@ parameters:
 - name: USER_ID_POPULATOR_BATCH_SIZE
   description: The number of user records to process in each batch
   value: '90'
+- name: PUBLIC_TENANT_CACHE_LIFETIME
+  description: TTL for the public tenant cache in seconds
+  value: '86400'

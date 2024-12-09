@@ -21,7 +21,7 @@ from unittest.mock import call, patch
 
 from django.conf import settings
 from django.test import TestCase
-from management.cache import TenantCache
+from management.cache import TenantCache, PublicTenantCache
 from management.models import Access, Group, Permission, Policy, Principal, ResourceDefinition, Role
 
 from api.models import Tenant
@@ -300,5 +300,59 @@ class TenantCacheTest(TestCase):
         redis_health_check.return_value = False
         # Get tenant from cache (should fail because redis_health_check failed)
         tenant = tenant_cache.get_tenant(tenant_org_id)
+        redis_health_check.assert_called_once()
+        self.assertNotEqual(tenant, self.tenant)
+
+
+class PublicTenantCacheTest(TestCase):
+    @classmethod
+    def setUpClass(self):
+        """Set up the tenant."""
+        super().setUpClass()
+        self.tenant = Tenant.objects.create(tenant_name="public")
+        self.tenant_name = self.tenant.tenant_name
+        self.key = f"rbac::tenant::tenant={self.tenant_name}"
+
+    @classmethod
+    def tearDownClass(self):
+        self.tenant.delete()
+        super().tearDownClass()
+
+    @patch("management.cache.PublicTenantCache.connection")
+    @patch("management.cache.BasicCache.redis_health_check")
+    def test_public_tenant_cache_functions_success(self, redis_health_check, redis_connection):
+        dump_content = pickle.dumps(self.tenant)
+
+        # Save tenant to cache
+        cache = PublicTenantCache()
+        cache.save_tenant(self.tenant)
+        self.assertTrue(call().__enter__().set(self.key, dump_content) in redis_connection.pipeline.mock_calls)
+
+        redis_connection.get.return_value = dump_content
+        redis_health_check.return_value = True
+        # Get tenant from cache
+        tenant = cache.get_tenant(self.tenant_name)
+        redis_health_check.assert_called_once()
+        redis_connection.get.assert_called_once_with(self.key)
+        self.assertEqual(tenant, self.tenant)
+
+        # Delete tenant from cache
+        cache.delete_tenant(self.tenant_name)
+        redis_connection.delete.assert_called_once_with(self.key)
+
+    @patch("management.cache.PublicTenantCache.connection")
+    @patch("management.cache.BasicCache.redis_health_check")
+    def test_public_tenant_cache_functions_failure(self, redis_health_check, redis_connection):
+        dump_content = pickle.dumps(self.tenant)
+
+        # Save tenant to cache
+        cache = PublicTenantCache()
+        cache.save_tenant(self.tenant)
+        self.assertTrue(call().__enter__().set(self.key, dump_content) in redis_connection.pipeline.mock_calls)
+
+        redis_connection.get.return_value = dump_content
+        redis_health_check.return_value = False
+        # Get tenant from cache (should fail because redis_health_check failed)
+        tenant = cache.get_tenant(self.tenant_name)
         redis_health_check.assert_called_once()
         self.assertNotEqual(tenant, self.tenant)

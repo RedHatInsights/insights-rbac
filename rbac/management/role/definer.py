@@ -66,7 +66,7 @@ def _add_ext_relation_if_it_exists(external_relation, role):
 
 def _make_role(data, dual_write_handler, force_create_relationships=False):
     """Create the role object in the database."""
-    public_tenant = Tenant.objects.get(tenant_name="public")
+    public_tenant = Tenant.objects.get_public_tenant()
     name = data.pop("name")
     display_name = data.get("display_name", name)
     access_list = data.get("access")
@@ -165,7 +165,7 @@ def seed_roles(force_create_relationships=False):
 
 def seed_permissions():
     """Update or create defined permissions."""
-    public_tenant = Tenant.objects.get(tenant_name="public")
+    public_tenant = Tenant.objects.get_public_tenant()
 
     permission_directory = os.path.join(settings.BASE_DIR, "management", "role", "permissions")
     permission_files = [
