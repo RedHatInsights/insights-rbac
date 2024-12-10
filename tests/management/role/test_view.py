@@ -158,6 +158,9 @@ class RoleViewsetTests(IdentityRequest):
             "admin_default",
             "external_role_id",
             "external_tenant",
+            "groups_in_count",
+            "groups_in",
+            "access",
         }
 
         self.principal = Principal(username=self.user_data["username"], tenant=self.tenant)
@@ -663,6 +666,7 @@ class RoleViewsetTests(IdentityRequest):
             self.assertIsNotNone(iterRole.get("name"))
             # fields displayed are same as defined
             self.assertEqual(self.display_fields, set(iterRole.keys()))
+
             if iterRole.get("name") == role_name:
                 self.assertEqual(iterRole.get("accessCount"), 2)
                 role = iterRole
@@ -674,6 +678,7 @@ class RoleViewsetTests(IdentityRequest):
         url = "{}?application={}".format(URL, "app")
         client = APIClient()
         response = client.get(url, **self.headers)
+
         self.assertEqual(response.data.get("meta").get("count"), 1)
         self.assertEqual(response.data.get("data")[0].get("name"), self.defRole.name)
 
@@ -682,6 +687,7 @@ class RoleViewsetTests(IdentityRequest):
         url = "{}?application={}".format(URL, "foo")
         client = APIClient()
         response = client.get(url, **self.headers)
+
         self.assertEqual(response.data.get("meta").get("count"), 1)
         self.assertEqual(response.data.get("data")[0].get("name"), self.defRole.name)
 
@@ -908,7 +914,7 @@ class RoleViewsetTests(IdentityRequest):
         # make sure all roles are from:
         #       * custom group 'NewGroupForJohn' or
         #       * 'Default access' group
-        groups = [default_access_group_name, custom_group_name]
+        groups = [default_access_group_name, custom_group_name, default_admin_access_group_name]
         for role in response_data:
             for group in role[groups_in]:
                 self.assertIn(group["name"], groups)
@@ -1183,7 +1189,6 @@ class RoleViewsetTests(IdentityRequest):
         url = "{}?add_fields={},{}&username={}".format(URL, field_1, field_2, self.principal.username)
         client = APIClient()
         response = client.get(url, **self.headers)
-
         self.assertEqual(len(response.data.get("data")), 5)
 
         role = response.data.get("data")[0]
@@ -1205,6 +1210,7 @@ class RoleViewsetTests(IdentityRequest):
         self.assertEqual(len(response.data.get("data")), 5)
 
         role = response.data.get("data")[0]
+
         self.assertEqual(new_display_fields, set(role.keys()))
         self.assertEqual(role["groups_in_count"], 1)
 
@@ -1732,7 +1738,6 @@ class RoleViewsetTests(IdentityRequest):
         response = client.get(URL, **self.headers)
 
         self.assertEqual(len(response.data.get("data")), 5)
-
         url = f"{URL}?external_tenant=foo"
         client = APIClient()
         response = client.get(url, **self.headers)
@@ -1751,7 +1756,6 @@ class RoleViewsetTests(IdentityRequest):
         url = f"{URL}?display_name=platform_admin_default_display&add_fields=groups_in_count%2Cgroups_in"
         client = APIClient()
         response = client.get(url, **self.headers)
-
         self.assertEqual(len(response.data.get("data")), 1)
         role = response.data.get("data")[0]
         self.assertEqual(role.get("groups_in_count"), 2)
@@ -1954,6 +1958,7 @@ class RoleViewNonAdminTests(IdentityRequest):
         response = client.get(url, **self.headers_user_based_principal)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         expected_count = self.system_roles_count + self.non_system_roles_count + 1
+
         self.assertEqual(len(response.data.get("data")), expected_count)
 
         response = client.get(url, **self.headers_service_account_principal)
