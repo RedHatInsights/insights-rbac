@@ -221,7 +221,10 @@ class V2TenantBootstrapService:
 
             for group in principal.group.all():
                 group.principals.remove(principal)
-                tuples_to_remove.append(group.relationship_to_principal(principal))
+                # The user id might be None for the principal so we use user instead
+                tuple = group.relationship_to_principal(user)
+                if tuple is None:
+                    raise ValueError(f"relationship_to_principal is None for user {user.username}")
 
             principal.delete()
         except Principal.DoesNotExist:
