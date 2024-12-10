@@ -571,7 +571,7 @@ class PrincipalUMBTestsWithV2TenantBootstrap(PrincipalUMBTests):
     @patch("management.principal.cleaner.UMB_CLIENT")
     @override_settings(PRINCIPAL_CLEANUP_UPDATE_ENABLED_UMB=False)
     def test_principal_creation_event_disabled(self, client_mock, proxy_mock):
-        """Test that we can run principal creation event."""
+        """Test that when update setting is disabled we do not add tenants for new, active users."""
         client_mock.canRead.side_effect = [True, False]
         client_mock.receiveFrame.return_value = MagicMock(body=FRAME_BODY_CREATION)
         Tenant.objects.get(org_id="17685860").delete()
@@ -603,7 +603,6 @@ class PrincipalUMBTestsWithV2TenantBootstrap(PrincipalUMBTests):
     )
     @patch("management.principal.cleaner.UMB_CLIENT")
     def test_principal_creation_event_does_not_create_principal(self, client_mock, proxy_mock):
-        """Test that we can run principal creation event."""
         public_tenant = Tenant.objects.get(tenant_name="public")
         Group.objects.create(name="default", platform_default=True, tenant=public_tenant)
         client_mock.canRead.side_effect = [True, False]
@@ -815,6 +814,27 @@ class PrincipalUMBTestsWithV2TenantBootstrap(PrincipalUMBTests):
                     )
                 ],
             )
+
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={
+            "status_code": 200,
+            "data": [],
+        },
+    )
+    @patch("management.principal.cleaner.UMB_CLIENT")
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
+    def test_non_bootstrapped_tenant_no_principal_disabled_user_does_not_produce_replication_event(self, replicate, client_mock, proxy_mock):
+        client_mock.canRead.side_effect = [True, False]
+        client_mock.receiveFrame.return_value = MagicMock(body=FRAME_BODY_CREATION)
+
+        process_principal_events_from_umb()
+
+        client_mock.receiveFrame.assert_called_once()
+        client_mock.disconnect.assert_called_once()
+        client_mock.ack.assert_called_once()
+
+        replicate.assert_not_called()
 
     def assertTenantBootstrappedByOrgId(self, org_id: str):
         tenant = Tenant.objects.get(org_id=org_id)

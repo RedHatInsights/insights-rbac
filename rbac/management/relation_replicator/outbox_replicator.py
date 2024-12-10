@@ -85,7 +85,10 @@ class OutboxReplicator(RelationReplicator):
 
         if not payload["relations_to_add"] and not payload["relations_to_remove"]:
             logger.warning(
-                "[Dual Write] Skipping empty replication event. aggregateid='%s' event_type='%s' %s",
+                "[Dual Write] Skipping empty replication event. "
+                "An empty event is always a bug. "
+                "Calling code should avoid this and if not obvious, log why there is nothing to replicate. "
+                "aggregateid='%s' event_type='%s' %s",
                 aggregateid,
                 event_type,
                 logged_info,
