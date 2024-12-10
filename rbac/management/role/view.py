@@ -330,8 +330,7 @@ class RoleViewSet(
         """
         public_tenant = Tenant.objects.get(tenant_name="public")
         base_queryset = (
-            Role.objects.only("name", "uuid")
-            .prefetch_related("access", "ext_relation")
+            Role.objects.prefetch_related("access", "ext_relation")
             .filter(tenant__in=[request.tenant, public_tenant])
             .annotate(policyCount=Count("policies", distinct=True), accessCount=Count("access", distinct=True))
         )
@@ -367,7 +366,7 @@ class RoleViewSet(
             system_value = str(query_params["system"]).lower()
 
             # Check if "add_fields" is a valid field
-            additional_fields = ["access", "groups_in", "groups_in_count"]
+            additional_fields = {"access", "groups_in", "groups_in_count"}
             if query_params["add_fields"]:
                 split_fields = query_params["add_fields"].split(",")
                 invalid_field = [field for field in split_fields if field not in additional_fields]
@@ -387,9 +386,8 @@ class RoleViewSet(
 
             # Username filter
             if query_params["username"]:
-                try:
-                    princ = Principal.objects.get(username=query_params["username"])
-                except Principal.DoesNotExist:
+                princ = Principal.objects.filter(username=query_params["username"]).first()
+                if not princ:
                     return Response(
                         status=status.HTTP_400_BAD_REQUEST,
                         data={
@@ -512,14 +510,12 @@ class RoleViewSet(
             else:
                 meta["count"] = filtered_queryset.count()
 
-            count = filtered_queryset.count()
-
             # Pagination
             links = {
                 "first": f"{path}?limit={limit}&offset=0",
                 "next": f"{path}?limit={limit}&offset={offset + limit}",
                 "previous": f"{path}?limit={limit}&offset={previous_offset}",
-                "last": f"{path}?limit={limit}&offset={count - limit if (count - limit) >= 0 else 0}",
+                "last": f"{path}?limit={limit}&offset={meta['count'] - limit if (meta['count'] - limit) >= 0 else 0}",
             }
 
             return Response({"meta": meta, "links": links, "data": serializer.data})
