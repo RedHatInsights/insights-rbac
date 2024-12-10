@@ -331,6 +331,7 @@ class RoleViewSet(
         public_tenant = Tenant.objects.get(tenant_name="public")
         base_queryset = (
             Role.objects.only("name", "uuid")
+            .prefetch_related("access", "ext_relation")
             .filter(tenant__in=[request.tenant, public_tenant])
             .annotate(policyCount=Count("policies", distinct=True), accessCount=Count("access", distinct=True))
         )
