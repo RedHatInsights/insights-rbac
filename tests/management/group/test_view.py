@@ -188,7 +188,7 @@ class GroupViewsetTests(IdentityRequest):
         self.defPolicy.save()
 
         self.Custom_default_group = Group(
-            name="Custom default group", platform_default=False, system=False, tenant=self.tenant
+            name="Custom default group", platform_default=True, system=False, tenant=self.public_tenant
         )
         self.Custom_default_group.save()
 
@@ -697,14 +697,13 @@ class GroupViewsetTests(IdentityRequest):
         response = client.get(url, **self.headers)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(response.data.get("data")), 6)
+        self.assertEqual(len(response.data.get("data")), 5)
         response_group_uuids = [group["uuid"] for group in response.data.get("data")]
         self.assertCountEqual(
             response_group_uuids,
             [
                 str(self.group.uuid),
                 str(self.groupB.uuid),
-                str(self.Custom_default_group.uuid),
                 str(self.emptyGroup.uuid),
                 str(self.groupMultiRole.uuid),
                 str(self.adminGroup.uuid),
@@ -1034,8 +1033,8 @@ class GroupViewsetTests(IdentityRequest):
 
         url = f"{reverse('v1_management:group-list')}?platform_default=true"
         response = client.get(url, **self.headers)
-        self.assertEqual(len(response.data.get("data")), 1)
-        self.assertEqual(response.data.get("data")[0]["uuid"], str(self.defGroup.uuid))
+        self.assertEqual(len(response.data.get("data")), 2)
+        self.assertEqual(response.data.get("data")[1]["uuid"], str(self.defGroup.uuid))
 
     def test_delete_group_invalid(self):
         """Test that deleting an invalid group returns an error."""
@@ -1359,7 +1358,7 @@ class GroupViewsetTests(IdentityRequest):
         url = "{}?username={}".format(url, self.test_principal.username)
         client = APIClient()
         response = client.get(url, **self.test_headers)
-        self.assertEqual(response.data.get("meta").get("count"), 4)
+        self.assertEqual(response.data.get("meta").get("count"), 5)
 
         # Return bad request when user does not exist
         url = reverse("v1_management:group-list")
@@ -1392,7 +1391,7 @@ class GroupViewsetTests(IdentityRequest):
         url = "{}?username={}".format(url, self.principalC.username)
         client = APIClient()
         response = client.get(url, **self.test_headers)
-        self.assertEqual(response.data.get("meta").get("count"), 2)
+        self.assertEqual(response.data.get("meta").get("count"), 3)
 
     @patch(
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
@@ -1448,7 +1447,7 @@ class GroupViewsetTests(IdentityRequest):
         url = "{}?username={}".format(url, username)
         client = APIClient()
         response = client.get(url, **self.test_headers)
-        self.assertEqual(response.data.get("meta").get("count"), 4)
+        self.assertEqual(response.data.get("meta").get("count"), 5)
 
     def test_get_group_roles_success(self):
         """Test that getting roles for a group returns successfully."""

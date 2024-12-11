@@ -455,10 +455,13 @@ class GroupViewSet(
             }
         """
         validate_uuid(kwargs.get("uuid"), "group uuid validation")
-        self.restrict_custom_default_group_renaming(request)
         self.protect_system_groups("update")
 
         group = self.get_object()
+
+        if group.platform_default:
+            self.restrict_custom_default_group_renaming(request)
+
         if not request.user.admin:
             self.protect_group_with_user_access_admin_role(group.roles_with_access(), "update_group")
 
