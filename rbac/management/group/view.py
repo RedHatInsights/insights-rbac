@@ -234,10 +234,10 @@ class GroupViewSet(
         try:
             custom_default_group = Group.objects.get(name="Custom default group")
             if (
-                name != group.name
-                and group.name == custom_default_group.name
-                or description != group.description
-                and group.description == custom_default_group.description
+                group.name == custom_default_group.name
+                and name != group.name
+                or group.description == custom_default_group.description
+                and description != group.description
                 and method in invalid_methods
             ):
                 key = "Custom default group"
@@ -245,7 +245,7 @@ class GroupViewSet(
                 error = {key: [_(message)]}
                 raise serializers.ValidationError(error)
         except Group.DoesNotExist:
-            custom_default_group = None
+            pass
 
     def protect_default_admin_group_roles(self, group):
         """Disallow default admin access roles from being updated."""
