@@ -220,18 +220,19 @@ class CrossAccountRequestViewSet(
         except Tenant.DoesNotExist:
             raise self.throw_validation_error("cross-account-request", f"Org ID '{target_org}' does not exist.")
 
-        request_data["roles"] = self.format_roles(request_data.get("roles"))
+        request_data["roles"] = self.find_system_role_uuids_by_names(request_data.get("roles"))
         request_data["user_id"] = self.request.user.user_id
 
     def validate_and_format_patch_input(self, request_data):
         """Validate the create api input."""
         if "roles" in request_data:
-            request_data["roles"] = self.format_roles(request_data.get("roles"))
+            request_data["roles"] = self.find_system_role_uuids_by_names(request_data.get("roles"))
 
-    def format_roles(self, roles):
+    def find_system_role_uuids_by_names(self, role_names):
         """Format role list as expected for cross-account-request."""
         public_tenant = Tenant.objects.get(tenant_name="public")
-        for role_name in roles:
+        system_role_uuids = []
+        for role_name in role_names:
             try:
                 role = Role.objects.get(tenant=public_tenant, display_name=role_name)
                 if not role.system:
@@ -240,8 +241,8 @@ class CrossAccountRequestViewSet(
                     )
             except Role.DoesNotExist:
                 raise self.throw_validation_error("cross-account-request", f"Role '{role_name}' does not exist.")
-
-        return [{"display_name": role} for role in roles]
+            system_role_uuids.append({"uuid": role.uuid})
+        return system_role_uuids
 
     def _with_dual_write_handler(
         self,

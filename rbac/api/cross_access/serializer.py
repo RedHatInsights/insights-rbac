@@ -56,7 +56,8 @@ class CrossAccountRequestSerializer(serializers.ModelSerializer):
 class RoleSerializer(serializers.ModelSerializer):
     """Serializer for the roles of cross access request model."""
 
-    display_name = serializers.CharField(max_length=150)
+    uuid = serializers.UUIDField(read_only=True)
+    display_name = serializers.CharField(max_length=150, read_only=True)
     description = serializers.CharField(max_length=150, read_only=True)
     permissions = serializers.SerializerMethodField(read_only=True)
 
@@ -64,7 +65,7 @@ class RoleSerializer(serializers.ModelSerializer):
         """Metadata for the serializer."""
 
         model = Role
-        fields = ("display_name", "description", "permissions")
+        fields = ("uuid", "display_name", "description", "permissions")
 
     def get_permissions(self, obj):
         """Permissions constructor for the serializer."""
@@ -108,25 +109,21 @@ class CrossAccountRequestDetailSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         """Override the create method to associate the roles to cross account request after it is created."""
-        role_data = validated_data.pop("roles")
-        display_names = [role["display_name"] for role in role_data]
+        validated_data.pop("roles")
         request = CrossAccountRequest.objects.create(**validated_data)
         cross_account_access_handler(request, self.context["user"])
-        roles = Role.objects.filter(display_name__in=display_names, system=True)
-        for role in roles:
-            request.roles.add(role)
-
+        role_uuids = [role["uuid"] for role in self.context["request"].data["roles"]]
+        request.roles.add(*role_uuids)
         return request
 
     @transaction.atomic
     def update(self, instance, validated_data):
         """Override the update method to associate the roles to cross account request after it is updated."""
         if "roles" in validated_data:
-            role_data = validated_data.pop("roles")
-            display_names = [role["display_name"] for role in role_data]
-            roles = Role.objects.filter(display_name__in=display_names)
+            validated_data.pop("roles")
+            role_uuids = [role["uuid"] for role in self.context["request"].data["roles"]]
             instance.roles.clear()
-            instance.roles.add(*roles)
+            instance.roles.add(*role_uuids)
 
         for field in validated_data:
             setattr(instance, field, validated_data.get(field))

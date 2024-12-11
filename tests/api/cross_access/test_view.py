@@ -291,7 +291,6 @@ class CrossAccountRequestViewTests(CrossAccountRequestTest):
             response = client.post(
                 f"{URL_LIST}?", self.data4create, format="json", **self.associate_non_admin_request.META
             )
-
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertEqual(response.data["target_account"], self.data4create["target_account"])
         self.assertEqual(response.data["status"], "pending")
@@ -488,6 +487,38 @@ class CrossAccountRequestViewTests(CrossAccountRequestTest):
                     self.assertIn(role.get("display_name"), self.data4create["roles"])
                 continue
             self.assertEqual(self.data4create.get(field), response.data.get(field))
+
+    def test_update_request_success_for_requestor_when_custom_role_with_same_name_exist(self):
+        """Test updating an entire CAR."""
+        Role.objects.create(name="role_8", system=False, tenant=self.tenant)
+        self.data4create["target_account"] = self.another_account
+        self.data4create["target_org"] = self.another_org_id
+        Tenant.objects.create(
+            tenant_name=f"acct{self.another_account}", account_id=self.another_account, org_id=self.another_org_id
+        )
+        self.data4create["start_date"] = self.format_date(self.ref_time + timedelta(3))
+        self.data4create["end_date"] = self.format_date(self.ref_time + timedelta(5))
+        self.data4create["roles"] = ["role_8", "role_9"]
+        self.data4create["status"] = "pending"
+
+        car_uuid = self.request_1.request_id
+        self.request_1.target_account = self.another_account
+        self.request_1.target_org = self.another_org_id
+        self.request_1.status = "pending"
+        self.request_1.save()
+        url = reverse("v1_api:cross-detail", kwargs={"pk": str(car_uuid)})
+
+        client = APIClient()
+        response = client.put(url, self.data4create, format="json", **self.associate_admin_request.META)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        for field in self.data4create:
+            if field == "roles":
+                for role in response.data.get("roles"):
+                    self.assertIn(role.get("display_name"), self.data4create["roles"])
+                continue
+            self.assertEqual(self.data4create.get(field), response.data.get(field))
+        self.assertEqual(len(response.data.get("roles")), 2)
 
     def test_update_request_fail_acct_for_requestor(self):
         """Test that updating the account of a CAR fails."""
