@@ -37,6 +37,7 @@ from management.principal.cleaner import (
     METRIC_STOMP_MESSAGES_NACK_TOTAL,
 )
 from management.principal.proxy import external_principal_to_user
+from management.relation_replicator.relation_replicator import ReplicationEventType
 from management.tenant_mapping.model import TenantMapping
 from management.tenant_service import get_tenant_bootstrap_service
 from management.workspace.model import Workspace
@@ -925,12 +926,15 @@ class PrincipalUMBTestsWithV2TenantBootstrap(PrincipalUMBTests):
     )
     @patch("management.group.model.AccessCache")
     @patch("management.principal.cleaner.UMB_CLIENT")
-    def test_disable_principal_which_is_in_or_not_in_group(self, client_mock, cache_class, proxy_mock):
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
+    def test_disable_principal_which_is_in_or_not_in_group(self, replicate, client_mock, cache_class, proxy_mock):
         """Process a umb message to disable a principal which is either in or not in a group."""
         principal_name = "principal-test"
         self.principal = Principal.objects.create(username=principal_name, tenant=self.tenant, user_id="56780000")
         self.group.principals.add(self.principal)
         self.group.save()
+        bootstrap_service = get_tenant_bootstrap_service(InMemoryRelationReplicator(self._tuples))
+        bootstrapped_tenant = bootstrap_service.bootstrap_tenant(self.tenant)
 
         before = REGISTRY.get_sample_value(METRIC_STOMP_MESSAGES_ACK_TOTAL)
         client_mock.canRead.side_effect = [True, False]
@@ -948,6 +952,20 @@ class PrincipalUMBTestsWithV2TenantBootstrap(PrincipalUMBTests):
         self.assertFalse(self.group.principals.all())
         cache_mock.delete_policy.assert_called_once_with(self.principal.uuid)
         self.assertTrue(before + 1 == after)
+        replicate.assert_called_once()
+        replication_event = replicate.call_args_list[0].args[0]
+        self.assertEqual(replication_event.event_type, ReplicationEventType.EXTERNAL_USER_DISABLE)
+        self.assertEqual(str(replication_event.partition_key), "stage")
+        self.assertEqual(
+            replication_event.event_info,
+            {
+                "user_id": self.principal.user_id,
+                "org_id": self.tenant.org_id,
+                "mapping_id": bootstrapped_tenant.mapping.id,
+                "principal_id": str(self.principal.uuid),
+            },
+        )
+        self.assertEqual(len(replication_event.remove), 3)
 
         # When principal not in group
         self.principal = Principal(username=principal_name, tenant=self.tenant, user_id="56780000")

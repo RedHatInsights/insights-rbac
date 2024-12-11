@@ -207,7 +207,7 @@ class V2TenantBootstrapService:
         tuples_to_remove = []
         user_id = user.user_id
         mapping: Optional[TenantMapping] = None
-        principal: Optional[Principal] = None
+        principal_id = ""
 
         if user_id is None:
             raise ValueError(f"User {user.username} has no user_id.")
@@ -219,7 +219,7 @@ class V2TenantBootstrapService:
         try:
             mapping = TenantMapping.objects.filter(tenant__org_id=user.org_id).get()
             default_group_uuid = str(mapping.default_group_uuid)  # type: ignore
-            default_admin_group_uuid = str(mapping.default_admin_group_uuid)
+            default_admin_group_uuid = str(mapping.default_admin_group_uuid)  # type: ignore
             tuples_to_remove.append(Group.relationship_to_user_id_for_group(default_group_uuid, user_id))
             tuples_to_remove.append(Group.relationship_to_user_id_for_group(default_admin_group_uuid, user_id))
         except TenantMapping.DoesNotExist:
@@ -230,6 +230,7 @@ class V2TenantBootstrapService:
 
         try:
             principal = Principal.objects.filter(username=user.username, tenant__org_id=user.org_id).get()
+            principal_id = str(principal.uuid)
 
             for group in principal.group.all():  # type: ignore
                 group.principals.remove(principal)
@@ -253,7 +254,7 @@ class V2TenantBootstrapService:
                     "user_id": user_id,
                     "org_id": user.org_id,
                     "mapping_id": mapping.id if mapping else None,
-                    "principal_id": principal.id if principal else None,
+                    "principal_id": principal_id,
                 },
                 partition_key=PartitionKey.byEnvironment(),
                 remove=tuples_to_remove,
