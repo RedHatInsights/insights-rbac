@@ -39,6 +39,7 @@ from management.principal.cleaner import (
 from management.principal.proxy import external_principal_to_user
 from management.tenant_mapping.model import TenantMapping
 from management.tenant_service import get_tenant_bootstrap_service
+from management.tenant_service.v2 import V2TenantBootstrapService
 from management.workspace.model import Workspace
 from api.models import Tenant
 from migration_tool.in_memory_tuples import (
@@ -51,6 +52,7 @@ from migration_tool.in_memory_tuples import (
     subject,
 )
 from tests.identity_request import IdentityRequest
+from tests.management.role.test_dual_write import RbacFixture
 
 
 class PrincipalCleanerTests(IdentityRequest):
@@ -309,6 +311,12 @@ class PrincipalUMBTests(IdentityRequest):
         self.group = Group(name="groupA", tenant=self.tenant)
         self.group.save()
 
+    def givenPrincipalFromMessageExists(self, with_user_id: bool = True):
+        """Create a principal from a message."""
+        return Principal.objects.create(
+            username=self.principal_name, user_id=self.principal_user_id if with_user_id else None, tenant=self.tenant
+        )
+
     @patch("management.principal.cleaner.UMB_CLIENT")
     def test_principal_cleanup_none(self, client_mock):
         """Test that we can run a principal clean up with no messages."""
@@ -543,12 +551,14 @@ class PrincipalUMBTests(IdentityRequest):
 class PrincipalUMBTestsWithV2TenantBootstrap(PrincipalUMBTests):
     """Test the principal processor functions with V2 tenant bootstrap enabled."""
 
-    _tuples: InMemoryTuples
+    tuples: InMemoryTuples
 
     def setUp(self):
         super().setUp()
         seed_group()
-        self._tuples = InMemoryTuples()
+        self.tuples = InMemoryTuples()
+        self.replicator = InMemoryRelationReplicator(self.tuples)
+        self.fixture = RbacFixture(replicator=self.replicator)
 
     @patch(
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
@@ -641,7 +651,7 @@ class PrincipalUMBTestsWithV2TenantBootstrap(PrincipalUMBTests):
         Tenant.objects.get(org_id="17685860").delete()
 
         with patch(
-            "management.principal.cleaner.OutboxReplicator", new=partial(InMemoryRelationReplicator, self._tuples)
+            "management.principal.cleaner.OutboxReplicator", new=partial(InMemoryRelationReplicator, self.tuples)
         ):
             process_principal_events_from_umb()
 
@@ -676,7 +686,7 @@ class PrincipalUMBTestsWithV2TenantBootstrap(PrincipalUMBTests):
         client_mock.receiveFrame.return_value = MagicMock(body=FRAME_BODY_CREATION)
 
         with patch(
-            "management.principal.cleaner.OutboxReplicator", new=partial(InMemoryRelationReplicator, self._tuples)
+            "management.principal.cleaner.OutboxReplicator", new=partial(InMemoryRelationReplicator, self.tuples)
         ):
             process_principal_events_from_umb()
 
@@ -715,7 +725,7 @@ class PrincipalUMBTestsWithV2TenantBootstrap(PrincipalUMBTests):
         client_mock.receiveFrame.return_value = MagicMock(body=FRAME_BODY)
 
         with patch(
-            "management.principal.cleaner.OutboxReplicator", new=partial(InMemoryRelationReplicator, self._tuples)
+            "management.principal.cleaner.OutboxReplicator", new=partial(InMemoryRelationReplicator, self.tuples)
         ):
             process_principal_events_from_umb()
 
@@ -750,7 +760,7 @@ class PrincipalUMBTestsWithV2TenantBootstrap(PrincipalUMBTests):
         client_mock.receiveFrame.return_value = MagicMock(body=FRAME_BODY)
 
         with patch(
-            "management.principal.cleaner.OutboxReplicator", new=partial(InMemoryRelationReplicator, self._tuples)
+            "management.principal.cleaner.OutboxReplicator", new=partial(InMemoryRelationReplicator, self.tuples)
         ):
             process_principal_events_from_umb()
 
@@ -780,14 +790,14 @@ class PrincipalUMBTestsWithV2TenantBootstrap(PrincipalUMBTests):
         client_mock.canRead.side_effect = [True, False]
         client_mock.receiveFrame.return_value = MagicMock(body=FRAME_BODY_CREATION)
 
-        bootstrap_service = get_tenant_bootstrap_service(InMemoryRelationReplicator(self._tuples))
+        bootstrap_service = get_tenant_bootstrap_service(InMemoryRelationReplicator(self.tuples))
         user = external_principal_to_user(proxy_mock.return_value["data"][0])
         bootstrap_service.update_user(user)
 
-        self._tuples.clear()
+        self.tuples.clear()
 
         with patch(
-            "management.principal.cleaner.OutboxReplicator", new=partial(InMemoryRelationReplicator, self._tuples)
+            "management.principal.cleaner.OutboxReplicator", new=partial(InMemoryRelationReplicator, self.tuples)
         ):
             process_principal_events_from_umb()
 
@@ -796,7 +806,7 @@ class PrincipalUMBTestsWithV2TenantBootstrap(PrincipalUMBTests):
             client_mock.ack.assert_called_once()
 
             mapping = TenantMapping.objects.get(tenant__org_id="17685860")
-            all_tuples = self._tuples.find_tuples()
+            all_tuples = self.tuples.find_tuples()
 
             # Should only have one tuple to ensure the user is in the default group
             self.assertEqual(
@@ -824,7 +834,9 @@ class PrincipalUMBTestsWithV2TenantBootstrap(PrincipalUMBTests):
     )
     @patch("management.principal.cleaner.UMB_CLIENT")
     @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
-    def test_non_bootstrapped_tenant_no_principal_disabled_user_does_not_produce_replication_event(self, replicate, client_mock, proxy_mock):
+    def test_non_bootstrapped_tenant_no_principal_disabled_user_does_not_produce_replication_event(
+        self, replicate, client_mock, proxy_mock
+    ):
         client_mock.canRead.side_effect = [True, False]
         client_mock.receiveFrame.return_value = MagicMock(body=FRAME_BODY_CREATION)
 
@@ -854,7 +866,7 @@ class PrincipalUMBTestsWithV2TenantBootstrap(PrincipalUMBTests):
         self.assertEqual(default.parent_id, root.id)
         self.assertEqual(
             1,
-            self._tuples.count_tuples(
+            self.tuples.count_tuples(
                 all_of(
                     resource("rbac", "workspace", default.id),
                     relation("binding"),
@@ -864,7 +876,7 @@ class PrincipalUMBTestsWithV2TenantBootstrap(PrincipalUMBTests):
         )
         self.assertEqual(
             1,
-            self._tuples.count_tuples(
+            self.tuples.count_tuples(
                 all_of(
                     resource("rbac", "role_binding", mapping.default_role_binding_uuid),
                     relation("subject"),
@@ -874,7 +886,7 @@ class PrincipalUMBTestsWithV2TenantBootstrap(PrincipalUMBTests):
         )
         self.assertEqual(
             1,
-            self._tuples.count_tuples(
+            self.tuples.count_tuples(
                 all_of(
                     resource("rbac", "role_binding", mapping.default_role_binding_uuid),
                     relation("role"),
@@ -885,7 +897,7 @@ class PrincipalUMBTestsWithV2TenantBootstrap(PrincipalUMBTests):
 
         self.assertEqual(
             1,
-            self._tuples.count_tuples(
+            self.tuples.count_tuples(
                 all_of(
                     resource("rbac", "workspace", default.id),
                     relation("binding"),
@@ -895,7 +907,7 @@ class PrincipalUMBTestsWithV2TenantBootstrap(PrincipalUMBTests):
         )
         self.assertEqual(
             1,
-            self._tuples.count_tuples(
+            self.tuples.count_tuples(
                 all_of(
                     resource("rbac", "role_binding", mapping.default_admin_role_binding_uuid),
                     relation("subject"),
@@ -905,7 +917,7 @@ class PrincipalUMBTestsWithV2TenantBootstrap(PrincipalUMBTests):
         )
         self.assertEqual(
             1,
-            self._tuples.count_tuples(
+            self.tuples.count_tuples(
                 all_of(
                     resource("rbac", "role_binding", mapping.default_admin_role_binding_uuid),
                     relation("role"),
@@ -1018,6 +1030,57 @@ class PrincipalUMBTestsWithV2TenantBootstrap(PrincipalUMBTests):
         self.assertTrue(self.group.principals.all())
         self.assertEqual(before + 1, after)
         self.assertEqual(ack_before, ack_after)
+
+
+class PrincipalUMBDisabledUserV2BootstrapTests(PrincipalUMBTestsWithV2TenantBootstrap):
+    def setUp(self):
+        super().setUp()
+
+        self.request_principals_patch = patch(
+            "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+            return_value={"status_code": 200, "data": []},
+        )
+        self.request_principals = self.request_principals_patch.start()
+
+        self.umb_client_patch = patch("management.principal.cleaner.UMB_CLIENT")
+        self.umb_client = self.umb_client_patch.start()
+        self.umb_client.canRead.side_effect = [True, False]
+        self.umb_client.receiveFrame.return_value = MagicMock(body=FRAME_BODY_CREATION)
+
+        self.replicate_patch = patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
+        self.replicate = self.replicate_patch.start()
+        self.replicate.side_effect = self.replicator.replicate
+
+        self.fixture.bootstrap_tenant(self.tenant)
+        self.principal = self.givenPrincipalFromMessageExists()
+
+    def tearDown(self):
+        self.request_principals_patch.stop()
+        self.umb_client_patch.stop()
+
+    def test_disabled_user_is_no_longer_member_of_custom_groups(self):
+        # Given custom groups that the user is a member of
+        group2, _ = self.fixture.new_group("g2", [], [], self.tenant)
+        self.fixture.add_members_to_group(self.group, [self.principal.user_id], [], self.tenant)
+        self.fixture.add_members_to_group(group2, [self.principal.user_id], [], self.tenant)
+
+        # When a message is received for that user
+        process_principal_events_from_umb()
+
+        # The user is no longer a member of custom groups
+        group1_members = self.tuples.find_tuples(
+            all_of(resource("rbac", "group", self.group.uuid), relation("member"))
+        )
+        group2_members = self.tuples.find_tuples(all_of(resource("rbac", "group", group2.uuid), relation("member")))
+
+        self.assertEqual(len(group1_members), 0)
+        self.assertEqual(len(group2_members), 0)
+
+    def test_disabled_user_is_no_longer_member_of_default_groups(self):
+        pass
+
+    def test_disabled_user_is_no_longer_bound_to_cross_account_access(self):
+        pass
 
 
 @override_settings(V2_BOOTSTRAP_TENANT=False)

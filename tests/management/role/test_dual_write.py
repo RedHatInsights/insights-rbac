@@ -27,7 +27,11 @@ from management.permission.model import Permission
 from management.policy.model import Policy
 from management.principal.model import Principal
 from management.relation_replicator.noop_replicator import NoopReplicator
-from management.relation_replicator.relation_replicator import DualWriteException, ReplicationEventType
+from management.relation_replicator.relation_replicator import (
+    DualWriteException,
+    RelationReplicator,
+    ReplicationEventType,
+)
 from management.role.model import Access, ResourceDefinition, Role, BindingMapping
 from management.role.relation_api_dual_write_handler import (
     RelationApiDualWriteHandler,
@@ -910,11 +914,21 @@ class DualWriteCustomRolesTestCase(DualWriteTestCase):
 class RbacFixture:
     """RBAC Fixture."""
 
-    def __init__(self, bootstrap_service: TenantBootstrapService = V2TenantBootstrapService(NoopReplicator())):
+    bootstrap_service: V2TenantBootstrapService
+
+    def __init__(
+        self,
+        bootstrap_service: Optional[TenantBootstrapService] = None,
+        replicator: RelationReplicator = NoopReplicator(),
+    ):
         """Initialize the RBAC fixture."""
         self.public_tenant = Tenant.objects.get(tenant_name="public")
-        self.bootstrap_service = bootstrap_service
+        if bootstrap_service is None:
+            self.bootstrap_service = V2TenantBootstrapService(replicator)
+        else:
+            self.bootstrap_service = bootstrap_service  # type: ignore
         self.default_group, self.admin_group = seed_group()
+        self.replicator = replicator
 
     def new_tenant(self, org_id: str) -> BootstrappedTenant:
         """Create a new tenant with the given name and organization ID."""
@@ -1040,21 +1054,28 @@ class RbacFixture:
         """Add members to the group."""
         principals = [
             *[
-                Principal.objects.get_or_create(username=user_id, tenant=principal_tenant, user_id=user_id)[0]
+                Principal.objects.get_or_create(
+                    tenant=principal_tenant, user_id=user_id, defaults={"username": user_id}
+                )[0]
                 for user_id in users
             ],
             *[
                 Principal.objects.get_or_create(
-                    username="service-account-" + user_id,
                     tenant=principal_tenant,
                     type="service-account",
                     user_id=user_id,
+                    defaults={"username": "service-account-" + user_id},
                 )[0]
                 for user_id in service_accounts
             ],
         ]
 
         group.principals.add(*principals)
+        handler = RelationApiDualWriteGroupHandler(
+            group, ReplicationEventType.ADD_PRINCIPALS_TO_GROUP, replicator=self.replicator
+        )
+        handler.generate_relations_to_add_principals(principals)
+        handler.replicate()
 
         return principals
 
