@@ -48,6 +48,7 @@ class ReplicationEventType(str, Enum):
     BOOTSTRAP_TENANT = "bootstrap_tenant"
     BULK_BOOTSTRAP_TENANT = "bulk_bootstrap_tenant"
     EXTERNAL_USER_UPDATE = "external_user_update"
+    EXTERNAL_USER_DISABLE = "external_user_disable"
     BULK_EXTERNAL_USER_UPDATE = "bulk_external_user_update"
     MIGRATE_CUSTOM_ROLE = "migrate_custom_role"
     MIGRATE_TENANT_GROUPS = "migrate_tenant_groups"
