@@ -39,7 +39,7 @@ class MigrateTests(TestCase):
         """Set up the utils tests."""
         super().setUp()
         # public tenant
-        public_tenant = Tenant.objects.get(tenant_name="public")
+        public_tenant = Tenant.objects.get_public_tenant()
 
         # system roles
         self.system_role_1 = Role.objects.create(

@@ -912,7 +912,7 @@ class RbacFixture:
 
     def __init__(self, bootstrap_service: TenantBootstrapService = V2TenantBootstrapService(NoopReplicator())):
         """Initialize the RBAC fixture."""
-        self.public_tenant = Tenant.objects.get(tenant_name="public")
+        self.public_tenant = Tenant.objects.get_public_tenant()
         self.bootstrap_service = bootstrap_service
         self.default_group, self.admin_group = seed_group()
 

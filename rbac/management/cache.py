@@ -156,6 +156,20 @@ class TenantCache(BasicCache):
         super().delete_cached(key, "tenant")
 
 
+class PublicTenantCache(TenantCache):
+    """Redis-based caching of public tenant."""
+
+    def set_cache(self, pipe, key, item):
+        """Override the method to set public tenant to cache."""
+        pipe.set(self.key_for(key), pickle.dumps(item))
+        pipe.expire(self.key_for(key), settings.PUBLIC_TENANT_CACHE_LIFETIME)
+        pipe.execute()
+
+    def save_tenant(self, tenant):
+        """Write the public tenant to Redis."""
+        super().save(tenant.tenant_name, tenant, "tenant")
+
+
 class AccessCache(BasicCache):
     """Redis-based caching of per-Principal per-app access policy."""  # noqa: D204
 

@@ -42,7 +42,7 @@ class AccessViewTests(IdentityRequest):
         user.account = self.customer_data["account_id"]
         user.org_id = self.customer_data["org_id"]
         request.user = user
-        public_tenant = Tenant.objects.get(tenant_name="public")
+        public_tenant = Tenant.objects.get_public_tenant()
 
         self.access_data = {
             "permission": "app:*:*",

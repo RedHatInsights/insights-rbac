@@ -173,7 +173,7 @@ class RoleViewSet(
             # You would be able to remove `select_for_update` here,
             # and instead rely on REPEATABLE READ's lost update detection to abort the tx.
             # Nothing else should need to change.
-            public_tenant = Tenant.objects.get(tenant_name="public")
+            public_tenant = Tenant.objects.get_public_tenant()
             base_query = Role.objects.filter(tenant__in=[self.request.tenant, public_tenant]).select_for_update()
 
             # TODO: May be redundant with RolePermissions check but copied from querysets.py for safety
@@ -513,7 +513,7 @@ class RoleViewSet(
 
         Assumes concurrent updates are prevented (e.g. with atomic block and locks).
         """
-        if instance.tenant_id == Tenant.objects.get(tenant_name="public").id:
+        if instance.tenant_id == Tenant.objects.get_public_tenant().id:
             key = "role"
             message = "System roles cannot be deleted."
             error = {key: [_(message)]}

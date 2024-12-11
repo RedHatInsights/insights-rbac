@@ -563,5 +563,5 @@ class V2TenantBootstrapService:
 
     def _get_public_tenant(self) -> Tenant:
         if self._public_tenant is None:
-            self._public_tenant = Tenant.objects.get(tenant_name="public")
+            self._public_tenant = Tenant.objects.get_public_tenant()
         return self._public_tenant
