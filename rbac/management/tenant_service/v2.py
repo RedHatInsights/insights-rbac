@@ -219,7 +219,9 @@ class V2TenantBootstrapService:
         try:
             mapping = TenantMapping.objects.filter(tenant__org_id=user.org_id).get()
             default_group_uuid = str(mapping.default_group_uuid)  # type: ignore
+            default_admin_group_uuid = str(mapping.default_admin_group_uuid)
             tuples_to_remove.append(Group.relationship_to_user_id_for_group(default_group_uuid, user_id))
+            tuples_to_remove.append(Group.relationship_to_user_id_for_group(default_admin_group_uuid, user_id))
         except TenantMapping.DoesNotExist:
             logger.info(
                 "No default membership to remove. There is no tenant mapping, so the tenant must not be bootstrapped."
@@ -235,6 +237,7 @@ class V2TenantBootstrapService:
                 tuple = group.relationship_to_principal(user)
                 if tuple is None:
                     raise ValueError(f"relationship_to_principal is None for user {user_id}")
+                tuples_to_remove.append(tuple)
 
             principal.delete()  # type: ignore
         except Principal.DoesNotExist:
