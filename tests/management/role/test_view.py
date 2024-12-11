@@ -151,6 +151,7 @@ class RoleViewsetTests(IdentityRequest):
             "display_name",
             "system",
             "created",
+            "access",
             "policyCount",
             "accessCount",
             "modified",
@@ -158,9 +159,6 @@ class RoleViewsetTests(IdentityRequest):
             "admin_default",
             "external_role_id",
             "external_tenant",
-            "groups_in_count",
-            "groups_in",
-            "access",
         }
 
         self.principal = Principal(username=self.user_data["username"], tenant=self.tenant)
@@ -914,7 +912,7 @@ class RoleViewsetTests(IdentityRequest):
         # make sure all roles are from:
         #       * custom group 'NewGroupForJohn' or
         #       * 'Default access' group
-        groups = [default_access_group_name, custom_group_name, default_admin_access_group_name]
+        groups = [default_access_group_name, custom_group_name]
         for role in response_data:
             for group in role[groups_in]:
                 self.assertIn(group["name"], groups)
@@ -1118,6 +1116,7 @@ class RoleViewsetTests(IdentityRequest):
 
         response_data = response.data.get("data")
         for iterRole in response_data:
+            print(iterRole.get("groups_in"))
             # fields displayed are same as defined, groupsInCount is added
             self.assertEqual(new_display_fields, set(iterRole.keys()))
             self.assertIsNotNone(iterRole.get("groups_in")[0]["name"])
@@ -1210,7 +1209,7 @@ class RoleViewsetTests(IdentityRequest):
         self.assertEqual(len(response.data.get("data")), 5)
 
         role = response.data.get("data")[0]
-
+        print(role)
         self.assertEqual(new_display_fields, set(role.keys()))
         self.assertEqual(role["groups_in_count"], 1)
 

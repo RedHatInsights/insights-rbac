@@ -329,12 +329,6 @@ class RoleViewSet(
 
         """
         public_tenant = Tenant.objects.get(tenant_name="public")
-        base_queryset = (
-            Role.objects.prefetch_related("access", "ext_relation")
-            .filter(tenant__in=[request.tenant, public_tenant])
-            .annotate(policyCount=Count("policies", distinct=True), accessCount=Count("access", distinct=True))
-        )
-
         # Filtering
         query_params = {
             "external_tenant": request.query_params.get("external_tenant", None),
@@ -349,8 +343,27 @@ class RoleViewSet(
             "username": request.query_params.get("username", None),
             "limit": request.query_params.get("limit", 10),
             "offset": request.query_params.get("offset", 0),
-            "add_fields": request.query_params.get("add_fields", None),
+            "add_fields": request.query_params.get("add_fields", ""),
         }
+        add_fields = query_params["add_fields"]
+        add_fields_split = add_fields.split(",")
+
+        base_queryset = (
+            Role.objects.prefetch_related("access", "ext_relation")
+            .filter(tenant__in=[request.tenant, public_tenant])
+            .annotate(
+                policyCount=Count("policies", distinct=True),
+                accessCount=Count("access", distinct=True),
+            )
+        )
+
+        # Dynamic annotations
+        if "groups_in_count" in add_fields_split:
+            base_queryset = base_queryset.annotate(groups_in_count=Count("policies__group"))
+        elif "groups_in" in add_fields_split:
+            base_queryset = base_queryset.annotate(groups_in=F("policies__group__name"))
+        else:
+            base_queryset = base_queryset
 
         filters = []
         limit = query_params["limit"]

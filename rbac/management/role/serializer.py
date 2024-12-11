@@ -92,6 +92,8 @@ class RoleSerializer(serializers.ModelSerializer):
     access = AccessSerializer(many=True)
     policyCount = serializers.IntegerField(read_only=True)
     accessCount = serializers.IntegerField(read_only=True)
+    groups_in_count = serializers.IntegerField(read_only=True)
+    groups_in = serializers.ListField(read_only=True)
     applications = serializers.SerializerMethodField()
     system = serializers.BooleanField(read_only=True)
     platform_default = serializers.BooleanField(read_only=True)
@@ -100,8 +102,6 @@ class RoleSerializer(serializers.ModelSerializer):
     modified = serializers.DateTimeField(read_only=True)
     external_role_id = serializers.SerializerMethodField()
     external_tenant = serializers.SerializerMethodField()
-    groups_in_count = serializers.SerializerMethodField()
-    groups_in = serializers.SerializerMethodField()
 
     class Meta:
         """Metadata for the serializer."""
@@ -115,6 +115,8 @@ class RoleSerializer(serializers.ModelSerializer):
             "access",
             "policyCount",
             "accessCount",
+            "groups_in_count",
+            "groups_in",
             "applications",
             "system",
             "platform_default",
@@ -123,8 +125,6 @@ class RoleSerializer(serializers.ModelSerializer):
             "modified",
             "external_role_id",
             "external_tenant",
-            "groups_in_count",
-            "groups_in",
         )
 
     def get_applications(self, obj):
@@ -164,17 +164,6 @@ class RoleSerializer(serializers.ModelSerializer):
     def get_external_tenant(self, obj):
         """Get the external tenant name if it's from an external tenant."""
         return obj.external_tenant_name()
-
-    def get_groups_in_count(self, obj):
-        """Get the total count of groups where the role is in."""
-        request = self.context.get("request")
-        groups_in = obtain_groups_in(obj, request)
-        return groups_in.count()  # Make sure this returns an integer count
-
-    def get_groups_in(self, obj):
-        """Get the groups where the role is in."""
-        request = self.context.get("request")
-        return obtain_groups_in(obj, request).values("name", "uuid", "description")
 
 
 class RoleMinimumSerializer(SerializerCreateOverrideMixin, serializers.ModelSerializer):
