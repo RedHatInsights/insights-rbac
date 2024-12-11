@@ -187,6 +187,11 @@ class GroupViewsetTests(IdentityRequest):
         self.defPolicy = Policy(name="defPolicy", system=True, tenant=self.public_tenant, group=self.defGroup)
         self.defPolicy.save()
 
+        self.Custom_default_group = Group(
+            name="Custom default group", platform_default=False, system=False, tenant=self.tenant
+        )
+        self.Custom_default_group.save()
+
         self.adminGroup = Group(name="groupAdmin", admin_default=True, tenant=self.public_tenant, system=True)
         self.adminGroup.save()
         self.adminGroup.principals.add(self.principal, self.test_principal)
@@ -440,11 +445,11 @@ class GroupViewsetTests(IdentityRequest):
         for keyname in ["meta", "links", "data"]:
             self.assertIn(keyname, response.data)
         self.assertIsInstance(response.data.get("data"), list)
-        self.assertEqual(len(response.data.get("data")), 6)
+        self.assertEqual(len(response.data.get("data")), 7)
 
         group = response.data.get("data")[0]
         self.assertIsNotNone(group.get("name"))
-        self.assertEqual(group.get("name"), self.group.name)
+        self.assertEqual(group.get("name"), self.Custom_default_group.name)
 
         # check that all fields from GroupInputSerializer are present
         for key in GroupInputSerializer().fields.keys():
@@ -546,7 +551,7 @@ class GroupViewsetTests(IdentityRequest):
         url = "{}?name={}".format(url, "group")
         client = APIClient()
         response = client.get(url, **self.headers)
-        self.assertEqual(response.data.get("meta").get("count"), 6)
+        self.assertEqual(response.data.get("meta").get("count"), 7)
 
     def test_get_group_by_partial_name_explicit(self):
         """Test that getting groups by name returns partial match when specified."""
@@ -554,7 +559,7 @@ class GroupViewsetTests(IdentityRequest):
         url = "{}?name={}&name_match={}".format(url, "group", "partial")
         client = APIClient()
         response = client.get(url, **self.headers)
-        self.assertEqual(response.data.get("meta").get("count"), 6)
+        self.assertEqual(response.data.get("meta").get("count"), 7)
 
     def test_get_group_by_name_invalid_criteria(self):
         """Test that getting groups by name fails with invalid name_match."""
@@ -657,13 +662,14 @@ class GroupViewsetTests(IdentityRequest):
         response = client.get(url, **self.headers)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(response.data.get("data")), 4)
+        self.assertEqual(len(response.data.get("data")), 5)
         response_group_uuids = [group["uuid"] for group in response.data.get("data")]
         self.assertCountEqual(
             response_group_uuids,
             [
                 str(self.group.uuid),
                 str(self.groupB.uuid),
+                str(self.Custom_default_group.uuid),
                 str(self.emptyGroup.uuid),
                 str(self.groupMultiRole.uuid),
             ],
@@ -691,13 +697,14 @@ class GroupViewsetTests(IdentityRequest):
         response = client.get(url, **self.headers)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(response.data.get("data")), 5)
+        self.assertEqual(len(response.data.get("data")), 6)
         response_group_uuids = [group["uuid"] for group in response.data.get("data")]
         self.assertCountEqual(
             response_group_uuids,
             [
                 str(self.group.uuid),
                 str(self.groupB.uuid),
+                str(self.Custom_default_group.uuid),
                 str(self.emptyGroup.uuid),
                 str(self.groupMultiRole.uuid),
                 str(self.adminGroup.uuid),
@@ -726,12 +733,13 @@ class GroupViewsetTests(IdentityRequest):
         response = client.get(url, **self.headers)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(response.data.get("data")), 5)
+        self.assertEqual(len(response.data.get("data")), 6)
         response_group_uuids = [group["uuid"] for group in response.data.get("data")]
         self.assertCountEqual(
             response_group_uuids,
             [
                 str(self.group.uuid),
+                str(self.Custom_default_group.uuid),
                 str(self.groupB.uuid),
                 str(self.emptyGroup.uuid),
                 str(self.groupMultiRole.uuid),
@@ -804,6 +812,14 @@ class GroupViewsetTests(IdentityRequest):
         """Test that platform_default groups are protected from updates"""
         url = reverse("v1_management:group-detail", kwargs={"uuid": self.defGroup.uuid})
         test_data = {"name": self.defGroup.name + "_updated"}
+        client = APIClient()
+        response = client.put(url, test_data, format="json", **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_update_custom_default_group(self):
+        """Test that Custom default group is protected from updates"""
+        url = reverse("v1_management:group-detail", kwargs={"uuid": self.Custom_default_group.uuid})
+        test_data = {"name": "new_name" + "_updated", "description": "new_description" + "_updated"}
         client = APIClient()
         response = client.put(url, test_data, format="json", **self.headers)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
