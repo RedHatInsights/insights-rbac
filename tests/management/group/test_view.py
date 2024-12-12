@@ -762,6 +762,7 @@ class GroupViewsetTests(IdentityRequest):
             url = reverse("v1_management:group-detail", kwargs={"uuid": self.group.uuid})
             client = APIClient()
             response = client.put(url, test_data, format="json", **self.headers)
+            print(response.data)
             self.assertEqual(response.status_code, status.HTTP_200_OK)
 
             self.assertIsNotNone(response.data.get("uuid"))
