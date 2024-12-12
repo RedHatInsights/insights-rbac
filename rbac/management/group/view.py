@@ -226,16 +226,20 @@ class GroupViewSet(
             raise serializers.ValidationError(error)
 
     def restrict_custom_default_group_renaming(self, request, group):
-        """Restrict users from changing the name of the Custom default group."""
+        """Restrict users from changing the name or description of the Custom default group."""
         method = request.method
         name = request.data.get("name")
+        description = request.data.get("description")
         invalid_methods = {"PUT"}
+        is_updating = method in invalid_methods
         try:
             custom_default_group = Group.objects.get(name="Custom default group")
-            is_custom_group = group.name == custom_default_group.name
-            if is_custom_group and method in invalid_methods and (name != group.name):
+            is_custom_group = (
+                group.name == custom_default_group.name and group.description == custom_default_group.description
+            )
+            if is_custom_group and is_updating and (name != group.name) or (description != group.description):
                 key = "Custom default group"
-                message = "Updating the name of Custom default group is restricted"
+                message = "Updating the name or description of Custom default group is restricted"
                 error = {key: [_(message)]}
                 raise serializers.ValidationError(error)
         except Group.DoesNotExist:
