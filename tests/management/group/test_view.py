@@ -187,10 +187,10 @@ class GroupViewsetTests(IdentityRequest):
         self.defPolicy = Policy(name="defPolicy", system=True, tenant=self.public_tenant, group=self.defGroup)
         self.defPolicy.save()
 
-        self.Custom_default_group = Group(
+        self.custom_default_group = Group(
             name="Custom default group", platform_default=True, system=False, tenant=self.public_tenant
         )
-        self.Custom_default_group.save()
+        self.custom_default_group.save()
 
         self.adminGroup = Group(name="groupAdmin", admin_default=True, tenant=self.public_tenant, system=True)
         self.adminGroup.save()
@@ -449,7 +449,7 @@ class GroupViewsetTests(IdentityRequest):
 
         group = response.data.get("data")[0]
         self.assertIsNotNone(group.get("name"))
-        self.assertEqual(group.get("name"), self.Custom_default_group.name)
+        self.assertEqual(group.get("name"), self.custom_default_group.name)
 
         # check that all fields from GroupInputSerializer are present
         for key in GroupInputSerializer().fields.keys():
@@ -669,7 +669,7 @@ class GroupViewsetTests(IdentityRequest):
             [
                 str(self.group.uuid),
                 str(self.groupB.uuid),
-                str(self.Custom_default_group.uuid),
+                str(self.custom_default_group.uuid),
                 str(self.emptyGroup.uuid),
                 str(self.groupMultiRole.uuid),
             ],
@@ -738,7 +738,7 @@ class GroupViewsetTests(IdentityRequest):
             response_group_uuids,
             [
                 str(self.group.uuid),
-                str(self.Custom_default_group.uuid),
+                str(self.custom_default_group.uuid),
                 str(self.groupB.uuid),
                 str(self.emptyGroup.uuid),
                 str(self.groupMultiRole.uuid),
@@ -818,7 +818,7 @@ class GroupViewsetTests(IdentityRequest):
 
     def test_update_custom_default_group(self):
         """Test that Custom default group is protected from updates"""
-        url = reverse("v1_management:group-detail", kwargs={"uuid": self.Custom_default_group.uuid})
+        url = reverse("v1_management:group-detail", kwargs={"uuid": self.custom_default_group.uuid})
         test_data = {"name": "new_name" + "_updated", "description": "new_description" + "_updated"}
         client = APIClient()
         response = client.put(url, test_data, format="json", **self.headers)

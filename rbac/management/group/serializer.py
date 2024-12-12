@@ -43,6 +43,21 @@ class GroupInputSerializer(SerializerCreateOverrideMixin, serializers.ModelSeria
         """Role count for the serializer."""
         return obj.role_count()
 
+    def is_custom_default_group(self, group):
+        """Check if the group is custom default or not."""
+        if group.platform_default and not group.system:
+            return True
+        return False
+
+    def restrict_custom_default_group_renaming(self, group):
+        """Restrict users from changing the name or description of the Custom default group."""
+        is_custom_default = self.is_custom_default_group(group)
+        if is_custom_default:
+            key = "detail"
+            message = "Updating the name or description of Custom default group is restricted"
+            error = {key: [(message)]}
+            raise serializers.ValidationError(error)
+
     class Meta:
         """Metadata for the serializer."""
 
@@ -69,6 +84,7 @@ class GroupInputSerializer(SerializerCreateOverrideMixin, serializers.ModelSeria
     def update(self, instance, validated_data):
         """Update the role object in the database."""
         group = super().update(instance, validated_data)
+        self.restrict_custom_default_group_renaming(group)
         group_obj_change_notification_handler(self.context["request"].user, group, "updated")
         return group
 
