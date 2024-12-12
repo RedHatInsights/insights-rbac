@@ -36,7 +36,7 @@ class CrossAccountRequestModelTests(TestCase):
 
         self.ref_time = timezone.now()
         self.request = CrossAccountRequest.objects.create(
-            target_account="123456", target_org="654321", user_id="567890", end_date=self.ref_time + timedelta(10)
+            target_org="654321", user_id="567890", end_date=self.ref_time + timedelta(10)
         )
 
     def tearDown(self):
@@ -45,7 +45,7 @@ class CrossAccountRequestModelTests(TestCase):
 
     def test_request_creation_success(self):
         """Test the creation of cross account request."""
-        self.assertEqual(self.request.target_account, "123456")
+        self.assertEqual(self.request.target_account, None)
         self.assertEqual(self.request.target_org, "654321")
         self.assertEqual(self.request.user_id, "567890")
         self.assertIsNotNone(self.request.start_date)

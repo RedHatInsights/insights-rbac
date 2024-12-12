@@ -55,11 +55,6 @@ class CrossAccountRequestFilter(filters.FilterSet):
         """Filter to lookup requests by target_org."""
         return CommonFilters.multiple_values_in(self, queryset, "target_org", values)
 
-    def account_filter(self, queryset, field, values):
-        """Filter to lookup requests by target_account."""
-        accounts = values.split(",")
-        return queryset.filter(target_account__in=accounts)
-
     def approved_filter(self, queryset, field, value):
         """Filter to lookup requests by status of approved."""
         if value:
@@ -76,14 +71,13 @@ class CrossAccountRequestFilter(filters.FilterSet):
             query = query | Q(status__iexact=status)
         return queryset.distinct().filter(query)
 
-    account = filters.CharFilter(field_name="target_account", method="account_filter")
     org_id = filters.CharFilter(field_name="target_org", method="org_id_filter")
     approved_only = filters.BooleanFilter(field_name="end_date", method="approved_filter")
     status = filters.CharFilter(field_name="status", method="status_filter")
 
     class Meta:
         model = CrossAccountRequest
-        fields = ["account", "org_id", "approved_only", "status"]
+        fields = ["org_id", "approved_only", "status"]
 
 
 class CrossAccountRequestViewSet(
@@ -346,9 +340,6 @@ class CrossAccountRequestViewSet(
                 "Please use PATCH to update the status of the request.",
             )
 
-        # Do not allow updating the target_org or target_account.
+        # Do not allow updating the target_org.
         if request.data.get("target_org") and str(request.data.get("target_org")) != update_obj.target_org:
             self.throw_validation_error("cross-account-update", "Target org must stay the same.")
-
-        if request.data.get("target_account") and str(request.data.get("target_account")) != update_obj.target_account:
-            self.throw_validation_error("cross-account-update", "Target account must stay the same.")
