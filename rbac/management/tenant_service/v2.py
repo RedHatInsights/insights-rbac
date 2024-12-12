@@ -207,7 +207,7 @@ class V2TenantBootstrapService:
         tuples_to_remove = []
         user_id = user.user_id
         mapping: Optional[TenantMapping] = None
-        principal_id = ""
+        principal_uuid = ""
 
         if user_id is None:
             raise ValueError(f"User {user.username} has no user_id.")
@@ -230,7 +230,7 @@ class V2TenantBootstrapService:
 
         try:
             principal = Principal.objects.filter(username=user.username, tenant__org_id=user.org_id).get()
-            principal_id = str(principal.uuid)
+            principal_uuid = str(principal.uuid)
 
             for group in principal.group.all():  # type: ignore
                 group.principals.remove(principal)
@@ -254,7 +254,7 @@ class V2TenantBootstrapService:
                     "user_id": user_id,
                     "org_id": user.org_id,
                     "mapping_id": mapping.id if mapping else None,
-                    "principal_id": principal_id,
+                    "principal_uuid": principal_uuid,
                 },
                 partition_key=PartitionKey.byEnvironment(),
                 remove=tuples_to_remove,
