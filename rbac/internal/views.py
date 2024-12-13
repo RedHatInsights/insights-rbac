@@ -23,9 +23,9 @@ import logging
 import requests
 from core.utils import destructive_ok
 from django.conf import settings
-from django.db import transaction
+from django.db import connection, transaction
 from django.db.migrations.recorder import MigrationRecorder
-from django.http import HttpResponse
+from django.http import HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404
 from django.utils.html import escape
 from management.cache import TenantCache
@@ -40,6 +40,8 @@ from management.principal.proxy import (
     bop_request_status_count,
     bop_request_time_tracking,
 )
+from management.relation_replicator.outbox_replicator import OutboxReplicator
+from management.role.serializer import BindingMappingSerializer
 from management.tasks import (
     migrate_data_in_worker,
     run_migrations_in_worker,
@@ -47,11 +49,19 @@ from management.tasks import (
     run_seeds_in_worker,
     run_sync_schemas_in_worker,
 )
+from management.tenant_service.v2 import V2TenantBootstrapService
 from rest_framework import status
 
-from api.common.pagination import StandardResultsSetPagination
+from api.common.pagination import StandardResultsSetPagination, WSGIRequestResultsSetPagination
 from api.models import Tenant
-from api.tasks import cross_account_cleanup, populate_tenant_account_id_in_worker
+from api.tasks import (
+    cross_account_cleanup,
+    populate_tenant_account_id_in_worker,
+    run_migration_resource_deletion,
+    run_reset_imported_tenants,
+)
+from api.utils import RESOURCE_MODEL_MAPPING, get_resources
+
 
 logger = logging.getLogger(__name__)
 TENANTS = TenantCache()
@@ -85,9 +95,11 @@ def list_unmodified_tenants(request):
     offset = int(request.GET.get("offset", 0))
 
     if limit:
-        tenant_qs = Tenant.objects.exclude(tenant_name="public")[offset : (limit + offset)]  # noqa: E203
+        tenant_qs = Tenant.objects.filter(ready=True).exclude(tenant_name="public")[
+            offset : (limit + offset)  # noqa: E203
+        ]
     else:
-        tenant_qs = Tenant.objects.exclude(tenant_name="public")
+        tenant_qs = Tenant.objects.filter(ready=True).exclude(tenant_name="public")
     to_return = []
     for tenant_obj in tenant_qs:
         if tenant_is_unmodified(tenant_name=tenant_obj.tenant_name, org_id=tenant_obj.org_id):
@@ -498,10 +510,185 @@ def data_migration(request):
     return HttpResponse("Data migration from V1 to V2 are running in a background worker.", status=202)
 
 
+def bootstrap_tenant(request):
+    """View method for bootstrapping a tenant.
+
+    POST /_private/api/utils/bootstrap_tenant/?org_id=12345&force=false
+
+    org_id:
+        (required) The org_id of the Tenant to bootstrap.
+
+    force:
+        Whether or not to force replication to happen, even if the Tenant is already bootstrapped.
+        Cannot be 'true' if replication is on, due to inconsistency risk.
+    """
+    if request.method != "POST":
+        return HttpResponse('Invalid method, only "POST" is allowed.', status=405)
+    logger.info("Running bootstrap tenant.")
+
+    org_id = request.GET.get("org_id")
+    force = request.GET.get("force", "false").lower() == "true"
+    if not org_id:
+        return HttpResponse('Invalid request, must supply the "org_id" query parameter.', status=400)
+    if force and settings.REPLICATION_TO_RELATION_ENABLED:
+        return HttpResponse(
+            "Forcing replication is not allowed when replication is on, "
+            "due to race condition with default group customization.",
+            status=400,
+        )
+    with transaction.atomic():
+        tenant = get_object_or_404(Tenant, org_id=org_id)
+        bootstrap_service = V2TenantBootstrapService(OutboxReplicator())
+        bootstrap_service.bootstrap_tenant(tenant, force=force)
+    return HttpResponse(f"Bootstrap tenant with org_id {org_id} finished.", status=200)
+
+
 class SentryDiagnosticError(Exception):
     """Raise this to create an event in Sentry."""
 
     pass
+
+
+def list_bindings_for_role(request):
+    """View method for listing bindings for a role.
+
+    GET /_private/api/utils/bindings/?role_uuid=xxx
+    """
+    if request.method != "GET":
+        return HttpResponse('Invalid method, only "GET" is allowed.', status=405)
+    role_uuid = request.GET.get("role_uuid")
+    if not role_uuid:
+        return HttpResponse(
+            'Invalid request, must supply the "role_uuid" query parameter.',
+            status=400,
+        )
+    role = get_object_or_404(Role, uuid=role_uuid)
+    bindings = role.binding_mappings.all()
+    serializer = BindingMappingSerializer(bindings, many=True)
+    result = serializer.data or []
+    return HttpResponse(json.dumps(result), content_type="application/json", status=200)
+
+
+def migration_resources(request):
+    """View or delete specific resources related to migration.
+
+    DELETE /_private/api/utils/migration_resources/?resource=xxx&org_id=xxx
+    GET /_private/api/utils/migration_resources/?resource=xxx&org_id=xxx&limit=1000
+    options of resource: workspace, mapping(tenantmapping), binding(bindingmapping)
+    org_id does not work for bindingmapping
+    """
+    resource = request.GET.get("resource")
+    if not resource:
+        return HttpResponse(
+            'Invalid request, must supply the "resource" query parameter.',
+            status=400,
+        )
+    resource = resource.lower()
+    if resource not in RESOURCE_MODEL_MAPPING:
+        return HttpResponse(
+            f"Invalid request, resource should be in '{RESOURCE_MODEL_MAPPING.keys()}'.",
+            status=400,
+        )
+
+    org_id = request.GET.get("org_id")
+
+    if request.method == "DELETE":
+        if not destructive_ok("api"):
+            return HttpResponse("Destructive operations disallowed.", status=400)
+        run_migration_resource_deletion.delay({"resource": resource, "org_id": org_id})
+        logger.info(f"Deleting resources of type {resource}. Requested by '{request.user.username}'")
+        return HttpResponse("Resource deletion is running in a background worker.", status=202)
+    elif request.method == "GET":
+        resource_objs = get_resources(resource, org_id)
+        pg = WSGIRequestResultsSetPagination()
+        page = pg.paginate_queryset(resource_objs, request)
+        page = [str(record.id) for record in page]
+        return HttpResponse(json.dumps(page), content_type="application/json", status=200)
+    return HttpResponse(f"Invalid method, {request.method}", status=405)
+
+
+def reset_imported_tenants(request: HttpRequest) -> HttpResponse:
+    """Reset tenants imported via user import job.
+
+    GET /_private/api/utils/reset_imported_tenants/?exclude_id=1&exclude_id=2
+    DELETE /_private/api/utils/reset_imported_tenants/?exclude_id=1&exclude_id=2
+    """
+    # If GET: return a count of how many tenants would be deleted
+    # If DELETE: delete the tenants
+    # Request should accept a query parameter to exclude certain tenants so we can exclude the ~129
+    excluded = request.GET.getlist("exclude_id", [])
+
+    query = "FROM api_tenant WHERE tenant_name <> 'public' "
+
+    if excluded:
+        query += "AND id NOT IN %s "
+
+    query += (
+        "AND NOT EXISTS (SELECT 1 FROM management_principal WHERE management_principal.tenant_id = api_tenant.id) "
+    )
+    query += """AND NOT (
+              EXISTS    (SELECT 1
+                         FROM   management_tenantmapping
+                         WHERE  management_tenantmapping.tenant_id = api_tenant.id)
+              OR EXISTS (SELECT 1
+                         FROM   management_access
+                         WHERE  management_access.tenant_id = api_tenant.id)
+              OR EXISTS (SELECT 1
+                         FROM   management_group
+                         WHERE  management_group.tenant_id = api_tenant.id)
+              OR EXISTS (SELECT 1
+                         FROM   management_permission
+                         WHERE  management_permission.tenant_id = api_tenant.id)
+              OR EXISTS (SELECT 1
+                         FROM   management_policy
+                         WHERE  management_policy.tenant_id = api_tenant.id)
+              OR EXISTS (SELECT 1
+                         FROM   management_resourcedefinition
+                         WHERE  management_resourcedefinition.tenant_id =
+                        api_tenant.id)
+              OR EXISTS (SELECT 1
+                         FROM   management_role
+                         WHERE  management_role.tenant_id = api_tenant.id)
+              OR EXISTS (SELECT 1
+                         FROM   management_auditlog
+                         WHERE  management_auditlog.tenant_id = api_tenant.id)
+              OR EXISTS (SELECT 1
+                         FROM   management_workspace
+                         WHERE  management_workspace.tenant_id = api_tenant.id)
+              )"""
+
+    try:
+        limit = int(request.GET.get("limit", "-1"))
+    except ValueError:
+        return HttpResponse("Invalid limit parameter, must be an integer.", status=400)
+
+    if limit > 0:
+        query += f" LIMIT {limit}"
+    elif limit == 0:
+        return HttpResponse("Limit is 0, nothing to do", status=200)
+
+    if request.method == "GET":
+        with connection.cursor() as cursor:
+            if limit > 0:
+                cursor.execute("SELECT COUNT(*) FROM (SELECT 1 " + query + ") subquery", (tuple(excluded),))
+            else:
+                cursor.execute(
+                    "SELECT COUNT(*) " + query,
+                    (tuple(excluded),),
+                )
+            count = cursor.fetchone()[0]
+
+        return HttpResponse(f"{count} tenants would be deleted", status=200)
+
+    if request.method == "DELETE":
+        if not destructive_ok("api"):
+            return HttpResponse("Destructive operations disallowed.", status=400)
+
+        run_reset_imported_tenants.delay({"query": query, "limit": limit, "excluded": excluded})
+
+        return HttpResponse("Tenants deleting in worker.", status=200)
+
+    return HttpResponse("Invalid method", status=405)
 
 
 def trigger_error(request):

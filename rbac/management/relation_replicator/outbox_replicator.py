@@ -18,15 +18,32 @@
 """RelationReplicator which writes to the outbox table."""
 
 import logging
-from typing import Optional
-from typing import Protocol
+from typing import Any, Dict, List, Optional, Protocol, TypedDict
 
+from django.db import transaction
 from google.protobuf import json_format
+from kessel.relations.v1beta1.common_pb2 import Relationship
 from management.models import Outbox
-from management.relation_replicator.relation_replicator import RelationReplicator, ReplicationEvent
+from management.relation_replicator.relation_replicator import (
+    RelationReplicator,
+    ReplicationEvent,
+    ReplicationEventType,
+)
+from prometheus_client import Counter
 
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
+
+relations_replication_event_total = Counter(
+    "relations_replication_event_total", "Total count of relations replication events"
+)
+
+
+class ReplicationEventPayload(TypedDict):
+    """Typed dictionary for ReplicationEvent payload."""
+
+    relations_to_add: List[Dict[str, Any]]
+    relations_to_remove: List[Dict[str, Any]]
 
 
 class OutboxReplicator(RelationReplicator):
@@ -39,36 +56,62 @@ class OutboxReplicator(RelationReplicator):
     def replicate(self, event: ReplicationEvent):
         """Replicate the given event to Kessel Relations via the Outbox."""
         payload = self._build_replication_event(event.add, event.remove)
-        self._save_replication_event(payload, event.event_type, event.event_info, event.partition_key)
+        self._save_replication_event(payload, event.event_type, event.event_info, str(event.partition_key))
 
-    def _build_replication_event(self, relations_to_add, relations_to_remove):
+    def _build_replication_event(
+        self, relations_to_add: list[Relationship], relations_to_remove: list[Relationship]
+    ) -> ReplicationEventPayload:
         """Build replication event."""
-        add_json = []
+        add_json: list[dict[str, Any]] = []
         for relation in relations_to_add:
             add_json.append(json_format.MessageToDict(relation))
 
-        remove_json = []
+        remove_json: list[dict[str, Any]] = []
         for relation in relations_to_remove:
             remove_json.append(json_format.MessageToDict(relation))
 
-        replication_event = {"relations_to_add": add_json, "relations_to_remove": remove_json}
-        return replication_event
+        return {"relations_to_add": add_json, "relations_to_remove": remove_json}
 
-    def _save_replication_event(self, payload, event_type, event_info: dict[str, object], aggregateid):
+    def _save_replication_event(
+        self,
+        payload: ReplicationEventPayload,
+        event_type: ReplicationEventType,
+        event_info: dict[str, object],
+        aggregateid: str,
+    ):
         """Save replication event."""
         # TODO: Can we add these as proper fields for kibana but also get logged in simple formatter?
+        logged_info = " ".join([f"info.{key}='{str(value)}'" for key, value in event_info.items()])
+
+        if not payload["relations_to_add"] and not payload["relations_to_remove"]:
+            logger.warning(
+                "[Dual Write] Skipping empty replication event. "
+                "An empty event is always a bug. "
+                "Calling code should avoid this and if not obvious, log why there is nothing to replicate. "
+                "aggregateid='%s' event_type='%s' %s",
+                aggregateid,
+                event_type,
+                logged_info,
+            )
+            return
+
         logger.info(
-            "[Dual Write] Publishing replication event. event_type='%s' %s",
+            "[Dual Write] Publishing replication event. aggregateid='%s' event_type='%s' %s",
+            aggregateid,
             event_type,
-            " ".join([f"info.{key}='{str(value)}'" for key, value in event_info.items()]),
+            logged_info,
         )
+
+        transaction.on_commit(relations_replication_event_total.inc)
+
         # https://debezium.io/documentation/reference/stable/transformations/outbox-event-router.html#basic-outbox-table
         outbox = Outbox(
             aggregatetype="relations-replication-event",
-            aggregateid=str(aggregateid),
+            aggregateid=aggregateid,
             event_type=event_type,
             payload=payload,
         )
+
         self._log.log(outbox)
 
 

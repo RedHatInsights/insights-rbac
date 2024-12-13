@@ -76,6 +76,10 @@ class GroupDefinerTests(IdentityRequest):
             name="new_platform_role", platform_default=True, tenant=self.public_tenant
         )
         role_to_remove = Role.objects.get(name="User Access administrator")
+
+        Tenant.objects.create(tenant_name="unready1", org_id="unready1", ready=False)
+        Tenant.objects.create(tenant_name="unready2", org_id="unready2", ready=False)
+
         with self.settings(NOTIFICATIONS_RH_ENABLED=True, NOTIFICATIONS_ENABLED=True):
             try:
                 seed_group()
@@ -138,6 +142,13 @@ class GroupDefinerTests(IdentityRequest):
                 ),
             ]
             kafka_mock.assert_has_calls(notification_messages, any_order=True)
+
+            for call_args in kafka_mock.call_args_list:
+                topic = call_args.args[0]
+                if topic != settings.NOTIFICATIONS_TOPIC:
+                    continue
+                body = call_args.args[1]
+                self.assertNotIn(body.get("org_id"), ["unready1", "unready2"], "Unready tenant should not be notified")
 
     def modify_default_group(self, system=True):
         """Add a role to the default group and/or change the system flag"""

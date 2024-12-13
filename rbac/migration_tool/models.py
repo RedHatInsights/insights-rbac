@@ -16,9 +16,10 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 
 from dataclasses import dataclass
-from typing import Tuple
+from typing import Iterable, Tuple
 
 from kessel.relations.v1beta1.common_pb2 import Relationship
+from management.principal.model import Principal
 from migration_tool.utils import create_relationship
 
 
@@ -90,14 +91,38 @@ class V2rolebinding:
     id: str
     role: V2role
     resource: V2boundresource
-    groups: frozenset[str]
+    groups: tuple[str]
+    users: tuple[str]
+
+    def __init__(
+        self,
+        id: str,
+        role: V2role,
+        resource: V2boundresource,
+        groups: Iterable[str] = [],
+        users: Iterable[str] = [],
+    ):
+        """
+        Initialize a V2 role binding.
+
+        [groups] and [users] allow multiple in the case there are multiple sources of bindings
+        for the same role and resource, though in the graph these occur only once.
+        """
+        # Need to use setattr due to frozen dataclass
+        # Fields are allowed to be any iterable for compatibility with existing code.
+        object.__setattr__(self, "id", id)
+        object.__setattr__(self, "role", role)
+        object.__setattr__(self, "resource", resource)
+        object.__setattr__(self, "groups", tuple(groups))
+        object.__setattr__(self, "users", tuple(users))
 
     def as_minimal_dict(self) -> dict:
-        """Convert the V2 role binding to a dictionary, excluding resource, original role, and users."""
+        """Convert the V2 role binding to a dictionary, excluding resource and original role."""
         return {
             "id": self.id,
             "role": self.role.as_dict(),
             "groups": [g for g in self.groups],
+            "users": [u for u in self.users],
         }
 
     def as_tuples(self):
@@ -109,9 +134,12 @@ class V2rolebinding:
         for perm in self.role.permissions:
             tuples.append(create_relationship(("rbac", "role"), self.role.id, ("rbac", "principal"), "*", perm))
 
-        for group in self.groups:
+        for group in set(self.groups):
             # These might be duplicate but it is OK, spiceDB will handle duplication through touch
             tuples.append(role_binding_group_subject_tuple(self.id, group))
+
+        for user in set(self.users):
+            tuples.append(role_binding_user_subject_tuple(self.id, user))
 
         tuples.append(
             create_relationship(
@@ -135,6 +163,18 @@ def role_binding_group_subject_tuple(role_binding_id: str, group_uuid: str) -> R
         group_uuid,
         "subject",
         subject_relation="member",
+    )
+
+
+def role_binding_user_subject_tuple(role_binding_id: str, user_id: str) -> Relationship:
+    """Create a relationship tuple for a role binding and a user."""
+    id = Principal.user_id_to_principal_resource_id(user_id)
+    return create_relationship(
+        ("rbac", "role_binding"),
+        role_binding_id,
+        ("rbac", "principal"),
+        id,
+        "subject",
     )
 
 

@@ -48,10 +48,16 @@ class ReplicationEventType(str, Enum):
     BOOTSTRAP_TENANT = "bootstrap_tenant"
     BULK_BOOTSTRAP_TENANT = "bulk_bootstrap_tenant"
     EXTERNAL_USER_UPDATE = "external_user_update"
+    EXTERNAL_USER_DISABLE = "external_user_disable"
     BULK_EXTERNAL_USER_UPDATE = "bulk_external_user_update"
     MIGRATE_CUSTOM_ROLE = "migrate_custom_role"
     MIGRATE_TENANT_GROUPS = "migrate_tenant_groups"
     CUSTOMIZE_DEFAULT_GROUP = "customize_default_group"
+    MIGRATE_SYSTEM_ROLE_ASSIGNMENT = "migrate_system_role_assignment"
+    APPROVE_CROSS_ACCOUNT_REQUEST = "approve_cross_account_request"
+    DENY_CROSS_ACCOUNT_REQUEST = "deny_cross_account_request"
+    EXPIRE_CROSS_ACCOUNT_REQUEST = "expire_cross_account_request"
+    MIGRATE_CROSS_ACCOUNT_REQUEST = "migrate_cross_account_request"
 
 
 class ReplicationEvent:

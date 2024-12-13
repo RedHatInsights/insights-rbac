@@ -18,6 +18,8 @@ redis_disable_cache_get_total = Counter(
     "redis_disable_cache_get_total", "Total amount of times cache has been disabled"
 )
 
+BATCH_DELETE_SIZE = 1000
+
 
 class BasicCache:
     """Basic cache class to be inherited."""
@@ -157,8 +159,14 @@ class TenantCache(BasicCache):
 class AccessCache(BasicCache):
     """Redis-based caching of per-Principal per-app access policy."""  # noqa: D204
 
-    def __init__(self, tenant):
-        """tenant: The name of the database schema for this tenant."""
+    def __init__(self, tenant: str):
+        """
+        tenant: The name of the database schema for this tenant.
+
+        if tenant is *, then it is for all tenants.
+        """
+        if not tenant:
+            raise ValueError("tenant must be provided")
         self.tenant = tenant
         super().__init__()
 
@@ -194,11 +202,15 @@ class AccessCache(BasicCache):
             return
         err_msg = f"Error deleting all policies for tenant {self.tenant}"
         with self.delete_handler(err_msg):
-            logger.info("Deleting entire policy cache for tenant %s", self.tenant)
-            keys = self.connection.keys(self.key_for("*"))
-
-            if keys:
-                self.connection.delete(*keys)
+            logger.info(f"Deleting entire policy cache for tenant {self.tenant}")
+            # Following piece is taken from https://github.com/jazzband/django-redis/pull/617
+            count = 0
+            pipeline = self.connection.pipeline()
+            for key in self.connection.scan_iter(match=self.key_for("*"), count=BATCH_DELETE_SIZE):
+                pipeline.delete(key)
+                count += 1
+            pipeline.execute()
+            logger.info(f"Deleted {count} policies for tenant {self.tenant}")
 
     def save_policy(self, uuid, sub_key, policy):
         """Write the policy for a given user for a given sub_key (application_offset_limit) to Redis."""
@@ -235,3 +247,10 @@ class JWKSCache(BasicCache):
     def set_jwks_response(self, response):
         """Save the JWKS certificates' response in Redis."""
         super().save(self.JWKS_CACHE_KEY, response, "JWKS response")
+
+
+def skip_purging_cache_for_public_tenant(tenant):
+    """Skip purging cache for public tenant."""
+    # Cache is by tenant org_id and user_id, we don't have to purge cache for public tenant
+    if tenant.tenant_name == "public":
+        return True

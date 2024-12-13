@@ -1,18 +1,18 @@
 apiVersion: template.openshift.io/v1
 kind: Template
 metadata:
-  name: rbac-seed-roles-perms-groups-cji
+  name: sa-id-populator-cji
 objects:
 - apiVersion: cloud.redhat.com/v1alpha1
   kind: ClowdJobInvocation
   metadata:
     labels:
       app: rbac
-    name: seed-roles-perms-groups-${RUN_NUMBER}
+    name: sa-id-populator-${RUN_NUMBER}
   spec:
     appName: rbac
     jobs:
-      - seed-roles-perms-groups
+      - sa-id-populator
 parameters:
 - name: RUN_NUMBER
   description: Used to track and re-run the job

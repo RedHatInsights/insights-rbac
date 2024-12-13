@@ -23,7 +23,7 @@ from json.decoder import JSONDecodeError
 
 from django.conf import settings
 from django.core.handlers.wsgi import WSGIRequest
-from django.db import IntegrityError
+from django.db import IntegrityError, transaction
 from django.http import Http404, HttpResponse, QueryDict
 from django.urls import resolve
 from django.utils.deprecation import MiddlewareMixin
@@ -115,13 +115,17 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
             try:
                 # If the tenant already exists, we assume it must be bootstrapped if dual writes are enabled.
                 tenant = Tenant.objects.get(org_id=request.user.org_id)
+                if not tenant.ready:
+                    tenant.ready = True
+                    tenant.save(update_fields=["ready"])
             except Tenant.DoesNotExist:
                 if request.user.system:
                     raise Http404()
                 # Tenants are normally bootstrapped via principal job,
                 # but there is a race condition where the user can use the service before the message is processed.
                 try:
-                    bootstrap = self.bootstrap_service.update_user(request.user, upsert=True)
+                    with transaction.atomic():
+                        bootstrap = self.bootstrap_service.update_user(request.user, upsert=True, ready_tenant=True)
                     if bootstrap is None:
                         # User is inactive. Should never happen but just in case...
                         raise Http404()
@@ -452,7 +456,9 @@ class ReadOnlyApiMiddleware(MiddlewareMixin):  # pylint: disable=too-few-public-
 
     def _should_deny_all_writes(self, request):
         """Determine whether or not to deny all API writes."""
-        return settings.READ_ONLY_API_MODE and self._is_write_request(request)
+        resolver = resolve(request.path)
+        api_namespace = resolver.app_name if resolver else ""
+        return settings.READ_ONLY_API_MODE and self._is_write_request(request) and api_namespace != "internal"
 
     def _should_deny_v2_writes(self, request):
         """Determine whether or not to deny v2 writes."""
