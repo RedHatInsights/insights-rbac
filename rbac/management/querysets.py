@@ -57,9 +57,9 @@ PRINCIPAL_QUERYSET_MAP = {
 }
 
 
-def get_annotated_groups():
+def get_annotated_groups(queryset):
     """Return an annotated set of groups for the tenant."""
-    return Group.objects.annotate(
+    return queryset.annotate(
         principalCount=Count("principals", filter=Q(principals__type="user"), distinct=True),
         policyCount=Count("policies", distinct=True),
     )
@@ -98,6 +98,8 @@ def _gather_group_querysets(request, args, kwargs):
     """Decide which groups to provide for request."""
     username = request.query_params.get("username")
 
+    base_queryset = Group.objects.all()
+
     scope = validate_and_get_key(request.query_params, SCOPE_KEY, VALID_SCOPES, ORG_ID_SCOPE)
     if scope != ORG_ID_SCOPE and not username:
         return get_object_principal_queryset(request, scope, Group)
@@ -118,28 +120,31 @@ def _gather_group_querysets(request, args, kwargs):
         username = kwargs.get("principals")
     if username:
         principal = get_principal(username, request)
-
         if principal.cross_account:
             return Group.objects.none()
         return (
             filter_queryset_by_tenant(
-                Group.objects.annotate(principalCount=Count("principals")), request.tenant
-            ).filter(principals__username__iexact=username)
+                get_annotated_groups(base_queryset.filter(principals__username__iexact=username)), request.tenant
+            )
             | default_group_set
         )
 
     if exclude_username:
-        return filter_queryset_by_tenant(
-            Group.objects.annotate(principalCount=Count("principals")), request.tenant
-        ).exclude(principals__username__iexact=exclude_username)
+        return (
+            filter_queryset_by_tenant(
+                get_annotated_groups(base_queryset.exclude(principals__username__iexact=exclude_username)),
+                request.tenant,
+            )
+            | default_group_set
+        )
 
     if has_group_all_access(request):
-        return filter_queryset_by_tenant(get_annotated_groups(), request.tenant) | default_group_set
+        return filter_queryset_by_tenant(get_annotated_groups(base_queryset), request.tenant) | default_group_set
 
     access = user_has_perm(request, "group")
 
     if access == "All":
-        return filter_queryset_by_tenant(get_annotated_groups(), request.tenant) | default_group_set
+        return filter_queryset_by_tenant(get_annotated_groups(base_queryset), request.tenant) | default_group_set
     if access == "None":
         return Group.objects.none()
 

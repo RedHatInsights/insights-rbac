@@ -570,7 +570,7 @@ class GroupViewsetTests(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
         principalCount = response.data.get("data")[0]["principalCount"]
-        self.assertEqual(principalCount, 2)
+        self.assertEqual(principalCount, 1)
 
     def test_get_group_principal_count_exclude_username_filter(self):
         "Test that when filtering a group with the exclude_username filter that principalCount is returned"
@@ -596,7 +596,7 @@ class GroupViewsetTests(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
         principalCount = response.data.get("data")[0]["principalCount"]
-        self.assertEqual(principalCount, 5)
+        self.assertEqual(principalCount, 1)
 
     def test_get_group_by_partial_name_by_default(self):
         """Test that getting groups by name returns partial match by default."""
