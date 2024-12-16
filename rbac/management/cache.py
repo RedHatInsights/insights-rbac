@@ -69,7 +69,7 @@ class BasicCache:
                 self.disable_caching()
                 return False
         except Exception as e:
-            logger.exception("Error:", e)
+            logger.exception(f"Error: {e}")
 
     @contextlib.contextmanager
     def delete_handler(self, err_msg):
