@@ -495,7 +495,12 @@ def get_param_list(request, param_name, default: list = []):
 def data_migration(request):
     """View method for running migrations from V1 to V2 spiceDB schema.
 
-    POST /_private/api/utils/data_migration/?exclude_apps=cost_management,rbac&orgs=id_1,id_2&write_relationships=True
+    POST /_private/api/utils/data_migration/
+    query params:
+        exclude_apps: e.g., cost_management,rbac
+        orgs: e.g., id_1,id_2
+        write_relationships: True, False, outbox
+        skip_roles: True or False
     """
     if request.method != "POST":
         return HttpResponse('Invalid method, only "POST" is allowed.', status=405)
@@ -505,6 +510,7 @@ def data_migration(request):
         "exclude_apps": get_param_list(request, "exclude_apps", default=settings.V2_MIGRATION_APP_EXCLUDE_LIST),
         "orgs": get_param_list(request, "orgs"),
         "write_relationships": request.GET.get("write_relationships", "False"),
+        "skip_roles": request.GET.get("skip_roles", "False").lower() == "true",
     }
     migrate_data_in_worker.delay(args)
     return HttpResponse("Data migration from V1 to V2 are running in a background worker.", status=202)
