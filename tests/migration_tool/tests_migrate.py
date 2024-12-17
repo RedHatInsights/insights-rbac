@@ -281,3 +281,16 @@ class MigrateTests(TestCase):
             migrate_data(**kwargs)
         except Exception:
             self.fail("migrate_data raised an exception when migrating tenant without org_id")
+
+    @override_settings(REPLICATION_TO_RELATION_ENABLED=True, PRINCIPAL_USER_DOMAIN="redhat", READ_ONLY_API_MODE=True)
+    @patch("migration_tool.migrate.migrate_groups_for_tenant")
+    @patch("migration_tool.migrate.migrate_roles_for_tenant")
+    @patch("migration_tool.migrate.migrate_cross_account_requests")
+    def test_skips_roles_migration(self, group_migrator, role_migrator, car_migrator):
+        kwargs = {"orgs": ["1234567"], "skip_roles": True}
+
+        migrate_data(**kwargs)
+
+        group_migrator.assert_called_once()
+        role_migrator.assert_not_called()
+        car_migrator.assert_called_once()
