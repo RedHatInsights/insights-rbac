@@ -408,7 +408,6 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
         IdentityHeaderMiddleware.log_request(request, response, is_internal)
         return response
 
-
     def should_load_user_permissions(self, request: WSGIRequest, user: User) -> bool:
         """Decide whether RBAC should load the access permissions for the user based on the given request."""
         # Organization administrators will have already all the permissions so there is no need to load permissions for
