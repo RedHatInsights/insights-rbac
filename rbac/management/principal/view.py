@@ -173,9 +173,11 @@ class PrincipalView(APIView):
             data = resp.get("data", [])
             if isinstance(data, dict):
                 data = data.get("users")
+            if isinstance(data, list):
+                response_data["data"] = data
             response_data["data"] = data
-            self.paginate_queryset(response_data["data"])
-            paginated_response = self.get_paginated_response(response_data["data"])
+            page = self.paginate_queryset(response_data["data"])
+            paginated_response = self.get_paginated_response(page)
             return paginated_response
         return Response(
             status=status.HTTP_500_INTERNAL_SERVER_ERROR,
