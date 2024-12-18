@@ -342,7 +342,7 @@ class PrincipalViewsetTests(IdentityRequest):
                 "principal_type": None,
             },
         )
-        print(response.data)
+
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         for keyname in ["meta", "links", "data"]:
             self.assertIn(keyname, response.data)
