@@ -386,18 +386,9 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
             request (object): The request object
             response (object): The response object
         """
-        is_internal = False
-        if any([request.path.startswith(prefix) for prefix in settings.INTERNAL_API_PATH_PREFIXES]):
-            # This request is for a private API endpoint
-            is_internal = True
-            IdentityHeaderMiddleware.log_request(request, response, is_internal)
-            return response
-
-        behalf = "principal"
-        is_system = False
-
-        if is_system:
-            behalf = "system"
+        is_internal = any([request.path.startswith(prefix) for prefix in settings.INTERNAL_API_PATH_PREFIXES])
+        # This request is for a private API endpoint
+        behalf = "system" if request.user.system else "principal"
 
         req_sys_counter.labels(
             behalf=behalf,
@@ -408,6 +399,7 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
 
         IdentityHeaderMiddleware.log_request(request, response, is_internal)
         return response
+
 
     def should_load_user_permissions(self, request: WSGIRequest, user: User) -> bool:
         """Decide whether RBAC should load the access permissions for the user based on the given request."""
