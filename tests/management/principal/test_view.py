@@ -324,7 +324,7 @@ class PrincipalViewsetTests(IdentityRequest):
     )
     def test_read_principal_filtered_list_success(self, mock_request):
         """Test that we can read a filtered list of principals."""
-        url = f'{reverse("v1_management:principals")}?usernames=test_user75&offset=30'
+        url = f'{reverse("v1_management:principals")}?usernames=test_user75&offset=10'
         client = APIClient()
         response = client.get(url, **self.headers)
 
@@ -332,10 +332,10 @@ class PrincipalViewsetTests(IdentityRequest):
             ["test_user75"],
             org_id=ANY,
             limit=10,
-            offset=30,
+            offset=10,
             options={
                 "limit": 10,
-                "offset": 30,
+                "offset": 10,
                 "sort_order": "asc",
                 "status": "enabled",
                 "username_only": "false",
@@ -595,7 +595,7 @@ class PrincipalViewsetTests(IdentityRequest):
         for keyname in ["meta", "links", "data"]:
             self.assertIn(keyname, response.data)
         self.assertIsInstance(response.data.get("data"), list)
-        self.assertEqual(response.data.get("meta").get("count"), "1")
+        self.assertEqual(response.data.get("meta").get("count"), 1)
         mock_request.assert_called_once_with(
             limit=10,
             offset=0,
@@ -628,7 +628,7 @@ class PrincipalViewsetTests(IdentityRequest):
         for keyname in ["meta", "links", "data"]:
             self.assertIn(keyname, response.data)
         self.assertIsInstance(response.data.get("data"), list)
-        self.assertEqual(response.data.get("meta").get("count"), "1")
+        self.assertEqual(response.data.get("meta").get("count"), 1)
         mock_request.assert_called_once_with(
             limit=10,
             offset=0,
@@ -661,7 +661,7 @@ class PrincipalViewsetTests(IdentityRequest):
         for keyname in ["meta", "links", "data"]:
             self.assertIn(keyname, response.data)
         self.assertIsInstance(response.data.get("data"), list)
-        self.assertEqual(response.data.get("meta").get("count"), "1")
+        self.assertEqual(response.data.get("meta").get("count"), 1)
         mock_request.assert_called_once_with(
             limit=10,
             offset=0,
@@ -927,7 +927,7 @@ class PrincipalViewsetTests(IdentityRequest):
             response = client.get(url, **self.headers)
 
             self.assertEqual(response.status_code, status.HTTP_200_OK)
-            self.assertEqual(int(response.data.get("meta").get("count")), 3)
+            self.assertEqual(int(response.data.get("meta").get("count")), min(limit, max(0, 3 - offset)))
             # for limit=1, offset=1, count=3 is the result min(1, max(0, 2)) = 1
             # for limit=2, offset=2, count=3 is the result min(2, max(0, 1)) = 1
             # for limit=5, offset=5, count=3 is the result min(5, max(0, -2)) = 0
