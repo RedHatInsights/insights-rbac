@@ -94,3 +94,20 @@ class User:
     bearer_token: str = ""
     client_id: str = ""
     is_service_account: bool = False
+
+
+class FilterQuerySet(models.QuerySet):
+    """Queryset for filtering."""
+
+    _public_tenant = None
+
+    @classmethod
+    def _get_public_tenant(cls) -> Tenant:
+        """Get or set public tenant."""
+        if cls._public_tenant is None:
+            cls._public_tenant = Tenant.objects.get(tenant_name="public")
+        return cls._public_tenant
+
+    def non_custom_only(self):
+        """Filter queryset by returning only non-custom results."""
+        return self.filter(system=True, tenant=FilterQuerySet._get_public_tenant())
