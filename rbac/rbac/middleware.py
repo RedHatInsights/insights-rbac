@@ -389,7 +389,6 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
         is_internal = any([request.path.startswith(prefix) for prefix in settings.INTERNAL_API_PATH_PREFIXES])
         is_system = False
 
-        # This request is for a private API endpoint
         if hasattr(request, "user") and request.user:
             username = request.user.username
             if username:
