@@ -393,8 +393,6 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
             username = request.user.username
             if username:
                 is_system = request.user.system
-            else:
-                is_system = False
 
         behalf = "system" if is_system else "principal"
 
