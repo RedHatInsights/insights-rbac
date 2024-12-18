@@ -207,7 +207,7 @@ class V2TenantBootstrapService:
         tuples_to_remove = []
         user_id = user.user_id
         mapping: Optional[TenantMapping] = None
-        principal: Optional[Principal] = None
+        principal_uuid = ""
 
         if user_id is None:
             raise ValueError(f"User {user.username} has no user_id.")
@@ -219,7 +219,9 @@ class V2TenantBootstrapService:
         try:
             mapping = TenantMapping.objects.filter(tenant__org_id=user.org_id).get()
             default_group_uuid = str(mapping.default_group_uuid)  # type: ignore
+            default_admin_group_uuid = str(mapping.default_admin_group_uuid)  # type: ignore
             tuples_to_remove.append(Group.relationship_to_user_id_for_group(default_group_uuid, user_id))
+            tuples_to_remove.append(Group.relationship_to_user_id_for_group(default_admin_group_uuid, user_id))
         except TenantMapping.DoesNotExist:
             logger.info(
                 "No default membership to remove. There is no tenant mapping, so the tenant must not be bootstrapped."
@@ -228,6 +230,7 @@ class V2TenantBootstrapService:
 
         try:
             principal = Principal.objects.filter(username=user.username, tenant__org_id=user.org_id).get()
+            principal_uuid = str(principal.uuid)
 
             for group in principal.group.all():  # type: ignore
                 group.principals.remove(principal)
@@ -235,6 +238,7 @@ class V2TenantBootstrapService:
                 tuple = group.relationship_to_principal(user)
                 if tuple is None:
                     raise ValueError(f"relationship_to_principal is None for user {user_id}")
+                tuples_to_remove.append(tuple)
 
             principal.delete()  # type: ignore
         except Principal.DoesNotExist:
@@ -250,7 +254,7 @@ class V2TenantBootstrapService:
                     "user_id": user_id,
                     "org_id": user.org_id,
                     "mapping_id": mapping.id if mapping else None,
-                    "principal_id": principal.id if principal else None,
+                    "principal_uuid": principal_uuid,
                 },
                 partition_key=PartitionKey.byEnvironment(),
                 remove=tuples_to_remove,

@@ -37,10 +37,11 @@ from management.principal.cleaner import (
     METRIC_STOMP_MESSAGES_NACK_TOTAL,
 )
 from management.principal.proxy import external_principal_to_user
+from management.relation_replicator.relation_replicator import PartitionKey, ReplicationEvent, ReplicationEventType
 from management.tenant_mapping.model import TenantMapping
 from management.tenant_service import get_tenant_bootstrap_service
 from management.workspace.model import Workspace
-from api.models import Tenant
+from api.models import Tenant, User
 from migration_tool.in_memory_tuples import (
     InMemoryRelationReplicator,
     InMemoryTuples,
@@ -916,6 +917,34 @@ class PrincipalUMBTestsWithV2TenantBootstrap(PrincipalUMBTests):
             ),
         )
 
+    def assert_user_memberships(self, mapping: TenantMapping, user_id: str, custom_group_uuid: str, number: int):
+        """Assert that the user is a member of the group."""
+        # Principal has relationships to default platform/admin group and custom group
+        platform_default_group_members = self._tuples.find_tuples(
+            all_of(
+                resource("rbac", "group", str(mapping.default_group_uuid)),
+                relation("member"),
+                subject("rbac", "principal", f"redhat/{user_id}"),
+            )
+        )
+        self.assertEqual(len(platform_default_group_members), number)
+        admin_default_group_members = self._tuples.find_tuples(
+            all_of(
+                resource("rbac", "group", str(mapping.default_admin_group_uuid)),
+                relation("member"),
+                subject("rbac", "principal", f"redhat/{user_id}"),
+            )
+        )
+        self.assertEqual(len(admin_default_group_members), number)
+        custom_group_members = self._tuples.find_tuples(
+            all_of(
+                resource("rbac", "group", str(custom_group_uuid)),
+                relation("member"),
+                subject("rbac", "principal", f"redhat/{user_id}"),
+            )
+        )
+        self.assertEqual(len(custom_group_members), number)
+
     @patch(
         "management.principal.proxy.PrincipalProxy._request_principals",
         return_value={
@@ -925,18 +954,44 @@ class PrincipalUMBTestsWithV2TenantBootstrap(PrincipalUMBTests):
     )
     @patch("management.group.model.AccessCache")
     @patch("management.principal.cleaner.UMB_CLIENT")
-    def test_disable_principal_which_is_in_or_not_in_group(self, client_mock, cache_class, proxy_mock):
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
+    def test_disable_principal_which_is_in_or_not_in_group(self, replicate, client_mock, cache_class, proxy_mock):
         """Process a umb message to disable a principal which is either in or not in a group."""
         principal_name = "principal-test"
         self.principal = Principal.objects.create(username=principal_name, tenant=self.tenant, user_id="56780000")
         self.group.principals.add(self.principal)
         self.group.save()
+        custom_group_uuid = str(self.group.uuid)
+        replicator = InMemoryRelationReplicator(self._tuples)
+        bootstrap_service = get_tenant_bootstrap_service(replicator)
+        bootstrapped_tenant = bootstrap_service.bootstrap_tenant(self.tenant)
+        mapping = bootstrapped_tenant.mapping
+        # Add relationships for user
+        user = User()
+        user.org_id = self.tenant.org_id
+        user.admin = True
+        user.username = principal_name
+        user.user_id = self.principal.user_id
+        user.is_active = True
+        bootstrap_service.update_user(user)
+        relationship = self.group.relationship_to_principal(self.principal)
+        replicator.replicate(
+            ReplicationEvent(
+                event_type=ReplicationEventType.EXTERNAL_USER_UPDATE,
+                info={"group_uuid": custom_group_uuid, "org_id": str(self.group.tenant.org_id)},
+                partition_key=PartitionKey.byEnvironment(),
+                remove=[],
+                add=[relationship],
+            ),
+        )
 
         before = REGISTRY.get_sample_value(METRIC_STOMP_MESSAGES_ACK_TOTAL)
         client_mock.canRead.side_effect = [True, False]
         client_mock.receiveFrame.return_value = MagicMock(body=FRAME_BODY)
         cache_mock = MagicMock()
         cache_class.return_value = cache_mock
+        self.assert_user_memberships(mapping, self.principal.user_id, custom_group_uuid, 1)
+        replicate.side_effect = replicator.replicate
         process_principal_events_from_umb()
 
         after = REGISTRY.get_sample_value(METRIC_STOMP_MESSAGES_ACK_TOTAL)
@@ -948,6 +1003,21 @@ class PrincipalUMBTestsWithV2TenantBootstrap(PrincipalUMBTests):
         self.assertFalse(self.group.principals.all())
         cache_mock.delete_policy.assert_called_once_with(self.principal.uuid)
         self.assertTrue(before + 1 == after)
+        replicate.assert_called_once()
+        replication_event = replicate.call_args_list[0].args[0]
+        self.assertEqual(replication_event.event_type, ReplicationEventType.EXTERNAL_USER_DISABLE)
+        self.assertEqual(str(replication_event.partition_key), "stage")
+        self.assertEqual(
+            replication_event.event_info,
+            {
+                "user_id": self.principal.user_id,
+                "org_id": self.tenant.org_id,
+                "mapping_id": bootstrapped_tenant.mapping.id,
+                "principal_uuid": str(self.principal.uuid),
+            },
+        )
+        self.assertEqual(len(replication_event.remove), 3)
+        self.assert_user_memberships(mapping, self.principal.user_id, custom_group_uuid, 0)
 
         # When principal not in group
         self.principal = Principal(username=principal_name, tenant=self.tenant, user_id="56780000")
