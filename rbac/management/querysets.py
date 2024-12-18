@@ -106,10 +106,9 @@ def _gather_group_querysets(request, args, kwargs, base_query: Optional[QuerySet
     if scope != ORG_ID_SCOPE and not username:
         return get_object_principal_queryset(request, scope, Group)
 
-    public_tenant = Tenant.objects.get(tenant_name="public")
-    default_group_set = Group.platform_default_set().filter(
-        tenant=request.tenant
-    ) or Group.platform_default_set().filter(tenant=public_tenant)
+    default_group_set = (
+        Group.platform_default_set().filter(tenant=request.tenant) or Group.platform_default_set().non_custom_only()
+    )
 
     exclude_username = request.query_params.get("exclude_username")
 
@@ -292,10 +291,9 @@ def _filter_admin_default(request: Request, queryset: QuerySet):
 
     # If the principal is an org admin, make sure they get any and all admin_default groups
     if is_org_admin:
-        public_tenant = Tenant.objects.get(tenant_name="public")
-        admin_default_group_set = Group.admin_default_set().filter(
-            tenant=request.tenant
-        ) or Group.admin_default_set().filter(tenant=public_tenant)
+        admin_default_group_set = (
+            Group.admin_default_set().filter(tenant=request.tenant) or Group.admin_default_set().non_custom_only()
+        )
 
         return queryset | admin_default_group_set
 
