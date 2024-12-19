@@ -169,10 +169,10 @@ def groups_for_principal(principal: Principal, tenant, **kwargs):
     # need to explicitly add the service accounts to a group.
     if principal.type == "user":
         admin_default_group_set = (
-            Group.admin_default_set().filter(tenant=tenant) or Group.admin_default_set().non_custom_only()
+            Group.admin_default_set().filter(tenant=tenant) or Group.admin_default_set().public_tenant_only()
         )
         platform_default_group_set = (
-            Group.platform_default_set().filter(tenant=tenant) or Group.platform_default_set().non_custom_only()
+            Group.platform_default_set().filter(tenant=tenant) or Group.platform_default_set().public_tenant_only()
         )
     else:
         admin_default_group_set = Group.objects.none()

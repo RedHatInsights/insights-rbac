@@ -39,6 +39,8 @@ class TenantModifiedQuerySet(models.QuerySet):
 class Tenant(models.Model):
     """The model used to create a tenant schema."""
 
+    _public_tenant = None
+
     ready = models.BooleanField(default=False)
     tenant_name = models.CharField(max_length=63)
     account_id = models.CharField(max_length=36, default=None, null=True)
@@ -48,6 +50,13 @@ class Tenant(models.Model):
     def __str__(self):
         """Get string representation of Tenant."""
         return f"Tenant ({self.org_id})"
+
+    @classmethod
+    def _get_public_tenant(cls):
+        """Get or set public tenant."""
+        if cls._public_tenant is None:
+            cls._public_tenant = Tenant.objects.get(tenant_name="public")
+        return cls._public_tenant
 
     class Meta:
         indexes = [
@@ -99,15 +108,6 @@ class User:
 class FilterQuerySet(models.QuerySet):
     """Queryset for filtering."""
 
-    _public_tenant = None
-
-    @classmethod
-    def _get_public_tenant(cls) -> Tenant:
-        """Get or set public tenant."""
-        if cls._public_tenant is None:
-            cls._public_tenant = Tenant.objects.get(tenant_name="public")
-        return cls._public_tenant
-
-    def non_custom_only(self):
+    def public_tenant_only(self):
         """Filter queryset by returning only non-custom results."""
-        return self.filter(system=True, tenant=FilterQuerySet._get_public_tenant())
+        return self.filter(system=True, tenant=Tenant._get_public_tenant())

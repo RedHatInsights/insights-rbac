@@ -176,7 +176,7 @@ class RelationApiDualWriteGroupHandler(RelationApiDualWriteSubjectHandler):
             return
         roles = Role.objects.filter(policies__group=self.group)
 
-        system_roles = roles.non_custom_only()
+        system_roles = roles.public_tenant_only()
 
         # Custom roles are locked to prevent resources from being added/removed concurrently,
         # in the case that the Roles had _no_ resources specified to begin with.
