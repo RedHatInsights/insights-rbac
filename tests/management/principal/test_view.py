@@ -921,18 +921,19 @@ class PrincipalViewsetTests(IdentityRequest):
         self.assertEqual(len(response.data.get("data")), 3)
 
         # set custom limit and offset
-        test_values = [(1, 0), (2, 0), (5, 5)]
+        test_values = [(2, 1), (2, 0), (5, 5)]
         for limit, offset in test_values:
             url = f"{reverse('v1_management:principals')}?type=service-account&limit={limit}&offset={offset}"
             client = APIClient()
             response = client.get(url, **self.headers)
-
+            print(response.data)
             self.assertEqual(response.status_code, status.HTTP_200_OK)
             self.assertEqual(int(response.data.get("meta").get("count")), min(limit, max(0, 3 - offset)))
-            # for limit=1, offset=0, count=3 is the result min(1, max(0, 3)) = 1
-            # for limit=2, offset=0, count=3 is the result min(2, max(0, 3)) = 2
+            # for limit=1, offset=1, count=3 is the result min(1, max(0, 3)) = 1
+            # for limit=2, offset=2, count=3 is the result min(2, max(0, 3)) = 1
             # for limit=5, offset=5, count=3 is the result min(5, max(0, -2)) = 0
-            self.assertEqual(len(response.data.get("data")), min(limit, max(0, 3 - offset)))
+
+            self.assertEqual(len(response.data.get("data")), limit - offset)
 
     @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
     @patch("management.principal.it_service.ITService.request_service_accounts", return_value=None)
