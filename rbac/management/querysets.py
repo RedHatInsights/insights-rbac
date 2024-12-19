@@ -59,9 +59,9 @@ PRINCIPAL_QUERYSET_MAP = {
 }
 
 
-def get_annotated_groups():
+def get_annotated_groups(queryset):
     """Return an annotated set of groups for the tenant."""
-    return Group.objects.annotate(
+    return queryset.annotate(
         principalCount=Count("principals", filter=Q(principals__type="user"), distinct=True),
         policyCount=Count("policies", distinct=True),
     )
@@ -98,7 +98,7 @@ def get_group_queryset(request, args=None, kwargs=None, base_query: Optional[Que
 
 def _gather_group_querysets(request, args, kwargs, base_query: Optional[QuerySet] = None):
     """Decide which groups to provide for request."""
-    base_query = base_query if base_query is not None else get_annotated_groups()
+    base_query = base_query if base_query is not None else get_annotated_groups(Group.objects.all())
 
     username = request.query_params.get("username")
 
@@ -125,13 +125,15 @@ def _gather_group_querysets(request, args, kwargs, base_query: Optional[QuerySet
         if principal.cross_account:
             return Group.objects.none()
         return (
-            filter_queryset_by_tenant(Group.objects.filter(principals__username__iexact=username), request.tenant)
+            filter_queryset_by_tenant(
+                get_annotated_groups(base_query.filter(principals__username__iexact=username)), request.tenant
+            )
             | default_group_set
         )
 
     if exclude_username:
         return filter_queryset_by_tenant(
-            Group.objects.exclude(principals__username__iexact=exclude_username), request.tenant
+            get_annotated_groups(base_query.exclude(principals__username__iexact=exclude_username)), request.tenant
         )
 
     if has_group_all_access(request):
