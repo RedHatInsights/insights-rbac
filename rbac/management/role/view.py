@@ -346,7 +346,6 @@ class RoleViewSet(
             "add_fields": request.query_params.get("add_fields", ""),
         }
         add_fields = query_params["add_fields"]
-        add_fields_split = add_fields.split(",")
 
         base_queryset = (
             Role.objects.prefetch_related("access", "ext_relation")
@@ -357,13 +356,10 @@ class RoleViewSet(
             )
         )
 
-        # Dynamic annotations
-        if "groups_in_count" in add_fields_split:
-            base_queryset = base_queryset.annotate(groups_in_count=Count("policies__group"))
-        elif "groups_in" in add_fields_split:
-            base_queryset = base_queryset.annotate(groups_in=F("policies__group__name"))
-        else:
-            base_queryset = base_queryset
+        # Dynamic annotation
+        if add_fields:
+            if "groups_in_count" in add_fields:
+                base_queryset = base_queryset.annotate(groups_in_count=Count("policies__group"))
 
         filters = []
         limit = query_params["limit"]
