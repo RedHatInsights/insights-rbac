@@ -564,9 +564,7 @@ class V2TenantBootstrapService:
     def _get_platform_default_policy_uuid(self) -> Optional[str]:
         try:
             if self._platform_default_policy_uuid is None:
-                policy = Group.objects.get(
-                    platform_default=True, system=True, tenant=self._get_public_tenant()
-                ).policies.get()
+                policy = Group.objects.public_tenant_only().get(platform_default=True).policies.get()
                 self._platform_default_policy_uuid = str(policy.uuid)
             return self._platform_default_policy_uuid
         except Group.DoesNotExist:
@@ -575,15 +573,8 @@ class V2TenantBootstrapService:
     def _get_admin_default_policy_uuid(self) -> Optional[str]:
         try:
             if self._admin_default_policy_uuid is None:
-                policy = Group.objects.get(
-                    admin_default=True, system=True, tenant=self._get_public_tenant()
-                ).policies.get()
+                policy = Group.objects.public_tenant_only().get(admin_default=True).policies.get()
                 self._admin_default_policy_uuid = str(policy.uuid)
             return self._admin_default_policy_uuid
         except Group.DoesNotExist:
             return None
-
-    def _get_public_tenant(self) -> Tenant:
-        if self._public_tenant is None:
-            self._public_tenant = Tenant.objects.get(tenant_name="public")
-        return self._public_tenant

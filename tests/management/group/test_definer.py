@@ -73,7 +73,7 @@ class GroupDefinerTests(IdentityRequest):
         kafka_mock = copy_call_args(send_kafka_message)
         self.modify_default_group()
         new_platform_role = Role.objects.create(
-            name="new_platform_role", platform_default=True, tenant=self.public_tenant
+            name="new_platform_role", platform_default=True, system=True, tenant=self.public_tenant
         )
         role_to_remove = Role.objects.get(name="User Access administrator")
 
