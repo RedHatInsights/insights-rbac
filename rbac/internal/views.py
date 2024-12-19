@@ -28,6 +28,7 @@ from django.db.migrations.recorder import MigrationRecorder
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404
 from django.utils.html import escape
+from internal.utils import delete_bindings
 from management.cache import TenantCache
 from management.models import Group, Permission, Role
 from management.principal.proxy import (
@@ -555,14 +556,13 @@ class SentryDiagnosticError(Exception):
     pass
 
 
-def list_bindings_for_role(request):
+def list_or_delete_bindings_for_role(request, role_uuid):
     """View method for listing bindings for a role.
 
-    GET /_private/api/utils/bindings/?role_uuid=xxx
+    GET or DELETE /_private/api/utils/bindings/?role__is_system=True
     """
-    if request.method != "GET":
-        return HttpResponse('Invalid method, only "GET" is allowed.', status=405)
-    role_uuid = request.GET.get("role_uuid")
+    if request.method not in ["GET", "DELETE"]:
+        return HttpResponse('Invalid method, only "GET" or "DELETE" is allowed.', status=405)
     if not role_uuid:
         return HttpResponse(
             'Invalid request, must supply the "role_uuid" query parameter.',
@@ -570,9 +570,22 @@ def list_bindings_for_role(request):
         )
     role = get_object_or_404(Role, uuid=role_uuid)
     bindings = role.binding_mappings.all()
-    serializer = BindingMappingSerializer(bindings, many=True)
-    result = serializer.data or []
-    return HttpResponse(json.dumps(result), content_type="application/json", status=200)
+    if request.GET:
+        filter_args = {}
+        for key, value in request.GET.items():
+            if value.lower() == "true":
+                value = True
+            elif value.lower() == "false":
+                value = False
+            filter_args.update({key: value})
+        bindings = bindings.filter(**filter_args)
+    if request.method == "GET":
+        serializer = BindingMappingSerializer(bindings, many=True)
+        result = serializer.data or []
+        return HttpResponse(json.dumps(result), content_type="application/json", status=200)
+    else:
+        info = delete_bindings(bindings)
+        return HttpResponse(info, content_type="application/json", status=204)
 
 
 def migration_resources(request):
