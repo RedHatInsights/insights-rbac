@@ -61,7 +61,7 @@ def seed_group() -> Tuple[Group, Group]:
             tenant=public_tenant,
         )
 
-        platform_roles = Role.objects.filter(platform_default=True)
+        platform_roles = Role.objects.filter(platform_default=True, tenant=public_tenant)
         update_group_roles(group, platform_roles, public_tenant)
         logger.info("Finished seeding default group %s.", name)
 
@@ -76,7 +76,7 @@ def seed_group() -> Tuple[Group, Group]:
             defaults={"description": admin_group_description, "name": admin_name, "system": True},
             tenant=public_tenant,
         )
-        admin_roles = Role.objects.filter(admin_default=True)
+        admin_roles = Role.objects.filter(admin_default=True, tenant=public_tenant)
         update_group_roles(admin_group, admin_roles, public_tenant)
         logger.info("Finished seeding default org admin group %s.", name)
 

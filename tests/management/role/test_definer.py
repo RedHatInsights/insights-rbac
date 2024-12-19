@@ -404,3 +404,24 @@ class RoleDefinerTests(IdentityRequest):
         self.assertTrue(
             any(self.is_update_event("dummy_hosts_write", args[0]) for args, _ in mock_replicate.call_args_list)
         )
+
+    @patch(
+        "builtins.open",
+        new_callable=mock_open,
+        read_data='{"roles": [{"name": "dummy_role_update", "system": true, "version": 3, "access": [{"permission": '
+        '"dummy:hosts:read"}]}]}',
+    )
+    @patch("os.listdir")
+    @patch("os.path.isfile")
+    def test_seed_roles_does_not_update_custom_roles_of_the_same_name(self, mock_isfile, mock_listdir, mock_open):
+        # mock files
+        mock_listdir.return_value = ["role.json"]
+        mock_isfile.return_value = True
+
+        # create a role in the database that exists in config for both public tenant and custom tenant
+        Role.objects.create(name="dummy_role_update", system=True, version=1, tenant=self.public_tenant)
+        custom = Role.objects.create(name="dummy_role_update", system=False, version=1, tenant=self.tenant)
+
+        seed_roles()
+
+        self.assertFalse(Role.objects.get(pk=custom.pk).system)

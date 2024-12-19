@@ -386,18 +386,15 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
             request (object): The request object
             response (object): The response object
         """
-        is_internal = False
-        if any([request.path.startswith(prefix) for prefix in settings.INTERNAL_API_PATH_PREFIXES]):
-            # This request is for a private API endpoint
-            is_internal = True
-            IdentityHeaderMiddleware.log_request(request, response, is_internal)
-            return response
-
-        behalf = "principal"
+        is_internal = any([request.path.startswith(prefix) for prefix in settings.INTERNAL_API_PATH_PREFIXES])
         is_system = False
 
-        if is_system:
-            behalf = "system"
+        if hasattr(request, "user") and request.user:
+            username = request.user.username
+            if username:
+                is_system = request.user.system
+
+        behalf = "system" if is_system else "principal"
 
         req_sys_counter.labels(
             behalf=behalf,
