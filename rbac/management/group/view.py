@@ -438,6 +438,7 @@ class GroupViewSet(
         self.protect_system_groups("update")
 
         group = self.get_object()
+
         if not request.user.admin:
             self.protect_group_with_user_access_admin_role(group.roles_with_access(), "update_group")
 
