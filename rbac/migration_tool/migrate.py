@@ -106,7 +106,7 @@ def migrate_groups_for_tenant(tenant: Tenant, replicator: RelationReplicator):
         if not group.platform_default:
             principals = group.principals.all()
         if group.system is False and group.admin_default is False:
-            system_roles = group.roles().non_custom_only()
+            system_roles = group.roles().public_tenant_only()
         if any(True for _ in system_roles) or any(True for _ in principals):
             # The migrator does not generally deal with concurrency control,
             # but we require an atomic block due to use of select_for_update in the dual write handler.
