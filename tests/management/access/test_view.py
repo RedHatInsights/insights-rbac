@@ -42,7 +42,7 @@ class AccessViewTests(IdentityRequest):
         user.account = self.customer_data["account_id"]
         user.org_id = self.customer_data["org_id"]
         request.user = user
-        public_tenant = Tenant.objects.get(tenant_name="public")
+        self.public_tenant = Tenant.objects.get(tenant_name="public")
 
         self.access_data = {
             "permission": "app:*:*",
@@ -151,8 +151,8 @@ class AccessViewTests(IdentityRequest):
         )
         default_group.policies.add(default_policy)
 
-    def create_role_and_permission(self, role_name, permission):
-        role = Role.objects.create(name=role_name, tenant=self.tenant)
+    def create_role_and_permission(self, role_name, permission, system=False):
+        role = Role.objects.create(name=role_name, tenant=self.tenant, system=system)
         assigned_permission = Permission.objects.create(permission=permission, tenant=self.tenant)
         access = Access.objects.create(role=role, permission=assigned_permission, tenant=self.tenant)
         return role
@@ -227,6 +227,53 @@ class AccessViewTests(IdentityRequest):
         response = client.get(url, **self.headers)
         self.assertEqual({"permission": "default:*:*", "resourceDefinitions": []}, response.data.get("data")[0])
 
+    def test_access_for_cross_account_principal_return_permissions_based_on_assigned_system_role(self):
+        self.create_platform_default_resource()
+        client = APIClient()
+        url = "{}?application=".format(reverse("v1_management:access"))
+        account_id = self.customer_data["account_id"]
+        org_id = self.customer_data["org_id"]
+        user_id = "123456"
+        user_name = f"{account_id}-{user_id}"
+
+        # create system role with access
+        system_role = Role.objects.create(name="Test Role one", tenant=self.public_tenant, system=True)
+        assigned_permission = Permission.objects.create(
+            permission="test:assigned:permission1", tenant=self.public_tenant
+        )
+        Access.objects.create(role=system_role, permission=assigned_permission, tenant=self.tenant)
+
+        cross_account_request = CrossAccountRequest.objects.create(
+            target_account=account_id,
+            user_id=user_id,
+            target_org=org_id,
+            end_date=timezone.now() + timedelta(10),
+            status="approved",
+        )
+        cross_account_request.roles.add(system_role)
+
+        # create non-system role with access and same name as system role
+        role = Role.objects.create(name="Test Role one", tenant=self.tenant, system=False)
+        assigned_permission = Permission.objects.create(
+            permission="test:assigned:permission2", tenant=self.public_tenant
+        )
+        Access.objects.create(role=role, permission=assigned_permission, tenant=self.tenant)
+
+        # Create cross_account principal and role, permission in the account
+        user_data = {"username": user_name, "email": "test@gmail.com"}
+        request_context = self._create_request_context(self.customer_data, user_data, is_org_admin=False)
+        request = request_context["request"]
+        self.test_headers = request.META
+        Principal.objects.create(username=user_name, cross_account=True, tenant=self.tenant)
+
+        response = client.get(url, **self.test_headers)
+
+        # only assigned role permissions without platform default permission
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data.get("data")), 1)
+
+        self.assertEqual(response.data.get("data")[0]["permission"], "test:assigned:permission1")
+
     def test_access_for_cross_account_principal_return_permissions_based_on_assigned_role(self):
         """Test that the expected access for cross account principal return permissions based on assigned role."""
         # setup default group/role
@@ -240,7 +287,7 @@ class AccessViewTests(IdentityRequest):
 
         # setup cross account request, role and permission in public schema
         ## This CAR will provide permission: "test:assigned:permission"
-        role = self.create_role_and_permission("Test Role one", "test:assigned:permission1")
+        role = self.create_role_and_permission("Test Role one", "test:assigned:permission1", True)
         cross_account_request = CrossAccountRequest.objects.create(
             target_account=account_id,
             user_id=user_id,
@@ -250,7 +297,7 @@ class AccessViewTests(IdentityRequest):
         )
         cross_account_request.roles.add(role)
         ## CAR below will provide permission: "app:*:*"
-        role = self.create_role_and_permission("Test Role two", "test:assigned:permission2")
+        role = self.create_role_and_permission("Test Role two", "test:assigned:permission2", True)
         cross_account_request = CrossAccountRequest.objects.create(
             target_account=account_id,
             user_id=user_id,
