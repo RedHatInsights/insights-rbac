@@ -23,7 +23,6 @@ from django.db.models import Q
 from django.utils import timezone
 from django_filters import rest_framework as filters
 from management.filters import CommonFilters
-from management.models import Role
 from management.principal.proxy import PrincipalProxy
 from management.relation_replicator.relation_replicator import ReplicationEventType
 from management.utils import validate_and_get_key, validate_uuid
@@ -149,8 +148,7 @@ class CrossAccountRequestViewSet(
         request = self.request
         if serializer.partial and request.data.get("status"):
             self.update_status(current, request.data.get("status"))
-        else:
-            serializer.save()
+        serializer.save()
 
     def retrieve(self, request, *args, **kwargs):
         """Retrieve cross account requests by request_id."""
@@ -220,29 +218,7 @@ class CrossAccountRequestViewSet(
         except Tenant.DoesNotExist:
             raise self.throw_validation_error("cross-account-request", f"Org ID '{target_org}' does not exist.")
 
-        request_data["roles"] = self.find_system_role_uuids_by_names(request_data.get("roles"))
         request_data["user_id"] = self.request.user.user_id
-
-    def validate_and_format_patch_input(self, request_data):
-        """Validate the create api input."""
-        if "roles" in request_data:
-            request_data["roles"] = self.find_system_role_uuids_by_names(request_data.get("roles"))
-
-    def find_system_role_uuids_by_names(self, role_names):
-        """Format role list as expected for cross-account-request."""
-        public_tenant = Tenant.objects.get(tenant_name="public")
-        system_role_uuids = []
-        for role_name in role_names:
-            try:
-                role = Role.objects.get(tenant=public_tenant, display_name=role_name)
-                if not role.system:
-                    self.throw_validation_error(
-                        "cross-account-request", "Only system roles may be assigned to a cross-account-request."
-                    )
-            except Role.DoesNotExist:
-                raise self.throw_validation_error("cross-account-request", f"Role '{role_name}' does not exist.")
-            system_role_uuids.append({"uuid": role.uuid})
-        return system_role_uuids
 
     def _with_dual_write_handler(
         self,
@@ -282,7 +258,6 @@ class CrossAccountRequestViewSet(
                     cross_account_roles
                 ),
             )
-        car.save()
 
     def check_patch_permission(self, request, update_obj):
         """Check if user has right to patch cross access request."""
