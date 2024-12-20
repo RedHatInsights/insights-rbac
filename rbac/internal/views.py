@@ -710,6 +710,74 @@ def reset_imported_tenants(request: HttpRequest) -> HttpResponse:
     return HttpResponse("Invalid method", status=405)
 
 
+ALLOWED_ROLE_UPDATE_ATTRIBUTES = {"system", "platform_default", "admin_default"}
+
+
+def str_to_bool(value: str) -> bool:
+    """Convert string to bool."""
+    return value.strip().lower() == "true"
+
+
+def handle_error(message: str, status_response: int) -> HttpResponse:
+    """Return HttpResponse object."""
+    return HttpResponse(json.dumps({"error": message}), content_type="application/json", status=status_response)
+
+
+def get_role_response(role: Role) -> HttpResponse:
+    """Return role response in HttpResponse object."""
+    response_data = {
+        "message": "Role retrieved successfully",
+        "role": {
+            "uuid": str(role.uuid),
+            "name": role.name,
+            "system": role.system,
+            "admin_default": role.admin_default,
+            "platform_default": role.platform_default,
+        },
+    }
+    return HttpResponse(json.dumps(response_data), content_type="application/json", status=200)
+
+
+def roles(request, uuid: str) -> HttpResponse:
+    """Update or get role.
+
+    GET /_private/api/role/uuid-uuid-uuid-uuid/
+    PUT /_private/api/role/uuid-uuid-uuid-uuid/
+    {
+        "system": "true"
+    }
+    """
+    try:
+        role = get_object_or_404(Role, uuid=uuid)
+
+        if request.method == "PUT":
+            body = json.loads(request.body)
+
+            invalid_keys = set(body.keys()) - ALLOWED_ROLE_UPDATE_ATTRIBUTES
+            if invalid_keys:
+                return handle_error(f"Invalid attributes: {', '.join(invalid_keys)}", 400)
+
+            if "system" in body:
+                role.system = str_to_bool(body["system"])
+
+            if "platform_default" in body:
+                role.platform_default = str_to_bool(body["platform_default"])
+
+            if "admin_default" in body:
+                role.admin_default = str_to_bool(body["admin_default"])
+
+            role.save()
+            return get_role_response(role)
+
+        elif request.method == "GET":
+            return get_role_response(role)
+
+        return handle_error("Invalid request method", 405)
+
+    except Exception as e:
+        return handle_error(str(e), 500)
+
+
 def trigger_error(request):
     """Trigger an error to confirm Sentry is working."""
     raise SentryDiagnosticError
