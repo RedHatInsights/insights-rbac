@@ -67,7 +67,7 @@ class SystemRole:
     @classmethod
     def set_system_roles(cls):
         """Set the system roles."""
-        for role in Role.objects.filter(system=True):
+        for role in Role.objects.public_tenant_only():
             # Skip roles such as OCM since they don't have permission
             if role.external_role_id():
                 continue

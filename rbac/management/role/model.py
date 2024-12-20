@@ -37,7 +37,7 @@ from migration_tool.models import (
     role_binding_user_subject_tuple,
 )
 
-from api.models import TenantAwareModel
+from api.models import FilterQuerySet, TenantAwareModel
 
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
@@ -56,6 +56,7 @@ class Role(TenantAwareModel):
     created = models.DateTimeField(default=timezone.now)
     modified = AutoDateTimeField(default=timezone.now)
     admin_default = models.BooleanField(default=False)
+    objects = FilterQuerySet.as_manager()
 
     @property
     def role(self):
