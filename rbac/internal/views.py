@@ -585,7 +585,7 @@ def list_or_delete_bindings_for_role(request, role_uuid):
         return HttpResponse(json.dumps(result), content_type="application/json", status=200)
     else:
         info = delete_bindings(bindings)
-        return HttpResponse(info, content_type="application/json", status=204)
+        return HttpResponse(json.dumps(info), status=200)
 
 
 def migration_resources(request):
