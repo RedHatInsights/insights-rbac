@@ -644,7 +644,7 @@ class InternalViewsetTests(IdentityRequest):
             f"/_private/api/utils/bindings/{self.role.uuid}/?mappings__role__is_system=True",
             **self.request.META,
         )
-        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
         with self.assertRaises(BindingMapping.DoesNotExist):
             binding_mappings[0].refresh_from_db()
         binding_mappings[1].refresh_from_db()
