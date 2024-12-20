@@ -88,7 +88,9 @@ def _make_role(data, dual_write_handler, force_create_relationships=False):
     else:
         if role.version != defaults["version"]:
             dual_write_handler.prepare_for_update(role)
-            Role.objects.filter(name=name).update(**defaults, display_name=display_name, modified=timezone.now())
+            Role.objects.filter(name=name, tenant=public_tenant).update(
+                **defaults, display_name=display_name, modified=timezone.now()
+            )
             logger.info("Updated system role %s.", name)
             role.access.all().delete()
             role_obj_change_notification_handler(role, "updated")
@@ -152,7 +154,8 @@ def seed_roles(force_create_relationships=False):
                 current_role_ids.update(file_role_ids)
 
     # Find roles in DB but not in config
-    roles_to_delete = Role.objects.filter(system=True).exclude(id__in=current_role_ids)
+    public_tenant = Tenant.objects.get(tenant_name="public")
+    roles_to_delete = Role.objects.filter(system=True, tenant=public_tenant).exclude(id__in=current_role_ids)
     logger.info(f"The following '{roles_to_delete.count()}' roles(s) eligible for removal: {roles_to_delete.values()}")
     if destructive_ok("seeding"):
         logger.info(f"Removing the following role(s): {roles_to_delete.values()}")

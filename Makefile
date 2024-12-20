@@ -117,8 +117,15 @@ run-migrations:
 shell:
 	DJANGO_READ_DOT_ENV_FILE=True $(PYTHON) $(PYDIR)/manage.py shell
 
+seeds:
+	DJANGO_READ_DOT_ENV_FILE=True $(PYTHON) $(PYDIR)/manage.py seeds
+
+show-migrations:
+	DJANGO_READ_DOT_ENV_FILE=True $(PYTHON) $(PYDIR)/manage.py showmigrations api management
+
 urls:
 	DJANGO_READ_DOT_ENV_FILE=True $(PYTHON) $(PYDIR)/manage.py show_urls
+
 
 create-test-db-file: run-migrations
 	sleep 1
