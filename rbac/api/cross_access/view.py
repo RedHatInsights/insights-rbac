@@ -126,9 +126,14 @@ class CrossAccountRequestViewSet(
         context["user"] = self.request.user
         return context
 
+    def format_roles(self, role_names):
+        return [{"display_name": role_name} for role_name in role_names]
+
     def create(self, request, *args, **kwargs):
         """Create cross account requests for associate."""
         self.validate_and_format_input(request.data)
+        if "roles" in request.data:
+            request.data["roles"] = self.format_roles(request.data["roles"])
         return super().create(request=request, args=args, kwargs=kwargs)
 
     def list(self, request, *args, **kwargs):
@@ -143,10 +148,13 @@ class CrossAccountRequestViewSet(
         """Patch a cross-account request. Target account admin use it to update status of the request."""
         return super().partial_update(request=request, *args, **kwargs)
 
+
     @transaction.atomic
     def update(self, request, *args, **kwargs):
         """Update a cross-account request. TAM requestor use it to update their requesters."""
         validate_uuid(kwargs.get("pk"), "cross-account request uuid validation")
+        if "roles" in request.data:
+            request.data["roles"] = self.format_roles(request.data["roles"])
         return super().update(request=request, *args, **kwargs)
 
     def perform_update(self, serializer):
@@ -226,13 +234,14 @@ class CrossAccountRequestViewSet(
         except Tenant.DoesNotExist:
             raise self.throw_validation_error("cross-account-request", f"Org ID '{target_org}' does not exist.")
 
-        request_data["roles"] = self.find_system_role_uuids_by_names(request_data.get("roles"))
+        #request_data["roles"] = self.find_system_role_uuids_by_names(request_data.get("roles"))
         request_data["user_id"] = self.request.user.user_id
 
     def validate_and_format_patch_input(self, request_data):
         """Validate the create api input."""
+        print("PATCHaaa")
         if "roles" in request_data:
-            request_data["roles"] = self.find_system_role_uuids_by_names(request_data.get("roles"))
+            request_data["roles"] = self.format_roles(request_data.get("roles"))
 
     def find_system_role_uuids_by_names(self, role_names):
         """Format role list as expected for cross-account-request."""
@@ -312,6 +321,8 @@ class CrossAccountRequestViewSet(
             """For requestors updating their requests, the request status may
             only be updated from pending to cancelled.
             """
+            print(request.data.get("status"))
+            print(update_obj.status)
             if update_obj.status != "pending" or request.data.get("status") != "cancelled":
                 self.throw_validation_error(
                     "cross-account partial update", "Request status may only be updated from pending to cancelled."

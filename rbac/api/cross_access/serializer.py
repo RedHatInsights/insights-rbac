@@ -21,8 +21,9 @@ from management.models import Role
 from management.notifications.notification_handlers import cross_account_access_handler
 from management.permission.serializer import PermissionSerializer
 from rest_framework import serializers
+from rest_framework.serializers import ValidationError
 
-from api.models import CrossAccountRequest
+from api.models import CrossAccountRequest, Tenant
 
 
 class CrossAccountRequestSerializer(serializers.ModelSerializer):
@@ -57,7 +58,7 @@ class RoleSerializer(serializers.ModelSerializer):
     """Serializer for the roles of cross access request model."""
 
     uuid = serializers.UUIDField(read_only=True)
-    display_name = serializers.CharField(max_length=150, read_only=True)
+    display_name = serializers.CharField(max_length=150)
     description = serializers.CharField(max_length=150, read_only=True)
     permissions = serializers.SerializerMethodField(read_only=True)
 
@@ -107,21 +108,44 @@ class CrossAccountRequestDetailSerializer(serializers.ModelSerializer):
         serialized_roles = [RoleSerializer(role).data for role in obj.roles.all()]
         return serialized_roles
 
+    def throw_validation_error(self, source, message):
+        """Construct a validation error and raise the error."""
+        error = {source: [message]}
+        raise ValidationError(error)
+
+    def validate_roles(self, roles):
+        """Format role list as expected for cross-account-request."""
+        public_tenant = Tenant.objects.get(tenant_name="public")
+        system_role_uuids = []
+        for role in roles:
+            role_display_name = role["display_name"]
+            try:
+                role = Role.objects.get(tenant=public_tenant, display_name=role_display_name)
+                if not role.system:
+                    self.throw_validation_error(
+                        "cross-account-request", "Only system roles may be assigned to a cross-account-request."
+                    )
+            except Role.DoesNotExist:
+                raise self.throw_validation_error("cross-account-request", f"Role '{role_display_name}' does not exist.")
+            system_role_uuids.append(role.uuid)
+        return system_role_uuids
+
     def create(self, validated_data):
         """Override the create method to associate the roles to cross account request after it is created."""
-        validated_data.pop("roles")
+        print("---")
+        role_uuids = validated_data.pop("roles")
         request = CrossAccountRequest.objects.create(**validated_data)
         cross_account_access_handler(request, self.context["user"])
-        role_uuids = [role["uuid"] for role in self.context["request"].data["roles"]]
+       # role_uuids = [role["uuid"] for role in self.context["request"].data["roles"]]
         request.roles.add(*role_uuids)
         return request
 
     @transaction.atomic
     def update(self, instance, validated_data):
+        print("PATCH")
         """Override the update method to associate the roles to cross account request after it is updated."""
         if "roles" in validated_data:
-            validated_data.pop("roles")
-            role_uuids = [role["uuid"] for role in self.context["request"].data["roles"]]
+            role_uuids = validated_data.pop("roles")
             instance.roles.clear()
             instance.roles.add(*role_uuids)
 
