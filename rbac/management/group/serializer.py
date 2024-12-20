@@ -54,8 +54,8 @@ class GroupInputSerializer(SerializerCreateOverrideMixin, serializers.ModelSeria
         is_custom_default = self.is_custom_default_group(group)
         if is_custom_default:
             key = "detail"
-            message = "Updating the name or description of Custom default group is restricted"
-            error = {key: [(message)]}
+            message = "Updating the name or description of 'Custom default group' is restricted"
+            error = {key: (message)}
             raise serializers.ValidationError(error)
 
     class Meta:
