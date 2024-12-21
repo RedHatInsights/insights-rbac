@@ -238,7 +238,7 @@ spec:
         steps:
           # Add the trusted artifact to the task volume
           - name: use-trusted-artifact
-            image: quay.io/redhat-appstudio/build-trusted-artifacts:latest@sha256:b31dc501d5068e30621e51681a2921d4e43f5a030ab78c8991f83a5e774534a3
+            image: quay.io/redhat-appstudio/build-trusted-artifacts:latest@sha256:ff35e09ff5c89e54538b50abae241a765b2b7868f05d62c4835bebf0978f3659
             args:
               - use
               - $(params.SOURCE_ARTIFACT)=/var/workdir
