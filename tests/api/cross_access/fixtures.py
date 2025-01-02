@@ -77,7 +77,7 @@ class CrossAccountRequestTest(IdentityRequest):
             self.associate_admin_request has user_id 1111111, and account number xxxxxx
             It would be approver for request_1, request_2, request_5;
             It would be requestor for request_3, request_6
-            | target_account | user_id | start_date | end_date  |  status  | roles |
+            |    target_org  | user_id | start_date | end_date  |  status  | roles |
             |     xxxxxx     | 1111111 |    now     | now+10day | approved |       |
             |     xxxxxx     | 2222222 |    now     | now+10day | pending  |       |
             |     123456     | 1111111 |    now     | now+10day | approved |       |
@@ -90,7 +90,7 @@ class CrossAccountRequestTest(IdentityRequest):
         self.another_org_id = "54321"
 
         self.data4create = {
-            "target_account": "012345",
+            "target_account": None,
             "target_org": "054321",
             "start_date": self.format_date(self.ref_time),
             "end_date": self.format_date(self.ref_time + timedelta(90)),
