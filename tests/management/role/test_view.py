@@ -1773,6 +1773,33 @@ class RoleViewsetTests(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(response.data.get("errors")[0].get("detail"), f"Role '{name}' already exists for a tenant.")
 
+    def test_create_role_with_invalid_equals_operation(self):
+        """Test that we cannot create a role when a String value is paired with the 'in' operation."""
+        role_name = "roleFail"
+        access_data = [
+            {
+                "permission": "someApp:*:*",
+                "resourceDefinitions": [
+                    {"attributeFilter": {"key": "keyA.id", "operation": "equals", "value": ["value1", "value2"]}}
+                ],
+            }
+        ]
+        response = self.create_role(role_name, in_access_data=access_data)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_create_role_with_invalid_in_operation(self):
+        """Test that we cannot create a role when a String value is paired with the 'in' operation."""
+        role_name = "roleFail"
+        access_data = [
+            {
+                "permission": "someApp:*:*",
+                "resourceDefinitions": [
+                    {"attributeFilter": {"key": "keyA.id", "operation": "in", "value": "valueA"}}
+                ],
+            }
+        ]
+        response = self.create_role(role_name, in_access_data=access_data)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
 class RoleViewNonAdminTests(IdentityRequest):
     """Test the role view for nonadmin user."""
