@@ -56,7 +56,7 @@ flake8-docstrings = "==1.7.0"
 flake8-import-order = "==0.18.2"
 flake8-quotes = "==3.3.2"
 mypy = "==1.11.2"
-types-pyyaml = "==6.0.12.12"
+types-pyyaml = "==6.0.12.20241230"
 cryptography = "==44.0.0"
 
 [requires]
