@@ -55,11 +55,11 @@ class ResourceDefinitionSerializer(SerializerCreateOverrideMixin, serializers.Mo
                 key = "format"
                 message = "attributeFilter operation 'in' expects a List value"
                 error = {key: [_(message)]}
-                raise serializers.ValidationError(error)
             elif type(values) is list and op == "equals":
                 key = "format"
                 message = "attributeFilter operation 'equals' expects a String value"
                 error = {key: [_(message)]}
+            if error:
                 raise serializers.ValidationError(error)
         return value
 

@@ -50,12 +50,7 @@ URL = reverse("v1_management:role-list")
 def normalize_and_sort(json_obj):
     for key, value in json_obj.items():
         if isinstance(value, list):
-            sorted_list = sorted(
-                [
-                    json.dumps(item, sort_keys=True, cls=DjangoJSONEncoder)
-                    for item in value
-                ]
-            )
+            sorted_list = sorted([json.dumps(item, sort_keys=True, cls=DjangoJSONEncoder) for item in value])
 
             json_obj[key] = [json.loads(item) for item in sorted_list]
     return json_obj
@@ -64,9 +59,7 @@ def normalize_and_sort(json_obj):
 def replication_event_for_v1_role(v1_role_uuid, default_workspace_id):
     """Create a replication event for a v1 role."""
     return {
-        "relations_to_add": relation_api_tuples_for_v1_role(
-            v1_role_uuid, default_workspace_id
-        ),
+        "relations_to_add": relation_api_tuples_for_v1_role(v1_role_uuid, default_workspace_id),
         "relations_to_remove": [],
     }
 
@@ -77,15 +70,11 @@ def relation_api_tuples_for_v1_role(v1_role_uuid, default_workspace_id):
     mappings = BindingMapping.objects.filter(role=role_id).all()
     relations = []
     for role_binding in [m.get_role_binding() for m in mappings]:
-        relation_tuple = relation_api_tuple(
-            "role_binding", role_binding.id, "role", "role", role_binding.role.id
-        )
+        relation_tuple = relation_api_tuple("role_binding", role_binding.id, "role", "role", role_binding.role.id)
         relations.append(relation_tuple)
 
         for permission in role_binding.role.permissions:
-            relation_tuple = relation_api_tuple(
-                "role", role_binding.role.id, permission, "principal", "*"
-            )
+            relation_tuple = relation_api_tuple("role", role_binding.role.id, permission, "principal", "*")
             relations.append(relation_tuple)
         if "app_all_read" in role_binding.role.permissions:
             relation_tuple = relation_api_tuple(
@@ -97,9 +86,7 @@ def relation_api_tuples_for_v1_role(v1_role_uuid, default_workspace_id):
             )
             relations.append(relation_tuple)
         else:
-            relation_tuple = relation_api_tuple(
-                "keya/id", "valueA", "binding", "role_binding", role_binding.id
-            )
+            relation_tuple = relation_api_tuple("keya/id", "valueA", "binding", "role_binding", role_binding.id)
             relations.append(relation_tuple)
     return relations
 
@@ -196,23 +183,17 @@ class RoleViewsetTests(IdentityRequest):
             "external_tenant",
         }
 
-        self.principal = Principal(
-            username=self.user_data["username"], tenant=self.tenant
-        )
+        self.principal = Principal(username=self.user_data["username"], tenant=self.tenant)
         self.principal.save()
         self.policy = Policy.objects.create(name="policyA", tenant=self.tenant)
-        self.group = Group(
-            name="groupA", description="groupA description", tenant=self.tenant
-        )
+        self.group = Group(name="groupA", description="groupA description", tenant=self.tenant)
         self.group.save()
         self.group.principals.add(self.principal)
         self.group.policies.add(self.policy)
         self.group.save()
 
         self.policyTwo = Policy.objects.create(name="policyB", tenant=self.tenant)
-        self.groupTwo = Group(
-            name="groupB", description="groupB description", tenant=self.tenant
-        )
+        self.groupTwo = Group(name="groupB", description="groupB description", tenant=self.tenant)
         self.groupTwo.save()
         self.groupTwo.principals.add(self.principal)
         self.groupTwo.policies.add(self.policyTwo)
@@ -221,9 +202,7 @@ class RoleViewsetTests(IdentityRequest):
         self.adminRole = Role(**admin_def_role_config, tenant=self.tenant)
         self.adminRole.save()
 
-        self.platformAdminRole = Role(
-            **platform_admin_def_role_config, tenant=self.tenant
-        )
+        self.platformAdminRole = Role(**platform_admin_def_role_config, tenant=self.tenant)
         self.platformAdminRole.save()
 
         self.public_tenant = Tenant.objects.get(tenant_name="public")
@@ -237,9 +216,7 @@ class RoleViewsetTests(IdentityRequest):
         self.defRole.save()
 
         self.ext_tenant = ExtTenant.objects.create(name="foo")
-        self.ext_role_relation = ExtRoleRelation.objects.create(
-            role=self.defRole, ext_tenant=self.ext_tenant
-        )
+        self.ext_role_relation = ExtRoleRelation.objects.create(role=self.defRole, ext_tenant=self.ext_tenant)
 
         self.policy.roles.add(
             self.defRole,
@@ -253,26 +230,14 @@ class RoleViewsetTests(IdentityRequest):
         self.policyTwo.roles.add(self.platformAdminRole)
         self.policyTwo.save()
 
-        self.permission = Permission.objects.create(
-            permission="app:*:*", tenant=self.tenant
-        )
-        self.permission2 = Permission.objects.create(
-            permission="app2:*:*", tenant=self.tenant
-        )
-        self.permission3 = Permission.objects.create(
-            permission="app:*:read", tenant=self.tenant
-        )
+        self.permission = Permission.objects.create(permission="app:*:*", tenant=self.tenant)
+        self.permission2 = Permission.objects.create(permission="app2:*:*", tenant=self.tenant)
+        self.permission3 = Permission.objects.create(permission="app:*:read", tenant=self.tenant)
         self.permission.permissions.add(self.permission3)
-        self.access = Access.objects.create(
-            permission=self.permission, role=self.defRole, tenant=self.tenant
-        )
-        self.access2 = Access.objects.create(
-            permission=self.permission2, role=self.defRole, tenant=self.tenant
-        )
+        self.access = Access.objects.create(permission=self.permission, role=self.defRole, tenant=self.tenant)
+        self.access2 = Access.objects.create(permission=self.permission2, role=self.defRole, tenant=self.tenant)
 
-        self.access3 = Access.objects.create(
-            permission=self.permission2, role=self.sysRole, tenant=self.tenant
-        )
+        self.access3 = Access.objects.create(permission=self.permission2, role=self.sysRole, tenant=self.tenant)
         Permission.objects.create(permission="cost-management:*:*", tenant=self.tenant)
         self.root_workspace = Workspace.objects.create(
             name="root",
@@ -346,9 +311,7 @@ class RoleViewsetTests(IdentityRequest):
     def create_policy(self, policy_name, group, roles):
         """Create a policy."""
         # create a policy
-        policy = Policy.objects.create(
-            name=policy_name, tenant=self.tenant, system=True
-        )
+        policy = Policy.objects.create(name=policy_name, tenant=self.tenant, system=True)
         for role in Role.objects.filter(uuid__in=roles):
             policy.roles.add(role)
         policy.group = Group.objects.get(uuid=group)
@@ -404,9 +367,7 @@ class RoleViewsetTests(IdentityRequest):
             self.assertEqual(al_dict_action, "create")
 
             # test that we can retrieve the role
-            url = reverse(
-                "v1_management:role-detail", kwargs={"uuid": response.data.get("uuid")}
-            )
+            url = reverse("v1_management:role-detail", kwargs={"uuid": response.data.get("uuid")})
             client = APIClient()
             response = client.get(url, **self.headers)
             uuid = response.data.get("uuid")
@@ -449,9 +410,7 @@ class RoleViewsetTests(IdentityRequest):
             )
 
     @override_settings(V2_MIGRATION_RESOURCE_EXCLUDE_LIST=["rbac:workspace"])
-    @patch(
-        "management.relation_replicator.outbox_replicator.OutboxReplicator._save_replication_event"
-    )
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator._save_replication_event")
     def test_role_replication_exluded_resource(self, mock_method):
         """Test that excluded resources do not replicate via dual write."""
         # Set up
@@ -486,12 +445,10 @@ class RoleViewsetTests(IdentityRequest):
             "too many relations (should not add relations for excluded resource)",
         )
 
-        role_binding = find_in_list(
-            to_add, lambda r: r["resource"]["type"]["name"] == "role_binding"
-        )["resource"]["id"]
-        workspace = find_in_list(
-            to_add, lambda r: r["resource"]["type"]["name"] == "workspace"
-        )
+        role_binding = find_in_list(to_add, lambda r: r["resource"]["type"]["name"] == "role_binding")["resource"][
+            "id"
+        ]
+        workspace = find_in_list(to_add, lambda r: r["resource"]["type"]["name"] == "workspace")
 
         self.assertEquals(
             role_binding,
@@ -501,13 +458,9 @@ class RoleViewsetTests(IdentityRequest):
 
         role = find_in_list(to_add, lambda r: r["resource"]["type"]["name"] == "role")
 
-        self.assertEquals(
-            role["relation"], "app_all_read", "expected workspace permission"
-        )
+        self.assertEquals(role["relation"], "app_all_read", "expected workspace permission")
 
-    @patch(
-        "management.relation_replicator.outbox_replicator.OutboxReplicator._save_replication_event"
-    )
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator._save_replication_event")
     def test_create_role_with_display_success(self, mock_method):
         """Test that we can create a role."""
         role_name = "roleD"
@@ -527,14 +480,10 @@ class RoleViewsetTests(IdentityRequest):
             },
             {"permission": "app:*:read", "resourceDefinitions": []},
         ]
-        response = self.create_role(
-            role_name, role_display=role_display, in_access_data=access_data
-        )
+        response = self.create_role(role_name, role_display=role_display, in_access_data=access_data)
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
 
-        replication_event = replication_event_for_v1_role(
-            response.data.get("uuid"), str(self.default_workspace.id)
-        )
+        replication_event = replication_event_for_v1_role(response.data.get("uuid"), str(self.default_workspace.id))
 
         mock_method.assert_called_once()
         actual_call_arg = mock_method.call_args[0][0]
@@ -543,9 +492,7 @@ class RoleViewsetTests(IdentityRequest):
         self.assertEqual(expected_sorted, actual_sorted)
 
         # test that we can retrieve the role
-        url = reverse(
-            "v1_management:role-detail", kwargs={"uuid": response.data.get("uuid")}
-        )
+        url = reverse("v1_management:role-detail", kwargs={"uuid": response.data.get("uuid")})
         client = APIClient()
         response = client.get(url, **self.headers)
 
@@ -629,9 +576,7 @@ class RoleViewsetTests(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
 
         # test that we can retrieve the role
-        url = reverse(
-            "v1_management:role-detail", kwargs={"uuid": response.data.get("uuid")}
-        )
+        url = reverse("v1_management:role-detail", kwargs={"uuid": response.data.get("uuid")})
         client = APIClient()
         response = client.get(url, **self.headers)
 
@@ -972,9 +917,7 @@ class RoleViewsetTests(IdentityRequest):
 
     def test_get_role_by_exact_display_name_match(self):
         """Test that getting roles by display_name returns exact match."""
-        url = "{}?display_name={}&name_match={}".format(
-            URL, self.sysRole.display_name, "exact"
-        )
+        url = "{}?display_name={}&name_match={}".format(URL, self.sysRole.display_name, "exact")
         client = APIClient()
         response = client.get(url, **self.headers)
         self.assertEqual(response.data.get("meta").get("count"), 1)
@@ -989,9 +932,7 @@ class RoleViewsetTests(IdentityRequest):
         self.assertEqual(response.data.get("meta").get("count"), 0)
 
     @patch("management.principal.proxy.PrincipalProxy.request_filtered_principals")
-    def test_list_role_with_groups_in_fields_with_username_param_for_non_org_admin(
-        self, mock_request
-    ):
+    def test_list_role_with_groups_in_fields_with_username_param_for_non_org_admin(self, mock_request):
         """
         Test that we can read a list of roles and the groups_in fields is set correctly
         for a request with 'username' param for non org admin principal.
@@ -1043,12 +984,8 @@ class RoleViewsetTests(IdentityRequest):
         }
 
         # add principal to the created group
-        principal_response = self.add_principal_to_group(
-            custom_group_uuid, john.username
-        )
-        self.assertEqual(
-            principal_response.status_code, status.HTTP_200_OK, principal_response
-        )
+        principal_response = self.add_principal_to_group(custom_group_uuid, john.username)
+        self.assertEqual(principal_response.status_code, status.HTTP_200_OK, principal_response)
 
         # add groups_in and groups_in_count fields into display fields
         groups_in_count = "groups_in_count"
@@ -1078,11 +1015,7 @@ class RoleViewsetTests(IdentityRequest):
 
         # make sure created role exists in result set and has correct values
         created_role = next(
-            (
-                iterRole
-                for iterRole in response_data
-                if iterRole["name"] == custom_role_name
-            ),
+            (iterRole for iterRole in response_data if iterRole["name"] == custom_role_name),
             None,
         )
         self.assertIsNotNone(created_role)
@@ -1098,9 +1031,7 @@ class RoleViewsetTests(IdentityRequest):
                 self.assertIn(group["name"], groups)
 
     @patch("management.principal.proxy.PrincipalProxy.request_filtered_principals")
-    def test_list_role_with_groups_in_fields_with_username_param_for_org_admin(
-        self, mock_request
-    ):
+    def test_list_role_with_groups_in_fields_with_username_param_for_org_admin(self, mock_request):
         """
         Test that we can read a list of roles and the groups_in fields is set correctly
         for a request with 'username' param for org admin principal.
@@ -1152,12 +1083,8 @@ class RoleViewsetTests(IdentityRequest):
         }
 
         # add principal to the created group
-        principal_response = self.add_principal_to_group(
-            custom_group_uuid, mary.username
-        )
-        self.assertEqual(
-            principal_response.status_code, status.HTTP_200_OK, principal_response
-        )
+        principal_response = self.add_principal_to_group(custom_group_uuid, mary.username)
+        self.assertEqual(principal_response.status_code, status.HTTP_200_OK, principal_response)
 
         # add groups_in and groups_in_count fields into display fields
         groups_in_count = "groups_in_count"
@@ -1187,11 +1114,7 @@ class RoleViewsetTests(IdentityRequest):
 
         # make sure created role exists in result set and has correct values
         created_role = next(
-            (
-                iterRole
-                for iterRole in response_data
-                if iterRole["name"] == custom_role_name
-            ),
+            (iterRole for iterRole in response_data if iterRole["name"] == custom_role_name),
             None,
         )
         self.assertIsNotNone(created_role)
@@ -1212,9 +1135,7 @@ class RoleViewsetTests(IdentityRequest):
                 self.assertIn(group["name"], groups)
 
     @patch("management.principal.proxy.PrincipalProxy.request_filtered_principals")
-    def test_list_role_with_groups_in_fields_for_principal_scope_success(
-        self, mock_request
-    ):
+    def test_list_role_with_groups_in_fields_for_principal_scope_success(self, mock_request):
         """
         Test that we can read a list of roles and the groups_in fields is set correctly
         for a principal scoped request.
@@ -1251,12 +1172,8 @@ class RoleViewsetTests(IdentityRequest):
         self.create_policy(policy_name, group_uuid, [role_uuid])
 
         # add user principal to the created group
-        principal_response = self.add_principal_to_group(
-            group_uuid, self.principal.username
-        )
-        self.assertEqual(
-            principal_response.status_code, status.HTTP_200_OK, principal_response
-        )
+        principal_response = self.add_principal_to_group(group_uuid, self.principal.username)
+        self.assertEqual(principal_response.status_code, status.HTTP_200_OK, principal_response)
 
         # hit /roles?groups_in, group should appear in groups_in
         field_1 = "groups_in_count"
@@ -1265,9 +1182,7 @@ class RoleViewsetTests(IdentityRequest):
         new_display_fields.add(field_1)
         new_display_fields.add(field_2)
 
-        url = "{}?add_fields={},{}&username={}".format(
-            URL, field_1, field_2, self.principal.username
-        )
+        url = "{}?add_fields={},{}&username={}".format(URL, field_1, field_2, self.principal.username)
         client = APIClient()
         response = client.get(url, **self.headers)
 
@@ -1297,11 +1212,7 @@ class RoleViewsetTests(IdentityRequest):
 
         # make sure a default role exists in result set and has correct values
         default_role = next(
-            (
-                iterRole
-                for iterRole in response_data
-                if iterRole["name"] == self.defRole.name
-            ),
+            (iterRole for iterRole in response_data if iterRole["name"] == self.defRole.name),
             None,
         )
         self.assertIsNotNone(default_role)
@@ -1339,11 +1250,7 @@ class RoleViewsetTests(IdentityRequest):
 
         # make sure a default role exists in result set and has correct values
         default_role = next(
-            (
-                iterRole
-                for iterRole in response_data
-                if iterRole["name"] == self.defRole.name
-            ),
+            (iterRole for iterRole in response_data if iterRole["name"] == self.defRole.name),
             None,
         )
         self.assertIsNotNone(default_role)
@@ -1352,11 +1259,7 @@ class RoleViewsetTests(IdentityRequest):
 
         # make sure an admin role exists in result set and has correct values
         admin_role = next(
-            (
-                iterRole
-                for iterRole in response_data
-                if iterRole["name"] == self.adminRole.name
-            ),
+            (iterRole for iterRole in response_data if iterRole["name"] == self.adminRole.name),
             None,
         )
         self.assertIsNotNone(admin_role)
@@ -1413,9 +1316,7 @@ class RoleViewsetTests(IdentityRequest):
             ],
         }
 
-        url = "{}?add_fields={},{}&username={}".format(
-            URL, field_1, field_2, self.principal.username
-        )
+        url = "{}?add_fields={},{}&username={}".format(URL, field_1, field_2, self.principal.username)
         client = APIClient()
         response = client.get(url, **self.headers)
 
@@ -1594,9 +1495,7 @@ class RoleViewsetTests(IdentityRequest):
 
             self.assertIsNotNone(response.data.get("uuid"))
             self.assertEqual(updated_name, response.data.get("name"))
-            self.assertEqual(
-                "cost-management:*:*", response.data.get("access")[0]["permission"]
-            )
+            self.assertEqual("cost-management:*:*", response.data.get("access")[0]["permission"])
 
             # test whether newly updated (post) role is added correctly within audit log database
             al_url = "/api/rbac/v1/auditlogs/"
@@ -1685,9 +1584,7 @@ class RoleViewsetTests(IdentityRequest):
         response = client.put(url, test_data, format="json", **self.headers)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
-    @patch(
-        "management.relation_replicator.outbox_replicator.OutboxReplicator._save_replication_event"
-    )
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator._save_replication_event")
     def test_update_role(self, mock_method):
         """Test that updating a role with an invalid permission returns an error."""
         # Set up
@@ -1730,14 +1627,10 @@ class RoleViewsetTests(IdentityRequest):
         test_data["access"] = new_access_data
         url = reverse("v1_management:role-detail", kwargs={"uuid": role_uuid})
         client = APIClient()
-        current_relations = relation_api_tuples_for_v1_role(
-            role_uuid, str(self.default_workspace.id)
-        )
+        current_relations = relation_api_tuples_for_v1_role(role_uuid, str(self.default_workspace.id))
 
         response = client.put(url, test_data, format="json", **self.headers)
-        replication_event = replication_event_for_v1_role(
-            response.data.get("uuid"), str(self.default_workspace.id)
-        )
+        replication_event = replication_event_for_v1_role(response.data.get("uuid"), str(self.default_workspace.id))
         replication_event["relations_to_remove"] = current_relations
         actual_call_arg = mock_method.call_args[0][0]
         expected_sorted = normalize_and_sort(replication_event)
@@ -1804,9 +1697,7 @@ class RoleViewsetTests(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         role_uuid = response.data.get("uuid")
         test_data = response.data
-        test_data.get("access")[0]["resourceDefinitions"][0].get("attributeFilter")[
-            "operation"
-        ] = "foo"
+        test_data.get("access")[0]["resourceDefinitions"][0].get("attributeFilter")["operation"] = "foo"
 
         # Test update failure
         url = reverse("v1_management:role-detail", kwargs={"uuid": role_uuid})
@@ -1854,9 +1745,7 @@ class RoleViewsetTests(IdentityRequest):
             f"Permission does not exist: {permission}",
         )
 
-    @patch(
-        "management.relation_replicator.outbox_replicator.OutboxReplicator._save_replication_event"
-    )
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator._save_replication_event")
     def test_delete_role(self, mock_method):
         """Test that we can delete an existing role."""
         role_name = "roleA"
@@ -1881,9 +1770,7 @@ class RoleViewsetTests(IdentityRequest):
         url = reverse("v1_management:role-detail", kwargs={"uuid": role_uuid})
         client = APIClient()
         replication_event = {"relations_to_add": [], "relations_to_remove": []}
-        current_relations = relation_api_tuples_for_v1_role(
-            role_uuid, str(self.default_workspace.id)
-        )
+        current_relations = relation_api_tuples_for_v1_role(role_uuid, str(self.default_workspace.id))
         replication_event["relations_to_remove"] = current_relations
         response = client.delete(url, **self.headers)
         actual_call_arg = mock_method.call_args[0][0]
@@ -1964,17 +1851,11 @@ class RoleViewsetTests(IdentityRequest):
 
     def test_delete_system_role_in_public_tenant(self):
         """Test that system roles in public tenant are protected from deletion"""
-        url = reverse(
-            "v1_management:role-detail", kwargs={"uuid": self.sysPubRole.uuid}
-        )
+        url = reverse("v1_management:role-detail", kwargs={"uuid": self.sysPubRole.uuid})
         client = APIClient()
 
-        existing_role = Role.objects.filter(
-            uuid=self.sysPubRole.uuid, tenant=self.public_tenant
-        ).first()
-        self.assertIsNotNone(
-            existing_role, "Public system role should exist before deletion test."
-        )
+        existing_role = Role.objects.filter(uuid=self.sysPubRole.uuid, tenant=self.public_tenant).first()
+        self.assertIsNotNone(existing_role, "Public system role should exist before deletion test.")
 
         response = client.delete(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
@@ -2159,9 +2040,7 @@ class RoleViewNonAdminTests(IdentityRequest):
             "platform_default": True,
             "admin_default": False,
         }
-        self.platform_default_role = Role.objects.create(
-            **platform_default_role_config, tenant=self.tenant
-        )
+        self.platform_default_role = Role.objects.create(**platform_default_role_config, tenant=self.tenant)
 
         admin_default_role_config = {
             "name": "admin_default_role",
@@ -2170,9 +2049,7 @@ class RoleViewNonAdminTests(IdentityRequest):
             "platform_default": False,
             "admin_default": True,
         }
-        self.admin_default_role = Role.objects.create(
-            **admin_default_role_config, tenant=self.tenant
-        )
+        self.admin_default_role = Role.objects.create(**admin_default_role_config, tenant=self.tenant)
 
         not_system_role_config = {
             "name": "not_system_role",
@@ -2182,9 +2059,7 @@ class RoleViewNonAdminTests(IdentityRequest):
             "admin_default": False,
         }
 
-        self.not_system_role = Role.objects.create(
-            **not_system_role_config, tenant=self.tenant
-        )
+        self.not_system_role = Role.objects.create(**not_system_role_config, tenant=self.tenant)
 
         self.system_roles_count = 2
         self.non_system_roles_count = 1
@@ -2208,9 +2083,7 @@ class RoleViewNonAdminTests(IdentityRequest):
 
         # Create 2 non org admin principals and 1 org admin
         # 1. user based principal
-        self.user_based_principal = Principal(
-            username="user_based_principal", tenant=self.tenant
-        )
+        self.user_based_principal = Principal(username="user_based_principal", tenant=self.tenant)
         self.user_based_principal.save()
 
         customer_data = {
@@ -2227,9 +2100,7 @@ class RoleViewNonAdminTests(IdentityRequest):
             },
             is_org_admin=False,
         )
-        self.headers_user_based_principal = request_context_user_based_principal[
-            "request"
-        ].META
+        self.headers_user_based_principal = request_context_user_based_principal["request"].META
 
         # 2. service account based principal
         service_account_data = self._create_service_account_data()
@@ -2246,9 +2117,7 @@ class RoleViewNonAdminTests(IdentityRequest):
             service_account_data=service_account_data,
             is_org_admin=False,
         )
-        self.headers_service_account_principal = (
-            request_context_service_account_principal["request"].META
-        )
+        self.headers_service_account_principal = request_context_service_account_principal["request"].META
 
         # 3 org admin principal in the tenant
         self.org_admin = Principal(username="org_admin", tenant=self.tenant)
@@ -2262,9 +2131,7 @@ class RoleViewNonAdminTests(IdentityRequest):
         self.headers_org_admin = request_context_org_admin["request"].META
 
         # Error messages
-        self.no_permission_err_message = (
-            "You do not have permission to perform this action."
-        )
+        self.no_permission_err_message = "You do not have permission to perform this action."
 
     def tearDown(self):
         """Tear down role viewset nonadmin tests."""
@@ -2327,15 +2194,11 @@ class RoleViewNonAdminTests(IdentityRequest):
 
         response = client.get(url, **self.headers_user_based_principal)
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
-        self.assertEqual(
-            response.data.get("errors")[0].get("detail"), self.no_permission_err_message
-        )
+        self.assertEqual(response.data.get("errors")[0].get("detail"), self.no_permission_err_message)
 
         response = client.get(url, **self.headers_service_account_principal)
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
-        self.assertEqual(
-            response.data.get("errors")[0].get("detail"), self.no_permission_err_message
-        )
+        self.assertEqual(response.data.get("errors")[0].get("detail"), self.no_permission_err_message)
 
         # Org Admin can list the roles
         response = client.get(url, **self.headers_org_admin)
@@ -2348,12 +2211,8 @@ class RoleViewNonAdminTests(IdentityRequest):
         Test that principal with 'User Access administrator' role can read a list of roles.
         """
         # Create a group with 'User Access administrator' role and add principals we use in headers
-        group_with_UA_admin = self._create_group_with_user_access_admin_role(
-            self.tenant
-        )
-        group_with_UA_admin.principals.add(
-            self.user_based_principal, self.service_account_principal
-        )
+        group_with_UA_admin = self._create_group_with_user_access_admin_role(self.tenant)
+        group_with_UA_admin.principals.add(self.user_based_principal, self.service_account_principal)
 
         client = APIClient()
         url = reverse("v1_management:role-list")
@@ -2390,12 +2249,8 @@ class RoleViewNonAdminTests(IdentityRequest):
         with '?system=true' in the request.
         """
         # Create a group with 'User Access administrator' role and add principals we use in headers
-        group_with_UA_admin = self._create_group_with_user_access_admin_role(
-            self.tenant
-        )
-        group_with_UA_admin.principals.add(
-            self.user_based_principal, self.service_account_principal
-        )
+        group_with_UA_admin = self._create_group_with_user_access_admin_role(self.tenant)
+        group_with_UA_admin.principals.add(self.user_based_principal, self.service_account_principal)
         client = APIClient()
         url = reverse("v1_management:role-list") + "?system=true"
 
@@ -2419,15 +2274,11 @@ class RoleViewNonAdminTests(IdentityRequest):
 
         response = client.get(url, **self.headers_user_based_principal)
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
-        self.assertEqual(
-            response.data.get("errors")[0].get("detail"), self.no_permission_err_message
-        )
+        self.assertEqual(response.data.get("errors")[0].get("detail"), self.no_permission_err_message)
 
         response = client.get(url, **self.headers_service_account_principal)
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
-        self.assertEqual(
-            response.data.get("errors")[0].get("detail"), self.no_permission_err_message
-        )
+        self.assertEqual(response.data.get("errors")[0].get("detail"), self.no_permission_err_message)
 
         # Org Admin can list the roles
         response = client.get(url, **self.headers_org_admin)
@@ -2440,12 +2291,8 @@ class RoleViewNonAdminTests(IdentityRequest):
         with '?system=false' in the request.
         """
         # Create a group with 'User Access administrator' role and add principals we use in headers
-        group_with_UA_admin = self._create_group_with_user_access_admin_role(
-            self.tenant
-        )
-        group_with_UA_admin.principals.add(
-            self.user_based_principal, self.service_account_principal
-        )
+        group_with_UA_admin = self._create_group_with_user_access_admin_role(self.tenant)
+        group_with_UA_admin.principals.add(self.user_based_principal, self.service_account_principal)
         client = APIClient()
         url = reverse("v1_management:role-list") + "?system=false"
 
@@ -2468,15 +2315,11 @@ class RoleViewNonAdminTests(IdentityRequest):
 
         response = client.get(url, **self.headers_user_based_principal)
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
-        self.assertEqual(
-            response.data.get("errors")[0].get("detail"), self.no_permission_err_message
-        )
+        self.assertEqual(response.data.get("errors")[0].get("detail"), self.no_permission_err_message)
 
         response = client.get(url, **self.headers_service_account_principal)
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
-        self.assertEqual(
-            response.data.get("errors")[0].get("detail"), self.no_permission_err_message
-        )
+        self.assertEqual(response.data.get("errors")[0].get("detail"), self.no_permission_err_message)
 
         # Org Admin can list the roles
         response = client.get(url, **self.headers_org_admin)
@@ -2490,12 +2333,8 @@ class RoleViewNonAdminTests(IdentityRequest):
         so the 'system' param is ignored in this case).
         """
         # Create a group with 'User Access administrator' role and add principals we use in headers
-        group_with_UA_admin = self._create_group_with_user_access_admin_role(
-            self.tenant
-        )
-        group_with_UA_admin.principals.add(
-            self.user_based_principal, self.service_account_principal
-        )
+        group_with_UA_admin = self._create_group_with_user_access_admin_role(self.tenant)
+        group_with_UA_admin.principals.add(self.user_based_principal, self.service_account_principal)
 
         client = APIClient()
         url = reverse("v1_management:role-list")
@@ -2520,12 +2359,8 @@ class RoleViewNonAdminTests(IdentityRequest):
         Test that it is not possible to create a custom role with RBAC permission.
         """
         # Create a group with 'User Access administrator' role and add principals we use in headers
-        group_with_UA_admin = self._create_group_with_user_access_admin_role(
-            self.tenant
-        )
-        group_with_UA_admin.principals.add(
-            self.user_based_principal, self.service_account_principal
-        )
+        group_with_UA_admin = self._create_group_with_user_access_admin_role(self.tenant)
+        group_with_UA_admin.principals.add(self.user_based_principal, self.service_account_principal)
 
         Permission.objects.create(permission="rbac:principal:read", tenant=self.tenant)
         permissions_count = len(Permission.objects.all())
@@ -2544,18 +2379,14 @@ class RoleViewNonAdminTests(IdentityRequest):
         access_data = [{"permission": "rbac:*:*", "resourceDefinitions": []}]
         test_data = {"name": role_name, "access": access_data}
 
-        response = client.post(
-            url, test_data, format="json", **self.headers_user_based_principal
-        )
+        response = client.post(url, test_data, format="json", **self.headers_user_based_principal)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(
             response.data.get("errors")[0].get("detail"),
             "Custom roles cannot be created for rbac",
         )
 
-        response = client.post(
-            url, test_data, format="json", **self.headers_service_account_principal
-        )
+        response = client.post(url, test_data, format="json", **self.headers_service_account_principal)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(
             response.data.get("errors")[0].get("detail"),
