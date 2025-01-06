@@ -2003,7 +2003,7 @@ class RoleViewsetTests(IdentityRequest):
             }
         ]
         response = self.create_role(role_name, in_access_data=access_data)
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data["errors"][0]["source"] == "resourceDefinitions.attributeFilter.format")
 
     def test_create_role_with_invalid_in_operation(self):
         """Test that we cannot create a role when a String value is paired with the 'in' operation."""
@@ -2016,14 +2016,14 @@ class RoleViewsetTests(IdentityRequest):
                         "attributeFilter": {
                             "key": "keyA.id",
                             "operation": "in",
-                            "value": "valueA",
+                            "value": "123456",
                         }
                     }
                 ],
             }
         ]
         response = self.create_role(role_name, in_access_data=access_data)
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data["errors"][0]["source"] == "resourceDefinitions.attributeFilter.format")
 
 
 class RoleViewNonAdminTests(IdentityRequest):
