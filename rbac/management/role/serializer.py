@@ -52,7 +52,7 @@ class ResourceDefinitionSerializer(SerializerCreateOverrideMixin, serializers.Mo
         else:
             values = value.get("value")
             error = False
-            if isinstance(values, str) and op == "in":
+            if not isinstance(values, list) and op == "in":
                 key = "format"
                 message = "attributeFilter operation 'in' expects a List value"
                 error = {key: [_(message)]}
