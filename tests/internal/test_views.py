@@ -33,12 +33,14 @@ from management.audit_log.model import AuditLog
 from management.models import BindingMapping, Group, Permission, Policy, Role, Workspace
 from management.principal.model import Principal
 from management.relation_replicator.noop_replicator import NoopReplicator
+from management.relation_replicator.relation_replicator import PartitionKey, ReplicationEvent, ReplicationEventType
 from management.role.model import Access, ResourceDefinition
 from management.tenant_mapping.model import TenantMapping
 from management.tenant_service.v1 import V1TenantBootstrapService
 from management.tenant_service.v2 import V2TenantBootstrapService
 from management.workspace.model import Workspace
 from migration_tool.in_memory_tuples import InMemoryRelationReplicator, InMemoryTuples
+from migration_tool.utils import create_relationship
 from rbac.settings import REPLICATION_TO_RELATION_ENABLED
 from tests.identity_request import IdentityRequest
 from tests.management.role.test_dual_write import RbacFixture
@@ -57,6 +59,8 @@ from tests.management.role.test_dual_write import RbacFixture
 )
 class InternalViewsetTests(IdentityRequest):
     """Test the internal viewset."""
+
+    _tuples: InMemoryTuples
 
     def valid_destructive_time():
         return datetime.utcnow().replace(tzinfo=pytz.UTC) + timedelta(hours=1)
@@ -94,6 +98,7 @@ class InternalViewsetTests(IdentityRequest):
 
         self._prior_logging_disable_level = logging.root.manager.disable
         logging.disable(logging.NOTSET)
+        self._tuples = InMemoryTuples()
 
     def tearDown(self):
         """Tear down internal viewset tests."""
@@ -499,6 +504,7 @@ class InternalViewsetTests(IdentityRequest):
                 "exclude_apps": ["rbac", "costmanagement"],
                 "orgs": ["acct00001", "acct00002"],
                 "write_relationships": "False",
+                "skip_roles": False,
             }
         )
         self.assertEqual(
@@ -514,7 +520,7 @@ class InternalViewsetTests(IdentityRequest):
                 **self.request.META,
             )
             migration_mock.assert_called_once_with(
-                {"exclude_apps": ["fooapp"], "orgs": [], "write_relationships": "False"}
+                {"exclude_apps": ["fooapp"], "orgs": [], "write_relationships": "False", "skip_roles": False}
             )
             self.assertEqual(response.status_code, status.HTTP_202_ACCEPTED)
             self.assertEqual(
@@ -529,7 +535,9 @@ class InternalViewsetTests(IdentityRequest):
                 f"/_private/api/utils/data_migration/",
                 **self.request.META,
             )
-            migration_mock.assert_called_once_with({"exclude_apps": [], "orgs": [], "write_relationships": "False"})
+            migration_mock.assert_called_once_with(
+                {"exclude_apps": [], "orgs": [], "write_relationships": "False", "skip_roles": False}
+            )
             self.assertEqual(response.status_code, status.HTTP_202_ACCEPTED)
             self.assertEqual(
                 response.content.decode(),
@@ -549,6 +557,7 @@ class InternalViewsetTests(IdentityRequest):
                 "exclude_apps": ["rbac", "costmanagement"],
                 "orgs": ["acct00001", "acct00002"],
                 "write_relationships": "outbox",
+                "skip_roles": False,
             }
         )
         self.assertEqual(response.status_code, status.HTTP_202_ACCEPTED)
@@ -560,7 +569,7 @@ class InternalViewsetTests(IdentityRequest):
     def test_list_bindings_by_role(self):
         """Test that we can list bindingmapping by role."""
         response = self.client.get(
-            f"/_private/api/utils/bindings/?role_uuid={self.role.uuid}",
+            f"/_private/api/utils/bindings/{self.role.uuid}/",
             **self.request.META,
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -578,12 +587,68 @@ class InternalViewsetTests(IdentityRequest):
             **binding_attrs,
         )
         response = self.client.get(
-            f"/_private/api/utils/bindings/?role_uuid={self.role.uuid}",
+            f"/_private/api/utils/bindings/{self.role.uuid}/",
             **self.request.META,
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         binding_attrs.update({"id": binding_mapping.id, "role": self.role.id})
         self.assertEqual(json.loads(response.content.decode()), [binding_attrs])
+
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
+    def test_delete_bindings_by_role(self, replicate):
+        """Test that we can delete bindingmapping by role."""
+        replicator = InMemoryRelationReplicator(self._tuples)
+        replicate.side_effect = replicator.replicate
+        binding_mapping_id = "abcdefg"
+        workspace_id = "123456"
+        relations = [
+            create_relationship(
+                ("rbac", "role_binding"),
+                binding_mapping_id,
+                ("rbac", "role"),
+                str(self.role.uuid),
+                "role",
+            ),
+            create_relationship(
+                ("rbac", "workspace"),
+                workspace_id,
+                ("rbac", "role_binding"),
+                binding_mapping_id,
+                "binding",
+            ),
+        ]
+        self._tuples.write(relations, [])
+        bindings_attrs = [
+            {
+                "resource_id": workspace_id,
+                "resource_type_namespace": "rbac",
+                "resource_type_name": "workspace",
+                "mappings": {
+                    "id": binding_mapping_id,
+                    "role": {"is_system": True, "id": str(self.role.uuid), "permissions": []},
+                },
+            },
+            {
+                "resource_id": workspace_id,
+                "resource_type_namespace": "rbac",
+                "resource_type_name": "workspace",
+                "mappings": {"foo": "bar"},
+            },
+        ]
+        self._tuples.find_tuples()
+        # Create binding mappings
+        binding_mappings = BindingMapping.objects.bulk_create(
+            [BindingMapping(role=self.role, **binding_attrs) for binding_attrs in bindings_attrs]
+        )
+        response = self.client.delete(
+            f"/_private/api/utils/bindings/{self.role.uuid}/?mappings__role__is_system=True",
+            **self.request.META,
+        )
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+        with self.assertRaises(BindingMapping.DoesNotExist):
+            binding_mappings[0].refresh_from_db()
+        binding_mappings[1].refresh_from_db()
+        self.assertEqual(self._tuples.find_tuples(), [])
 
     def test_bootstrapping_tenant(self):
         """Test that we can bootstrap a tenant."""

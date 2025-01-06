@@ -29,6 +29,12 @@ class Command(BaseCommand):
             choices=["True", "False", "relations-api", "outbox"],
             help="Whether to replicate relationships and how. True is == 'relations-api' for compatibility.",
         )
+        parser.add_argument(
+            "--skip-roles",
+            default="False",
+            choices=["True", "False"],
+            help="Whether to skip migrate roles.",
+        )
 
     def handle(self, *args, **options):
         """Handle method for command."""
@@ -37,6 +43,7 @@ class Command(BaseCommand):
             "exclude_apps": options["exclude_apps"],
             "orgs": options["org_list"],
             "write_relationships": options["write_relationships"],
+            "skip_roles": options["skip_roles"] == "True",
         }
         migrate_data(**kwargs)
         logger.info("*** Migration completed. ***\n")
