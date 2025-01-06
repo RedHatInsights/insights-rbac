@@ -21,6 +21,7 @@ import logging
 
 from django.db import transaction
 from django.urls import resolve
+from management.relation_replicator.logging_replicator import stringify_spicedb_relationship
 from management.relation_replicator.outbox_replicator import OutboxReplicator
 from management.relation_replicator.relation_replicator import PartitionKey, ReplicationEvent, ReplicationEventType
 
@@ -81,5 +82,5 @@ def delete_bindings(bindings):
                 ),
             )
             bindings.delete()
-        info["relations"] = relations_to_remove
+        info["relations"] = [stringify_spicedb_relationship(relation) for relation in relations_to_remove]
     return info

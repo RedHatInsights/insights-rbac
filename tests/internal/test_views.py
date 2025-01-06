@@ -644,7 +644,7 @@ class InternalViewsetTests(IdentityRequest):
             f"/_private/api/utils/bindings/{self.role.uuid}/?mappings__role__is_system=True",
             **self.request.META,
         )
-        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
         with self.assertRaises(BindingMapping.DoesNotExist):
             binding_mappings[0].refresh_from_db()
         binding_mappings[1].refresh_from_db()
@@ -1123,3 +1123,174 @@ class InternalViewsetTests(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertIn("Deleted 2 tenants.", logs.output[0])
         self.assertEqual(4, Tenant.objects.count())
+
+    def test_update_system_flag_in_role(self):
+        """Test that we can update a role."""
+        tenant = Tenant.objects.create(tenant_name="1234", org_id="1234")
+        custom_role = Role.objects.create(
+            name="role 1", system=True, tenant=tenant, platform_default=False, admin_default=False
+        )
+
+        request_body = {
+            "system": "false",
+        }
+
+        json_request_body = json.dumps(request_body)
+
+        self.assertTrue(custom_role.system)
+        self.assertFalse(custom_role.platform_default)
+        self.assertFalse(custom_role.admin_default)
+
+        response = self.client.put(
+            f"/_private/api/roles/{custom_role.uuid}/",
+            json_request_body,
+            **self.request.META,
+            content_type="application/json",
+        )
+
+        custom_role.refresh_from_db()
+
+        self.assertFalse(custom_role.system)
+        self.assertFalse(custom_role.platform_default)
+        self.assertFalse(custom_role.admin_default)
+        self.assertEqual(response.status_code, 200)
+
+    def test_update_platform_default_flag_in_role(self):
+        """Test that we can update a role."""
+        tenant = Tenant.objects.create(tenant_name="1234", org_id="1234")
+        custom_role = Role.objects.create(
+            name="role 1", system=False, tenant=tenant, platform_default=True, admin_default=False
+        )
+
+        request_body = {
+            "platform_default": "false",
+        }
+
+        json_request_body = json.dumps(request_body)
+
+        self.assertFalse(custom_role.system)
+        self.assertTrue(custom_role.platform_default)
+        self.assertFalse(custom_role.admin_default)
+
+        response = self.client.put(
+            f"/_private/api/roles/{custom_role.uuid}/",
+            json_request_body,
+            **self.request.META,
+            content_type="application/json",
+        )
+
+        custom_role.refresh_from_db()
+
+        self.assertFalse(custom_role.system, False)
+        self.assertFalse(custom_role.platform_default, False)
+        self.assertFalse(custom_role.admin_default, False)
+        self.assertEqual(response.status_code, 200)
+
+    def test_update_admin_default_flag_in_role(self):
+        """Test that we can update a role."""
+        tenant = Tenant.objects.create(tenant_name="1234", org_id="1234")
+        custom_role = Role.objects.create(
+            name="role 1", system=False, tenant=tenant, platform_default=False, admin_default=True
+        )
+
+        request_body = {
+            "admin_default": "false",
+        }
+
+        json_request_body = json.dumps(request_body)
+
+        self.assertFalse(custom_role.system)
+        self.assertFalse(custom_role.platform_default)
+        self.assertTrue(custom_role.admin_default)
+
+        response = self.client.put(
+            f"/_private/api/roles/{custom_role.uuid}/",
+            json_request_body,
+            **self.request.META,
+            content_type="application/json",
+        )
+
+        custom_role.refresh_from_db()
+
+        self.assertFalse(custom_role.system)
+        self.assertFalse(custom_role.platform_default)
+        self.assertFalse(custom_role.admin_default)
+        self.assertEqual(response.status_code, 200)
+
+    def test_update_role(self):
+        """Test that we can update a role."""
+        tenant = Tenant.objects.create(tenant_name="1234", org_id="1234")
+        custom_role = Role.objects.create(
+            name="role 1", system=False, tenant=tenant, platform_default=False, admin_default=False
+        )
+
+        request_body = {"admin_default": "true", "system": "true", "platform_default": "true"}
+
+        json_request_body = json.dumps(request_body)
+
+        self.assertFalse(custom_role.system)
+        self.assertFalse(custom_role.platform_default)
+        self.assertFalse(custom_role.admin_default)
+
+        response = self.client.put(
+            f"/_private/api/roles/{custom_role.uuid}/",
+            json_request_body,
+            **self.request.META,
+            content_type="application/json",
+        )
+
+        custom_role.refresh_from_db()
+
+        self.assertTrue(custom_role.system)
+        self.assertTrue(custom_role.platform_default)
+        self.assertTrue(custom_role.admin_default)
+        self.assertEqual(response.status_code, 200)
+
+    def test_update_role_fails_disallowed_attributes(self):
+        """Test that we can update a role."""
+        tenant = Tenant.objects.create(tenant_name="1234", org_id="1234")
+        custom_role = Role.objects.create(
+            name="role 1", system=False, tenant=tenant, platform_default=False, admin_default=False
+        )
+
+        request_body = {"admin_default": "true", "system": "true", "name": "platform_default"}
+
+        json_request_body = json.dumps(request_body)
+
+        self.assertFalse(custom_role.system)
+        self.assertFalse(custom_role.platform_default)
+        self.assertFalse(custom_role.admin_default)
+
+        response = self.client.put(
+            f"/_private/api/roles/{custom_role.uuid}/",
+            json_request_body,
+            **self.request.META,
+            content_type="application/json",
+        )
+
+        custom_role.refresh_from_db()
+
+        self.assertFalse(custom_role.system)
+        self.assertFalse(custom_role.platform_default)
+        self.assertFalse(custom_role.admin_default)
+        self.assertEqual(response.status_code, 400)
+
+    def test_fetch_role(self):
+        """Test that we can update a role."""
+        tenant = Tenant.objects.create(tenant_name="1234", org_id="1234")
+        custom_role = Role.objects.create(
+            name="role 1", system=False, tenant=tenant, platform_default=False, admin_default=False
+        )
+
+        response = self.client.get(
+            f"/_private/api/roles/{custom_role.uuid}/",
+            **self.request.META,
+            content_type="application/json",
+        )
+
+        body = json.loads(response.content.decode())
+        role = body["role"]
+        self.assertFalse(role["system"])
+        self.assertFalse(role["platform_default"])
+        self.assertFalse(role["admin_default"])
+        self.assertEqual(response.status_code, 200)
