@@ -225,6 +225,14 @@ class GroupViewSet(
             error = {key: [_(message)]}
             raise serializers.ValidationError(error)
 
+    def restrict_custom_default_group_renaming(self, action, group):
+        """Restrict users from changing the name or description of the Custom default group."""
+        if group.platform_default and action == "update":
+            key = "detail"
+            message = "Updating the name or description of 'Custom default group' is restricted"
+            error = {key: (message)}
+            raise serializers.ValidationError(error)
+
     def protect_default_admin_group_roles(self, group):
         """Disallow default admin access roles from being updated."""
         if group.admin_default:
@@ -441,6 +449,8 @@ class GroupViewSet(
 
         if not request.user.admin:
             self.protect_group_with_user_access_admin_role(group.roles_with_access(), "update_group")
+
+        self.restrict_custom_default_group_renaming(action="update", group=group)
 
         update_group = super().update(request=request, args=args, kwargs=kwargs)
 
