@@ -97,6 +97,7 @@ objects:
         - name: umb-certs
           secret:
             secretName: service-accounts
+            optional: true
             items:
             - key: umb-cert
               path: cert.pem
@@ -109,7 +110,11 @@ objects:
           requests:
             cpu: ${CELERY_WORKER_CPU_REQUEST}
             memory: ${CELERY_WORKER_MEMORY_REQUEST}
-        env:
+        env: &common_env_vars
+          - name: APP_NAMESPACE
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.namespace
           - name: DJANGO_LOG_LEVEL
             value: ${DJANGO_LOG_LEVEL}
           - name: DJANGO_DEBUG
@@ -124,7 +129,7 @@ objects:
             valueFrom:
               secretKeyRef:
                 key: django-secret-key
-                name: ${NAME}-secret
+                name: rbac-secret
                 optional: false
           - name: ENV_NAME
             value: ${ENV_NAME}
@@ -132,19 +137,19 @@ objects:
             valueFrom:
               secretKeyRef:
                 key: principal-proxy-protocol
-                name: ${NAME}-secret
+                name: rbac-secret
                 optional: false
           - name: PRINCIPAL_PROXY_SERVICE_HOST
             valueFrom:
               secretKeyRef:
                 key: principal-proxy-host
-                name: ${NAME}-secret
+                name: rbac-secret
                 optional: false
           - name: PRINCIPAL_PROXY_SERVICE_PORT
             valueFrom:
               secretKeyRef:
                 key: principal-proxy-port
-                name: ${NAME}-secret
+                name: rbac-secret
                 optional: false
           - name: PRINCIPAL_PROXY_SERVICE_PATH
             value: ''
@@ -152,7 +157,7 @@ objects:
             valueFrom:
               secretKeyRef:
                 key: principal-proxy-env
-                name: ${NAME}-secret
+                name: rbac-secret
                 optional: false
           - name: PRINCIPAL_PROXY_CLIENT_ID
             valueFrom:
@@ -170,18 +175,16 @@ objects:
             valueFrom:
               secretKeyRef:
                 key: principal-proxy-ssl-verify
-                name: ${NAME}-secret
+                name: rbac-secret
                 optional: true
           - name: PRINCIPAL_PROXY_SERVICE_SOURCE_CERT
             valueFrom:
               secretKeyRef:
                 key: principal-proxy-source-cert
-                name: ${NAME}-secret
+                name: rbac-secret
                 optional: true
-          - name: APP_NAMESPACE
-            valueFrom:
-              fieldRef:
-                fieldPath: metadata.namespace
+          - name: PRINCIPAL_USER_DOMAIN
+            value: ${PRINCIPAL_USER_DOMAIN}
           - name: PGSSLMODE
             value: ${PGSSLMODE}
           - name: CLOWDER_ENABLED
@@ -222,6 +225,22 @@ objects:
             value: ${RELATION_API_SERVER}
           - name: REPLICATION_TO_RELATION_ENABLED
             value: ${REPLICATION_TO_RELATION_ENABLED}
+          - name: PRINCIPAL_CLEANUP_UPDATE_ENABLED_UMB
+            value: ${PRINCIPAL_CLEANUP_UPDATE_ENABLED_UMB}
+          - name: V2_MIGRATION_APP_EXCLUDE_LIST
+            value: ${V2_MIGRATION_APP_EXCLUDE_LIST}
+          - name: V2_MIGRATION_RESOURCE_EXCLUDE_LIST
+            value: ${V2_MIGRATION_RESOURCE_EXCLUDE_LIST}
+          - name: V2_BOOTSTRAP_TENANT
+            value: ${V2_BOOTSTRAP_TENANT}
+          ####### Following envs are for scheduler, doesn't hurt to put in worker
+          - name: PRINCIPAL_CLEANUP_DELETION_ENABLED_UMB
+            value: ${PRINCIPAL_CLEANUP_DELETION_ENABLED_UMB}
+          - name: UMB_JOB_ENABLED
+            value: ${UMB_JOB_ENABLED}
+          - name: READ_ONLY_API_MODE
+            value: ${READ_ONLY_API_MODE}
+
     - name: scheduler-service
       minReplicas: ${{MIN_SCHEDULER_REPLICAS}}
       metadata:
@@ -267,39 +286,7 @@ objects:
           requests:
             cpu: ${CELERY_SCHEDULER_CPU_REQUEST}
             memory: ${CELERY_SCHEDULER_MEMORY_REQUEST}
-        env:
-        - name: DJANGO_LOG_LEVEL
-          value: ${DJANGO_LOG_LEVEL}
-        - name: DJANGO_DEBUG
-          value: ${DJANGO_DEBUG}
-        - name: APP_NAMESPACE
-          valueFrom:
-            fieldRef:
-              fieldPath: metadata.namespace
-        - name: PERMISSION_SEEDING_ENABLED
-          value: 'False'
-        - name: ROLE_SEEDING_ENABLED
-          value: 'False'
-        - name: GROUP_SEEDING_ENABLED
-          value: 'False'
-        - name: CLOWDER_ENABLED
-          value: ${CLOWDER_ENABLED}
-        - name: CW_NULL_WORKAROUND
-          value: ${CW_NULL_WORKAROUND}
-        - name: GLITCHTIP_DSN
-          valueFrom:
-            secretKeyRef:
-              name: ${GLITCHTIP_SECRET}
-              key: dsn
-              optional: true
-        - name: PRINCIPAL_USER_DOMAIN
-          value: ${PRINCIPAL_USER_DOMAIN}
-        - name: PRINCIPAL_CLEANUP_DELETION_ENABLED_UMB
-          value: ${PRINCIPAL_CLEANUP_DELETION_ENABLED_UMB}
-        - name: PRINCIPAL_CLEANUP_UPDATE_ENABLED_UMB
-          value: ${PRINCIPAL_CLEANUP_UPDATE_ENABLED_UMB}
-        - name: UMB_JOB_ENABLED
-          value: ${UMB_JOB_ENABLED}
+        env: *common_env_vars
 
     - name: service
       minReplicas: ${{MIN_REPLICAS}}
@@ -355,26 +342,28 @@ objects:
             cpu: ${CPU_REQUEST}
             memory: ${MEMORY_REQUEST}
         env:
-          - name: GLITCHTIP_DSN
+          - name: APP_NAMESPACE
             valueFrom:
-              secretKeyRef:
-                name: ${GLITCHTIP_SECRET}
-                key: dsn
-                optional: true
-          - name: SERVICE_PSKS
-            valueFrom:
-              secretKeyRef:
-                key: psks.json
-                name: ${RBAC_PSKS}
-                optional: false
-          - name: PGSSLMODE
-            value: ${PGSSLMODE}
+              fieldRef:
+                fieldPath: metadata.namespace
+          - name: DJANGO_LOG_LEVEL
+            value: ${DJANGO_LOG_LEVEL}
+          - name: DJANGO_DEBUG
+            value: ${DJANGO_DEBUG}
+          - name: PERMISSION_SEEDING_ENABLED
+            value: 'False'
+          - name: ROLE_SEEDING_ENABLED
+            value: 'False'
+          - name: GROUP_SEEDING_ENABLED
+            value: 'False'
           - name: DJANGO_SECRET_KEY
             valueFrom:
               secretKeyRef:
                 key: django-secret-key
                 name: rbac-secret
                 optional: false
+          - name: ENV_NAME
+            value: ${ENV_NAME}
           - name: PRINCIPAL_PROXY_SERVICE_PROTOCOL
             valueFrom:
               secretKeyRef:
@@ -425,6 +414,59 @@ objects:
                 key: principal-proxy-source-cert
                 name: rbac-secret
                 optional: true
+          - name: PRINCIPAL_USER_DOMAIN
+            value: ${PRINCIPAL_USER_DOMAIN}
+          - name: PGSSLMODE
+            value: ${PGSSLMODE}
+          - name: CLOWDER_ENABLED
+            value: ${CLOWDER_ENABLED}
+          - name: CW_NULL_WORKAROUND
+            value: ${CW_NULL_WORKAROUND}
+          - name: GLITCHTIP_DSN
+            valueFrom:
+              secretKeyRef:
+                name: ${GLITCHTIP_SECRET}
+                key: dsn
+                optional: true
+          - name: MAX_SEED_THREADS
+            value: ${MAX_SEED_THREADS}
+          - name: NOTIFICATIONS_ENABLED
+            value: ${NOTIFICATIONS_ENABLED}
+          - name: NOTIFICATIONS_RH_ENABLED
+            value: ${NOTIFICATIONS_RH_ENABLED}
+          - name: KAFKA_ENABLED
+            value: ${KAFKA_ENABLED}
+          - name: NOTIFICATIONS_TOPIC
+            value: ${NOTIFICATIONS_TOPIC}
+          - name: EXTERNAL_SYNC_TOPIC
+            value: ${EXTERNAL_SYNC_TOPIC}
+          - name: EXTERNAL_CHROME_TOPIC
+            value: ${EXTERNAL_CHROME_TOPIC}
+          - name: MIGRATE_AND_SEED_ON_INIT
+            value: ${SERVICE_MIGRATE_AND_SEED_ON_INIT}
+          - name: UMB_HOST
+            value: ${UMB_HOST}
+          - name: UMB_PORT
+            value: ${UMB_PORT}
+          - name: SA_NAME
+            value: ${SA_NAME}
+          - name: REPLICATION_TO_RELATION_ENABLED
+            value: ${REPLICATION_TO_RELATION_ENABLED}
+          - name: PRINCIPAL_CLEANUP_UPDATE_ENABLED_UMB
+            value: ${PRINCIPAL_CLEANUP_UPDATE_ENABLED_UMB}
+          - name: V2_MIGRATION_APP_EXCLUDE_LIST
+            value: ${V2_MIGRATION_APP_EXCLUDE_LIST}
+          - name: V2_MIGRATION_RESOURCE_EXCLUDE_LIST
+            value: ${V2_MIGRATION_RESOURCE_EXCLUDE_LIST}
+          - name: V2_BOOTSTRAP_TENANT
+            value: ${V2_BOOTSTRAP_TENANT}
+          ####### Following envs are additional to workers
+          - name: SERVICE_PSKS
+            valueFrom:
+              secretKeyRef:
+                key: psks.json
+                name: ${RBAC_PSKS}
+                optional: false
           - name: POD_CPU_LIMIT
             valueFrom:
               resourceFieldRef:
@@ -432,20 +474,12 @@ objects:
                 resource: limits.cpu
           - name: ACCESS_CACHE_ENABLED
             value: ${ACCESS_CACHE_ENABLED}
-          - name: APP_NAMESPACE
-            valueFrom:
-              fieldRef:
-                fieldPath: metadata.namespace
-          - name: DJANGO_DEBUG
-            value: ${DJANGO_DEBUG}
           - name: API_PATH_PREFIX
             value: ${API_PATH_PREFIX}
           - name: DEVELOPMENT
             value: ${DEVELOPMENT}
           - name: RBAC_LOG_LEVEL
             value: ${RBAC_LOG_LEVEL}
-          - name: DJANGO_LOG_LEVEL
-            value: ${DJANGO_LOG_LEVEL}
           - name: DJANGO_LOG_FORMATTER
             value: ${DJANGO_LOG_FORMATTER}
           - name: DJANGO_LOG_HANDLERS
@@ -454,8 +488,6 @@ objects:
             value: ${DJANGO_LOG_DIRECTORY}
           - name: DJANGO_LOGGING_FILE
             value: ${DJANGO_LOGGING_FILE}
-          - name: ENV_NAME
-            value: ${ENV_NAME}
           - name: PERMISSION_SEEDING_ENABLED
             value: ${PERMISSION_SEEDING_ENABLED}
           - name: ROLE_SEEDING_ENABLED
@@ -464,50 +496,22 @@ objects:
             value: ${GROUP_SEEDING_ENABLED}
           - name: BYPASS_BOP_VERIFICATION
             value: ${BYPASS_BOP_VERIFICATION}
-          - name: REPLICATION_TO_RELATION_ENABLED
-            value: ${REPLICATION_TO_RELATION_ENABLED}
           - name: ROLE_CREATE_ALLOW_LIST
             value: ${ROLE_CREATE_ALLOW_LIST}
-          - name: V2_MIGRATION_APP_EXCLUDE_LIST
-            value: ${V2_MIGRATION_APP_EXCLUDE_LIST}
-          - name: V2_MIGRATION_RESOURCE_EXCLUDE_LIST
-            value: ${V2_MIGRATION_RESOURCE_EXCLUDE_LIST}
-          - name: V2_BOOTSTRAP_TENANT
-            value: ${V2_BOOTSTRAP_TENANT}
-          - name: V1_BOOTSTRAP_ADD_USER_ID
-            value: ${V1_BOOTSTRAP_ADD_USER_ID}
           - name: RBAC_DESTRUCTIVE_API_ENABLED_UNTIL
             value: ${RBAC_DESTRUCTIVE_API_ENABLED_UNTIL}
           - name: RBAC_DESTRUCTIVE_SEEDING_ENABLED_UNTIL
             value: ${RBAC_DESTRUCTIVE_SEEDING_ENABLED_UNTIL}
-          - name: CLOWDER_ENABLED
-            value: ${CLOWDER_ENABLED}
-          - name: APP_NAMESPACE
-            value: ${APP_NAMESPACE}
-          - name: CW_NULL_WORKAROUND
-            value: ${CW_NULL_WORKAROUND}
           - name: REDIS_MAX_CONNECTIONS
             value: ${REDIS_MAX_CONNECTIONS}
           - name: REDIS_SOCKET_CONNECT_TIMEOUT
             value: ${REDIS_SOCKET_CONNECT_TIMEOUT}
           - name: REDIS_SOCKET_TIMEOUT
             value: ${REDIS_SOCKET_TIMEOUT}
-          - name: NOTIFICATIONS_ENABLED
-            value: ${NOTIFICATIONS_ENABLED}
           - name: GUNICORN_WORKER_MULTIPLIER
             value: ${GUNICORN_WORKER_MULTIPLIER}
           - name: GUNICORN_THREAD_LIMIT
             value: ${GUNICORN_THREAD_LIMIT}
-          - name: NOTIFICATIONS_TOPIC
-            value: ${NOTIFICATIONS_TOPIC}
-          - name: KAFKA_ENABLED
-            value: ${KAFKA_ENABLED}
-          - name: EXTERNAL_SYNC_TOPIC
-            value: ${EXTERNAL_SYNC_TOPIC}
-          - name: EXTERNAL_CHROME_TOPIC
-            value: ${EXTERNAL_CHROME_TOPIC}
-          - name: MIGRATE_AND_SEED_ON_INIT
-            value: ${SERVICE_MIGRATE_AND_SEED_ON_INIT}
           - name: USE_CLOWDER_CA_FOR_BOP
             value: ${USE_CLOWDER_CA_FOR_BOP}
           - name: IT_BYPASS_IT_CALLS
@@ -596,12 +600,132 @@ objects:
         podSpec:
           image: quay.io/cloudservices/rbac:latest
           command:
-            - ./rbac/manage.py import_tenant_user_data
+            - /opt/rbac/rbac/manage.py
+            - import_tenant_user_data
             - --start_line
             - ${USER_ID_POPULATOR_START_LINE}
             - --batch_size
             - ${USER_ID_POPULATOR_BATCH_SIZE}
-          env:
+          env: &job_common_env_vars
+            - name: APP_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: DJANGO_LOG_LEVEL
+              value: ${DJANGO_LOG_LEVEL}
+            - name: DJANGO_DEBUG
+              value: ${DJANGO_DEBUG}
+            - name: PERMISSION_SEEDING_ENABLED
+              value: 'False'
+            - name: ROLE_SEEDING_ENABLED
+              value: 'False'
+            - name: GROUP_SEEDING_ENABLED
+              value: 'False'
+            - name: DJANGO_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  key: django-secret-key
+                  name: rbac-secret
+                  optional: false
+            - name: ENV_NAME
+              value: ${ENV_NAME}
+            - name: PRINCIPAL_PROXY_SERVICE_PROTOCOL
+              valueFrom:
+                secretKeyRef:
+                  key: principal-proxy-protocol
+                  name: rbac-secret
+                  optional: false
+            - name: PRINCIPAL_PROXY_SERVICE_HOST
+              valueFrom:
+                secretKeyRef:
+                  key: principal-proxy-host
+                  name: rbac-secret
+                  optional: false
+            - name: PRINCIPAL_PROXY_SERVICE_PORT
+              valueFrom:
+                secretKeyRef:
+                  key: principal-proxy-port
+                  name: rbac-secret
+                  optional: false
+            - name: PRINCIPAL_PROXY_SERVICE_PATH
+              value: ''
+            - name: PRINCIPAL_PROXY_USER_ENV
+              valueFrom:
+                secretKeyRef:
+                  key: principal-proxy-env
+                  name: rbac-secret
+                  optional: false
+            - name: PRINCIPAL_PROXY_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  key: client-id
+                  name: insights-rbac
+                  optional: false
+            - name: PRINCIPAL_PROXY_API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  key: token
+                  name: insights-rbac
+                  optional: false
+            - name: PRINCIPAL_PROXY_SERVICE_SSL_VERIFY
+              valueFrom:
+                secretKeyRef:
+                  key: principal-proxy-ssl-verify
+                  name: rbac-secret
+                  optional: true
+            - name: PRINCIPAL_PROXY_SERVICE_SOURCE_CERT
+              valueFrom:
+                secretKeyRef:
+                  key: principal-proxy-source-cert
+                  name: rbac-secret
+                  optional: true
+            - name: PRINCIPAL_USER_DOMAIN
+              value: ${PRINCIPAL_USER_DOMAIN}
+            - name: PGSSLMODE
+              value: ${PGSSLMODE}
+            - name: CLOWDER_ENABLED
+              value: ${CLOWDER_ENABLED}
+            - name: CW_NULL_WORKAROUND
+              value: ${CW_NULL_WORKAROUND}
+            - name: GLITCHTIP_DSN
+              valueFrom:
+                secretKeyRef:
+                  name: ${GLITCHTIP_SECRET}
+                  key: dsn
+                  optional: true
+            - name: MAX_SEED_THREADS
+              value: ${MAX_SEED_THREADS}
+            - name: ACCESS_CACHE_CONNECT_SIGNALS
+              value: 'False'
+            - name: NOTIFICATIONS_ENABLED
+              value: ${NOTIFICATIONS_ENABLED}
+            - name: NOTIFICATIONS_RH_ENABLED
+              value: ${NOTIFICATIONS_RH_ENABLED}
+            - name: KAFKA_ENABLED
+              value: ${KAFKA_ENABLED}
+            - name: NOTIFICATIONS_TOPIC
+              value: ${NOTIFICATIONS_TOPIC}
+            - name: EXTERNAL_SYNC_TOPIC
+              value: ${EXTERNAL_SYNC_TOPIC}
+            - name: EXTERNAL_CHROME_TOPIC
+              value: ${EXTERNAL_CHROME_TOPIC}
+            - name: MIGRATE_AND_SEED_ON_INIT
+              value: ${WORKER_MIGRATE_AND_SEED_ON_INIT}
+            - name: UMB_HOST
+              value: ${UMB_HOST}
+            - name: UMB_PORT
+              value: ${UMB_PORT}
+            - name: SA_NAME
+              value: ${SA_NAME}
+            - name: PRINCIPAL_CLEANUP_UPDATE_ENABLED_UMB
+              value: ${PRINCIPAL_CLEANUP_UPDATE_ENABLED_UMB}
+            - name: V2_MIGRATION_APP_EXCLUDE_LIST
+              value: ${V2_MIGRATION_APP_EXCLUDE_LIST}
+            - name: V2_MIGRATION_RESOURCE_EXCLUDE_LIST
+              value: ${V2_MIGRATION_RESOURCE_EXCLUDE_LIST}
+            - name: V2_BOOTSTRAP_TENANT
+              value: ${V2_BOOTSTRAP_TENANT}
+            ######## Following envs are different from worker
             - name: S3_AWS_ACCESS_KEY_ID
               valueFrom:
                 secretKeyRef:
@@ -617,6 +741,57 @@ objects:
                 secretKeyRef:
                   name: ${S3_AWS_SECRET}
                   key: bucket
+            - name: REPLICATION_TO_RELATION_ENABLED
+              value: "True"
+          resources:
+            limits:
+              cpu: 300m
+              memory: 1Gi
+            requests:
+              cpu: 50m
+              memory: 512Mi
+          volumes:
+          - name: users-data
+            persistentVolumeClaim:
+              claimName: users-data
+          volumeMounts:
+          - mountPath: /tmp
+            name: users-data
+      - name: seed-roles-perms-groups
+        podSpec:
+          image: quay.io/cloudservices/rbac:latest
+          command:
+            - /opt/rbac/rbac/manage.py
+            - seeds
+            - --roles
+            - --force-create-relationships
+          resources:
+            limits:
+              cpu: 300m
+              memory: 1Gi
+            requests:
+              cpu: 50m
+              memory: 512Mi
+          env: *job_common_env_vars
+          volumes:
+            - configMap:
+                name: ${CONFIG_MAP_NAME}
+              name: default-role-config
+            - configMap:
+                name: ${MODEL_ACCESS_PERMISSIONS}
+              name: model-access-permissions
+          volumeMounts:
+            - mountPath: /opt/rbac/rbac/management/role/definitions
+              name: default-role-config
+            - mountPath: /opt/rbac/rbac/management/role/permissions
+              name: model-access-permissions
+      - name: sa-id-populator
+        podSpec:
+          image: quay.io/cloudservices/rbac:latest
+          command:
+            - /opt/rbac/rbac/manage.py
+            - import_service_account_data
+          env: *job_common_env_vars
           resources:
             limits:
               cpu: 300m
@@ -818,11 +993,6 @@ parameters:
 - description: Whether or not to bootstrap tenants using V2 logic (i.e. creating workspaces and relations).
   name: V2_BOOTSTRAP_TENANT
   value: 'False'
-- description: |
-    Whether or not to add user IDs to existing principals within V1 logic. Once V2 tenant bootstrapping is used,
-    this flag is ignored and user IDs will be added regardless.
-  name: V1_BOOTSTRAP_ADD_USER_ID
-  value: rbac:workspace
 - description: Timestamp expiration allowance on destructive actions through the internal RBAC API
   name: RBAC_DESTRUCTIVE_API_ENABLED_UNTIL
   value: ''
@@ -997,7 +1167,7 @@ parameters:
 - name: PRINCIPAL_CLEANUP_UPDATE_ENABLED_UMB
   description: Allow cleanup job to update principals via messages from UMB
   value: 'False'
-- name: UMB_JOB_ENABLE
+- name: UMB_JOB_ENABLED
   description: Temp env to enable the UMB job
   value: 'True'
 - name: UMB_HOST
@@ -1034,4 +1204,4 @@ parameters:
   value: '1'
 - name: USER_ID_POPULATOR_BATCH_SIZE
   description: The number of user records to process in each batch
-  value: '1000'
+  value: '90'

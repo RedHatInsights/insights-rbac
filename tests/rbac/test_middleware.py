@@ -233,6 +233,39 @@ class IdentityHeaderMiddlewareTest(IdentityRequest):
         self.assertEqual(mock_request.user.username, self.user_data["username"])
         tenant = Tenant.objects.get(org_id=self.org_id)
         self.assertIsNotNone(tenant)
+        self.assertTrue(tenant.ready)
+
+    def test_process_existing_tenant_unchanged(self):
+        mock_request = self.request
+        middleware = IdentityHeaderMiddleware(get_response=IdentityHeaderMiddleware.process_request)
+        middleware.process_request(mock_request)
+        self.assertTrue(hasattr(mock_request, "user"))
+        self.assertEqual(mock_request.user.username, self.user_data["username"])
+        tenant = Tenant.objects.get(org_id=self.org_id)
+        self.assertIsNotNone(tenant)
+        self.assertTrue(tenant.ready)
+
+        # Process a second request
+        middleware = IdentityHeaderMiddleware(get_response=IdentityHeaderMiddleware.process_request)
+        middleware.process_request(mock_request)
+
+        tenant = Tenant.objects.get(org_id=self.org_id)
+        self.assertTrue(tenant.ready)
+
+    def test_process_readies_tenant(self):
+        """If a tenant exists but is not ready, it is readied by the middleware."""
+        tenant = Tenant.objects.create(
+            tenant_name="test_user", org_id=self.org_id, account_id=self.customer["account_id"]
+        )
+        tenant.ready = False
+        tenant.save()
+
+        mock_request = self.request
+        middleware = IdentityHeaderMiddleware(get_response=IdentityHeaderMiddleware.process_request)
+        middleware.process_request(mock_request)
+
+        tenant = Tenant.objects.get(org_id=self.org_id)
+        self.assertTrue(tenant.ready)
 
     def test_process_no_customer(self):
         """Test that the customer, tenant and user are not created."""
@@ -685,7 +718,7 @@ class V2RbacTenantMiddlewareTest(RbacTenantMiddlewareTest):
                 1,
                 self._tuples.count_tuples(
                     all_of(
-                        resource("rbac", "workspace", default.uuid),
+                        resource("rbac", "workspace", default.id),
                         relation("binding"),
                         subject("rbac", "role_binding", mapping.default_role_binding_uuid),
                     )
@@ -716,7 +749,7 @@ class V2RbacTenantMiddlewareTest(RbacTenantMiddlewareTest):
                 1,
                 self._tuples.count_tuples(
                     all_of(
-                        resource("rbac", "workspace", default.uuid),
+                        resource("rbac", "workspace", default.id),
                         relation("binding"),
                         subject("rbac", "role_binding", mapping.default_admin_role_binding_uuid),
                     )

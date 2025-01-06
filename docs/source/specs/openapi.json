@@ -1735,6 +1735,9 @@
               }
             }
           },
+          "400": {
+            "description": "Bad Input"
+          },
           "401": {
             "description": "Unauthorized"
           },
@@ -3408,7 +3411,6 @@
       },
       "CrossAccountRequestIn": {
         "required": [
-          "target_account",
           "target_org",
           "start_date",
           "end_date",

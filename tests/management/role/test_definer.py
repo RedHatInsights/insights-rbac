@@ -15,6 +15,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Test the role definer."""
+from typing import Any
 from django.conf import settings
 from unittest.mock import ANY, call, patch, mock_open
 from management.role.definer import seed_roles, seed_permissions
@@ -122,6 +123,8 @@ class RoleDefinerTests(IdentityRequest):
         access.save()
 
         org_id = self.customer_data["org_id"]
+        Tenant.objects.create(tenant_name="unready1", org_id="unready1", ready=False)
+        Tenant.objects.create(tenant_name="unready2", org_id="unready2", ready=False)
 
         with self.settings(NOTIFICATIONS_RH_ENABLED=True, NOTIFICATIONS_ENABLED=True):
             seed_roles()
@@ -176,6 +179,13 @@ class RoleDefinerTests(IdentityRequest):
                 ),
             ]
             kafka_mock.assert_has_calls(notification_messages, any_order=True)
+
+            for call_args in kafka_mock.call_args_list:
+                topic = call_args.args[0]
+                if topic != settings.NOTIFICATIONS_TOPIC:
+                    continue
+                body = call_args.args[1]
+                self.assertNotIn(body.get("org_id"), ["unready1", "unready2"], "Unready tenant should not be notified")
 
     def try_seed_roles(self):
         """Try to seed roles"""
@@ -354,3 +364,64 @@ class RoleDefinerTests(IdentityRequest):
             self.assertTrue(
                 any(self.is_remove_event("inventory_hosts_read", args[0]) for args, _ in mock_replicate.call_args_list)
             )
+
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
+    @patch(
+        "builtins.open",
+        new_callable=mock_open,
+        read_data='{"roles": [{"name": "existing_system_role", "system": true, "version": 1, "access": [{"permission": "dummy:hosts:read"}]}, {"name": "role_wants_update", "system": true, "version": 3, "access": [{"permission": "dummy:hosts:write"}]}]}',
+    )
+    @patch("os.listdir")
+    @patch("os.path.isfile")
+    def test_seed_roles_existing_role_add_tuples(
+        self,
+        mock_isfile,
+        mock_listdir,
+        mock_open,
+        mock_replicate,
+    ):
+        # mock files
+        mock_listdir.return_value = ["role.json"]
+        mock_isfile.return_value = True
+
+        # create a role in the database that exists in config with no changes.
+        existing_role = Role.objects.create(
+            name="existing_system_role", system=True, version=1, tenant=self.public_tenant
+        )
+        permission, _ = Permission.objects.get_or_create(permission="dummy:hosts:read", tenant=self.public_tenant)
+        _ = Access.objects.create(permission=permission, role=existing_role, tenant=self.public_tenant)
+
+        existing_role.save()
+
+        # create a role in the database that exists in config with changes.
+        Role.objects.create(name="role_wants_update", system=True, version=1, tenant=self.public_tenant)
+
+        seed_roles(force_create_relationships=True)
+
+        self.assertTrue(
+            any(self.is_create_event("dummy_hosts_read", args[0]) for args, _ in mock_replicate.call_args_list)
+        )
+        self.assertTrue(
+            any(self.is_update_event("dummy_hosts_write", args[0]) for args, _ in mock_replicate.call_args_list)
+        )
+
+    @patch(
+        "builtins.open",
+        new_callable=mock_open,
+        read_data='{"roles": [{"name": "dummy_role_update", "system": true, "version": 3, "access": [{"permission": '
+        '"dummy:hosts:read"}]}]}',
+    )
+    @patch("os.listdir")
+    @patch("os.path.isfile")
+    def test_seed_roles_does_not_update_custom_roles_of_the_same_name(self, mock_isfile, mock_listdir, mock_open):
+        # mock files
+        mock_listdir.return_value = ["role.json"]
+        mock_isfile.return_value = True
+
+        # create a role in the database that exists in config for both public tenant and custom tenant
+        Role.objects.create(name="dummy_role_update", system=True, version=1, tenant=self.public_tenant)
+        custom = Role.objects.create(name="dummy_role_update", system=False, version=1, tenant=self.tenant)
+
+        seed_roles()
+
+        self.assertFalse(Role.objects.get(pk=custom.pk).system)

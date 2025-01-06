@@ -2,7 +2,7 @@
 
 import re
 from collections import defaultdict
-from typing import Callable, Hashable, Iterable, List, NamedTuple, Set, Tuple, TypeVar
+from typing import Callable, Hashable, Iterable, List, NamedTuple, Set, Tuple, TypeVar, Union
 
 from kessel.relations.v1beta1.common_pb2 import Relationship
 from management.relation_replicator.relation_replicator import RelationReplicator
@@ -107,7 +107,7 @@ class InMemoryTuples:
 
     def find_group_with_tuples(
         self,
-        predicates: List[Callable[[RelationTuple], bool]],
+        predicates: Union[Callable[[RelationTuple], bool], List[Callable[[RelationTuple], bool]]],
         group_by: Callable[[RelationTuple], T],
         group_filter: Callable[[T], bool] = lambda _: True,
         require_full_match: bool = False,
@@ -159,9 +159,10 @@ class InMemoryTuples:
         unmatched_groups: dict[T, List[RelationTuple]] = {}
 
         # Iterate over each group
+        predicate_list = predicates if isinstance(predicates, list) else [predicates]
         for key, group_tuples in grouped_tuples.items():
-            remaining_tuples = set(group_tuples)
-            remaining_predicates = list(predicates) if match_once else predicates
+            remaining_tuples = list(group_tuples)
+            remaining_predicates = list(predicate_list) if match_once else predicate_list
             i = 0
             matching_tuples = []
             success = True
@@ -171,12 +172,17 @@ class InMemoryTuples:
             while remaining_predicates and i < len(remaining_predicates):
                 predicate = remaining_predicates[i]
                 found = False
-                for rel in remaining_tuples:
+                j = 0
+                while j < len(remaining_tuples):
+                    rel = remaining_tuples[j]
                     if predicate(rel):
                         matching_tuples.append(rel)
-                        remaining_tuples.remove(rel)
+                        remaining_tuples.pop(j)
                         found = True
-                        break  # Move to next predicate
+                        if match_once:
+                            break  # Move to next predicate
+                    else:
+                        j += 1
                 if not found:
                     success = False
                     break  # Predicate not satisfied in this group
@@ -200,6 +206,10 @@ class InMemoryTuples:
     def __repr__(self):
         """Return a representation of the store."""
         return f"InMemoryTuples({repr(self._tuples)})"
+
+    def __len__(self):
+        """Return the number of tuples in the store."""
+        return len(self._tuples)
 
 
 class TuplePredicate:
@@ -307,4 +317,6 @@ class InMemoryRelationReplicator(RelationReplicator):
 
     def replicate(self, event):
         """Replicate the event to the in-memory store."""
+        # TODO: should also track the partition that each event was written to
+        # in order to test partitioning logic
         self.store.write(event.add, event.remove)

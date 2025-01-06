@@ -87,7 +87,7 @@ class DualWriteTestCase(TestCase):
         """Return the default workspace ID."""
         tenant = tenant if tenant is not None else self.tenant
         default = Workspace.objects.get(tenant=tenant, type=Workspace.Types.DEFAULT)
-        return str(default.uuid)
+        return str(default.id)
 
     def dual_write_handler(self, role: Role, event_type: ReplicationEventType) -> RelationApiDualWriteHandler:
         """Create a RelationApiDualWriteHandler for the given role and event type."""
@@ -187,8 +187,8 @@ class DualWriteTestCase(TestCase):
         policy: Policy
         for role in roles:
             policy = self.fixture.add_role_to_group(role, group, self.tenant)
-            dual_write_handler.replicate_added_role(role)
-
+            dual_write_handler.generate_relations_to_add_roles([role])
+        dual_write_handler.replicate()
         return policy
 
     def given_roles_unassigned_from_group(self, group: Group, roles: list[Role]) -> Policy:
@@ -203,7 +203,8 @@ class DualWriteTestCase(TestCase):
         policy: Policy
         for role in roles:
             policy = self.fixture.remove_role_from_group(role, group, self.tenant)
-            dual_write_handler.replicate_removed_role(role)
+            dual_write_handler.generate_relations_to_remove_roles([role])
+        dual_write_handler.replicate()
         return policy
 
     def given_group_removed(self, group: Group):
@@ -215,7 +216,7 @@ class DualWriteTestCase(TestCase):
         )
         dual_write_handler.prepare_to_delete_group()
         group.delete()
-        dual_write_handler.replicate_deleted_group()
+        dual_write_handler.replicate()
 
     def expect_1_v2_role_with_permissions(self, permissions: list[str]) -> str:
         """Assert there is a role matching the given permissions and return its ID."""
@@ -620,7 +621,7 @@ class DualWriteSystemRolesTestCase(DualWriteTestCase):
         tuples = self.tuples.find_tuples(predicate=resource_type("rbac", "role"))
         self.assertEquals(len(tuples), 4)
 
-        parents = [rel.subject_id for rel in tuples if rel.relation == "child" and rel.resource_id == str(role.uuid)]
+        parents = [rel.resource_id for rel in tuples if rel.relation == "child" and rel.subject_id == str(role.uuid)]
         self.assertSetEqual(set([admin_default, platform_default]), set(parents))
 
         dual_write_handler = SeedingRelationApiDualWriteHandler(replicator=InMemoryRelationReplicator(self.tuples))
@@ -635,7 +636,7 @@ class DualWriteSystemRolesTestCase(DualWriteTestCase):
         # check if only 2 relations exists in replicator.
         tuples = self.tuples.find_tuples(predicate=resource_type("rbac", "role"))
         self.assertEquals(len(tuples), 2)
-        parents = [rel.subject_id for rel in tuples if rel.relation == "child" and rel.resource_id == str(role.uuid)]
+        parents = [rel.resource_id for rel in tuples if rel.relation == "child" and rel.subject_id == str(role.uuid)]
         self.assertSetEqual(set([platform_default]), set(parents))
 
         # ensure no relations exist in replicator.
@@ -662,7 +663,7 @@ class DualWriteSystemRolesTestCase(DualWriteTestCase):
         # check if relations exist in replicator.
         tuples = self.tuples.find_tuples(predicate=resource_type("rbac", "role"))
         self.assertEquals(len(tuples), 4)
-        parents = [rel.subject_id for rel in tuples if rel.relation == "child" and rel.resource_id == str(role.uuid)]
+        parents = [rel.resource_id for rel in tuples if rel.relation == "child" and rel.subject_id == str(role.uuid)]
         self.assertSetEqual(set([admin_default, platform_default]), set(parents))
 
         dual_write_handler = SeedingRelationApiDualWriteHandler(replicator=InMemoryRelationReplicator(self.tuples))
@@ -677,7 +678,7 @@ class DualWriteSystemRolesTestCase(DualWriteTestCase):
         # Check that it was created as platform default
         tuples = self.tuples.find_tuples(predicate=resource_type("rbac", "role"))
         self.assertEquals(len(tuples), 1)
-        parents = [rel.subject_id for rel in tuples if rel.relation == "child" and rel.resource_id == str(role.uuid)]
+        parents = [rel.resource_id for rel in tuples if rel.relation == "child" and rel.subject_id == str(role.uuid)]
         self.assertSetEqual(set([platform_default]), set(parents))
 
         # Delete system role
@@ -693,7 +694,7 @@ class DualWriteSystemRolesTestCase(DualWriteTestCase):
         # Check that it was created as platform default
         tuples = self.tuples.find_tuples(predicate=resource_type("rbac", "role"))
         self.assertEquals(len(tuples), 1)
-        parents = [rel.subject_id for rel in tuples if rel.relation == "child" and rel.resource_id == str(role.uuid)]
+        parents = [rel.resource_id for rel in tuples if rel.relation == "child" and rel.subject_id == str(role.uuid)]
         self.assertSetEqual(set([admin_default]), set(parents))
 
         # Delete system role
@@ -921,7 +922,16 @@ class RbacFixture:
 
     def new_unbootstrapped_tenant(self, org_id: str) -> Tenant:
         """Create a new tenant with the given name and organization ID."""
-        return Tenant.objects.create(tenant_name=f"org{org_id}", org_id=org_id)
+        # A new unbootstrapped tenant would be ready, because this must've been created prior to bootstrapping
+        return Tenant.objects.create(tenant_name=f"org{org_id}", org_id=org_id, ready=True)
+
+    def bootstrap_tenant(self, tenant: Tenant) -> Optional[BootstrappedTenant]:
+        """Bootstrap the tenant."""
+        if isinstance(self.bootstrap_service, V2TenantBootstrapService):
+            return self.bootstrap_service.bootstrap_tenant(tenant)
+        else:
+            # Nothing to do if not using V2 bootstrapping
+            return None
 
     def new_system_role(self, name: str, permissions: list[str], platform_default=False, admin_default=False) -> Role:
         """Create a new system role with the given name and permissions."""
@@ -982,6 +992,12 @@ class RbacFixture:
                     )
 
         return role
+
+    def new_principals_in_tenant(self, users: list[str], tenant: Tenant) -> list[Principal]:
+        """Create new principals in the tenant."""
+        return [
+            Principal.objects.get_or_create(username=user_id, tenant=tenant, user_id=user_id)[0] for user_id in users
+        ]
 
     def new_group(
         self, name: str, users: list[str], service_accounts: list[str], tenant: Tenant

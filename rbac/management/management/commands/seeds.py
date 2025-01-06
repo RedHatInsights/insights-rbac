@@ -18,7 +18,7 @@
 import logging
 
 from django.core.management.base import BaseCommand
-from management.seeds import group_seeding, permission_seeding, purge_cache, role_seeding
+from management.seeds import group_seeding, permission_seeding, role_seeding
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
@@ -33,6 +33,7 @@ class Command(BaseCommand):
         parser.add_argument("--permissions", action="store_true")
         parser.add_argument("--roles", action="store_true")
         parser.add_argument("--groups", action="store_true")
+        parser.add_argument("--force-create-relationships", action="store_true")
 
     def handle(self, *args, **options):
         """Handle method for command."""
@@ -45,7 +46,8 @@ class Command(BaseCommand):
 
         if options["roles"] or seed_all:
             logger.info("*** Seeding roles... ***")
-            role_seeding()
+            logger.info(f"Running with force-create-relationships: {options.get('force_create_relationships', False)}")
+            role_seeding(options.get("force_create_relationships", False))
             logger.info("*** Role seeding completed. ***\n")
 
         if options["groups"] or seed_all:
@@ -53,4 +55,6 @@ class Command(BaseCommand):
             group_seeding()
             logger.info("*** Group seeding completed. ***\n")
 
-        purge_cache()
+        # Since the cache will expire in 10 min. We can let it expire by itself. Not worth to explicitly expire it
+        # currently becuthere might be some other unexpected issues. Can enable it in the future if it becomes an issue.
+        # purge_cache_for_all_tenants()

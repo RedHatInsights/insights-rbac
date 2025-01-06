@@ -133,7 +133,7 @@ class ITService:
 
                 # Save the metrics for the successful call. Successful does not mean that we received an OK response,
                 # but that we were able to reach IT's SSO instead and get a response from them.
-                it_request_status_count.labels(method=requests.get.__name__.upper(), status=response.status_code)
+                it_request_status_count.labels(method="GET", status=response.status_code).inc()
 
                 if not status.is_success(response.status_code):
                     LOGGER.error(
@@ -455,6 +455,7 @@ class ITService:
         description = service_account_from_it_service.get("description")
         created_by = service_account_from_it_service.get("createdBy")
         created_at = service_account_from_it_service.get("createdAt")
+        user_id = service_account_from_it_service.get("userId")
 
         if client_id:
             service_account["clientId"] = client_id
@@ -470,6 +471,9 @@ class ITService:
 
         if created_at:
             service_account["time_created"] = created_at
+
+        if user_id:
+            service_account["userId"] = user_id
 
         # Hard code the type for every service account.
         service_account["type"] = "service-account"
