@@ -1327,7 +1327,6 @@ class PrincipalViewsetTests(IdentityRequest):
         url = f"{reverse('v1_management:principals')}?type=service-account&order_by=owner"
         client = APIClient()
         response = client.get(url, **self.headers)
-        print(response.data.get("data"))
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data.get("data")), 2)
         sa1 = response.data.get("data")[0]
@@ -1413,7 +1412,6 @@ class PrincipalViewsetTests(IdentityRequest):
         url = f"{reverse('v1_management:principals')}?type=service-account&order_by=-owner"
         client = APIClient()
         response = client.get(url, **self.headers)
-        print(response.data.get("data"))
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data.get("data")), 2)
         sa1 = response.data.get("data")[0]
@@ -1671,7 +1669,6 @@ class PrincipalViewsetTests(IdentityRequest):
         url = f"{reverse('v1_management:principals')}?type=service-account&order_by=description"
         client = APIClient()
         response = client.get(url, **self.headers)
-        print(response.data.get("data"))
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data.get("data")), 2)
         sa1 = response.data.get("data")[0]
@@ -1843,7 +1840,6 @@ class PrincipalViewsetTests(IdentityRequest):
         url = f"{reverse('v1_management:principals')}?type=service-account&order_by=clientId"
         client = APIClient()
         response = client.get(url, **self.headers)
-        print(response.data.get("data"))
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data.get("data")), 2)
         sa1 = response.data.get("data")[0]

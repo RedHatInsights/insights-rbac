@@ -317,17 +317,20 @@ class ITService:
             for sa in service_accounts:
                 sa_description = str(sa.get("description"))
                 if (
-                    name
-                    and sa.get("name") == name
-                    or owner
-                    and sa.get("owner") == owner
-                    or description
-                    and description in sa_description
+                    (name and sa.get("name") == name)
+                    or (owner and sa.get("owner") == owner)
+                    or (description and description in sa_description)
                 ):
                     filtered_service_accounts.append(sa)
+                    count = len(filtered_service_accounts)
+            # If any order_by parameter is passed then sort the filtered service accounts by that field
+            if order_by in ["time_created", "name", "description", "clientId", "owner"]:
+                filtered_service_accounts.sort(reverse=False, key=lambda sa: sa.get(order_by, ""))
+            elif order_by in ["-time_created", "-name", "-description", "-clientId", "-owner"]:
+                filtered_service_accounts.sort(reverse=True, key=lambda sa: sa.get(order_by, ""))
             return filtered_service_accounts, count
 
-        # If any order_by parameter is passed then sort the service accounts by that field either asc or desc
+        # If no filter is provided sort the original service accounts by the order_by provided
         if order_by in ["time_created", "name", "description", "clientId", "owner"]:
             service_accounts.sort(reverse=False, key=lambda sa: sa.get(order_by, ""))
         elif order_by in ["-time_created", "-name", "-description", "-clientId", "-owner"]:
