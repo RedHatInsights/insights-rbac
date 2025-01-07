@@ -33,7 +33,7 @@ from management.rbac_fields import AutoDateTimeField
 from management.role.model import Role
 from migration_tool.utils import create_relationship
 
-from api.models import TenantAwareModel, User
+from api.models import FilterQuerySet, TenantAwareModel, User
 
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
@@ -51,6 +51,7 @@ class Group(TenantAwareModel):
     platform_default = models.BooleanField(default=False)
     system = models.BooleanField(default=False)
     admin_default = models.BooleanField(default=False)
+    objects = FilterQuerySet.as_manager()
 
     @staticmethod
     def relationship_to_principal_for_group(

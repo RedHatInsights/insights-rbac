@@ -58,6 +58,7 @@ class ReplicationEventType(str, Enum):
     DENY_CROSS_ACCOUNT_REQUEST = "deny_cross_account_request"
     EXPIRE_CROSS_ACCOUNT_REQUEST = "expire_cross_account_request"
     MIGRATE_CROSS_ACCOUNT_REQUEST = "migrate_cross_account_request"
+    DELETE_BINDING_MAPPINGS = "delete_binding_mappings"
 
 
 class ReplicationEvent:
