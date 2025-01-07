@@ -450,7 +450,7 @@ class GroupViewSet(
         if not request.user.admin:
             self.protect_group_with_user_access_admin_role(group.roles_with_access(), "update_group")
 
-        self.restrict_custom_default_group_renaming(action="update", group=group)
+        self.restrict_custom_default_group_renaming("update", group)
 
         update_group = super().update(request=request, args=args, kwargs=kwargs)
 
