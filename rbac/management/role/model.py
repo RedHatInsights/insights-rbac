@@ -17,7 +17,7 @@
 
 """Model for role management."""
 import logging
-from typing import Union
+from typing import Optional, Union
 from uuid import uuid4
 
 from django.conf import settings
@@ -29,7 +29,13 @@ from kessel.relations.v1beta1.common_pb2 import Relationship
 from management.cache import AccessCache
 from management.models import Permission, Principal
 from management.rbac_fields import AutoDateTimeField
-from migration_tool.models import V2boundresource, V2role, V2rolebinding, role_binding_group_subject_tuple
+from migration_tool.models import (
+    V2boundresource,
+    V2role,
+    V2rolebinding,
+    role_binding_group_subject_tuple,
+    role_binding_user_subject_tuple,
+)
 
 from api.models import TenantAwareModel
 
@@ -156,18 +162,32 @@ class BindingMapping(models.Model):
         return v2_role_binding.as_tuples()
 
     def is_unassigned(self):
-        """Return true if mapping is not assigned to any groups."""
-        return len(self.mappings["groups"]) == 0
+        """Return true if mapping is not assigned to any groups or users."""
+        return len(self.mappings.get("groups", [])) == 0 and len(self.mappings.get("users", [])) == 0
 
-    def remove_group_from_bindings(self, group_uuid: str) -> Relationship:
+    def remove_group_from_bindings(self, group_uuid: str) -> Optional[Relationship]:
         """Remove group from mappings."""
-        self.mappings["groups"] = [group for group in self.mappings["groups"] if group != group_uuid]
+        self.mappings["groups"].remove(group_uuid)
+        if group_uuid in self.mappings["groups"]:
+            return None
         return role_binding_group_subject_tuple(self.mappings["id"], group_uuid)
 
     def add_group_to_bindings(self, group_uuid: str) -> Relationship:
         """Add group to mappings."""
         self.mappings["groups"].append(group_uuid)
         return role_binding_group_subject_tuple(self.mappings["id"], group_uuid)
+
+    def remove_user_from_bindings(self, user_id: str) -> Optional[Relationship]:
+        """Remove user from mappings."""
+        self.mappings["users"].remove(user_id)
+        if user_id in self.mappings["users"]:
+            return None
+        return role_binding_user_subject_tuple(self.mappings["id"], user_id)
+
+    def add_user_to_bindings(self, user_id: str) -> Relationship:
+        """Add user to mappings."""
+        self.mappings["users"].append(user_id)
+        return role_binding_user_subject_tuple(self.mappings["id"], user_id)
 
     def update_mappings_from_role_binding(self, role_binding: V2rolebinding):
         """Set mappings."""
@@ -197,7 +217,6 @@ class BindingMapping(models.Model):
             is_system=args["role"]["is_system"],
             permissions=frozenset(args["role"]["permissions"]),
         )
-        args["groups"] = frozenset(args["groups"])
         return V2rolebinding(**args)
 
 
