@@ -781,3 +781,33 @@ def roles(request, uuid: str) -> HttpResponse:
 def trigger_error(request):
     """Trigger an error to confirm Sentry is working."""
     raise SentryDiagnosticError
+
+
+def correct_resource_definitions(request):
+    """Get/Fix resourceDefinitions with incorrect attributeFilters.
+
+    Attribute filters with lists must use 'in' operation. Those with a single string must use 'equal'
+
+    GET /_private/api/utils/resource_definitions
+    PATCH /_private/api/utils/resource_definitions
+    """
+    if request.method == "GET":
+        with connection.cursor() as cursor:
+            query = """SELECT COUNT(*) FROM management_resourcedefinition
+                        WHERE "attributeFilter"->>'operation' = 'equal'
+                        AND jsonb_typeof("attributeFilter"->'value') = 'array';"""
+
+            cursor.execute(query)
+            count = cursor.fetchone()[0]
+
+            query = """SELECT COUNT(*) from management_resourcedefinition WHERE "attributeFilter"->>'operation' = 'in'
+                        AND jsonb_typeof("attributeFilter"->'value') = 'string';"""
+
+            cursor.execute(query)
+            count += cursor.fetchone()[0]
+
+        return HttpResponse(f"{count} resource definitions would be corrected", status=200)
+    elif request.method == "PATCH":
+        pass
+
+    return HttpResponse('Invalid method, only "GET" or "PATCH" are allowed.', status=405)
