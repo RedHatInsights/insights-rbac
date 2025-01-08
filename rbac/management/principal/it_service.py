@@ -321,11 +321,11 @@ class ITService:
                     or (description and description in sa_description)
                 ):
                     filtered_service_accounts.append(sa)
-                    count = len(filtered_service_accounts)
                 else:
                     raise serializers.ValidationError(
                         {"detail": "Invalid value provided to query parameter when trying to filter service accounts"}
                     )
+            count = len(filtered_service_accounts)
             s_accounts = filtered_service_accounts
         else:
             s_accounts = service_accounts
