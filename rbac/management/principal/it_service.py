@@ -308,7 +308,6 @@ class ITService:
         description = options.get("description")
         filtered_service_accounts = []
         sa_query_passed = name or owner or description
-
         count = len(service_accounts)
         # flake8 ignore E203 = Whitespace before ':' -> false positive https://github.com/PyCQA/pycodestyle/issues/373
         service_accounts = service_accounts[offset : offset + limit]  # type: ignore # noqa: E203
@@ -323,19 +322,16 @@ class ITService:
                 ):
                     filtered_service_accounts.append(sa)
                     count = len(filtered_service_accounts)
-            # If any order_by parameter is passed then sort the filtered service accounts by that field
-            if order_by in ["time_created", "name", "description", "clientId", "owner"]:
-                filtered_service_accounts.sort(reverse=False, key=lambda sa: sa.get(order_by, ""))
-            elif order_by in ["-time_created", "-name", "-description", "-clientId", "-owner"]:
-                filtered_service_accounts.sort(reverse=True, key=lambda sa: sa.get(order_by, ""))
-            return filtered_service_accounts, count
-
-        # If no filter is provided sort the original service accounts by the order_by provided
+            s_accounts = filtered_service_accounts
+        else:
+            s_accounts = service_accounts
         if order_by in ["time_created", "name", "description", "clientId", "owner"]:
-            service_accounts.sort(reverse=False, key=lambda sa: sa.get(order_by, ""))
-        elif order_by in ["-time_created", "-name", "-description", "-clientId", "-owner"]:
-            service_accounts.sort(reverse=True, key=lambda sa: sa.get(order_by[1:], ""))
-        return service_accounts, count
+            # If any order_by parameter is passed without filter condition sort service accounts by that field
+            if sort_order == "asc":
+                s_accounts.sort(reverse=False, key=lambda sa: sa.get(order_by, ""))
+            elif sort_order == "desc":
+                s_accounts.sort(reverse=True, key=lambda sa: sa.get(order_by, ""))
+        return s_accounts, count
 
     def get_service_accounts_group(self, group: Group, user: User, options: dict[str, Any] = {}) -> list[dict]:
         """Get the service accounts for the given group."""

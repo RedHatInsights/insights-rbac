@@ -1152,7 +1152,7 @@ class PrincipalViewsetTests(IdentityRequest):
             }
         )
         mock_request.return_value = mocked_values
-        url = f"{reverse('v1_management:principals')}?type=service-account&order_by=-time_created"
+        url = f"{reverse('v1_management:principals')}?type=service-account&order_by=time_created&sort_order=desc"
         client = APIClient()
         response = client.get(url, **self.headers)
 
@@ -1238,7 +1238,7 @@ class PrincipalViewsetTests(IdentityRequest):
             }
         )
         mock_request.return_value = mocked_values
-        url = f"{reverse('v1_management:principals')}?type=service-account&order_by=time_created"
+        url = f"{reverse('v1_management:principals')}?type=service-account&order_by=time_created&sort_order=asc"
         client = APIClient()
         response = client.get(url, **self.headers)
 
@@ -1324,7 +1324,7 @@ class PrincipalViewsetTests(IdentityRequest):
             }
         )
         mock_request.return_value = mocked_values
-        url = f"{reverse('v1_management:principals')}?type=service-account&order_by=owner"
+        url = f"{reverse('v1_management:principals')}?type=service-account&order_by=owner&sort_order=asc"
         client = APIClient()
         response = client.get(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -1409,7 +1409,7 @@ class PrincipalViewsetTests(IdentityRequest):
             }
         )
         mock_request.return_value = mocked_values
-        url = f"{reverse('v1_management:principals')}?type=service-account&order_by=-owner"
+        url = f"{reverse('v1_management:principals')}?type=service-account&order_by=owner&sort_order=desc"
         client = APIClient()
         response = client.get(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -1494,7 +1494,7 @@ class PrincipalViewsetTests(IdentityRequest):
             }
         )
         mock_request.return_value = mocked_values
-        url = f"{reverse('v1_management:principals')}?type=service-account&order_by=name"
+        url = f"{reverse('v1_management:principals')}?type=service-account&order_by=name&sort_order=asc"
         client = APIClient()
         response = client.get(url, **self.headers)
 
@@ -1580,7 +1580,7 @@ class PrincipalViewsetTests(IdentityRequest):
             }
         )
         mock_request.return_value = mocked_values
-        url = f"{reverse('v1_management:principals')}?type=service-account&order_by=-name"
+        url = f"{reverse('v1_management:principals')}?type=service-account&order_by=name&sort_order=desc"
         client = APIClient()
         response = client.get(url, **self.headers)
 
@@ -1666,7 +1666,7 @@ class PrincipalViewsetTests(IdentityRequest):
             }
         )
         mock_request.return_value = mocked_values
-        url = f"{reverse('v1_management:principals')}?type=service-account&order_by=description"
+        url = f"{reverse('v1_management:principals')}?type=service-account&order_by=description&sort_order=asc"
         client = APIClient()
         response = client.get(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -1751,7 +1751,7 @@ class PrincipalViewsetTests(IdentityRequest):
             }
         )
         mock_request.return_value = mocked_values
-        url = f"{reverse('v1_management:principals')}?type=service-account&order_by=-description"
+        url = f"{reverse('v1_management:principals')}?type=service-account&order_by=name&sort_order=desc"
         client = APIClient()
         response = client.get(url, **self.headers)
 
@@ -1837,14 +1837,14 @@ class PrincipalViewsetTests(IdentityRequest):
             }
         )
         mock_request.return_value = mocked_values
-        url = f"{reverse('v1_management:principals')}?type=service-account&order_by=clientId"
+        url = f"{reverse('v1_management:principals')}?type=service-account&order_by=clientId&sort_order=asc"
         client = APIClient()
         response = client.get(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data.get("data")), 2)
         sa1 = response.data.get("data")[0]
         sa2 = response.data.get("data")[1]
-
+        print(response.data)
         self.assertCountEqual(
             list(sa1.keys()),
             ["clientId", "name", "description", "owner", "time_created", "type", "username"],
@@ -1922,10 +1922,12 @@ class PrincipalViewsetTests(IdentityRequest):
             }
         )
         mock_request.return_value = mocked_values
-        url = f"{reverse('v1_management:principals')}?type=service-account&order_by=-clientId"
+        url = f"{reverse('v1_management:principals')}?type=service-account&order_by=clientId&sort_order=desc"
+
         client = APIClient()
         response = client.get(url, **self.headers)
-
+        print(response.data)
+        print(mocked_values)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data.get("data")), 2)
         sa1 = response.data.get("data")[0]
