@@ -492,6 +492,12 @@ class RoleViewSet(
 
         Assumes concurrent updates are prevented (e.g. with atomic block and locks).
         """
+        if serializer.instance.system:
+            key = "role.update"
+            message = "System roles may not be updated."
+            error = {key: [_(message)]}
+            raise serializers.ValidationError(error)
+
         if self.action != "partial_update":
             dual_write_handler = RelationApiDualWriteHandler(
                 serializer.instance, ReplicationEventType.UPDATE_CUSTOM_ROLE
