@@ -261,6 +261,8 @@ class CrossAccountRequestViewSet(
 
     def update_status(self, car, status):
         """Update the status of a cross-account-request."""
+        if car.status == status:  # No operation needed
+            return
         car.status = status
         if status == "approved":
             create_cross_principal(car.user_id, target_org=car.target_org)
@@ -273,7 +275,6 @@ class CrossAccountRequestViewSet(
                 ),
             )
         elif status == "denied":
-
             self._with_dual_write_handler(
                 car,
                 ReplicationEventType.DENY_CROSS_ACCOUNT_REQUEST,
