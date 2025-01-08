@@ -1,5 +1,6 @@
 """Common objects for tenant services."""
 
+import logging
 from typing import NamedTuple, Optional, Protocol
 
 from management.principal.model import Principal
@@ -7,6 +8,8 @@ from management.tenant_mapping.model import TenantMapping
 from management.workspace.model import Workspace
 
 from api.models import Tenant, User
+
+logger = logging.getLogger(__name__)
 
 
 def _ensure_principal_with_user_id_in_tenant(user: User, tenant: Tenant, upsert: bool = False):
@@ -24,6 +27,10 @@ def _ensure_principal_with_user_id_in_tenant(user: User, tenant: Tenant, upsert:
             principal = Principal.objects.get(username=user.username, tenant=tenant)
         except Principal.DoesNotExist:
             pass
+        except Principal.MultipleObjectsReturned:
+            logger.warning(
+                f"Multiple principals returned for the same username. username={user.username} org_id={tenant.org_id}"
+            )
 
     if not created and principal and principal.user_id != user.user_id:
         principal.user_id = user.user_id
@@ -43,7 +50,11 @@ class TenantBootstrapService(Protocol):
     """Service for bootstrapping users in tenants."""
 
     def update_user(
-        self, user: User, upsert: bool = False, bootstrapped_tenant: Optional[BootstrappedTenant] = None
+        self,
+        user: User,
+        upsert: bool = False,
+        bootstrapped_tenant: Optional[BootstrappedTenant] = None,
+        ready_tenant: bool = True,
     ) -> Optional[BootstrappedTenant]:
         """Bootstrap a user in a tenant."""
         ...

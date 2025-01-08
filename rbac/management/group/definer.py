@@ -61,7 +61,7 @@ def seed_group() -> Tuple[Group, Group]:
             tenant=public_tenant,
         )
 
-        platform_roles = Role.objects.filter(platform_default=True)
+        platform_roles = Role.objects.filter(platform_default=True).public_tenant_only()
         update_group_roles(group, platform_roles, public_tenant)
         logger.info("Finished seeding default group %s.", name)
 
@@ -76,7 +76,7 @@ def seed_group() -> Tuple[Group, Group]:
             defaults={"description": admin_group_description, "name": admin_name, "system": True},
             tenant=public_tenant,
         )
-        admin_roles = Role.objects.filter(admin_default=True)
+        admin_roles = Role.objects.filter(admin_default=True).public_tenant_only()
         update_group_roles(admin_group, admin_roles, public_tenant)
         logger.info("Finished seeding default org admin group %s.", name)
 
@@ -97,7 +97,10 @@ def clone_default_group_in_public_schema(group, tenant) -> Optional[Group]:
     if settings.V2_BOOTSTRAP_TENANT:
         tenant_bootstrap_service = V2TenantBootstrapService(OutboxReplicator())
         bootstrapped_tenant = tenant_bootstrap_service.bootstrap_tenant(tenant)
-        group_uuid = bootstrapped_tenant.mapping.default_group_uuid
+        mapping = bootstrapped_tenant.mapping
+        # Mapping is always present with V2
+        assert mapping is not None
+        group_uuid = mapping.default_group_uuid
     else:
         group_uuid = uuid4()
 

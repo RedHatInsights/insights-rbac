@@ -25,7 +25,8 @@ objects:
       transforms.outbox.type: io.debezium.transforms.outbox.EventRouter
       transforms.outbox.table.field.payload: ${PAYLOAD_NAME}
       plugin.name: pgoutput
-      heartbeat.interval.ms: 300000
+      heartbeat.interval.ms: ${DEBEZIUM_HEARTBEAT_INTERVAL_MS}
+      heartbeat.action.query: ${DEBEZIUM_ACTION_QUERY}
       topic.heartbeat.prefix: ${TOPIC_HEARTBEAT_PREFIX}
 parameters:
 - name: DB_SERVERNAME
@@ -67,3 +68,9 @@ parameters:
 - name: TOPIC_HEARTBEAT_PREFIX
   value: debezium-heartbeat
   description: Prefix for the connector heartbeat topic
+- name: DEBEZIUM_ACTION_QUERY
+  value: "SELECT pg_logical_emit_message(false, 'heartbeat', now()::varchar);"
+  description: Query action that runs for each heartbeat event
+- name: DEBEZIUM_HEARTBEAT_INTERVAL_MS
+  value: "300000"
+  description: The interval for the Debezium heartbeat in ms
