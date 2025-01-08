@@ -17,11 +17,20 @@
 """Celery setup."""
 from __future__ import absolute_import, unicode_literals
 
+import logging
 import os
+import sys
 
+import sentry_sdk
+from app_common_python import LoadedConfig
 from celery import Celery
 from celery.schedules import crontab
+from celery.signals import worker_ready
 from django.conf import settings
+from prometheus_client import CollectorRegistry, multiprocess, start_http_server
+
+
+logger = logging.getLogger("__name__")
 
 # set the default Django settings module for the 'celery' program.
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "rbac.settings")
@@ -63,3 +72,20 @@ else:
 
 # Load task modules from all registered Django app configs.
 app.autodiscover_tasks()
+
+
+@worker_ready.connect
+def start_metrics_server(sender=None, **kwargs):
+    """Start the metrics server."""
+    registry = CollectorRegistry()
+    multiprocess.MultiProcessCollector(registry)
+    metrics_port = LoadedConfig.metricsPort or 9000
+
+    try:
+        start_http_server(metrics_port, addr="0.0.0.0", registry=registry)
+        logger.info(f"Server started and exposing to port {metrics_port}.")
+    except Exception as e:
+        sentry_sdk.capture_exception(e)
+        logger.error(f"Failed to start metrics server: {e}")
+        # Exit the entire process, we don't want to spin up the worker without metrics
+        sys.exit(1)

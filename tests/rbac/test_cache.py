@@ -34,7 +34,7 @@ class AccessCacheTest(TestCase):
     def setUpClass(self):
         """Set up the tenant."""
         super().setUpClass()
-        self.tenant = Tenant.objects.create(tenant_name="acct12345")
+        self.tenant = Tenant.objects.create(tenant_name="acct12345", org_id="12345")
         self.tenant.ready = True
         self.tenant.save()
 

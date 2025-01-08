@@ -23,7 +23,7 @@ from json.decoder import JSONDecodeError
 
 from django.conf import settings
 from django.core.handlers.wsgi import WSGIRequest
-from django.db import IntegrityError
+from django.db import IntegrityError, transaction
 from django.http import Http404, HttpResponse, QueryDict
 from django.urls import resolve
 from django.utils.deprecation import MiddlewareMixin
@@ -115,13 +115,17 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
             try:
                 # If the tenant already exists, we assume it must be bootstrapped if dual writes are enabled.
                 tenant = Tenant.objects.get(org_id=request.user.org_id)
+                if not tenant.ready:
+                    tenant.ready = True
+                    tenant.save(update_fields=["ready"])
             except Tenant.DoesNotExist:
                 if request.user.system:
                     raise Http404()
                 # Tenants are normally bootstrapped via principal job,
                 # but there is a race condition where the user can use the service before the message is processed.
                 try:
-                    bootstrap = self.bootstrap_service.update_user(request.user, upsert=True)
+                    with transaction.atomic():
+                        bootstrap = self.bootstrap_service.update_user(request.user, upsert=True, ready_tenant=True)
                     if bootstrap is None:
                         # User is inactive. Should never happen but just in case...
                         raise Http404()
@@ -382,18 +386,15 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
             request (object): The request object
             response (object): The response object
         """
-        is_internal = False
-        if any([request.path.startswith(prefix) for prefix in settings.INTERNAL_API_PATH_PREFIXES]):
-            # This request is for a private API endpoint
-            is_internal = True
-            IdentityHeaderMiddleware.log_request(request, response, is_internal)
-            return response
-
-        behalf = "principal"
+        is_internal = any([request.path.startswith(prefix) for prefix in settings.INTERNAL_API_PATH_PREFIXES])
         is_system = False
 
-        if is_system:
-            behalf = "system"
+        if hasattr(request, "user") and request.user:
+            username = request.user.username
+            if username:
+                is_system = request.user.system
+
+        behalf = "system" if is_system else "principal"
 
         req_sys_counter.labels(
             behalf=behalf,

@@ -39,6 +39,8 @@ class TenantModifiedQuerySet(models.QuerySet):
 class Tenant(models.Model):
     """The model used to create a tenant schema."""
 
+    _public_tenant = None
+
     ready = models.BooleanField(default=False)
     tenant_name = models.CharField(max_length=63)
     account_id = models.CharField(max_length=36, default=None, null=True)
@@ -48,6 +50,18 @@ class Tenant(models.Model):
     def __str__(self):
         """Get string representation of Tenant."""
         return f"Tenant ({self.org_id})"
+
+    @classmethod
+    def _get_public_tenant(cls):
+        """Get or set public tenant."""
+        if cls._public_tenant is None:
+            cls._public_tenant = Tenant.objects.get(tenant_name="public")
+        return cls._public_tenant
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["ready"]),
+        ]
 
 
 class TenantAwareModel(models.Model):
@@ -62,7 +76,22 @@ class TenantAwareModel(models.Model):
 class User:
     """A request User. Might also represent a service account."""
 
-    username: Optional[str] = None
+    _username: Optional[str] = None
+
+    @property
+    def username(self) -> Optional[str]:
+        """Return the username."""
+        return self._username
+
+    @username.setter
+    def username(self, value: Optional[str]) -> None:
+        """
+        Set the username.
+
+        Lower-cases the username due to case insensitivity.
+        """
+        self._username = value.lower() if value else None
+
     account: Optional[str] = None
     admin: bool = False
     access = {}
@@ -74,3 +103,11 @@ class User:
     bearer_token: str = ""
     client_id: str = ""
     is_service_account: bool = False
+
+
+class FilterQuerySet(models.QuerySet):
+    """Queryset for filtering."""
+
+    def public_tenant_only(self):
+        """Filter queryset by returning only non-custom results."""
+        return self.filter(system=True, tenant=Tenant._get_public_tenant())

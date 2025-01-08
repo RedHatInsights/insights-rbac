@@ -3411,7 +3411,6 @@
       },
       "CrossAccountRequestIn": {
         "required": [
-          "target_account",
           "target_org",
           "start_date",
           "end_date",

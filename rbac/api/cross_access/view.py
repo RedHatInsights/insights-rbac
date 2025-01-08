@@ -16,6 +16,8 @@
 #
 
 """View for cross access request."""
+from typing import Callable, List, Optional
+
 from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
@@ -35,7 +37,6 @@ from api.cross_access.serializer import CrossAccountRequestDetailSerializer, Cro
 from api.cross_access.util import create_cross_principal
 from api.models import CrossAccountRequest, Tenant
 
-
 QUERY_BY_KEY = "query_by"
 ORG_ID = "target_org"
 USER_ID = "user_id"
@@ -54,11 +55,6 @@ class CrossAccountRequestFilter(filters.FilterSet):
         """Filter to lookup requests by target_org."""
         return CommonFilters.multiple_values_in(self, queryset, "target_org", values)
 
-    def account_filter(self, queryset, field, values):
-        """Filter to lookup requests by target_account."""
-        accounts = values.split(",")
-        return queryset.filter(target_account__in=accounts)
-
     def approved_filter(self, queryset, field, value):
         """Filter to lookup requests by status of approved."""
         if value:
@@ -75,14 +71,13 @@ class CrossAccountRequestFilter(filters.FilterSet):
             query = query | Q(status__iexact=status)
         return queryset.distinct().filter(query)
 
-    account = filters.CharFilter(field_name="target_account", method="account_filter")
     org_id = filters.CharFilter(field_name="target_org", method="org_id_filter")
     approved_only = filters.BooleanFilter(field_name="end_date", method="approved_filter")
     status = filters.CharFilter(field_name="status", method="status_filter")
 
     class Meta:
         model = CrossAccountRequest
-        fields = ["account", "org_id", "approved_only", "status"]
+        fields = ["org_id", "approved_only", "status"]
 
 
 class CrossAccountRequestViewSet(
@@ -248,18 +243,44 @@ class CrossAccountRequestViewSet(
 
         return [{"display_name": role} for role in roles]
 
+    def _with_dual_write_handler(
+        self,
+        car: CrossAccountRequest,
+        replication_event_type: ReplicationEventType,
+        generate_relations: Optional[Callable[[RelationApiDualWriteCrossAccessHandler, List], None]] = None,
+    ) -> None:
+        """Use dual write handler."""
+        cross_account_roles = car.roles.all()
+        if any(True for _ in cross_account_roles):
+            dual_write_handler = RelationApiDualWriteCrossAccessHandler(car, replication_event_type)
+
+            if generate_relations and callable(generate_relations):
+                generate_relations(dual_write_handler, cross_account_roles)
+
+            dual_write_handler.replicate()
+
     def update_status(self, car, status):
         """Update the status of a cross-account-request."""
         car.status = status
         if status == "approved":
             create_cross_principal(car.user_id, target_org=car.target_org)
-            cross_account_roles = car.roles.all()
-            if any(True for _ in cross_account_roles):
-                dual_write_handler = RelationApiDualWriteCrossAccessHandler(
-                    car, ReplicationEventType.APPROVE_CROSS_ACCOUNT_REQUEST
-                )
-                dual_write_handler.generate_relations_to_add_roles(cross_account_roles)
-                dual_write_handler.replicate()
+
+            self._with_dual_write_handler(
+                car,
+                ReplicationEventType.APPROVE_CROSS_ACCOUNT_REQUEST,
+                lambda dual_write_handler, cross_account_roles: dual_write_handler.generate_relations_to_add_roles(
+                    cross_account_roles
+                ),
+            )
+        elif status == "denied":
+
+            self._with_dual_write_handler(
+                car,
+                ReplicationEventType.DENY_CROSS_ACCOUNT_REQUEST,
+                lambda dual_write_handler, cross_account_roles: dual_write_handler.generate_relations_to_remove_roles(
+                    cross_account_roles
+                ),
+            )
         car.save()
 
     def check_patch_permission(self, request, update_obj):
@@ -319,9 +340,6 @@ class CrossAccountRequestViewSet(
                 "Please use PATCH to update the status of the request.",
             )
 
-        # Do not allow updating the target_org or target_account.
+        # Do not allow updating the target_org.
         if request.data.get("target_org") and str(request.data.get("target_org")) != update_obj.target_org:
             self.throw_validation_error("cross-account-update", "Target org must stay the same.")
-
-        if request.data.get("target_account") and str(request.data.get("target_account")) != update_obj.target_account:
-            self.throw_validation_error("cross-account-update", "Target account must stay the same.")

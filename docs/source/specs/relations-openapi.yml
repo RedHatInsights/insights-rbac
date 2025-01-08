@@ -35,11 +35,11 @@ paths:
           ]
         }
         ```
-        
+
         Schema in SpiceDB
         ```
           definition user {}
-          
+
           definition group {
               relation member: user | group#member
           }
@@ -76,7 +76,7 @@ paths:
             format: uuid
       description: |
         Example of request body from platform RBAC API
-        
+
         Request
         ```
         POST /groups/0ff698d7-3972-4385-9a15-0fe9cd49f740/roles/
@@ -89,22 +89,22 @@ paths:
             ]
           }
         ```
-        
+
         Schema in SpiceDB
         ```
           definition rbac/v1role {
             relation role: role
             relation binding: role_binding
           }
-    
+
           definition user {}
-  
+
           definition role {
           }
           definition group {
               relation member: user | group#member
           }
-  
+
           definition role_binding {
             relation subject : user | group#member
           }
@@ -113,23 +113,23 @@ paths:
         Prerequisites:
         ```
           role_binding:ROLE-UUID#granted@role:ROLE-UUID
-        
+
           rbac/v1role:ROLE-UUID#role@role:ROLE-UUID
-        
+
           // NOTE at this relation has to be checked before we add relation in example section
           rbac/v1role:ROLE-UUID#binding@role_binding:ROLE-UUID
         ```
-        
+
         zed command to check:
         ```
           role_binding:ROLE-UUID#subject@group:94846f2f-cced-474f-b7f3-47e2ec51dd1#member
         ```
-        
+
         Example of relations in SpiceDB to add a role to a group (in zed format)
         ```
           role_binding:ROLE-UUID#subject@group:0ff698d7-3972-4385-9a15-0fe9cd49f740#member
         ```
-        
+
         [Authzed playground](https://play.authzed.com/s/NEIiBuig1-Bg/schema)
       requestBody:
         content:
@@ -171,14 +171,14 @@ paths:
             ]
           }
         ```
-        
+
         Schema in SpiceDB
         ```
           definition rbac/v1role {
             relation role: role
             relation binding: role_binding
           }
-    
+
           definition user {}
 
           definition role {
