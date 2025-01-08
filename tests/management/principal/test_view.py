@@ -823,7 +823,7 @@ class PrincipalViewsetTests(IdentityRequest):
             mocked_values.append(
                 {
                     "clientId": uuid,
-                    "name": f"service_account_name_{uuid.split('-')[0]}",
+                    "name": f"service_account_name_b6636c60",
                     "description": f"Service Account description {uuid.split('-')[0]}",
                     "owner": "jsmith",
                     "username": "service_account-" + uuid,
@@ -1028,8 +1028,8 @@ class PrincipalViewsetTests(IdentityRequest):
         client = APIClient()
         response = client.get(url, **self.headers)
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(response.data.get("data")), 0)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIsNone(response.data.get("data"))
 
     @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
     @patch("management.principal.it_service.ITService.request_service_accounts")
@@ -1062,13 +1062,13 @@ class PrincipalViewsetTests(IdentityRequest):
         client = APIClient()
         response = client.get(url, **self.headers)
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(response.data.get("data")), 0)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIsNone(response.data.get("data"))
 
     @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
     @patch("management.principal.it_service.ITService.request_service_accounts")
     def test_principal_service_account_filter_by_incorrect_description(self, mock_request):
-        """Test that trying to filter by an incorrect description for service accounts returns an empty data array"""
+        """Test that trying to filter by an incorrect description for service accounts returns an empty array"""
         # Create SA in the database
         sa_client_id = "b6636c60-a31d-013c-b93d-6aa2427b506c"
         sa_username = "service_account-" + sa_client_id
@@ -1096,8 +1096,8 @@ class PrincipalViewsetTests(IdentityRequest):
         client = APIClient()
         response = client.get(url, **self.headers)
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(response.data.get("data")), 0)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIsNone(response.data.get("data"))
 
     @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
     @patch("management.principal.it_service.ITService.request_service_accounts")
