@@ -1570,3 +1570,53 @@ class ITServiceTests(IdentityRequest):
                 f' "{expected_first_username}" or "{expected_second_username}", got the following service account:'
                 f" {filtered_result}",
             )
+
+    @override_settings(IT_BYPASS_IT_CALLS=True)
+    def test_principal_filtering_without_username_match_criteria_exact_skipped(self):
+        """Test the function under test skips the expected service account when filtering by exact match criteria without usernames"""
+        user = User()
+        user.account = self.tenant.account_id
+        user.org_id = self.tenant.org_id
+
+        # Set the options for the filter.
+        options = {
+            "limit": 10,
+            "offset": 0,
+            "match_criteria": "exact",
+            "usernames": None,
+        }
+
+        # Call the function under test.
+        result, count = self.it_service.get_service_accounts(user=user, options=options)
+        print(result)
+        print(count)
+        self.assertEqual(
+            0,
+            count,
+            "unexpected number of service accounts fetched for the tenant",
+        )
+
+    @override_settings(IT_BYPASS_IT_CALLS=True)
+    def test_principal_filtering_without_username_match_criteria_partial_skipped(self):
+        """Test the function under test skips the expected service account when match_criteria is partial without usernames"""
+        user = User()
+        user.account = self.tenant.account_id
+        user.org_id = self.tenant.org_id
+
+        # Set the options for the filter.
+        options = {
+            "limit": 10,
+            "offset": 0,
+            "match_criteria": "partial",
+            "usernames": None,
+        }
+
+        # Call the function under test.
+        result, count = self.it_service.get_service_accounts(user=user, options=options)
+        print(result)
+        print(count)
+        self.assertEqual(
+            0,
+            count,
+            "unexpected number of service accounts fetched for the tenant",
+        )
