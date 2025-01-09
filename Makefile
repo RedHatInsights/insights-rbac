@@ -37,7 +37,7 @@ Please use `make <target>` where <target> is one of:
   collect-static           collect static files to host
   make-migrations          make migrations for the database
   reinitdb                 drop and recreate the database
-  requirements             generate Pipfile.lock, requirements and RTD requirements
+  requirements             generate Pipfile.lock and requirements
   run-migrations           run migrations against database
   serve                    run the Django server locally
   serve-with-oc            run Django server locally against an Openshift DB
@@ -117,8 +117,15 @@ run-migrations:
 shell:
 	DJANGO_READ_DOT_ENV_FILE=True $(PYTHON) $(PYDIR)/manage.py shell
 
+seeds:
+	DJANGO_READ_DOT_ENV_FILE=True $(PYTHON) $(PYDIR)/manage.py seeds
+
+show-migrations:
+	DJANGO_READ_DOT_ENV_FILE=True $(PYTHON) $(PYDIR)/manage.py showmigrations api management
+
 urls:
 	DJANGO_READ_DOT_ENV_FILE=True $(PYTHON) $(PYDIR)/manage.py show_urls
+
 
 create-test-db-file: run-migrations
 	sleep 1
@@ -135,7 +142,6 @@ collect-static:
 requirements:
 	pipenv lock
 	pipenv requirements > requirements.txt
-	pipenv run pip freeze > docs/rtd_requirements.txt
 
 serve:
 	DJANGO_READ_DOT_ENV_FILE=True $(PYTHON) $(PYDIR)/manage.py runserver $(PORT)

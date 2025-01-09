@@ -31,6 +31,7 @@ from management.tenant_service import get_tenant_bootstrap_service
 from management.tenant_service.tenant_service import TenantBootstrapService
 from prometheus_client import Counter
 from rest_framework import status
+from sentry_sdk import capture_exception
 from stompest.config import StompConfig
 from stompest.error import StompConnectionError
 from stompest.protocol import StompSpec
@@ -46,10 +47,15 @@ CERT_LOC = "/opt/rbac/rbac/management/principal/umb_certs/cert.pem"
 KEY_LOC = "/opt/rbac/rbac/management/principal/umb_certs/key.pem"
 LOCK_ID = 42  # For Keith, with Love
 
-METRIC_STOMP_MESSAGE_TOTAL = "stomp_messages_total"
-umb_message_processed_count = Counter(
-    METRIC_STOMP_MESSAGE_TOTAL,
+METRIC_STOMP_MESSAGES_ACK_TOTAL = "stomp_messages_ack_total"
+METRIC_STOMP_MESSAGES_NACK_TOTAL = "stomp_messages_nack_total"
+stomp_messages_ack_total = Counter(
+    METRIC_STOMP_MESSAGES_ACK_TOTAL,
     "Number of stomp UMB messages processed",
+)
+stomp_messages_nack_total = Counter(
+    METRIC_STOMP_MESSAGES_NACK_TOTAL,
+    "Number of stomp UMB messages that failed to be processed",
 )
 
 
@@ -110,7 +116,7 @@ def clean_tenants_principals():
     """Check which principals are eligible for clean up."""
     logger.info("clean_tenant_principals: Start principal clean up.")
 
-    for tenant in list(Tenant.objects.all()):
+    for tenant in list(Tenant.objects.filter(ready=True).exclude(tenant_name="public")):
         logger.info("clean_tenant_principals: Running principal clean up for tenant %s.", tenant.tenant_name)
         clean_tenant_principals(tenant)
         logger.info("clean_tenant_principals: Completed principal clean up for tenant %s.", tenant.tenant_name)
@@ -199,27 +205,24 @@ def process_umb_event(frame, umb_client: Stomp, bootstrap_service: TenantBootstr
             logger.info("process_umb_event: Another listener is running. Aborting.")
             return False
 
-        data_dict = xmltodict.parse(frame.body)
-        canonical_message = data_dict.get("CanonicalMessage")
-        if canonical_message:
-            try:
-                user = retrieve_user_info(canonical_message)
-            except Exception as e:  # Skip processing and leave the it to be processed later
-                logger.error("process_umb_event: Error retrieving user info: %s", str(e))
-                return True
+        try:
+            data_dict = xmltodict.parse(frame.body)
+            canonical_message = data_dict.get("CanonicalMessage")
 
+            user = retrieve_user_info(canonical_message)
             # By default, only process disabled users.
             # If the setting is enabled, process all users.
             if not user.is_active or settings.PRINCIPAL_CLEANUP_UPDATE_ENABLED_UMB:
-                bootstrap_service.update_user(user)
-        else:
-            # Message is malformed.
-            # Ensure we dont block the entire queue by discarding it.
-            # TODO: this is not the only way a message can be malformed
-            pass
+                # If Tenant is not already ready, don't ready it
+                bootstrap_service.update_user(user, ready_tenant=False)
+            umb_client.ack(frame)
+            stomp_messages_ack_total.inc()
+        except Exception as e:
+            logger.error("process_umb_event: Error processing umb message : %s", str(e))
+            capture_exception(e)
+            umb_client.nack(frame)
+            stomp_messages_nack_total.inc()
 
-    umb_client.ack(frame)
-    umb_message_processed_count.inc()
     return True
 
 

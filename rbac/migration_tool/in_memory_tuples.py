@@ -207,6 +207,10 @@ class InMemoryTuples:
         """Return a representation of the store."""
         return f"InMemoryTuples({repr(self._tuples)})"
 
+    def __len__(self):
+        """Return the number of tuples in the store."""
+        return len(self._tuples)
+
 
 class TuplePredicate:
     """A predicate that can be used to filter relation tuples."""

@@ -63,7 +63,7 @@ class MigrateTests(TestCase):
 
         # two organizations
         # tenant 1 - org_id=1234567
-        self.tenant = Tenant.objects.create(org_id="1234567", tenant_name="tenant")
+        self.tenant = Tenant.objects.create(org_id="1234567", tenant_name="tenant", ready=True)
         self.root_workspace = Workspace.objects.create(
             type=Workspace.Types.ROOT, tenant=self.tenant, name="Root Workspace"
         )
@@ -109,7 +109,7 @@ class MigrateTests(TestCase):
         self.policy_a2.roles.add(self.role_a2)
 
         # tenant 2 - org_id=7654321
-        another_tenant = Tenant.objects.create(org_id="7654321")
+        another_tenant = Tenant.objects.create(org_id="7654321", ready=True)
 
         root_workspace_another_tenant = Workspace.objects.create(
             type=Workspace.Types.ROOT, tenant=another_tenant, name="Root Workspace"
@@ -268,3 +268,29 @@ class MigrateTests(TestCase):
             ),
         ]
         logger_mock.info.assert_has_calls(tuples, any_order=True)
+
+    @override_settings(REPLICATION_TO_RELATION_ENABLED=True, PRINCIPAL_USER_DOMAIN="redhat", READ_ONLY_API_MODE=True)
+    def test_skips_orgs_without_org_ids(self):
+        # Create a tenant without an org id
+        Tenant.objects.create(tenant_name="tenant", ready=True)
+
+        # Migrate without limiting org
+        kwargs = {"exclude_apps": ["app1"]}
+
+        try:
+            migrate_data(**kwargs)
+        except Exception:
+            self.fail("migrate_data raised an exception when migrating tenant without org_id")
+
+    @override_settings(REPLICATION_TO_RELATION_ENABLED=True, PRINCIPAL_USER_DOMAIN="redhat", READ_ONLY_API_MODE=True)
+    @patch("migration_tool.migrate.migrate_groups_for_tenant")
+    @patch("migration_tool.migrate.migrate_roles_for_tenant")
+    @patch("migration_tool.migrate.migrate_cross_account_requests")
+    def test_skips_roles_migration(self, group_migrator, role_migrator, car_migrator):
+        kwargs = {"orgs": ["1234567"], "skip_roles": True}
+
+        migrate_data(**kwargs)
+
+        group_migrator.assert_called_once()
+        role_migrator.assert_not_called()
+        car_migrator.assert_called_once()

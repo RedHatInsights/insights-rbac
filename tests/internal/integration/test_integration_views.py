@@ -31,7 +31,7 @@ class IntegrationViewsTests(IdentityRequest):
     def setUp(self):
         """Set up the integration view tests."""
         test_roles = ["Role Admin", "Role A", "Role B"]
-        test_principals = ["user_admin", "user_a", "user_b"]
+        test_principals = ["user_admin", "user_a", "user_b", "roles_test"]
 
         super().setUp()
         self.client = APIClient()
@@ -193,7 +193,7 @@ class IntegrationViewsTests(IdentityRequest):
         self.assertEqual(response.data.get("meta").get("count"), 3)
 
     def test_groups_for_principal_invalid_account(self):
-        """Test that a /tenant/<id>/principal/<username>groups/ request from an external account fails."""
+        """Test that a /tenant/<id>/principal/<username>/groups/ request from an external account fails."""
         external_request_context = self._create_request_context(self.customer, self.user_data, is_internal=False)
         request = external_request_context["request"]
         response = self.client.get(
@@ -202,6 +202,20 @@ class IntegrationViewsTests(IdentityRequest):
             follow=True,
         )
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_groups_for_principal_roles_in_username(self):
+        """
+        Test that a request to /tenant/<id>/principal/<username>/groups/ from an internal account works
+        with "roles" substring in the principal's username (RHCLOUD-32144).
+        """
+        response = self.client.get(
+            f"/_private/api/v1/integrations/tenant/{self.tenant.org_id}/principal/roles_test/groups/",
+            **self.request.META,
+            follow=True,
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        # Expecting ["Group All"]
+        self.assertEqual(response.data.get("meta").get("count"), 1)
 
     @patch(
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
