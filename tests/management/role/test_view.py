@@ -1205,7 +1205,6 @@ class RoleViewsetTests(IdentityRequest):
         url = "{}?add_fields={},{}&scope=principal".format(URL, field_1, field_2)
         client = APIClient()
         response = client.get(url, **self.headers)
-
         self.assertEqual(len(response.data.get("data")), 5)
 
         role = response.data.get("data")[0]

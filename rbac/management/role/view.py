@@ -328,7 +328,6 @@ class RoleViewSet(
             }
 
         """
-        public_tenant = Tenant.objects.get(tenant_name="public")
         # Filtering
         query_params = {
             "external_tenant": request.query_params.get("external_tenant", None),
@@ -346,15 +345,8 @@ class RoleViewSet(
             "add_fields": request.query_params.get("add_fields", ""),
         }
         add_fields = query_params["add_fields"]
-
-        base_queryset = (
-            Role.objects.prefetch_related("access", "ext_relation")
-            .filter(tenant__in=[request.tenant, public_tenant])
-            .annotate(
-                policyCount=Count("policies", distinct=True),
-                accessCount=Count("access", distinct=True),
-            )
-        )
+        roles = get_role_queryset(self.request)
+        base_queryset = roles
 
         # Dynamic annotation
         if add_fields:
