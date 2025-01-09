@@ -51,7 +51,7 @@ class RelationsApiReplicator(RelationReplicator):
             try:
                 stub.CreateTuples(request)
             except grpc.RpcError as err:
-                error = GRPCError(err.value)
+                error = GRPCError(err)
                 logger.error(
                     "Failed to write relationships to the relation API server: "
                     f"error code {error.code}, reason {error.reason}"

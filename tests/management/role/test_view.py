@@ -1352,7 +1352,7 @@ class RoleViewsetTests(IdentityRequest):
             self.assertEqual(updated_name, response.data.get("name"))
             self.assertEqual("cost-management:*:*", response.data.get("access")[0]["permission"])
 
-            # test whether newly updatecd (post) role is added correctly within audit log database
+            # test whether newly updated (post) role is added correctly within audit log database
             al_url = "/api/rbac/v1/auditlogs/"
             al_client = APIClient()
             al_response = al_client.get(al_url, **self.headers)

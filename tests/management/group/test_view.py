@@ -15,18 +15,22 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Test the group viewset."""
+from datetime import timedelta
 import random
 from unittest.mock import call, patch, ANY, Mock
 from uuid import uuid4
-
+import json
 from django.db import transaction
 from django.conf import settings
 from django.urls import reverse, resolve
+from django.utils import timezone
 from django.test.utils import override_settings
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.test import APIClient
 
+from api.cross_access.model import CrossAccountRequest
+from api.cross_access.util import check_cross_request_expiry
 from api.models import Tenant, User
 from management.cache import TenantCache
 from management.group.serializer import GroupInputSerializer
@@ -44,8 +48,20 @@ from management.models import (
 )
 from management.relation_replicator.noop_replicator import NoopReplicator
 from management.tenant_service.v2 import V2TenantBootstrapService
+from management.tenant_mapping.model import TenantMapping
+
+from migration_tool.in_memory_tuples import (
+    InMemoryRelationReplicator,
+    InMemoryTuples,
+    all_of,
+    relation,
+    resource,
+    subject,
+)
+from rbac.settings import REPLICATION_TO_RELATION_ENABLED
 from tests.core.test_kafka import copy_call_args
 from tests.identity_request import IdentityRequest
+from tests.management.role.test_dual_write import RbacFixture
 from tests.management.role.test_view import find_in_list, relation_api_tuple
 
 
@@ -219,17 +235,10 @@ class GroupViewsetTests(IdentityRequest):
         self.group.principals.add(*self.service_accounts)
         self.group.save()
 
-        self.root_workspace = Workspace.objects.create(
-            type=Workspace.Types.ROOT,
-            name="Root",
-            tenant=self.tenant,
-        )
-        self.default_workspace = Workspace.objects.create(
-            type=Workspace.Types.DEFAULT,
-            name="Default",
-            tenant=self.tenant,
-            parent=self.root_workspace,
-        )
+        self.bootstrap_service = V2TenantBootstrapService(NoopReplicator())
+        bootstrapped = self.bootstrap_service.bootstrap_tenant(self.tenant)
+        self.default_workspace = bootstrapped.default_workspace
+        self.root_workspace = bootstrapped.root_workspace
 
     def tearDown(self):
         """Tear down group viewset tests."""
@@ -333,21 +342,6 @@ class GroupViewsetTests(IdentityRequest):
         client = APIClient()
         response = client.post(url, test_data, format="json", **self.headers)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-
-    def test_create_duplicate_group(self):
-        """Test that creating a duplicate group is not allowed."""
-        group_name = "groupC"
-        test_data = {"name": group_name}
-
-        # create a group
-        with transaction.atomic():
-            url = reverse("v1_management:group-list")
-            client = APIClient()
-            response = client.post(url, test_data, format="json", **self.headers)
-            self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-
-            response = client.post(url, test_data, format="json", **self.headers)
-            self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
     def test_create_group_with_reserved_name(self):
         """Test that creating a group with reserved name is not allowed."""
@@ -981,7 +975,8 @@ class GroupViewsetTests(IdentityRequest):
         response = client.delete(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
-    def test_delete_custom_default_group(self):
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator._save_replication_event")
+    def test_delete_custom_default_group(self, mock_method):
         """
         Test that custom platform_default groups can be deleted and the public default group
         becomes default for the tenant
@@ -1002,6 +997,24 @@ class GroupViewsetTests(IdentityRequest):
         url = reverse("v1_management:group-detail", kwargs={"uuid": customDefGroup.uuid})
         response = client.delete(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+
+        actual_call_arg = mock_method.call_args[0][0]
+
+        to_add = actual_call_arg["relations_to_add"]
+
+        tenant_mapping = TenantMapping.objects.get(tenant=self.tenant)
+
+        def assert_group_tuples(tuple_to_replicate):
+            relation_tuple = relation_api_tuple(
+                "workspace",
+                str(self.default_workspace.id),
+                "binding",
+                "role_binding",
+                str(tenant_mapping.default_role_binding_uuid),
+            )
+            self.assertIsNotNone(find_relation_in_list(tuple_to_replicate, relation_tuple))
+
+        assert_group_tuples(to_add)
 
         url = f"{reverse('v1_management:group-list')}?platform_default=true"
         response = client.get(url, **self.headers)
@@ -1718,7 +1731,7 @@ class GroupViewsetTests(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(principals, None)
 
-    @patch("management.group.relation_api_dual_write_group_handler.OutboxReplicator._save_replication_event")
+    @patch("management.group.relation_api_dual_write_subject_handler.OutboxReplicator._save_replication_event")
     def test_add_group_roles_system_policy_create_success(self, mock_method):
         """Test that adding a role to a group without a system policy returns successfully."""
         url = reverse("v1_management:group-roles", kwargs={"uuid": self.group.uuid})
@@ -1746,8 +1759,10 @@ class GroupViewsetTests(IdentityRequest):
         self.assertEqual(system_policy.tenant, self.tenant)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
+    @override_settings(V2_BOOTSTRAP_TENANT=True)
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator._save_replication_event")
     @patch("core.kafka.RBACProducer.send_kafka_message")
-    def test_system_flag_update_on_add(self, send_kafka_message):
+    def test_system_flag_update_on_add(self, send_kafka_message, mock_method):
         """Test that adding a role to a platform_default group flips the system flag."""
         kafka_mock = copy_call_args(send_kafka_message)
         with self.settings(NOTIFICATIONS_ENABLED=True):
@@ -1768,6 +1783,54 @@ class GroupViewsetTests(IdentityRequest):
             self.assertTrue(self.defGroup.system)
             self.assertEqual(self.defGroup.roles().count(), 1)
             response = client.post(url, test_data, format="json", **self.headers)
+            actual_call_arg = mock_method.call_args_list[0][0][0]
+            to_remove = actual_call_arg["relations_to_remove"]
+            to_add = actual_call_arg["relations_to_add"]
+
+            binding_mapping = BindingMapping.objects.get(
+                role=default_role, resource_type_name="workspace", resource_id=self.default_workspace.id
+            )
+
+            # New platform default role for tenant created
+            custom_default_group = Group.objects.get(platform_default=True, tenant=self.tenant)
+
+            relation_tuple = relation_api_tuple(
+                "role_binding", binding_mapping.mappings["id"], "role", "role", str(default_role.uuid)
+            )
+
+            self.assertIsNotNone(find_relation_in_list(to_add, relation_tuple))
+
+            relation_tuple = relation_api_tuple(
+                "workspace",
+                str(self.default_workspace.id),
+                "binding",
+                "role_binding",
+                str(binding_mapping.mappings["id"]),
+            )
+
+            self.assertIsNotNone(find_relation_in_list(to_add, relation_tuple))
+
+            relation_tuple = relation_api_tuple(
+                "role_binding",
+                binding_mapping.mappings["id"],
+                "subject",
+                "group",
+                str(custom_default_group.uuid),
+                "member",
+            )
+
+            self.assertIsNotNone(find_relation_in_list(to_add, relation_tuple))
+
+            tenant_mapping = TenantMapping.objects.get(tenant=self.tenant)
+
+            relation_tuple = relation_api_tuple(
+                "workspace",
+                str(self.default_workspace.id),
+                "binding",
+                "role_binding",
+                str(tenant_mapping.default_role_binding_uuid),
+            )
+            self.assertIsNotNone(find_relation_in_list(to_remove, relation_tuple))
 
             # Original platform default role does not change
             self.defGroup.refresh_from_db()
@@ -1776,8 +1839,8 @@ class GroupViewsetTests(IdentityRequest):
             self.assertEqual(self.defGroup.tenant, self.public_tenant)
             self.assertEqual(response.status_code, status.HTTP_200_OK)
 
-            # New platform default role for tenant created
             custom_default_group = Group.objects.get(platform_default=True, tenant=self.tenant)
+            self.assertEqual(custom_default_group.uuid, tenant_mapping.default_group_uuid)
             self.assertEqual(custom_default_group.name, "Custom default access")
             self.assertFalse(custom_default_group.system)
             self.assertEqual(custom_default_group.tenant, self.tenant)
@@ -1831,8 +1894,155 @@ class GroupViewsetTests(IdentityRequest):
             ]
             kafka_mock.assert_has_calls(notification_messages, any_order=True)
 
+    @override_settings(V2_BOOTSTRAP_TENANT=True)
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator._save_replication_event")
     @patch("core.kafka.RBACProducer.send_kafka_message")
-    def test_system_flag_update_on_remove(self, send_kafka_message):
+    def test_system_flag_update_on_remove_and_keep_one_role_in_group(self, send_kafka_message, mock_method):
+        """Test that removing a role from a platform_default group flips the system flag."""
+        kafka_mock = copy_call_args(send_kafka_message)
+        with self.settings(NOTIFICATIONS_ENABLED=True):
+            default_role = Role.objects.create(
+                name="default_role",
+                description="A default role for a group.",
+                platform_default=True,
+                system=True,
+                tenant=self.public_tenant,
+            )
+            default_role_to_keep_in_group = Role.objects.create(
+                name="default_role_to_keep_in_group",
+                description="A default role for a group that is kept within the group.",
+                platform_default=True,
+                system=True,
+                tenant=self.public_tenant,
+            )
+            self.defGroup.policies.first().roles.add(default_role)
+            self.defGroup.policies.first().roles.add(default_role_to_keep_in_group)
+
+            self.assertTrue(self.defGroup.system)
+
+            org_id = self.customer_data["org_id"]
+
+            url = reverse("v1_management:group-roles", kwargs={"uuid": self.defGroup.uuid})
+            client = APIClient()
+            url = "{}?roles={}".format(url, default_role.uuid)
+            response = client.delete(url, format="json", **self.headers)
+            actual_call_arg = mock_method.call_args_list[0][0][0]
+            to_remove = actual_call_arg["relations_to_remove"]
+            tuple_to_replicate = actual_call_arg["relations_to_add"]
+
+            self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+            self.defGroup.refresh_from_db()
+            self.assertEqual(self.defGroup.name, "groupDef")
+            self.assertTrue(self.defGroup.system)
+            self.assertEqual(self.defGroup.tenant, self.public_tenant)
+            self.assertEqual(self.defGroup.roles().count(), 2)
+
+            # New platform default role for tenant created
+            custom_default_group = Group.objects.get(platform_default=True, tenant=self.tenant)
+            self.assertEqual(custom_default_group.name, "Custom default access")
+            self.assertFalse(custom_default_group.system)
+            self.assertEqual(custom_default_group.tenant, self.tenant)
+            self.assertEqual(custom_default_group.roles().count(), 1)
+
+            binding_mapping = BindingMapping.objects.get(
+                role=default_role_to_keep_in_group,
+                resource_type_name="workspace",
+                resource_id=self.default_workspace.id,
+            )
+
+            relation_tuple = relation_api_tuple(
+                "role_binding",
+                binding_mapping.mappings["id"],
+                "role",
+                "role",
+                str(default_role_to_keep_in_group.uuid),
+            )
+
+            self.assertIsNotNone(find_relation_in_list(tuple_to_replicate, relation_tuple))
+
+            relation_tuple = relation_api_tuple(
+                "workspace",
+                str(self.default_workspace.id),
+                "binding",
+                "role_binding",
+                str(binding_mapping.mappings["id"]),
+            )
+
+            self.assertIsNotNone(find_relation_in_list(tuple_to_replicate, relation_tuple))
+
+            relation_tuple = relation_api_tuple(
+                "role_binding",
+                binding_mapping.mappings["id"],
+                "subject",
+                "group",
+                str(custom_default_group.uuid),
+                "member",
+            )
+            self.assertIsNotNone(find_relation_in_list(tuple_to_replicate, relation_tuple))
+
+            tenant_mapping = TenantMapping.objects.get(tenant=self.tenant)
+
+            relation_tuple = relation_api_tuple(
+                "workspace",
+                str(self.default_workspace.id),
+                "binding",
+                "role_binding",
+                str(tenant_mapping.default_role_binding_uuid),
+            )
+            self.assertIsNotNone(find_relation_in_list(to_remove, relation_tuple))
+
+            notification_messages = [
+                call(
+                    settings.NOTIFICATIONS_TOPIC,
+                    {
+                        "bundle": "console",
+                        "application": "rbac",
+                        "event_type": "platform-default-group-turned-into-custom",
+                        "timestamp": ANY,
+                        "events": [
+                            {
+                                "metadata": {},
+                                "payload": {
+                                    "name": custom_default_group.name,
+                                    "username": self.user_data["username"],
+                                    "uuid": str(custom_default_group.uuid),
+                                },
+                            }
+                        ],
+                        "org_id": org_id,
+                    },
+                    ANY,
+                ),
+                call(
+                    settings.NOTIFICATIONS_TOPIC,
+                    {
+                        "bundle": "console",
+                        "application": "rbac",
+                        "event_type": "custom-default-access-updated",
+                        "timestamp": ANY,
+                        "events": [
+                            {
+                                "metadata": {},
+                                "payload": {
+                                    "name": custom_default_group.name,
+                                    "username": self.user_data["username"],
+                                    "uuid": str(custom_default_group.uuid),
+                                    "operation": "removed",
+                                    "role": {"uuid": str(default_role.uuid), "name": default_role.name},
+                                },
+                            }
+                        ],
+                        "org_id": org_id,
+                    },
+                    ANY,
+                ),
+            ]
+            kafka_mock.assert_has_calls(notification_messages, any_order=True)
+
+    @override_settings(V2_BOOTSTRAP_TENANT=True)
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator._save_replication_event")
+    @patch("core.kafka.RBACProducer.send_kafka_message")
+    def test_system_flag_update_on_remove(self, send_kafka_message, mock_method):
         """Test that removing a role from a platform_default group flips the system flag."""
         kafka_mock = copy_call_args(send_kafka_message)
         with self.settings(NOTIFICATIONS_ENABLED=True):
@@ -1852,12 +2062,16 @@ class GroupViewsetTests(IdentityRequest):
             client = APIClient()
             url = "{}?roles={}".format(url, default_role.uuid)
             response = client.delete(url, format="json", **self.headers)
+            actual_call_arg = mock_method.call_args_list[0][0][0]
+            to_remove = actual_call_arg["relations_to_remove"]
+            tuple_to_replicate = actual_call_arg["relations_to_add"]
+
             self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
             self.defGroup.refresh_from_db()
             self.assertEqual(self.defGroup.name, "groupDef")
             self.assertTrue(self.defGroup.system)
-            self.assertTrue(self.defGroup.tenant, self.tenant)
-            self.assertTrue(self.defGroup.roles(), 1)
+            self.assertEqual(self.defGroup.tenant, self.public_tenant)
+            self.assertEqual(self.defGroup.roles().count(), 1)
 
             # New platform default role for tenant created
             custom_default_group = Group.objects.get(platform_default=True, tenant=self.tenant)
@@ -1865,6 +2079,17 @@ class GroupViewsetTests(IdentityRequest):
             self.assertFalse(custom_default_group.system)
             self.assertEqual(custom_default_group.tenant, self.tenant)
             self.assertEqual(custom_default_group.roles().count(), 0)
+
+            tenant_mapping = TenantMapping.objects.get(tenant=self.tenant)
+
+            relation_tuple = relation_api_tuple(
+                "workspace",
+                str(self.default_workspace.id),
+                "binding",
+                "role_binding",
+                str(tenant_mapping.default_role_binding_uuid),
+            )
+            self.assertIsNotNone(find_relation_in_list(to_remove, relation_tuple))
 
             notification_messages = [
                 call(
@@ -3725,7 +3950,7 @@ class GroupViewNonAdminTests(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.json()["name"], new_name_sa)
 
-    @patch("management.group.relation_api_dual_write_group_handler.OutboxReplicator._save_replication_event")
+    @patch("management.group.relation_api_dual_write_subject_handler.OutboxReplicator._save_replication_event")
     def test_add_and_remove_role_to_group(self, mock_method):
         Permission.objects.create(permission="app:inventory:read", tenant=self.tenant)
 
@@ -3784,7 +4009,7 @@ class GroupViewNonAdminTests(IdentityRequest):
         assert_group_tuples(to_remove)
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
 
-    @patch("management.group.relation_api_dual_write_group_handler.OutboxReplicator._save_replication_event")
+    @patch("management.group.relation_api_dual_write_subject_handler.OutboxReplicator._save_replication_event")
     def test_add_and_remove_system_role_to_group(self, mock_method):
         # Create a group with 'User Access administrator' role and add principals we use in headers
         group_with_admin = self._create_group_with_user_access_administrator_role(self.tenant)
@@ -4255,7 +4480,7 @@ class GroupViewNonAdminTests(IdentityRequest):
 
     @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
     @patch("management.relation_replicator.outbox_replicator.OutboxReplicator._save_replication_event")
-    @patch("management.principal.it_service.ITService.request_service_accounts")
+    @patch("management.principal.it_service.requests.get")
     def test_add_service_account_principal_in_group_with_User_Access_Admin_success(self, mock_request, mock_method):
         """
         Test that non org admin with 'User Access administrator' role can add
@@ -4292,7 +4517,25 @@ class GroupViewNonAdminTests(IdentityRequest):
                 "type": "service-account",
             }
         ]
-        mock_request.return_value = mocked_values
+
+        class MockResponse:
+            def __init__(self, json_response):
+                self.status_code = 200
+                self._json = json_response
+                self.content = json.dumps(json_response)
+
+            def json(self):
+                return self._json
+
+        def mock_get(url: str, params: dict, *args, **kwargs):
+            if url.endswith("/service_accounts/v1") and (
+                not (client_ids := params.get("clientId")) or sa_uuid in client_ids
+            ):
+                return MockResponse(mocked_values)
+            return MockResponse([])
+
+        mock_request.side_effect = mock_get
+        mock_request.__name__ = "request_service_accounts"
 
         url = reverse("v1_management:group-principals", kwargs={"uuid": test_group.uuid})
         client = APIClient()
@@ -5376,3 +5619,353 @@ class GroupViewNonAdminTests(IdentityRequest):
 
         response = client.put(url, request_body, format="json", **self.headers_service_account_principal)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+    def test_duplicate_group_creation(self):
+        """
+        Test that when a duplicate group is added for a tenant the correct error response is being returned
+        """
+        # Initial group creation
+        request_body = {"name": "duplicateEntry"}
+        url = reverse("v1_management:group-list")
+
+        with transaction.atomic():
+            # Initial group creation
+            response = self.client.post(url, request_body, format="json", **self.headers_org_admin)
+            self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+            # Duplicate add attempt
+            duplicate_response = self.client.post(url, request_body, format="json", **self.headers_org_admin)
+            self.assertEqual(duplicate_response.status_code, status.HTTP_400_BAD_REQUEST)
+
+            self.assertEqual(
+                duplicate_response.data.get("errors")[0]["detail"],
+                "A group with the name 'duplicateEntry' exists for this tenant",
+            )
+
+
+@override_settings(REPLICATION_TO_RELATION_ENABLED=True)
+class GroupReplicationTests(IdentityRequest):
+    def setUp(self):
+        super().setUp()
+        self.fixture = RbacFixture()
+        self.relations = InMemoryTuples()
+        self.in_memory_replicator = InMemoryRelationReplicator(self.relations)
+
+        self.org_admin = Principal(username="org_admin", tenant=self.tenant)
+        self.org_admin.save()
+
+        customer_data = {
+            "account_id": self.tenant.account_id,
+            "tenant_name": self.tenant.tenant_name,
+            "org_id": self.tenant.org_id,
+        }
+        request_context_org_admin = self._create_request_context(
+            customer_data=customer_data,
+            user_data={"username": self.org_admin.username, "email": "test@email.com"},
+            is_org_admin=True,
+        )
+        self.headers_org_admin = request_context_org_admin["request"].META
+
+        self.associate_admin_request_context = self._create_request_context(
+            self.customer_data, self.user_data, is_org_admin=True, is_internal=True
+        )
+        self.associate_admin_request = self.associate_admin_request_context["request"]
+
+        self.fixture.bootstrap_tenant(self.tenant)
+
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
+    def test_remove_role_does_not_remove_binding_if_cross_account_granted(self, replicate):
+        replicate.side_effect = self.in_memory_replicator.replicate
+
+        self.sr1 = self.fixture.new_system_role("sr1", ["app:*:*"])
+
+        # Create a group and give it the system role
+        test_group = Group(name="test group", tenant=self.tenant)
+        test_group.save()
+
+        request_body = {"roles": [self.sr1.uuid]}
+
+        url = reverse("v1_management:group-roles", kwargs={"uuid": test_group.uuid})
+        client = APIClient()
+        response = client.post(url, request_body, format="json", **self.headers_org_admin)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        # Now approve a CAR for the tenant and the same role
+        request = CrossAccountRequest.objects.create(
+            target_account=self.tenant.account_id,
+            target_org=self.tenant.org_id,
+            user_id="2222222",
+            end_date=timezone.now() + timedelta(10),
+            status="pending",
+        )
+        request.roles.add(self.sr1)
+        update_data = {"status": "approved"}
+        car_uuid = request.request_id
+        url = reverse("v1_api:cross-detail", kwargs={"pk": str(car_uuid)})
+        client = APIClient()
+        response = client.patch(url, update_data, format="json", **self.associate_admin_request.META)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        # Check that the roles are now bound to the user in the target account (default workspace)
+        # and the group
+        default_workspace_id = Workspace.objects.get(
+            tenant__org_id=self.tenant.org_id, type=Workspace.Types.DEFAULT
+        ).id
+        default_bindings = self.relations.find_tuples(
+            # Tuples for bindings to the default workspace
+            all_of(resource("rbac", "workspace", default_workspace_id), relation("binding"))
+        )
+
+        # Of these bindings, look for the ones that are for the role
+        sr1_bindings, _ = self.relations.find_group_with_tuples(
+            # Tuples which are...
+            # grouped by resource
+            group_by=lambda t: (t.resource_type_namespace, t.resource_type_name, t.resource_id),
+            # where the resource is one of the default role bindings...
+            group_filter=lambda group: group[0] == "rbac"
+            and group[1] == "role_binding"
+            and group[2] in {str(binding.subject_id) for binding in default_bindings},
+            # and where one of the tuples from that binding has...
+            predicates=[
+                # a subject relation
+                relation("subject"),
+                all_of(
+                    # for the sr1 role
+                    relation("role"),
+                    subject("rbac", "role", str(self.sr1.uuid)),
+                ),
+            ],
+            match_once=False,
+        )
+
+        self.assertEqual(len(sr1_bindings), 1, f"Expected 1 binding but got {len(sr1_bindings)}")
+
+        subjects = {t.subject_id for _, tuples in sr1_bindings.items() for t in tuples if t.relation == "subject"}
+
+        # Assert the bindings are to both subjects
+        self.assertCountEqual(subjects, [str(test_group.uuid), "redhat/2222222"])
+
+        url = reverse("v1_management:group-roles", kwargs={"uuid": test_group.uuid})
+        url = "{}?roles={}".format(url, self.sr1.uuid)
+        client = APIClient()
+        response = client.delete(url, format="json", **self.headers_org_admin)
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+
+        # Now check the binding is still there and only to the user
+        sr1_bindings, _ = self.relations.find_group_with_tuples(
+            # Tuples which are...
+            # grouped by resource
+            group_by=lambda t: (t.resource_type_namespace, t.resource_type_name, t.resource_id),
+            # where the resource is one of the default role bindings...
+            group_filter=lambda group: group[0] == "rbac"
+            and group[1] == "role_binding"
+            and group[2] in {str(binding.subject_id) for binding in default_bindings},
+            # and where one of the tuples from that binding has...
+            predicates=[
+                # a subject relation
+                relation("subject"),
+                all_of(
+                    # for the sr1 role
+                    relation("role"),
+                    subject("rbac", "role", str(self.sr1.uuid)),
+                ),
+            ],
+            match_once=False,
+        )
+
+        # Assert the roles are correct for these bindings – one per role that was included in the request,
+        # and not any not included in the request
+        self.assertEqual(len(sr1_bindings), 1, f"Expected 1 binding but got {len(sr1_bindings)}")
+
+        # Collect all the bound roles by iterating over the bindings and getting the subjects of the role relation
+        subjects = {t.subject_id for _, tuples in sr1_bindings.items() for t in tuples if t.relation == "subject"}
+
+        self.assertCountEqual(subjects, ["redhat/2222222"])
+
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
+    def test_expire_cross_account_does_not_remove_binding_if_role_granted_to_group(self, replicate):
+        replicate.side_effect = self.in_memory_replicator.replicate
+
+        self.sr1 = self.fixture.new_system_role("sr1", ["app:*:*"])
+
+        # Create a group and give it the system role
+        test_group = Group(name="test group", tenant=self.tenant)
+        test_group.save()
+
+        request_body = {"roles": [self.sr1.uuid]}
+
+        url = reverse("v1_management:group-roles", kwargs={"uuid": test_group.uuid})
+        client = APIClient()
+        response = client.post(url, request_body, format="json", **self.headers_org_admin)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        # Now approve a CAR for the tenant and the same role
+        request = CrossAccountRequest.objects.create(
+            target_account=self.tenant.account_id,
+            target_org=self.tenant.org_id,
+            user_id="2222222",
+            end_date=timezone.now() + timedelta(10),
+            status="pending",
+        )
+        request.roles.add(self.sr1)
+        update_data = {"status": "approved"}
+        car_uuid = request.request_id
+        url = reverse("v1_api:cross-detail", kwargs={"pk": str(car_uuid)})
+        client = APIClient()
+        response = client.patch(url, update_data, format="json", **self.associate_admin_request.META)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        # Check that the roles are now bound to the user in the target account (default workspace)
+        # and the group
+        default_workspace_id = Workspace.objects.get(
+            tenant__org_id=self.tenant.org_id, type=Workspace.Types.DEFAULT
+        ).id
+        default_bindings = self.relations.find_tuples(
+            # Tuples for bindings to the default workspace
+            all_of(resource("rbac", "workspace", default_workspace_id), relation("binding"))
+        )
+
+        # Of these bindings, look for the ones that are for the role
+        sr1_bindings, _ = self.relations.find_group_with_tuples(
+            # Tuples which are...
+            # grouped by resource
+            group_by=lambda t: (t.resource_type_namespace, t.resource_type_name, t.resource_id),
+            # where the resource is one of the default role bindings...
+            group_filter=lambda group: group[0] == "rbac"
+            and group[1] == "role_binding"
+            and group[2] in {str(binding.subject_id) for binding in default_bindings},
+            # and where one of the tuples from that binding has...
+            predicates=[
+                # a subject relation
+                relation("subject"),
+                all_of(
+                    # for the sr1 role
+                    relation("role"),
+                    subject("rbac", "role", str(self.sr1.uuid)),
+                ),
+            ],
+            match_once=False,
+        )
+
+        self.assertEqual(len(sr1_bindings), 1, f"Expected 1 binding but got {len(sr1_bindings)}")
+
+        subjects = {t.subject_id for _, tuples in sr1_bindings.items() for t in tuples if t.relation == "subject"}
+
+        # Assert the bindings are to both subjects
+        self.assertCountEqual(subjects, [str(test_group.uuid), "redhat/2222222"])
+
+        # Now expire the CAR
+        after_expiration = request.end_date + timedelta(seconds=1)
+        with patch("django.utils.timezone.now", return_value=after_expiration):
+            check_cross_request_expiry()
+
+        # Now check the binding is still there and only to the group
+        sr1_bindings, _ = self.relations.find_group_with_tuples(
+            # Tuples which are...
+            # grouped by resource
+            group_by=lambda t: (t.resource_type_namespace, t.resource_type_name, t.resource_id),
+            # where the resource is one of the default role bindings...
+            group_filter=lambda group: group[0] == "rbac"
+            and group[1] == "role_binding"
+            and group[2] in {str(binding.subject_id) for binding in default_bindings},
+            # and where one of the tuples from that binding has...
+            predicates=[
+                # a subject relation
+                relation("subject"),
+                all_of(
+                    # for the sr1 role
+                    relation("role"),
+                    subject("rbac", "role", str(self.sr1.uuid)),
+                ),
+            ],
+            match_once=False,
+        )
+
+        # Assert the roles are correct for these bindings – one per role that was included in the request,
+        # and not any not included in the request
+        self.assertEqual(len(sr1_bindings), 1, f"Expected 1 binding but got {len(sr1_bindings)}")
+
+        # Collect all the bound roles by iterating over the bindings and getting the subjects of the role relation
+        subjects = {t.subject_id for _, tuples in sr1_bindings.items() for t in tuples if t.relation == "subject"}
+
+        self.assertCountEqual(subjects, [str(test_group.uuid)])
+
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
+    def test_add_role_already_added_is_noop(self, replicate):
+        replicate.side_effect = self.in_memory_replicator.replicate
+
+        self.sr1 = self.fixture.new_system_role("sr1", ["app:*:*"])
+
+        groupC = Group.objects.create(name="groupC", tenant=self.tenant)
+        url = reverse("v1_management:group-roles", kwargs={"uuid": groupC.uuid})
+        client = APIClient()
+        test_data = {"roles": [self.sr1.uuid]}
+
+        self.assertCountEqual([], list(groupC.roles()))
+
+        response = client.post(url, test_data, format="json", **self.headers)
+
+        self.assertCountEqual([self.sr1], list(groupC.roles()))
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        # Reset relations to see only new tuples
+        self.relations.clear()
+
+        # Add role again
+        response = client.post(url, test_data, format="json", **self.headers)
+
+        # Expect no new tuples
+        self.assertEquals(0, self.relations.count_tuples())
+
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
+    def test_remove_role_added_twice_removes_role(self, replicate):
+        replicate.side_effect = self.in_memory_replicator.replicate
+
+        sr1 = self.fixture.new_system_role("sr1", ["app:*:*"])
+
+        group = Group.objects.create(name="groupC", tenant=self.tenant)
+        url = reverse("v1_management:group-roles", kwargs={"uuid": group.uuid})
+        client = APIClient()
+        test_data = {"roles": [sr1.uuid]}
+
+        self.assertCountEqual([], list(group.roles()))
+
+        response = client.post(url, test_data, format="json", **self.headers)
+
+        self.assertCountEqual([sr1], list(group.roles()))
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        # Add role again
+        response = client.post(url, test_data, format="json", **self.headers)
+
+        self.assertCountEqual([sr1], list(group.roles()))
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        # Now remove the role
+        url = reverse("v1_management:group-roles", kwargs={"uuid": group.uuid})
+        client = APIClient()
+        url = "{}?roles={}".format(url, sr1.uuid)
+
+        response = client.delete(url, format="json", **self.headers)
+
+        # Expect no binding anywhere for the sr1 role
+        sr1_bindings, _ = self.relations.find_group_with_tuples(
+            # Tuples which are...
+            # grouped by resource
+            group_by=lambda t: (t.resource_type_namespace, t.resource_type_name, t.resource_id),
+            # where the resource is ...
+            group_filter=lambda group: group[0] == "rbac" and group[1] == "role_binding",
+            # and where one of the tuples from that binding has...
+            predicates=[
+                # a subject relation
+                relation("subject"),
+                all_of(
+                    # for the sr1 role
+                    relation("role"),
+                    subject("rbac", "role", str(sr1.uuid)),
+                ),
+            ],
+            match_once=False,
+        )
+
+        self.assertEqual(len(sr1_bindings), 0)

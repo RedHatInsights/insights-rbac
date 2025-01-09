@@ -18,12 +18,16 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 import logging
 from typing import Iterable
 
+from django.conf import settings
+from django.db import transaction
 from kessel.relations.v1beta1 import common_pb2
+from management.group.relation_api_dual_write_group_handler import RelationApiDualWriteGroupHandler
 from management.models import Workspace
 from management.principal.model import Principal
 from management.relation_replicator.logging_replicator import LoggingReplicator
 from management.relation_replicator.outbox_replicator import OutboxReplicator
 from management.relation_replicator.relation_replicator import (
+    PartitionKey,
     RelationReplicator,
     ReplicationEvent,
     ReplicationEventType,
@@ -34,8 +38,8 @@ from migration_tool.models import V2rolebinding
 from migration_tool.sharedSystemRolesReplicatedRoleBindings import v1_role_to_v2_bindings
 from migration_tool.utils import create_relationship
 
-from api.models import Tenant
-
+from api.cross_access.relation_api_dual_write_cross_access_handler import RelationApiDualWriteCrossAccessHandler
+from api.models import CrossAccountRequest, Tenant
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
@@ -93,33 +97,30 @@ def migrate_role(
     return relationships, v2_role_bindings
 
 
-def migrate_users_for_groups(tenant: Tenant) -> list[common_pb2.Relationship]:
-    """Write users relationship to groups."""
-    relationships: list[common_pb2.Relationship] = []
-    for group in tenant.group_set.exclude(platform_default=True):
-        user_set: Iterable[Principal] = group.principals.all()
-        for user in user_set:
-            if (relationship := group.relationship_to_principal(user)) is not None:
-                relationships.append(relationship)
-    return relationships
+def migrate_groups_for_tenant(tenant: Tenant, replicator: RelationReplicator):
+    """Generate user relationships and system role assignments for groups in a tenant."""
+    groups = tenant.group_set.all()
+    for group in groups:
+        principals: list[Principal] = []
+        system_roles: list[Role] = []
+        if not group.platform_default:
+            principals = group.principals.all()
+        if group.system is False and group.admin_default is False:
+            system_roles = group.roles().public_tenant_only()
+        if any(True for _ in system_roles) or any(True for _ in principals):
+            # The migrator does not generally deal with concurrency control,
+            # but we require an atomic block due to use of select_for_update in the dual write handler.
+            with transaction.atomic():
+                dual_write_handler = RelationApiDualWriteGroupHandler(
+                    group, ReplicationEventType.MIGRATE_TENANT_GROUPS, replicator=replicator
+                )
+                dual_write_handler.generate_relations_to_add_principals(principals)
+                dual_write_handler.generate_relations_to_add_roles(system_roles)
+                dual_write_handler.replicate()
 
 
-def migrate_data_for_tenant(tenant: Tenant, exclude_apps: list, replicator: RelationReplicator):
-    """Migrate all data for a given tenant."""
-    logger.info("Migrating relations of group and user.")
-
-    tuples = migrate_users_for_groups(tenant)
-    replicator.replicate(
-        ReplicationEvent(
-            event_type=ReplicationEventType.MIGRATE_TENANT_GROUPS,
-            info={"tenant": tenant.org_id},
-            partition_key="rbactodo",
-            add=tuples,
-        )
-    )
-
-    logger.info("Finished migrating relations of group and user.")
-
+def migrate_roles_for_tenant(tenant, exclude_apps, replicator):
+    """Migrate all roles for a given tenant."""
     default_workspace = Workspace.objects.get(type=Workspace.Types.DEFAULT, tenant=tenant)
 
     roles = tenant.role_set.all()
@@ -143,7 +144,7 @@ def migrate_data_for_tenant(tenant: Tenant, exclude_apps: list, replicator: Rela
             ReplicationEvent(
                 event_type=ReplicationEventType.MIGRATE_CUSTOM_ROLE,
                 info={"role_uuid": str(role.uuid)},
-                partition_key="rbactodo",
+                partition_key=PartitionKey.byEnvironment(),
                 add=tuples,
             )
         )
@@ -152,18 +153,65 @@ def migrate_data_for_tenant(tenant: Tenant, exclude_apps: list, replicator: Rela
     logger.info(f"Migrated {roles.count()} roles for tenant: {tenant.org_id}")
 
 
-def migrate_data(exclude_apps: list = [], orgs: list = [], write_relationships: str = "False"):
+def migrate_data_for_tenant(tenant: Tenant, exclude_apps: list, replicator: RelationReplicator, skip_roles: bool):
+    """Migrate all data for a given tenant."""
+    logger.info("Migrating relations of group and user.")
+
+    migrate_groups_for_tenant(tenant, replicator)
+
+    logger.info("Finished migrating relations of group and user.")
+
+    if skip_roles:
+        logger.info("Skipping migrating roles.")
+    else:
+        migrate_roles_for_tenant(tenant, exclude_apps, replicator)
+
+    logger.info("Migrating relations of cross account requests.")
+    migrate_cross_account_requests(tenant, replicator)
+    logger.info("Finished relations of cross account requests.")
+
+
+# The migrator does not generally deal with concurrency control,
+# but we require an atomic block due to use of select_for_update in the dual write handler.
+def migrate_cross_account_requests(tenant: Tenant, replicator: RelationReplicator):
+    """Migrate approved account requests."""
+    cross_account_requests = CrossAccountRequest.objects.filter(status="approved", target_org=tenant.org_id)
+    for cross_account_request in cross_account_requests:
+        with transaction.atomic():
+            cross_account_roles = cross_account_request.roles.all()
+            if any(True for _ in cross_account_roles):
+                dual_write_handler = RelationApiDualWriteCrossAccessHandler(
+                    cross_account_request, ReplicationEventType.MIGRATE_CROSS_ACCOUNT_REQUEST, replicator
+                )
+                dual_write_handler.generate_relations_to_add_roles(cross_account_request.roles.all())
+                dual_write_handler.replicate()
+
+
+def migrate_data(
+    exclude_apps: list = [], orgs: list = [], write_relationships: str = "False", skip_roles: bool = False
+):
     """Migrate all data for all tenants."""
+    # Only run this in maintanence mode or
+    # if we don't write relationships (testing out the migration and clean up the created bindingmappings)
+    if not settings.READ_ONLY_API_MODE and write_relationships != "False":
+        logger.fatal("Read-only API mode is required. READ_ONLY_API_MODE must be set to true.")
+        return
+
     count = 0
-    tenants = Tenant.objects.exclude(tenant_name="public")
+    tenants = Tenant.objects.filter(ready=True).exclude(tenant_name="public")
     replicator = _get_replicator(write_relationships)
     if orgs:
         tenants = tenants.filter(org_id__in=orgs)
     total = tenants.count()
     for tenant in tenants.iterator():
-        logger.info(f"Migrating data for tenant: {tenant.org_id}")
+        if tenant.org_id is None:
+            logger.warning(f"Not migrating tenant, no org id: pk={tenant.id}")
+            continue
+        else:
+            logger.info(f"Migrating data for tenant: {tenant.org_id}")
+
         try:
-            migrate_data_for_tenant(tenant, exclude_apps, replicator)
+            migrate_data_for_tenant(tenant, exclude_apps, replicator, skip_roles)
         except Exception as e:
             logger.error(f"Failed to migrate data for tenant: {tenant.org_id}. Error: {e}")
             raise e

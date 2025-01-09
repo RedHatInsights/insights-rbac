@@ -26,7 +26,7 @@ from management.group.model import Group
 from management.models import Workspace
 from management.relation_replicator.noop_replicator import NoopReplicator
 from management.relation_replicator.outbox_replicator import OutboxReplicator
-from management.relation_replicator.relation_replicator import DualWriteException
+from management.relation_replicator.relation_replicator import DualWriteException, PartitionKey
 from management.relation_replicator.relation_replicator import RelationReplicator
 from management.relation_replicator.relation_replicator import ReplicationEvent
 from management.relation_replicator.relation_replicator import ReplicationEventType
@@ -160,9 +160,7 @@ class SeedingRelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
                 ReplicationEvent(
                     event_type=event_type,
                     info=metadata,
-                    # TODO: need to think about partitioning
-                    # Maybe resource id
-                    partition_key="rbactodo",
+                    partition_key=PartitionKey.byEnvironment(),
                     remove=remove,
                     add=add,
                 ),
@@ -173,9 +171,7 @@ class SeedingRelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
     def _get_platform_default_policy_uuid(self) -> Optional[str]:
         try:
             if self._platform_default_policy_uuid is None:
-                policy = Group.objects.get(
-                    platform_default=True, system=True, tenant=self._get_public_tenant()
-                ).policies.get()
+                policy = Group.objects.public_tenant_only().get(platform_default=True).policies.get()
                 self._platform_default_policy_uuid = str(policy.uuid)
             return self._platform_default_policy_uuid
         except Group.DoesNotExist:
@@ -184,18 +180,11 @@ class SeedingRelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
     def _get_admin_default_policy_uuid(self) -> Optional[str]:
         try:
             if self._admin_default_policy_uuid is None:
-                policy = Group.objects.get(
-                    admin_default=True, system=True, tenant=self._get_public_tenant()
-                ).policies.get()
+                policy = Group.objects.public_tenant_only().get(admin_default=True).policies.get()
                 self._admin_default_policy_uuid = str(policy.uuid)
             return self._admin_default_policy_uuid
         except Group.DoesNotExist:
             return None
-
-    def _get_public_tenant(self) -> Tenant:
-        if self._public_tenant is None:
-            self._public_tenant = Tenant.objects.get(tenant_name="public")
-        return self._public_tenant
 
 
 class RelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
@@ -301,9 +290,7 @@ class RelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
                 ReplicationEvent(
                     event_type=self.event_type,
                     info={"v1_role_uuid": str(self.role.uuid)},
-                    # TODO: need to think about partitioning
-                    # Maybe resource id
-                    partition_key="rbactodo",
+                    partition_key=PartitionKey.byEnvironment(),
                     remove=self.current_role_relations,
                     add=self.role_relations,
                 ),

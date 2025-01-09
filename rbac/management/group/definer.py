@@ -33,13 +33,14 @@ from management.notifications.notification_handlers import (
     group_role_change_notification_handler,
 )
 from management.policy.model import Policy
+from management.relation_replicator.outbox_replicator import OutboxReplicator
 from management.relation_replicator.relation_replicator import ReplicationEventType
 from management.role.model import Role
+from management.tenant_service.v2 import V2TenantBootstrapService
 from management.utils import clear_pk
 from rest_framework import serializers
 
 from api.models import Tenant
-
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
@@ -60,7 +61,7 @@ def seed_group() -> Tuple[Group, Group]:
             tenant=public_tenant,
         )
 
-        platform_roles = Role.objects.filter(platform_default=True)
+        platform_roles = Role.objects.filter(platform_default=True).public_tenant_only()
         update_group_roles(group, platform_roles, public_tenant)
         logger.info("Finished seeding default group %s.", name)
 
@@ -75,7 +76,7 @@ def seed_group() -> Tuple[Group, Group]:
             defaults={"description": admin_group_description, "name": admin_name, "system": True},
             tenant=public_tenant,
         )
-        admin_roles = Role.objects.filter(admin_default=True)
+        admin_roles = Role.objects.filter(admin_default=True).public_tenant_only()
         update_group_roles(admin_group, admin_roles, public_tenant)
         logger.info("Finished seeding default org admin group %s.", name)
 
@@ -92,10 +93,14 @@ def set_system_flag_before_update(group: Group, tenant, user) -> Optional[Group]
 
 def clone_default_group_in_public_schema(group, tenant) -> Optional[Group]:
     """Clone the default group for a tenant into the public schema."""
-    if settings.PRINCIPAL_CLEANUP_UPDATE_ENABLED_UMB:
-        # TODO: bootstrap the tenant to get the mapping
-        # use this for uuid instead and to remove the default role binding tuple
-        group_uuid = uuid4()
+    bootstrapped_tenant = None
+    if settings.V2_BOOTSTRAP_TENANT:
+        tenant_bootstrap_service = V2TenantBootstrapService(OutboxReplicator())
+        bootstrapped_tenant = tenant_bootstrap_service.bootstrap_tenant(tenant)
+        mapping = bootstrapped_tenant.mapping
+        # Mapping is always present with V2
+        assert mapping is not None
+        group_uuid = mapping.default_group_uuid
     else:
         group_uuid = uuid4()
 
@@ -119,15 +124,21 @@ def clone_default_group_in_public_schema(group, tenant) -> Optional[Group]:
     tenant_default_policy.group = group
     tenant_default_policy.save()
     tenant_default_policy.roles.set(public_default_roles)
+
+    if bootstrapped_tenant:
+        dual_write_handler = RelationApiDualWriteGroupHandler(group, ReplicationEventType.CUSTOMIZE_DEFAULT_GROUP)
+        dual_write_handler.generate_relations_to_add_roles(
+            public_default_roles, remove_default_access_from=bootstrapped_tenant.mapping
+        )
+        dual_write_handler.replicate()
+
     return group
 
 
-@transaction.atomic
 def add_roles(group, roles_or_role_ids, tenant, user=None):
     """Process list of roles and add them to the group."""
     roles = _roles_by_query_or_ids(roles_or_role_ids)
     group_name = group.name
-
     group, created = Group.objects.get_or_create(name=group_name, tenant=tenant)
     system_policy_name = "System Policy for Group {}".format(group.uuid)
     system_policy, system_policy_created = Policy.objects.update_or_create(
@@ -143,6 +154,8 @@ def add_roles(group, roles_or_role_ids, tenant, user=None):
     # in the case that the Roles had _no_ resources specified to begin with.
     # This should not be necessary for system roles.
     custom_roles = roles.filter(tenant=tenant).select_for_update()
+
+    added_roles: list[Role] = []
 
     for role in [*system_roles, *custom_roles]:
         # Only Organization administrators are allowed to add the role with RBAC permission
@@ -166,15 +179,15 @@ def add_roles(group, roles_or_role_ids, tenant, user=None):
             continue
 
         system_policy.roles.add(role)
-
-        if tenant.tenant_name != "public":
-            dual_write_handler = RelationApiDualWriteGroupHandler(group, ReplicationEventType.ASSIGN_ROLE)
-            dual_write_handler.replicate_added_role(role)
-        # Send notifications
         group_role_change_notification_handler(user, group, role, "added")
+        added_roles.append(role)
+
+    if tenant.tenant_name != "public":
+        dual_write_handler = RelationApiDualWriteGroupHandler(group, ReplicationEventType.ASSIGN_ROLE)
+        dual_write_handler.generate_relations_to_add_roles(added_roles)
+        dual_write_handler.replicate()
 
 
-@transaction.atomic
 def remove_roles(group, roles_or_role_ids, tenant, user=None):
     """Process list of roles and remove them from the group."""
     roles = _roles_by_query_or_ids(roles_or_role_ids)
@@ -186,6 +199,8 @@ def remove_roles(group, roles_or_role_ids, tenant, user=None):
     # This should not be necessary for system roles.
     custom_roles = roles.filter(tenant=tenant).select_for_update()
 
+    removed_roles: list[Role] = []
+
     for policy in group.policies.all():
         for role in [*system_roles, *custom_roles]:
             # Only remove the role if it was attached
@@ -193,12 +208,14 @@ def remove_roles(group, roles_or_role_ids, tenant, user=None):
                 policy.roles.remove(role)
                 logger.info(f"Removing role {role} from group {group.name} for tenant {tenant.org_id}.")
 
-                if tenant.tenant_name != "public":
-                    dual_write_handler = RelationApiDualWriteGroupHandler(group, ReplicationEventType.UNASSIGN_ROLE)
-                    dual_write_handler.replicate_removed_role(role)
-
                 # Send notifications
                 group_role_change_notification_handler(user, group, role, "removed")
+                removed_roles.append(role)
+
+    if tenant.tenant_name != "public":
+        dual_write_handler = RelationApiDualWriteGroupHandler(group, ReplicationEventType.UNASSIGN_ROLE)
+        dual_write_handler.generate_relations_to_remove_roles(removed_roles)
+        dual_write_handler.replicate()
 
 
 def update_group_roles(group, roleset, tenant):

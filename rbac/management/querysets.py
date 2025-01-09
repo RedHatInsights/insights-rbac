@@ -15,6 +15,8 @@
 #    along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Queryset helpers for management module."""
+from typing import Optional
+
 from django.conf import settings
 from django.db.models import Q, QuerySet
 from django.db.models.aggregates import Count
@@ -88,24 +90,25 @@ def has_group_all_access(request):
     )
 
 
-def get_group_queryset(request, args=None, kwargs=None):
+def get_group_queryset(request, args=None, kwargs=None, base_query: Optional[QuerySet] = None):
     """Obtain the queryset for groups."""
-    queryset = _filter_admin_default(request, _gather_group_querysets(request, args, kwargs))
+    queryset = _filter_admin_default(request, _gather_group_querysets(request, args, kwargs, base_query=base_query))
     return _filter_default_groups(request, queryset)
 
 
-def _gather_group_querysets(request, args, kwargs):
+def _gather_group_querysets(request, args, kwargs, base_query: Optional[QuerySet] = None):
     """Decide which groups to provide for request."""
+    base_query = base_query if base_query is not None else get_annotated_groups()
+
     username = request.query_params.get("username")
 
     scope = validate_and_get_key(request.query_params, SCOPE_KEY, VALID_SCOPES, ORG_ID_SCOPE)
     if scope != ORG_ID_SCOPE and not username:
         return get_object_principal_queryset(request, scope, Group)
 
-    public_tenant = Tenant.objects.get(tenant_name="public")
-    default_group_set = Group.platform_default_set().filter(
-        tenant=request.tenant
-    ) or Group.platform_default_set().filter(tenant=public_tenant)
+    default_group_set = (
+        Group.platform_default_set().filter(tenant=request.tenant) or Group.platform_default_set().public_tenant_only()
+    )
 
     exclude_username = request.query_params.get("exclude_username")
 
@@ -131,12 +134,12 @@ def _gather_group_querysets(request, args, kwargs):
         )
 
     if has_group_all_access(request):
-        return filter_queryset_by_tenant(get_annotated_groups(), request.tenant) | default_group_set
+        return filter_queryset_by_tenant(base_query, request.tenant) | default_group_set
 
     access = user_has_perm(request, "group")
 
     if access == "All":
-        return filter_queryset_by_tenant(get_annotated_groups(), request.tenant) | default_group_set
+        return filter_queryset_by_tenant(base_query, request.tenant) | default_group_set
     if access == "None":
         return Group.objects.none()
 
@@ -288,10 +291,9 @@ def _filter_admin_default(request: Request, queryset: QuerySet):
 
     # If the principal is an org admin, make sure they get any and all admin_default groups
     if is_org_admin:
-        public_tenant = Tenant.objects.get(tenant_name="public")
-        admin_default_group_set = Group.admin_default_set().filter(
-            tenant=request.tenant
-        ) or Group.admin_default_set().filter(tenant=public_tenant)
+        admin_default_group_set = (
+            Group.admin_default_set().filter(tenant=request.tenant) or Group.admin_default_set().public_tenant_only()
+        )
 
         return queryset | admin_default_group_set
 
