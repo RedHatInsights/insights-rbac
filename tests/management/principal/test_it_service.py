@@ -1598,7 +1598,7 @@ class ITServiceTests(IdentityRequest):
 
     @override_settings(IT_BYPASS_IT_CALLS=True)
     def test_principal_filtering_without_username_match_criteria_partial_skipped(self):
-        """Test the function under test skips the expected service account when match_criteria is exact without usernames"""
+        """Test the function under test skips the expected service account when match_criteria is partial without usernames"""
         user = User()
         user.account = self.tenant.account_id
         user.org_id = self.tenant.org_id
