@@ -326,16 +326,14 @@ class ITService:
                         {"detail": "Invalid value provided to query parameter when trying to filter service accounts"}
                     )
             count = len(filtered_service_accounts)
-            s_accounts = filtered_service_accounts
+            service_accounts = filtered_service_accounts
         else:
-            s_accounts = service_accounts
-        if order_by in ["time_created", "name", "description", "clientId", "owner"]:
-            # If any order_by parameter is passed without filter condition sort service accounts by that field
-            if sort_order == "asc":
-                s_accounts.sort(reverse=False, key=lambda sa: sa.get(order_by, ""))
-            elif sort_order == "desc":
-                s_accounts.sort(reverse=True, key=lambda sa: sa.get(order_by, ""))
-        return s_accounts, count
+            # If any order_by parameter is passed then sort the service accounts by that field either asc or desc
+            if order_by in ["-time_created", "-name", "-description", "-clientId", "-owner"]:
+                service_accounts.sort(reverse=True, key=lambda sa: sa.get(order_by[1:], ""))
+            else:
+                service_accounts.sort(reverse=False, key=lambda sa: sa.get(order_by, ""))
+        return service_accounts, count
 
     def get_service_accounts_group(self, group: Group, user: User, options: dict[str, Any] = {}) -> list[dict]:
         """Get the service accounts for the given group."""

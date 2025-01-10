@@ -1152,7 +1152,7 @@ class PrincipalViewsetTests(IdentityRequest):
             }
         )
         mock_request.return_value = mocked_values
-        url = f"{reverse('v1_management:principals')}?type=service-account&order_by=time_created&sort_order=desc"
+        url = f"{reverse('v1_management:principals')}?type=service-account&order_by=-time_created"
         client = APIClient()
         response = client.get(url, **self.headers)
 
@@ -1238,7 +1238,7 @@ class PrincipalViewsetTests(IdentityRequest):
             }
         )
         mock_request.return_value = mocked_values
-        url = f"{reverse('v1_management:principals')}?type=service-account&order_by=time_created&sort_order=asc"
+        url = f"{reverse('v1_management:principals')}?type=service-account&order_by=time_created"
         client = APIClient()
         response = client.get(url, **self.headers)
 
@@ -1324,7 +1324,7 @@ class PrincipalViewsetTests(IdentityRequest):
             }
         )
         mock_request.return_value = mocked_values
-        url = f"{reverse('v1_management:principals')}?type=service-account&order_by=owner&sort_order=asc"
+        url = f"{reverse('v1_management:principals')}?type=service-account&order_by=owner"
         client = APIClient()
         response = client.get(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -1409,7 +1409,7 @@ class PrincipalViewsetTests(IdentityRequest):
             }
         )
         mock_request.return_value = mocked_values
-        url = f"{reverse('v1_management:principals')}?type=service-account&order_by=owner&sort_order=desc"
+        url = f"{reverse('v1_management:principals')}?type=service-account&order_by=-owner"
         client = APIClient()
         response = client.get(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -1494,7 +1494,7 @@ class PrincipalViewsetTests(IdentityRequest):
             }
         )
         mock_request.return_value = mocked_values
-        url = f"{reverse('v1_management:principals')}?type=service-account&order_by=name&sort_order=asc"
+        url = f"{reverse('v1_management:principals')}?type=service-account&order_by=name"
         client = APIClient()
         response = client.get(url, **self.headers)
 
@@ -1580,7 +1580,7 @@ class PrincipalViewsetTests(IdentityRequest):
             }
         )
         mock_request.return_value = mocked_values
-        url = f"{reverse('v1_management:principals')}?type=service-account&order_by=name&sort_order=desc"
+        url = f"{reverse('v1_management:principals')}?type=service-account&order_by=-name"
         client = APIClient()
         response = client.get(url, **self.headers)
 
@@ -1666,7 +1666,7 @@ class PrincipalViewsetTests(IdentityRequest):
             }
         )
         mock_request.return_value = mocked_values
-        url = f"{reverse('v1_management:principals')}?type=service-account&order_by=description&sort_order=asc"
+        url = f"{reverse('v1_management:principals')}?type=service-account&order_by=description"
         client = APIClient()
         response = client.get(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -1701,7 +1701,7 @@ class PrincipalViewsetTests(IdentityRequest):
     @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
     @patch("management.principal.it_service.ITService.request_service_accounts")
     def test_principal_service_account_sort_by_name_desc(self, mock_request):
-        """Test that we can sort service accounts by description descending"""
+        """Test that we can sort service accounts by name descending"""
         # Create SA in the database
         sa_client_ids = [
             "b6636c60-a31d-013c-b93d-6aa2427b506c",
@@ -1751,7 +1751,7 @@ class PrincipalViewsetTests(IdentityRequest):
             }
         )
         mock_request.return_value = mocked_values
-        url = f"{reverse('v1_management:principals')}?type=service-account&order_by=name&sort_order=desc"
+        url = f"{reverse('v1_management:principals')}?type=service-account&order_by=-name"
         client = APIClient()
         response = client.get(url, **self.headers)
 
@@ -1837,7 +1837,7 @@ class PrincipalViewsetTests(IdentityRequest):
             }
         )
         mock_request.return_value = mocked_values
-        url = f"{reverse('v1_management:principals')}?type=service-account&order_by=clientId&sort_order=asc"
+        url = f"{reverse('v1_management:principals')}?type=service-account&order_by=clientId"
         client = APIClient()
         response = client.get(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -1922,7 +1922,7 @@ class PrincipalViewsetTests(IdentityRequest):
             }
         )
         mock_request.return_value = mocked_values
-        url = f"{reverse('v1_management:principals')}?type=service-account&order_by=clientId&sort_order=desc"
+        url = f"{reverse('v1_management:principals')}?type=service-account&order_by=-clientId"
 
         client = APIClient()
         response = client.get(url, **self.headers)
