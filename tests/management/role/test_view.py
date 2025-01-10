@@ -1680,7 +1680,6 @@ class RoleViewsetTests(IdentityRequest):
 
         replicate_mock.assert_not_called()
 
-
     def test_update_admin_default_role(self):
         """Test that admin default roles are protected from deletion"""
 

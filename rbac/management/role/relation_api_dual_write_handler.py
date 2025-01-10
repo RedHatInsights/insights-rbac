@@ -274,6 +274,9 @@ class RelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
             return
         self.role = role
         self._generate_relations_and_mappings_for_role()
+        # No need to replicate if creating role with empty access, which won't have any relationships
+        if not role.access.all() and self.event_type == ReplicationEventType.CREATE_CUSTOM_ROLE:
+            return
         self._replicate()
 
     def replicate_deleted_role(self):
