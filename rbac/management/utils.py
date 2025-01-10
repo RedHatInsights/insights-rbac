@@ -28,6 +28,7 @@ from management.principal.it_service import ITService
 from management.principal.proxy import PrincipalProxy
 from rest_framework import serializers
 from rest_framework.request import Request
+from rest_framework.serializers import ValidationError
 
 from api.models import Tenant
 
@@ -351,3 +352,9 @@ def v2response_error_from_errors(errors, exc=None, context=None):
         response["instance"] = context.get("request").path
 
     return response
+
+
+def raise_validation_error(source, message):
+    """Construct a validation error and raise the error."""
+    error = {source: [message]}
+    raise ValidationError(error)

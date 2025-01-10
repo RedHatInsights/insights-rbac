@@ -20,8 +20,8 @@ from django.db import transaction
 from management.models import Role
 from management.notifications.notification_handlers import cross_account_access_handler
 from management.permission.serializer import PermissionSerializer
+from management.utils import raise_validation_error
 from rest_framework import serializers
-from rest_framework.serializers import ValidationError
 
 from api.models import CrossAccountRequest, Tenant
 
@@ -108,11 +108,6 @@ class CrossAccountRequestDetailSerializer(serializers.ModelSerializer):
         serialized_roles = [RoleSerializer(role).data for role in obj.roles.all()]
         return serialized_roles
 
-    def throw_validation_error(self, source, message):
-        """Construct a validation error and raise the error."""
-        error = {source: [message]}
-        raise ValidationError(error)
-
     def validate_roles(self, roles):
         """Format role list as expected for cross-account-request."""
         public_tenant = Tenant.objects.get(tenant_name="public")
@@ -126,13 +121,11 @@ class CrossAccountRequestDetailSerializer(serializers.ModelSerializer):
             role_display_name = role["display_name"]
 
             if role_display_name not in role_dict:
-                raise self.throw_validation_error(
-                    "cross-account-request", f"Role '{role_display_name}' does not exist."
-                )
+                raise raise_validation_error("cross-account-request", f"Role '{role_display_name}' does not exist.")
 
             role = role_dict[role_display_name]
             if not role.system:
-                self.throw_validation_error(
+                raise_validation_error(
                     "cross-account-request", "Only system roles may be assigned to a cross-account-request."
                 )
 

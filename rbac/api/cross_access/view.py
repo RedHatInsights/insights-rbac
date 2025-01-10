@@ -25,10 +25,9 @@ from django_filters import rest_framework as filters
 from management.filters import CommonFilters
 from management.principal.proxy import PrincipalProxy
 from management.relation_replicator.relation_replicator import ReplicationEventType
-from management.utils import validate_and_get_key, validate_uuid
+from management.utils import raise_validation_error, validate_and_get_key, validate_uuid
 from rest_framework import mixins, viewsets
 from rest_framework.filters import OrderingFilter
-from rest_framework.serializers import ValidationError
 
 from api.cross_access.access_control import CrossAccountRequestAccessPermission
 from api.cross_access.relation_api_dual_write_cross_access_handler import RelationApiDualWriteCrossAccessHandler
@@ -196,27 +195,22 @@ class CrossAccountRequestViewSet(
 
         return result
 
-    def throw_validation_error(self, source, message):
-        """Construct a validation error and raise the error."""
-        error = {source: [message]}
-        raise ValidationError(error)
-
     def validate_and_format_input(self, request_data):
         """Validate the create api input."""
         for field in PARAMS_FOR_CREATION:
             if not request_data.__contains__(field):
-                self.throw_validation_error("cross-account-request", f"Field {field} must be specified.")
+                raise_validation_error("cross-account-request", f"Field {field} must be specified.")
 
         target_org = request_data.get("target_org")
         if target_org == self.request.user.org_id:
-            self.throw_validation_error(
+            raise_validation_error(
                 "cross-account-request", "Creating a cross access request for your own org id is not allowed."
             )
 
         try:
             Tenant.objects.get(org_id=target_org)
         except Tenant.DoesNotExist:
-            raise self.throw_validation_error("cross-account-request", f"Org ID '{target_org}' does not exist.")
+            raise raise_validation_error("cross-account-request", f"Org ID '{target_org}' does not exist.")
 
         request_data["user_id"] = self.request.user.user_id
 
@@ -266,33 +260,33 @@ class CrossAccountRequestViewSet(
             may update status from pending/approved/denied to approved/denied.
             """
             if not request.user.admin:
-                self.throw_validation_error("cross-account partial update", "Only org admins may update status.")
+                raise_validation_error("cross-account partial update", "Only org admins may update status.")
             if update_obj.status not in ["pending", "approved", "denied"]:
-                self.throw_validation_error(
+                raise_validation_error(
                     "cross-account partial update", "Only pending/approved/denied requests may be updated."
                 )
             if request.data.get("status") not in ["approved", "denied"]:
-                self.throw_validation_error(
+                raise_validation_error(
                     "cross-account partial update", "Request status may only be updated to approved/denied."
                 )
             if len(request.data.keys()) > 1 or next(iter(request.data)) != "status":
-                self.throw_validation_error("cross-account partial update", "Only status may be updated.")
+                raise_validation_error("cross-account partial update", "Only status may be updated.")
         elif request.user.user_id == update_obj.user_id:
             """For requestors updating their requests, the request status may
             only be updated from pending to cancelled.
             """
             if update_obj.status != "pending" or request.data.get("status") != "cancelled":
-                self.throw_validation_error(
+                raise_validation_error(
                     "cross-account partial update", "Request status may only be updated from pending to cancelled."
                 )
             for field in request.data:
                 if field not in VALID_PATCH_FIELDS:
-                    self.throw_validation_error(
+                    raise_validation_error(
                         "cross-account partial update",
                         f"Field '{field}' is not supported. Please use one or more of: {VALID_PATCH_FIELDS}",
                     )
         else:
-            self.throw_validation_error(
+            raise_validation_error(
                 "cross-account partial update", "User does not have permission to update the request."
             )
 
@@ -300,17 +294,15 @@ class CrossAccountRequestViewSet(
         """Check if user has permission to update cross access request."""
         # Only requestors could update the cross access request.
         if request.user.user_id != update_obj.user_id:
-            self.throw_validation_error(
-                "cross-account update", "Only the requestor may update the cross access request."
-            )
+            raise_validation_error("cross-account update", "Only the requestor may update the cross access request.")
 
         # Only pending request could be updated.
         if update_obj.status != "pending":
-            self.throw_validation_error("cross-account update", "Only pending requests may be updated.")
+            raise_validation_error("cross-account update", "Only pending requests may be updated.")
 
         # Do not allow updating the status:
         if request.data.get("status") and str(request.data.get("status")) != "pending":
-            self.throw_validation_error(
+            raise_validation_error(
                 "cross-account update",
                 "The status may not be updated through PUT endpoint. "
                 "Please use PATCH to update the status of the request.",
@@ -318,4 +310,4 @@ class CrossAccountRequestViewSet(
 
         # Do not allow updating the target_org.
         if request.data.get("target_org") and str(request.data.get("target_org")) != update_obj.target_org:
-            self.throw_validation_error("cross-account-update", "Target org must stay the same.")
+            raise_validation_error("cross-account-update", "Target org must stay the same.")
