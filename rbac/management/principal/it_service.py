@@ -249,9 +249,10 @@ class ITService:
         if specified_usernames:
             usernames = specified_usernames.split(",")
 
-        # If "match_criteria" is specified, only the first username is taken into account.
+        # If "match_criteria" is specified and the usernames list is not empty,
+        # only the first username is taken into account
         match_criteria = options.get("match_criteria")
-        if match_criteria:
+        if match_criteria and usernames:
             username = usernames[0]
 
             if match_criteria == "partial":
