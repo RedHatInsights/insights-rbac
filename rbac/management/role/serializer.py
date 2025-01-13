@@ -159,6 +159,15 @@ class RoleSerializer(serializers.ModelSerializer):
         """Get the external tenant name if it's from an external tenant."""
         return obj.external_tenant_name()
 
+    def validate(self, data):
+        """Validate the input data of role."""
+        if self.instance and self.instance.system:
+            key = "role.update"
+            message = "System roles may not be updated."
+            error = {key: [_(message)]}
+            raise serializers.ValidationError(error)
+        return super().validate(data)
+
 
 class RoleMinimumSerializer(SerializerCreateOverrideMixin, serializers.ModelSerializer):
     """Serializer for the Role model that doesn't return access info."""
@@ -309,6 +318,15 @@ class RolePatchSerializer(RoleSerializer):
         instance = update_role(instance, validated_data, clear_access=False)
         return instance
 
+    def validate(self, data):
+        """Validate the input data of patching role."""
+        if self.instance.system:
+            key = "role.update"
+            message = "System roles may not be updated."
+            error = {key: [_(message)]}
+            raise serializers.ValidationError(error)
+        return super().validate(data)
+
 
 class BindingMappingSerializer(serializers.ModelSerializer):
     """Serializer for the binding mapping."""
@@ -381,7 +399,9 @@ def update_role(instance, validated_data, clear_access=True):
     update_fields = []
 
     for field_name in ["name", "display_name", "description"]:
-        setattr(instance, field_name, validated_data.get(field_name, getattr(instance, field_name)))
+        if field_name not in validated_data:
+            continue
+        setattr(instance, field_name, validated_data[field_name])
         update_fields.append(field_name)
 
     instance.save(update_fields=update_fields)
