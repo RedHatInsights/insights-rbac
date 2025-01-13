@@ -519,17 +519,13 @@ class RoleViewSet(
             error = {key: [_(message)]}
             raise serializers.ValidationError(error)
 
-        # If there is binding_mapping for a role, there is relaitonships to replicate.
-        do_replication = bool(instance.binding_mappings.all())
-        if do_replication:
-            dual_write_handler = RelationApiDualWriteHandler(instance, ReplicationEventType.DELETE_CUSTOM_ROLE)
-            dual_write_handler.prepare_for_update()
+        dual_write_handler = RelationApiDualWriteHandler(instance, ReplicationEventType.DELETE_CUSTOM_ROLE)
+        dual_write_handler.prepare_for_update()
 
         self.delete_policies_if_no_role_attached(instance)
         instance.delete()
 
-        if do_replication:
-            dual_write_handler.replicate_deleted_role()
+        dual_write_handler.replicate_deleted_role()
         role_obj_change_notification_handler(instance, "deleted", self.request.user)
 
         # Audit in perform_destroy because it needs access to deleted instance

@@ -1665,13 +1665,14 @@ class RoleViewsetTests(IdentityRequest):
         response = client.get(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
-    @patch("management.role.relation_api_dual_write_handler.RelationApiDualWriteHandler._replicate")
+    @patch("management.role.relation_api_dual_write_handler.OutboxReplicator.replicate")
     def test_delete_custom_role_without_bindingmappins(self, replicate_mock):
         role_name = "role_without_bindingmapping"
         access_data = []
         response = self.create_role(role_name, in_access_data=access_data)
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
 
+        replicate_mock.reset_mock()
         role_uuid = response.data.get("uuid")
         url = reverse("v1_management:role-detail", kwargs={"uuid": role_uuid})
         client = APIClient()

@@ -847,7 +847,7 @@ class DualWriteCustomRolesTestCase(DualWriteTestCase):
         """Delete the role and its bindings when deleting a custom role."""
         pass
 
-    @patch("management.role.relation_api_dual_write_handler.RelationApiDualWriteHandler._replicate")
+    @patch("management.role.relation_api_dual_write_handler.OutboxReplicator.replicate")
     def test_create_role_with_empty_access(self, replicate_mock):
         """Create a role and its bindings when creating a custom role."""
         self.given_v1_role("role_without_access", [])

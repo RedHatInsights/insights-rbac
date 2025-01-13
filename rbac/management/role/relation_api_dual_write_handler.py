@@ -190,6 +190,8 @@ class SeedingRelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
 class RelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
     """Class to handle Dual Write API related operations."""
 
+    _expected_empty_relation_reason = None
+
     @classmethod
     def for_system_role_event(
         cls,
@@ -245,6 +247,13 @@ class RelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
             logger.info(
                 "[Dual Write] Generate relations from current state of role(%s): '%s'", self.role.uuid, self.role.name
             )
+            if not self.role.access.all() and self.event_type == ReplicationEventType.DELETE_CUSTOM_ROLE:
+                self._expected_empty_relation_reason = (
+                    f"No access found for role({self.role.uuid}): '{self.role.name}'. "
+                    "Assuming no current relations exist. "
+                    "If this is NOT the case, relations are inconsistent!",
+                )
+                return
 
             self.binding_mappings = {m.id: m for m in self.role.binding_mappings.select_for_update().all()}
 
@@ -276,6 +285,11 @@ class RelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
         self._generate_relations_and_mappings_for_role()
         # No need to replicate if creating role with empty access, which won't have any relationships
         if not role.access.all() and self.event_type == ReplicationEventType.CREATE_CUSTOM_ROLE:
+            self._expected_empty_relation_reason = (
+                f"No access found for role({role.uuid}): '{role.name}'. "
+                "Assuming no relations to create. "
+                f"event_type='{self.event_type}'"
+            )
             return
         self._replicate()
 
@@ -283,11 +297,17 @@ class RelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
         """Replicate removal of current role state."""
         if not self.replication_enabled():
             return
+
         self._replicate()
 
     def _replicate(self):
         if not self.replication_enabled():
             return
+
+        if self._expected_empty_relation_reason:
+            logger.info(f"[Dual Write] Skipping empty replication event. {self._expected_empty_relation_reason}")
+            return
+
         try:
             self._replicator.replicate(
                 ReplicationEvent(
