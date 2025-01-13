@@ -30,7 +30,7 @@ from django.shortcuts import get_object_or_404
 from django.utils.html import escape
 from internal.utils import delete_bindings
 from management.cache import TenantCache
-from management.models import Group, Permission, Role
+from management.models import Group, Permission, Role, ResourceDefinition
 from management.principal.proxy import (
     API_TOKEN_HEADER,
     CLIENT_ID_HEADER,
@@ -791,23 +791,40 @@ def correct_resource_definitions(request):
     GET /_private/api/utils/resource_definitions
     PATCH /_private/api/utils/resource_definitions
     """
+    list_query = """ FROM management_resourcedefinition
+                WHERE "attributeFilter"->>'operation' = 'equal'
+                AND jsonb_typeof("attributeFilter"->'value') = 'array';"""
+
+    string_query = """ from management_resourcedefinition WHERE "attributeFilter"->>'operation' = 'in'
+                AND jsonb_typeof("attributeFilter"->'value') = 'string';"""
+
     if request.method == "GET":
         with connection.cursor() as cursor:
-            query = """SELECT COUNT(*) FROM management_resourcedefinition
-                        WHERE "attributeFilter"->>'operation' = 'equal'
-                        AND jsonb_typeof("attributeFilter"->'value') = 'array';"""
 
-            cursor.execute(query)
+            cursor.execute("SELECT COUNT(*)" + list_query)
             count = cursor.fetchone()[0]
 
-            query = """SELECT COUNT(*) from management_resourcedefinition WHERE "attributeFilter"->>'operation' = 'in'
-                        AND jsonb_typeof("attributeFilter"->'value') = 'string';"""
-
-            cursor.execute(query)
+            cursor.execute("SELECT COUNT(*)" + string_query)
             count += cursor.fetchone()[0]
 
         return HttpResponse(f"{count} resource definitions would be corrected", status=200)
     elif request.method == "PATCH":
-        pass
+        with connection.cursor() as cursor:
+
+            cursor.execute("SELECT id " + list_query)
+            result = cursor.fetchall()
+            for id in result:
+                resource_definition = ResourceDefinition.objects.get(id=id)
+                resource_definition.attributeFilter["operation"] = "in"
+                resource_definition.save()
+
+            cursor.execute("SELECT id " + string_query)
+            result = cursor.fetchall()
+            for id in result:
+                resource_definition = ResourceDefinition.objects.get(id=id)
+                resource_definition.attributeFilter["operation"] = "equal"
+                resource_definition.save()
+
+        return HttpResponse("Updated bad resource definitions", status=200)
 
     return HttpResponse('Invalid method, only "GET" or "PATCH" are allowed.', status=405)
