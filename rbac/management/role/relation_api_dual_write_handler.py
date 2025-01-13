@@ -251,7 +251,7 @@ class RelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
                 self._expected_empty_relation_reason = (
                     f"No access found for role({self.role.uuid}): '{self.role.name}'. "
                     "Assuming no current relations exist. "
-                    "If this is NOT the case, relations are inconsistent!",
+                    f"event_type='{self.event_type}'",
                 )
                 return
 

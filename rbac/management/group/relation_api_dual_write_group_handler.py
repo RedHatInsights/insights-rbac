@@ -44,6 +44,7 @@ class RelationApiDualWriteGroupHandler(RelationApiDualWriteSubjectHandler):
     """Class to handle Dual Write for group bindings and membership."""
 
     group: Group
+    _expected_empty_relation_reason = None
 
     def __init__(
         self,
@@ -108,6 +109,9 @@ class RelationApiDualWriteGroupHandler(RelationApiDualWriteSubjectHandler):
 
     def _replicate(self):
         if not self.replication_enabled():
+            return
+        if self._expected_empty_relation_reason:
+            logger.info(f"Skipping empty replication event. {self._expected_empty_relation_reason}")
             return
         try:
             self._replicator.replicate(
@@ -195,6 +199,13 @@ class RelationApiDualWriteGroupHandler(RelationApiDualWriteSubjectHandler):
             self.relations_to_add.append(self._default_binding())
         else:
             self.principals = self.group.principals.all()
+            if not self.principals.exists() and not roles.exists():
+                self._expected_empty_relation_reason = (
+                    f"No principal or role found for group({self.group.uuid}): '{self.group.name}'. "
+                    "Assuming no current relations exist. "
+                    f"event_type='{self.event_type}'",
+                )
+                return
             self.relations_to_remove.extend(self._generate_member_relations())
 
     def _default_binding(self, mapping: Optional[TenantMapping] = None) -> Relationship:
