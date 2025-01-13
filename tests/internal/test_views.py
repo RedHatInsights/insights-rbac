@@ -21,6 +21,7 @@ from rest_framework import status
 from rest_framework.test import APIClient
 from django.conf import settings
 from django.test import override_settings
+from django.urls import reverse
 from datetime import datetime, timedelta
 from unittest.mock import MagicMock
 from unittest.mock import patch
@@ -1294,3 +1295,99 @@ class InternalViewsetTests(IdentityRequest):
         self.assertFalse(role["platform_default"])
         self.assertFalse(role["admin_default"])
         self.assertEqual(response.status_code, 200)
+
+
+class InternalViewsetResourceDefinitionTests(IdentityRequest):
+    def setUp(self):
+        """Set up the access view tests."""
+        super().setUp()
+        request = self.request_context["request"]
+        self.customer = self.customer_data
+        self.internal_request_context = self._create_request_context(self.customer, self.user_data, is_internal=True)
+        user = User()
+        user.username = self.user_data["username"]
+        user.account = self.customer_data["account_id"]
+        user.org_id = self.customer_data["org_id"]
+        request.user = user
+        public_tenant = Tenant.objects.get(tenant_name="public")
+
+        self.access_data = {
+            "permission": "app:*:*",
+            "resourceDefinitions": [{"attributeFilter": {"key": "key1.id", "operation": "equal", "value": "value1"}}],
+        }
+
+        test_tenant_org_id = "100001"
+
+        # we need to delete old test_tenant's that may exist in cache
+        TENANTS = TenantCache()
+        TENANTS.delete_tenant(test_tenant_org_id)
+
+        # items with test_ prefix have hard coded attributes for new BOP requests
+        self.test_tenant = Tenant(
+            tenant_name="acct1111111", account_id="1111111", org_id=test_tenant_org_id, ready=True
+        )
+        self.test_tenant.save()
+        self.test_principal = Principal(username="test_user", tenant=self.test_tenant)
+        self.test_principal.save()
+        self.test_group = Group(name="test_groupA", tenant=self.test_tenant)
+        self.test_group.save()
+        self.test_group.principals.add(self.test_principal)
+        self.test_group.save()
+        self.test_permission = Permission.objects.create(permission="app:test_*:test_*", tenant=self.test_tenant)
+        Permission.objects.create(permission="app:test_foo:test_bar", tenant=self.test_tenant)
+        user_data = {"username": "test_user", "email": "test@gmail.com"}
+        request_context = self._create_request_context(
+            {"account_id": "1111111", "tenant_name": "acct1111111", "org_id": "100001"}, user_data, is_org_admin=True
+        )
+        request = request_context["request"]
+        self.test_headers = request.META
+        test_tenant_root_workspace = Workspace.objects.create(
+            name="Test Tenant Root Workspace", type=Workspace.Types.ROOT, tenant=self.test_tenant
+        )
+        Workspace.objects.create(
+            name="Test Tenant Default Workspace",
+            type=Workspace.Types.DEFAULT,
+            parent=test_tenant_root_workspace,
+            tenant=self.test_tenant,
+        )
+
+        self.principal = Principal(username=user.username, tenant=self.tenant)
+        self.principal.save()
+        self.admin_principal = Principal(username="user_admin", tenant=self.tenant)
+        self.admin_principal.save()
+        self.group = Group(name="groupA", tenant=self.tenant)
+        self.group.save()
+        self.group.principals.add(self.principal)
+        self.group.save()
+        self.permission = Permission.objects.create(permission="app:*:*", tenant=self.tenant)
+        Permission.objects.create(permission="app:foo:bar", tenant=self.tenant)
+
+    def tearDown(self):
+        """Tear down access view tests."""
+        Group.objects.all().delete()
+        Principal.objects.all().delete()
+        Role.objects.all().delete()
+        Policy.objects.all().delete()
+        Workspace.objects.filter(parent__isnull=False).delete()
+        Workspace.objects.filter(parent__isnull=True).delete()
+
+    def create_role(self, role_name, headers, in_access_data=None):
+        """Create a role."""
+        access_data = self.access_data
+        if in_access_data:
+            access_data = in_access_data
+        test_data = {"name": role_name, "access": [access_data]}
+
+        # create a role
+        url = reverse("v1_management:role-list")
+        client = APIClient()
+        response = client.post(url, test_data, format="json", **headers)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        return response
+
+    def test_correct_string_resource_definition(self):
+        """Test that a string attributeFilter can have the equal operation"""
+
+        role_name = "roleA"
+        response = self.create_role(role_name, headers=self.headers)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
