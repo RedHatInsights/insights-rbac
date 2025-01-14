@@ -205,9 +205,9 @@ class GroupViewSet(
         """Get serializer based on route."""
         if "principals" in self.request.path:
             return GroupPrincipalInputSerializer
-        if ROLES_KEY in self.request.path and self.request.method == "GET":
+        if ROLES_KEY in self.request.path.split("/") and self.request.method == "GET":
             return GroupRoleSerializerOut
-        if ROLES_KEY in self.request.path:
+        if ROLES_KEY in self.request.path.split("/"):
             return GroupRoleSerializerIn
         if self.request.method in ("POST", "PUT"):
             return GroupInputSerializer
