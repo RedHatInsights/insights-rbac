@@ -11,7 +11,7 @@ This README outlines how to use the ephemeral make tasks
 Prerequisites
 ===============
 1. You must be logged into VPN
-2. Install bonfire locally
+2. Install `bonfire <https://github.com/RedHatInsights/bonfire>`_ locally
 3. Log into the ephemeral cluster (via the UI)
     a. Select your username drop down in the top right corner and select
     b. Copy login command

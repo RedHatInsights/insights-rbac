@@ -26,7 +26,7 @@ from management.models import Access, Group, Policy, Principal, Role
 from management.permissions.principal_access import PrincipalAccessPermission
 from management.principal.it_service import ITService
 from management.principal.proxy import PrincipalProxy
-from rest_framework import serializers, status
+from rest_framework import serializers
 from rest_framework.request import Request
 
 from api.models import CrossAccountRequest, Tenant
@@ -164,17 +164,16 @@ def groups_for_principal(principal: Principal, tenant, **kwargs):
     if principal.cross_account:
         return set()
     assigned_group_set = principal.group.all()
-    public_tenant = Tenant.objects.get(tenant_name="public")
 
     # Only user principals should be able to get permissions from the default groups. For service accounts, customers
     # need to explicitly add the service accounts to a group.
     if principal.type == "user":
-        admin_default_group_set = Group.admin_default_set().filter(tenant=tenant) or Group.admin_default_set().filter(
-            tenant=public_tenant
+        admin_default_group_set = (
+            Group.admin_default_set().filter(tenant=tenant) or Group.admin_default_set().public_tenant_only()
         )
-        platform_default_group_set = Group.platform_default_set().filter(
-            tenant=tenant
-        ) or Group.platform_default_set().filter(tenant=public_tenant)
+        platform_default_group_set = (
+            Group.platform_default_set().filter(tenant=tenant) or Group.platform_default_set().public_tenant_only()
+        )
     else:
         admin_default_group_set = Group.objects.none()
         platform_default_group_set = Group.objects.none()
@@ -277,17 +276,6 @@ def validate_group_name(name):
         key = "Group name Validation"
         message = f"{name} is reserved, please use another name."
         raise serializers.ValidationError({key: _(message)})
-
-
-def validate_limit_and_offset(query_params):
-    """Limit and offset should not be negative number."""
-    if (int(query_params.get("limit", 10)) < 0) | (int(query_params.get("offset", 0)) < 0):
-        error = {
-            "detail": "Values for limit and offset must be positive numbers.",
-            "source": "CrossAccountRequest",
-            "status": str(status.HTTP_400_BAD_REQUEST),
-        }
-        return {"errors": [error]}
 
 
 def roles_for_cross_account_principal(principal):

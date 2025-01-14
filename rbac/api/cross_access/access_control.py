@@ -21,9 +21,8 @@ from rest_framework import permissions
 
 QUERY_BY_KEY = "query_by"
 USER_ID = "user_id"
-ACCOUNT = "target_account"
 ORG_ID = "target_org"
-VALID_QUERY_BY_KEY = [ACCOUNT, USER_ID, ORG_ID]
+VALID_QUERY_BY_KEY = [USER_ID, ORG_ID]
 
 
 class CrossAccountRequestAccessPermission(permissions.BasePermission):
@@ -37,12 +36,12 @@ class CrossAccountRequestAccessPermission(permissions.BasePermission):
                 return request.user.internal
 
             if request.method in ["PUT", "PATCH"]:
-                # The permission depends on the object to be updated, strict permission check in view.
+                # The permission depends on the object to be updated, see has_object_permission
                 return True
 
             # For list
             query_by = validate_and_get_key(request.query_params, QUERY_BY_KEY, VALID_QUERY_BY_KEY, ORG_ID)
-            if query_by == ACCOUNT or query_by == ORG_ID:
+            if query_by == ORG_ID:
                 return request.user.admin
             elif query_by == USER_ID:
                 return request.user.internal
@@ -50,5 +49,17 @@ class CrossAccountRequestAccessPermission(permissions.BasePermission):
 
         if request.method not in permissions.SAFE_METHODS:
             return False
+
+        return True
+
+    def has_object_permission(self, request, view, obj):
+        """Check permission based on identity and object."""
+        if request.method == "PUT":
+            view.check_update_permission(request, obj)
+            request.data["target_org"] = obj.target_org
+            view.validate_and_format_input(request.data)
+        elif request.method == "PATCH":
+            view.check_patch_permission(request, obj)
+            view.validate_and_format_patch_input(request.data)
 
         return True

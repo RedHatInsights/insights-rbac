@@ -57,6 +57,7 @@ coverage.xml
 *.log
 local_settings.py
 db.sqlite3
+rbac/celerybeat-schedule.db
 
 # Flask stuff:
 instance/
@@ -134,3 +135,6 @@ dev/*
 /scripts/ephemeral/config.yaml
 docs/source/specs/typespec/node_modules/
 docs/source/specs/typespec/tsp-output/
+
+# umb certs
+rbac/management/principal/umb_certs/

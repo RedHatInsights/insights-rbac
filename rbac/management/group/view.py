@@ -22,7 +22,7 @@ from uuid import UUID
 
 import requests
 from django.conf import settings
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.db.models import Q
 from django.db.models.aggregates import Count
 from django.utils.translation import gettext as _
@@ -58,7 +58,10 @@ from management.principal.model import Principal
 from management.principal.proxy import PrincipalProxy
 from management.principal.serializer import ServiceAccountSerializer
 from management.principal.view import ADMIN_ONLY_KEY, USERNAME_ONLY_KEY, VALID_BOOLEAN_VALUE
-from management.querysets import get_group_queryset, get_role_queryset
+from management.querysets import (
+    get_group_queryset,
+    get_role_queryset,
+)
 from management.relation_replicator.relation_replicator import ReplicationEventType
 from management.role.view import RoleViewSet
 from management.utils import validate_and_get_key, validate_group_name, validate_uuid
@@ -182,15 +185,29 @@ class GroupViewSet(
 
     def get_queryset(self):
         """Obtain queryset for requesting user based on access."""
-        return get_group_queryset(self.request, self.args, self.kwargs)
+        add_principals_method = self.action == "principals" and self.request.method == "POST"
+        destroy_method = self.action == "destroy"
+
+        if add_principals_method or destroy_method:
+            # In this case, the group must be locked to prevent principal changes during deletion.
+            # If not locked, replication to relations may be out of sync due to phantom reads.
+            # We have to modify the starting queryset to support locking because
+            # FOR UPDATE statement cannot be used with GROUP BY statement
+            # and by default this uses GROUP BY for counts.
+            group_query_set = get_group_queryset(
+                self.request, self.args, self.kwargs, base_query=Group.objects.all()
+            ).select_for_update()
+        else:
+            group_query_set = get_group_queryset(self.request, self.args, self.kwargs)
+        return group_query_set
 
     def get_serializer_class(self):
         """Get serializer based on route."""
         if "principals" in self.request.path:
             return GroupPrincipalInputSerializer
-        if ROLES_KEY in self.request.path and self.request.method == "GET":
+        if ROLES_KEY in self.request.path.split("/") and self.request.method == "GET":
             return GroupRoleSerializerOut
-        if ROLES_KEY in self.request.path:
+        if ROLES_KEY in self.request.path.split("/"):
             return GroupRoleSerializerIn
         if self.request.method in ("POST", "PUT"):
             return GroupInputSerializer
@@ -256,7 +273,17 @@ class GroupViewSet(
             }
         """
         validate_group_name(request.data.get("name"))
-        create_group = super().create(request=request, args=args, kwargs=kwargs)
+        try:
+            create_group = super().create(request=request, args=args, kwargs=kwargs)
+        except IntegrityError as e:
+            if "unique constraint" in str(e.args):
+                raise serializers.ValidationError(
+                    {"group": f"A group with the name '{request.data.get('name')}' exists for this tenant"}
+                )
+            else:
+                raise serializers.ValidationError(
+                    {"group": "Unknown Integrity Error occurred while trying to add group for this tenant"}
+                )
 
         if status.is_success(create_group.status_code):
             auditlog = AuditLog()
@@ -364,12 +391,13 @@ class GroupViewSet(
             HTTP/1.1 204 NO CONTENT
         """
         validate_uuid(kwargs.get("uuid"), "group uuid validation")
-        self.protect_system_groups("delete")
-        group = self.get_object()
-        if not request.user.admin:
-            self.protect_group_with_user_access_admin_role(group.roles_with_access(), "remove_group")
 
         with transaction.atomic():
+            self.protect_system_groups("delete")
+            group = self.get_object()
+            if not request.user.admin:
+                self.protect_group_with_user_access_admin_role(group.roles_with_access(), "remove_group")
+
             dual_write_handler = RelationApiDualWriteGroupHandler(group, ReplicationEventType.DELETE_GROUP)
             dual_write_handler.prepare_to_delete_group()
 
@@ -653,7 +681,6 @@ class GroupViewSet(
         validate_uuid(uuid, "group uuid validation")
 
         org_id = self.request.user.org_id
-        group = self.get_object()
         if request.method == "POST":
             serializer = GroupPrincipalInputSerializer(data=request.data)
 
@@ -671,47 +698,60 @@ class GroupViewSet(
                 else:
                     principals.append(specified_principal)
 
-            self.protect_system_groups("add principals", group)
-
-            if not request.user.admin:
-                self.protect_group_with_user_access_admin_role(group.roles_with_access(), "add principals")
-
-            # Process the service accounts and add them to the group.
-            if len(service_accounts) > 0:
-                token_validator = ITSSOTokenValidator()
-                request.user.bearer_token = token_validator.validate_token(
-                    request=request,
-                    additional_scopes_to_validate=set[ScopeClaims]([ScopeClaims.SERVICE_ACCOUNTS_CLAIM]),
-                )
-                try:
-                    self.ensure_id_for_service_accounts_exists(user=request.user, service_accounts=service_accounts)
-                except InsufficientPrivilegesError as ipe:
-                    return Response(
-                        status=status.HTTP_403_FORBIDDEN,
-                        data={
-                            "errors": [{"detail": str(ipe), "status": status.HTTP_403_FORBIDDEN, "source": "groups"}]
-                        },
-                    )
-                except ServiceAccountNotFoundError as sanfe:
-                    return Response(
-                        status=status.HTTP_400_BAD_REQUEST,
-                        data={
-                            "errors": [
-                                {"detail": str(sanfe), "source": "group", "status": str(status.HTTP_400_BAD_REQUEST)}
-                            ]
-                        },
-                    )
-
-            # Process user principals and add them to the group.
-            principals_from_response = []
-            if len(principals) > 0:
-                proxy_response = self.validate_principals_in_proxy_request(principals, org_id=org_id)
-                if len(proxy_response.get("data", [])) > 0:
-                    principals_from_response = proxy_response.get("data", [])
-                if isinstance(proxy_response, dict) and "errors" in proxy_response:
-                    return Response(status=proxy_response["status_code"], data=proxy_response["errors"])
-
             with transaction.atomic():
+                group = self.get_object()
+                self.protect_system_groups("add principals", group)
+
+                if not request.user.admin:
+                    self.protect_group_with_user_access_admin_role(group.roles_with_access(), "add principals")
+
+                # Process the service accounts and add them to the group.
+                if len(service_accounts) > 0:
+                    token_validator = ITSSOTokenValidator()
+                    request.user.bearer_token = token_validator.validate_token(
+                        request=request,
+                        additional_scopes_to_validate=set[ScopeClaims]([ScopeClaims.SERVICE_ACCOUNTS_CLAIM]),
+                    )
+                    try:
+                        self.ensure_id_for_service_accounts_exists(
+                            user=request.user, service_accounts=service_accounts
+                        )
+                    except InsufficientPrivilegesError as ipe:
+                        return Response(
+                            status=status.HTTP_403_FORBIDDEN,
+                            data={
+                                "errors": [
+                                    {
+                                        "detail": str(ipe),
+                                        "status": status.HTTP_403_FORBIDDEN,
+                                        "source": "groups",
+                                    }
+                                ]
+                            },
+                        )
+                    except ServiceAccountNotFoundError as sanfe:
+                        return Response(
+                            status=status.HTTP_400_BAD_REQUEST,
+                            data={
+                                "errors": [
+                                    {
+                                        "detail": str(sanfe),
+                                        "source": "group",
+                                        "status": str(status.HTTP_400_BAD_REQUEST),
+                                    }
+                                ]
+                            },
+                        )
+
+                # Process user principals and add them to the group.
+                principals_from_response = []
+                if len(principals) > 0:
+                    proxy_response = self.validate_principals_in_proxy_request(principals, org_id=org_id)
+                    if len(proxy_response.get("data", [])) > 0:
+                        principals_from_response = proxy_response.get("data", [])
+                    if isinstance(proxy_response, dict) and "errors" in proxy_response:
+                        return Response(status=proxy_response["status_code"], data=proxy_response["errors"])
+
                 new_service_accounts = []
                 if len(service_accounts) > 0:
                     group, new_service_accounts = self.add_service_accounts(
@@ -732,6 +772,7 @@ class GroupViewSet(
             output = GroupSerializer(group)
             response = Response(status=status.HTTP_200_OK, data=output.data)
         elif request.method == "GET":
+            group = self.get_object()
             # Check if the request comes with a bunch of service account client IDs that we need to check. Since this
             # query parameter is incompatible with any other query parameter, we make the checks first. That way if any
             # other query parameter was specified, we simply return early.
@@ -896,6 +937,8 @@ class GroupViewSet(
             page = self.paginate_queryset(resp.get("data"))
             response = self.get_paginated_response(page)
         else:
+            group = self.get_object()
+
             self.protect_system_groups("remove principals")
 
             if not request.user.admin:
