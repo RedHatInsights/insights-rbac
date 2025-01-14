@@ -155,9 +155,9 @@ def get_role_queryset(request) -> QuerySet:
     """Obtain the queryset for roles."""
     scope = validate_and_get_key(request.query_params, SCOPE_KEY, VALID_SCOPES, ORG_ID_SCOPE)
     public_tenant = Tenant.objects.get(tenant_name="public")
-    base_query = annotate_roles_with_counts(Role.objects.prefetch_related("access", "ext_relation")).filter(
-        tenant__in=[request.tenant, public_tenant]
-    )
+    base_query = annotate_roles_with_counts(
+        Role.objects.prefetch_related("access", "ext_relation", "access__permission")
+    ).filter(tenant__in=[request.tenant, public_tenant])
 
     if scope == PRINCIPAL_SCOPE:
         queryset = get_object_principal_queryset(
