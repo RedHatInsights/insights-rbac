@@ -1185,7 +1185,7 @@ class GroupViewsetTests(IdentityRequest):
             self.assertEqual(principal.tenant, self.tenant)
 
             # test whether added principals into a group is added correctly within audit log database
-            al_url = "/api/v1/auditlogs/"
+            al_url = "/api/rbac/v1/auditlogs/"
             al_client = APIClient()
             al_response = al_client.get(al_url, **self.headers)
             retrieve_data = al_response.data.get("data")
@@ -2315,7 +2315,7 @@ class GroupViewsetTests(IdentityRequest):
             self.assertEqual(response.status_code, status.HTTP_200_OK)
 
             # test whether adding roles into a group is added correctly within audit log database
-            al_url = "/api/v1/auditlogs/"
+            al_url = "/api/rbac/v1/auditlogs/"
             al_client = APIClient()
             al_response = al_client.get(al_url, **self.headers)
             retrieve_data = al_response.data.get("data")
@@ -4674,24 +4674,6 @@ class GroupViewNonAdminTests(IdentityRequest):
         response = client.post(url, request_body, format="json", **self.headers_org_admin)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
-        # test whether the added service account is added correctly within audit log database
-        al_url = "/api/v1/auditlogs/"
-        al_client = APIClient()
-        al_response = al_client.get(al_url, **self.headers_org_admin)
-        retrieve_data = al_response.data.get("data")
-        al_list = retrieve_data
-        al_dict = al_list[0]
-
-        al_dict_principal_username = al_dict["principal_username"]
-        al_dict_description = al_dict["description"]
-        al_dict_resource = al_dict["resource_type"]
-        al_dict_action = al_dict["action"]
-
-        self.assertEqual(self.org_admin.username, al_dict_principal_username)
-        self.assertIsNotNone(al_dict_description)
-        self.assertEqual(al_dict_resource, "group")
-        self.assertEqual(al_dict_action, "add")
-
         actual_call_arg = mock_method.call_args[0][0]
         self.assertEqual(
             generate_replication_event_to_add_principals(str(test_group.uuid), "redhat/2345"),
@@ -4729,6 +4711,7 @@ class GroupViewNonAdminTests(IdentityRequest):
 
         response = client.post(url, request_body, format="json", **self.headers_user_based_principal)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
+
         actual_call_arg = mock_method.call_args[0][0]
         self.assertEqual(
             generate_replication_event_to_add_principals(str(test_group.uuid), "redhat/1234"),

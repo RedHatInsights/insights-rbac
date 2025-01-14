@@ -1145,7 +1145,7 @@ class GroupViewSet(
                     request,
                     AuditLog.GROUP,
                     object=group,
-                    type_dict=log_roles,
+                    type_dict=response_data.data,
                     user_type=AuditLog.ROLE,
                 )
 
