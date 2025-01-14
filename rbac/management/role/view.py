@@ -267,13 +267,17 @@ class RoleViewSet(
                 ]
             }
         """
+        req_name = request.data.get("name")
+        req_role_exists = Role.objects.filter(
+            Q(name=req_name) | Q(display_name=req_name), system=True, tenant=request.tenant
+        ).exists()
+        print(req_role_exists)
+        if req_role_exists:
+            raise serializers.ValidationError(
+                {"role": f"The role name '{req_name}' is reserved, please use another name"}
+            )
         self.validate_role(request)
         try:
-            if Role.objects.filter(display_name=request.data.get("name"), system=True).exists():
-                return Response(
-                    {"Error": f"The role name '{request.data.get('name')}' is reserved, please use another name"},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
             with transaction.atomic():
                 return super().create(request=request, args=args, kwargs=kwargs)
         except IntegrityError as e:
@@ -468,9 +472,19 @@ class RoleViewSet(
         """
         validate_uuid(kwargs.get("uuid"), "role uuid validation")
         self.validate_role(request)
-
+        req_name = request.data.get("name")
+        req_role_exists = Role.objects.filter(
+            Q(name=req_name) | Q(display_name=req_name), system=True, tenant=request.tenant
+        ).exists()
+        print(req_role_exists)
+        if req_role_exists:
+            raise serializers.ValidationError(
+                {"role": f"The role name '{req_name}' is reserved, please use another name"}
+            )
         try:
-            if Role.objects.filter(display_name=request.data.get("name"), system=True).exists():
+            req_tenant_roles = Role.objects.filter(tenant=request.tenant)
+            req_name = request.data.get("name")
+            if req_tenant_roles.filter(display_name=req_name, system=True).exists():
                 return Response(
                     {"Error": f"The role name '{request.data.get('name')}' is reserved, please use another name"},
                     status=status.HTTP_400_BAD_REQUEST,
