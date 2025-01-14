@@ -151,10 +151,8 @@ class RoleViewsetTests(IdentityRequest):
             "display_name",
             "system",
             "created",
-            "access",
             "policyCount",
             "accessCount",
-            "groups_in",
             "modified",
             "platform_default",
             "admin_default",
@@ -665,7 +663,6 @@ class RoleViewsetTests(IdentityRequest):
             self.assertIsNotNone(iterRole.get("name"))
             # fields displayed are same as defined
             self.assertEqual(self.display_fields, set(iterRole.keys()))
-
             if iterRole.get("name") == role_name:
                 self.assertEqual(iterRole.get("accessCount"), 2)
                 role = iterRole
@@ -677,7 +674,6 @@ class RoleViewsetTests(IdentityRequest):
         url = "{}?application={}".format(URL, "app")
         client = APIClient()
         response = client.get(url, **self.headers)
-
         self.assertEqual(response.data.get("meta").get("count"), 1)
         self.assertEqual(response.data.get("data")[0].get("name"), self.defRole.name)
 
@@ -686,7 +682,6 @@ class RoleViewsetTests(IdentityRequest):
         url = "{}?application={}".format(URL, "foo")
         client = APIClient()
         response = client.get(url, **self.headers)
-
         self.assertEqual(response.data.get("meta").get("count"), 1)
         self.assertEqual(response.data.get("data")[0].get("name"), self.defRole.name)
 
@@ -907,7 +902,7 @@ class RoleViewsetTests(IdentityRequest):
         # make sure created role exists in result set and has correct values
         created_role = next((iterRole for iterRole in response_data if iterRole["name"] == custom_role_name), None)
         self.assertIsNotNone(created_role)
-        self.assertEqual(created_role[groups_in_count], 2)
+        self.assertEqual(created_role[groups_in_count], 1)
         self.assertEqual(created_role[groups_in][0]["name"], custom_group_name)
 
         # make sure all roles are from:
@@ -1003,7 +998,7 @@ class RoleViewsetTests(IdentityRequest):
         # make sure created role exists in result set and has correct values
         created_role = next((iterRole for iterRole in response_data if iterRole["name"] == custom_role_name), None)
         self.assertIsNotNone(created_role)
-        self.assertEqual(created_role[groups_in_count], 2)
+        self.assertEqual(created_role[groups_in_count], 1)
         self.assertEqual(created_role[groups_in][0]["name"], custom_group_name)
 
         # make sure all roles are from:
@@ -1085,13 +1080,13 @@ class RoleViewsetTests(IdentityRequest):
         # make sure created role exists in result set and has correct values
         created_role = next((iterRole for iterRole in response_data if iterRole["name"] == role_name), None)
         self.assertIsNotNone(created_role)
-        self.assertEqual(created_role["groups_in_count"], 2)
+        self.assertEqual(created_role["groups_in_count"], 1)
         self.assertEqual(created_role["groups_in"][0]["name"], group_name)
 
         # make sure a default role exists in result set and has correct values
         default_role = next((iterRole for iterRole in response_data if iterRole["name"] == self.defRole.name), None)
         self.assertIsNotNone(default_role)
-        self.assertEqual(default_role["groups_in_count"], 2)
+        self.assertEqual(default_role["groups_in_count"], 1)
         self.assertEqual(default_role["groups_in"][0]["name"], self.group.name)
 
     def test_list_role_with_groups_in_fields_for_admin_scope_success(self):
@@ -1126,7 +1121,7 @@ class RoleViewsetTests(IdentityRequest):
         # make sure a default role exists in result set and has correct values
         default_role = next((iterRole for iterRole in response_data if iterRole["name"] == self.defRole.name), None)
         self.assertIsNotNone(default_role)
-        self.assertEqual(default_role["groups_in_count"], 2)
+        self.assertEqual(default_role["groups_in_count"], 1)
         self.assertEqual(default_role["groups_in"][0]["name"], self.group.name)
 
         # make sure an admin role exists in result set and has correct values
@@ -1188,6 +1183,7 @@ class RoleViewsetTests(IdentityRequest):
         url = "{}?add_fields={},{}&username={}".format(URL, field_1, field_2, self.principal.username)
         client = APIClient()
         response = client.get(url, **self.headers)
+
         self.assertEqual(len(response.data.get("data")), 5)
 
         role = response.data.get("data")[0]
@@ -1205,6 +1201,7 @@ class RoleViewsetTests(IdentityRequest):
         url = "{}?add_fields={},{}&scope=principal".format(URL, field_1, field_2)
         client = APIClient()
         response = client.get(url, **self.headers)
+
         self.assertEqual(len(response.data.get("data")), 5)
 
         role = response.data.get("data")[0]
@@ -1735,6 +1732,7 @@ class RoleViewsetTests(IdentityRequest):
         response = client.get(URL, **self.headers)
 
         self.assertEqual(len(response.data.get("data")), 5)
+
         url = f"{URL}?external_tenant=foo"
         client = APIClient()
         response = client.get(url, **self.headers)
@@ -1753,6 +1751,7 @@ class RoleViewsetTests(IdentityRequest):
         url = f"{URL}?display_name=platform_admin_default_display&add_fields=groups_in_count%2Cgroups_in"
         client = APIClient()
         response = client.get(url, **self.headers)
+
         self.assertEqual(len(response.data.get("data")), 1)
         role = response.data.get("data")[0]
         self.assertEqual(role.get("groups_in_count"), 2)
@@ -1955,7 +1954,6 @@ class RoleViewNonAdminTests(IdentityRequest):
         response = client.get(url, **self.headers_user_based_principal)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         expected_count = self.system_roles_count + self.non_system_roles_count + 1
-
         self.assertEqual(len(response.data.get("data")), expected_count)
 
         response = client.get(url, **self.headers_service_account_principal)

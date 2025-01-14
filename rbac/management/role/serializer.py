@@ -92,8 +92,6 @@ class RoleSerializer(serializers.ModelSerializer):
     access = AccessSerializer(many=True)
     policyCount = serializers.IntegerField(read_only=True)
     accessCount = serializers.IntegerField(read_only=True)
-    groups_in_count = serializers.IntegerField(read_only=True)
-    groups_in = serializers.SerializerMethodField()
     applications = serializers.SerializerMethodField()
     system = serializers.BooleanField(read_only=True)
     platform_default = serializers.BooleanField(read_only=True)
@@ -115,8 +113,6 @@ class RoleSerializer(serializers.ModelSerializer):
             "access",
             "policyCount",
             "accessCount",
-            "groups_in_count",
-            "groups_in",
             "applications",
             "system",
             "platform_default",
@@ -130,11 +126,6 @@ class RoleSerializer(serializers.ModelSerializer):
     def get_applications(self, obj):
         """Get the list of applications in the role."""
         return obtain_applications(obj)
-
-    def get_groups_in(self, obj):
-        """Get the groups where the role is in."""
-        request = self.context.get("request")
-        return obtain_groups_in(obj, request).values("name", "uuid", "description")
 
     def create(self, validated_data):
         """Create the role object in the database."""
