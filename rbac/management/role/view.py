@@ -46,7 +46,6 @@ from rest_framework.decorators import action
 from rest_framework.filters import OrderingFilter
 from rest_framework.response import Response
 
-from api.common.pagination import StandardResultsSetPagination
 from api.models import Tenant
 from rbac.env import ENVIRONMENT
 from .model import Role
@@ -142,7 +141,6 @@ class RoleViewSet(
     filterset_class = RoleFilter
     ordering_fields = ("name", "display_name", "modified", "policyCount")
     ordering = ("name",)
-    default_limit = StandardResultsSetPagination.default_limit
 
     def get_queryset(self):
         """Obtain queryset for requesting user based on access and action."""
