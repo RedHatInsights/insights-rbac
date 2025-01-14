@@ -600,12 +600,13 @@ objects:
         podSpec:
           image: quay.io/cloudservices/rbac:latest
           command:
-            - /opt/rbac/rbac/manage.py
-            - import_tenant_user_data
-            - --start_line
-            - ${USER_ID_POPULATOR_START_LINE}
-            - --batch_size
-            - ${USER_ID_POPULATOR_BATCH_SIZE}
+            - ls
+            # - /opt/rbac/rbac/manage.py
+            # - import_tenant_user_data
+            # - --start_line
+            # - ${USER_ID_POPULATOR_START_LINE}
+            # - --batch_size
+            # - ${USER_ID_POPULATOR_BATCH_SIZE}
           env: &job_common_env_vars
             - name: APP_NAMESPACE
               valueFrom:
@@ -761,10 +762,11 @@ objects:
         podSpec:
           image: quay.io/cloudservices/rbac:latest
           command:
-            - /opt/rbac/rbac/manage.py
-            - seeds
-            - --roles
-            - --force-create-relationships
+            - ls
+            # - /opt/rbac/rbac/manage.py
+            # - seeds
+            # - --roles
+            # - --force-create-relationships
           resources:
             limits:
               cpu: 300m
@@ -789,8 +791,9 @@ objects:
         podSpec:
           image: quay.io/cloudservices/rbac:latest
           command:
-            - /opt/rbac/rbac/manage.py
-            - import_service_account_data
+            - ls
+            # - /opt/rbac/rbac/manage.py
+            # - import_service_account_data
           env: *job_common_env_vars
           resources:
             limits:
