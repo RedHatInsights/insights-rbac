@@ -527,7 +527,6 @@ class CrossAccountRequestViewTests(CrossAccountRequestTest):
         # request_2's account is "xxxxxx" same as associate_admin_request's account
         car_uuid = self.request_2.request_id
         url = reverse("v1_api:cross-detail", kwargs={"pk": str(car_uuid)})
-
         client = APIClient()
 
         # From pending to approved
@@ -537,8 +536,17 @@ class CrossAccountRequestViewTests(CrossAccountRequestTest):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data.get("status"), update_data.get("status"))
 
+        binding_mapping = self.role_1.binding_mappings.first()
+        binding_mapping.mappings["groups"] = ["12345f"]  # fake groups to stop it from getting deleted
+        binding_mapping.save()
         # From approved to denied
         update_data = {"status": "denied"}
+        response = client.patch(url, update_data, format="json", **self.associate_admin_request.META)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data.get("status"), update_data.get("status"))
+
+        # Deined again should be fine
         response = client.patch(url, update_data, format="json", **self.associate_admin_request.META)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
