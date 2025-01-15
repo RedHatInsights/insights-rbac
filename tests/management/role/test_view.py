@@ -189,9 +189,6 @@ class RoleViewsetTests(IdentityRequest):
         self.sysRole = Role(**sys_role_config, tenant=self.public_tenant)
         self.sysRole.save()
 
-        self.sysRoleR = Role(**sys_role_config, tenant=self.tenant)
-        self.sysRoleR.save()
-
         self.defRole = Role(**def_role_config, tenant=self.public_tenant)
         self.defRole.save()
 
@@ -1466,6 +1463,7 @@ class RoleViewsetTests(IdentityRequest):
         current_relations = relation_api_tuples_for_v1_role(role_uuid, str(self.default_workspace.id))
 
         response = client.put(url, test_data, format="json", **self.headers)
+
         replication_event = replication_event_for_v1_role(response.data.get("uuid"), str(self.default_workspace.id))
         replication_event["relations_to_remove"] = current_relations
         actual_call_arg = mock_method.call_args[0][0]
@@ -1779,34 +1777,31 @@ class RoleViewsetTests(IdentityRequest):
     def test_create_custom_role_with_same_name_as_system_role(self):
         """Test that trying to create a custom role with the same name as a system role is not possible"""
         client = APIClient()
-        name = "system_role"
+        name = "system_display"
         test_data = {"name": name, "access": []}
 
         # Attempt to create custom role with the same name as system role
         response = client.post(URL, test_data, format="json", **self.headers)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        print(response.data)
         # Assert output message is correct
         self.assertEqual(
             response.data.get("errors")[0].get("detail"),
-            f"The role name '{name}' is reserved, please use another name",
+            f"Role '{name}' already exists for a tenant.",
         )
 
     def test_update_custom_role_with_same_name_as_system_role(self):
         """Test that trying to update a custom role with the same name as a system role is not possible"""
+        name = "system_display"
+        test_data = {"name": name, "access": []}
         url = reverse("v1_management:role-detail", kwargs={"uuid": self.sysRole.uuid})
         client = APIClient()
-        name = "system_role"
-        test_data = {"name": name, "access": []}
-
-        # Attempt to create custom role with the same name as system role
         response = client.put(url, test_data, format="json", **self.headers)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
         # Assert output message is correct
         self.assertEqual(
             response.data.get("errors")[0].get("detail"),
-            f"The role name '{name}' is reserved, please use another name",
+            f"Role '{name}' name cannot be updated with this value.",
         )
 
 

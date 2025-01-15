@@ -267,16 +267,8 @@ class RoleViewSet(
                 ]
             }
         """
-        req_name = request.data.get("name")
-        req_role_exists = Role.objects.filter(
-            Q(name=req_name) | Q(display_name=req_name), system=True, tenant=request.tenant
-        ).exists()
-        print(req_role_exists)
-        if req_role_exists:
-            raise serializers.ValidationError(
-                {"role": f"The role name '{req_name}' is reserved, please use another name"}
-            )
         self.validate_role(request)
+        self.restrict_role_create_update_if_system_or_custom_exists(request)
         try:
             with transaction.atomic():
                 return super().create(request=request, args=args, kwargs=kwargs)
@@ -472,23 +464,8 @@ class RoleViewSet(
         """
         validate_uuid(kwargs.get("uuid"), "role uuid validation")
         self.validate_role(request)
-        req_name = request.data.get("name")
-        req_role_exists = Role.objects.filter(
-            Q(name=req_name) | Q(display_name=req_name), system=True, tenant=request.tenant
-        ).exists()
-        print(req_role_exists)
-        if req_role_exists:
-            raise serializers.ValidationError(
-                {"role": f"The role name '{req_name}' is reserved, please use another name"}
-            )
+        self.restrict_role_create_update_if_system_or_custom_exists(request)
         try:
-            req_tenant_roles = Role.objects.filter(tenant=request.tenant)
-            req_name = request.data.get("name")
-            if req_tenant_roles.filter(display_name=req_name, system=True).exists():
-                return Response(
-                    {"Error": f"The role name '{request.data.get('name')}' is reserved, please use another name"},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
             with transaction.atomic():
                 return super().update(request=request, args=args, kwargs=kwargs)
         except DualWriteException as e:
@@ -652,3 +629,19 @@ class RoleViewSet(
         for policy in policies:
             if policy.roles.count() == 1:
                 policy.delete()
+
+    def restrict_role_create_update_if_system_or_custom_exists(self, request):
+        """If a role has the same display_name when a role is being created or updated restrict the operation."""
+        req_method = request.method
+        req_name = request.data.get("name")
+        public_tenant = Tenant.objects.get(tenant_name="public")
+        req_custom_role_exists = Role.objects.filter(
+            display_name=req_name, platform_default=True, tenant__in=[request.tenant, public_tenant]
+        ).exists()
+        req_system_role_exists = Role.objects.filter(
+            display_name=req_name, system=True, tenant__in=[request.tenant, public_tenant]
+        ).exists()
+        if req_custom_role_exists or req_system_role_exists and req_method == "PUT":
+            raise serializers.ValidationError({"role": f"Role '{req_name}' name cannot be updated with this value."})
+        elif req_custom_role_exists or req_system_role_exists and req_method == "POST":
+            raise serializers.ValidationError({"role": f"Role '{req_name}' already exists for a tenant."})
