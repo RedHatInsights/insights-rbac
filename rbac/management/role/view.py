@@ -644,4 +644,4 @@ class RoleViewSet(
         if req_custom_role_exists or req_system_role_exists and req_method == "PUT":
             raise serializers.ValidationError({"role": f"Role '{req_name}' name cannot be updated with this value."})
         elif req_custom_role_exists or req_system_role_exists and req_method == "POST":
-            raise serializers.ValidationError({"role": f"Role '{req_name}' already exists for a tenant."})
+            raise serializers.ValidationError({"role": f"Role '{req_name}' already exists for the tenant."})
