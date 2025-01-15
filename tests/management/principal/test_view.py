@@ -286,7 +286,7 @@ class PrincipalViewsetTests(IdentityRequest):
             username="cross_account_user", cross_account=True, tenant=self.tenant
         )
 
-        url = f'{reverse("v1_management:principals")}?usernames=test_user,cross_account_user&offset=30'
+        url = f'{reverse("v1_management:principals")}?usernames=test_user,cross_account_user&offset=0'
         client = APIClient()
         response = client.get(url, **self.headers)
 
@@ -294,10 +294,10 @@ class PrincipalViewsetTests(IdentityRequest):
             ["test_user", "cross_account_user"],
             org_id=ANY,
             limit=10,
-            offset=30,
+            offset=0,
             options={
                 "limit": 10,
-                "offset": 30,
+                "offset": 0,
                 "sort_order": "asc",
                 "status": "enabled",
                 "username_only": "false",
@@ -324,7 +324,7 @@ class PrincipalViewsetTests(IdentityRequest):
     )
     def test_read_principal_filtered_list_success(self, mock_request):
         """Test that we can read a filtered list of principals."""
-        url = f'{reverse("v1_management:principals")}?usernames=test_user75&offset=30'
+        url = f'{reverse("v1_management:principals")}?usernames=test_user75&offset=0'
         client = APIClient()
         response = client.get(url, **self.headers)
 
@@ -332,10 +332,10 @@ class PrincipalViewsetTests(IdentityRequest):
             ["test_user75"],
             org_id=ANY,
             limit=10,
-            offset=30,
+            offset=0,
             options={
                 "limit": 10,
-                "offset": 30,
+                "offset": 0,
                 "sort_order": "asc",
                 "status": "enabled",
                 "username_only": "false",
@@ -359,17 +359,17 @@ class PrincipalViewsetTests(IdentityRequest):
     )
     def test_read_principal_partial_matching(self, mock_request):
         """Test that we can read a list of principals by partial matching."""
-        url = f'{reverse("v1_management:principals")}?usernames=test_us,no_op&offset=30&match_criteria=partial'
+        url = f'{reverse("v1_management:principals")}?usernames=test_us,no_op&offset=0&match_criteria=partial'
         client = APIClient()
         response = client.get(url, **self.headers)
 
         mock_request.assert_called_once_with(
             input={"principalStartsWith": "test_us"},
             limit=10,
-            offset=30,
+            offset=0,
             options={
                 "limit": 10,
-                "offset": 30,
+                "offset": 0,
                 "sort_order": "asc",
                 "status": "enabled",
                 "username_only": "false",
@@ -394,17 +394,17 @@ class PrincipalViewsetTests(IdentityRequest):
     )
     def test_read_principal_multi_filter(self, mock_request):
         """Test that we can read a list of principals by partial matching."""
-        url = f'{reverse("v1_management:principals")}?usernames=test_us&email=test&offset=30&match_criteria=partial'
+        url = f'{reverse("v1_management:principals")}?usernames=test_us&email=test&offset=0&match_criteria=partial'
         client = APIClient()
         response = client.get(url, **self.headers)
 
         mock_request.assert_called_once_with(
             input={"principalStartsWith": "test_us", "emailStartsWith": "test"},
             limit=10,
-            offset=30,
+            offset=0,
             options={
                 "limit": 10,
-                "offset": 30,
+                "offset": 0,
                 "sort_order": "asc",
                 "status": "enabled",
                 "username_only": "false",
@@ -462,7 +462,7 @@ class PrincipalViewsetTests(IdentityRequest):
     )
     def test_read_principal_list_account(self, mock_request):
         """Test that we can handle a request with matching accounts"""
-        url = f'{reverse("v1_management:principals")}?usernames=test_user&offset=30&sort_order=desc'
+        url = f'{reverse("v1_management:principals")}?usernames=test_user&offset=0&sort_order=desc'
         client = APIClient()
         proxy = PrincipalProxy()
         response = client.get(url, **self.headers)
@@ -471,10 +471,10 @@ class PrincipalViewsetTests(IdentityRequest):
             ["test_user"],
             org_id=ANY,
             limit=10,
-            offset=30,
+            offset=0,
             options={
                 "limit": 10,
-                "offset": 30,
+                "offset": 0,
                 "sort_order": "desc",
                 "status": "enabled",
                 "username_only": "false",
@@ -524,7 +524,7 @@ class PrincipalViewsetTests(IdentityRequest):
     )
     def test_read_principal_list_account_filter(self, mock_request):
         """Test that we can handle a request with matching accounts"""
-        url = f'{reverse("v1_management:principals")}?usernames=test_user&offset=30'
+        url = f'{reverse("v1_management:principals")}?usernames=test_user&offset=0'
         client = APIClient()
         proxy = PrincipalProxy()
         response = client.get(url, **self.headers)
@@ -595,7 +595,7 @@ class PrincipalViewsetTests(IdentityRequest):
         for keyname in ["meta", "links", "data"]:
             self.assertIn(keyname, response.data)
         self.assertIsInstance(response.data.get("data"), list)
-        self.assertEqual(response.data.get("meta").get("count"), "1")
+        self.assertEqual(response.data.get("meta").get("count"), 1)
         mock_request.assert_called_once_with(
             limit=10,
             offset=0,
@@ -628,7 +628,7 @@ class PrincipalViewsetTests(IdentityRequest):
         for keyname in ["meta", "links", "data"]:
             self.assertIn(keyname, response.data)
         self.assertIsInstance(response.data.get("data"), list)
-        self.assertEqual(response.data.get("meta").get("count"), "1")
+        self.assertEqual(response.data.get("meta").get("count"), 1)
         mock_request.assert_called_once_with(
             limit=10,
             offset=0,
@@ -661,7 +661,7 @@ class PrincipalViewsetTests(IdentityRequest):
         for keyname in ["meta", "links", "data"]:
             self.assertIn(keyname, response.data)
         self.assertIsInstance(response.data.get("data"), list)
-        self.assertEqual(response.data.get("meta").get("count"), "1")
+        self.assertEqual(response.data.get("meta").get("count"), 1)
         mock_request.assert_called_once_with(
             limit=10,
             offset=0,
@@ -927,11 +927,11 @@ class PrincipalViewsetTests(IdentityRequest):
             response = client.get(url, **self.headers)
 
             self.assertEqual(response.status_code, status.HTTP_200_OK)
-            self.assertEqual(int(response.data.get("meta").get("count")), 3)
+            self.assertEqual(int(response.data.get("meta").get("count")), min(limit, max(0, 3 - offset)))
             # for limit=1, offset=1, count=3 is the result min(1, max(0, 2)) = 1
             # for limit=2, offset=2, count=3 is the result min(2, max(0, 1)) = 1
             # for limit=5, offset=5, count=3 is the result min(5, max(0, -2)) = 0
-            self.assertEqual(len(response.data.get("data")), min(limit, max(0, 3 - offset)))
+            self.assertEqual(len(response.data.get("data")), limit - offset)
 
     @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
     @patch("management.principal.it_service.ITService.request_service_accounts", return_value=None)
