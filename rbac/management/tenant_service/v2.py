@@ -206,31 +206,56 @@ class V2TenantBootstrapService:
         # Get tenant mapping if present but no need to create if not
         tuples_to_remove = []
         user_id = user.user_id
+        mapping: Optional[TenantMapping] = None
+        principal_uuid = ""
 
         if user_id is None:
             raise ValueError(f"User {user.username} has no user_id.")
 
+        logger.info(
+            f"Removing Principal and group membership from RBAC and Relations. user_id={user_id} org_id={user.org_id}"
+        )
+
         try:
             mapping = TenantMapping.objects.filter(tenant__org_id=user.org_id).get()
-            tuples_to_remove.append(Group.relationship_to_user_id_for_group(str(mapping.default_group_uuid), user_id))
+            default_group_uuid = str(mapping.default_group_uuid)  # type: ignore
+            default_admin_group_uuid = str(mapping.default_admin_group_uuid)  # type: ignore
+            tuples_to_remove.append(Group.relationship_to_user_id_for_group(default_group_uuid, user_id))
+            tuples_to_remove.append(Group.relationship_to_user_id_for_group(default_admin_group_uuid, user_id))
         except TenantMapping.DoesNotExist:
-            pass
+            logger.info(
+                "No default membership to remove. There is no tenant mapping, so the tenant must not be bootstrapped."
+                f"org_id={user.org_id} user_id={user_id}"
+            )
 
         try:
             principal = Principal.objects.filter(username=user.username, tenant__org_id=user.org_id).get()
+            principal_uuid = str(principal.uuid)
 
-            for group in principal.group.all():
+            for group in principal.group.all():  # type: ignore
                 group.principals.remove(principal)
-                tuples_to_remove.append(group.relationship_to_principal(principal))
+                # The user id might be None for the principal so we use user instead
+                tuple = group.relationship_to_principal(user)
+                if tuple is None:
+                    raise ValueError(f"relationship_to_principal is None for user {user_id}")
+                tuples_to_remove.append(tuple)
 
-            principal.delete()
+            principal.delete()  # type: ignore
         except Principal.DoesNotExist:
-            pass
+            logger.info(f"Could not find Principal to remove. org_id={user.org_id} user_id={user_id}")
+
+        if not tuples_to_remove:
+            return
 
         self._replicator.replicate(
             ReplicationEvent(
-                event_type=ReplicationEventType.EXTERNAL_USER_UPDATE,
-                info={"user_id": user_id, "org_id": user.org_id},
+                event_type=ReplicationEventType.EXTERNAL_USER_DISABLE,
+                info={
+                    "user_id": user_id,
+                    "org_id": user.org_id,
+                    "mapping_id": mapping.id if mapping else None,
+                    "principal_uuid": principal_uuid,
+                },
                 partition_key=PartitionKey.byEnvironment(),
                 remove=tuples_to_remove,
             )
@@ -539,9 +564,7 @@ class V2TenantBootstrapService:
     def _get_platform_default_policy_uuid(self) -> Optional[str]:
         try:
             if self._platform_default_policy_uuid is None:
-                policy = Group.objects.get(
-                    platform_default=True, system=True, tenant=self._get_public_tenant()
-                ).policies.get()
+                policy = Group.objects.public_tenant_only().get(platform_default=True).policies.get()
                 self._platform_default_policy_uuid = str(policy.uuid)
             return self._platform_default_policy_uuid
         except Group.DoesNotExist:
@@ -550,15 +573,8 @@ class V2TenantBootstrapService:
     def _get_admin_default_policy_uuid(self) -> Optional[str]:
         try:
             if self._admin_default_policy_uuid is None:
-                policy = Group.objects.get(
-                    admin_default=True, system=True, tenant=self._get_public_tenant()
-                ).policies.get()
+                policy = Group.objects.public_tenant_only().get(admin_default=True).policies.get()
                 self._admin_default_policy_uuid = str(policy.uuid)
             return self._admin_default_policy_uuid
         except Group.DoesNotExist:
             return None
-
-    def _get_public_tenant(self) -> Tenant:
-        if self._public_tenant is None:
-            self._public_tenant = Tenant.objects.get(tenant_name="public")
-        return self._public_tenant

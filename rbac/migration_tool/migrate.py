@@ -106,7 +106,7 @@ def migrate_groups_for_tenant(tenant: Tenant, replicator: RelationReplicator):
         if not group.platform_default:
             principals = group.principals.all()
         if group.system is False and group.admin_default is False:
-            system_roles = group.roles().filter(system=True)
+            system_roles = group.roles().public_tenant_only()
         if any(True for _ in system_roles) or any(True for _ in principals):
             # The migrator does not generally deal with concurrency control,
             # but we require an atomic block due to use of select_for_update in the dual write handler.
@@ -119,14 +119,8 @@ def migrate_groups_for_tenant(tenant: Tenant, replicator: RelationReplicator):
                 dual_write_handler.replicate()
 
 
-def migrate_data_for_tenant(tenant: Tenant, exclude_apps: list, replicator: RelationReplicator):
-    """Migrate all data for a given tenant."""
-    logger.info("Migrating relations of group and user.")
-
-    migrate_groups_for_tenant(tenant, replicator)
-
-    logger.info("Finished migrating relations of group and user.")
-
+def migrate_roles_for_tenant(tenant, exclude_apps, replicator):
+    """Migrate all roles for a given tenant."""
     default_workspace = Workspace.objects.get(type=Workspace.Types.DEFAULT, tenant=tenant)
 
     roles = tenant.role_set.all()
@@ -158,6 +152,20 @@ def migrate_data_for_tenant(tenant: Tenant, exclude_apps: list, replicator: Rela
         logger.info(f"Migration completed for role: {role.name} with UUID {role.uuid}.")
     logger.info(f"Migrated {roles.count()} roles for tenant: {tenant.org_id}")
 
+
+def migrate_data_for_tenant(tenant: Tenant, exclude_apps: list, replicator: RelationReplicator, skip_roles: bool):
+    """Migrate all data for a given tenant."""
+    logger.info("Migrating relations of group and user.")
+
+    migrate_groups_for_tenant(tenant, replicator)
+
+    logger.info("Finished migrating relations of group and user.")
+
+    if skip_roles:
+        logger.info("Skipping migrating roles.")
+    else:
+        migrate_roles_for_tenant(tenant, exclude_apps, replicator)
+
     logger.info("Migrating relations of cross account requests.")
     migrate_cross_account_requests(tenant, replicator)
     logger.info("Finished relations of cross account requests.")
@@ -179,7 +187,9 @@ def migrate_cross_account_requests(tenant: Tenant, replicator: RelationReplicato
                 dual_write_handler.replicate()
 
 
-def migrate_data(exclude_apps: list = [], orgs: list = [], write_relationships: str = "False"):
+def migrate_data(
+    exclude_apps: list = [], orgs: list = [], write_relationships: str = "False", skip_roles: bool = False
+):
     """Migrate all data for all tenants."""
     # Only run this in maintanence mode or
     # if we don't write relationships (testing out the migration and clean up the created bindingmappings)
@@ -201,7 +211,7 @@ def migrate_data(exclude_apps: list = [], orgs: list = [], write_relationships: 
             logger.info(f"Migrating data for tenant: {tenant.org_id}")
 
         try:
-            migrate_data_for_tenant(tenant, exclude_apps, replicator)
+            migrate_data_for_tenant(tenant, exclude_apps, replicator, skip_roles)
         except Exception as e:
             logger.error(f"Failed to migrate data for tenant: {tenant.org_id}. Error: {e}")
             raise e

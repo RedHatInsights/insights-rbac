@@ -28,6 +28,7 @@ from django.db.migrations.recorder import MigrationRecorder
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404
 from django.utils.html import escape
+from internal.utils import delete_bindings
 from management.cache import TenantCache
 from management.models import Group, Permission, Role
 from management.principal.proxy import (
@@ -495,7 +496,12 @@ def get_param_list(request, param_name, default: list = []):
 def data_migration(request):
     """View method for running migrations from V1 to V2 spiceDB schema.
 
-    POST /_private/api/utils/data_migration/?exclude_apps=cost_management,rbac&orgs=id_1,id_2&write_relationships=True
+    POST /_private/api/utils/data_migration/
+    query params:
+        exclude_apps: e.g., cost_management,rbac
+        orgs: e.g., id_1,id_2
+        write_relationships: True, False, outbox
+        skip_roles: True or False
     """
     if request.method != "POST":
         return HttpResponse('Invalid method, only "POST" is allowed.', status=405)
@@ -505,6 +511,7 @@ def data_migration(request):
         "exclude_apps": get_param_list(request, "exclude_apps", default=settings.V2_MIGRATION_APP_EXCLUDE_LIST),
         "orgs": get_param_list(request, "orgs"),
         "write_relationships": request.GET.get("write_relationships", "False"),
+        "skip_roles": request.GET.get("skip_roles", "False").lower() == "true",
     }
     migrate_data_in_worker.delay(args)
     return HttpResponse("Data migration from V1 to V2 are running in a background worker.", status=202)
@@ -549,14 +556,13 @@ class SentryDiagnosticError(Exception):
     pass
 
 
-def list_bindings_for_role(request):
+def list_or_delete_bindings_for_role(request, role_uuid):
     """View method for listing bindings for a role.
 
-    GET /_private/api/utils/bindings/?role_uuid=xxx
+    GET or DELETE /_private/api/utils/bindings/?role__is_system=True
     """
-    if request.method != "GET":
-        return HttpResponse('Invalid method, only "GET" is allowed.', status=405)
-    role_uuid = request.GET.get("role_uuid")
+    if request.method not in ["GET", "DELETE"]:
+        return HttpResponse('Invalid method, only "GET" or "DELETE" is allowed.', status=405)
     if not role_uuid:
         return HttpResponse(
             'Invalid request, must supply the "role_uuid" query parameter.',
@@ -564,9 +570,22 @@ def list_bindings_for_role(request):
         )
     role = get_object_or_404(Role, uuid=role_uuid)
     bindings = role.binding_mappings.all()
-    serializer = BindingMappingSerializer(bindings, many=True)
-    result = serializer.data or []
-    return HttpResponse(json.dumps(result), content_type="application/json", status=200)
+    if request.GET:
+        filter_args = {}
+        for key, value in request.GET.items():
+            if value.lower() == "true":
+                value = True
+            elif value.lower() == "false":
+                value = False
+            filter_args.update({key: value})
+        bindings = bindings.filter(**filter_args)
+    if request.method == "GET":
+        serializer = BindingMappingSerializer(bindings, many=True)
+        result = serializer.data or []
+        return HttpResponse(json.dumps(result), content_type="application/json", status=200)
+    else:
+        info = delete_bindings(bindings)
+        return HttpResponse(json.dumps(info), status=200)
 
 
 def migration_resources(request):
@@ -689,6 +708,74 @@ def reset_imported_tenants(request: HttpRequest) -> HttpResponse:
         return HttpResponse("Tenants deleting in worker.", status=200)
 
     return HttpResponse("Invalid method", status=405)
+
+
+ALLOWED_ROLE_UPDATE_ATTRIBUTES = {"system", "platform_default", "admin_default"}
+
+
+def str_to_bool(value: str) -> bool:
+    """Convert string to bool."""
+    return value.strip().lower() == "true"
+
+
+def handle_error(message: str, status_response: int) -> HttpResponse:
+    """Return HttpResponse object."""
+    return HttpResponse(json.dumps({"error": message}), content_type="application/json", status=status_response)
+
+
+def get_role_response(role: Role) -> HttpResponse:
+    """Return role response in HttpResponse object."""
+    response_data = {
+        "message": "Role retrieved successfully",
+        "role": {
+            "uuid": str(role.uuid),
+            "name": role.name,
+            "system": role.system,
+            "admin_default": role.admin_default,
+            "platform_default": role.platform_default,
+        },
+    }
+    return HttpResponse(json.dumps(response_data), content_type="application/json", status=200)
+
+
+def roles(request, uuid: str) -> HttpResponse:
+    """Update or get role.
+
+    GET /_private/api/role/uuid-uuid-uuid-uuid/
+    PUT /_private/api/role/uuid-uuid-uuid-uuid/
+    {
+        "system": "true"
+    }
+    """
+    try:
+        role = get_object_or_404(Role, uuid=uuid)
+
+        if request.method == "PUT":
+            body = json.loads(request.body)
+
+            invalid_keys = set(body.keys()) - ALLOWED_ROLE_UPDATE_ATTRIBUTES
+            if invalid_keys:
+                return handle_error(f"Invalid attributes: {', '.join(invalid_keys)}", 400)
+
+            if "system" in body:
+                role.system = str_to_bool(body["system"])
+
+            if "platform_default" in body:
+                role.platform_default = str_to_bool(body["platform_default"])
+
+            if "admin_default" in body:
+                role.admin_default = str_to_bool(body["admin_default"])
+
+            role.save()
+            return get_role_response(role)
+
+        elif request.method == "GET":
+            return get_role_response(role)
+
+        return handle_error("Invalid request method", 405)
+
+    except Exception as e:
+        return handle_error(str(e), 500)
 
 
 def trigger_error(request):
