@@ -99,6 +99,7 @@ class PrincipalView(APIView):
     def get(self, request):
         """List principals for account."""
         user = request.user
+        path = request.path
         query_params = request.query_params
         default_limit = StandardResultsSetPagination.default_limit
         usernames_filter = ""
@@ -120,6 +121,12 @@ class PrincipalView(APIView):
             }
             errors = {"errors": [error]}
             return Response(status=status.HTTP_400_BAD_REQUEST, data=errors)
+
+        previous_offset = 0
+        if offset - limit > 0:
+            previous_offset = offset - limit
+        else:
+            None
         # Attempt validating and obtaining the "principal type" query
         # parameter.
         principal_type = validate_and_get_key(
@@ -170,27 +177,30 @@ class PrincipalView(APIView):
         response_data = {}
         if status_code == status.HTTP_200_OK:
             data = resp.get("data", [])
-            if isinstance(data, dict):
+            if principal_type == "service-account":
+                count = sa_count
+            elif isinstance(data, dict):
+                count = data.get("userCount")
                 data = data.get("users")
-            if isinstance(data, list):
-                response_data["data"] = data
-
-            page = self.paginate_queryset(response_data["data"])
-            paginated_response = self.get_paginated_response(page)
-            return paginated_response
-
-        return Response(
-            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            data={
-                "errors": [
-                    {
-                        "detail": "Unexpected internal error.",
-                        "source": "principals",
-                        "status": str(status.HTTP_500_INTERNAL_SERVER_ERROR),
-                    }
-                ]
-            },
-        )
+            elif isinstance(data, list):
+                count = len(data)
+            else:
+                count = None
+            last_link_offset = int(count) - int(limit) if (int(count) - int(limit)) >= 0 else 0
+            response_data["meta"] = {"count": count, "limit": limit, "offset": offset}
+            response_data["links"] = {
+                "first": f"{path}?limit={limit}&offset=0{usernames_filter}",
+                "next": f"{path}?limit={limit}&offset={offset + limit}{usernames_filter}",
+                "previous": (
+                    f"{path}?limit={limit}&offset={previous_offset}{usernames_filter}" if offset - limit >= 0 else None
+                ),
+                "last": f"{path}?limit={limit}&offset={last_link_offset}{usernames_filter}",
+            }
+            response_data["data"] = data
+        else:
+            response_data = resp
+            del response_data["status_code"]
+        return Response(status=status_code, data=response_data)
 
     def users_from_proxy(self, user, query_params, options, limit, offset):
         """Format principal request for proxy and return prepped result."""
@@ -228,24 +238,3 @@ class PrincipalView(APIView):
             org_id=user.org_id, input=proxyInput, limit=limit, offset=offset, options=options
         )
         return resp, ""
-
-    @property
-    def paginator(self):
-        """Return the paginator instance associated with the view, or `None`."""
-        if not hasattr(self, "_paginator"):
-            self._paginator = self.pagination_class()
-            self._paginator.max_limit = None
-        return self._paginator
-
-    def paginate_queryset(self, queryset):
-        """Return a single page of results, or `None` if pagination is disabled."""
-        if self.paginator is None:
-            return None
-        if "limit" not in self.request.query_params:
-            self.paginator.default_limit = len(queryset)
-        return self.paginator.paginate_queryset(queryset, self.request, view=self)
-
-    def get_paginated_response(self, data):
-        """Return a paginated style `Response` object for the given output data."""
-        assert self.paginator is not None
-        return self.paginator.get_paginated_response(data)
