@@ -22,7 +22,7 @@ from django.conf import settings
 from django.db import transaction
 from kessel.relations.v1beta1 import common_pb2
 from management.group.relation_api_dual_write_group_handler import RelationApiDualWriteGroupHandler
-from management.models import Workspace
+from management.models import Group, Workspace
 from management.principal.model import Principal
 from management.relation_replicator.logging_replicator import LoggingReplicator
 from management.relation_replicator.outbox_replicator import OutboxReplicator
@@ -40,6 +40,7 @@ from migration_tool.utils import create_relationship
 
 from api.cross_access.relation_api_dual_write_cross_access_handler import RelationApiDualWriteCrossAccessHandler
 from api.models import CrossAccountRequest, Tenant
+
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
@@ -108,15 +109,26 @@ def migrate_groups_for_tenant(tenant: Tenant, replicator: RelationReplicator):
         if group.system is False and group.admin_default is False:
             system_roles = group.roles().public_tenant_only()
         if any(True for _ in system_roles) or any(True for _ in principals):
-            # The migrator does not generally deal with concurrency control,
-            # but we require an atomic block due to use of select_for_update in the dual write handler.
+            # The migrator deals with concurrency control.
+            # We need an atomic block because the select_for_update is used in the dual write handler,
+            # and the group must be locked to add principals to the groups.
+            # NOTE: The lock on the group is not necessary when adding system roles to the group,
+            # as the binding mappings are locked during this process to ensure concurrency control.
+            # Start of transaction for group operations
             with transaction.atomic():
+                # Lock group
+                Group.objects.select_for_update().get(pk=group.pk)
                 dual_write_handler = RelationApiDualWriteGroupHandler(
                     group, ReplicationEventType.MIGRATE_TENANT_GROUPS, replicator=replicator
                 )
+                # this operation requires lock on group as well as in view,
+                # more details in GroupViewSet#get_queryset method which is used to add principals.
                 dual_write_handler.generate_relations_to_add_principals(principals)
+                # lock on group is not required to add system role, only binding mappings which is included in
+                # dual_write_handler
                 dual_write_handler.generate_relations_to_add_roles(system_roles)
                 dual_write_handler.replicate()
+            # End of transaction for group operations, locks are released
 
 
 def migrate_roles_for_tenant(tenant, exclude_apps, replicator):
@@ -171,20 +183,32 @@ def migrate_data_for_tenant(tenant: Tenant, exclude_apps: list, replicator: Rela
     logger.info("Finished relations of cross account requests.")
 
 
-# The migrator does not generally deal with concurrency control,
-# but we require an atomic block due to use of select_for_update in the dual write handler.
 def migrate_cross_account_requests(tenant: Tenant, replicator: RelationReplicator):
     """Migrate approved account requests."""
     cross_account_requests = CrossAccountRequest.objects.filter(status="approved", target_org=tenant.org_id)
     for cross_account_request in cross_account_requests:
+        # The migrator deals with concurrency control.
+        # We need an atomic block because the select_for_update is used in the dual write handler,
+        # and cross account request must be locked to add roles.
+        # Start of transaction for approved cross account request and "add roles" operation
         with transaction.atomic():
+            # Lock cross account request
+            cross_account_request = CrossAccountRequest.objects.select_for_update().get(pk=cross_account_request.pk)
             cross_account_roles = cross_account_request.roles.all()
             if any(True for _ in cross_account_roles):
                 dual_write_handler = RelationApiDualWriteCrossAccessHandler(
                     cross_account_request, ReplicationEventType.MIGRATE_CROSS_ACCOUNT_REQUEST, replicator
                 )
+                # This operation requires lock on cross account request as is done
+                # in CrossAccountRequestViewSet#get_queryset
+                # This also locks binding mapping if exists for passed system roles.
                 dual_write_handler.generate_relations_to_add_roles(cross_account_request.roles.all())
                 dual_write_handler.replicate()
+        # End of transaction for approved cross account request and its add role operation
+        # Locks on cross account request and eventually on default workspace are released.
+        # Default workspace is locked when related binding mapping did not exist yet
+        # (Considering the position of this algorithm,the binding mappings for system roles should already exist,
+        # as they are tied to the system roles.)
 
 
 def migrate_data(
@@ -193,6 +217,7 @@ def migrate_data(
     """Migrate all data for all tenants."""
     # Only run this in maintanence mode or
     # if we don't write relationships (testing out the migration and clean up the created bindingmappings)
+    # TODO: this condition needs to be removed to use migrator without maintenance mode.
     if not settings.READ_ONLY_API_MODE and write_relationships != "False":
         logger.fatal("Read-only API mode is required. READ_ONLY_API_MODE must be set to true.")
         return
