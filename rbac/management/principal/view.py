@@ -186,11 +186,17 @@ class PrincipalView(APIView):
                 count = len(data)
             else:
                 count = None
+
             last_link_offset = int(count) - int(limit) if (int(count) - int(limit)) >= 0 else 0
+            next_offset = offset + limit
             response_data["meta"] = {"count": count, "limit": limit, "offset": offset}
             response_data["links"] = {
                 "first": f"{path}?limit={limit}&offset=0{usernames_filter}",
-                "next": f"{path}?limit={limit}&offset={offset + limit}{usernames_filter}",
+                "next": (
+                    f"{path}?limit={limit}&offset={next_offset}{usernames_filter}"
+                    if int(next_offset) < int(count)
+                    else None
+                ),
                 "previous": (
                     f"{path}?limit={limit}&offset={previous_offset}{usernames_filter}" if offset - limit >= 0 else None
                 ),
