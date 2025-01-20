@@ -40,24 +40,24 @@ logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 def migrate_groups_for_tenant(tenant: Tenant, replicator: RelationReplicator):
     """Generate user relationships and system role assignments for groups in a tenant."""
-    groups = tenant.group_set.all()
+    groups = tenant.group_set.values("pk")
     for group in groups:
-        principals: list[Principal] = []
-        system_roles: list[Role] = []
-        if not group.platform_default:
-            principals = group.principals.all()
-        if group.system is False and group.admin_default is False:
-            system_roles = group.roles().public_tenant_only()
-        if any(True for _ in system_roles) or any(True for _ in principals):
-            # The migrator deals with concurrency control.
-            # We need an atomic block because the select_for_update is used in the dual write handler,
-            # and the group must be locked to add principals to the groups.
-            # NOTE: The lock on the group is not necessary when adding system roles to the group,
-            # as the binding mappings are locked during this process to ensure concurrency control.
-            # Start of transaction for group operations
-            with transaction.atomic():
-                # Lock group
-                Group.objects.select_for_update().get(pk=group.pk)
+        # The migrator deals with concurrency control.
+        # We need an atomic block because the select_for_update is used in the dual write handler,
+        # and the group must be locked to add principals to the groups.
+        # NOTE: The lock on the group is not necessary when adding system roles to the group,
+        # as the binding mappings are locked during this process to ensure concurrency control.
+        # Start of transaction for group operations
+        with transaction.atomic():
+            # Requery the group with a lock
+            group = Group.objects.select_for_update().get(pk=group["pk"])
+            principals: list[Principal] = []
+            system_roles: list[Role] = []
+            if not group.platform_default:
+                principals = group.principals.all()
+            if group.system is False and group.admin_default is False:
+                system_roles = group.roles().public_tenant_only()
+            if any(True for _ in system_roles) or any(True for _ in principals):
                 dual_write_handler = RelationApiDualWriteGroupHandler(
                     group, ReplicationEventType.MIGRATE_TENANT_GROUPS, replicator=replicator
                 )
@@ -68,7 +68,7 @@ def migrate_groups_for_tenant(tenant: Tenant, replicator: RelationReplicator):
                 # dual_write_handler
                 dual_write_handler.generate_relations_to_add_roles(system_roles)
                 dual_write_handler.replicate()
-            # End of transaction for group operations, locks are released
+        # End of transaction for group operations, locks are released
 
 
 def migrate_roles_for_tenant(tenant, exclude_apps, replicator):

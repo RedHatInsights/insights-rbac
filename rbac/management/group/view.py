@@ -185,10 +185,10 @@ class GroupViewSet(
 
     def get_queryset(self):
         """Obtain queryset for requesting user based on access."""
-        add_principals_method = self.action == "principals" and self.request.method == "POST"
+        principals_method = self.action == "principals" and (self.request.method != "GET")
         destroy_method = self.action == "destroy"
 
-        if add_principals_method or destroy_method:
+        if principals_method or destroy_method:
             # In this case, the group must be locked to prevent principal changes during deletion.
             # If not locked, replication to relations may be out of sync due to phantom reads.
             # We have to modify the starting queryset to support locking because
