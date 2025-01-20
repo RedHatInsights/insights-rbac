@@ -1423,7 +1423,7 @@ class InternalViewsetResourceDefinitionTests(IdentityRequest):
         access = Access.objects.create(role=role, permission=assigned_permission, tenant=self.tenant)
         return role
 
-    def test_correct_string_resource_definition(self):
+    def test_get_correct_string_resource_definition(self):
         """Test that a string attributeFilter can have the equal operation"""
 
         role_name = "roleA"
@@ -1444,7 +1444,7 @@ class InternalViewsetResourceDefinitionTests(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.content, b"0 resource definitions would be corrected")
 
-    def test_incorrect_string_resource_definition(self):
+    def test_get_incorrect_string_resource_definition(self):
         """Test that a string attributeFilter cannot have the in operation"""
 
         role_name = "roleA"
@@ -1465,7 +1465,7 @@ class InternalViewsetResourceDefinitionTests(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.content, b"1 resource definitions would be corrected")
 
-    def test_correct_list_resource_definition(self):
+    def test_get_correct_list_resource_definition(self):
         """Test that a list attributeFilter can have the in operation"""
 
         role_name = "roleA"
@@ -1488,7 +1488,7 @@ class InternalViewsetResourceDefinitionTests(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.content, b"0 resource definitions would be corrected")
 
-    def test_correct_list_resource_definition(self):
+    def test_get_incorrect_list_resource_definition(self):
         """Test that a list attributeFilter cannot have the equal operation"""
 
         role_name = "roleA"
@@ -1510,3 +1510,123 @@ class InternalViewsetResourceDefinitionTests(IdentityRequest):
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.content, b"1 resource definitions would be corrected")
+
+    def test_patch_correct_string_resource_definition(self):
+        """Test patching a string attributeFilter with the equal operation"""
+
+        role_name = "roleA"
+
+        self.access_data = {
+            "permission": "app:*:*",
+            "resourceDefinitions": [{"attributeFilter": {"key": "key1.id", "operation": "equal", "value": "value1"}}],
+        }
+
+        response = self.create_role(role_name, headers=self.headers)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+        response = self.client.patch(
+            f"/_private/api/utils/resource_definitions/",
+            **self.internal_request.META,
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.content, b"Updated 0 bad resource definitions")
+
+        response = self.client.get(
+            f"/_private/api/utils/resource_definitions/",
+            **self.internal_request.META,
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.content, b"0 resource definitions would be corrected")
+
+    def test_patch_incorrect_string_resource_definition(self):
+        """Test patching a string attributeFilter with the in operation"""
+
+        role_name = "roleA"
+
+        self.access_data = {
+            "permission": "app:*:*",
+            "resourceDefinitions": [{"attributeFilter": {"key": "key1.id", "operation": "in", "value": "value1"}}],
+        }
+
+        response = self.create_role(role_name, headers=self.headers)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+        response = self.client.patch(
+            f"/_private/api/utils/resource_definitions/",
+            **self.internal_request.META,
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.content, b"Updated 1 bad resource definitions")
+
+        response = self.client.get(
+            f"/_private/api/utils/resource_definitions/",
+            **self.internal_request.META,
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.content, b"0 resource definitions would be corrected")
+
+    def test_patch_correct_list_resource_definition(self):
+        """Test patching a list attributeFilter with the in operation"""
+
+        role_name = "roleA"
+
+        self.access_data = {
+            "permission": "app:*:*",
+            "resourceDefinitions": [
+                {"attributeFilter": {"key": "key1.id", "operation": "in", "value": ["value1", "value2"]}}
+            ],
+        }
+
+        response = self.create_role(role_name, headers=self.headers)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+        response = self.client.patch(
+            f"/_private/api/utils/resource_definitions/",
+            **self.internal_request.META,
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.content, b"Updated 0 bad resource definitions")
+
+        response = self.client.get(
+            f"/_private/api/utils/resource_definitions/",
+            **self.internal_request.META,
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.content, b"0 resource definitions would be corrected")
+
+    def test_patch_incorrect_list_resource_definition(self):
+        """Test patching a list attributeFilter with the equal operation"""
+
+        role_name = "roleA"
+
+        self.access_data = {
+            "permission": "app:*:*",
+            "resourceDefinitions": [
+                {"attributeFilter": {"key": "key1.id", "operation": "equal", "value": ["value1", "value2"]}}
+            ],
+        }
+
+        response = self.create_role(role_name, headers=self.headers)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+        response = self.client.patch(
+            f"/_private/api/utils/resource_definitions/",
+            **self.internal_request.META,
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.content, b"Updated 1 bad resource definitions")
+
+        response = self.client.get(
+            f"/_private/api/utils/resource_definitions/",
+            **self.internal_request.META,
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.content, b"0 resource definitions would be corrected")
