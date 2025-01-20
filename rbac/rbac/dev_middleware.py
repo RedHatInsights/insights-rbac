@@ -38,7 +38,7 @@ class DevelopmentIdentityHeaderMiddleware(MiddlewareMixin):  # pylint: disable=t
         """
         if hasattr(request, "META"):
             user_type = request.headers.get("User-Type")
-            if True or user_type and user_type in ["associate", "internal", "turnpike"]:
+            if user_type and user_type in ["associate", "internal", "turnpike"]:
                 identity_header = {
                     "identity": {
                         "associate": {
