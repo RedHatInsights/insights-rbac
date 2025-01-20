@@ -78,17 +78,19 @@ def migrate_roles_for_tenant(tenant, exclude_apps, replicator):
         roles = roles.exclude(access__permission__application__in=exclude_apps)
 
     for role in roles:
-        logger.info(f"Migrating role: {role.name} with UUID {role.uuid}.")
-
+        # The migrator deals with concurrency control and roles needs to be locked.
         with transaction.atomic():
+            logger.info(f"Migrating role: {role.name} with UUID {role.uuid}.")
+            # Requery and lock role
             role = Role.objects.select_for_update().get(pk=role.pk)
             dual_write_handler = RelationApiDualWriteHandler(
                 role, ReplicationEventType.MIGRATE_CUSTOM_ROLE, replicator
             )
-
+            dual_write_handler.prepare_for_update()
             dual_write_handler.replicate_new_or_updated_role(role)
-
+        # End of transaction, locks on role is released.
         logger.info(f"Migration completed for role: {role.name} with UUID {role.uuid}.")
+
     logger.info(f"Migrated {roles.count()} roles for tenant: {tenant.org_id}")
 
 
