@@ -110,18 +110,17 @@ class ITService:
 
             # If the offset is zero, that means that we need to call the service at least once to get the first
             # service accounts. If it equals the limit, that means that there are more pages to fetch.
-            parameters: dict[str, Union[int, list[str]]] = {"first": offset, "max": limit}
-            # If we were given client IDs to filter the collection with, do it!
-            if client_ids:
-                parameters["clientId"] = client_ids
+            parameters: dict[str, Union[int, Optional[list[str]]]] = {
+                "first": offset,
+                "max": limit,
+                "clientId": client_ids,
+            }
 
             continue_fetching: bool = True
             while continue_fetching:
                 # Recreate the parameters dictionary every time since otherwise the "assert_has_calls" statement of the
                 # tests only sees the last value for the offset when attempting to fetch multiple pages.
-                parameters = {"first": offset, "max": limit}
-                if client_ids:
-                    parameters["clientId"] = client_ids
+                parameters = {"first": offset, "max": limit, "clientId": client_ids}
 
                 # Call IT.
                 response = requests.get(
@@ -304,10 +303,37 @@ class ITService:
         limit = options.get("limit")
         limit_offset_validation(offset, limit)
 
+        # Service account filtering query parameters
+        name = options.get("name")
+        owner = options.get("owner")
+        description = options.get("description")
+        filtered_service_accounts = []
+        sa_query_passed = name or owner or description
         count = len(service_accounts)
         # flake8 ignore E203 = Whitespace before ':' -> false positive https://github.com/PyCQA/pycodestyle/issues/373
         service_accounts = service_accounts[offset : offset + limit]  # type: ignore # noqa: E203
-
+        # If any one service account filter parameter is provided extract & return the specific service account(s)
+        if sa_query_passed:
+            for sa in service_accounts:
+                sa_description = str(sa.get("description"))
+                if (
+                    (name and sa.get("name") == name)
+                    or (owner and sa.get("owner") == owner)
+                    or (description and description in sa_description)
+                ):
+                    filtered_service_accounts.append(sa)
+                else:
+                    raise serializers.ValidationError(
+                        {"detail": "Invalid value provided to query parameter when trying to filter service accounts"}
+                    )
+            count = len(filtered_service_accounts)
+            service_accounts = filtered_service_accounts
+        else:
+            # If any order_by parameter is passed then sort the service accounts by that field either asc or desc
+            if order_by in ["-time_created", "-name", "-description", "-clientId", "-owner"]:
+                service_accounts.sort(reverse=True, key=lambda sa: sa.get(order_by[1:], ""))
+            else:
+                service_accounts.sort(reverse=False, key=lambda sa: sa.get(order_by, ""))
         return service_accounts, count
 
     def get_service_accounts_group(self, group: Group, user: User, options: dict[str, Any] = {}) -> list[dict]:
@@ -492,7 +518,6 @@ class ITService:
 
         # If the "username_only" parameter was set, we should only return that for the user.
         username_only = options.get("username_only")
-
         for it_service_account in it_service_accounts:
             try:
                 sa_principal = service_account_principals[it_service_account["clientId"]]
