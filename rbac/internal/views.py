@@ -809,22 +809,25 @@ def correct_resource_definitions(request):
 
         return HttpResponse(f"{count} resource definitions would be corrected", status=200)
     elif request.method == "PATCH":
+        count = 0
         with connection.cursor() as cursor:
 
             cursor.execute("SELECT id " + list_query)
             result = cursor.fetchall()
             for id in result:
-                resource_definition = ResourceDefinition.objects.get(id=id)
+                resource_definition = ResourceDefinition.objects.get(id=id[0])
                 resource_definition.attributeFilter["operation"] = "in"
                 resource_definition.save()
+                count += 1
 
             cursor.execute("SELECT id " + string_query)
             result = cursor.fetchall()
             for id in result:
-                resource_definition = ResourceDefinition.objects.get(id=id)
+                resource_definition = ResourceDefinition.objects.get(id=id[0])
                 resource_definition.attributeFilter["operation"] = "equal"
                 resource_definition.save()
+                count += 1
 
-        return HttpResponse("Updated bad resource definitions", status=200)
+        return HttpResponse(f"Updated {count} bad resource definitions", status=200)
 
     return HttpResponse('Invalid method, only "GET" or "PATCH" are allowed.', status=405)
