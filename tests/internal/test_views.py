@@ -31,6 +31,7 @@ import json
 from api.models import User, Tenant
 from api.utils import reset_imported_tenants
 from management.audit_log.model import AuditLog
+from management.cache import TenantCache
 from management.models import BindingMapping, Group, Permission, Policy, Role, Workspace
 from management.principal.model import Principal
 from management.relation_replicator.noop_replicator import NoopReplicator
@@ -1301,9 +1302,12 @@ class InternalViewsetResourceDefinitionTests(IdentityRequest):
     def setUp(self):
         """Set up the access view tests."""
         super().setUp()
-        request = self.request_context["request"]
+        self.client = APIClient()
         self.customer = self.customer_data
         self.internal_request_context = self._create_request_context(self.customer, self.user_data, is_internal=True)
+        self.internal_request = self.internal_request_context["request"]
+
+        request = self.request_context["request"]
         user = User()
         user.username = self.user_data["username"]
         user.account = self.customer_data["account_id"]
@@ -1361,6 +1365,18 @@ class InternalViewsetResourceDefinitionTests(IdentityRequest):
         self.group.save()
         self.permission = Permission.objects.create(permission="app:*:*", tenant=self.tenant)
         Permission.objects.create(permission="app:foo:bar", tenant=self.tenant)
+        tenant_root_workspace = Workspace.objects.create(
+            name="root",
+            description="Root workspace",
+            tenant=self.tenant,
+            type=Workspace.Types.ROOT,
+        )
+        Workspace.objects.create(
+            name="Tenant Default Workspace",
+            type=Workspace.Types.DEFAULT,
+            parent=tenant_root_workspace,
+            tenant=self.tenant,
+        )
 
     def tearDown(self):
         """Tear down access view tests."""
@@ -1385,9 +1401,43 @@ class InternalViewsetResourceDefinitionTests(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         return response
 
+    def create_policy(self, policy_name, group, roles, tenant):
+        """Create a policy."""
+        # create a policy
+        policy = Policy.objects.create(name=policy_name, tenant=tenant, system=True)
+        for role in Role.objects.filter(uuid__in=roles):
+            policy.roles.add(role)
+        policy.group = Group.objects.get(uuid=group)
+        policy.save()
+
+    def create_platform_default_resource(self):
+        """Setup default group and role."""
+        default_permission = Permission.objects.create(permission="default:*:*", tenant=self.tenant)
+        default_role = Role.objects.create(name="default role", platform_default=True, system=True, tenant=self.tenant)
+        default_access = Access.objects.create(permission=default_permission, role=default_role, tenant=self.tenant)
+        default_policy = Policy.objects.create(name="default policy", system=True, tenant=self.tenant)
+        default_policy.roles.add(default_role)
+        default_group = Group.objects.create(
+            name="default group", system=True, platform_default=True, tenant=self.tenant
+        )
+        default_group.policies.add(default_policy)
+
+    def create_role_and_permission(self, role_name, permission):
+        role = Role.objects.create(name=role_name, tenant=self.tenant)
+        assigned_permission = Permission.objects.create(permission=permission, tenant=self.tenant)
+        access = Access.objects.create(role=role, permission=assigned_permission, tenant=self.tenant)
+        return role
+
     def test_correct_string_resource_definition(self):
         """Test that a string attributeFilter can have the equal operation"""
 
         role_name = "roleA"
         response = self.create_role(role_name, headers=self.headers)
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+        response = self.client.get(
+            f"/_private/api/utils/resource_definitions/",
+            **self.internal_request.META,
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
