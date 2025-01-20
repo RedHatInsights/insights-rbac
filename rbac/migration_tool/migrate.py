@@ -17,7 +17,6 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 import logging
 
-from django.conf import settings
 from django.db import transaction
 from management.group.relation_api_dual_write_group_handler import RelationApiDualWriteGroupHandler
 from management.models import Group
@@ -144,10 +143,8 @@ def migrate_data(
     exclude_apps: list = [], orgs: list = [], write_relationships: str = "False", skip_roles: bool = False
 ):
     """Migrate all data for all tenants."""
-    # Only run this in maintanence mode or
-    # if we don't write relationships (testing out the migration and clean up the created bindingmappings)
-    # TODO: this condition needs to be removed to use migrator without maintenance mode.
-    if not settings.READ_ONLY_API_MODE and write_relationships != "False":
+    # Run this if we don't write relationships (testing out the migration and clean up the created bindingmappings)
+    if write_relationships != "False":
         logger.fatal("Read-only API mode is required. READ_ONLY_API_MODE must be set to true.")
         return
 
