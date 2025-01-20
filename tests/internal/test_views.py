@@ -1315,11 +1315,6 @@ class InternalViewsetResourceDefinitionTests(IdentityRequest):
         request.user = user
         public_tenant = Tenant.objects.get(tenant_name="public")
 
-        self.access_data = {
-            "permission": "app:*:*",
-            "resourceDefinitions": [{"attributeFilter": {"key": "key1.id", "operation": "equal", "value": "value1"}}],
-        }
-
         test_tenant_org_id = "100001"
 
         # we need to delete old test_tenant's that may exist in cache
@@ -1432,6 +1427,12 @@ class InternalViewsetResourceDefinitionTests(IdentityRequest):
         """Test that a string attributeFilter can have the equal operation"""
 
         role_name = "roleA"
+
+        self.access_data = {
+            "permission": "app:*:*",
+            "resourceDefinitions": [{"attributeFilter": {"key": "key1.id", "operation": "equal", "value": "value1"}}],
+        }
+
         response = self.create_role(role_name, headers=self.headers)
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
 
@@ -1441,3 +1442,71 @@ class InternalViewsetResourceDefinitionTests(IdentityRequest):
         )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.content, b"0 resource definitions would be corrected")
+
+    def test_incorrect_string_resource_definition(self):
+        """Test that a string attributeFilter cannot have the in operation"""
+
+        role_name = "roleA"
+
+        self.access_data = {
+            "permission": "app:*:*",
+            "resourceDefinitions": [{"attributeFilter": {"key": "key1.id", "operation": "in", "value": "value1"}}],
+        }
+
+        response = self.create_role(role_name, headers=self.headers)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+        response = self.client.get(
+            f"/_private/api/utils/resource_definitions/",
+            **self.internal_request.META,
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.content, b"1 resource definitions would be corrected")
+
+    def test_correct_list_resource_definition(self):
+        """Test that a list attributeFilter can have the in operation"""
+
+        role_name = "roleA"
+
+        self.access_data = {
+            "permission": "app:*:*",
+            "resourceDefinitions": [
+                {"attributeFilter": {"key": "key1.id", "operation": "in", "value": ["value1", "value2"]}}
+            ],
+        }
+
+        response = self.create_role(role_name, headers=self.headers)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+        response = self.client.get(
+            f"/_private/api/utils/resource_definitions/",
+            **self.internal_request.META,
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.content, b"0 resource definitions would be corrected")
+
+    def test_correct_list_resource_definition(self):
+        """Test that a list attributeFilter cannot have the equal operation"""
+
+        role_name = "roleA"
+
+        self.access_data = {
+            "permission": "app:*:*",
+            "resourceDefinitions": [
+                {"attributeFilter": {"key": "key1.id", "operation": "equal", "value": ["value1", "value2"]}}
+            ],
+        }
+
+        response = self.create_role(role_name, headers=self.headers)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+        response = self.client.get(
+            f"/_private/api/utils/resource_definitions/",
+            **self.internal_request.META,
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.content, b"1 resource definitions would be corrected")
