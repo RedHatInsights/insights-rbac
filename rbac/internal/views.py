@@ -30,7 +30,7 @@ from django.shortcuts import get_object_or_404
 from django.utils.html import escape
 from internal.utils import delete_bindings
 from management.cache import TenantCache
-from management.models import Group, Permission, Role, ResourceDefinition
+from management.models import Group, Permission, ResourceDefinition, Role
 from management.principal.proxy import (
     API_TOKEN_HEADER,
     CLIENT_ID_HEADER,
