@@ -49,6 +49,8 @@ class BaseRelationApiDualWriteHandler(ABC):
     # TODO: continue factoring common behavior into this base class, and potentially into a higher base class
     # for the general pattern
 
+    _expected_empty_relation_reason = None
+
     def __init__(self, replicator: Optional[RelationReplicator] = None):
         """Initialize SeedingRelationApiDualWriteHandler."""
         if not self.replication_enabled():
@@ -59,6 +61,10 @@ class BaseRelationApiDualWriteHandler(ABC):
     def replication_enabled(self):
         """Check whether replication enabled."""
         return settings.REPLICATION_TO_RELATION_ENABLED is True
+
+    def set_expected_empty_relation_reason_to_replicator(self, reason: str):
+        """Set expected empty relation reason to replicator."""
+        self._expected_empty_relation_reason = reason
 
 
 class SeedingRelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
@@ -190,8 +196,6 @@ class SeedingRelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
 class RelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
     """Class to handle Dual Write API related operations."""
 
-    _expected_empty_relation_reason = None
-
     @classmethod
     def for_system_role_event(
         cls,
@@ -247,13 +251,6 @@ class RelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
             logger.info(
                 "[Dual Write] Generate relations from current state of role(%s): '%s'", self.role.uuid, self.role.name
             )
-            if not self.role.access.all() and self.event_type == ReplicationEventType.DELETE_CUSTOM_ROLE:
-                self._expected_empty_relation_reason = (
-                    f"No access found for role({self.role.uuid}): '{self.role.name}'. "
-                    "Assuming no current relations exist. "
-                    f"event_type='{self.event_type}'",
-                )
-                return
 
             self.binding_mappings = {m.id: m for m in self.role.binding_mappings.select_for_update().all()}
 
@@ -283,14 +280,6 @@ class RelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
             return
         self.role = role
         self._generate_relations_and_mappings_for_role()
-        # No need to replicate if creating role with empty access, which won't have any relationships
-        if not role.access.all() and self.event_type == ReplicationEventType.CREATE_CUSTOM_ROLE:
-            self._expected_empty_relation_reason = (
-                f"No access found for role({role.uuid}): '{role.name}'. "
-                "Assuming no relations to create. "
-                f"event_type='{self.event_type}'"
-            )
-            return
         self._replicate()
 
     def replicate_deleted_role(self):

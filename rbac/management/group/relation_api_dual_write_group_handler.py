@@ -111,7 +111,7 @@ class RelationApiDualWriteGroupHandler(RelationApiDualWriteSubjectHandler):
         if not self.replication_enabled():
             return
         if self._expected_empty_relation_reason:
-            logger.info(f"Skipping empty replication event. {self._expected_empty_relation_reason}")
+            logger.info(f"[Dual Write] Skipping empty replication event. {self._expected_empty_relation_reason}")
             return
         try:
             self._replicator.replicate(
@@ -174,11 +174,10 @@ class RelationApiDualWriteGroupHandler(RelationApiDualWriteSubjectHandler):
             role, update_mapping=remove_group_from_binding, create_default_mapping_for_system_role=None
         )
 
-    def prepare_to_delete_group(self):
+    def prepare_to_delete_group(self, roles):
         """Generate relations to delete."""
         if not self.replication_enabled():
             return
-        roles = Role.objects.filter(policies__group=self.group)
 
         system_roles = roles.public_tenant_only()
 
@@ -199,13 +198,6 @@ class RelationApiDualWriteGroupHandler(RelationApiDualWriteSubjectHandler):
             self.relations_to_add.append(self._default_binding())
         else:
             self.principals = self.group.principals.all()
-            if not self.principals.exists() and not roles.exists():
-                self._expected_empty_relation_reason = (
-                    f"No principal or role found for group({self.group.uuid}): '{self.group.name}'. "
-                    "Assuming no current relations exist. "
-                    f"event_type='{self.event_type}'",
-                )
-                return
             self.relations_to_remove.extend(self._generate_member_relations())
 
     def _default_binding(self, mapping: Optional[TenantMapping] = None) -> Relationship:
@@ -222,3 +214,7 @@ class RelationApiDualWriteGroupHandler(RelationApiDualWriteSubjectHandler):
             str(mapping.default_role_binding_uuid),
             "binding",
         )
+
+    def set_expected_empty_relation_reason(self, reason):
+        """Set expected empty relation reason."""
+        self._expected_empty_relation_reason = reason

@@ -215,7 +215,8 @@ class DualWriteTestCase(TestCase):
             ReplicationEventType.DELETE_GROUP,
             replicator=InMemoryRelationReplicator(self.tuples),
         )
-        dual_write_handler.prepare_to_delete_group()
+        roles = Role.objects.filter(policies__group=group)
+        dual_write_handler.prepare_to_delete_group(roles)
         group.delete()
         dual_write_handler.replicate()
 
