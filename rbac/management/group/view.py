@@ -937,19 +937,19 @@ class GroupViewSet(
             page = self.paginate_queryset(resp.get("data"))
             response = self.get_paginated_response(page)
         else:
-            group = self.get_object()
-
-            self.protect_system_groups("remove principals")
-
-            if not request.user.admin:
-                self.protect_group_with_user_access_admin_role(group.roles_with_access(), "remove_principals")
-
-            if SERVICE_ACCOUNTS_KEY not in request.query_params and USERNAMES_KEY not in request.query_params:
-                key = "detail"
-                message = "Query parameter {} or {} is required.".format(SERVICE_ACCOUNTS_KEY, USERNAMES_KEY)
-                raise serializers.ValidationError({key: _(message)})
-
             with transaction.atomic():
+                group = self.get_object()
+
+                self.protect_system_groups("remove principals")
+
+                if not request.user.admin:
+                    self.protect_group_with_user_access_admin_role(group.roles_with_access(), "remove_principals")
+
+                if SERVICE_ACCOUNTS_KEY not in request.query_params and USERNAMES_KEY not in request.query_params:
+                    key = "detail"
+                    message = "Query parameter {} or {} is required.".format(SERVICE_ACCOUNTS_KEY, USERNAMES_KEY)
+                    raise serializers.ValidationError({key: _(message)})
+
                 service_accounts_to_remove = []
                 # Remove the service accounts from the group.
                 if SERVICE_ACCOUNTS_KEY in request.query_params:
