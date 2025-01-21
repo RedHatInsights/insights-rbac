@@ -157,10 +157,8 @@ class RoleSerializer(serializers.ModelSerializer):
         """Update the role object in the database."""
         access_list = validated_data.pop("access")
         tenant = self.context["request"].tenant
-        role_name = instance.name
-        update_data = validate_role_update(instance, validated_data)
 
-        instance = update_role(role_name, update_data, tenant)
+        instance = update_role(instance, validated_data)
 
         create_access_for_role(instance, access_list, tenant)
 
@@ -173,6 +171,15 @@ class RoleSerializer(serializers.ModelSerializer):
     def get_external_tenant(self, obj):
         """Get the external tenant name if it's from an external tenant."""
         return obj.external_tenant_name()
+
+    def validate(self, data):
+        """Validate the input data of role."""
+        if self.instance and self.instance.system:
+            key = "role.update"
+            message = "System roles may not be updated."
+            error = {key: [_(message)]}
+            raise serializers.ValidationError(error)
+        return super().validate(data)
 
 
 class RoleMinimumSerializer(SerializerCreateOverrideMixin, serializers.ModelSerializer):
@@ -321,12 +328,17 @@ class RolePatchSerializer(RoleSerializer):
 
     def update(self, instance, validated_data):
         """Patch the role object."""
-        tenant = self.context["request"].tenant
-        role_name = instance.name
-        update_data = validate_role_update(instance, validated_data)
-
-        instance = update_role(role_name, update_data, tenant, clear_access=False)
+        instance = update_role(instance, validated_data, clear_access=False)
         return instance
+
+    def validate(self, data):
+        """Validate the input data of patching role."""
+        if self.instance.system:
+            key = "role.update"
+            message = "System roles may not be updated."
+            error = {key: [_(message)]}
+            raise serializers.ValidationError(error)
+        return super().validate(data)
 
 
 class BindingMappingSerializer(serializers.ModelSerializer):
@@ -395,43 +407,19 @@ def create_access_for_role(role, access_list, tenant):
             ResourceDefinition.objects.create(**resource_def_item, access=access_obj, tenant=tenant)
 
 
-def validate_role_update(instance, validated_data):
-    """Validate if role could be updated."""
-    if instance.system:
-        key = "role.update"
-        message = "System roles may not be updated."
-        error = {key: [_(message)]}
-        raise serializers.ValidationError(error)
-    updated_name = validated_data.get("name", instance.name)
-    updated_display_name = validated_data.get("display_name", instance.display_name)
-    updated_description = validated_data.get("description", instance.description)
-
-    return {
-        "updated_name": updated_name,
-        "updated_display_name": updated_display_name,
-        "updated_description": updated_description,
-    }
-
-
-def update_role(role_name, update_data, tenant, clear_access=True):
+def update_role(instance, validated_data, clear_access=True):
     """Update role attribute."""
-    role = Role.objects.get(name=role_name, tenant=tenant)
-
     update_fields = []
 
-    if "updated_name" in update_data:
-        role.name = update_data["updated_name"]
-        update_fields.append("name")
-    if "updated_display_name" in update_data:
-        role.display_name = update_data["updated_display_name"]
-        update_fields.append("display_name")
-    if "updated_description" in update_data:
-        role.description = update_data["updated_description"]
-        update_fields.append("description")
+    for field_name in ["name", "display_name", "description"]:
+        if field_name not in validated_data:
+            continue
+        setattr(instance, field_name, validated_data[field_name])
+        update_fields.append(field_name)
 
-    role.save(update_fields=update_fields)
+    instance.save(update_fields=update_fields)
 
     if clear_access:
-        role.access.all().delete()
+        instance.access.all().delete()
 
-    return role
+    return instance

@@ -199,15 +199,15 @@ class RoleViewsetTests(IdentityRequest):
         self.groupTwo.policies.add(self.policyTwo)
         self.groupTwo.save()
 
-        self.adminRole = Role(**admin_def_role_config, tenant=self.tenant)
-        self.adminRole.save()
-
-        self.platformAdminRole = Role(**platform_admin_def_role_config, tenant=self.tenant)
-        self.platformAdminRole.save()
-
         self.public_tenant = Tenant.objects.get(tenant_name="public")
         self.sysPubRole = Role(**sys_pub_role_config, tenant=self.public_tenant)
         self.sysPubRole.save()
+
+        self.adminRole = Role(**admin_def_role_config, tenant=self.public_tenant)
+        self.adminRole.save()
+
+        self.platformAdminRole = Role(**platform_admin_def_role_config, tenant=self.public_tenant)
+        self.platformAdminRole.save()
 
         self.sysRole = Role(**sys_role_config, tenant=self.public_tenant)
         self.sysRole.save()
@@ -1893,6 +1893,7 @@ class RoleViewsetTests(IdentityRequest):
         }
         response = client.put(url, test_data, format="json", **self.headers)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data["errors"][0]["detail"], "System roles may not be updated.")
 
     def test_delete_default_role(self):
         """Test that default roles are protected from deletion"""
