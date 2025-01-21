@@ -84,7 +84,6 @@ DEBUG = False if os.getenv("DJANGO_DEBUG", "False") == "False" else True  # pyli
 
 ALLOWED_HOSTS = ["*"]
 
-
 # Application definition
 
 INSTALLED_APPS = [
