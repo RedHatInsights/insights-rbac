@@ -39,7 +39,7 @@ logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 def migrate_groups_for_tenant(tenant: Tenant, replicator: RelationReplicator):
     """Generate user relationships and system role assignments for groups in a tenant."""
-    groups = tenant.group_set.values("pk")
+    groups = tenant.group_set.only("pk").values("pk")
     for group in groups:
         # The migrator deals with concurrency control.
         # We need an atomic block because the select_for_update is used in the dual write handler,
@@ -72,16 +72,16 @@ def migrate_groups_for_tenant(tenant: Tenant, replicator: RelationReplicator):
 
 def migrate_roles_for_tenant(tenant, exclude_apps, replicator):
     """Migrate all roles for a given tenant."""
-    roles = tenant.role_set.all()
+    roles = tenant.role_set.only("pk")
     if exclude_apps:
         roles = roles.exclude(access__permission__application__in=exclude_apps)
-
-    for role in roles:
+    role_pks = roles.values_list("pk", flat=True)
+    for role in role_pks:
         # The migrator deals with concurrency control and roles needs to be locked.
         with transaction.atomic():
-            logger.info(f"Migrating role: {role.name} with UUID {role.uuid}.")
             # Requery and lock role
-            role = Role.objects.select_for_update().get(pk=role.pk)
+            role = Role.objects.select_for_update().get(pk=role)
+            logger.info(f"Migrating role: {role.name} with UUID {role.uuid}.")
             dual_write_handler = RelationApiDualWriteHandler(
                 role, ReplicationEventType.MIGRATE_CUSTOM_ROLE, replicator
             )
