@@ -958,7 +958,7 @@
         }
       }
     },
-    "/api/utils/roles/": {
+    "/api/utils/role/": {
       "delete": {
         "tags": [
           "Role"
