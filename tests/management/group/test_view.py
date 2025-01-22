@@ -817,7 +817,6 @@ class GroupViewsetTests(IdentityRequest):
         test_data = {"name": "new_name" + "_updated", "description": "new_description" + "_updated"}
         client = APIClient()
         response = client.put(url, test_data, format="json", **self.headers)
-        print(response.data)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
     def test_update_admin_default_group(self):
