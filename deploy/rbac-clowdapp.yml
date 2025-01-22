@@ -225,6 +225,8 @@ objects:
             value: ${RELATION_API_SERVER}
           - name: REPLICATION_TO_RELATION_ENABLED
             value: ${REPLICATION_TO_RELATION_ENABLED}
+          - name: REPLICATION_TO_RELATION_IN_MIGRATOR_ENABLED
+            value: ${REPLICATION_TO_RELATION_IN_MIGRATOR_ENABLED}
           - name: PRINCIPAL_CLEANUP_UPDATE_ENABLED_UMB
             value: ${PRINCIPAL_CLEANUP_UPDATE_ENABLED_UMB}
           - name: V2_MIGRATION_APP_EXCLUDE_LIST
@@ -452,6 +454,8 @@ objects:
             value: ${SA_NAME}
           - name: REPLICATION_TO_RELATION_ENABLED
             value: ${REPLICATION_TO_RELATION_ENABLED}
+          - name: REPLICATION_TO_RELATION_IN_MIGRATOR_ENABLED
+            value: ${REPLICATION_TO_RELATION_IN_MIGRATOR_ENABLED}
           - name: PRINCIPAL_CLEANUP_UPDATE_ENABLED_UMB
             value: ${PRINCIPAL_CLEANUP_UPDATE_ENABLED_UMB}
           - name: V2_MIGRATION_APP_EXCLUDE_LIST
@@ -743,6 +747,8 @@ objects:
                   key: bucket
             - name: REPLICATION_TO_RELATION_ENABLED
               value: "True"
+            - name: REPLICATION_TO_RELATION_IN_MIGRATOR_ENABLED
+              value: "False"
           resources:
             limits:
               cpu: 300m
@@ -1187,6 +1193,9 @@ parameters:
   value: "localhost:9000"
 - name: REPLICATION_TO_RELATION_ENABLED
   description: Enable replication to Relation API
+  value: "False"
+- name: REPLICATION_TO_RELATION_IN_MIGRATOR_ENABLED
+  description: Enable replication in migrator to Relation API
   value: "False"
 - name: V2_APIS_ENABLED
   description: Flag to explicitly enable v2 API endpoints

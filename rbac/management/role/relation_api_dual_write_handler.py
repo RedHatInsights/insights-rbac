@@ -58,7 +58,10 @@ class BaseRelationApiDualWriteHandler(ABC):
 
     def replication_enabled(self):
         """Check whether replication enabled."""
-        return settings.REPLICATION_TO_RELATION_ENABLED is True
+        return (
+            settings.REPLICATION_TO_RELATION_ENABLED is True
+            or settings.REPLICATION_TO_RELATION_IN_MIGRATOR_ENABLED is True
+        )
 
 
 class SeedingRelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
