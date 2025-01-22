@@ -2288,6 +2288,20 @@ class GroupViewsetTests(IdentityRequest):
         self.assertCountEqual([self.roleB], list(groupC.roles()))
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
+    @patch("management.group.relation_api_dual_write_subject_handler.OutboxReplicator.replicate")
+    def test_add_group_role_not_found_will_not_replicate(self, replicate_mock):
+        """Test that adding roles to a group skips ids not found, and returns success."""
+        groupC = Group.objects.create(name="groupC", tenant=self.tenant)
+        url = reverse("v1_management:group-roles", kwargs={"uuid": groupC.uuid})
+        client = APIClient()
+        test_data = {"roles": [self.dummy_role_id]}
+
+        response = client.post(url, test_data, format="json", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertCountEqual([], list(groupC.roles()))
+        replicate_mock.assert_not_called()
+
     def test_remove_group_roles_success(self):
         """Test that removing a role from a group returns successfully."""
         url = reverse("v1_management:group-roles", kwargs={"uuid": self.group.uuid})

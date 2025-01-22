@@ -49,6 +49,8 @@ class BaseRelationApiDualWriteHandler(ABC):
     # TODO: continue factoring common behavior into this base class, and potentially into a higher base class
     # for the general pattern
 
+    _expected_empty_relation_reason = None
+
     def __init__(self, replicator: Optional[RelationReplicator] = None):
         """Initialize SeedingRelationApiDualWriteHandler."""
         if not self.replication_enabled():
@@ -59,6 +61,10 @@ class BaseRelationApiDualWriteHandler(ABC):
     def replication_enabled(self):
         """Check whether replication enabled."""
         return settings.REPLICATION_TO_RELATION_ENABLED is True
+
+    def set_expected_empty_relation_reason_to_replicator(self, reason: str):
+        """Set expected empty relation reason to replicator."""
+        self._expected_empty_relation_reason = reason
 
 
 class SeedingRelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
@@ -280,11 +286,17 @@ class RelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
         """Replicate removal of current role state."""
         if not self.replication_enabled():
             return
+
         self._replicate()
 
     def _replicate(self):
         if not self.replication_enabled():
             return
+
+        if self._expected_empty_relation_reason:
+            logger.info(f"[Dual Write] Skipping empty replication event. {self._expected_empty_relation_reason}")
+            return
+
         try:
             self._replicator.replicate(
                 ReplicationEvent(

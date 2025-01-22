@@ -35,7 +35,6 @@ from management.group.definer import (
     remove_roles,
     set_system_flag_before_update,
 )
-from management.group.model import Group
 from management.group.relation_api_dual_write_group_handler import (
     RelationApiDualWriteGroupHandler,
 )
@@ -47,7 +46,7 @@ from management.group.serializer import (
     GroupSerializer,
     RoleMinimumSerializer,
 )
-from management.models import AuditLog
+from management.models import AuditLog, Group, Role
 from management.notifications.notification_handlers import (
     group_obj_change_notification_handler,
     group_principal_change_notification_handler,
@@ -399,7 +398,16 @@ class GroupViewSet(
                 self.protect_group_with_user_access_admin_role(group.roles_with_access(), "remove_group")
 
             dual_write_handler = RelationApiDualWriteGroupHandler(group, ReplicationEventType.DELETE_GROUP)
-            dual_write_handler.prepare_to_delete_group()
+            roles = Role.objects.filter(policies__group=group)
+            if not group.platform_default and group.principals.exists() and not roles.exists():
+                expected_empty_relation_reason = (
+                    f"No principal or role found for group({group.uuid}): '{group.name}'. "
+                    "Assuming no current relations exist. "
+                    f"event_type='{ReplicationEventType.DELETE_GROUP}'",
+                )
+                dual_write_handler.set_expected_empty_relation_reason(expected_empty_relation_reason)
+            else:
+                dual_write_handler.prepare_to_delete_group(roles)
 
             response = super().destroy(request=request, args=args, kwargs=kwargs)
 
