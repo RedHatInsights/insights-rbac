@@ -104,8 +104,7 @@ def clone_default_group_in_public_schema(group, tenant) -> Optional[Group]:
     else:
         group_uuid = uuid4()
 
-    public_tenant = Tenant.objects.get(tenant_name="public")
-    tenant_default_policy = group.policies.get(tenant=public_tenant)
+    tenant_default_policy = group.policies.get(system=True)
     group.name = "Custom default access"
     group.system = False
     group.tenant = tenant
@@ -118,7 +117,7 @@ def clone_default_group_in_public_schema(group, tenant) -> Optional[Group]:
     if Group.objects.filter(name=group.name, platform_default=group.platform_default, tenant=tenant):
         # TODO: returning none can break other code
         return None
-    public_default_roles = Role.objects.filter(platform_default=True, tenant=public_tenant)
+    public_default_roles = Role.objects.filter(platform_default=True).public_tenant_only()
 
     group.save()
     tenant_default_policy.group = group

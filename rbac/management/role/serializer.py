@@ -22,7 +22,6 @@ from management.serializer_override_mixin import SerializerCreateOverrideMixin
 from management.utils import filter_queryset_by_tenant, get_principal, validate_and_get_key
 from rest_framework import serializers
 
-from api.models import Tenant
 from .model import Access, BindingMapping, Permission, ResourceDefinition, Role
 from ..querysets import ORG_ID_SCOPE, PRINCIPAL_SCOPE, SCOPE_KEY, VALID_SCOPES
 
@@ -359,11 +358,9 @@ def obtain_groups_in(obj, request):
     else:
         assigned_groups = filter_queryset_by_tenant(Group.objects.filter(policies__in=policy_ids), request.tenant)
 
-    public_tenant = Tenant.objects.get(tenant_name="public")
-
     platform_default_groups = Group.platform_default_set().filter(tenant=request.tenant).filter(
         policies__in=policy_ids
-    ) or Group.platform_default_set().filter(tenant=public_tenant).filter(policies__in=policy_ids)
+    ) or Group.platform_default_set().public_tenant_only().filter(policies__in=policy_ids)
 
     if username_param and scope_param != PRINCIPAL_SCOPE:
         is_org_admin = request.user_from_query.admin
@@ -375,7 +372,7 @@ def obtain_groups_in(obj, request):
     if is_org_admin:
         admin_default_groups = Group.admin_default_set().filter(tenant=request.tenant).filter(
             policies__in=policy_ids
-        ) or Group.admin_default_set().filter(tenant=public_tenant).filter(policies__in=policy_ids)
+        ) or Group.admin_default_set().public_tenant_only().filter(policies__in=policy_ids)
 
         qs = qs | admin_default_groups
 
