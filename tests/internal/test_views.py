@@ -889,7 +889,9 @@ class InternalViewsetTests(IdentityRequest):
         self.fixture.new_principals_in_tenant(["u2"], o2.tenant)
 
         with self.assertLogs("api.utils", level="INFO") as logs:
-            response = self.client.delete("/_private/api/utils/reset_imported_tenants/", **self.request.META)
+            response = self.client.delete(
+                "/_private/api/utils/reset_imported_tenants/?only_ready_false_flag=false", **self.request.META
+            )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertIn("Deleted 2 tenants.", logs.output[0])
@@ -908,7 +910,9 @@ class InternalViewsetTests(IdentityRequest):
             self.fixture.new_tenant(f"o{i}")
 
         with self.assertLogs("api.utils", level="INFO") as logs:
-            response = self.client.delete("/_private/api/utils/reset_imported_tenants/?limit=3", **self.request.META)
+            response = self.client.delete(
+                "/_private/api/utils/reset_imported_tenants/?only_ready_false_flag=false&limit=3", **self.request.META
+            )
 
         self.assertIn("Deleted 3 tenants.", logs.output[0])
 
@@ -926,7 +930,9 @@ class InternalViewsetTests(IdentityRequest):
         for i in range(100):
             self.fixture.new_tenant(f"o{i + 3}")
 
-        response = self.client.get("/_private/api/utils/reset_imported_tenants/", **self.request.META)
+        response = self.client.get(
+            "/_private/api/utils/reset_imported_tenants/?only_ready_false_flag=false", **self.request.META
+        )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.content.decode(), "100 tenants would be deleted")
@@ -962,7 +968,9 @@ class InternalViewsetTests(IdentityRequest):
         self.fixture.new_tenant("o_no_objects4")
 
         with self.assertLogs("api.utils", level="INFO") as logs:
-            response = self.client.delete("/_private/api/utils/reset_imported_tenants/", **self.request.META)
+            response = self.client.delete(
+                "/_private/api/utils/reset_imported_tenants/?only_ready_false_flag=false", **self.request.META
+            )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertIn("Deleted 4 tenants.", logs.output[0])
@@ -1004,7 +1012,9 @@ class InternalViewsetTests(IdentityRequest):
         self.fixture.new_tenant("o_no_objects4")
 
         with self.assertLogs("api.utils", level="INFO") as logs:
-            response = self.client.delete("/_private/api/utils/reset_imported_tenants/?limit=1", **self.request.META)
+            response = self.client.delete(
+                "/_private/api/utils/reset_imported_tenants/?only_ready_false_flag=false&limit=1", **self.request.META
+            )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertIn("Deleted 1 tenants.", logs.output[0])
@@ -1042,7 +1052,9 @@ class InternalViewsetTests(IdentityRequest):
         self.fixture.new_tenant("o_no_objects3")
         self.fixture.new_tenant("o_no_objects4")
 
-        response = self.client.get("/_private/api/utils/reset_imported_tenants/", **self.request.META)
+        response = self.client.get(
+            "/_private/api/utils/reset_imported_tenants/?only_ready_false_flag=false", **self.request.META
+        )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.content.decode(), "4 tenants would be deleted")
@@ -1074,7 +1086,9 @@ class InternalViewsetTests(IdentityRequest):
         self.fixture.new_tenant("o_no_objects3")
         self.fixture.new_tenant("o_no_objects4")
 
-        response = self.client.get("/_private/api/utils/reset_imported_tenants/?limit=1", **self.request.META)
+        response = self.client.get(
+            "/_private/api/utils/reset_imported_tenants/?only_ready_false_flag=false&limit=1", **self.request.META
+        )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.content.decode(), "1 tenants would be deleted")
@@ -1113,7 +1127,7 @@ class InternalViewsetTests(IdentityRequest):
         self.assertEqual(6, Tenant.objects.count())
 
         response = self.client.get(
-            f"/_private/api/utils/reset_imported_tenants/?exclude_id={t1.id}&exclude_id={t3.id}",
+            f"/_private/api/utils/reset_imported_tenants/?only_ready_false_flag=false&exclude_id={t1.id}&exclude_id={t3.id}",
             **self.request.META,
         )
 
@@ -1137,7 +1151,7 @@ class InternalViewsetTests(IdentityRequest):
 
         with self.assertLogs("api.utils", level="INFO") as logs:
             response = self.client.delete(
-                f"/_private/api/utils/reset_imported_tenants/?exclude_id={t1.id}&exclude_id={t3.id}",
+                f"/_private/api/utils/reset_imported_tenants/?only_ready_false_flag=false&exclude_id={t1.id}&exclude_id={t3.id}",
                 **self.request.META,
             )
 
