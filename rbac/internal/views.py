@@ -369,6 +369,40 @@ def car_expiry(request):
     return HttpResponse('Invalid method, only "POST" is allowed.', status=405)
 
 
+def set_tenant_ready(request):
+    """View/set Tenant with ready flag true.
+
+    GET /_private/api/utils/set_tenant_ready/
+    POST /_private/api/utils/set_tenant_ready/?max_expected=1234
+    """
+    tenant_qs = Tenant.objects.exclude(tenant_name="public").filter(ready=False)
+    if request.method == "GET":
+        tenant_count = tenant_qs.count()
+        return HttpResponse(f"Total of {tenant_count} tenants not set to be ready.", status=200)
+
+    if request.method == "POST":
+        if not destructive_ok("api"):
+            return HttpResponse("Destructive operations disallowed.", status=400)
+        logger.info("Setting flag ready to true for tenants.")
+        max_expected = request.GET.get("max_expected")
+        if not max_expected:
+            return HttpResponse("Please specify a max_expected value.", status=400)
+        with transaction.atomic():
+            prev_count = tenant_qs.count()
+            if prev_count > int(max_expected):
+                return HttpResponse(
+                    f"Total of {prev_count} tenants exceeds max_expected of {max_expected}.",
+                    status=400,
+                )
+            tenant_qs.update(ready=True)
+            return HttpResponse(
+                f"Total of {prev_count} tenants has been updated. "
+                f"{tenant_qs.count()} tenant with ready flag equal to false.",
+                status=200,
+            )
+    return HttpResponse('Invalid method, only "POST" is allowed.', status=405)
+
+
 def populate_tenant_account_id(request):
     """View method for populating Tenant#account_id values.
 
