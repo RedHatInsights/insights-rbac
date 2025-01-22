@@ -143,11 +143,6 @@ def migrate_data(
     exclude_apps: list = [], orgs: list = [], write_relationships: str = "False", skip_roles: bool = False
 ):
     """Migrate all data for all tenants."""
-    # Run this if we don't write relationships (testing out the migration and clean up the created bindingmappings)
-    if write_relationships != "False":
-        logger.fatal("Read-only API mode is required. READ_ONLY_API_MODE must be set to true.")
-        return
-
     count = 0
     tenants = Tenant.objects.filter(ready=True).exclude(tenant_name="public")
     replicator = _get_replicator(write_relationships)
