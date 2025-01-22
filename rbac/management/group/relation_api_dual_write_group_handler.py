@@ -51,20 +51,23 @@ class RelationApiDualWriteGroupHandler(RelationApiDualWriteSubjectHandler):
         group,
         event_type: ReplicationEventType,
         replicator: Optional[RelationReplicator] = None,
+        enable_replication_for_migrator: Optional[bool] = False,
     ):
         """Initialize RelationApiDualWriteGroupHandler."""
-        if not self.replication_enabled():
-            return
-
         try:
             self.group = group
             self.principals = []
             self._platform_default_policy_uuid: Optional[str] = None
             self._public_tenant: Optional[Tenant] = None
             self._tenant_mapping = None
-
+            self.enable_replication_for_migrator = enable_replication_for_migrator
             default_workspace = Workspace.objects.get(tenant_id=self.group.tenant_id, type=Workspace.Types.DEFAULT)
-            super().__init__(default_workspace, event_type, replicator)
+            super().__init__(
+                default_workspace,
+                event_type,
+                replicator,
+                enable_replication_for_migrator=self.enable_replication_for_migrator,
+            )
         except Exception as e:
             raise DualWriteException(e)
 

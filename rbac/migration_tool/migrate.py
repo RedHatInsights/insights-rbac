@@ -58,7 +58,10 @@ def migrate_groups_for_tenant(tenant: Tenant, replicator: RelationReplicator):
                 system_roles = group.roles().public_tenant_only()
             if any(True for _ in system_roles) or any(True for _ in principals):
                 dual_write_handler = RelationApiDualWriteGroupHandler(
-                    group, ReplicationEventType.MIGRATE_TENANT_GROUPS, replicator=replicator
+                    group,
+                    ReplicationEventType.MIGRATE_TENANT_GROUPS,
+                    replicator=replicator,
+                    enable_replication_for_migrator=True,
                 )
                 # this operation requires lock on group as well as in view,
                 # more details in GroupViewSet#get_queryset method which is used to add principals.
@@ -83,7 +86,7 @@ def migrate_roles_for_tenant(tenant, exclude_apps, replicator):
             role = Role.objects.select_for_update().get(pk=role)
             logger.info(f"Migrating role: {role.name} with UUID {role.uuid}.")
             dual_write_handler = RelationApiDualWriteHandler(
-                role, ReplicationEventType.MIGRATE_CUSTOM_ROLE, replicator
+                role, ReplicationEventType.MIGRATE_CUSTOM_ROLE, replicator, enable_replication_for_migrator=True
             )
             dual_write_handler.prepare_for_update()
             dual_write_handler.replicate_new_or_updated_role(role)
@@ -125,7 +128,10 @@ def migrate_cross_account_requests(tenant: Tenant, replicator: RelationReplicato
             cross_account_roles = cross_account_request.roles.all()
             if any(True for _ in cross_account_roles):
                 dual_write_handler = RelationApiDualWriteCrossAccessHandler(
-                    cross_account_request, ReplicationEventType.MIGRATE_CROSS_ACCOUNT_REQUEST, replicator
+                    cross_account_request,
+                    ReplicationEventType.MIGRATE_CROSS_ACCOUNT_REQUEST,
+                    replicator,
+                    enable_replication_for_migrator=True,
                 )
                 # This operation requires lock on cross account request as is done
                 # in CrossAccountRequestViewSet#get_queryset

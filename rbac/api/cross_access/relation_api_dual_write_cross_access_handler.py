@@ -43,17 +43,20 @@ class RelationApiDualWriteCrossAccessHandler(RelationApiDualWriteSubjectHandler)
         cross_account_request: CrossAccountRequest,
         event_type: ReplicationEventType,
         replicator: Optional[RelationReplicator] = None,
+        enable_replication_for_migrator: bool = False,
     ):
         """Initialize RelationApiDualWriteCrossAccessHandler."""
-        if not self.replication_enabled():
-            return
-
         try:
             self.cross_account_request = cross_account_request
             default_workspace = Workspace.objects.get(
                 tenant__org_id=self.cross_account_request.target_org, type=Workspace.Types.DEFAULT
             )
-            super().__init__(default_workspace, event_type, replicator)
+            super().__init__(
+                default_workspace,
+                event_type,
+                replicator,
+                enable_replication_for_migrator=enable_replication_for_migrator,
+            )
         except Exception as e:
             raise DualWriteException(e)
 

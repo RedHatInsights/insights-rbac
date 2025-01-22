@@ -51,8 +51,11 @@ class BaseRelationApiDualWriteHandler(ABC):
 
     _expected_empty_relation_reason = None
 
-    def __init__(self, replicator: Optional[RelationReplicator] = None):
+    def __init__(
+        self, replicator: Optional[RelationReplicator] = None, enable_replication_for_migrator: Optional[bool] = False
+    ):
         """Initialize SeedingRelationApiDualWriteHandler."""
+        self.enable_replication_for_migrator = enable_replication_for_migrator
         if not self.replication_enabled():
             self._replicator = NoopReplicator()
             return
@@ -60,7 +63,7 @@ class BaseRelationApiDualWriteHandler(ABC):
 
     def replication_enabled(self):
         """Check whether replication enabled."""
-        return settings.REPLICATION_TO_RELATION_ENABLED is True
+        return settings.REPLICATION_TO_RELATION_ENABLED is True or self.enable_replication_for_migrator is True
 
     def set_expected_empty_relation_reason_to_replicator(self, reason: str):
         """Set expected empty relation reason to replicator."""
@@ -214,9 +217,11 @@ class RelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
         event_type: ReplicationEventType,
         replicator: Optional[RelationReplicator] = None,
         tenant: Optional[Tenant] = None,
+        enable_replication_for_migrator: bool = False,
     ):
         """Initialize RelationApiDualWriteHandler."""
-        super().__init__(replicator)
+        self.enable_replication_for_migrator = enable_replication_for_migrator
+        super().__init__(replicator, enable_replication_for_migrator=enable_replication_for_migrator)
 
         if not self.replication_enabled():
             return

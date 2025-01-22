@@ -42,8 +42,10 @@ class RelationApiDualWriteSubjectHandler:
         default_workspace: Workspace,
         event_type: ReplicationEventType,
         replicator: Optional[RelationReplicator] = None,
+        enable_replication_for_migrator: Optional[bool] = False,
     ):
         """Initialize RelationApiDualWriteSubjectHandler."""
+        self.enable_replication_for_migrator = enable_replication_for_migrator
         if not self.replication_enabled():
             return
 
@@ -59,7 +61,7 @@ class RelationApiDualWriteSubjectHandler:
 
     def replication_enabled(self):
         """Check whether replication enabled."""
-        return settings.REPLICATION_TO_RELATION_ENABLED is True
+        return settings.REPLICATION_TO_RELATION_ENABLED is True or self.enable_replication_for_migrator is True
 
     def _create_default_mapping_for_system_role(self, system_role: Role, **subject: Iterable[str]) -> BindingMapping:
         """Create default mapping."""
