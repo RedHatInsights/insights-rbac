@@ -635,13 +635,10 @@ class RoleViewSet(
         req_method = request.method
         req_name = request.data.get("name")
         public_tenant = Tenant.objects.get(tenant_name="public")
-        req_custom_role_exists = Role.objects.filter(
-            display_name=req_name, platform_default=True, tenant__in=[request.tenant, public_tenant]
-        ).exists()
-        req_system_role_exists = Role.objects.filter(
-            display_name=req_name, system=True, tenant__in=[request.tenant, public_tenant]
-        ).exists()
+        base_role_queryset = Role.objects.filter(display_name=req_name, tenant__in=[request.tenant, public_tenant])
+        req_custom_role_exists = base_role_queryset.filter(platform_default=True).exists()
+        req_system_role_exists = base_role_queryset.filter(system=True).exists()
         if req_custom_role_exists or req_system_role_exists and req_method == "PUT":
             raise serializers.ValidationError({"role": f"Role '{req_name}' name cannot be updated with this value."})
         elif req_custom_role_exists or req_system_role_exists and req_method == "POST":
-            raise serializers.ValidationError({"role": f"Role '{req_name}' already exists for the tenant."})
+            raise serializers.ValidationError({"role": f"Role '{req_name}' already exists for a tenant."})

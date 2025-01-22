@@ -1785,10 +1785,7 @@ class RoleViewsetTests(IdentityRequest):
         response = client.post(URL, test_data, format="json", **self.headers)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         # Assert output message is correct
-        self.assertEqual(
-            response.data.get("errors")[0].get("detail"),
-            f"Role '{name}' already exists for a tenant.",
-        )
+        self.assertEqual(response.data.get("errors")[0].get("detail"), f"Role '{name}' already exists for a tenant.")
 
     def test_update_custom_role_with_same_name_as_system_role(self):
         """Test that trying to update a custom role with the same name as a system role is not possible"""
