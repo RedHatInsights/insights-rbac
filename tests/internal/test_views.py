@@ -902,6 +902,32 @@ class InternalViewsetTests(IdentityRequest):
 
     @override_settings(INTERNAL_DESTRUCTIVE_API_OK_UNTIL=valid_destructive_time())
     @patch("api.tasks.run_reset_imported_tenants.delay")
+    def test_reset_imported_tenants_with_ready_false_flag(self, delay):
+        """Test that tenants flagged as ready=false are properly removed."""
+        delay.side_effect = lambda args: reset_imported_tenants(**args)
+        self.fixture = RbacFixture(V1TenantBootstrapService())
+        self.fixture.new_unbootstrapped_tenant("o1")  # Tenant with ready=true
+        self.fixture.new_unbootstrapped_tenant("o2")  # Tenant with ready=true
+
+        # Test the query without and with the query param 'only_ready_false_flag=true' (default value)
+        for query_param in ["", "?only_ready_false_flag=true"]:
+            self.fixture.new_not_ready_tenant("o3")  # Tenant with ready=false
+            self.fixture.new_not_ready_tenant("o4")  # Tenant with ready=false
+
+            with self.assertLogs("api.utils", level="INFO") as logs:
+                response = self.client.delete(
+                    f"/_private/api/utils/reset_imported_tenants/{query_param}", **self.request.META
+                )
+
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            self.assertIn("Deleted 2 tenants.", logs.output[0])
+            self.assertTrue(Tenant.objects.filter(org_id="o1").exists())
+            self.assertTrue(Tenant.objects.filter(org_id="o2").exists())
+            self.assertFalse(Tenant.objects.filter(org_id="o3").exists())
+            self.assertFalse(Tenant.objects.filter(org_id="o4").exists())
+
+    @override_settings(INTERNAL_DESTRUCTIVE_API_OK_UNTIL=valid_destructive_time())
+    @patch("api.tasks.run_reset_imported_tenants.delay")
     def test_reset_imported_tenants_removes_up_to_limit(self, delay):
         delay.side_effect = lambda args: reset_imported_tenants(**args)
 
@@ -913,6 +939,25 @@ class InternalViewsetTests(IdentityRequest):
             response = self.client.delete(
                 "/_private/api/utils/reset_imported_tenants/?only_ready_false_flag=false&limit=3", **self.request.META
             )
+
+        self.assertIn("Deleted 3 tenants.", logs.output[0])
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        # two extra tenants for test tenant and public tenant
+        self.assertEqual(Tenant.objects.count(), 9)
+
+    @override_settings(INTERNAL_DESTRUCTIVE_API_OK_UNTIL=valid_destructive_time())
+    @patch("api.tasks.run_reset_imported_tenants.delay")
+    def test_reset_imported_tenants_removes_up_to_limit_with_ready_false_flag(self, delay):
+        """Test that tenants flagged as ready=false are properly removed up to the specified limit."""
+        delay.side_effect = lambda args: reset_imported_tenants(**args)
+
+        self.fixture = RbacFixture(V1TenantBootstrapService())
+        for i in range(10):
+            self.fixture.new_not_ready_tenant(f"o{i}")
+
+        with self.assertLogs("api.utils", level="INFO") as logs:
+            response = self.client.delete("/_private/api/utils/reset_imported_tenants/?limit=3", **self.request.META)
 
         self.assertIn("Deleted 3 tenants.", logs.output[0])
 
@@ -933,6 +978,19 @@ class InternalViewsetTests(IdentityRequest):
         response = self.client.get(
             "/_private/api/utils/reset_imported_tenants/?only_ready_false_flag=false", **self.request.META
         )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.content.decode(), "100 tenants would be deleted")
+
+    def test_reset_imported_tenants_get_counts_all_tenants_to_be_deleted_with_ready_false_flag(self):
+        self.fixture = RbacFixture(V1TenantBootstrapService())
+        self.fixture.new_tenant("o1")
+        self.fixture.new_tenant("o2")
+
+        for i in range(100):
+            self.fixture.new_not_ready_tenant(f"o{i + 3}")
+
+        response = self.client.get("/_private/api/utils/reset_imported_tenants/", **self.request.META)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.content.decode(), "100 tenants would be deleted")
@@ -1134,6 +1192,24 @@ class InternalViewsetTests(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.content.decode(), "2 tenants would be deleted")
 
+    def test_reset_imported_tenants_excludes_get_with_ready_false_flag(self):
+        # Create some tenants that would be deleted but exclude some
+        self.fixture = RbacFixture(V1TenantBootstrapService())
+        t1 = self.fixture.new_not_ready_tenant("o1")
+        t2 = self.fixture.new_not_ready_tenant("o2")
+        self.fixture.new_not_ready_tenant("o3")
+        self.fixture.new_not_ready_tenant("o4")
+
+        self.assertEqual(6, Tenant.objects.count())
+
+        response = self.client.get(
+            f"/_private/api/utils/reset_imported_tenants/?exclude_id={t1.id}&exclude_id={t2.id}",
+            **self.request.META,
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.content.decode(), "2 tenants would be deleted")
+
     @override_settings(INTERNAL_DESTRUCTIVE_API_OK_UNTIL=valid_destructive_time())
     @patch("api.tasks.run_reset_imported_tenants.delay")
     def test_reset_imported_tenants_excludes_delete(self, delay):
@@ -1158,6 +1234,35 @@ class InternalViewsetTests(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertIn("Deleted 2 tenants.", logs.output[0])
         self.assertEqual(4, Tenant.objects.count())
+
+    @override_settings(INTERNAL_DESTRUCTIVE_API_OK_UNTIL=valid_destructive_time())
+    @patch("api.tasks.run_reset_imported_tenants.delay")
+    def test_reset_imported_tenants_excludes_delete_with_ready_false_flag(self, delay):
+        delay.side_effect = lambda args: reset_imported_tenants(**args)
+
+        # Create some tenants that would be deleted but exclude some
+        self.fixture = RbacFixture(V1TenantBootstrapService())
+        t1 = self.fixture.new_not_ready_tenant("o1")
+        t2 = self.fixture.new_not_ready_tenant("o2")
+        self.fixture.new_not_ready_tenant("o3")
+        self.fixture.new_not_ready_tenant("o4")
+
+        self.assertEqual(6, Tenant.objects.count())
+
+        with self.assertLogs("api.utils", level="INFO") as logs:
+            response = self.client.delete(
+                f"/_private/api/utils/reset_imported_tenants/?exclude_id={t1.id}&exclude_id={t2.id}",
+                **self.request.META,
+            )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn("Deleted 2 tenants.", logs.output[0])
+        self.assertEqual(4, Tenant.objects.count())
+
+        self.assertTrue(Tenant.objects.filter(org_id="o1").exists())
+        self.assertTrue(Tenant.objects.filter(org_id="o2").exists())
+        self.assertFalse(Tenant.objects.filter(org_id="o3").exists())
+        self.assertFalse(Tenant.objects.filter(org_id="o4").exists())
 
     def test_update_system_flag_in_role(self):
         """Test that we can update a role."""

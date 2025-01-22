@@ -928,6 +928,10 @@ class RbacFixture:
         """Create a new tenant with the given name and organization ID."""
         return self.bootstrap_service.new_bootstrapped_tenant(org_id)
 
+    def new_not_ready_tenant(self, org_id: str) -> Tenant:
+        """Create a new tenant with ready=false flag."""
+        return Tenant.objects.create(tenant_name=f"org{org_id}", org_id=org_id, ready=False)
+
     def new_unbootstrapped_tenant(self, org_id: str) -> Tenant:
         """Create a new tenant with the given name and organization ID."""
         # A new unbootstrapped tenant would be ready, because this must've been created prior to bootstrapping
