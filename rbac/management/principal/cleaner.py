@@ -242,7 +242,8 @@ def process_principal_events_from_umb(bootstrap_service: Optional[TenantBootstra
     try:
         # 1.1 or greater is required to support NACK, used when messages fail.
         UMB_CLIENT.connect(versions=[StompSpec.VERSION_1_1, StompSpec.VERSION_1_2])
-        UMB_CLIENT.subscribe(QUEUE, {StompSpec.ACK_HEADER: StompSpec.ACK_CLIENT_INDIVIDUAL})
+        # We only have one subscription for this connection, so using a static ID header.
+        UMB_CLIENT.subscribe(QUEUE, {StompSpec.ACK_HEADER: StompSpec.ACK_CLIENT_INDIVIDUAL, StompSpec.ID_HEADER: "0"})
     except StompConnectionError as e:
         # Skip if already connected/subscribed
         if not str(e).startswith(("Already connected", "Already subscribed")):
