@@ -1427,7 +1427,7 @@
           "200": {
             "description": "0 tenant with ready flag equal to false."
           },
-          "400":{
+          "400": {
             "description": "Invalid request, must supply the 'max_expected' query parameter.",
             "content": {
               "application/json": {
@@ -1443,6 +1443,133 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/utils/reset_imported_tenants/": {
+      "delete": {
+        "tags": [
+          "Tenants"
+        ],
+        "summary": "Remove tenants imported via user import job",
+        "description": "Remove tenants with the flag ready=false or tenants without related objects. To use this endpoint, destructive API operations must be enabled.",
+        "operationId": "RemoveImportedTenants",
+        "parameters": [
+          {
+            "name": "exclude_id",
+            "in": "query",
+            "required": false,
+            "description": "IDs of tenants to exclude from the reset operation. Can be specified multiple times.",
+            "explode": true,
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "name": "only_ready_false_flag",
+            "in": "query",
+            "required": false,
+            "description": "If set to true, the query searches for tenants with the 'ready=false' flag; otherwise, it looks for tenants without related objects.",
+            "schema": {
+              "type": "boolean",
+              "default": true
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "description": "Parameter for selecting the amount of data removed.",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Tenants deleting in worker."
+          },
+          "400": {
+            "description": "Destructive operations disallowed."
+          },
+          "500": {
+            "description": "Unexpected Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Tenants"
+        ],
+        "summary": "Get count of tenants imported via user import job",
+        "description": "Returns the count of tenants with the flag ready=false or tenants without related objects.",
+        "operationId": "CountOfImportedTenants",
+        "parameters": [
+          {
+            "name": "exclude_id",
+            "in": "query",
+            "required": false,
+            "description": "IDs of tenants to exclude from the reset operation. Can be specified multiple times.",
+            "explode": true,
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "name": "only_ready_false_flag",
+            "in": "query",
+            "required": false,
+            "description": "If set to true, the query searches for tenants with the 'ready=false' flag; otherwise, it looks for tenants without related objects.",
+            "schema": {
+              "type": "boolean",
+              "default": true
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "description": "Parameter for selecting the amount of data returned.",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Tenants count that would be deleted.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string",
+                  "example": "2 tenants would be deleted"
                 }
               }
             }
