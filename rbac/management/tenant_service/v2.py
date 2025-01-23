@@ -1,6 +1,6 @@
 """V2 implementation of Tenant bootstrapping."""
 
-from typing import List, Optional
+from typing import Callable, List, Optional
 from uuid import UUID
 
 from django.conf import settings
@@ -24,6 +24,13 @@ from migration_tool.utils import create_relationship
 from api.models import Tenant, User
 
 
+def get_user_id(user: User):
+    """Get user ID."""
+    if user.user_id is None:
+        raise ValueError(f"Cannot update user without user_id. username={user.username}")
+    return user.user_id
+
+
 class V2TenantBootstrapService:
     """Service for bootstrapping tenants with built-in relationships."""
 
@@ -32,11 +39,19 @@ class V2TenantBootstrapService:
     _public_tenant: Optional[Tenant]
     _platform_default_policy_uuid: Optional[str] = None
     _admin_default_policy_uuid: Optional[str] = None
+    _get_user_id: Callable[[User], str] = get_user_id
 
-    def __init__(self, replicator: RelationReplicator, public_tenant: Optional[Tenant] = None):
+    def __init__(
+        self,
+        replicator: RelationReplicator,
+        public_tenant: Optional[Tenant] = None,
+        get_user_id: Optional[Callable[[User], str]] = None,
+    ):
         """Initialize the TenantBootstrapService with a RelationReplicator."""
         self._replicator = replicator
         self._public_tenant = public_tenant
+        if get_user_id:
+            self._get_user_id = get_user_id
 
     def new_bootstrapped_tenant(self, org_id: str, account_number: Optional[str] = None) -> BootstrappedTenant:
         """Create a new tenant."""
@@ -90,10 +105,7 @@ class V2TenantBootstrapService:
         if mapping is None:
             raise ValueError(f"Expected TenantMapping but got None. org_id: {bootstrapped_tenant.tenant.org_id}")
 
-        user_id = user.user_id
-
-        if user_id is None:
-            raise ValueError(f"Cannot update user without user_id. username={user.username}")
+        user_id = self._get_user_id(user)
 
         tuples_to_add = []
         tuples_to_remove = []
@@ -205,12 +217,9 @@ class V2TenantBootstrapService:
 
         # Get tenant mapping if present but no need to create if not
         tuples_to_remove = []
-        user_id = user.user_id
+        user_id = self._get_user_id(user)
         mapping: Optional[TenantMapping] = None
         principal_uuid = ""
-
-        if user_id is None:
-            raise ValueError(f"User {user.username} has no user_id.")
 
         logger.info(
             f"Removing Principal and group membership from RBAC and Relations. user_id={user_id} org_id={user.org_id}"
@@ -409,10 +418,7 @@ class V2TenantBootstrapService:
         """Get the tuples to add and remove for a user."""
         tuples_to_add = []
         tuples_to_remove = []
-        user_id = user.user_id
-
-        if user_id is None:
-            raise ValueError(f"User {user.username} has no user_id.")
+        user_id = self._get_user_id(user)
 
         tuples_to_add.append(Group.relationship_to_user_id_for_group(str(mapping.default_group_uuid), user_id))
 
