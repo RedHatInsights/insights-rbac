@@ -132,7 +132,9 @@ ssl_context.verify_mode = ssl.CERT_NONE
 if os.path.isfile(CERT_LOC):
     ssl_context.load_cert_chain(CERT_LOC, keyfile=KEY_LOC)
 
-CONFIG = StompConfig(f"ssl://{settings.UMB_HOST}:{settings.UMB_PORT}", sslContext=ssl_context)
+CONFIG = StompConfig(
+    f"ssl://{settings.UMB_HOST}:{settings.UMB_PORT}", sslContext=ssl_context, version=StompSpec.VERSION_1_2
+)
 QUEUE = f"/queue/Consumer.{settings.SA_NAME}.users-subscription.VirtualTopic.canonical.user"
 UMB_CLIENT = Stomp(CONFIG)
 
