@@ -29,6 +29,7 @@ from django.urls import resolve
 from django.utils.deprecation import MiddlewareMixin
 from management.cache import TenantCache
 from management.models import Principal
+from management.principal.proxy import PrincipalProxy
 from management.relation_replicator.outbox_replicator import OutboxReplicator
 from management.tenant_service import get_tenant_bootstrap_service
 from management.tenant_service.tenant_service import TenantBootstrapService
@@ -90,6 +91,24 @@ class HttpResponseUnauthorizedRequest(HttpResponse):
     status_code = 401
 
 
+PROXY = PrincipalProxy()
+
+
+def get_user_id(user: User):
+    """Return the user ID for the given user."""
+    user_id = user.user_id
+    if not user_id:
+        resp = PROXY.request_filtered_principals([user.username], org_id=user.org_id, options={"return_id": True})
+        if isinstance(resp, dict) and "errors" in resp:
+            logging.warning(resp.get("errors"))
+            return
+        if not resp.get("data"):
+            logging.warning(f"No user found of user name {user.username}.")
+            raise Http404()
+        return resp["data"][0]["user_id"]
+    return user.user_id
+
+
 class IdentityHeaderMiddleware(MiddlewareMixin):
     """A subclass of RemoteUserMiddleware.
 
@@ -106,7 +125,7 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
         # In this case the replicator needs to include a precondition
         # which does not add the tuples if any others already exist for the tenant
         # (the tx will be rolled back in that case)
-        self.bootstrap_service = get_tenant_bootstrap_service(OutboxReplicator())
+        self.bootstrap_service = get_tenant_bootstrap_service(OutboxReplicator(), get_user_id)
 
     def get_tenant(self, model, hostname, request):
         """Override the tenant selection logic."""
