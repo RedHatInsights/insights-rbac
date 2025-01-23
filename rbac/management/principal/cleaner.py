@@ -220,6 +220,13 @@ def process_umb_event(frame, umb_client: Stomp, bootstrap_service: TenantBootstr
         except Exception as e:
             logger.error("process_umb_event: Error processing umb message : %s", str(e))
             capture_exception(e)
+            # Nack sends back to the broker that we failed to process this message.
+            # The broker may redeliver the message up to a certain number of retries.
+            # Eventually, the message is discarded, usually logged and sent to a DLQ.
+            # In other words, nacking is appropriate for messages which *may* be processable
+            # if retried.
+            # Either way, this lets us eventually proceed further in the queue,
+            # and should mark the message so it can be debugged later if needed.
             umb_client.nack(frame)
             stomp_messages_nack_total.inc()
 
@@ -231,7 +238,8 @@ def process_principal_events_from_umb(bootstrap_service: Optional[TenantBootstra
     logger.info("process_tenant_principal_events: Start processing principal events from umb.")
     bootstrap_service = bootstrap_service or get_tenant_bootstrap_service(OutboxReplicator())
     try:
-        UMB_CLIENT.connect()
+        # 1.1 or greater is required to support NACK, used when messages fail.
+        UMB_CLIENT.connect(versions=[StompSpec.VERSION_1_1, StompSpec.VERSION_1_2])
         UMB_CLIENT.subscribe(QUEUE, {StompSpec.ACK_HEADER: StompSpec.ACK_CLIENT_INDIVIDUAL})
     except StompConnectionError as e:
         # Skip if already connected/subscribed
