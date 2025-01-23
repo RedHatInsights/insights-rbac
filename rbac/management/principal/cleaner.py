@@ -231,7 +231,7 @@ def process_principal_events_from_umb(bootstrap_service: Optional[TenantBootstra
     logger.info("process_tenant_principal_events: Start processing principal events from umb.")
     bootstrap_service = bootstrap_service or get_tenant_bootstrap_service(OutboxReplicator())
     try:
-        UMB_CLIENT.connect()
+        UMB_CLIENT.connect(versions=[StompSpec.VERSION_1_1, StompSpec.VERSION_1_2])
         UMB_CLIENT.subscribe(QUEUE, {StompSpec.ACK_HEADER: StompSpec.ACK_CLIENT_INDIVIDUAL})
     except StompConnectionError as e:
         # Skip if already connected/subscribed
