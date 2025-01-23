@@ -17,7 +17,6 @@
 """Test cases for Tenant bootstrapping logic."""
 
 from typing import Optional, Tuple
-from unittest.mock import patch
 from django.test import TestCase
 from management.group.definer import seed_group
 from management.group.model import Group
@@ -34,7 +33,6 @@ from migration_tool.in_memory_tuples import (
     resource,
     subject,
 )
-from rbac.middleware import get_user_id
 from tests.management.role.test_dual_write import RbacFixture
 
 from api.models import Tenant, User
@@ -429,22 +427,7 @@ class V2TenantBootstrapServiceTest(TestCase):
         self.assertEqual(original_mapping, new_mapping)
         self.assertCountEqual(original_workspaces, new_workspaces)
 
-    @patch(
-        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
-        return_value={
-            "status_code": 200,
-            "data": [
-                {
-                    "username": "user_1",
-                    "email": "test_user@email.com",
-                    "first_name": "user",
-                    "last_name": "test",
-                    "user_id": "u1",
-                }
-            ],
-        },
-    )
-    def test_inject_get_user_id_method(self, _):
+    def test_inject_get_user_id_method(self):
         bootstrapped = self.fixture.new_tenant(org_id="o1")
 
         user = User()
@@ -453,6 +436,7 @@ class V2TenantBootstrapServiceTest(TestCase):
         user.is_active = True
         user.user_name = "user_1"
 
+        get_user_id = lambda user: "u1"
         service = V2TenantBootstrapService(InMemoryRelationReplicator(self.tuples), get_user_id=get_user_id)
         bootstrapped = service.update_user(user)
 

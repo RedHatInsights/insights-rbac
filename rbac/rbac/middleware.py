@@ -103,6 +103,9 @@ def get_user_id(user: User):
         if isinstance(resp, dict) and "errors" in resp:
             sentry_sdk.capture_message(resp.get("errors"))
             return
+        if not resp.get("data"):
+            sentry_sdk.capture_message(f"No user found of user name {user.username}.")
+            raise Http404()
         return resp["data"][0]["user_id"]
     return user.user_id
 
