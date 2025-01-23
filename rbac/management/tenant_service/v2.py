@@ -24,7 +24,7 @@ from migration_tool.utils import create_relationship
 from api.models import Tenant, User
 
 
-def get_user_id(user: User):
+def default_get_user_id(user: User):
     """Get user ID."""
     if user.user_id is None:
         raise ValueError(f"Cannot update user without user_id. username={user.username}")
@@ -39,7 +39,6 @@ class V2TenantBootstrapService:
     _public_tenant: Optional[Tenant]
     _platform_default_policy_uuid: Optional[str] = None
     _admin_default_policy_uuid: Optional[str] = None
-    _get_user_id: Callable[[User], str] = get_user_id
 
     def __init__(
         self,
@@ -50,8 +49,7 @@ class V2TenantBootstrapService:
         """Initialize the TenantBootstrapService with a RelationReplicator."""
         self._replicator = replicator
         self._public_tenant = public_tenant
-        if get_user_id:
-            self._get_user_id = get_user_id
+        self._get_user_id = get_user_id if get_user_id else default_get_user_id
 
     def new_bootstrapped_tenant(self, org_id: str, account_number: Optional[str] = None) -> BootstrappedTenant:
         """Create a new tenant."""
