@@ -21,7 +21,6 @@ import json
 import logging
 from json.decoder import JSONDecodeError
 
-import sentry_sdk
 from django.conf import settings
 from django.core.handlers.wsgi import WSGIRequest
 from django.db import IntegrityError, transaction
@@ -101,10 +100,10 @@ def get_user_id(user: User):
     if not user_id:
         resp = PROXY.request_filtered_principals([user.username], org_id=user.org_id, options={"return_id": True})
         if isinstance(resp, dict) and "errors" in resp:
-            sentry_sdk.capture_message(resp.get("errors"))
+            logging.warning(resp.get("errors"))
             return
         if not resp.get("data"):
-            sentry_sdk.capture_message(f"No user found of user name {user.username}.")
+            logging.warning(f"No user found of user name {user.username}.")
             raise Http404()
         return resp["data"][0]["user_id"]
     return user.user_id
