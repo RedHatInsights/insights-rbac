@@ -220,6 +220,13 @@ def process_umb_event(frame, umb_client: Stomp, bootstrap_service: TenantBootstr
         except Exception as e:
             logger.error("process_umb_event: Error processing umb message : %s", str(e))
             capture_exception(e)
+            # Nack sends back to the broker that we failed to process this message.
+            # The broker may redeliver the message up to a certain number of retries.
+            # Eventually, the message is discarded, usually logged and sent to a DLQ.
+            # In other words, nacking is appropriate for messages which *may* be processable
+            # if retried.
+            # Either way, this lets us eventually proceed further in the queue,
+            # and should mark the message so it can be debugged later if needed.
             umb_client.nack(frame)
             stomp_messages_nack_total.inc()
 
