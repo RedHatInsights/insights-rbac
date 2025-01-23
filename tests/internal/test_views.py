@@ -280,6 +280,25 @@ class InternalViewsetTests(IdentityRequest):
             "Tenant objects account_id values being updated in background worker.",
         )
 
+    @override_settings(INTERNAL_DESTRUCTIVE_API_OK_UNTIL=valid_destructive_time())
+    def test_setting_ready_flag_for_tenants(self):
+        """Test that we can get the total of not ready tenants and set them to true."""
+        Tenant.objects.create(tenant_name="acct_not_ready", org_id="1234")
+        response = self.client.get(f"/_private/api/utils/set_tenant_ready/", **self.request.META)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.content.decode(), "Total of 1 tenants not set to be ready.")
+
+        response = self.client.post(f"/_private/api/utils/set_tenant_ready/", **self.request.META)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+        response = self.client.post(f"/_private/api/utils/set_tenant_ready/?max_expected=2", **self.request.META)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            response.content.decode(), "Total of 1 tenants has been updated. 0 tenant with ready flag equal to false."
+        )
+        self.assertEqual(Tenant.objects.filter(ready=False).count(), 0)
+
     @patch("api.tasks.populate_tenant_account_id_in_worker.delay")
     def test_populate_tenant_account_id_get_failure(self, populate_mock):
         """Test that we get a bad request for not using POST method."""
