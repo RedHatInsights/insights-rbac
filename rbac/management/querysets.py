@@ -121,11 +121,16 @@ def _gather_group_querysets(request, args, kwargs, base_query: Optional[QuerySet
         username = kwargs.get("principals")
     if username:
         principal = get_principal(username, request)
+        principal_groups = principal.group.all()
+        principal_group_uuids = []
+        for group in principal_groups:
+            principal_group_uuids.append(group.uuid)
+
         if principal.cross_account:
             return Group.objects.none()
         return (
             filter_queryset_by_tenant(
-                get_annotated_groups(base_query.filter(principals__username__iexact=username)), request.tenant
+                get_annotated_groups(base_query.filter(uuid__in=principal_group_uuids)), request.tenant
             )
             | default_group_set
         )
