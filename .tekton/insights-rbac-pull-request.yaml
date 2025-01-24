@@ -246,7 +246,7 @@ spec:
             # set the working directory to value from previous step
             workingDir: /var/workdir
             # Use image that suites your use case
-            image: registry.access.redhat.com/ubi8/python-39:latest
+            image: registry.access.redhat.com/ubi9/python-39:latest
             securityContext:
             # If the task step needs write access to the volume, set the runAsUser to 0 (root).
               runAsUser: 0
