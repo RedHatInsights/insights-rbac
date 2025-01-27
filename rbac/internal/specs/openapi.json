@@ -958,7 +958,7 @@
         }
       }
     },
-    "/api/utils/roles/": {
+    "/api/utils/role/": {
       "delete": {
         "tags": [
           "Role"
@@ -1340,6 +1340,95 @@
           },
           "400": {
             "description": "Invalid request, must supply the 'resource' query parameter.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Invalid method.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/utils/set_tenant_ready/": {
+      "get": {
+        "tags": [
+          "Set tenant ready"
+        ],
+        "summary": "View count of tenants with ready flag false",
+        "description": "View count of tenants with ready flag false.",
+        "operationId": "ViewTenantReadyFalse",
+        "responses": {
+          "200": {
+            "description": "Total of tenants not set to be ready."
+          },
+          "405": {
+            "description": "Invalid method.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Set tenant ready"
+        ],
+        "summary": "Set ready flag of tenants to true",
+        "description": "Set ready flag of tenants to true.",
+        "operationId": "SetTenantReady",
+        "parameters": [
+          {
+            "name": "max_expected",
+            "in": "query",
+            "required": true,
+            "description": "Defines the max number of not ready tenants to be updated.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "0 tenant with ready flag equal to false."
+          },
+          "400":{
+            "description": "Invalid request, must supply the 'max_expected' query parameter.",
             "content": {
               "application/json": {
                 "schema": {

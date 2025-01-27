@@ -35,7 +35,6 @@ from management.group.definer import (
     remove_roles,
     set_system_flag_before_update,
 )
-from management.group.model import Group
 from management.group.relation_api_dual_write_group_handler import (
     RelationApiDualWriteGroupHandler,
 )
@@ -47,7 +46,7 @@ from management.group.serializer import (
     GroupSerializer,
     RoleMinimumSerializer,
 )
-from management.models import AuditLog
+from management.models import AuditLog, Group, Role
 from management.notifications.notification_handlers import (
     group_obj_change_notification_handler,
     group_principal_change_notification_handler,
@@ -185,10 +184,10 @@ class GroupViewSet(
 
     def get_queryset(self):
         """Obtain queryset for requesting user based on access."""
-        add_principals_method = self.action == "principals" and self.request.method == "POST"
+        principals_method = self.action == "principals" and (self.request.method != "GET")
         destroy_method = self.action == "destroy"
 
-        if add_principals_method or destroy_method:
+        if principals_method or destroy_method:
             # In this case, the group must be locked to prevent principal changes during deletion.
             # If not locked, replication to relations may be out of sync due to phantom reads.
             # We have to modify the starting queryset to support locking because
@@ -399,7 +398,16 @@ class GroupViewSet(
                 self.protect_group_with_user_access_admin_role(group.roles_with_access(), "remove_group")
 
             dual_write_handler = RelationApiDualWriteGroupHandler(group, ReplicationEventType.DELETE_GROUP)
-            dual_write_handler.prepare_to_delete_group()
+            roles = Role.objects.filter(policies__group=group)
+            if not group.platform_default and group.principals.exists() and not roles.exists():
+                expected_empty_relation_reason = (
+                    f"No principal or role found for group({group.uuid}): '{group.name}'. "
+                    "Assuming no current relations exist. "
+                    f"event_type='{ReplicationEventType.DELETE_GROUP}'",
+                )
+                dual_write_handler.set_expected_empty_relation_reason(expected_empty_relation_reason)
+            else:
+                dual_write_handler.prepare_to_delete_group(roles)
 
             response = super().destroy(request=request, args=args, kwargs=kwargs)
 
@@ -937,19 +945,19 @@ class GroupViewSet(
             page = self.paginate_queryset(resp.get("data"))
             response = self.get_paginated_response(page)
         else:
-            group = self.get_object()
-
-            self.protect_system_groups("remove principals")
-
-            if not request.user.admin:
-                self.protect_group_with_user_access_admin_role(group.roles_with_access(), "remove_principals")
-
-            if SERVICE_ACCOUNTS_KEY not in request.query_params and USERNAMES_KEY not in request.query_params:
-                key = "detail"
-                message = "Query parameter {} or {} is required.".format(SERVICE_ACCOUNTS_KEY, USERNAMES_KEY)
-                raise serializers.ValidationError({key: _(message)})
-
             with transaction.atomic():
+                group = self.get_object()
+
+                self.protect_system_groups("remove principals")
+
+                if not request.user.admin:
+                    self.protect_group_with_user_access_admin_role(group.roles_with_access(), "remove_principals")
+
+                if SERVICE_ACCOUNTS_KEY not in request.query_params and USERNAMES_KEY not in request.query_params:
+                    key = "detail"
+                    message = "Query parameter {} or {} is required.".format(SERVICE_ACCOUNTS_KEY, USERNAMES_KEY)
+                    raise serializers.ValidationError({key: _(message)})
+
                 service_accounts_to_remove = []
                 # Remove the service accounts from the group.
                 if SERVICE_ACCOUNTS_KEY in request.query_params:

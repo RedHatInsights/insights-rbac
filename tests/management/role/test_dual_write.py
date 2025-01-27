@@ -51,6 +51,7 @@ from migration_tool.in_memory_tuples import (
 
 
 from api.models import Tenant
+from unittest.mock import patch
 
 
 @override_settings(REPLICATION_TO_RELATION_ENABLED=True)
@@ -214,7 +215,8 @@ class DualWriteTestCase(TestCase):
             ReplicationEventType.DELETE_GROUP,
             replicator=InMemoryRelationReplicator(self.tuples),
         )
-        dual_write_handler.prepare_to_delete_group()
+        roles = Role.objects.filter(policies__group=group)
+        dual_write_handler.prepare_to_delete_group(roles)
         group.delete()
         dual_write_handler.replicate()
 
@@ -845,6 +847,12 @@ class DualWriteCustomRolesTestCase(DualWriteTestCase):
     def test_delete_role(self):
         """Delete the role and its bindings when deleting a custom role."""
         pass
+
+    @patch("management.role.relation_api_dual_write_handler.OutboxReplicator.replicate")
+    def test_create_role_with_empty_access(self, replicate_mock):
+        """Create a role and its bindings when creating a custom role."""
+        self.given_v1_role("role_without_access", [])
+        replicate_mock.assert_not_called()
 
     def test_remove_resource_removes_role_binding(self):
         """Remove the role binding when removing the resource from attribute filter."""
