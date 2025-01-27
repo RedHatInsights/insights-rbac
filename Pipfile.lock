@@ -1,7 +1,7 @@
 {
     "_meta": {
         "hash": {
-            "sha256": "760fe7d420904ce6a1c5b636c486f0a77bf8165a4b93647cfa090601dff7e646"
+            "sha256": "1c7b5acb0a1b543e7c28357c9805653c3e7298ffa4a9be561b687ff98afdeb07"
         },
         "pipfile-spec": 6,
         "requires": {
@@ -379,11 +379,11 @@
         },
         "django-prometheus": {
             "hashes": [
-                "sha256:240378a1307c408bd5fc85614a3a57f1ce633d4a222c9e291e2bbf325173b801",
-                "sha256:e6616770d8820b8834762764bf1b76ec08e1b98e72a6f359d488a2e15fe3537c"
+                "sha256:cf9b26f7ba2e4568f08f8f91480a2882023f5908579681bcf06a4d2465f12168",
+                "sha256:f9c8b6c780c9419ea01043c63a437d79db2c33353451347894408184ad9c3e1e"
             ],
             "index": "pypi",
-            "version": "==2.2.0"
+            "version": "==2.3.1"
         },
         "django-tenants": {
             "hashes": [
