@@ -1316,6 +1316,44 @@ class InternalViewsetTests(IdentityRequest):
         self.assertFalse(role["admin_default"])
         self.assertEqual(response.status_code, 200)
 
+    @override_settings(INTERNAL_DESTRUCTIVE_API_OK_UNTIL=valid_destructive_time())
+    def test_update_username_to_lowercase(self):
+        """Test that the uppercase username would be updated to lowercase."""
+        # Only POST is allowed
+        response = self.client.delete(
+            f"/_private/api/utils/username_lower/",
+            **self.request.META,
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_405_METHOD_NOT_ALLOWED)
+
+        Principal.objects.bulk_create(
+            [
+                Principal(username="12345", tenant=self.tenant),
+                Principal(username="ABCDE", tenant=self.tenant),
+                Principal(username="user", tenant=self.tenant),
+            ]
+        )
+
+        response = self.client.get(
+            f"/_private/api/utils/username_lower/",
+            **self.request.META,
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            response.content.decode(), "Usernames to be updated: ['12345', 'ABCDE'] to ['12345', 'abcde']"
+        )
+
+        response = self.client.post(
+            f"/_private/api/utils/username_lower/",
+            **self.request.META,
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 200)
+        usernames = Principal.objects.values_list("username", flat=True)
+        self.assertEqual({"12345", "abcde", "user"}, set(usernames))
+
 
 class InternalViewsetResourceDefinitionTests(IdentityRequest):
     def setUp(self):

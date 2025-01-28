@@ -1481,6 +1481,84 @@
           }
         }
       }
+    },
+    "/api/utils/username_lower/": {
+      "get": {
+        "tags": [
+          "List username"
+        ],
+        "summary": "List uppercase username",
+        "description": "List uppercase username.",
+        "operationId": "ListUsername",
+        "responses": {
+          "200": {
+            "description": "List of uppercase username."
+          },
+          "405": {
+            "description": "Invalid method.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Update username"
+        ],
+        "summary": "Update uppercase username to lowercase",
+        "description": "Update uppercase username to lowercase.",
+        "operationId": "LowerUsername",
+        "responses": {
+          "200": {
+            "description": "All uppercase username updated to lowercase."
+          },
+          "400":{
+            "description": "Invalid request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Invalid method.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "servers": [
