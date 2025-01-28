@@ -80,6 +80,7 @@ urlpatterns = [
     path("api/utils/get_org_admin/<int:org_or_account>/", views.get_org_admin),
     path("api/utils/role/", views.role_removal),
     path("api/utils/permission/", views.permission_removal),
+    path("api/utils/username_lower/", views.username_lower),
     path("api/utils/data_migration/", views.data_migration),
     path("api/utils/bindings/<role_uuid>/", views.list_or_delete_bindings_for_role),
     path("api/utils/bootstrap_tenant/", views.bootstrap_tenant),
