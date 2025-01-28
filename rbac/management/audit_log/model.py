@@ -80,9 +80,8 @@ class AuditLog(TenantAwareModel):
             group_object_name = "group: " + group_object.name
             return group_object_id, group_object_name
 
-        elif r_type == AuditLog.PERMISSION:
-            # TODO: update for permission related items
-            return None
+        else:
+            return ValueError("Wrong Resource Type")
 
     def find_edited_field(self, resource, resource_name, request, object):
         """Add additional information when group/role is edited."""
@@ -97,6 +96,22 @@ class AuditLog(TenantAwareModel):
             if request.data.get("access"):
                 description = description + "edited access (permissions/resources)"
         return description
+
+    def find_specific_list_of_users(self, type_dict, user_type):
+        """Create list of principals/roles/service accounts for description."""
+        names_list = []
+        if user_type == "user" or user_type == "User":
+            for username in type_dict:
+                names_list.append(username["username"])
+        elif user_type == "service_account" or user_type == "Service Account":
+            for service_account in type_dict:
+                names_list.append(service_account["clientId"])
+        elif user_type == AuditLog.ROLE:
+            for role in type_dict["data"]:
+                names_list.append(role["uuid"])
+        else:
+            return ValueError("User type does not exist")
+        return ", ".join(names_list)
 
     def log_create(self, request, resource):
         """Audit Log when a role or a group is created."""
@@ -136,5 +151,19 @@ class AuditLog(TenantAwareModel):
         more_information = self.find_edited_field(resource, resource_name, request, object)
         self.description = more_information
         self.action = AuditLog.EDIT
+        self.tenant_id = self.get_tenant_id(request)
+        super(AuditLog, self).save()
+
+    def log_group_assignment(self, request, resource, object, type_dict, user_type):
+        """Audit Log when a role, user/principal, or service account is added to a group."""
+        self.principal_username = request.user.username
+        self.resource_type = resource
+        self.resource_id = object.id
+        resource_name = "group: " + object.name
+
+        name_list = self.find_specific_list_of_users(type_dict, user_type)
+        self.description = f"{user_type} {name_list} added to {resource_name}"
+
+        self.action = AuditLog.ADD
         self.tenant_id = self.get_tenant_id(request)
         super(AuditLog, self).save()
