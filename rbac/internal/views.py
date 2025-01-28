@@ -672,44 +672,51 @@ def reset_imported_tenants(request: HttpRequest) -> HttpResponse:
     # Request should accept a query parameter to exclude certain tenants so we can exclude the ~129
     excluded = request.GET.getlist("exclude_id", [])
 
+    # The default query created with "ready=false" flag otherwise is used query that checks that tenant
+    # does not have records in all tables.
+    only_ready_false_flag = request.GET.get("only_ready_false_flag", "true").strip().lower() == "true"
+
     query = "FROM api_tenant WHERE tenant_name <> 'public' "
 
     if excluded:
         query += "AND id NOT IN %s "
 
-    query += (
-        "AND NOT EXISTS (SELECT 1 FROM management_principal WHERE management_principal.tenant_id = api_tenant.id) "
-    )
-    query += """AND NOT (
-              EXISTS    (SELECT 1
-                         FROM   management_tenantmapping
-                         WHERE  management_tenantmapping.tenant_id = api_tenant.id)
-              OR EXISTS (SELECT 1
-                         FROM   management_access
-                         WHERE  management_access.tenant_id = api_tenant.id)
-              OR EXISTS (SELECT 1
-                         FROM   management_group
-                         WHERE  management_group.tenant_id = api_tenant.id)
-              OR EXISTS (SELECT 1
-                         FROM   management_permission
-                         WHERE  management_permission.tenant_id = api_tenant.id)
-              OR EXISTS (SELECT 1
-                         FROM   management_policy
-                         WHERE  management_policy.tenant_id = api_tenant.id)
-              OR EXISTS (SELECT 1
-                         FROM   management_resourcedefinition
-                         WHERE  management_resourcedefinition.tenant_id =
-                        api_tenant.id)
-              OR EXISTS (SELECT 1
-                         FROM   management_role
-                         WHERE  management_role.tenant_id = api_tenant.id)
-              OR EXISTS (SELECT 1
-                         FROM   management_auditlog
-                         WHERE  management_auditlog.tenant_id = api_tenant.id)
-              OR EXISTS (SELECT 1
-                         FROM   management_workspace
-                         WHERE  management_workspace.tenant_id = api_tenant.id)
-              )"""
+    if only_ready_false_flag:
+        query += "AND NOT ready"
+    else:
+        query += (
+            "AND NOT EXISTS (SELECT 1 FROM management_principal WHERE management_principal.tenant_id = api_tenant.id) "
+        )
+        query += """AND NOT (
+                  EXISTS    (SELECT 1
+                             FROM   management_tenantmapping
+                             WHERE  management_tenantmapping.tenant_id = api_tenant.id)
+                  OR EXISTS (SELECT 1
+                             FROM   management_access
+                             WHERE  management_access.tenant_id = api_tenant.id)
+                  OR EXISTS (SELECT 1
+                             FROM   management_group
+                             WHERE  management_group.tenant_id = api_tenant.id)
+                  OR EXISTS (SELECT 1
+                             FROM   management_permission
+                             WHERE  management_permission.tenant_id = api_tenant.id)
+                  OR EXISTS (SELECT 1
+                             FROM   management_policy
+                             WHERE  management_policy.tenant_id = api_tenant.id)
+                  OR EXISTS (SELECT 1
+                             FROM   management_resourcedefinition
+                             WHERE  management_resourcedefinition.tenant_id =
+                            api_tenant.id)
+                  OR EXISTS (SELECT 1
+                             FROM   management_role
+                             WHERE  management_role.tenant_id = api_tenant.id)
+                  OR EXISTS (SELECT 1
+                             FROM   management_auditlog
+                             WHERE  management_auditlog.tenant_id = api_tenant.id)
+                  OR EXISTS (SELECT 1
+                             FROM   management_workspace
+                             WHERE  management_workspace.tenant_id = api_tenant.id)
+                  )"""
 
     try:
         limit = int(request.GET.get("limit", "-1"))
