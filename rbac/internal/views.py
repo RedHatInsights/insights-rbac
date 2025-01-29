@@ -25,7 +25,6 @@ from core.utils import destructive_ok
 from django.conf import settings
 from django.db import connection, transaction
 from django.db.migrations.recorder import MigrationRecorder
-from django.db.models import Func
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404
 from django.utils.html import escape
@@ -875,12 +874,6 @@ def correct_resource_definitions(request):
     return HttpResponse('Invalid method, only "GET" or "PATCH" are allowed.', status=405)
 
 
-class Upper(Func):
-    """Upper class function."""
-
-    function = "UPPER"
-
-
 def username_lower(request):
     """Update the username for the principal to be lowercase."""
     if request.method not in ["POST", "GET"]:
@@ -891,11 +884,13 @@ def username_lower(request):
     pre_names = []
     updated_names = []
     with transaction.atomic():
-        principals = Principal.objects.filter(type="user").filter(username=Upper("username"))
+        principals = Principal.objects.filter(type="user").filter(username__regex=r"[A-Z]").order_by("username")
         for principal in principals:
             pre_names.append(principal.username)
             principal.username = principal.username.lower()
             updated_names.append(principal.username)
+            pre_names.sort()
+            updated_names.sort()
         if request.method == "GET":
             return HttpResponse(
                 f"Usernames to be updated: {pre_names} to {updated_names}",
