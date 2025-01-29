@@ -755,6 +755,7 @@ class GroupViewsetTests(IdentityRequest):
             url = reverse("v1_management:group-detail", kwargs={"uuid": self.group.uuid})
             client = APIClient()
             response = client.put(url, test_data, format="json", **self.headers)
+
             self.assertEqual(response.status_code, status.HTTP_200_OK)
 
             self.assertIsNotNone(response.data.get("uuid"))
@@ -804,6 +805,16 @@ class GroupViewsetTests(IdentityRequest):
         """Test that platform_default groups are protected from updates"""
         url = reverse("v1_management:group-detail", kwargs={"uuid": self.defGroup.uuid})
         test_data = {"name": self.defGroup.name + "_updated"}
+        client = APIClient()
+        response = client.put(url, test_data, format="json", **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_update_custom_default_group(self):
+        """Test that Custom default group is protected from updates"""
+        customDefGroup = Group(name="customDefGroup", platform_default=True, system=False, tenant=self.tenant)
+        customDefGroup.save()
+        url = reverse("v1_management:group-detail", kwargs={"uuid": customDefGroup.uuid})
+        test_data = {"name": "new_name" + "_updated", "description": "new_description" + "_updated"}
         client = APIClient()
         response = client.put(url, test_data, format="json", **self.headers)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
