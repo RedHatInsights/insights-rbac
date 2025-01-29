@@ -44,6 +44,7 @@ class RelationApiDualWriteGroupHandler(RelationApiDualWriteSubjectHandler):
     """Class to handle Dual Write for group bindings and membership."""
 
     group: Group
+    _expected_empty_relation_reason = None
 
     def __init__(
         self,
@@ -109,6 +110,9 @@ class RelationApiDualWriteGroupHandler(RelationApiDualWriteSubjectHandler):
     def _replicate(self):
         if not self.replication_enabled():
             return
+        if self._expected_empty_relation_reason:
+            logger.info(f"[Dual Write] Skipping empty replication event. {self._expected_empty_relation_reason}")
+            return
         try:
             self._replicator.replicate(
                 ReplicationEvent(
@@ -170,11 +174,10 @@ class RelationApiDualWriteGroupHandler(RelationApiDualWriteSubjectHandler):
             role, update_mapping=remove_group_from_binding, create_default_mapping_for_system_role=None
         )
 
-    def prepare_to_delete_group(self):
+    def prepare_to_delete_group(self, roles):
         """Generate relations to delete."""
         if not self.replication_enabled():
             return
-        roles = Role.objects.filter(policies__group=self.group)
 
         system_roles = roles.public_tenant_only()
 
@@ -211,3 +214,7 @@ class RelationApiDualWriteGroupHandler(RelationApiDualWriteSubjectHandler):
             str(mapping.default_role_binding_uuid),
             "binding",
         )
+
+    def set_expected_empty_relation_reason(self, reason):
+        """Set expected empty relation reason."""
+        self._expected_empty_relation_reason = reason

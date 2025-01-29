@@ -776,6 +776,45 @@ class V2RbacTenantMiddlewareTest(RbacTenantMiddlewareTest):
                 ),
             )
 
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={
+            "status_code": 200,
+            "data": [
+                {
+                    "username": "user_1",
+                    "email": "test_user@email.com",
+                    "first_name": "user",
+                    "last_name": "test",
+                    "user_id": "u1",
+                    "org_id": "12345",
+                }
+            ],
+        },
+    )
+    def test_bootstraps_tenants_if_user_id_is_missing(self, _):
+        with patch("rbac.middleware.OutboxReplicator", new=partial(InMemoryRelationReplicator, self._tuples)):
+            # Change the user's org so we create a new tenant
+            self.request.user.org_id = "12345"
+            self.org_id = "12345"
+            self.request.user.id = None
+            mock_request = self.request
+            tenant_cache = TenantCache()
+            tenant_cache.delete_tenant(self.org_id)
+            middleware = IdentityHeaderMiddleware(get_response=IdentityHeaderMiddleware.get_tenant)
+            result = middleware.get_tenant(Tenant, "localhost", mock_request)
+            self.assertEqual(result.org_id, mock_request.user.org_id)
+            tenant = Tenant.objects.get(org_id=self.org_id)
+            self.assertIsNotNone(tenant)
+            mapping = TenantMapping.objects.get(tenant=tenant)
+            self.assertIsNotNone(mapping)
+            workspaces = list(Workspace.objects.filter(tenant=tenant))
+            self.assertEqual(len(workspaces), 2)
+            default = Workspace.objects.get(type=Workspace.Types.DEFAULT, tenant=tenant)
+            self.assertIsNotNone(default)
+            root = Workspace.objects.get(type=Workspace.Types.ROOT, tenant=tenant)
+            self.assertIsNotNone(root)
+
 
 @override_settings(V2_BOOTSTRAP_TENANT=True)
 class V2IdentityHeaderMiddlewareTest(IdentityHeaderMiddlewareTest):
