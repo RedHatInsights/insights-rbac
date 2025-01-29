@@ -1450,6 +1450,9 @@ class InternalViewsetTests(IdentityRequest):
             [
                 Principal(username="12345", tenant=self.tenant),
                 Principal(username="ABCDE", tenant=self.tenant),
+                Principal(username="Xyz", tenant=self.tenant),
+                Principal(username="iJkLm", tenant=self.tenant),
+                Principal(username="i.J.k@.L.m", tenant=self.tenant),
                 Principal(username="user", tenant=self.tenant),
             ]
         )
@@ -1461,7 +1464,8 @@ class InternalViewsetTests(IdentityRequest):
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(
-            response.content.decode(), "Usernames to be updated: ['12345', 'ABCDE'] to ['12345', 'abcde']"
+            response.content.decode(),
+            "Usernames to be updated: ['ABCDE', 'Xyz', 'i.J.k@.L.m', 'iJkLm'] to ['abcde', 'i.j.k@.l.m', 'ijklm', 'xyz']",
         )
 
         response = self.client.post(
@@ -1470,8 +1474,8 @@ class InternalViewsetTests(IdentityRequest):
             content_type="application/json",
         )
         self.assertEqual(response.status_code, 200)
-        usernames = Principal.objects.values_list("username", flat=True)
-        self.assertEqual({"12345", "abcde", "user"}, set(usernames))
+        usernames = Principal.objects.values_list("username", flat=True).order_by("username")
+        self.assertEqual({"12345", "abcde", "i.j.k@.l.m", "ijklm", "user", "xyz"}, set(usernames))
 
 
 class InternalViewsetResourceDefinitionTests(IdentityRequest):
