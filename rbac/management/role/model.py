@@ -182,6 +182,10 @@ class BindingMapping(models.Model):
         """Remove user from mappings."""
         self.mappings["users"].remove(user_id)
         if user_id in self.mappings["users"]:
+            logging.info(
+                f"[Dual Write] user {user_id} still in mappings of bindingmapping {self.pk}, "
+                "therefore, no relation to remove. "
+            )
             return None
         return role_binding_user_subject_tuple(self.mappings["id"], user_id)
 
