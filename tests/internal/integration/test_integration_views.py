@@ -442,6 +442,7 @@ class IntegrationViewsTests(IdentityRequest):
             **self.request.META,
             follow=True,
         )
+
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data.get("meta").get("count"), 1)
 
