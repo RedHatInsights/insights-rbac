@@ -51,6 +51,11 @@ class Principal(TenantAwareModel):
             return None
         return Principal.user_id_to_principal_resource_id(self.user_id)
 
+    def save(self, *args, **kwargs):
+        """Override save to only store lower case username."""
+        self.username = self.username.lower()
+        super(Principal, self).save(*args, **kwargs)
+
     class Meta:
         ordering = ["username"]
         constraints = [
