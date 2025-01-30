@@ -584,9 +584,9 @@ def bootstrap_tenant(request):
             status=400,
         )
     with transaction.atomic():
+        bootstrap_service = V2TenantBootstrapService(OutboxReplicator())
         for org_id in org_ids:
             tenant = get_object_or_404(Tenant, org_id=org_id)
-            bootstrap_service = V2TenantBootstrapService(OutboxReplicator())
             bootstrap_service.bootstrap_tenant(tenant, force=force)
     return HttpResponse(f"Bootstrapping tenants with org_ids {org_ids} were finished.", status=200)
 
