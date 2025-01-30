@@ -1477,6 +1477,51 @@ class InternalViewsetTests(IdentityRequest):
         usernames = Principal.objects.values_list("username", flat=True).order_by("username")
         self.assertEqual({"12345", "abcde", "i.j.k@.l.m", "ijklm", "user", "xyz"}, set(usernames))
 
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={
+            "status_code": 200,
+            "data": [
+                {
+                    "username": "test_user",
+                    "email": "test_user@email.com",
+                    "first_name": "user",
+                    "last_name": "test",
+                    "user_id": "u1",
+                    "org_id": "12345",
+                    "is_active": False,
+                }
+            ],
+        },
+    )
+    @override_settings(INTERNAL_DESTRUCTIVE_API_OK_UNTIL=valid_destructive_time())
+    def test_delete_principal(self, _):
+        """Test that we can delete principal."""
+        # No username specified
+        response = self.client.delete(f"/_private/api/utils/principal/", **self.request.META)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+        tenant = Tenant.objects.create(tenant_name="test_tenant", org_id="12345")
+        Principal.objects.bulk_create(
+            [
+                Principal(username="test_user", tenant=tenant),
+                Principal(username="test2", tenant=tenant),
+            ]
+        )
+        # Get usernames of the principals to be deleted
+        response = self.client.get("/_private/api/utils/principal/?usernames=test_user,test2", **self.request.META)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            response.content.decode(),
+            "Principals to be deleted: ['test2']",
+        )
+
+        # Delete the principals
+        response = self.client.delete("/_private/api/utils/principal/?usernames=test_user, test2", **self.request.META)
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertTrue(Principal.objects.filter(username="test_user").exists())
+        self.assertTrue(Principal.objects.filter(username="test2").exists())
+
 
 class InternalViewsetResourceDefinitionTests(IdentityRequest):
     def setUp(self):
