@@ -180,6 +180,8 @@ def add_roles(group, roles_or_role_ids, tenant, user=None):
         group_role_change_notification_handler(user, group, role, "added")
         added_roles.append(role)
 
+    if not added_roles:
+        return
     if tenant.tenant_name != "public":
         dual_write_handler = RelationApiDualWriteGroupHandler(group, ReplicationEventType.ASSIGN_ROLE)
         dual_write_handler.generate_relations_to_add_roles(added_roles)
