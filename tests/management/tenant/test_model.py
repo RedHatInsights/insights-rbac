@@ -427,6 +427,31 @@ class V2TenantBootstrapServiceTest(TestCase):
         self.assertEqual(original_mapping, new_mapping)
         self.assertCountEqual(original_workspaces, new_workspaces)
 
+    def test_inject_get_user_id_method(self):
+        bootstrapped = self.fixture.new_tenant(org_id="o1")
+
+        user = User()
+        user.org_id = "o1"
+        user.admin = False
+        user.is_active = True
+        user.user_name = "user_1"
+
+        get_user_id = lambda user: "u1"
+        service = V2TenantBootstrapService(InMemoryRelationReplicator(self.tuples), get_user_id=get_user_id)
+        bootstrapped = service.update_user(user)
+
+        # But is a regular user
+        self.assertEqual(
+            1,
+            self.tuples.count_tuples(
+                all_of(
+                    resource("rbac", "group", bootstrapped.mapping.default_group_uuid),
+                    relation("member"),
+                    subject("rbac", "principal", "localhost/u1"),
+                )
+            ),
+        )
+
     def assertAddedToDefaultGroup(self, user_id: str, tenant_mapping: TenantMapping, and_admin_group: bool = False):
         self.assertEqual(
             1,

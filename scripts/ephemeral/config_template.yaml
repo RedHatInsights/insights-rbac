@@ -13,11 +13,11 @@ apps:
   components:
   - name: rbac
     host: local
-    repo: %REPO%
+    repo: $(REPO}
     path: /deploy/rbac-clowdapp.yml
     parameters:
-      IMAGE_TAG: %IMAGE_TAG%
-      IMAGE: %IMAGE%
+      IMAGE_TAG: ${IMAGE_TAG}
+      IMAGE: ${IMAGE}
       CW_NULL_WORKAROUND: false
       MIN_SCHEDULER_REPLICAS: 1
       CELERY_WORKER_MEMORY_LIMIT: '2Gi'
