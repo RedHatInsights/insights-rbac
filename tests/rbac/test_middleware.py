@@ -797,7 +797,7 @@ class V2RbacTenantMiddlewareTest(RbacTenantMiddlewareTest):
             # Change the user's org so we create a new tenant
             self.request.user.org_id = "12345"
             self.org_id = "12345"
-            self.request.user.id = None
+            self.request.user.user_id = None
             mock_request = self.request
             tenant_cache = TenantCache()
             tenant_cache.delete_tenant(self.org_id)
@@ -806,6 +806,8 @@ class V2RbacTenantMiddlewareTest(RbacTenantMiddlewareTest):
             self.assertEqual(result.org_id, mock_request.user.org_id)
             tenant = Tenant.objects.get(org_id=self.org_id)
             self.assertIsNotNone(tenant)
+            princial = Principal.objects.get(username=self.request.user.username, tenant=tenant)
+            self.assertEqual(princial.user_id, "u1")
             mapping = TenantMapping.objects.get(tenant=tenant)
             self.assertIsNotNone(mapping)
             workspaces = list(Workspace.objects.filter(tenant=tenant))
