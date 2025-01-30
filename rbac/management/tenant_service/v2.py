@@ -301,7 +301,6 @@ class V2TenantBootstrapService:
         # a TenantMapping must have already been created.
         mapping = TenantMapping.objects.create(tenant=tenant)
         relationships.extend(self._bootstrap_default_access(tenant, mapping, str(default_workspace.id)))
-
         self._replicator.replicate(
             ReplicationEvent(
                 event_type=ReplicationEventType.BOOTSTRAP_TENANT,
