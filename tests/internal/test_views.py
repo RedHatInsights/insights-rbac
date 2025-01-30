@@ -708,6 +708,40 @@ class InternalViewsetTests(IdentityRequest):
         self.assertEqual(len(tuples), 9)
 
     @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
+    def test_bootstrapping_multiple_tenants(self, replicate):
+        """Test that we can bootstrap a tenant."""
+        org_ids = ["12345", "123456", "6789"]
+
+        payload = {"org_ids": org_ids}
+
+        tuples = InMemoryTuples()
+        replicator = InMemoryRelationReplicator(tuples)
+        replicate.side_effect = replicator.replicate
+        RbacFixture(V2TenantBootstrapService(replicator))
+        tuples.clear()
+
+        for org_id in org_ids:
+            tenant = Tenant.objects.create(org_id=org_id)
+            self.assertFalse(Workspace.objects.filter(tenant=tenant, type=Workspace.Types.ROOT).exists())
+            self.assertFalse(Workspace.objects.filter(tenant=tenant, type=Workspace.Types.DEFAULT).exists())
+
+        response = self.client.post(
+            f"/_private/api/utils/bootstrap_tenant/",
+            data=payload,
+            **self.request.META,
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        for org_id in org_ids:
+            tenant = Tenant.objects.get(org_id=org_id)
+            self.assertTrue(Workspace.objects.filter(tenant=tenant, type=Workspace.Types.ROOT).exists())
+            self.assertTrue(Workspace.objects.filter(tenant=tenant, type=Workspace.Types.DEFAULT).exists())
+            self.assertTrue(getattr(tenant, "tenant_mapping"))
+        self.assertEqual(
+            len(tuples), 9 + 9 + 9
+        )  # orgs: 3 for workspaces, 3 for default and 3 for admin default access
+
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
     def test_bootstrapping_existing_tenant_without_force_does_nothing(self, replicate):
         tuples = InMemoryTuples()
         replicator = InMemoryRelationReplicator(tuples)
