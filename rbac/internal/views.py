@@ -567,10 +567,16 @@ def bootstrap_tenant(request):
         return HttpResponse('Invalid method, only "POST" is allowed.', status=405)
     logger.info("Running bootstrap tenant.")
 
-    org_id = request.GET.get("org_id")
+    if not request.body:
+        return HttpResponse('Invalid request, must supply the "org_ids" in body.', status=400)
+
+    org_ids_data = json.loads(request.body.decode("utf-8").replace("'", '"'))
     force = request.GET.get("force", "false").lower() == "true"
-    if not org_id:
-        return HttpResponse('Invalid request, must supply the "org_id" query parameter.', status=400)
+    if "org_ids" not in org_ids_data or len(org_ids_data["org_ids"]) == 0:
+        return HttpResponse(
+            'Invalid request: the "org_ids" array in the body must contain at least one org_id', status=400
+        )
+    org_ids = org_ids_data["org_ids"]
     if force and settings.REPLICATION_TO_RELATION_ENABLED:
         return HttpResponse(
             "Forcing replication is not allowed when replication is on, "
@@ -578,10 +584,11 @@ def bootstrap_tenant(request):
             status=400,
         )
     with transaction.atomic():
-        tenant = get_object_or_404(Tenant, org_id=org_id)
-        bootstrap_service = V2TenantBootstrapService(OutboxReplicator())
-        bootstrap_service.bootstrap_tenant(tenant, force=force)
-    return HttpResponse(f"Bootstrap tenant with org_id {org_id} finished.", status=200)
+        for org_id in org_ids:
+            tenant = get_object_or_404(Tenant, org_id=org_id)
+            bootstrap_service = V2TenantBootstrapService(OutboxReplicator())
+            bootstrap_service.bootstrap_tenant(tenant, force=force)
+    return HttpResponse(f"Bootstrapping tenants with org_ids {org_ids} were finished.", status=200)
 
 
 class SentryDiagnosticError(Exception):

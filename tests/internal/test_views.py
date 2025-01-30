@@ -671,24 +671,41 @@ class InternalViewsetTests(IdentityRequest):
         binding_mappings[1].refresh_from_db()
         self.assertEqual(self._tuples.find_tuples(), [])
 
-    def test_bootstrapping_tenant(self):
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
+    def test_bootstrapping_tenant(self, replicate):
         """Test that we can bootstrap a tenant."""
         org_id = "12345"
+
+        payload = {"org_ids": [org_id]}
         response = self.client.post(
-            f"/_private/api/utils/bootstrap_tenant/?org_id={org_id}",
+            f"/_private/api/utils/bootstrap_tenant/",
+            data=payload,
             **self.request.META,
+            content_type="application/json",
         )
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
+        tuples = InMemoryTuples()
+        replicator = InMemoryRelationReplicator(tuples)
+        replicate.side_effect = replicator.replicate
+        RbacFixture(V2TenantBootstrapService(replicator))
+        tuples.clear()
+
         tenant = Tenant.objects.create(org_id=org_id)
+        self.assertFalse(Workspace.objects.filter(tenant=tenant, type=Workspace.Types.ROOT).exists())
+        self.assertFalse(Workspace.objects.filter(tenant=tenant, type=Workspace.Types.DEFAULT).exists())
+
         response = self.client.post(
-            f"/_private/api/utils/bootstrap_tenant/?org_id={org_id}",
+            f"/_private/api/utils/bootstrap_tenant/",
+            data=payload,
             **self.request.META,
+            content_type="application/json",
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        Workspace.objects.filter(tenant=tenant, type=Workspace.Types.ROOT).exists()
-        Workspace.objects.filter(tenant=tenant, type=Workspace.Types.DEFAULT).exists()
+        self.assertTrue(Workspace.objects.filter(tenant=tenant, type=Workspace.Types.ROOT).exists())
+        self.assertTrue(Workspace.objects.filter(tenant=tenant, type=Workspace.Types.DEFAULT).exists())
         self.assertTrue(getattr(tenant, "tenant_mapping"))
+        self.assertEqual(len(tuples), 9)
 
     @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
     def test_bootstrapping_existing_tenant_without_force_does_nothing(self, replicate):
@@ -698,13 +715,15 @@ class InternalViewsetTests(IdentityRequest):
         fixture = RbacFixture(V2TenantBootstrapService(replicator))
 
         org_id = "12345"
-
+        payload = {"org_ids": [org_id]}
         fixture.new_tenant(org_id)
         tuples.clear()
 
         response = self.client.post(
             f"/_private/api/utils/bootstrap_tenant/?org_id={org_id}",
+            data=payload,
             **self.request.META,
+            content_type="application/json",
         )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -712,7 +731,9 @@ class InternalViewsetTests(IdentityRequest):
 
         response = self.client.post(
             f"/_private/api/utils/bootstrap_tenant/?org_id={org_id}&force=false",
+            data=payload,
             **self.request.META,
+            content_type="application/json",
         )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -727,13 +748,15 @@ class InternalViewsetTests(IdentityRequest):
         fixture = RbacFixture(V2TenantBootstrapService(replicator))
 
         org_id = "12345"
-
+        payload = {"org_ids": [org_id]}
         fixture.new_tenant(org_id)
         tuples.clear()
 
         response = self.client.post(
             f"/_private/api/utils/bootstrap_tenant/?org_id={org_id}&force=true",
+            data=payload,
             **self.request.META,
+            content_type="application/json",
         )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -742,9 +765,12 @@ class InternalViewsetTests(IdentityRequest):
     @override_settings(REPLICATION_TO_RELATION_ENABLED=True)
     def test_cannot_force_bootstrapping_while_replication_enabled(self):
         org_id = "12345"
+        payload = {"org_ids": [org_id]}
         response = self.client.post(
             f"/_private/api/utils/bootstrap_tenant/?org_id={org_id}&force=true",
+            data=payload,
             **self.request.META,
+            content_type="application/json",
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
