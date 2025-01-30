@@ -30,7 +30,7 @@ from django.shortcuts import get_object_or_404
 from django.utils.html import escape
 from internal.utils import delete_bindings
 from management.cache import TenantCache
-from management.models import Group, Permission, Role
+from management.models import Group, Permission, Principal, ResourceDefinition, Role
 from management.principal.proxy import (
     API_TOKEN_HEADER,
     CLIENT_ID_HEADER,
@@ -369,6 +369,40 @@ def car_expiry(request):
     return HttpResponse('Invalid method, only "POST" is allowed.', status=405)
 
 
+def set_tenant_ready(request):
+    """View/set Tenant with ready flag true.
+
+    GET /_private/api/utils/set_tenant_ready/
+    POST /_private/api/utils/set_tenant_ready/?max_expected=1234
+    """
+    tenant_qs = Tenant.objects.exclude(tenant_name="public").filter(ready=False)
+    if request.method == "GET":
+        tenant_count = tenant_qs.count()
+        return HttpResponse(f"Total of {tenant_count} tenants not set to be ready.", status=200)
+
+    if request.method == "POST":
+        if not destructive_ok("api"):
+            return HttpResponse("Destructive operations disallowed.", status=400)
+        logger.info("Setting flag ready to true for tenants.")
+        max_expected = request.GET.get("max_expected")
+        if not max_expected:
+            return HttpResponse("Please specify a max_expected value.", status=400)
+        with transaction.atomic():
+            prev_count = tenant_qs.count()
+            if prev_count > int(max_expected):
+                return HttpResponse(
+                    f"Total of {prev_count} tenants exceeds max_expected of {max_expected}.",
+                    status=400,
+                )
+            tenant_qs.update(ready=True)
+            return HttpResponse(
+                f"Total of {prev_count} tenants has been updated. "
+                f"{tenant_qs.count()} tenant with ready flag equal to false.",
+                status=200,
+            )
+    return HttpResponse('Invalid method, only "POST" is allowed.', status=405)
+
+
 def populate_tenant_account_id(request):
     """View method for populating Tenant#account_id values.
 
@@ -637,44 +671,51 @@ def reset_imported_tenants(request: HttpRequest) -> HttpResponse:
     # Request should accept a query parameter to exclude certain tenants so we can exclude the ~129
     excluded = request.GET.getlist("exclude_id", [])
 
+    # The default query created with "ready=false" flag otherwise is used query that checks that tenant
+    # does not have records in all tables.
+    only_ready_false_flag = request.GET.get("only_ready_false_flag", "true").strip().lower() == "true"
+
     query = "FROM api_tenant WHERE tenant_name <> 'public' "
 
     if excluded:
         query += "AND id NOT IN %s "
 
-    query += (
-        "AND NOT EXISTS (SELECT 1 FROM management_principal WHERE management_principal.tenant_id = api_tenant.id) "
-    )
-    query += """AND NOT (
-              EXISTS    (SELECT 1
-                         FROM   management_tenantmapping
-                         WHERE  management_tenantmapping.tenant_id = api_tenant.id)
-              OR EXISTS (SELECT 1
-                         FROM   management_access
-                         WHERE  management_access.tenant_id = api_tenant.id)
-              OR EXISTS (SELECT 1
-                         FROM   management_group
-                         WHERE  management_group.tenant_id = api_tenant.id)
-              OR EXISTS (SELECT 1
-                         FROM   management_permission
-                         WHERE  management_permission.tenant_id = api_tenant.id)
-              OR EXISTS (SELECT 1
-                         FROM   management_policy
-                         WHERE  management_policy.tenant_id = api_tenant.id)
-              OR EXISTS (SELECT 1
-                         FROM   management_resourcedefinition
-                         WHERE  management_resourcedefinition.tenant_id =
-                        api_tenant.id)
-              OR EXISTS (SELECT 1
-                         FROM   management_role
-                         WHERE  management_role.tenant_id = api_tenant.id)
-              OR EXISTS (SELECT 1
-                         FROM   management_auditlog
-                         WHERE  management_auditlog.tenant_id = api_tenant.id)
-              OR EXISTS (SELECT 1
-                         FROM   management_workspace
-                         WHERE  management_workspace.tenant_id = api_tenant.id)
-              )"""
+    if only_ready_false_flag:
+        query += "AND NOT ready"
+    else:
+        query += (
+            "AND NOT EXISTS (SELECT 1 FROM management_principal WHERE management_principal.tenant_id = api_tenant.id) "
+        )
+        query += """AND NOT (
+                  EXISTS    (SELECT 1
+                             FROM   management_tenantmapping
+                             WHERE  management_tenantmapping.tenant_id = api_tenant.id)
+                  OR EXISTS (SELECT 1
+                             FROM   management_access
+                             WHERE  management_access.tenant_id = api_tenant.id)
+                  OR EXISTS (SELECT 1
+                             FROM   management_group
+                             WHERE  management_group.tenant_id = api_tenant.id)
+                  OR EXISTS (SELECT 1
+                             FROM   management_permission
+                             WHERE  management_permission.tenant_id = api_tenant.id)
+                  OR EXISTS (SELECT 1
+                             FROM   management_policy
+                             WHERE  management_policy.tenant_id = api_tenant.id)
+                  OR EXISTS (SELECT 1
+                             FROM   management_resourcedefinition
+                             WHERE  management_resourcedefinition.tenant_id =
+                            api_tenant.id)
+                  OR EXISTS (SELECT 1
+                             FROM   management_role
+                             WHERE  management_role.tenant_id = api_tenant.id)
+                  OR EXISTS (SELECT 1
+                             FROM   management_auditlog
+                             WHERE  management_auditlog.tenant_id = api_tenant.id)
+                  OR EXISTS (SELECT 1
+                             FROM   management_workspace
+                             WHERE  management_workspace.tenant_id = api_tenant.id)
+                  )"""
 
     try:
         limit = int(request.GET.get("limit", "-1"))
@@ -781,3 +822,79 @@ def roles(request, uuid: str) -> HttpResponse:
 def trigger_error(request):
     """Trigger an error to confirm Sentry is working."""
     raise SentryDiagnosticError
+
+
+def correct_resource_definitions(request):
+    """Get/Fix resourceDefinitions with incorrect attributeFilters.
+
+    Attribute filters with lists must use 'in' operation. Those with a single string must use 'equal'
+
+    GET /_private/api/utils/resource_definitions
+    PATCH /_private/api/utils/resource_definitions
+    """
+    list_query = """ FROM management_resourcedefinition
+                WHERE "attributeFilter"->>'operation' = 'equal'
+                AND jsonb_typeof("attributeFilter"->'value') = 'array';"""
+
+    string_query = """ from management_resourcedefinition WHERE "attributeFilter"->>'operation' = 'in'
+                AND jsonb_typeof("attributeFilter"->'value') = 'string';"""
+
+    if request.method == "GET":
+        with connection.cursor() as cursor:
+
+            cursor.execute("SELECT COUNT(*)" + list_query)
+            count = cursor.fetchone()[0]
+
+            cursor.execute("SELECT COUNT(*)" + string_query)
+            count += cursor.fetchone()[0]
+
+        return HttpResponse(f"{count} resource definitions would be corrected", status=200)
+    elif request.method == "PATCH":
+        count = 0
+        with connection.cursor() as cursor:
+
+            cursor.execute("SELECT id " + list_query)
+            result = cursor.fetchall()
+            for id in result:
+                resource_definition = ResourceDefinition.objects.get(id=id[0])
+                resource_definition.attributeFilter["operation"] = "in"
+                resource_definition.save()
+                count += 1
+
+            cursor.execute("SELECT id " + string_query)
+            result = cursor.fetchall()
+            for id in result:
+                resource_definition = ResourceDefinition.objects.get(id=id[0])
+                resource_definition.attributeFilter["operation"] = "equal"
+                resource_definition.save()
+                count += 1
+
+        return HttpResponse(f"Updated {count} bad resource definitions", status=200)
+
+    return HttpResponse('Invalid method, only "GET" or "PATCH" are allowed.', status=405)
+
+
+def username_lower(request):
+    """Update the username for the principal to be lowercase."""
+    if request.method not in ["POST", "GET"]:
+        return HttpResponse("Invalid request method, only POST/GET are allowed.", status=405)
+    if request.method == "POST" and not destructive_ok("api"):
+        return HttpResponse("Destructive operations disallowed.", status=400)
+
+    pre_names = []
+    updated_names = []
+    with transaction.atomic():
+        principals = Principal.objects.filter(type="user").filter(username__regex=r"[A-Z]").order_by("username")
+        for principal in principals:
+            pre_names.append(principal.username)
+            principal.username = principal.username.lower()
+            updated_names.append(principal.username)
+            pre_names.sort()
+            updated_names.sort()
+        if request.method == "GET":
+            return HttpResponse(
+                f"Usernames to be updated: {pre_names} to {updated_names}",
+                status=200,
+            )
+        Principal.objects.bulk_update(principals, ["username"])
+        return HttpResponse(f"Updated {len(principals)} usernames", status=200)

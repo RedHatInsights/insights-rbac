@@ -60,6 +60,5 @@ class CrossAccountRequestAccessPermission(permissions.BasePermission):
             view.validate_and_format_input(request.data)
         elif request.method == "PATCH":
             view.check_patch_permission(request, obj)
-            view.validate_and_format_patch_input(request.data)
 
         return True
