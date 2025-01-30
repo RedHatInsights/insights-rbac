@@ -23,7 +23,7 @@ from management.permission.serializer import PermissionSerializer
 from management.utils import raise_validation_error
 from rest_framework import serializers
 
-from api.models import CrossAccountRequest
+from api.models import CrossAccountRequest, Tenant
 
 
 class CrossAccountRequestSerializer(serializers.ModelSerializer):
@@ -110,8 +110,9 @@ class CrossAccountRequestDetailSerializer(serializers.ModelSerializer):
 
     def validate_roles(self, roles):
         """Format role list as expected for cross-account-request."""
+        public_tenant = Tenant.objects.get(tenant_name="public")
         role_display_names = [role["display_name"] for role in roles]
-        roles_queryset = Role.objects.filter(display_name__in=role_display_names).public_tenant_only()
+        roles_queryset = Role.objects.filter(display_name__in=role_display_names, tenant=public_tenant)
         role_dict = {role.display_name: role for role in roles_queryset}
 
         system_role_uuids = []
