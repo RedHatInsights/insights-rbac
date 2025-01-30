@@ -583,6 +583,15 @@ class GroupViewsetTests(IdentityRequest):
         group.principals.add(user_principal)
         group.save()
 
+        # Create user principal
+        principal_name = "username_filter_test_2"
+        user_principal_2 = Principal(username=principal_name, tenant=self.test_tenant)
+        user_principal_2.save()
+
+        # Add principal to group
+        group.principals.add(user_principal_2)
+        group.save()
+
         # Test that principal count exists & is correct when filtering groups when excluding user
         url = f"{reverse('v1_management:group-list')}"
         url = "{}?exclude_username={}".format(url, "True")
@@ -591,7 +600,7 @@ class GroupViewsetTests(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
         principalCount = response.data.get("data")[0]["principalCount"]
-        self.assertEqual(principalCount, 1)
+        self.assertEqual(principalCount, 2)
 
     def test_get_group_by_partial_name_by_default(self):
         """Test that getting groups by name returns partial match by default."""
