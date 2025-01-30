@@ -1573,6 +1573,45 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/api/utils/principal/": {
+      "delete": {
+        "tags": [
+          "Principal"
+        ],
+        "summary": "Delete principals without user_id and inactive.",
+        "description": "Delete principals without principals and inactive..",
+        "operationId": "DeletePrincipal",
+        "parameters": [
+          {
+            "name": "usernames",
+            "in": "query",
+            "required": true,
+            "description": "Comma separated list of usernames of the principals to be deleted.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Principals deleted"
+          },
+          "400": {
+            "description": "Bad Input"
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           },
           "500": {
             "description": "Unexpected Error",
