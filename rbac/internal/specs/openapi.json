@@ -1116,19 +1116,30 @@
         "tags": [
           "Tenant bootstrap"
         ],
-        "summary": "Bootstrap a tennat by org id",
-        "description": "Bootstrap a tenant by org id",
+        "summary": "Bootstrap a tenants by org ids",
+        "description": "Bootstrap a tenants by org ids",
         "operationId": "TenantBootstrap",
-        "parameters": [
-          {
-            "name": "org_id",
-            "in": "query",
-            "required": true,
-            "description": "Defines the org id of the tenant to bootstrap.",
-            "schema": {
-              "type": "string"
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "org_ids": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "A list of organization IDs to bootstrap."
+                  }
+                },
+                "required": ["org_ids"]
+              }
             }
-          },
+          }
+        },
+        "parameters": [
           {
             "name": "force",
             "in": "query",
@@ -1570,6 +1581,45 @@
                 "schema": {
                   "type": "string",
                   "example": "2 tenants would be deleted"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/utils/principal/": {
+      "delete": {
+        "tags": [
+          "Principal"
+        ],
+        "summary": "Delete principals without user_id and inactive.",
+        "description": "Delete principals without principals and inactive..",
+        "operationId": "DeletePrincipal",
+        "parameters": [
+          {
+            "name": "usernames",
+            "in": "query",
+            "required": true,
+            "description": "Comma separated list of usernames of the principals to be deleted.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Principals deleted"
+          },
+          "400": {
+            "description": "Bad Input"
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
                 }
               }
             }

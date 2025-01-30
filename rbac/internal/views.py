@@ -54,7 +54,7 @@ from management.tenant_service.v2 import V2TenantBootstrapService
 from rest_framework import status
 
 from api.common.pagination import StandardResultsSetPagination, WSGIRequestResultsSetPagination
-from api.models import Tenant
+from api.models import Tenant, User
 from api.tasks import (
     cross_account_cleanup,
     populate_tenant_account_id_in_worker,
@@ -66,6 +66,7 @@ from api.utils import RESOURCE_MODEL_MAPPING, get_resources
 
 logger = logging.getLogger(__name__)
 TENANTS = TenantCache()
+PROXY = PrincipalProxy()
 
 
 def tenant_is_modified(tenant_name=None, org_id=None):
@@ -249,7 +250,6 @@ def get_org_admin(request, org_or_account):
 
     GET /_private/api/utils/get_org_admin/{org_or_account}/?type=account_id,org_id
     """
-    PROXY = PrincipalProxy()
     default_limit = StandardResultsSetPagination.default_limit
     request_path = request.path
     try:
@@ -567,10 +567,16 @@ def bootstrap_tenant(request):
         return HttpResponse('Invalid method, only "POST" is allowed.', status=405)
     logger.info("Running bootstrap tenant.")
 
-    org_id = request.GET.get("org_id")
+    if not request.body:
+        return HttpResponse('Invalid request, must supply the "org_ids" in body.', status=400)
+
+    org_ids_data = json.loads(request.body.decode("utf-8").replace("'", '"'))
     force = request.GET.get("force", "false").lower() == "true"
-    if not org_id:
-        return HttpResponse('Invalid request, must supply the "org_id" query parameter.', status=400)
+    if "org_ids" not in org_ids_data or len(org_ids_data["org_ids"]) == 0:
+        return HttpResponse(
+            'Invalid request: the "org_ids" array in the body must contain at least one org_id', status=400
+        )
+    org_ids = org_ids_data["org_ids"]
     if force and settings.REPLICATION_TO_RELATION_ENABLED:
         return HttpResponse(
             "Forcing replication is not allowed when replication is on, "
@@ -578,10 +584,11 @@ def bootstrap_tenant(request):
             status=400,
         )
     with transaction.atomic():
-        tenant = get_object_or_404(Tenant, org_id=org_id)
         bootstrap_service = V2TenantBootstrapService(OutboxReplicator())
-        bootstrap_service.bootstrap_tenant(tenant, force=force)
-    return HttpResponse(f"Bootstrap tenant with org_id {org_id} finished.", status=200)
+        for org_id in org_ids:
+            tenant = get_object_or_404(Tenant, org_id=org_id)
+            bootstrap_service.bootstrap_tenant(tenant, force=force)
+    return HttpResponse(f"Bootstrapping tenants with org_ids {org_ids} were finished.", status=200)
 
 
 class SentryDiagnosticError(Exception):
@@ -898,3 +905,56 @@ def username_lower(request):
             )
         Principal.objects.bulk_update(principals, ["username"])
         return HttpResponse(f"Updated {len(principals)} usernames", status=200)
+
+
+def principal_removal(request):
+    """Get/Delete not active principals.
+
+    GET or DELETE /_private/api/utils/principal/?usernames=a,b,c
+    """
+    logger.info(f"Principal edit or removal: {request.method} {request.user.username}")
+    if request.method not in ["DELETE", "GET"]:
+        return HttpResponse('Invalid method, only "DELETE" or "GET" is allowed.', status=405)
+
+    if not request.GET.get("usernames"):
+        return HttpResponse("Please provided a list of usernames with comma separated.", status=400)
+    usernames = request.GET.get("usernames").split(",")
+    resp = PROXY.request_filtered_principals(usernames, org_id=None, options={"return_id": True})
+
+    if isinstance(resp, dict) and "errors" in resp:
+        return HttpResponse(resp.get("errors"), status=400)
+
+    active_users = {(principal_data["username"], principal_data["org_id"]) for principal_data in resp["data"]}
+
+    principals = (
+        Principal.objects.filter(username__in=usernames).filter(type=Principal.Types.USER).prefetch_related("tenant")
+    )
+    principals_delete = [
+        principal for principal in principals if (principal.username, principal.tenant.org_id) not in active_users
+    ]
+
+    principal_usernames = [principal.username for principal in principals_delete]
+
+    if request.method == "GET":
+        return HttpResponse(
+            f"Principals to be deleted: {principal_usernames}",
+            status=200,
+        )
+    if not destructive_ok("api"):
+        return HttpResponse("Destructive operations disallowed.", status=400)
+
+    with transaction.atomic():
+        bootstrap_service = V2TenantBootstrapService(OutboxReplicator())
+        for principal in principals_delete:
+            if not principal.user_id:
+                principal.delete()
+            else:
+                user = User()
+                user.username = principal.username
+                user.org_id = principal.tenant.org_id
+                user.is_active = False
+                user.user_id = principal.user_id
+
+                bootstrap_service.update_user(user)
+
+        return HttpResponse(f"Users deleted: {principal_usernames}", status=204)

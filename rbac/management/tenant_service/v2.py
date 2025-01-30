@@ -103,7 +103,7 @@ class V2TenantBootstrapService:
         if mapping is None:
             raise ValueError(f"Expected TenantMapping but got None. org_id: {bootstrapped_tenant.tenant.org_id}")
 
-        user_id = self._get_user_id(user)
+        user.user_id = self._get_user_id(user)
 
         tuples_to_add = []
         tuples_to_remove = []
@@ -116,7 +116,7 @@ class V2TenantBootstrapService:
         self._replicator.replicate(
             ReplicationEvent(
                 event_type=ReplicationEventType.EXTERNAL_USER_UPDATE,
-                info={"user_id": user_id, "org_id": user.org_id},
+                info={"user_id": user.user_id, "org_id": user.org_id},
                 partition_key=PartitionKey.byEnvironment(),
                 add=tuples_to_add,
                 remove=tuples_to_remove,
@@ -301,7 +301,6 @@ class V2TenantBootstrapService:
         # a TenantMapping must have already been created.
         mapping = TenantMapping.objects.create(tenant=tenant)
         relationships.extend(self._bootstrap_default_access(tenant, mapping, str(default_workspace.id)))
-
         self._replicator.replicate(
             ReplicationEvent(
                 event_type=ReplicationEventType.BOOTSTRAP_TENANT,

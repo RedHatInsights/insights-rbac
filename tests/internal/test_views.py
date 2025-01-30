@@ -671,24 +671,75 @@ class InternalViewsetTests(IdentityRequest):
         binding_mappings[1].refresh_from_db()
         self.assertEqual(self._tuples.find_tuples(), [])
 
-    def test_bootstrapping_tenant(self):
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
+    def test_bootstrapping_tenant(self, replicate):
         """Test that we can bootstrap a tenant."""
         org_id = "12345"
+
+        payload = {"org_ids": [org_id]}
         response = self.client.post(
-            f"/_private/api/utils/bootstrap_tenant/?org_id={org_id}",
+            f"/_private/api/utils/bootstrap_tenant/",
+            data=payload,
             **self.request.META,
+            content_type="application/json",
         )
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
+        tuples = InMemoryTuples()
+        replicator = InMemoryRelationReplicator(tuples)
+        replicate.side_effect = replicator.replicate
+        RbacFixture(V2TenantBootstrapService(replicator))
+        tuples.clear()
+
         tenant = Tenant.objects.create(org_id=org_id)
+        self.assertFalse(Workspace.objects.filter(tenant=tenant, type=Workspace.Types.ROOT).exists())
+        self.assertFalse(Workspace.objects.filter(tenant=tenant, type=Workspace.Types.DEFAULT).exists())
+
         response = self.client.post(
-            f"/_private/api/utils/bootstrap_tenant/?org_id={org_id}",
+            f"/_private/api/utils/bootstrap_tenant/",
+            data=payload,
             **self.request.META,
+            content_type="application/json",
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        Workspace.objects.filter(tenant=tenant, type=Workspace.Types.ROOT).exists()
-        Workspace.objects.filter(tenant=tenant, type=Workspace.Types.DEFAULT).exists()
+        self.assertTrue(Workspace.objects.filter(tenant=tenant, type=Workspace.Types.ROOT).exists())
+        self.assertTrue(Workspace.objects.filter(tenant=tenant, type=Workspace.Types.DEFAULT).exists())
         self.assertTrue(getattr(tenant, "tenant_mapping"))
+        self.assertEqual(len(tuples), 9)
+
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
+    def test_bootstrapping_multiple_tenants(self, replicate):
+        """Test that we can bootstrap a tenant."""
+        org_ids = ["12345", "123456", "6789"]
+
+        payload = {"org_ids": org_ids}
+
+        tuples = InMemoryTuples()
+        replicator = InMemoryRelationReplicator(tuples)
+        replicate.side_effect = replicator.replicate
+        RbacFixture(V2TenantBootstrapService(replicator))
+        tuples.clear()
+
+        for org_id in org_ids:
+            tenant = Tenant.objects.create(org_id=org_id)
+            self.assertFalse(Workspace.objects.filter(tenant=tenant, type=Workspace.Types.ROOT).exists())
+            self.assertFalse(Workspace.objects.filter(tenant=tenant, type=Workspace.Types.DEFAULT).exists())
+
+        response = self.client.post(
+            f"/_private/api/utils/bootstrap_tenant/",
+            data=payload,
+            **self.request.META,
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        for org_id in org_ids:
+            tenant = Tenant.objects.get(org_id=org_id)
+            self.assertTrue(Workspace.objects.filter(tenant=tenant, type=Workspace.Types.ROOT).exists())
+            self.assertTrue(Workspace.objects.filter(tenant=tenant, type=Workspace.Types.DEFAULT).exists())
+            self.assertTrue(getattr(tenant, "tenant_mapping"))
+        self.assertEqual(
+            len(tuples), 9 + 9 + 9
+        )  # orgs: 3 for workspaces, 3 for default and 3 for admin default access
 
     @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
     def test_bootstrapping_existing_tenant_without_force_does_nothing(self, replicate):
@@ -698,13 +749,15 @@ class InternalViewsetTests(IdentityRequest):
         fixture = RbacFixture(V2TenantBootstrapService(replicator))
 
         org_id = "12345"
-
+        payload = {"org_ids": [org_id]}
         fixture.new_tenant(org_id)
         tuples.clear()
 
         response = self.client.post(
             f"/_private/api/utils/bootstrap_tenant/?org_id={org_id}",
+            data=payload,
             **self.request.META,
+            content_type="application/json",
         )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -712,7 +765,9 @@ class InternalViewsetTests(IdentityRequest):
 
         response = self.client.post(
             f"/_private/api/utils/bootstrap_tenant/?org_id={org_id}&force=false",
+            data=payload,
             **self.request.META,
+            content_type="application/json",
         )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -727,13 +782,15 @@ class InternalViewsetTests(IdentityRequest):
         fixture = RbacFixture(V2TenantBootstrapService(replicator))
 
         org_id = "12345"
-
+        payload = {"org_ids": [org_id]}
         fixture.new_tenant(org_id)
         tuples.clear()
 
         response = self.client.post(
             f"/_private/api/utils/bootstrap_tenant/?org_id={org_id}&force=true",
+            data=payload,
             **self.request.META,
+            content_type="application/json",
         )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -742,9 +799,12 @@ class InternalViewsetTests(IdentityRequest):
     @override_settings(REPLICATION_TO_RELATION_ENABLED=True)
     def test_cannot_force_bootstrapping_while_replication_enabled(self):
         org_id = "12345"
+        payload = {"org_ids": [org_id]}
         response = self.client.post(
             f"/_private/api/utils/bootstrap_tenant/?org_id={org_id}&force=true",
+            data=payload,
             **self.request.META,
+            content_type="application/json",
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
@@ -1476,6 +1536,51 @@ class InternalViewsetTests(IdentityRequest):
         self.assertEqual(response.status_code, 200)
         usernames = Principal.objects.values_list("username", flat=True).order_by("username")
         self.assertEqual({"12345", "abcde", "i.j.k@.l.m", "ijklm", "user", "xyz"}, set(usernames))
+
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={
+            "status_code": 200,
+            "data": [
+                {
+                    "username": "test_user",
+                    "email": "test_user@email.com",
+                    "first_name": "user",
+                    "last_name": "test",
+                    "user_id": "u1",
+                    "org_id": "12345",
+                    "is_active": False,
+                }
+            ],
+        },
+    )
+    @override_settings(INTERNAL_DESTRUCTIVE_API_OK_UNTIL=valid_destructive_time())
+    def test_delete_principal(self, _):
+        """Test that we can delete principal."""
+        # No username specified
+        response = self.client.delete(f"/_private/api/utils/principal/", **self.request.META)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+        tenant = Tenant.objects.create(tenant_name="test_tenant", org_id="12345")
+        Principal.objects.bulk_create(
+            [
+                Principal(username="test_user", tenant=tenant),
+                Principal(username="test2", tenant=tenant),
+            ]
+        )
+        # Get usernames of the principals to be deleted
+        response = self.client.get("/_private/api/utils/principal/?usernames=test_user,test2", **self.request.META)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            response.content.decode(),
+            "Principals to be deleted: ['test2']",
+        )
+
+        # Delete the principals
+        response = self.client.delete("/_private/api/utils/principal/?usernames=test_user, test2", **self.request.META)
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertTrue(Principal.objects.filter(username="test_user").exists())
+        self.assertTrue(Principal.objects.filter(username="test2").exists())
 
 
 class InternalViewsetResourceDefinitionTests(IdentityRequest):
