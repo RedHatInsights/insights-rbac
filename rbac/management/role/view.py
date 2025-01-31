@@ -268,7 +268,7 @@ class RoleViewSet(
             }
         """
         self.validate_role(request)
-        self.restrict_role_create_update_if_system_or_custom_exists(request)
+        self.restrict_role_create_update_if_system_role_exists(request)
         try:
             with transaction.atomic():
                 return super().create(request=request, args=args, kwargs=kwargs)
@@ -464,7 +464,7 @@ class RoleViewSet(
         """
         validate_uuid(kwargs.get("uuid"), "role uuid validation")
         self.validate_role(request)
-        self.restrict_role_create_update_if_system_or_custom_exists(request)
+        self.restrict_role_create_update_if_system_role_exists(request)
         try:
             with transaction.atomic():
                 return super().update(request=request, args=args, kwargs=kwargs)
@@ -630,15 +630,14 @@ class RoleViewSet(
             if policy.roles.count() == 1:
                 policy.delete()
 
-    def restrict_role_create_update_if_system_or_custom_exists(self, request):
-        """If a role has the same display_name when a role is being created or updated restrict the operation."""
+    def restrict_role_create_update_if_system_role_exists(self, request):
+        """If a system role has the same display_name when a role is being created or updated restrict the operation."""
         req_method = request.method
         req_name = request.data.get("name")
         public_tenant = Tenant.objects.get(tenant_name="public")
         base_role_queryset = Role.objects.filter(display_name=req_name, tenant__in=[request.tenant, public_tenant])
-        req_custom_role_exists = base_role_queryset.filter(platform_default=True).exists()
         req_system_role_exists = base_role_queryset.filter(system=True).exists()
-        if req_custom_role_exists or req_system_role_exists and req_method == "PUT":
+        if req_system_role_exists and req_method == "PUT":
             raise serializers.ValidationError({"role": f"Role '{req_name}' name cannot be updated with this value."})
-        elif req_custom_role_exists or req_system_role_exists and req_method == "POST":
+        elif req_system_role_exists and req_method == "POST":
             raise serializers.ValidationError({"role": f"Role '{req_name}' already exists for a tenant."})
