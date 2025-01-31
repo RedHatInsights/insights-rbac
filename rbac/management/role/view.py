@@ -480,6 +480,14 @@ class RoleViewSet(
         role = serializer.save()
 
         dual_write_handler = RelationApiDualWriteHandler(role, ReplicationEventType.CREATE_CUSTOM_ROLE)
+        # No need to replicate if creating role with empty access, which won't have any relationships
+        if not role.access.all():
+            expected_empty_relation_reason = (
+                f"No access found for role({role.uuid}): '{role.name}'. "
+                "Assuming no relations to create. "
+                f"event_type='{ReplicationEventType.CREATE_CUSTOM_ROLE}'"
+            )
+            dual_write_handler.set_expected_empty_relation_reason_to_replicator(expected_empty_relation_reason)
         dual_write_handler.replicate_new_or_updated_role(role)
 
         role_obj_change_notification_handler(role, "created", self.request.user)
@@ -521,7 +529,16 @@ class RoleViewSet(
             raise serializers.ValidationError(error)
 
         dual_write_handler = RelationApiDualWriteHandler(instance, ReplicationEventType.DELETE_CUSTOM_ROLE)
-        dual_write_handler.prepare_for_update()
+        # Check emptiness
+        if not instance.access.all():
+            expected_empty_relation_reason = (
+                f"No access found for role({instance.uuid}): '{instance.name}'. "
+                "Assuming no relations to create. "
+                f"event_type='{ReplicationEventType.DELETE_CUSTOM_ROLE}'"
+            )
+            dual_write_handler.set_expected_empty_relation_reason_to_replicator(expected_empty_relation_reason)
+        else:
+            dual_write_handler.prepare_for_update()
 
         self.delete_policies_if_no_role_attached(instance)
         instance.delete()

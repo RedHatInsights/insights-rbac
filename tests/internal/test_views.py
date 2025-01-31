@@ -21,6 +21,7 @@ from rest_framework import status
 from rest_framework.test import APIClient
 from django.conf import settings
 from django.test import override_settings
+from django.urls import reverse
 from datetime import datetime, timedelta
 from unittest.mock import MagicMock
 from unittest.mock import patch
@@ -30,6 +31,7 @@ import json
 from api.models import User, Tenant
 from api.utils import reset_imported_tenants
 from management.audit_log.model import AuditLog
+from management.cache import TenantCache
 from management.models import BindingMapping, Group, Permission, Policy, Role, Workspace
 from management.principal.model import Principal
 from management.relation_replicator.noop_replicator import NoopReplicator
@@ -277,6 +279,25 @@ class InternalViewsetTests(IdentityRequest):
             response.content.decode(),
             "Tenant objects account_id values being updated in background worker.",
         )
+
+    @override_settings(INTERNAL_DESTRUCTIVE_API_OK_UNTIL=valid_destructive_time())
+    def test_setting_ready_flag_for_tenants(self):
+        """Test that we can get the total of not ready tenants and set them to true."""
+        Tenant.objects.create(tenant_name="acct_not_ready", org_id="1234")
+        response = self.client.get(f"/_private/api/utils/set_tenant_ready/", **self.request.META)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.content.decode(), "Total of 1 tenants not set to be ready.")
+
+        response = self.client.post(f"/_private/api/utils/set_tenant_ready/", **self.request.META)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+        response = self.client.post(f"/_private/api/utils/set_tenant_ready/?max_expected=2", **self.request.META)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            response.content.decode(), "Total of 1 tenants has been updated. 0 tenant with ready flag equal to false."
+        )
+        self.assertEqual(Tenant.objects.filter(ready=False).count(), 0)
 
     @patch("api.tasks.populate_tenant_account_id_in_worker.delay")
     def test_populate_tenant_account_id_get_failure(self, populate_mock):
@@ -650,24 +671,75 @@ class InternalViewsetTests(IdentityRequest):
         binding_mappings[1].refresh_from_db()
         self.assertEqual(self._tuples.find_tuples(), [])
 
-    def test_bootstrapping_tenant(self):
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
+    def test_bootstrapping_tenant(self, replicate):
         """Test that we can bootstrap a tenant."""
         org_id = "12345"
+
+        payload = {"org_ids": [org_id]}
         response = self.client.post(
-            f"/_private/api/utils/bootstrap_tenant/?org_id={org_id}",
+            f"/_private/api/utils/bootstrap_tenant/",
+            data=payload,
             **self.request.META,
+            content_type="application/json",
         )
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
+        tuples = InMemoryTuples()
+        replicator = InMemoryRelationReplicator(tuples)
+        replicate.side_effect = replicator.replicate
+        RbacFixture(V2TenantBootstrapService(replicator))
+        tuples.clear()
+
         tenant = Tenant.objects.create(org_id=org_id)
+        self.assertFalse(Workspace.objects.filter(tenant=tenant, type=Workspace.Types.ROOT).exists())
+        self.assertFalse(Workspace.objects.filter(tenant=tenant, type=Workspace.Types.DEFAULT).exists())
+
         response = self.client.post(
-            f"/_private/api/utils/bootstrap_tenant/?org_id={org_id}",
+            f"/_private/api/utils/bootstrap_tenant/",
+            data=payload,
             **self.request.META,
+            content_type="application/json",
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        Workspace.objects.filter(tenant=tenant, type=Workspace.Types.ROOT).exists()
-        Workspace.objects.filter(tenant=tenant, type=Workspace.Types.DEFAULT).exists()
+        self.assertTrue(Workspace.objects.filter(tenant=tenant, type=Workspace.Types.ROOT).exists())
+        self.assertTrue(Workspace.objects.filter(tenant=tenant, type=Workspace.Types.DEFAULT).exists())
         self.assertTrue(getattr(tenant, "tenant_mapping"))
+        self.assertEqual(len(tuples), 9)
+
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
+    def test_bootstrapping_multiple_tenants(self, replicate):
+        """Test that we can bootstrap a tenant."""
+        org_ids = ["12345", "123456", "6789"]
+
+        payload = {"org_ids": org_ids}
+
+        tuples = InMemoryTuples()
+        replicator = InMemoryRelationReplicator(tuples)
+        replicate.side_effect = replicator.replicate
+        RbacFixture(V2TenantBootstrapService(replicator))
+        tuples.clear()
+
+        for org_id in org_ids:
+            tenant = Tenant.objects.create(org_id=org_id)
+            self.assertFalse(Workspace.objects.filter(tenant=tenant, type=Workspace.Types.ROOT).exists())
+            self.assertFalse(Workspace.objects.filter(tenant=tenant, type=Workspace.Types.DEFAULT).exists())
+
+        response = self.client.post(
+            f"/_private/api/utils/bootstrap_tenant/",
+            data=payload,
+            **self.request.META,
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        for org_id in org_ids:
+            tenant = Tenant.objects.get(org_id=org_id)
+            self.assertTrue(Workspace.objects.filter(tenant=tenant, type=Workspace.Types.ROOT).exists())
+            self.assertTrue(Workspace.objects.filter(tenant=tenant, type=Workspace.Types.DEFAULT).exists())
+            self.assertTrue(getattr(tenant, "tenant_mapping"))
+        self.assertEqual(
+            len(tuples), 9 + 9 + 9
+        )  # orgs: 3 for workspaces, 3 for default and 3 for admin default access
 
     @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
     def test_bootstrapping_existing_tenant_without_force_does_nothing(self, replicate):
@@ -677,13 +749,15 @@ class InternalViewsetTests(IdentityRequest):
         fixture = RbacFixture(V2TenantBootstrapService(replicator))
 
         org_id = "12345"
-
+        payload = {"org_ids": [org_id]}
         fixture.new_tenant(org_id)
         tuples.clear()
 
         response = self.client.post(
             f"/_private/api/utils/bootstrap_tenant/?org_id={org_id}",
+            data=payload,
             **self.request.META,
+            content_type="application/json",
         )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -691,7 +765,9 @@ class InternalViewsetTests(IdentityRequest):
 
         response = self.client.post(
             f"/_private/api/utils/bootstrap_tenant/?org_id={org_id}&force=false",
+            data=payload,
             **self.request.META,
+            content_type="application/json",
         )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -706,13 +782,15 @@ class InternalViewsetTests(IdentityRequest):
         fixture = RbacFixture(V2TenantBootstrapService(replicator))
 
         org_id = "12345"
-
+        payload = {"org_ids": [org_id]}
         fixture.new_tenant(org_id)
         tuples.clear()
 
         response = self.client.post(
             f"/_private/api/utils/bootstrap_tenant/?org_id={org_id}&force=true",
+            data=payload,
             **self.request.META,
+            content_type="application/json",
         )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -721,9 +799,12 @@ class InternalViewsetTests(IdentityRequest):
     @override_settings(REPLICATION_TO_RELATION_ENABLED=True)
     def test_cannot_force_bootstrapping_while_replication_enabled(self):
         org_id = "12345"
+        payload = {"org_ids": [org_id]}
         response = self.client.post(
             f"/_private/api/utils/bootstrap_tenant/?org_id={org_id}&force=true",
+            data=payload,
             **self.request.META,
+            content_type="application/json",
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
@@ -868,7 +949,9 @@ class InternalViewsetTests(IdentityRequest):
         self.fixture.new_principals_in_tenant(["u2"], o2.tenant)
 
         with self.assertLogs("api.utils", level="INFO") as logs:
-            response = self.client.delete("/_private/api/utils/reset_imported_tenants/", **self.request.META)
+            response = self.client.delete(
+                "/_private/api/utils/reset_imported_tenants/?only_ready_false_flag=false", **self.request.META
+            )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertIn("Deleted 2 tenants.", logs.output[0])
@@ -879,12 +962,59 @@ class InternalViewsetTests(IdentityRequest):
 
     @override_settings(INTERNAL_DESTRUCTIVE_API_OK_UNTIL=valid_destructive_time())
     @patch("api.tasks.run_reset_imported_tenants.delay")
+    def test_reset_imported_tenants_with_ready_false_flag(self, delay):
+        """Test that tenants flagged as ready=false are properly removed."""
+        delay.side_effect = lambda args: reset_imported_tenants(**args)
+        self.fixture = RbacFixture(V1TenantBootstrapService())
+        self.fixture.new_unbootstrapped_tenant("o1")  # Tenant with ready=true
+        self.fixture.new_unbootstrapped_tenant("o2")  # Tenant with ready=true
+
+        # Test the query without and with the query param 'only_ready_false_flag=true' (default value)
+        for query_param in ["", "?only_ready_false_flag=true"]:
+            self.fixture.new_not_ready_tenant("o3")  # Tenant with ready=false
+            self.fixture.new_not_ready_tenant("o4")  # Tenant with ready=false
+
+            with self.assertLogs("api.utils", level="INFO") as logs:
+                response = self.client.delete(
+                    f"/_private/api/utils/reset_imported_tenants/{query_param}", **self.request.META
+                )
+
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            self.assertIn("Deleted 2 tenants.", logs.output[0])
+            self.assertTrue(Tenant.objects.filter(org_id="o1").exists())
+            self.assertTrue(Tenant.objects.filter(org_id="o2").exists())
+            self.assertFalse(Tenant.objects.filter(org_id="o3").exists())
+            self.assertFalse(Tenant.objects.filter(org_id="o4").exists())
+
+    @override_settings(INTERNAL_DESTRUCTIVE_API_OK_UNTIL=valid_destructive_time())
+    @patch("api.tasks.run_reset_imported_tenants.delay")
     def test_reset_imported_tenants_removes_up_to_limit(self, delay):
         delay.side_effect = lambda args: reset_imported_tenants(**args)
 
         self.fixture = RbacFixture(V1TenantBootstrapService())
         for i in range(10):
             self.fixture.new_tenant(f"o{i}")
+
+        with self.assertLogs("api.utils", level="INFO") as logs:
+            response = self.client.delete(
+                "/_private/api/utils/reset_imported_tenants/?only_ready_false_flag=false&limit=3", **self.request.META
+            )
+
+        self.assertIn("Deleted 3 tenants.", logs.output[0])
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        # two extra tenants for test tenant and public tenant
+        self.assertEqual(Tenant.objects.count(), 9)
+
+    @override_settings(INTERNAL_DESTRUCTIVE_API_OK_UNTIL=valid_destructive_time())
+    @patch("api.tasks.run_reset_imported_tenants.delay")
+    def test_reset_imported_tenants_removes_up_to_limit_with_ready_false_flag(self, delay):
+        """Test that tenants flagged as ready=false are properly removed up to the specified limit."""
+        delay.side_effect = lambda args: reset_imported_tenants(**args)
+
+        self.fixture = RbacFixture(V1TenantBootstrapService())
+        for i in range(10):
+            self.fixture.new_not_ready_tenant(f"o{i}")
 
         with self.assertLogs("api.utils", level="INFO") as logs:
             response = self.client.delete("/_private/api/utils/reset_imported_tenants/?limit=3", **self.request.META)
@@ -904,6 +1034,21 @@ class InternalViewsetTests(IdentityRequest):
 
         for i in range(100):
             self.fixture.new_tenant(f"o{i + 3}")
+
+        response = self.client.get(
+            "/_private/api/utils/reset_imported_tenants/?only_ready_false_flag=false", **self.request.META
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.content.decode(), "100 tenants would be deleted")
+
+    def test_reset_imported_tenants_get_counts_all_tenants_to_be_deleted_with_ready_false_flag(self):
+        self.fixture = RbacFixture(V1TenantBootstrapService())
+        self.fixture.new_tenant("o1")
+        self.fixture.new_tenant("o2")
+
+        for i in range(100):
+            self.fixture.new_not_ready_tenant(f"o{i + 3}")
 
         response = self.client.get("/_private/api/utils/reset_imported_tenants/", **self.request.META)
 
@@ -941,7 +1086,9 @@ class InternalViewsetTests(IdentityRequest):
         self.fixture.new_tenant("o_no_objects4")
 
         with self.assertLogs("api.utils", level="INFO") as logs:
-            response = self.client.delete("/_private/api/utils/reset_imported_tenants/", **self.request.META)
+            response = self.client.delete(
+                "/_private/api/utils/reset_imported_tenants/?only_ready_false_flag=false", **self.request.META
+            )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertIn("Deleted 4 tenants.", logs.output[0])
@@ -983,7 +1130,9 @@ class InternalViewsetTests(IdentityRequest):
         self.fixture.new_tenant("o_no_objects4")
 
         with self.assertLogs("api.utils", level="INFO") as logs:
-            response = self.client.delete("/_private/api/utils/reset_imported_tenants/?limit=1", **self.request.META)
+            response = self.client.delete(
+                "/_private/api/utils/reset_imported_tenants/?only_ready_false_flag=false&limit=1", **self.request.META
+            )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertIn("Deleted 1 tenants.", logs.output[0])
@@ -1021,7 +1170,9 @@ class InternalViewsetTests(IdentityRequest):
         self.fixture.new_tenant("o_no_objects3")
         self.fixture.new_tenant("o_no_objects4")
 
-        response = self.client.get("/_private/api/utils/reset_imported_tenants/", **self.request.META)
+        response = self.client.get(
+            "/_private/api/utils/reset_imported_tenants/?only_ready_false_flag=false", **self.request.META
+        )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.content.decode(), "4 tenants would be deleted")
@@ -1053,7 +1204,9 @@ class InternalViewsetTests(IdentityRequest):
         self.fixture.new_tenant("o_no_objects3")
         self.fixture.new_tenant("o_no_objects4")
 
-        response = self.client.get("/_private/api/utils/reset_imported_tenants/?limit=1", **self.request.META)
+        response = self.client.get(
+            "/_private/api/utils/reset_imported_tenants/?only_ready_false_flag=false&limit=1", **self.request.META
+        )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.content.decode(), "1 tenants would be deleted")
@@ -1092,7 +1245,25 @@ class InternalViewsetTests(IdentityRequest):
         self.assertEqual(6, Tenant.objects.count())
 
         response = self.client.get(
-            f"/_private/api/utils/reset_imported_tenants/?exclude_id={t1.id}&exclude_id={t3.id}",
+            f"/_private/api/utils/reset_imported_tenants/?only_ready_false_flag=false&exclude_id={t1.id}&exclude_id={t3.id}",
+            **self.request.META,
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.content.decode(), "2 tenants would be deleted")
+
+    def test_reset_imported_tenants_excludes_get_with_ready_false_flag(self):
+        # Create some tenants that would be deleted but exclude some
+        self.fixture = RbacFixture(V1TenantBootstrapService())
+        t1 = self.fixture.new_not_ready_tenant("o1")
+        t2 = self.fixture.new_not_ready_tenant("o2")
+        self.fixture.new_not_ready_tenant("o3")
+        self.fixture.new_not_ready_tenant("o4")
+
+        self.assertEqual(6, Tenant.objects.count())
+
+        response = self.client.get(
+            f"/_private/api/utils/reset_imported_tenants/?exclude_id={t1.id}&exclude_id={t2.id}",
             **self.request.META,
         )
 
@@ -1116,13 +1287,42 @@ class InternalViewsetTests(IdentityRequest):
 
         with self.assertLogs("api.utils", level="INFO") as logs:
             response = self.client.delete(
-                f"/_private/api/utils/reset_imported_tenants/?exclude_id={t1.id}&exclude_id={t3.id}",
+                f"/_private/api/utils/reset_imported_tenants/?only_ready_false_flag=false&exclude_id={t1.id}&exclude_id={t3.id}",
                 **self.request.META,
             )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertIn("Deleted 2 tenants.", logs.output[0])
         self.assertEqual(4, Tenant.objects.count())
+
+    @override_settings(INTERNAL_DESTRUCTIVE_API_OK_UNTIL=valid_destructive_time())
+    @patch("api.tasks.run_reset_imported_tenants.delay")
+    def test_reset_imported_tenants_excludes_delete_with_ready_false_flag(self, delay):
+        delay.side_effect = lambda args: reset_imported_tenants(**args)
+
+        # Create some tenants that would be deleted but exclude some
+        self.fixture = RbacFixture(V1TenantBootstrapService())
+        t1 = self.fixture.new_not_ready_tenant("o1")
+        t2 = self.fixture.new_not_ready_tenant("o2")
+        self.fixture.new_not_ready_tenant("o3")
+        self.fixture.new_not_ready_tenant("o4")
+
+        self.assertEqual(6, Tenant.objects.count())
+
+        with self.assertLogs("api.utils", level="INFO") as logs:
+            response = self.client.delete(
+                f"/_private/api/utils/reset_imported_tenants/?exclude_id={t1.id}&exclude_id={t2.id}",
+                **self.request.META,
+            )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn("Deleted 2 tenants.", logs.output[0])
+        self.assertEqual(4, Tenant.objects.count())
+
+        self.assertTrue(Tenant.objects.filter(org_id="o1").exists())
+        self.assertTrue(Tenant.objects.filter(org_id="o2").exists())
+        self.assertFalse(Tenant.objects.filter(org_id="o3").exists())
+        self.assertFalse(Tenant.objects.filter(org_id="o4").exists())
 
     def test_update_system_flag_in_role(self):
         """Test that we can update a role."""
@@ -1294,3 +1494,441 @@ class InternalViewsetTests(IdentityRequest):
         self.assertFalse(role["platform_default"])
         self.assertFalse(role["admin_default"])
         self.assertEqual(response.status_code, 200)
+
+    @override_settings(INTERNAL_DESTRUCTIVE_API_OK_UNTIL=valid_destructive_time())
+    def test_update_username_to_lowercase(self):
+        """Test that the uppercase username would be updated to lowercase."""
+        # Only POST is allowed
+        response = self.client.delete(
+            f"/_private/api/utils/username_lower/",
+            **self.request.META,
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_405_METHOD_NOT_ALLOWED)
+
+        Principal.objects.bulk_create(
+            [
+                Principal(username="12345", tenant=self.tenant),
+                Principal(username="ABCDE", tenant=self.tenant),
+                Principal(username="Xyz", tenant=self.tenant),
+                Principal(username="iJkLm", tenant=self.tenant),
+                Principal(username="i.J.k@.L.m", tenant=self.tenant),
+                Principal(username="user", tenant=self.tenant),
+            ]
+        )
+
+        response = self.client.get(
+            f"/_private/api/utils/username_lower/",
+            **self.request.META,
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            response.content.decode(),
+            "Usernames to be updated: ['ABCDE', 'Xyz', 'i.J.k@.L.m', 'iJkLm'] to ['abcde', 'i.j.k@.l.m', 'ijklm', 'xyz']",
+        )
+
+        response = self.client.post(
+            f"/_private/api/utils/username_lower/",
+            **self.request.META,
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 200)
+        usernames = Principal.objects.values_list("username", flat=True).order_by("username")
+        self.assertEqual({"12345", "abcde", "i.j.k@.l.m", "ijklm", "user", "xyz"}, set(usernames))
+
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={
+            "status_code": 200,
+            "data": [
+                {
+                    "username": "test_user",
+                    "email": "test_user@email.com",
+                    "first_name": "user",
+                    "last_name": "test",
+                    "user_id": "u1",
+                    "org_id": "12345",
+                    "is_active": False,
+                }
+            ],
+        },
+    )
+    @override_settings(INTERNAL_DESTRUCTIVE_API_OK_UNTIL=valid_destructive_time())
+    def test_delete_principal(self, _):
+        """Test that we can delete principal."""
+        # No username specified
+        response = self.client.delete(f"/_private/api/utils/principal/", **self.request.META)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+        tenant = Tenant.objects.create(tenant_name="test_tenant", org_id="12345")
+        Principal.objects.bulk_create(
+            [
+                Principal(username="test_user", tenant=tenant),
+                Principal(username="test2", tenant=tenant),
+            ]
+        )
+        # Get usernames of the principals to be deleted
+        response = self.client.get(
+            "/_private/api/utils/principal/?usernames=test_user,test2&user_type=user", **self.request.META
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            response.content.decode(),
+            "Principals to be deleted: ['test2']",
+        )
+
+        # Delete the principals of type user
+        response = self.client.delete(
+            "/_private/api/utils/principal/?usernames=test_user, test2&user_type=user", **self.request.META
+        )
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertTrue(Principal.objects.filter(username="test_user").exists())
+        self.assertTrue(Principal.objects.filter(username="test2").exists())
+
+        # Delete the principals of type service-account
+        Principal.objects.bulk_create(
+            [
+                Principal(username="sa_1", tenant=tenant, type="service-account"),
+                Principal(username="sa_2", tenant=tenant, type="service-account"),
+            ]
+        )
+        response = self.client.delete(
+            "/_private/api/utils/principal/?usernames=sa_1,sa_2&user_type=service-account", **self.request.META
+        )
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertFalse(Principal.objects.filter(type="service-account").exists())
+
+
+class InternalViewsetResourceDefinitionTests(IdentityRequest):
+    def setUp(self):
+        """Set up the access view tests."""
+        super().setUp()
+        self.client = APIClient()
+        self.customer = self.customer_data
+        self.internal_request_context = self._create_request_context(self.customer, self.user_data, is_internal=True)
+        self.internal_request = self.internal_request_context["request"]
+
+        request = self.request_context["request"]
+        user = User()
+        user.username = self.user_data["username"]
+        user.account = self.customer_data["account_id"]
+        user.org_id = self.customer_data["org_id"]
+        request.user = user
+        public_tenant = Tenant.objects.get(tenant_name="public")
+
+        test_tenant_org_id = "100001"
+
+        # we need to delete old test_tenant's that may exist in cache
+        TENANTS = TenantCache()
+        TENANTS.delete_tenant(test_tenant_org_id)
+
+        # items with test_ prefix have hard coded attributes for new BOP requests
+        self.test_tenant = Tenant(
+            tenant_name="acct1111111", account_id="1111111", org_id=test_tenant_org_id, ready=True
+        )
+        self.test_tenant.save()
+        self.test_principal = Principal(username="test_user", tenant=self.test_tenant)
+        self.test_principal.save()
+        self.test_group = Group(name="test_groupA", tenant=self.test_tenant)
+        self.test_group.save()
+        self.test_group.principals.add(self.test_principal)
+        self.test_group.save()
+        self.test_permission = Permission.objects.create(permission="app:test_*:test_*", tenant=self.test_tenant)
+        Permission.objects.create(permission="app:test_foo:test_bar", tenant=self.test_tenant)
+        user_data = {"username": "test_user", "email": "test@gmail.com"}
+        request_context = self._create_request_context(
+            {"account_id": "1111111", "tenant_name": "acct1111111", "org_id": "100001"}, user_data, is_org_admin=True
+        )
+        request = request_context["request"]
+        self.test_headers = request.META
+        test_tenant_root_workspace = Workspace.objects.create(
+            name="Test Tenant Root Workspace", type=Workspace.Types.ROOT, tenant=self.test_tenant
+        )
+        Workspace.objects.create(
+            name="Test Tenant Default Workspace",
+            type=Workspace.Types.DEFAULT,
+            parent=test_tenant_root_workspace,
+            tenant=self.test_tenant,
+        )
+
+        self.principal = Principal(username=user.username, tenant=self.tenant)
+        self.principal.save()
+        self.admin_principal = Principal(username="user_admin", tenant=self.tenant)
+        self.admin_principal.save()
+        self.group = Group(name="groupA", tenant=self.tenant)
+        self.group.save()
+        self.group.principals.add(self.principal)
+        self.group.save()
+        self.permission = Permission.objects.create(permission="app:*:*", tenant=self.tenant)
+        Permission.objects.create(permission="app:foo:bar", tenant=self.tenant)
+        tenant_root_workspace = Workspace.objects.create(
+            name="root",
+            description="Root workspace",
+            tenant=self.tenant,
+            type=Workspace.Types.ROOT,
+        )
+        Workspace.objects.create(
+            name="Tenant Default Workspace",
+            type=Workspace.Types.DEFAULT,
+            parent=tenant_root_workspace,
+            tenant=self.tenant,
+        )
+
+    def tearDown(self):
+        """Tear down access view tests."""
+        Group.objects.all().delete()
+        Principal.objects.all().delete()
+        Role.objects.all().delete()
+        Policy.objects.all().delete()
+        Workspace.objects.filter(parent__isnull=False).delete()
+        Workspace.objects.filter(parent__isnull=True).delete()
+
+    def create_role(self, role_name, headers, in_access_data=None):
+        """Create a role."""
+        access_data = self.access_data
+        if in_access_data:
+            access_data = in_access_data
+        test_data = {"name": role_name, "access": [access_data]}
+
+        # create a role
+        url = reverse("v1_management:role-list")
+        client = APIClient()
+        response = client.post(url, test_data, format="json", **headers)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        return response
+
+    def create_policy(self, policy_name, group, roles, tenant):
+        """Create a policy."""
+        # create a policy
+        policy = Policy.objects.create(name=policy_name, tenant=tenant, system=True)
+        for role in Role.objects.filter(uuid__in=roles):
+            policy.roles.add(role)
+        policy.group = Group.objects.get(uuid=group)
+        policy.save()
+
+    def create_platform_default_resource(self):
+        """Setup default group and role."""
+        default_permission = Permission.objects.create(permission="default:*:*", tenant=self.tenant)
+        default_role = Role.objects.create(name="default role", platform_default=True, system=True, tenant=self.tenant)
+        default_access = Access.objects.create(permission=default_permission, role=default_role, tenant=self.tenant)
+        default_policy = Policy.objects.create(name="default policy", system=True, tenant=self.tenant)
+        default_policy.roles.add(default_role)
+        default_group = Group.objects.create(
+            name="default group", system=True, platform_default=True, tenant=self.tenant
+        )
+        default_group.policies.add(default_policy)
+
+    def create_role_and_permission(self, role_name, permission):
+        role = Role.objects.create(name=role_name, tenant=self.tenant)
+        assigned_permission = Permission.objects.create(permission=permission, tenant=self.tenant)
+        access = Access.objects.create(role=role, permission=assigned_permission, tenant=self.tenant)
+        return role
+
+    def test_get_correct_string_resource_definition(self):
+        """Test that a string attributeFilter can have the equal operation"""
+
+        role_name = "roleA"
+
+        self.access_data = {
+            "permission": "app:*:*",
+            "resourceDefinitions": [{"attributeFilter": {"key": "key1.id", "operation": "equal", "value": "value1"}}],
+        }
+
+        response = self.create_role(role_name, headers=self.headers)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+        response = self.client.get(
+            f"/_private/api/utils/resource_definitions/",
+            **self.internal_request.META,
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.content, b"0 resource definitions would be corrected")
+
+    def test_get_incorrect_string_resource_definition(self):
+        """Test that a string attributeFilter cannot have the in operation"""
+
+        role_name = "roleA"
+
+        self.access_data = {
+            "permission": "app:*:*",
+            "resourceDefinitions": [{"attributeFilter": {"key": "key1.id", "operation": "in", "value": "value1"}}],
+        }
+
+        response = self.create_role(role_name, headers=self.headers)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+        response = self.client.get(
+            f"/_private/api/utils/resource_definitions/",
+            **self.internal_request.META,
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.content, b"1 resource definitions would be corrected")
+
+    def test_get_correct_list_resource_definition(self):
+        """Test that a list attributeFilter can have the in operation"""
+
+        role_name = "roleA"
+
+        self.access_data = {
+            "permission": "app:*:*",
+            "resourceDefinitions": [
+                {"attributeFilter": {"key": "key1.id", "operation": "in", "value": ["value1", "value2"]}}
+            ],
+        }
+
+        response = self.create_role(role_name, headers=self.headers)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+        response = self.client.get(
+            f"/_private/api/utils/resource_definitions/",
+            **self.internal_request.META,
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.content, b"0 resource definitions would be corrected")
+
+    def test_get_incorrect_list_resource_definition(self):
+        """Test that a list attributeFilter cannot have the equal operation"""
+
+        role_name = "roleA"
+
+        self.access_data = {
+            "permission": "app:*:*",
+            "resourceDefinitions": [
+                {"attributeFilter": {"key": "key1.id", "operation": "equal", "value": ["value1", "value2"]}}
+            ],
+        }
+
+        response = self.create_role(role_name, headers=self.headers)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+        response = self.client.get(
+            f"/_private/api/utils/resource_definitions/",
+            **self.internal_request.META,
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.content, b"1 resource definitions would be corrected")
+
+    def test_patch_correct_string_resource_definition(self):
+        """Test patching a string attributeFilter with the equal operation"""
+
+        role_name = "roleA"
+
+        self.access_data = {
+            "permission": "app:*:*",
+            "resourceDefinitions": [{"attributeFilter": {"key": "key1.id", "operation": "equal", "value": "value1"}}],
+        }
+
+        response = self.create_role(role_name, headers=self.headers)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+        response = self.client.patch(
+            f"/_private/api/utils/resource_definitions/",
+            **self.internal_request.META,
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.content, b"Updated 0 bad resource definitions")
+
+        response = self.client.get(
+            f"/_private/api/utils/resource_definitions/",
+            **self.internal_request.META,
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.content, b"0 resource definitions would be corrected")
+
+    def test_patch_incorrect_string_resource_definition(self):
+        """Test patching a string attributeFilter with the in operation"""
+
+        role_name = "roleA"
+
+        self.access_data = {
+            "permission": "app:*:*",
+            "resourceDefinitions": [{"attributeFilter": {"key": "key1.id", "operation": "in", "value": "value1"}}],
+        }
+
+        response = self.create_role(role_name, headers=self.headers)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+        response = self.client.patch(
+            f"/_private/api/utils/resource_definitions/",
+            **self.internal_request.META,
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.content, b"Updated 1 bad resource definitions")
+
+        response = self.client.get(
+            f"/_private/api/utils/resource_definitions/",
+            **self.internal_request.META,
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.content, b"0 resource definitions would be corrected")
+
+    def test_patch_correct_list_resource_definition(self):
+        """Test patching a list attributeFilter with the in operation"""
+
+        role_name = "roleA"
+
+        self.access_data = {
+            "permission": "app:*:*",
+            "resourceDefinitions": [
+                {"attributeFilter": {"key": "key1.id", "operation": "in", "value": ["value1", "value2"]}}
+            ],
+        }
+
+        response = self.create_role(role_name, headers=self.headers)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+        response = self.client.patch(
+            f"/_private/api/utils/resource_definitions/",
+            **self.internal_request.META,
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.content, b"Updated 0 bad resource definitions")
+
+        response = self.client.get(
+            f"/_private/api/utils/resource_definitions/",
+            **self.internal_request.META,
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.content, b"0 resource definitions would be corrected")
+
+    def test_patch_incorrect_list_resource_definition(self):
+        """Test patching a list attributeFilter with the equal operation"""
+
+        role_name = "roleA"
+
+        self.access_data = {
+            "permission": "app:*:*",
+            "resourceDefinitions": [
+                {"attributeFilter": {"key": "key1.id", "operation": "equal", "value": ["value1", "value2"]}}
+            ],
+        }
+
+        response = self.create_role(role_name, headers=self.headers)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+        response = self.client.patch(
+            f"/_private/api/utils/resource_definitions/",
+            **self.internal_request.META,
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.content, b"Updated 1 bad resource definitions")
+
+        response = self.client.get(
+            f"/_private/api/utils/resource_definitions/",
+            **self.internal_request.META,
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.content, b"0 resource definitions would be corrected")
