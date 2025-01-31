@@ -910,7 +910,7 @@ def username_lower(request):
 def principal_removal(request):
     """Get/Delete not active principals.
 
-    GET or DELETE /_private/api/utils/principal/?usernames=a,b,c
+    GET or DELETE /_private/api/utils/principal/?usernames=a,b,c&user_type=service-account
     """
     logger.info(f"Principal edit or removal: {request.method} {request.user.username}")
     if request.method not in ["DELETE", "GET"]:
@@ -918,17 +918,21 @@ def principal_removal(request):
 
     if not request.GET.get("usernames"):
         return HttpResponse("Please provided a list of usernames with comma separated.", status=400)
+    if not request.GET.get("user_type"):
+        return HttpResponse("Please provided a type of principal.", status=400)
     usernames = request.GET.get("usernames").split(",")
-    resp = PROXY.request_filtered_principals(usernames, org_id=None, options={"return_id": True})
+    user_type = request.GET.get("user_type")
 
-    if isinstance(resp, dict) and "errors" in resp:
-        return HttpResponse(resp.get("errors"), status=400)
+    principals = Principal.objects.filter(username__in=usernames).filter(type=user_type).prefetch_related("tenant")
+    active_users = {}
+    if request.GET.get("user_type") == "user":
+        resp = PROXY.request_filtered_principals(usernames, org_id=None, options={"return_id": True})
 
-    active_users = {(principal_data["username"], principal_data["org_id"]) for principal_data in resp["data"]}
+        if isinstance(resp, dict) and "errors" in resp:
+            return HttpResponse(resp.get("errors"), status=400)
 
-    principals = (
-        Principal.objects.filter(username__in=usernames).filter(type=Principal.Types.USER).prefetch_related("tenant")
-    )
+        active_users = {(principal_data["username"], principal_data["org_id"]) for principal_data in resp["data"]}
+
     principals_delete = [
         principal for principal in principals if (principal.username, principal.tenant.org_id) not in active_users
     ]
