@@ -54,6 +54,7 @@ from management.tenant_service.v2 import V2TenantBootstrapService
 from rest_framework import status
 
 from api.common.pagination import StandardResultsSetPagination, WSGIRequestResultsSetPagination
+from api.cross_access.model import RequestsRoles
 from api.models import Tenant, User
 from api.tasks import (
     cross_account_cleanup,
@@ -367,6 +368,35 @@ def car_expiry(request):
         cross_account_cleanup.delay()
         return HttpResponse("Expiry checks are running in a background worker.", status=202)
     return HttpResponse('Invalid method, only "POST" is allowed.', status=405)
+
+
+def cars_clean(request):
+    """View or update cross-account request associated with custom roles.
+
+    GET or POST /_private/api/cars/clean/
+    """
+    if request.method not in ("GET", "POST"):
+        return HttpResponse('Invalid method, only "GET" and "POST" are allowed.', status=405)
+    if request.method == "POST" and not destructive_ok("api"):
+        return HttpResponse("Destructive operations disallowed.", status=400)
+
+    with transaction.atomic():
+        request_roles = RequestsRoles.objects.filter(role__system=False).prefetch_related(
+            "role", "cross_account_request"
+        )
+        if request.method == "GET":
+            result = {
+                str(request_role.cross_account_request.request_id): (
+                    request_role.role.id,
+                    request_role.role.display_name,
+                )
+                for request_role in request_roles
+            }
+            return HttpResponse(json.dumps(result), status=200)
+        else:
+            logger.info("Cleaning up cars.")
+            request_roles.delete()
+            return HttpResponse("Cars cleaned up.", status=200)
 
 
 def set_tenant_ready(request):
