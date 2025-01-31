@@ -1605,6 +1605,19 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "user_type",
+            "in": "query",
+            "required": true,
+            "description": "The user type to search principals.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "user",
+                "service-account"
+              ]
+            }
           }
         ],
         "responses": {

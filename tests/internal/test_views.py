@@ -1569,18 +1569,35 @@ class InternalViewsetTests(IdentityRequest):
             ]
         )
         # Get usernames of the principals to be deleted
-        response = self.client.get("/_private/api/utils/principal/?usernames=test_user,test2", **self.request.META)
+        response = self.client.get(
+            "/_private/api/utils/principal/?usernames=test_user,test2&user_type=user", **self.request.META
+        )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(
             response.content.decode(),
             "Principals to be deleted: ['test2']",
         )
 
-        # Delete the principals
-        response = self.client.delete("/_private/api/utils/principal/?usernames=test_user, test2", **self.request.META)
+        # Delete the principals of type user
+        response = self.client.delete(
+            "/_private/api/utils/principal/?usernames=test_user, test2&user_type=user", **self.request.META
+        )
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
         self.assertTrue(Principal.objects.filter(username="test_user").exists())
         self.assertTrue(Principal.objects.filter(username="test2").exists())
+
+        # Delete the principals of type service-account
+        Principal.objects.bulk_create(
+            [
+                Principal(username="sa_1", tenant=tenant, type="service-account"),
+                Principal(username="sa_2", tenant=tenant, type="service-account"),
+            ]
+        )
+        response = self.client.delete(
+            "/_private/api/utils/principal/?usernames=sa_1,sa_2&user_type=service-account", **self.request.META
+        )
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertFalse(Principal.objects.filter(type="service-account").exists())
 
 
 class InternalViewsetResourceDefinitionTests(IdentityRequest):
