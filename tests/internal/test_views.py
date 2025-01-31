@@ -28,6 +28,7 @@ from unittest.mock import patch
 import pytz
 import json
 
+from api.cross_access.model import CrossAccountRequest
 from api.models import User, Tenant
 from api.utils import reset_imported_tenants
 from management.audit_log.model import AuditLog
@@ -1598,6 +1599,46 @@ class InternalViewsetTests(IdentityRequest):
         )
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
         self.assertFalse(Principal.objects.filter(type="service-account").exists())
+
+    @override_settings(INTERNAL_DESTRUCTIVE_API_OK_UNTIL=valid_destructive_time())
+    def test_clean_up_roles_in_cars(self):
+        """Test that we can get and clean up cars with custom roles."""
+        tenant = Tenant.objects.create(tenant_name="1234", org_id="XXXX")
+        custom_role = Role.objects.create(
+            name="role 1", system=False, tenant=tenant, platform_default=False, admin_default=False
+        )
+        system_role = self.role
+        car = CrossAccountRequest.objects.create(
+            target_org="123456",
+            user_id="1111111",
+            start_date=datetime.now(),
+            end_date=datetime.now() + timedelta(10),
+            status="approved",
+        )
+        car.roles.add(*(system_role, custom_role))
+        self.assertTrue(system_role.system)
+        self.assertTrue(car.roles.filter(id=system_role.id).exists())
+        self.assertTrue(car.roles.filter(id=custom_role.id).exists())
+        response = self.client.get(
+            f"/_private/api/cars/clean/",
+            **self.request.META,
+            content_type="application/json",
+        )
+        self.assertTrue(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            response.content.decode(), json.dumps({str(car.request_id): (custom_role.id, custom_role.display_name)})
+        )
+        custom_role.refresh_from_db()
+        system_role.refresh_from_db()
+
+        response = self.client.post(
+            f"/_private/api/cars/clean/",
+            **self.request.META,
+            content_type="application/json",
+        )
+        self.assertTrue(response.status_code, status.HTTP_200_OK)
+        self.assertTrue(car.roles.filter(id=system_role.id).exists())
+        self.assertFalse(car.roles.filter(id=custom_role.id).exists())
 
 
 class InternalViewsetResourceDefinitionTests(IdentityRequest):
