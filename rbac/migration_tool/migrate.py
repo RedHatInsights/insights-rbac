@@ -65,7 +65,11 @@ def migrate_groups_for_tenant(tenant: Tenant, replicator: RelationReplicator):
                 dual_write_handler.generate_relations_to_add_principals(principals)
                 # lock on group is not required to add system role, only binding mappings which is included in
                 # dual_write_handler
-                dual_write_handler.generate_relations_to_add_roles(system_roles)
+                # `reset_mapping_for_roles` is used because it is idempotent,
+                # HOWEVER it is also potentially destructive. This is done because we are sure
+                # there is currently only one source for roles to the same group and resource
+                # which does not duplicate roles (group policy).
+                dual_write_handler.generate_relations_reset_roles(system_roles)
                 dual_write_handler.replicate()
         # End of transaction for group operations, locks are released
 
@@ -130,6 +134,7 @@ def migrate_cross_account_requests(tenant: Tenant, replicator: RelationReplicato
                 # This operation requires lock on cross account request as is done
                 # in CrossAccountRequestViewSet#get_queryset
                 # This also locks binding mapping if exists for passed system roles.
+                # TODO: also "reset" roles, see group dual write handler
                 dual_write_handler.generate_relations_to_add_roles(cross_account_request.roles.all())
                 dual_write_handler.replicate()
         # End of transaction for approved cross account request and its add role operation

@@ -83,7 +83,7 @@ class RelationApiDualWriteCrossAccessHandler(RelationApiDualWriteSubjectHandler)
             return
 
         def add_principal_to_binding(mapping: BindingMapping):
-            self.relations_to_add.append(mapping.add_user_to_bindings(str(self.cross_account_request.user_id)))
+            self.relations_to_add.append(mapping.push_user_to_bindings(str(self.cross_account_request.user_id)))
 
         for role in roles:
             self._update_mapping_for_system_role(
@@ -107,7 +107,7 @@ class RelationApiDualWriteCrossAccessHandler(RelationApiDualWriteSubjectHandler)
             return
 
         def remove_principal_from_binding(mapping: BindingMapping):
-            removal = mapping.remove_user_from_bindings(str(self.cross_account_request.user_id))
+            removal = mapping.pop_user_from_bindings(str(self.cross_account_request.user_id))
             if removal is not None:
                 self.relations_to_remove.append(removal)
 

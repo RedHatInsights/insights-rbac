@@ -17,7 +17,7 @@
 
 """Model for role management."""
 import logging
-from typing import Optional, Union
+from typing import Iterable, Optional, Union
 from uuid import uuid4
 
 from django.conf import settings
@@ -166,19 +166,46 @@ class BindingMapping(models.Model):
         """Return true if mapping is not assigned to any groups or users."""
         return len(self.mappings.get("groups", [])) == 0 and len(self.mappings.get("users", [])) == 0
 
-    def remove_group_from_bindings(self, group_uuid: str) -> Optional[Relationship]:
-        """Remove group from mappings."""
+    def unassign_group(self, group_uuid) -> Optional[Relationship]:
+        """
+        Completely unassign this group from the mapping, even if it is assigned more than once.
+
+        Returns the Relationship for this Group.
+        """
+        relationship = None
+        while True:
+            relationship = self.pop_group_from_bindings(group_uuid)
+            if relationship is None:
+                break
+        return relationship
+
+    def pop_group_from_bindings(self, group_uuid: str) -> Optional[Relationship]:
+        """
+        Pop the group from mappings.
+        
+        The group may still be bound to the role in other ways, so the group may still be included in the binding
+        more than once after this method returns.
+
+        If the group is no longer assigned at all, the Relationship is returned to be removed.
+
+        If you wish to remove the group entirely (and know it is safe to do so!), use [unassign_group].
+        """
         self.mappings["groups"].remove(group_uuid)
         if group_uuid in self.mappings["groups"]:
             return None
         return role_binding_group_subject_tuple(self.mappings["id"], group_uuid)
 
-    def add_group_to_bindings(self, group_uuid: str) -> Relationship:
-        """Add group to mappings."""
+    def push_group_to_bindings(self, group_uuid: str) -> Relationship:
+        """
+        Add group to mappings.
+        
+        This adds an additional entry for the group, even if the group is already assigned, to account for multiple
+        possible sources that may have assigned the group for the same role and resource.
+        """
         self.mappings["groups"].append(group_uuid)
         return role_binding_group_subject_tuple(self.mappings["id"], group_uuid)
 
-    def remove_user_from_bindings(self, user_id: str) -> Optional[Relationship]:
+    def pop_user_from_bindings(self, user_id: str) -> Optional[Relationship]:
         """Remove user from mappings."""
         self.mappings["users"].remove(user_id)
         if user_id in self.mappings["users"]:
@@ -189,7 +216,7 @@ class BindingMapping(models.Model):
             return None
         return role_binding_user_subject_tuple(self.mappings["id"], user_id)
 
-    def add_user_to_bindings(self, user_id: str) -> Relationship:
+    def push_user_to_bindings(self, user_id: str) -> Relationship:
         """Add user to mappings."""
         self.mappings["users"].append(user_id)
         return role_binding_user_subject_tuple(self.mappings["id"], user_id)
