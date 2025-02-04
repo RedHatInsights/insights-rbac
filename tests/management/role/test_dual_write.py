@@ -424,7 +424,7 @@ class DualWriteGroupTestCase(DualWriteTestCase):
                 subject("rbac", "group", str(group.uuid), "member"),
             )
         )
-
+        self.assertEquals(len(tuples), 1)
         dual_write_handler = RelationApiDualWriteGroupHandler(
             group,
             ReplicationEventType.UNASSIGN_ROLE,
@@ -442,7 +442,7 @@ class DualWriteGroupTestCase(DualWriteTestCase):
                 subject("rbac", "group", str(group.uuid), "member"),
             )
         )
-        self.assertEquals(len(tuples), 1)
+        self.assertEquals(len(tuples), 0)
 
     def test_delete_group_removes_group_from_role_bindings(self):
         # Add two groups to two roles
