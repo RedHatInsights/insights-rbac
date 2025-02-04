@@ -442,9 +442,9 @@ class DualWriteGroupTestCase(DualWriteTestCase):
                 subject("rbac", "group", str(group.uuid), "member"),
             )
         )
-        self.assertEquals(len(tuples), 0)
+        self.assertEquals(len(tuples), 1)
 
-    def test_group_not_bound_after_reset_when_role_added_multiple_times(self):
+    def test_reset_called_multiple_times_when_role_added_multiple_times(self):
         role_test = self.given_v1_system_role(
             "rtest",
             permissions=["app1:hosts:read", "inventory:hosts:write"],
@@ -454,10 +454,11 @@ class DualWriteGroupTestCase(DualWriteTestCase):
 
         self.given_roles_assigned_to_group(group, roles=[role_test])
         self.given_roles_assigned_to_group(group, roles=[role_test])
+        self.given_roles_assigned_to_group(group, roles=[role_test])
 
         # See the group bound multiple times
         mappings = BindingMapping.objects.filter(role=role_test).first().mappings
-        self.assertEquals(len(mappings["groups"]), 2)
+        self.assertEquals(len(mappings["groups"]), 3)
         tuples = self.tuples.find_tuples(
             all_of(
                 resource("rbac", "role_binding", mappings["id"]),
@@ -467,12 +468,58 @@ class DualWriteGroupTestCase(DualWriteTestCase):
         )
         self.assertEquals(len(tuples), 1)
 
-        self.tuples.clear()
         dual_write_handler = RelationApiDualWriteGroupHandler(
             group,
             ReplicationEventType.UNASSIGN_ROLE,
             replicator=InMemoryRelationReplicator(self.tuples),
         )
+        dual_write_handler.generate_relations_to_add_roles([role_test])
+        dual_write_handler.generate_relations_reset_roles([role_test])
+        dual_write_handler.generate_relations_reset_roles([role_test])
+        dual_write_handler.generate_relations_reset_roles([role_test])
+        dual_write_handler.replicate()
+
+        mappings = BindingMapping.objects.filter(role=role_test).first().mappings
+        self.assertEquals(len(mappings["groups"]), 1)
+        tuples = self.tuples.find_tuples(
+            all_of(
+                resource("rbac", "role_binding", mappings["id"]),
+                relation("subject"),
+                subject("rbac", "group", str(group.uuid), "member"),
+            )
+        )
+        self.assertEquals(len(tuples), 1)
+
+    def test_reset_when_role_added_multiple_times(self):
+        role_test = self.given_v1_system_role(
+            "rtest",
+            permissions=["app1:hosts:read", "inventory:hosts:write"],
+        )
+
+        group, _ = self.given_group("g1", [])
+
+        self.given_roles_assigned_to_group(group, roles=[role_test])
+        self.given_roles_assigned_to_group(group, roles=[role_test])
+        self.given_roles_assigned_to_group(group, roles=[role_test])
+
+        # See the group bound multiple times
+        mappings = BindingMapping.objects.filter(role=role_test).first().mappings
+        self.assertEquals(len(mappings["groups"]), 3)
+        tuples = self.tuples.find_tuples(
+            all_of(
+                resource("rbac", "role_binding", mappings["id"]),
+                relation("subject"),
+                subject("rbac", "group", str(group.uuid), "member"),
+            )
+        )
+        self.assertEquals(len(tuples), 1)
+
+        dual_write_handler = RelationApiDualWriteGroupHandler(
+            group,
+            ReplicationEventType.UNASSIGN_ROLE,
+            replicator=InMemoryRelationReplicator(self.tuples),
+        )
+        dual_write_handler.generate_relations_to_add_roles([role_test])
         dual_write_handler.generate_relations_reset_roles([role_test])
         dual_write_handler.replicate()
 

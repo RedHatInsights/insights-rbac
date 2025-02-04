@@ -174,10 +174,9 @@ class BindingMapping(models.Model):
         """
         relationship = None
         while True:
-            previous_relationship = self.pop_group_from_bindings(group_uuid)
-            if previous_relationship is None:
+            relationship = self.pop_group_from_bindings(group_uuid)
+            if relationship is not None:
                 break
-            relationship = previous_relationship
         return relationship
 
     def pop_group_from_bindings(self, group_uuid: str) -> Optional[Relationship]:
@@ -191,9 +190,9 @@ class BindingMapping(models.Model):
 
         If you wish to remove the group entirely (and know it is safe to do so!), use [unassign_group].
         """
-        if group_uuid not in self.mappings["groups"]:
-            return None
         self.mappings["groups"].remove(group_uuid)
+        if group_uuid in self.mappings["groups"]:
+            return None
         return role_binding_group_subject_tuple(self.mappings["id"], group_uuid)
 
     def push_group_to_bindings(self, group_uuid: str) -> Relationship:
