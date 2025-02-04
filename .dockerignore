@@ -10,7 +10,6 @@
 !scripts/
 !deploy/
 !tests/
-!requirements.txt
 !Makefile
 !mypy.ini
 
