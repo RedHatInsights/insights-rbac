@@ -190,7 +190,8 @@ class BindingMapping(models.Model):
 
         If you wish to remove the group entirely (and know it is safe to do so!), use [unassign_group].
         """
-        self.mappings["groups"].remove(group_uuid)
+        if group_uuid in self.mappings["groups"]:
+            self.mappings["groups"].remove(group_uuid)
         if group_uuid in self.mappings["groups"]:
             return None
         return role_binding_group_subject_tuple(self.mappings["id"], group_uuid)
