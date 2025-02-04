@@ -174,9 +174,10 @@ class BindingMapping(models.Model):
         """
         relationship = None
         while True:
-            relationship = self.pop_group_from_bindings(group_uuid)
-            if relationship is None:
+            previous_relationship = self.pop_group_from_bindings(group_uuid)
+            if previous_relationship is None:
                 break
+            relationship = previous_relationship
         return relationship
 
     def pop_group_from_bindings(self, group_uuid: str) -> Optional[Relationship]:
