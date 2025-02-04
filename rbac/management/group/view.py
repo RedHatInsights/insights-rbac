@@ -214,15 +214,32 @@ class GroupViewSet(
             return GroupInputSerializer
         return GroupSerializer
 
-    def protect_system_groups(self, action, group=None):
-        """Deny modifications on system groups."""
+    def protect_special_groups(self, action, group=None, additional=None):
+        """
+        Prevent modifications to protected groups.
+
+        This method denies the specified action if the group belongs to certain protected categories,
+        such as system groups or any additional conditionally protected groups.
+
+        Args:
+            action (str): The action being attempted (e.g., "update", "delete").
+            group (Optional[object]): The group instance to check. If None, defaults to `self.get_object()`.
+            additional (Optional[str]): An optional attribute name to check for additional protection.
+
+        Raises:
+            serializers.ValidationError: If the group has a protected attribute, preventing modification.
+        """
         if group is None:
             group = self.get_object()
-        if group.system:
-            key = "group"
-            message = "{} cannot be performed on system groups.".format(action.upper())
-            error = {key: [_(message)]}
-            raise serializers.ValidationError(error)
+        attrs = ["system"]
+        if additional:
+            attrs.append(additional)
+        for attr in attrs:
+            if getattr(group, attr):
+                key = "group"
+                message = f"{action.upper()} cannot be performed on {attr} groups."
+                error = {key: [_(message)]}
+                raise serializers.ValidationError(error)
 
     def restrict_custom_default_group_renaming(self, request, group):
         """Restrict users from changing the name or description of the Custom default group."""
@@ -403,7 +420,7 @@ class GroupViewSet(
         validate_uuid(kwargs.get("uuid"), "group uuid validation")
 
         with transaction.atomic():
-            self.protect_system_groups("delete")
+            self.protect_special_groups("delete")
             group = self.get_object()
             if not request.user.admin:
                 self.protect_group_with_user_access_admin_role(group.roles_with_access(), "remove_group")
@@ -454,7 +471,7 @@ class GroupViewSet(
             }
         """
         validate_uuid(kwargs.get("uuid"), "group uuid validation")
-        self.protect_system_groups("update")
+        self.protect_special_groups("update")
 
         group = self.get_object()
 
@@ -722,7 +739,7 @@ class GroupViewSet(
 
             with transaction.atomic():
                 group = self.get_object()
-                self.protect_system_groups("add principals", group)
+                self.protect_special_groups("add principals", group, additional="platform_default")
 
                 if not request.user.admin:
                     self.protect_group_with_user_access_admin_role(group.roles_with_access(), "add principals")
@@ -962,7 +979,7 @@ class GroupViewSet(
             with transaction.atomic():
                 group = self.get_object()
 
-                self.protect_system_groups("remove principals")
+                self.protect_special_groups("remove principals", additional="platform_default")
 
                 if not request.user.admin:
                     self.protect_group_with_user_access_admin_role(group.roles_with_access(), "remove_principals")
