@@ -35,7 +35,6 @@ from management.group.definer import (
     remove_roles,
     set_system_flag_before_update,
 )
-from management.group.model import Group
 from management.group.relation_api_dual_write_group_handler import (
     RelationApiDualWriteGroupHandler,
 )
@@ -47,7 +46,7 @@ from management.group.serializer import (
     GroupSerializer,
     RoleMinimumSerializer,
 )
-from management.models import AuditLog
+from management.models import AuditLog, Group, Role
 from management.notifications.notification_handlers import (
     group_obj_change_notification_handler,
     group_principal_change_notification_handler,
@@ -185,10 +184,10 @@ class GroupViewSet(
 
     def get_queryset(self):
         """Obtain queryset for requesting user based on access."""
-        add_principals_method = self.action == "principals" and self.request.method == "POST"
+        principals_method = self.action == "principals" and (self.request.method != "GET")
         destroy_method = self.action == "destroy"
 
-        if add_principals_method or destroy_method:
+        if principals_method or destroy_method:
             # In this case, the group must be locked to prevent principal changes during deletion.
             # If not locked, replication to relations may be out of sync due to phantom reads.
             # We have to modify the starting queryset to support locking because
@@ -215,15 +214,43 @@ class GroupViewSet(
             return GroupInputSerializer
         return GroupSerializer
 
-    def protect_system_groups(self, action, group=None):
-        """Deny modifications on system groups."""
+    def protect_special_groups(self, action, group=None, additional=None):
+        """
+        Prevent modifications to protected groups.
+
+        This method denies the specified action if the group belongs to certain protected categories,
+        such as system groups or any additional conditionally protected groups.
+
+        Args:
+            action (str): The action being attempted (e.g., "update", "delete").
+            group (Optional[object]): The group instance to check. If None, defaults to `self.get_object()`.
+            additional (Optional[str]): An optional attribute name to check for additional protection.
+
+        Raises:
+            serializers.ValidationError: If the group has a protected attribute, preventing modification.
+        """
         if group is None:
             group = self.get_object()
-        if group.system:
-            key = "group"
-            message = "{} cannot be performed on system groups.".format(action.upper())
-            error = {key: [_(message)]}
-            raise serializers.ValidationError(error)
+        attrs = ["system"]
+        if additional:
+            attrs.append(additional)
+        for attr in attrs:
+            if getattr(group, attr):
+                key = "group"
+                message = f"{action.upper()} cannot be performed on {attr} groups."
+                error = {key: [_(message)]}
+                raise serializers.ValidationError(error)
+
+    def restrict_custom_default_group_renaming(self, request, group):
+        """Restrict users from changing the name or description of the Custom default group."""
+        invalid_parameters = ["name", "description"]
+        if group.platform_default and request.method == "PUT":
+            invalid_fields = [field for field in invalid_parameters if field in request.data]
+            if invalid_fields:
+                key = "detail"
+                message = "Updating the name or description of 'Custom default group' is restricted"
+                error = {key: (message)}
+                raise serializers.ValidationError(error)
 
     def protect_default_admin_group_roles(self, group):
         """Disallow default admin access roles from being updated."""
@@ -393,13 +420,22 @@ class GroupViewSet(
         validate_uuid(kwargs.get("uuid"), "group uuid validation")
 
         with transaction.atomic():
-            self.protect_system_groups("delete")
+            self.protect_special_groups("delete")
             group = self.get_object()
             if not request.user.admin:
                 self.protect_group_with_user_access_admin_role(group.roles_with_access(), "remove_group")
 
             dual_write_handler = RelationApiDualWriteGroupHandler(group, ReplicationEventType.DELETE_GROUP)
-            dual_write_handler.prepare_to_delete_group()
+            roles = Role.objects.filter(policies__group=group)
+            if not group.platform_default and group.principals.exists() and not roles.exists():
+                expected_empty_relation_reason = (
+                    f"No principal or role found for group({group.uuid}): '{group.name}'. "
+                    "Assuming no current relations exist. "
+                    f"event_type='{ReplicationEventType.DELETE_GROUP}'",
+                )
+                dual_write_handler.set_expected_empty_relation_reason(expected_empty_relation_reason)
+            else:
+                dual_write_handler.prepare_to_delete_group(roles)
 
             response = super().destroy(request=request, args=args, kwargs=kwargs)
 
@@ -435,11 +471,14 @@ class GroupViewSet(
             }
         """
         validate_uuid(kwargs.get("uuid"), "group uuid validation")
-        self.protect_system_groups("update")
+        self.protect_special_groups("update")
 
         group = self.get_object()
+
         if not request.user.admin:
             self.protect_group_with_user_access_admin_role(group.roles_with_access(), "update_group")
+
+        self.restrict_custom_default_group_renaming(request, group)
 
         update_group = super().update(request=request, args=args, kwargs=kwargs)
 
@@ -700,7 +739,7 @@ class GroupViewSet(
 
             with transaction.atomic():
                 group = self.get_object()
-                self.protect_system_groups("add principals", group)
+                self.protect_special_groups("add principals", group, additional="platform_default")
 
                 if not request.user.admin:
                     self.protect_group_with_user_access_admin_role(group.roles_with_access(), "add principals")
@@ -937,19 +976,19 @@ class GroupViewSet(
             page = self.paginate_queryset(resp.get("data"))
             response = self.get_paginated_response(page)
         else:
-            group = self.get_object()
-
-            self.protect_system_groups("remove principals")
-
-            if not request.user.admin:
-                self.protect_group_with_user_access_admin_role(group.roles_with_access(), "remove_principals")
-
-            if SERVICE_ACCOUNTS_KEY not in request.query_params and USERNAMES_KEY not in request.query_params:
-                key = "detail"
-                message = "Query parameter {} or {} is required.".format(SERVICE_ACCOUNTS_KEY, USERNAMES_KEY)
-                raise serializers.ValidationError({key: _(message)})
-
             with transaction.atomic():
+                group = self.get_object()
+
+                self.protect_special_groups("remove principals", additional="platform_default")
+
+                if not request.user.admin:
+                    self.protect_group_with_user_access_admin_role(group.roles_with_access(), "remove_principals")
+
+                if SERVICE_ACCOUNTS_KEY not in request.query_params and USERNAMES_KEY not in request.query_params:
+                    key = "detail"
+                    message = "Query parameter {} or {} is required.".format(SERVICE_ACCOUNTS_KEY, USERNAMES_KEY)
+                    raise serializers.ValidationError({key: _(message)})
+
                 service_accounts_to_remove = []
                 # Remove the service accounts from the group.
                 if SERVICE_ACCOUNTS_KEY in request.query_params:

@@ -17,8 +17,5 @@ jobs:
       with:
         python-version: '3.9'
 
-    - name: Install Pipenv
-      run: pip install pipenv
-
     - name: Run Pre-Commit
       uses: pre-commit/action@v3.0.1
