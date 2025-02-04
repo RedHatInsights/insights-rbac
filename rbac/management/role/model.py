@@ -17,7 +17,7 @@
 
 """Model for role management."""
 import logging
-from typing import Iterable, Optional, Union
+from typing import Optional, Union
 from uuid import uuid4
 
 from django.conf import settings
@@ -182,7 +182,7 @@ class BindingMapping(models.Model):
     def pop_group_from_bindings(self, group_uuid: str) -> Optional[Relationship]:
         """
         Pop the group from mappings.
-        
+
         The group may still be bound to the role in other ways, so the group may still be included in the binding
         more than once after this method returns.
 
@@ -190,15 +190,15 @@ class BindingMapping(models.Model):
 
         If you wish to remove the group entirely (and know it is safe to do so!), use [unassign_group].
         """
-        self.mappings["groups"].remove(group_uuid)
-        if group_uuid in self.mappings["groups"]:
+        if group_uuid not in self.mappings["groups"]:
             return None
+        self.mappings["groups"].remove(group_uuid)
         return role_binding_group_subject_tuple(self.mappings["id"], group_uuid)
 
     def push_group_to_bindings(self, group_uuid: str) -> Relationship:
         """
         Add group to mappings.
-        
+
         This adds an additional entry for the group, even if the group is already assigned, to account for multiple
         possible sources that may have assigned the group for the same role and resource.
         """

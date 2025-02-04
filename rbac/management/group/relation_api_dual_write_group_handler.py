@@ -156,19 +156,18 @@ class RelationApiDualWriteGroupHandler(RelationApiDualWriteSubjectHandler):
 
     def generate_relations_reset_roles(self, roles: Iterable[Role]):
         """
-        Resets the mapping and relationships for the group, assuming this group should only be assigned once.
+        Reset the mapping and relationships for the group, assuming this group should only be assigned once.
 
         This is safe if you are SURE this group should only be assigned once,
         OR you will be re-adding the other sources of assignments.
 
         This method **IS** idempotent. It will reset the group to the same state every time.
         """
-
         if not self.replication_enabled():
             return
 
         def reset_mapping(mapping: BindingMapping):
-            to_remove = mapping.unassign_group(self.group.uuid)
+            to_remove = mapping.unassign_group(str(self.group.uuid))
             self.relations_to_remove.append(to_remove)
             to_add = mapping.push_group_to_bindings(str(self.group.uuid))
             self.relations_to_add.append(to_add)
