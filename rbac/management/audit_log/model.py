@@ -97,22 +97,6 @@ class AuditLog(TenantAwareModel):
                 description = description + "edited access (permissions/resources)"
         return description
 
-    def find_specific_list_of_users(self, type_dict, user_type):
-        """Create list of principals/roles/service accounts for description."""
-        names_list = []
-        if user_type == "user" or user_type == "User":
-            for username in type_dict:
-                names_list.append(username["username"])
-        elif user_type == "service_account" or user_type == "Service Account":
-            for service_account in type_dict:
-                names_list.append(service_account["clientId"])
-        elif user_type == AuditLog.ROLE:
-            for role in type_dict["data"]:
-                names_list.append(role["uuid"])
-        else:
-            return ValueError("User type does not exist")
-        return ", ".join(names_list)
-
     def log_create(self, request, resource):
         """Audit Log when a role or a group is created."""
         self.principal_username = request.user.username
