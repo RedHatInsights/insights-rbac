@@ -752,6 +752,14 @@ class GroupViewSet(
                         self.ensure_id_for_service_accounts_exists(
                             user=request.user, service_accounts=service_accounts
                         )
+                        auditlog = AuditLog()
+                        auditlog.log_group_assignment(
+                            request,
+                            AuditLog.GROUP,
+                            group,
+                            service_accounts,
+                            Principal.Types.SERVICE_ACCOUNT,
+                        )
                     except InsufficientPrivilegesError as ipe:
                         return Response(
                             status=status.HTTP_403_FORBIDDEN,
@@ -785,6 +793,14 @@ class GroupViewSet(
                     proxy_response = self.validate_principals_in_proxy_request(principals, org_id=org_id)
                     if len(proxy_response.get("data", [])) > 0:
                         principals_from_response = proxy_response.get("data", [])
+                    auditlog = AuditLog()
+                    auditlog.log_group_assignment(
+                        request,
+                        AuditLog.GROUP,
+                        group,
+                        principals,
+                        Principal.Types.USER,
+                    )
                     if isinstance(proxy_response, dict) and "errors" in proxy_response:
                         return Response(status=proxy_response["status_code"], data=proxy_response["errors"])
 
@@ -795,38 +811,33 @@ class GroupViewSet(
                         service_accounts=service_accounts,
                         org_id=org_id,
                     )
+                    auditlog = AuditLog()
+                    auditlog.log_group_assignment(
+                        request,
+                        AuditLog.GROUP,
+                        group,
+                        service_accounts,
+                        Principal.Types.SERVICE_ACCOUNT,
+                    )
                 new_users = []
                 if len(principals) > 0:
                     group, new_users = self.add_users(group, principals_from_response, org_id=org_id)
+                    auditlog = AuditLog()
+                    auditlog.log_group_assignment(
+                        request,
+                        AuditLog.GROUP,
+                        group,
+                        principals,
+                        Principal.Types.USER,
+                    )
 
                 dual_write_handler = RelationApiDualWriteGroupHandler(
                     group, ReplicationEventType.ADD_PRINCIPALS_TO_GROUP
                 )
                 dual_write_handler.replicate_new_principals(new_users + new_service_accounts)
-
             # Serialize the group...
             output = GroupSerializer(group)
             response = Response(status=status.HTTP_200_OK, data=output.data)
-
-            if status.is_success(response.status_code):
-                if len(principals) > 0:
-                    auditlog = AuditLog()
-                    auditlog.log_group_assignment(
-                        request,
-                        AuditLog.GROUP,
-                        object=group,
-                        type_dict=principals,
-                        user_type=Principal.Types.USER,
-                    )
-                if len(service_accounts) > 0:
-                    auditlog = AuditLog()
-                    auditlog.log_group_assignment(
-                        request,
-                        AuditLog.GROUP,
-                        object=group,
-                        type_dict=service_accounts,
-                        user_type=Principal.Types.SERVICE_ACCOUNT,
-                    )
 
         elif request.method == "GET":
             group = self.get_object()
@@ -1162,14 +1173,15 @@ class GroupViewSet(
             response_data = GroupRoleSerializerIn(group)
             response = Response(status=status.HTTP_200_OK, data=response_data.data)
             if status.is_success(response.status_code):
-                auditlog = AuditLog()
-                auditlog.log_group_assignment(
-                    request,
-                    AuditLog.GROUP,
-                    object=group,
-                    type_dict=response_data.data,
-                    user_type=AuditLog.ROLE,
-                )
+                for role in response_data.data["data"]:
+                    auditlog = AuditLog()
+                    auditlog.log_group_assignment(
+                        request,
+                        AuditLog.GROUP,
+                        group,
+                        role["name"],
+                        AuditLog.ROLE,
+                    )
 
         elif request.method == "GET":
             serialized_roles = self.obtain_roles(request, group)

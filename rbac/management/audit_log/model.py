@@ -154,15 +154,14 @@ class AuditLog(TenantAwareModel):
         self.tenant_id = self.get_tenant_id(request)
         super(AuditLog, self).save()
 
-    def log_group_assignment(self, request, resource, object, type_dict, user_type):
+    def log_group_assignment(self, request, resource_type, resource, values_for_description, assigned_resource_type):
         """Audit Log when a role, user/principal, or service account is added to a group."""
         self.principal_username = request.user.username
-        self.resource_type = resource
-        self.resource_id = object.id
-        resource_name = "group: " + object.name
+        self.resource_type = resource_type
+        self.resource_id = resource.id
+        resource_name = "group: " + resource.name
 
-        name_list = self.find_specific_list_of_users(type_dict, user_type)
-        self.description = f"{user_type} {name_list} added to {resource_name}"
+        self.description = f"{assigned_resource_type} {values_for_description} added to {resource_name}"
 
         self.action = AuditLog.ADD
         self.tenant_id = self.get_tenant_id(request)
