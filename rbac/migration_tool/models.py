@@ -118,11 +118,12 @@ class V2rolebinding:
 
     def as_minimal_dict(self) -> dict:
         """Convert the V2 role binding to a dictionary, excluding resource and original role."""
+        users = [u for u in self.users] if self.users else {}
         return {
             "id": self.id,
             "role": self.role.as_dict(),
             "groups": [g for g in self.groups],
-            "users": [u for u in self.users],
+            "users": users,
         }
 
     def as_tuples(self):

@@ -134,8 +134,7 @@ def migrate_cross_account_requests(tenant: Tenant, replicator: RelationReplicato
                 # This operation requires lock on cross account request as is done
                 # in CrossAccountRequestViewSet#get_queryset
                 # This also locks binding mapping if exists for passed system roles.
-                # TODO: also "reset" roles, see group dual write handler
-                dual_write_handler.generate_relations_to_add_roles(cross_account_request.roles.all())
+                dual_write_handler.generate_relations_to_reset_roles(cross_account_request.roles.all())
                 dual_write_handler.replicate()
         # End of transaction for approved cross account request and its add role operation
         # Locks on cross account request and eventually on default workspace are released.

@@ -128,6 +128,24 @@ class ExtRoleRelation(models.Model):
         ]
 
 
+class SourceKey:
+    """Key for a source."""
+
+    key: str
+
+    def __init__(self, source):
+        """Init method."""
+        self.key = f"{source.__class__.__name__}/{source.request_id}"
+
+    def __hash__(self):
+        """Hash value for the SourceKey instance."""
+        return hash(self.key)
+
+    def __str__(self):
+        """Return the string representation of the SourceKey instance."""
+        return f"{self.key}"
+
+
 class BindingMapping(models.Model):
     """V2 binding Mapping definition."""
 
@@ -206,9 +224,12 @@ class BindingMapping(models.Model):
         self.mappings["groups"].append(group_uuid)
         return role_binding_group_subject_tuple(self.mappings["id"], group_uuid)
 
-    def pop_user_from_bindings(self, user_id: str) -> Optional[Relationship]:
+    def pop_user_from_bindings(self, source) -> Optional[Relationship]:
         """Remove user from mappings."""
-        self.mappings["users"].remove(user_id)
+        user_id = str(source.user_id)
+        self._remove_value_from_mappings("users", user_id, source)
+        # TODO: This can be removed once we migrated all to new format
+        # Cause not duplication will present
         if user_id in self.mappings["users"]:
             logging.info(
                 f"[Dual Write] user {user_id} still in mappings of bindingmapping {self.pk}, "
@@ -217,9 +238,10 @@ class BindingMapping(models.Model):
             return None
         return role_binding_user_subject_tuple(self.mappings["id"], user_id)
 
-    def push_user_to_bindings(self, user_id: str) -> Relationship:
+    def push_user_to_bindings(self, car) -> Relationship:
         """Add user to mappings."""
-        self.mappings["users"].append(user_id)
+        user_id = str(car.user_id)
+        self._add_value_to_mappings("users", user_id, car)
         return role_binding_user_subject_tuple(self.mappings["id"], user_id)
 
     def update_mappings_from_role_binding(self, role_binding: V2rolebinding):
@@ -242,6 +264,8 @@ class BindingMapping(models.Model):
     def get_role_binding(self) -> V2rolebinding:
         """Get role binding."""
         args = {**self.mappings}
+        if "users" in args and isinstance(args["users"], dict):
+            args["users"] = list(args["users"].values())
         args["resource"] = V2boundresource(
             resource_type=(self.resource_type_namespace, self.resource_type_name), resource_id=self.resource_id
         )
@@ -251,6 +275,20 @@ class BindingMapping(models.Model):
             permissions=frozenset(args["role"]["permissions"]),
         )
         return V2rolebinding(**args)
+
+    def _remove_value_from_mappings(self, field, value, source):
+        """Update mappings by removing value."""
+        if isinstance(self.mappings[field], list):
+            self.mappings[field].remove(value)
+        else:
+            self.mappings[field].pop(str(SourceKey(source)))
+
+    def _add_value_to_mappings(self, field, value, source):
+        """Update mappings by adding value."""
+        if isinstance(self.mappings[field], list):
+            self.mappings[field].append(value)
+        else:
+            self.mappings[field].update({str(SourceKey(source)): value})
 
 
 def role_related_obj_change_cache_handler(sender=None, instance=None, using=None, **kwargs):
