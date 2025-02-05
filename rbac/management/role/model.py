@@ -214,9 +214,9 @@ class BindingMapping(models.Model):
             return None
         return role_binding_group_subject_tuple(self.mappings["id"], group_uuid)
 
-    def push_group_to_bindings(self, group_uuid: str) -> Relationship:
+    def assign_group_to_bindings(self, group_uuid: str) -> Relationship:
         """
-        Add group to mappings.
+        Assign group to mappings.
 
         This adds an additional entry for the group, even if the group is already assigned, to account for multiple
         possible sources that may have assigned the group for the same role and resource.
@@ -286,7 +286,6 @@ class BindingMapping(models.Model):
             self.mappings[field].update({str(source): value})
         else:
             self.mappings[field].append(value)
-            
 
 
 def role_related_obj_change_cache_handler(sender=None, instance=None, using=None, **kwargs):

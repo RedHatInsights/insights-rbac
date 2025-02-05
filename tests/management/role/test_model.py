@@ -144,7 +144,7 @@ class BindingMappingTests(IdentityRequest):
         """Test that it is only unassigned when there are no groups and no users."""
         self.assertTrue(self.binding_mapping.is_unassigned())
 
-        self.binding_mapping.push_group_to_bindings("group1")
+        self.binding_mapping.assign_group_to_bindings("group1")
         self.assertFalse(self.binding_mapping.is_unassigned())
 
         self.binding_mapping.pop_group_from_bindings("group1")
@@ -153,8 +153,8 @@ class BindingMappingTests(IdentityRequest):
 
     def test_add_group_to_bindings(self):
         """Test that adding groups adds to the groups array in the mapping with group uuids."""
-        self.binding_mapping.push_group_to_bindings("group1")
-        self.binding_mapping.push_group_to_bindings("group2")
+        self.binding_mapping.assign_group_to_bindings("group1")
+        self.binding_mapping.assign_group_to_bindings("group2")
         self.assertIn("group1", self.binding_mapping.mappings["groups"])
         self.assertIn("group2", self.binding_mapping.mappings["groups"])
 
@@ -167,8 +167,8 @@ class BindingMappingTests(IdentityRequest):
 
     def test_remove_group_from_bindings(self):
         """Test that after removing groups, they aren't in the mapping except for ones which were removed."""
-        self.binding_mapping.push_group_to_bindings("group1")
-        self.binding_mapping.push_group_to_bindings("group2")
+        self.binding_mapping.assign_group_to_bindings("group1")
+        self.binding_mapping.assign_group_to_bindings("group2")
         self.binding_mapping.pop_group_from_bindings("group1")
         self.assertNotIn("group1", self.binding_mapping.mappings["groups"])
         self.assertIn("group2", self.binding_mapping.mappings["groups"])
@@ -183,7 +183,7 @@ class BindingMappingTests(IdentityRequest):
 
     def test_add_group_to_bindings_returns_tuple(self):
         """Test that add_group_to_bindings method returns the expected tuple."""
-        relationship = self.binding_mapping.push_group_to_bindings("group1")
+        relationship = self.binding_mapping.assign_group_to_bindings("group1")
         self.assertEqual(
             relationship,
             create_relationship(
@@ -212,7 +212,7 @@ class BindingMappingTests(IdentityRequest):
 
     def test_remove_group_from_bindings_returns_tuple(self):
         """Test that remove_group_from_bindings method returns the expected tuple."""
-        self.binding_mapping.push_group_to_bindings("group1")
+        self.binding_mapping.assign_group_to_bindings("group1")
         relationship = self.binding_mapping.pop_group_from_bindings("group1")
         self.assertEqual(
             relationship,
@@ -243,7 +243,7 @@ class BindingMappingTests(IdentityRequest):
 
     def test_as_tuples_includes_group_and_user_tuples(self):
         """Test that when converted to tuples it includes both group and user tuples."""
-        self.binding_mapping.push_group_to_bindings("group1")
+        self.binding_mapping.assign_group_to_bindings("group1")
         self.binding_mapping.assign_user_to_bindings(self.user_id_1, self.cars[0])
         tuples = self.binding_mapping.as_tuples()
         self.assertIn(
@@ -270,8 +270,8 @@ class BindingMappingTests(IdentityRequest):
 
     def test_remove_all_groups_unassigned(self):
         """Test that removing all groups means the mapping is now unassigned."""
-        self.binding_mapping.push_group_to_bindings("group1")
-        self.binding_mapping.push_group_to_bindings("group2")
+        self.binding_mapping.assign_group_to_bindings("group1")
+        self.binding_mapping.assign_group_to_bindings("group2")
         self.binding_mapping.pop_group_from_bindings("group1")
         self.binding_mapping.pop_group_from_bindings("group2")
         self.assertTrue(self.binding_mapping.is_unassigned())
@@ -286,8 +286,8 @@ class BindingMappingTests(IdentityRequest):
 
     def test_get_role_binding_includes_groups_and_users(self):
         """Test that get_role_binding includes both groups and users."""
-        self.binding_mapping.push_group_to_bindings("group1")
-        self.binding_mapping.push_group_to_bindings("group1")
+        self.binding_mapping.assign_group_to_bindings("group1")
+        self.binding_mapping.assign_group_to_bindings("group1")
         self.binding_mapping.assign_user_to_bindings(self.user_id_1, self.cars[0])
         self.binding_mapping.assign_user_to_bindings(self.user_id_1, self.cars[0])
         role_binding = self.binding_mapping.get_role_binding()
@@ -306,8 +306,8 @@ class BindingMappingTests(IdentityRequest):
 
     def test_get_role_binding_includes_duplicate_groups(self):
         """Test that get_role_binding includes duplicate groups."""
-        self.binding_mapping.push_group_to_bindings("group1")
-        self.binding_mapping.push_group_to_bindings("group1")
+        self.binding_mapping.assign_group_to_bindings("group1")
+        self.binding_mapping.assign_group_to_bindings("group1")
         role_binding = self.binding_mapping.get_role_binding()
         self.assertIn("group1", role_binding.groups)
         self.assertEqual(len(role_binding.groups), 2)

@@ -92,7 +92,7 @@ class V2rolebinding:
     role: V2role
     resource: V2boundresource
     groups: tuple[str]
-    users: tuple[str]
+    users: Union[list, dict]
 
     def __init__(
         self,

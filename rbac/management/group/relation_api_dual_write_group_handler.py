@@ -139,7 +139,7 @@ class RelationApiDualWriteGroupHandler(RelationApiDualWriteSubjectHandler):
             return
 
         def add_group_to_binding(mapping: BindingMapping):
-            self.relations_to_add.append(mapping.push_group_to_bindings(str(self.group.uuid)))
+            self.relations_to_add.append(mapping.assign_group_to_bindings(str(self.group.uuid)))
 
         for role in roles:
             self._update_mapping_for_role(
@@ -154,7 +154,9 @@ class RelationApiDualWriteGroupHandler(RelationApiDualWriteSubjectHandler):
             default_binding = self._default_binding(mapping=remove_default_access_from)
             self.relations_to_remove.append(default_binding)
 
-    def generate_relations_reset_roles(self, roles: Iterable[Role]):
+    def generate_relations_reset_roles(
+        self, roles: Iterable[Role], remove_default_access_from: Optional[TenantMapping] = None
+    ):
         """
         Reset the mapping and relationships for the group, assuming this group should only be assigned once.
 
@@ -168,8 +170,9 @@ class RelationApiDualWriteGroupHandler(RelationApiDualWriteSubjectHandler):
 
         def reset_mapping(mapping: BindingMapping):
             to_remove = mapping.unassign_group(str(self.group.uuid))
-            self.relations_to_remove.append(to_remove)
-            to_add = mapping.push_group_to_bindings(str(self.group.uuid))
+            if to_remove:
+                self.relations_to_remove.append(to_remove)
+            to_add = mapping.assign_group_to_bindings(str(self.group.uuid))
             self.relations_to_add.append(to_add)
 
         # Go through current roles
@@ -186,6 +189,10 @@ class RelationApiDualWriteGroupHandler(RelationApiDualWriteSubjectHandler):
                     role, groups=frozenset([str(self.group.uuid)])
                 ),
             )
+
+        if remove_default_access_from is not None:
+            default_binding = self._default_binding(mapping=remove_default_access_from)
+            self.relations_to_remove.append(default_binding)
 
     def replicate(self):
         """Replicate generated relations."""
