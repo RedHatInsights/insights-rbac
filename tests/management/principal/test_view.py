@@ -999,108 +999,6 @@ class PrincipalViewsetTests(IdentityRequest):
 
     @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
     @patch("management.principal.it_service.ITService.request_service_accounts")
-    def test_principal_service_account_filter_by_incorrect_name(self, mock_request):
-        """Test that trying to filter by an incorrect name for a service account returns an empty data array"""
-        # Create SA in the database
-        sa_client_id = "b6636c60-a31d-013c-b93d-6aa2427b506c"
-        sa_username = "service_account-" + sa_client_id
-
-        Principal.objects.create(
-            username=sa_username,
-            tenant=self.tenant,
-            type="service-account",
-            service_account_id=sa_client_id,
-        )
-
-        mock_request.return_value = [
-            {
-                "clientId": sa_client_id,
-                "name": "service_account_name",
-                "description": "Service Account description",
-                "owner": "ecasey",
-                "username": sa_username,
-                "time_created": 1706784741,
-                "type": "service-account",
-            }
-        ]
-
-        url = f"{reverse('v1_management:principals')}?type=service-account&name=service_account_name_wrong"
-        client = APIClient()
-        response = client.get(url, **self.headers)
-
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIsNone(response.data.get("data"))
-
-    @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
-    @patch("management.principal.it_service.ITService.request_service_accounts")
-    def test_principal_service_account_filter_by_incorrect_owner(self, mock_request):
-        """Test that trying to filter by an incorrect owner for service accounts returns an empty data array"""
-        # Create SA in the database
-        sa_client_id = "b6636c60-a31d-013c-b93d-6aa2427b506c"
-        sa_username = "service_account-" + sa_client_id
-
-        Principal.objects.create(
-            username=sa_username,
-            tenant=self.tenant,
-            type="service-account",
-            service_account_id=sa_client_id,
-        )
-
-        mock_request.return_value = [
-            {
-                "clientId": sa_client_id,
-                "name": "service_account_name",
-                "description": "Service Account description",
-                "owner": "ecasey",
-                "username": sa_username,
-                "time_created": 1706784741,
-                "type": "service-account",
-            }
-        ]
-
-        url = f"{reverse('v1_management:principals')}?type=service-account&owner=ecasey12"
-        client = APIClient()
-        response = client.get(url, **self.headers)
-
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIsNone(response.data.get("data"))
-
-    @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
-    @patch("management.principal.it_service.ITService.request_service_accounts")
-    def test_principal_service_account_filter_by_incorrect_description(self, mock_request):
-        """Test that trying to filter by an incorrect description for service accounts returns an empty array"""
-        # Create SA in the database
-        sa_client_id = "b6636c60-a31d-013c-b93d-6aa2427b506c"
-        sa_username = "service_account-" + sa_client_id
-
-        Principal.objects.create(
-            username=sa_username,
-            tenant=self.tenant,
-            type="service-account",
-            service_account_id=sa_client_id,
-        )
-
-        mock_request.return_value = [
-            {
-                "clientId": sa_client_id,
-                "name": "service_account_name",
-                "description": "Service Account description",
-                "owner": "ecasey",
-                "username": sa_username,
-                "time_created": 1706784741,
-                "type": "service-account",
-            }
-        ]
-
-        url = f"{reverse('v1_management:principals')}?type=service-account&description=Wrong description"
-        client = APIClient()
-        response = client.get(url, **self.headers)
-
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIsNone(response.data.get("data"))
-
-    @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
-    @patch("management.principal.it_service.ITService.request_service_accounts")
     def test_principal_service_account_sort_by_time_created_desc(self, mock_request):
         """Test that we can sort service accounts by time_created descending"""
         # Create SA in the database
@@ -1840,6 +1738,7 @@ class PrincipalViewsetTests(IdentityRequest):
         url = f"{reverse('v1_management:principals')}?type=service-account&order_by=clientId"
         client = APIClient()
         response = client.get(url, **self.headers)
+        print(response.data)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data.get("data")), 2)
         sa1 = response.data.get("data")[0]

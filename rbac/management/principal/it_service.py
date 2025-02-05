@@ -321,12 +321,8 @@ class ITService:
                     or (description and description in sa_description)
                 ):
                     filtered_service_accounts.append(sa)
-                else:
-                    raise serializers.ValidationError(
-                        {"detail": "Invalid value provided to query parameter when trying to filter service accounts"}
-                    )
-            count = len(filtered_service_accounts)
-            service_accounts = filtered_service_accounts
+                    count = len(filtered_service_accounts)
+                    service_accounts = filtered_service_accounts
         else:
             # If any order_by parameter is passed then sort the service accounts by that field either asc or desc
             if order_by in ["-time_created", "-name", "-description", "-clientId", "-owner"]:
