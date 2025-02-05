@@ -801,6 +801,1063 @@ class PrincipalViewsetTests(IdentityRequest):
 
     @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
     @patch("management.principal.it_service.ITService.request_service_accounts")
+    def test_principal_service_account_filter_by_name(self, mock_request):
+        """Test that we can filter service accounts by name"""
+        # Create 3 SA in the database
+        sa_client_ids = [
+            "b6636c60-a31d-013c-b93d-6aa2427b506c",
+            "69a116a0-a3d4-013c-b940-6aa2427b506c",
+            "6f3c2700-a3d4-013c-b941-6aa2427b506c",
+        ]
+        for uuid in sa_client_ids:
+            Principal.objects.create(
+                username="service_account-" + uuid,
+                tenant=self.tenant,
+                type="service-account",
+                service_account_id=uuid,
+            )
+
+        # create a return value for the mock
+        mocked_values = []
+        for uuid in sa_client_ids:
+            mocked_values.append(
+                {
+                    "clientId": uuid,
+                    "name": f"service_account_name_b6636c60",
+                    "description": f"Service Account description {uuid.split('-')[0]}",
+                    "owner": "jsmith",
+                    "username": "service_account-" + uuid,
+                    "time_created": 1706784741,
+                    "type": "service-account",
+                }
+            )
+
+        mock_request.return_value = mocked_values
+
+        url = f"{reverse('v1_management:principals')}?type=service-account&name=service_account_name_b6636c60"
+        client = APIClient()
+        response = client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIsInstance(response.data.get("data"), list)
+
+        sa = response.data.get("data")[0]
+        self.assertCountEqual(
+            list(sa.keys()),
+            ["clientId", "name", "description", "owner", "time_created", "type", "username"],
+        )
+        self.assertEqual(sa.get("clientId"), sa_client_ids[0])
+        self.assertEqual(sa.get("name"), f"service_account_name_{sa_client_ids[0].split('-')[0]}")
+        self.assertEqual(sa.get("description"), f"Service Account description {sa_client_ids[0].split('-')[0]}")
+        self.assertEqual(sa.get("owner"), "jsmith")
+        self.assertEqual(sa.get("type"), "service-account")
+        self.assertEqual(sa.get("username"), "service_account-" + sa_client_ids[0])
+
+    @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
+    @patch("management.principal.it_service.ITService.request_service_accounts")
+    def test_principal_service_account_filter_by_owner(self, mock_request):
+        """Test that we can filter service accounts by owner"""
+        # Create SA in the database
+        sa_client_id = "b6636c60-a31d-013c-b93d-6aa2427b506c"
+        sa_username = "service_account-" + sa_client_id
+
+        Principal.objects.create(
+            username=sa_username,
+            tenant=self.tenant,
+            type="service-account",
+            service_account_id=sa_client_id,
+        )
+
+        mock_request.return_value = [
+            {
+                "clientId": sa_client_id,
+                "name": "service_account_name",
+                "description": "Service Account description",
+                "owner": "ecasey",
+                "username": sa_username,
+                "time_created": 1706784741,
+                "type": "service-account",
+            }
+        ]
+
+        url = f"{reverse('v1_management:principals')}?type=service-account&owner=ecasey"
+        client = APIClient()
+        response = client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIsInstance(response.data.get("data"), list)
+        self.assertEqual(int(response.data.get("meta").get("count")), 1)
+        self.assertEqual(len(response.data.get("data")), 1)
+
+        sa = response.data.get("data")[0]
+        self.assertCountEqual(
+            list(sa.keys()),
+            ["clientId", "name", "description", "owner", "time_created", "type", "username"],
+        )
+        self.assertEqual(sa.get("clientId"), sa_client_id)
+        self.assertEqual(sa.get("name"), "service_account_name")
+        self.assertEqual(sa.get("description"), "Service Account description")
+        self.assertEqual(sa.get("owner"), "ecasey")
+        self.assertEqual(sa.get("type"), "service-account")
+        self.assertEqual(sa.get("username"), sa_username)
+
+    @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
+    @patch("management.principal.it_service.ITService.request_service_accounts")
+    def test_principal_service_account_filter_by_description(self, mock_request):
+        """Test that we can filter service accounts by description"""
+        # Create SA in the database
+        sa_client_id = "b6636c60-a31d-013c-b93d-6aa2427b506c"
+        sa_username = "service_account-" + sa_client_id
+
+        Principal.objects.create(
+            username=sa_username,
+            tenant=self.tenant,
+            type="service-account",
+            service_account_id=sa_client_id,
+        )
+
+        mock_request.return_value = [
+            {
+                "clientId": sa_client_id,
+                "name": "service_account_name",
+                "description": "Service Account description",
+                "owner": "ecasey",
+                "username": sa_username,
+                "time_created": 1706784741,
+                "type": "service-account",
+            }
+        ]
+
+        url = f"{reverse('v1_management:principals')}?type=service-account&description=Service"
+        client = APIClient()
+        response = client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIsInstance(response.data.get("data"), list)
+        self.assertEqual(int(response.data.get("meta").get("count")), 1)
+        self.assertEqual(len(response.data.get("data")), 1)
+
+        sa = response.data.get("data")[0]
+        self.assertCountEqual(
+            list(sa.keys()),
+            ["clientId", "name", "description", "owner", "time_created", "type", "username"],
+        )
+        self.assertEqual(sa.get("clientId"), sa_client_id)
+        self.assertEqual(sa.get("name"), "service_account_name")
+        self.assertEqual(sa.get("description"), "Service Account description")
+        self.assertEqual(sa.get("owner"), "ecasey")
+        self.assertEqual(sa.get("type"), "service-account")
+        self.assertEqual(sa.get("username"), sa_username)
+
+    @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
+    @patch("management.principal.it_service.ITService.request_service_accounts")
+    def test_principal_service_account_filter_by_owner_name_description(self, mock_request):
+        """Test that we can filter service accounts by all filter options"""
+        # Create SA in the database
+        sa_client_id = "b6636c60-a31d-013c-b93d-6aa2427b506c"
+        sa_username = "service_account-" + sa_client_id
+
+        Principal.objects.create(
+            username=sa_username,
+            tenant=self.tenant,
+            type="service-account",
+            service_account_id=sa_client_id,
+        )
+
+        mock_request.return_value = [
+            {
+                "clientId": sa_client_id,
+                "name": "service_account_name",
+                "description": "Service Account description",
+                "owner": "ecasey",
+                "username": sa_username,
+                "time_created": 1706784741,
+                "type": "service-account",
+            }
+        ]
+
+        url = f"{reverse('v1_management:principals')}?type=service-account&owner=ecasey1&name=service_account_name&description=Service"
+        client = APIClient()
+        response = client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIsInstance(response.data.get("data"), list)
+        self.assertEqual(int(response.data.get("meta").get("count")), 1)
+        self.assertEqual(len(response.data.get("data")), 1)
+
+        sa = response.data.get("data")[0]
+        self.assertCountEqual(
+            list(sa.keys()),
+            ["clientId", "name", "description", "owner", "time_created", "type", "username"],
+        )
+        self.assertEqual(sa.get("clientId"), sa_client_id)
+        self.assertEqual(sa.get("name"), "service_account_name")
+        self.assertEqual(sa.get("description"), "Service Account description")
+        self.assertEqual(sa.get("owner"), "ecasey")
+        self.assertEqual(sa.get("type"), "service-account")
+        self.assertEqual(sa.get("username"), sa_username)
+
+    @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
+    @patch("management.principal.it_service.ITService.request_service_accounts")
+    def test_principal_service_account_sort_by_time_created_desc(self, mock_request):
+        """Test that we can sort service accounts by time_created descending"""
+        # Create SA in the database
+        sa_client_ids = [
+            "b6636c60-a31d-013c-b93d-6aa2427b506c",
+            "69a116a0-a3d4-013c-b940-6aa2427b506c",
+            "6f3c2700-a3d4-013c-b941-6aa2427b506c",
+        ]
+        sa_username1 = "service_account-" + sa_client_ids[0]
+        sa_username2 = "service_account-" + sa_client_ids[1]
+
+        Principal.objects.create(
+            username=sa_username1,
+            tenant=self.tenant,
+            type="service-account",
+            service_account_id=sa_client_ids[0],
+        )
+
+        Principal.objects.create(
+            username=sa_username2,
+            tenant=self.tenant,
+            type="service-account",
+            service_account_id=sa_client_ids[1],
+        )
+
+        mocked_values = []
+
+        mocked_values.append(
+            {
+                "clientId": sa_client_ids[0],
+                "name": "service_account_name",
+                "description": "Service Account description",
+                "owner": "ecasey",
+                "username": sa_username1,
+                "time_created": 1706784741,
+                "type": "service-account",
+            }
+        )
+
+        mocked_values.append(
+            {
+                "clientId": sa_client_ids[1],
+                "name": "service_account_name",
+                "description": "Service Account description",
+                "owner": "ecasey",
+                "username": sa_username2,
+                "time_created": 1306784741,
+                "type": "service-account",
+            }
+        )
+        mock_request.return_value = mocked_values
+        url = f"{reverse('v1_management:principals')}?type=service-account&order_by=-time_created"
+        client = APIClient()
+        response = client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data.get("data")), 2)
+        sa1 = response.data.get("data")[0]
+        sa2 = response.data.get("data")[1]
+
+        self.assertCountEqual(
+            list(sa1.keys()),
+            ["clientId", "name", "description", "owner", "time_created", "type", "username"],
+        )
+        self.assertEqual(sa1.get("clientId"), sa_client_ids[0])
+        self.assertEqual(sa1.get("name"), "service_account_name")
+        self.assertEqual(sa1.get("description"), "Service Account description")
+        self.assertEqual(sa1.get("owner"), "ecasey")
+        self.assertEqual(sa1.get("type"), "service-account")
+        self.assertEqual(sa1.get("username"), sa_username1)
+        self.assertEqual(sa1.get("time_created"), 1706784741)
+
+        self.assertCountEqual(
+            list(sa2.keys()),
+            ["clientId", "name", "description", "owner", "time_created", "type", "username"],
+        )
+        self.assertEqual(sa2.get("clientId"), sa_client_ids[1])
+        self.assertEqual(sa2.get("name"), "service_account_name")
+        self.assertEqual(sa2.get("description"), "Service Account description")
+        self.assertEqual(sa2.get("owner"), "ecasey")
+        self.assertEqual(sa2.get("type"), "service-account")
+        self.assertEqual(sa2.get("username"), sa_username2)
+        self.assertEqual(sa2.get("time_created"), 1306784741)
+
+    @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
+    @patch("management.principal.it_service.ITService.request_service_accounts")
+    def test_principal_service_account_sort_by_time_created_asc(self, mock_request):
+        """Test that we can sort service accounts by time_created ascending"""
+        # Create SA in the database
+        sa_client_ids = [
+            "b6636c60-a31d-013c-b93d-6aa2427b506c",
+            "69a116a0-a3d4-013c-b940-6aa2427b506c",
+            "6f3c2700-a3d4-013c-b941-6aa2427b506c",
+        ]
+        sa_username1 = "service_account-" + sa_client_ids[0]
+        sa_username2 = "service_account-" + sa_client_ids[1]
+
+        Principal.objects.create(
+            username=sa_username1,
+            tenant=self.tenant,
+            type="service-account",
+            service_account_id=sa_client_ids[0],
+        )
+
+        Principal.objects.create(
+            username=sa_username2,
+            tenant=self.tenant,
+            type="service-account",
+            service_account_id=sa_client_ids[1],
+        )
+
+        mocked_values = []
+
+        mocked_values.append(
+            {
+                "clientId": sa_client_ids[0],
+                "name": "service_account_name",
+                "description": "Service Account description",
+                "owner": "ecasey",
+                "username": sa_username1,
+                "time_created": 1706784741,
+                "type": "service-account",
+            }
+        )
+
+        mocked_values.append(
+            {
+                "clientId": sa_client_ids[1],
+                "name": "service_account_name",
+                "description": "Service Account description",
+                "owner": "ecasey",
+                "username": sa_username2,
+                "time_created": 1306784741,
+                "type": "service-account",
+            }
+        )
+        mock_request.return_value = mocked_values
+        url = f"{reverse('v1_management:principals')}?type=service-account&order_by=time_created"
+        client = APIClient()
+        response = client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data.get("data")), 2)
+        sa1 = response.data.get("data")[1]
+        sa2 = response.data.get("data")[0]
+
+        self.assertCountEqual(
+            list(sa2.keys()),
+            ["clientId", "name", "description", "owner", "time_created", "type", "username"],
+        )
+        self.assertEqual(sa2.get("clientId"), sa_client_ids[1])
+        self.assertEqual(sa2.get("name"), "service_account_name")
+        self.assertEqual(sa2.get("description"), "Service Account description")
+        self.assertEqual(sa2.get("owner"), "ecasey")
+        self.assertEqual(sa2.get("type"), "service-account")
+        self.assertEqual(sa2.get("username"), sa_username2)
+        self.assertEqual(sa2.get("time_created"), 1306784741)
+
+        self.assertCountEqual(
+            list(sa1.keys()),
+            ["clientId", "name", "description", "owner", "time_created", "type", "username"],
+        )
+        self.assertEqual(sa1.get("clientId"), sa_client_ids[0])
+        self.assertEqual(sa1.get("name"), "service_account_name")
+        self.assertEqual(sa1.get("description"), "Service Account description")
+        self.assertEqual(sa1.get("owner"), "ecasey")
+        self.assertEqual(sa1.get("type"), "service-account")
+        self.assertEqual(sa1.get("username"), sa_username1)
+        self.assertEqual(sa1.get("time_created"), 1706784741)
+
+    @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
+    @patch("management.principal.it_service.ITService.request_service_accounts")
+    def test_principal_service_account_sort_by_owner_asc(self, mock_request):
+        """Test that we can sort service accounts by owner ascending"""
+        # Create SA in the database
+        sa_client_ids = [
+            "b6636c60-a31d-013c-b93d-6aa2427b506c",
+            "69a116a0-a3d4-013c-b940-6aa2427b506c",
+            "6f3c2700-a3d4-013c-b941-6aa2427b506c",
+        ]
+        sa_username1 = "service_account-" + sa_client_ids[0]
+        sa_username2 = "service_account-" + sa_client_ids[1]
+
+        Principal.objects.create(
+            username=sa_username1,
+            tenant=self.tenant,
+            type="service-account",
+            service_account_id=sa_client_ids[0],
+        )
+
+        Principal.objects.create(
+            username=sa_username2,
+            tenant=self.tenant,
+            type="service-account",
+            service_account_id=sa_client_ids[1],
+        )
+
+        mocked_values = []
+
+        mocked_values.append(
+            {
+                "clientId": sa_client_ids[0],
+                "name": "service_account_name",
+                "description": "Service Account description",
+                "owner": "acasey",
+                "username": sa_username1,
+                "time_created": 1706784741,
+                "type": "service-account",
+            }
+        )
+
+        mocked_values.append(
+            {
+                "clientId": sa_client_ids[1],
+                "name": "service_account_name",
+                "description": "Service Account description",
+                "owner": "ecasey",
+                "username": sa_username2,
+                "time_created": 1306784741,
+                "type": "service-account",
+            }
+        )
+        mock_request.return_value = mocked_values
+        url = f"{reverse('v1_management:principals')}?type=service-account&order_by=owner"
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data.get("data")), 2)
+        sa1 = response.data.get("data")[0]
+        sa2 = response.data.get("data")[1]
+
+        self.assertCountEqual(
+            list(sa1.keys()),
+            ["clientId", "name", "description", "owner", "time_created", "type", "username"],
+        )
+        self.assertEqual(sa1.get("clientId"), sa_client_ids[0])
+        self.assertEqual(sa1.get("name"), "service_account_name")
+        self.assertEqual(sa1.get("description"), "Service Account description")
+        self.assertEqual(sa1.get("owner"), "acasey")
+        self.assertEqual(sa1.get("type"), "service-account")
+        self.assertEqual(sa1.get("username"), sa_username1)
+        self.assertEqual(sa1.get("time_created"), 1706784741)
+
+        self.assertCountEqual(
+            list(sa2.keys()),
+            ["clientId", "name", "description", "owner", "time_created", "type", "username"],
+        )
+        self.assertEqual(sa2.get("clientId"), sa_client_ids[1])
+        self.assertEqual(sa2.get("name"), "service_account_name")
+        self.assertEqual(sa2.get("description"), "Service Account description")
+        self.assertEqual(sa2.get("owner"), "ecasey")
+        self.assertEqual(sa2.get("type"), "service-account")
+        self.assertEqual(sa2.get("username"), sa_username2)
+        self.assertEqual(sa2.get("time_created"), 1306784741)
+
+    @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
+    @patch("management.principal.it_service.ITService.request_service_accounts")
+    def test_principal_service_account_sort_by_owner_desc(self, mock_request):
+        """Test that we can sort service accounts by owner descending"""
+        # Create SA in the database
+        sa_client_ids = [
+            "b6636c60-a31d-013c-b93d-6aa2427b506c",
+            "69a116a0-a3d4-013c-b940-6aa2427b506c",
+            "6f3c2700-a3d4-013c-b941-6aa2427b506c",
+        ]
+        sa_username1 = "service_account-" + sa_client_ids[0]
+        sa_username2 = "service_account-" + sa_client_ids[1]
+
+        Principal.objects.create(
+            username=sa_username1,
+            tenant=self.tenant,
+            type="service-account",
+            service_account_id=sa_client_ids[0],
+        )
+
+        Principal.objects.create(
+            username=sa_username2,
+            tenant=self.tenant,
+            type="service-account",
+            service_account_id=sa_client_ids[1],
+        )
+
+        mocked_values = []
+
+        mocked_values.append(
+            {
+                "clientId": sa_client_ids[0],
+                "name": "service_account_name",
+                "description": "Service Account description",
+                "owner": "ecasey",
+                "username": sa_username1,
+                "time_created": 1706784741,
+                "type": "service-account",
+            }
+        )
+
+        mocked_values.append(
+            {
+                "clientId": sa_client_ids[1],
+                "name": "service_account_name",
+                "description": "Service Account description",
+                "owner": "acasey",
+                "username": sa_username2,
+                "time_created": 1306784741,
+                "type": "service-account",
+            }
+        )
+        mock_request.return_value = mocked_values
+        url = f"{reverse('v1_management:principals')}?type=service-account&order_by=-owner"
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data.get("data")), 2)
+        sa1 = response.data.get("data")[0]
+        sa2 = response.data.get("data")[1]
+
+        self.assertCountEqual(
+            list(sa1.keys()),
+            ["clientId", "name", "description", "owner", "time_created", "type", "username"],
+        )
+        self.assertEqual(sa1.get("clientId"), sa_client_ids[0])
+        self.assertEqual(sa1.get("name"), "service_account_name")
+        self.assertEqual(sa1.get("description"), "Service Account description")
+        self.assertEqual(sa1.get("owner"), "ecasey")
+        self.assertEqual(sa1.get("type"), "service-account")
+        self.assertEqual(sa1.get("username"), sa_username1)
+        self.assertEqual(sa1.get("time_created"), 1706784741)
+
+        self.assertCountEqual(
+            list(sa2.keys()),
+            ["clientId", "name", "description", "owner", "time_created", "type", "username"],
+        )
+        self.assertEqual(sa2.get("clientId"), sa_client_ids[1])
+        self.assertEqual(sa2.get("name"), "service_account_name")
+        self.assertEqual(sa2.get("description"), "Service Account description")
+        self.assertEqual(sa2.get("owner"), "acasey")
+        self.assertEqual(sa2.get("type"), "service-account")
+        self.assertEqual(sa2.get("username"), sa_username2)
+        self.assertEqual(sa2.get("time_created"), 1306784741)
+
+    @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
+    @patch("management.principal.it_service.ITService.request_service_accounts")
+    def test_principal_service_account_sort_by_name_asc(self, mock_request):
+        """Test that we can sort service accounts by name ascending"""
+        # Create SA in the database
+        sa_client_ids = [
+            "b6636c60-a31d-013c-b93d-6aa2427b506c",
+            "69a116a0-a3d4-013c-b940-6aa2427b506c",
+            "6f3c2700-a3d4-013c-b941-6aa2427b506c",
+        ]
+        sa_username1 = "service_account-" + sa_client_ids[0]
+        sa_username2 = "service_account-" + sa_client_ids[1]
+
+        Principal.objects.create(
+            username=sa_username1,
+            tenant=self.tenant,
+            type="service-account",
+            service_account_id=sa_client_ids[0],
+        )
+
+        Principal.objects.create(
+            username=sa_username2,
+            tenant=self.tenant,
+            type="service-account",
+            service_account_id=sa_client_ids[1],
+        )
+
+        mocked_values = []
+
+        mocked_values.append(
+            {
+                "clientId": sa_client_ids[0],
+                "name": "a_service_account_name",
+                "description": "Service Account description",
+                "owner": "ecasey",
+                "username": sa_username1,
+                "time_created": 1706784741,
+                "type": "service-account",
+            }
+        )
+
+        mocked_values.append(
+            {
+                "clientId": sa_client_ids[1],
+                "name": "z_service_account_name",
+                "description": "Service Account description",
+                "owner": "ecasey",
+                "username": sa_username2,
+                "time_created": 1306784741,
+                "type": "service-account",
+            }
+        )
+        mock_request.return_value = mocked_values
+        url = f"{reverse('v1_management:principals')}?type=service-account&order_by=name"
+        client = APIClient()
+        response = client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data.get("data")), 2)
+        sa1 = response.data.get("data")[0]
+        sa2 = response.data.get("data")[1]
+
+        self.assertCountEqual(
+            list(sa1.keys()),
+            ["clientId", "name", "description", "owner", "time_created", "type", "username"],
+        )
+        self.assertEqual(sa1.get("clientId"), sa_client_ids[0])
+        self.assertEqual(sa1.get("name"), "a_service_account_name")
+        self.assertEqual(sa1.get("description"), "Service Account description")
+        self.assertEqual(sa1.get("owner"), "ecasey")
+        self.assertEqual(sa1.get("type"), "service-account")
+        self.assertEqual(sa1.get("username"), sa_username1)
+        self.assertEqual(sa1.get("time_created"), 1706784741)
+
+        self.assertCountEqual(
+            list(sa2.keys()),
+            ["clientId", "name", "description", "owner", "time_created", "type", "username"],
+        )
+        self.assertEqual(sa2.get("clientId"), sa_client_ids[1])
+        self.assertEqual(sa2.get("name"), "z_service_account_name")
+        self.assertEqual(sa2.get("description"), "Service Account description")
+        self.assertEqual(sa2.get("owner"), "ecasey")
+        self.assertEqual(sa2.get("type"), "service-account")
+        self.assertEqual(sa2.get("username"), sa_username2)
+        self.assertEqual(sa2.get("time_created"), 1306784741)
+
+    @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
+    @patch("management.principal.it_service.ITService.request_service_accounts")
+    def test_principal_service_account_sort_by_name_desc(self, mock_request):
+        """Test that we can sort service accounts by name descending"""
+        # Create SA in the database
+        sa_client_ids = [
+            "b6636c60-a31d-013c-b93d-6aa2427b506c",
+            "69a116a0-a3d4-013c-b940-6aa2427b506c",
+            "6f3c2700-a3d4-013c-b941-6aa2427b506c",
+        ]
+        sa_username1 = "service_account-" + sa_client_ids[0]
+        sa_username2 = "service_account-" + sa_client_ids[1]
+
+        Principal.objects.create(
+            username=sa_username1,
+            tenant=self.tenant,
+            type="service-account",
+            service_account_id=sa_client_ids[0],
+        )
+
+        Principal.objects.create(
+            username=sa_username2,
+            tenant=self.tenant,
+            type="service-account",
+            service_account_id=sa_client_ids[1],
+        )
+
+        mocked_values = []
+
+        mocked_values.append(
+            {
+                "clientId": sa_client_ids[0],
+                "name": "a_service_account_name",
+                "description": "Service Account description",
+                "owner": "ecasey",
+                "username": sa_username1,
+                "time_created": 1706784741,
+                "type": "service-account",
+            }
+        )
+
+        mocked_values.append(
+            {
+                "clientId": sa_client_ids[1],
+                "name": "z_service_account_name",
+                "description": "Service Account description",
+                "owner": "ecasey",
+                "username": sa_username2,
+                "time_created": 1306784741,
+                "type": "service-account",
+            }
+        )
+        mock_request.return_value = mocked_values
+        url = f"{reverse('v1_management:principals')}?type=service-account&order_by=-name"
+        client = APIClient()
+        response = client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data.get("data")), 2)
+        sa1 = response.data.get("data")[0]
+        sa2 = response.data.get("data")[1]
+
+        self.assertCountEqual(
+            list(sa1.keys()),
+            ["clientId", "name", "description", "owner", "time_created", "type", "username"],
+        )
+        self.assertEqual(sa1.get("clientId"), sa_client_ids[1])
+        self.assertEqual(sa1.get("name"), "z_service_account_name")
+        self.assertEqual(sa1.get("description"), "Service Account description")
+        self.assertEqual(sa1.get("owner"), "ecasey")
+        self.assertEqual(sa1.get("type"), "service-account")
+        self.assertEqual(sa1.get("username"), sa_username2)
+        self.assertEqual(sa1.get("time_created"), 1306784741)
+
+        self.assertCountEqual(
+            list(sa2.keys()),
+            ["clientId", "name", "description", "owner", "time_created", "type", "username"],
+        )
+        self.assertEqual(sa2.get("clientId"), sa_client_ids[0])
+        self.assertEqual(sa2.get("name"), "a_service_account_name")
+        self.assertEqual(sa2.get("description"), "Service Account description")
+        self.assertEqual(sa2.get("owner"), "ecasey")
+        self.assertEqual(sa2.get("type"), "service-account")
+        self.assertEqual(sa2.get("username"), sa_username1)
+        self.assertEqual(sa2.get("time_created"), 1706784741)
+
+    @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
+    @patch("management.principal.it_service.ITService.request_service_accounts")
+    def test_principal_service_account_sort_by_description_asc(self, mock_request):
+        """Test that we can sort service accounts by description ascending"""
+        # Create SA in the database
+        sa_client_ids = [
+            "b6636c60-a31d-013c-b93d-6aa2427b506c",
+            "69a116a0-a3d4-013c-b940-6aa2427b506c",
+            "6f3c2700-a3d4-013c-b941-6aa2427b506c",
+        ]
+        sa_username1 = "service_account-" + sa_client_ids[0]
+        sa_username2 = "service_account-" + sa_client_ids[1]
+
+        Principal.objects.create(
+            username=sa_username1,
+            tenant=self.tenant,
+            type="service-account",
+            service_account_id=sa_client_ids[0],
+        )
+
+        Principal.objects.create(
+            username=sa_username2,
+            tenant=self.tenant,
+            type="service-account",
+            service_account_id=sa_client_ids[1],
+        )
+
+        mocked_values = []
+
+        mocked_values.append(
+            {
+                "clientId": sa_client_ids[0],
+                "name": "a_service_account_name",
+                "description": "A Service Account description",
+                "owner": "ecasey",
+                "username": sa_username1,
+                "time_created": 1706784741,
+                "type": "service-account",
+            }
+        )
+
+        mocked_values.append(
+            {
+                "clientId": sa_client_ids[1],
+                "name": "z_service_account_name",
+                "description": "Z Service Account description",
+                "owner": "ecasey",
+                "username": sa_username2,
+                "time_created": 1306784741,
+                "type": "service-account",
+            }
+        )
+        mock_request.return_value = mocked_values
+        url = f"{reverse('v1_management:principals')}?type=service-account&order_by=description"
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data.get("data")), 2)
+        sa1 = response.data.get("data")[0]
+        sa2 = response.data.get("data")[1]
+
+        self.assertCountEqual(
+            list(sa1.keys()),
+            ["clientId", "name", "description", "owner", "time_created", "type", "username"],
+        )
+        self.assertEqual(sa1.get("clientId"), sa_client_ids[0])
+        self.assertEqual(sa1.get("name"), "a_service_account_name")
+        self.assertEqual(sa1.get("description"), "A Service Account description")
+        self.assertEqual(sa1.get("owner"), "ecasey")
+        self.assertEqual(sa1.get("type"), "service-account")
+        self.assertEqual(sa1.get("username"), sa_username1)
+        self.assertEqual(sa1.get("time_created"), 1706784741)
+
+        self.assertCountEqual(
+            list(sa2.keys()),
+            ["clientId", "name", "description", "owner", "time_created", "type", "username"],
+        )
+        self.assertEqual(sa2.get("clientId"), sa_client_ids[1])
+        self.assertEqual(sa2.get("name"), "z_service_account_name")
+        self.assertEqual(sa2.get("description"), "Z Service Account description")
+        self.assertEqual(sa2.get("owner"), "ecasey")
+        self.assertEqual(sa2.get("type"), "service-account")
+        self.assertEqual(sa2.get("username"), sa_username2)
+        self.assertEqual(sa2.get("time_created"), 1306784741)
+
+    @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
+    @patch("management.principal.it_service.ITService.request_service_accounts")
+    def test_principal_service_account_sort_by_name_desc(self, mock_request):
+        """Test that we can sort service accounts by name descending"""
+        # Create SA in the database
+        sa_client_ids = [
+            "b6636c60-a31d-013c-b93d-6aa2427b506c",
+            "69a116a0-a3d4-013c-b940-6aa2427b506c",
+            "6f3c2700-a3d4-013c-b941-6aa2427b506c",
+        ]
+        sa_username1 = "service_account-" + sa_client_ids[0]
+        sa_username2 = "service_account-" + sa_client_ids[1]
+
+        Principal.objects.create(
+            username=sa_username1,
+            tenant=self.tenant,
+            type="service-account",
+            service_account_id=sa_client_ids[0],
+        )
+
+        Principal.objects.create(
+            username=sa_username2,
+            tenant=self.tenant,
+            type="service-account",
+            service_account_id=sa_client_ids[1],
+        )
+
+        mocked_values = []
+
+        mocked_values.append(
+            {
+                "clientId": sa_client_ids[0],
+                "name": "a_service_account_name",
+                "description": "A Service Account description",
+                "owner": "ecasey",
+                "username": sa_username1,
+                "time_created": 1706784741,
+                "type": "service-account",
+            }
+        )
+
+        mocked_values.append(
+            {
+                "clientId": sa_client_ids[1],
+                "name": "z_service_account_name",
+                "description": "Z Service Account description",
+                "owner": "ecasey",
+                "username": sa_username2,
+                "time_created": 1306784741,
+                "type": "service-account",
+            }
+        )
+        mock_request.return_value = mocked_values
+        url = f"{reverse('v1_management:principals')}?type=service-account&order_by=-name"
+        client = APIClient()
+        response = client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data.get("data")), 2)
+        sa1 = response.data.get("data")[0]
+        sa2 = response.data.get("data")[1]
+
+        self.assertCountEqual(
+            list(sa1.keys()),
+            ["clientId", "name", "description", "owner", "time_created", "type", "username"],
+        )
+        self.assertEqual(sa1.get("clientId"), sa_client_ids[1])
+        self.assertEqual(sa1.get("name"), "z_service_account_name")
+        self.assertEqual(sa1.get("description"), "Z Service Account description")
+        self.assertEqual(sa1.get("owner"), "ecasey")
+        self.assertEqual(sa1.get("type"), "service-account")
+        self.assertEqual(sa1.get("username"), sa_username2)
+        self.assertEqual(sa1.get("time_created"), 1306784741)
+
+        self.assertCountEqual(
+            list(sa2.keys()),
+            ["clientId", "name", "description", "owner", "time_created", "type", "username"],
+        )
+        self.assertEqual(sa2.get("clientId"), sa_client_ids[0])
+        self.assertEqual(sa2.get("name"), "a_service_account_name")
+        self.assertEqual(sa2.get("description"), "A Service Account description")
+        self.assertEqual(sa2.get("owner"), "ecasey")
+        self.assertEqual(sa2.get("type"), "service-account")
+        self.assertEqual(sa2.get("username"), sa_username1)
+        self.assertEqual(sa2.get("time_created"), 1706784741)
+
+    @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
+    @patch("management.principal.it_service.ITService.request_service_accounts")
+    def test_principal_service_account_sort_by_clientid_asc(self, mock_request):
+        """Test that we can sort service accounts by clientId ascending"""
+        # Create SA in the database
+        sa_client_ids = [
+            "b6636c60-a31d-013c-b93d-6aa2427b506c",
+            "69a116a0-a3d4-013c-b940-6aa2427b506c",
+            "6f3c2700-a3d4-013c-b941-6aa2427b506c",
+        ]
+        sa_username1 = "service_account-" + sa_client_ids[0]
+        sa_username2 = "service_account-" + sa_client_ids[1]
+
+        Principal.objects.create(
+            username=sa_username1,
+            tenant=self.tenant,
+            type="service-account",
+            service_account_id=sa_client_ids[0],
+        )
+
+        Principal.objects.create(
+            username=sa_username2,
+            tenant=self.tenant,
+            type="service-account",
+            service_account_id=sa_client_ids[1],
+        )
+
+        mocked_values = []
+
+        mocked_values.append(
+            {
+                "clientId": sa_client_ids[0],
+                "name": "service_account_name",
+                "description": "Service Account description",
+                "owner": "ecasey",
+                "username": sa_username1,
+                "time_created": 1706784741,
+                "type": "service-account",
+            }
+        )
+
+        mocked_values.append(
+            {
+                "clientId": sa_client_ids[1],
+                "name": "service_account_name",
+                "description": "Service Account description",
+                "owner": "ecasey",
+                "username": sa_username2,
+                "time_created": 1306784741,
+                "type": "service-account",
+            }
+        )
+        mock_request.return_value = mocked_values
+        url = f"{reverse('v1_management:principals')}?type=service-account&order_by=clientId"
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        print(response.data)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data.get("data")), 2)
+        sa1 = response.data.get("data")[0]
+        sa2 = response.data.get("data")[1]
+        print(response.data)
+        self.assertCountEqual(
+            list(sa1.keys()),
+            ["clientId", "name", "description", "owner", "time_created", "type", "username"],
+        )
+        self.assertEqual(sa1.get("clientId"), sa_client_ids[1])
+        self.assertEqual(sa1.get("name"), "service_account_name")
+        self.assertEqual(sa1.get("description"), "Service Account description")
+        self.assertEqual(sa1.get("owner"), "ecasey")
+        self.assertEqual(sa1.get("type"), "service-account")
+        self.assertEqual(sa1.get("username"), sa_username2)
+        self.assertEqual(sa1.get("time_created"), 1306784741)
+
+        self.assertCountEqual(
+            list(sa2.keys()),
+            ["clientId", "name", "description", "owner", "time_created", "type", "username"],
+        )
+        self.assertEqual(sa2.get("clientId"), sa_client_ids[0])
+        self.assertEqual(sa2.get("name"), "service_account_name")
+        self.assertEqual(sa2.get("description"), "Service Account description")
+        self.assertEqual(sa2.get("owner"), "ecasey")
+        self.assertEqual(sa2.get("type"), "service-account")
+        self.assertEqual(sa2.get("username"), sa_username1)
+        self.assertEqual(sa2.get("time_created"), 1706784741)
+
+    @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
+    @patch("management.principal.it_service.ITService.request_service_accounts")
+    def test_principal_service_account_sort_by_clientid_desc(self, mock_request):
+        """Test that we can sort service accounts by clientId descending"""
+        # Create SA in the database
+        sa_client_ids = [
+            "b6636c60-a31d-013c-b93d-6aa2427b506c",
+            "69a116a0-a3d4-013c-b940-6aa2427b506c",
+            "6f3c2700-a3d4-013c-b941-6aa2427b506c",
+        ]
+        sa_username1 = "service_account-" + sa_client_ids[0]
+        sa_username2 = "service_account-" + sa_client_ids[1]
+
+        Principal.objects.create(
+            username=sa_username1,
+            tenant=self.tenant,
+            type="service-account",
+            service_account_id=sa_client_ids[0],
+        )
+
+        Principal.objects.create(
+            username=sa_username2,
+            tenant=self.tenant,
+            type="service-account",
+            service_account_id=sa_client_ids[1],
+        )
+
+        mocked_values = []
+
+        mocked_values.append(
+            {
+                "clientId": sa_client_ids[0],
+                "name": "service_account_name",
+                "description": "Service Account description",
+                "owner": "ecasey",
+                "username": sa_username1,
+                "time_created": 1706784741,
+                "type": "service-account",
+            }
+        )
+
+        mocked_values.append(
+            {
+                "clientId": sa_client_ids[1],
+                "name": "service_account_name",
+                "description": "Service Account description",
+                "owner": "ecasey",
+                "username": sa_username2,
+                "time_created": 1306784741,
+                "type": "service-account",
+            }
+        )
+        mock_request.return_value = mocked_values
+        url = f"{reverse('v1_management:principals')}?type=service-account&order_by=-clientId"
+
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        print(response.data)
+        print(mocked_values)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data.get("data")), 2)
+        sa1 = response.data.get("data")[0]
+        sa2 = response.data.get("data")[1]
+
+        self.assertCountEqual(
+            list(sa1.keys()),
+            ["clientId", "name", "description", "owner", "time_created", "type", "username"],
+        )
+        self.assertEqual(sa1.get("clientId"), sa_client_ids[0])
+        self.assertEqual(sa1.get("name"), "service_account_name")
+        self.assertEqual(sa1.get("description"), "Service Account description")
+        self.assertEqual(sa1.get("owner"), "ecasey")
+        self.assertEqual(sa1.get("type"), "service-account")
+        self.assertEqual(sa1.get("username"), sa_username1)
+        self.assertEqual(sa1.get("time_created"), 1706784741)
+
+        self.assertCountEqual(
+            list(sa2.keys()),
+            ["clientId", "name", "description", "owner", "time_created", "type", "username"],
+        )
+        self.assertEqual(sa2.get("clientId"), sa_client_ids[1])
+        self.assertEqual(sa2.get("name"), "service_account_name")
+        self.assertEqual(sa2.get("description"), "Service Account description")
+        self.assertEqual(sa2.get("owner"), "ecasey")
+        self.assertEqual(sa2.get("type"), "service-account")
+        self.assertEqual(sa2.get("username"), sa_username2)
+        self.assertEqual(sa2.get("time_created"), 1306784741)
+
+    @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
+    @patch("management.principal.it_service.ITService.request_service_accounts")
     def test_read_principal_service_account_list_success(self, mock_request):
         """Test that we can read a list of service accounts."""
         # Create SA in the database
