@@ -54,6 +54,7 @@ from management.tenant_service.v2 import V2TenantBootstrapService
 from rest_framework import status
 
 from api.common.pagination import StandardResultsSetPagination, WSGIRequestResultsSetPagination
+from api.cross_access.model import RequestsRoles
 from api.models import Tenant, User
 from api.tasks import (
     cross_account_cleanup,
@@ -367,6 +368,35 @@ def car_expiry(request):
         cross_account_cleanup.delay()
         return HttpResponse("Expiry checks are running in a background worker.", status=202)
     return HttpResponse('Invalid method, only "POST" is allowed.', status=405)
+
+
+def cars_clean(request):
+    """View or update cross-account request associated with custom roles.
+
+    GET or POST /_private/api/cars/clean/
+    """
+    if request.method not in ("GET", "POST"):
+        return HttpResponse('Invalid method, only "GET" and "POST" are allowed.', status=405)
+    if request.method == "POST" and not destructive_ok("api"):
+        return HttpResponse("Destructive operations disallowed.", status=400)
+
+    with transaction.atomic():
+        request_roles = RequestsRoles.objects.filter(role__system=False).prefetch_related(
+            "role", "cross_account_request"
+        )
+        if request.method == "GET":
+            result = {
+                str(request_role.cross_account_request.request_id): (
+                    request_role.role.id,
+                    request_role.role.display_name,
+                )
+                for request_role in request_roles
+            }
+            return HttpResponse(json.dumps(result), status=200)
+        else:
+            logger.info("Cleaning up cars.")
+            request_roles.delete()
+            return HttpResponse("Cars cleaned up.", status=200)
 
 
 def set_tenant_ready(request):
@@ -910,7 +940,7 @@ def username_lower(request):
 def principal_removal(request):
     """Get/Delete not active principals.
 
-    GET or DELETE /_private/api/utils/principal/?usernames=a,b,c
+    GET or DELETE /_private/api/utils/principal/?usernames=a,b,c&user_type=service-account
     """
     logger.info(f"Principal edit or removal: {request.method} {request.user.username}")
     if request.method not in ["DELETE", "GET"]:
@@ -918,17 +948,21 @@ def principal_removal(request):
 
     if not request.GET.get("usernames"):
         return HttpResponse("Please provided a list of usernames with comma separated.", status=400)
+    if not request.GET.get("user_type"):
+        return HttpResponse("Please provided a type of principal.", status=400)
     usernames = request.GET.get("usernames").split(",")
-    resp = PROXY.request_filtered_principals(usernames, org_id=None, options={"return_id": True})
+    user_type = request.GET.get("user_type")
 
-    if isinstance(resp, dict) and "errors" in resp:
-        return HttpResponse(resp.get("errors"), status=400)
+    principals = Principal.objects.filter(username__in=usernames).filter(type=user_type).prefetch_related("tenant")
+    active_users = {}
+    if request.GET.get("user_type") == "user":
+        resp = PROXY.request_filtered_principals(usernames, org_id=None, options={"return_id": True})
 
-    active_users = {(principal_data["username"], principal_data["org_id"]) for principal_data in resp["data"]}
+        if isinstance(resp, dict) and "errors" in resp:
+            return HttpResponse(resp.get("errors"), status=400)
 
-    principals = (
-        Principal.objects.filter(username__in=usernames).filter(type=Principal.Types.USER).prefetch_related("tenant")
-    )
+        active_users = {(principal_data["username"], principal_data["org_id"]) for principal_data in resp["data"]}
+
     principals_delete = [
         principal for principal in principals if (principal.username, principal.tenant.org_id) not in active_users
     ]

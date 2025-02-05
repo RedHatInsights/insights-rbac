@@ -880,6 +880,84 @@
         }
       }
     },
+    "/api/utils/cars/clean/": {
+      "get": {
+        "tags": [
+          "Cars Clean"
+        ],
+        "summary": "Get info of cars with custom roles",
+        "description": "Get info of cars with custom roles",
+        "operationId": "getCars",
+        "responses": {
+          "200": {
+            "description": "Info of cars with custom roles."
+          },
+          "405": {
+            "description": "Invalid method, only 'Get' and 'POST' are allowed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Cars Clean"
+        ],
+        "summary": "Clean up custom roles in cars",
+        "description": "Clean up custom roles in cars",
+        "operationId": "cleanCars",
+        "responses": {
+          "200": {
+            "description": "Deleted cars with custom roles."
+          },
+          "400": {
+            "description": "Destructive operations disallowed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Invalid method, only 'Get' and 'POST' are allowed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/utils/get_org_admin/{org_or_account}/": {
       "get": {
         "tags": [
@@ -1604,6 +1682,19 @@
             "description": "Comma separated list of usernames of the principals to be deleted.",
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "name": "user_type",
+            "in": "query",
+            "required": true,
+            "description": "The user type to search principals.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "user",
+                "service-account"
+              ]
             }
           }
         ],

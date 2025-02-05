@@ -71,6 +71,7 @@ urlpatterns = [
     path("api/migrations/progress/", views.migration_progress),
     path("api/seeds/run/", views.run_seeds),
     path("api/cars/expire/", views.car_expiry),
+    path("api/cars/clean/", views.cars_clean),
     path("api/sentry_debug/", views.trigger_error),
     path("api/utils/sync_schemas/", views.sync_schemas),
     path("api/utils/set_tenant_ready/", views.set_tenant_ready),
