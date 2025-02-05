@@ -107,12 +107,12 @@ class RelationApiDualWriteCrossAccessHandler(RelationApiDualWriteSubjectHandler)
                     if relations_to_remove is not None:
                         self.relations_to_remove.append(relations_to_remove)
                 mapping.mappings["users"] = {}
-            source_key = SourceKey(self.cross_account_request)
+            source_key = SourceKey(self.cross_account_request, self.cross_account_request.source_pk())
             user_id = str(self.cross_account_request.user_id)
             self.relations_to_add.append(mapping.assign_user_to_bindings(user_id, source_key))
 
         for role in roles:
-            source_key = SourceKey(self.cross_account_request)
+            source_key = SourceKey(self.cross_account_request, self.cross_account_request.source_pk())
             user_id = str(self.cross_account_request.user_id)
             self._update_mapping_for_system_role(
                 role,
@@ -135,7 +135,7 @@ class RelationApiDualWriteCrossAccessHandler(RelationApiDualWriteSubjectHandler)
             return
 
         def remove_principal_from_binding(mapping: BindingMapping):
-            source_key = SourceKey(self.cross_account_request)
+            source_key = SourceKey(self.cross_account_request, self.cross_account_request.source_pk())
             user_id = str(self.cross_account_request.user_id)
             removal = mapping.unassign_user_from_bindings(user_id, source=source_key)
             if removal is not None:

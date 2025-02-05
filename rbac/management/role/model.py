@@ -133,9 +133,9 @@ class SourceKey:
 
     key: str
 
-    def __init__(self, source):
+    def __init__(self, source, source_id: str):
         """Init method."""
-        self.key = f"{source.__class__.__name__}/{source.source_pk()}"
+        self.key = f"{source.__class__.__name__}/{source_id}"
 
     def __hash__(self):
         """Hash value for the SourceKey instance."""
@@ -218,13 +218,25 @@ class BindingMapping(models.Model):
         """
         Assign group to mappings.
 
+        If the group entry already exists, skip it.
+        """
+        if group_uuid in self.mappings["groups"]:
+            return None
+        self.mappings["groups"].append(group_uuid)
+        return role_binding_group_subject_tuple(self.mappings["id"], group_uuid)
+
+    # TODO: This can be deleted after the migration
+    def add_group_to_bindings(self, group_uuid: str) -> Relationship:
+        """
+        Add group to mappings.
+
         This adds an additional entry for the group, even if the group is already assigned, to account for multiple
         possible sources that may have assigned the group for the same role and resource.
         """
         self.mappings["groups"].append(group_uuid)
         return role_binding_group_subject_tuple(self.mappings["id"], group_uuid)
 
-    def unassign_user_from_bindings(self, user_id: str, source: SourceKey = None) -> Optional[Relationship]:
+    def unassign_user_from_bindings(self, user_id: str, source: Optional[SourceKey] = None) -> Optional[Relationship]:
         """Unassign user from mappings."""
         self._remove_value_from_mappings("users", user_id, source)
         users_list = (
@@ -238,7 +250,7 @@ class BindingMapping(models.Model):
             return None
         return role_binding_user_subject_tuple(self.mappings["id"], user_id)
 
-    def assign_user_to_bindings(self, user_id: str, source: SourceKey = None) -> Relationship:
+    def assign_user_to_bindings(self, user_id: str, source: Optional[SourceKey] = None) -> Relationship:
         """Assign user to mappings."""
         self._add_value_to_mappings("users", user_id, source)
         return role_binding_user_subject_tuple(self.mappings["id"], user_id)

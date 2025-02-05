@@ -286,8 +286,8 @@ class BindingMappingTests(IdentityRequest):
 
     def test_get_role_binding_includes_groups_and_users(self):
         """Test that get_role_binding includes both groups and users."""
-        self.binding_mapping.assign_group_to_bindings("group1")
-        self.binding_mapping.assign_group_to_bindings("group1")
+        self.binding_mapping.add_group_to_bindings("group1")
+        self.binding_mapping.add_group_to_bindings("group1")
         self.binding_mapping.assign_user_to_bindings(self.user_id_1, self.cars[0])
         self.binding_mapping.assign_user_to_bindings(self.user_id_1, self.cars[0])
         role_binding = self.binding_mapping.get_role_binding()
@@ -306,8 +306,8 @@ class BindingMappingTests(IdentityRequest):
 
     def test_get_role_binding_includes_duplicate_groups(self):
         """Test that get_role_binding includes duplicate groups."""
-        self.binding_mapping.assign_group_to_bindings("group1")
-        self.binding_mapping.assign_group_to_bindings("group1")
+        self.binding_mapping.add_group_to_bindings("group1")
+        self.binding_mapping.add_group_to_bindings("group1")
         role_binding = self.binding_mapping.get_role_binding()
         self.assertIn("group1", role_binding.groups)
         self.assertEqual(len(role_binding.groups), 2)

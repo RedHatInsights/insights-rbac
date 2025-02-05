@@ -1144,7 +1144,7 @@ class DualWriteCrossAccountReqeustTestCase(DualWriteTestCase):
         dual_write_handler.replicate()
 
         mapping = BindingMapping.objects.filter(role=system_role).first()
-        self.assertEquals(mapping.mappings["users"], {str(SourceKey(car_1)): user_id_1})
+        self.assertEquals(mapping.mappings["users"], {str(SourceKey(car_1, car_1.source_pk())): user_id_1})
         tuples = self.tuples.find_tuples(
             all_of(
                 resource("rbac", "role_binding", mapping.mappings["id"]),
@@ -1167,7 +1167,7 @@ class DualWriteCrossAccountReqeustTestCase(DualWriteTestCase):
         dual_write_handler.generate_relations_reset_roles(car_1.roles.all())
         dual_write_handler.replicate()
         mapping.refresh_from_db()
-        self.assertEquals(mapping.mappings["users"], {str(SourceKey(car_1)): user_id_1})
+        self.assertEquals(mapping.mappings["users"], {str(SourceKey(car_1, car_1.source_pk())): user_id_1})
         tuples = self.tuples.find_tuples(
             all_of(
                 resource("rbac", "role_binding", mapping.mappings["id"]),
@@ -1187,7 +1187,8 @@ class DualWriteCrossAccountReqeustTestCase(DualWriteTestCase):
         dual_write_handler.replicate()
         mapping.refresh_from_db()
         self.assertEquals(
-            mapping.mappings["users"], {str(SourceKey(car_1)): user_id_1, str(SourceKey(car_2)): user_id_2}
+            mapping.mappings["users"],
+            {str(SourceKey(car_1, car_1.source_pk())): user_id_1, str(SourceKey(car_2, car_2.source_pk())): user_id_2},
         )
         tuples = self.tuples.find_tuples(
             all_of(
@@ -1210,7 +1211,11 @@ class DualWriteCrossAccountReqeustTestCase(DualWriteTestCase):
         mapping.refresh_from_db()
         self.assertEquals(
             mapping.mappings["users"],
-            {str(SourceKey(car_1)): user_id_1, str(SourceKey(car_2)): user_id_2, str(SourceKey(car_3)): user_id_1},
+            {
+                str(SourceKey(car_1, car_1.source_pk())): user_id_1,
+                str(SourceKey(car_2, car_2.source_pk())): user_id_2,
+                str(SourceKey(car_3, car_3.source_pk())): user_id_1,
+            },
         )
         tuples = self.tuples.find_tuples(
             all_of(

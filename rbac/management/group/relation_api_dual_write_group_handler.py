@@ -126,6 +126,7 @@ class RelationApiDualWriteGroupHandler(RelationApiDualWriteSubjectHandler):
         except Exception as e:
             raise DualWriteException(e)
 
+    # TODO: this can be removed after the migrator
     def generate_relations_to_add_roles(
         self, roles: Iterable[Role], remove_default_access_from: Optional[TenantMapping] = None
     ):
@@ -139,7 +140,7 @@ class RelationApiDualWriteGroupHandler(RelationApiDualWriteSubjectHandler):
             return
 
         def add_group_to_binding(mapping: BindingMapping):
-            self.relations_to_add.append(mapping.assign_group_to_bindings(str(self.group.uuid)))
+            self.relations_to_add.append(mapping.add_group_to_bindings(str(self.group.uuid)))
 
         for role in roles:
             self._update_mapping_for_role(
