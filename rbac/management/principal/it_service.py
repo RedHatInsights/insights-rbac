@@ -312,7 +312,7 @@ class ITService:
         count = len(service_accounts)
         # flake8 ignore E203 = Whitespace before ':' -> false positive https://github.com/PyCQA/pycodestyle/issues/373
         service_accounts = service_accounts[offset : offset + limit]  # type: ignore # noqa: E203
-        # If any one service account filter parameter is provided extract & return the specific service account(s)
+        # If any one service account filter parameter is provided extract & return the specific service accounts
         if sa_query_passed:
             for sa in service_accounts:
                 sa_description = str(sa.get("description"))
