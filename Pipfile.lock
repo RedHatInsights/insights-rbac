@@ -1,7 +1,7 @@
 {
     "_meta": {
         "hash": {
-            "sha256": "5f38c2af256edf83530faf67a996899ce55b1ca5f6e0cf165475b73cb665bc67"
+            "sha256": "d049e8a88d46a8a969339c15b0f8a62ec1f8e50c9d20c00e74801754f5cf5893"
         },
         "pipfile-spec": 6,
         "requires": {
@@ -74,11 +74,11 @@
         },
         "botocore": {
             "hashes": [
-                "sha256:82c5660027f696608d0e55feb08c146c11c7ebeba7615961c7765dcf6009a00d",
-                "sha256:c919be883f95b9e0c3021429a365d40cd7944b8345a07af30dc8d891ceefe07a"
+                "sha256:5ae1ed362c8ed908a6ced8cdd12b21e2196c100bc79f9e95c9c1fc7f9ea74f5a",
+                "sha256:86ed88beb4f244c96529435c868d3940073c2774116f0023fb7691f6e7053bd9"
             ],
             "markers": "python_version >= '3.8'",
-            "version": "==1.36.11"
+            "version": "==1.36.12"
         },
         "celery": {
             "hashes": [
@@ -593,12 +593,12 @@
         },
         "joserfc": {
             "hashes": [
-                "sha256:2011f36798778df7585c15b331b4fbd70dd09ae3a0bbfd9f47fbe320d11c9de3",
-                "sha256:59b706e7393fc9fee361c879bcc5e0cf4a50c8ad39f751045e4b5f2a04a3fa1b"
+                "sha256:8d3e0253b0b24aeaf049d7bf7a847040dd6462de24cefd0c14abfc8b353f9619",
+                "sha256:f3c4efa35a62fc100097e4bec2584f5fd21b878eee3eb5324bc9b37d2969b2a4"
             ],
             "index": "pypi",
             "markers": "python_version >= '3.8'",
-            "version": "==0.8.0"
+            "version": "==1.0.2"
         },
         "kafka-python": {
             "hashes": [
