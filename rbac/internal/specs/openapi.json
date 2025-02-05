@@ -880,7 +880,7 @@
         }
       }
     },
-    "/api/utils/cars/clean/": {
+    "/api/cars/clean/": {
       "get": {
         "tags": [
           "Cars Clean"
@@ -890,40 +890,7 @@
         "operationId": "getCars",
         "responses": {
           "200": {
-            "description": "Info of cars with custom roles."
-          },
-          "405": {
-            "description": "Invalid method, only 'Get' and 'POST' are allowed.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Unexpected Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        }
-      },
-      "post": {
-        "tags": [
-          "Cars Clean"
-        ],
-        "summary": "Clean up custom roles in cars",
-        "description": "Clean up custom roles in cars",
-        "operationId": "cleanCars",
-        "responses": {
-          "200": {
-            "description": "Deleted cars with custom roles."
+            "description": ""
           },
           "400": {
             "description": "Destructive operations disallowed.",
@@ -944,6 +911,294 @@
                 }
               }
             }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Cars Clean"
+        ],
+        "summary": "Clean up custom roles in cars",
+        "description": "Clean up custom roles in cars",
+        "operationId": "cleanCars",
+        "responses": {
+          "200": {
+            "description": "Cars cleaned up."
+          },
+          "400": {
+            "description": "Destructive operations disallowed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Invalid method, only 'Get' and 'POST' are allowed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/utils/sync_schemas": {
+      "post": {
+        "tags": [
+          "Utils"
+        ],
+        "summary": "Sync public and tenant schemas",
+        "description": "View method for syncing public and tenant schemas",
+        "operationId": "syncSchemas",
+        "responses": {
+          "202": {
+            "description": "Running schema sync in background worker."
+          },
+          "405": {
+            "description": "Invalid method, only 'POST' is allowed."
+          }
+        }
+      }
+    },
+    "/api/utils/populate_tenant_account_id": {
+      "post": {
+        "tags": [
+          "Utils"
+        ],
+        "summary": "Populate tenant account_id values",
+        "description": "View method for syncing public and tenant schemas",
+        "operationId": "populateAcccountId",
+        "responses": {
+          "200": {
+            "description": "Tenant objects account_id values being updated in background worker."
+          },
+          "405": {
+            "description": "Invalid method, only 'POST' is allowed."
+          }
+        }
+      }
+    },
+    "/api/utils/invalid_default_admin_groups": {
+      "get": {
+        "tags": [
+          "Utils"
+        ],
+        "summary": "Get invalid default admin groups",
+        "description": "View method for querying/removing invalid default admin groups.",
+        "operationId": "invalidAdminGroup",
+        "responses": {
+          "200": {
+            "description": "Invalid default admin groups",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "invalid_default_admin_groups": {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      },
+                      "example": [
+                        {
+                          "name": "group1",
+                          "admin_default": true,
+                          "system": false,
+                          "platform_default": true,
+                          "tenant": "tenantA"
+                        },
+                        {
+                          "name": "group2",
+                          "admin_default": true,
+                          "system": false,
+                          "platform_default": true,
+                          "tenant": "tenantB"
+                        }
+                      ]
+                    },
+                    "invalid_default_admin_groups_count": {
+                      "type": "integer",
+                      "example": 2
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Invalid method, only 'Delete' and 'Get' are allowed."
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Utils"
+        ],
+        "summary": "Remove invalid default admin groups",
+        "description": "View method for querying/removing invalid default admin groups.",
+        "operationId": "invalidAdminGroupDel",
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "400": {
+            "description": "Destructive operations disallowed."
+          },
+          "405": {
+            "description": "Invalid method, only 'Delete' and 'Get' are allowed."
+          }
+        }
+      }
+    },
+    "/api/utils/ocm_performance": {
+      "post": {
+        "tags": [
+          "Utils"
+        ],
+        "summary": "Run OCM performance tests",
+        "description": "View method for running OCM performance tests.",
+        "operationId": "ocmPerformance",
+        "responses": {
+          "202": {
+            "description": "OCM performance tests are running in a background worker."
+          },
+          "405": {
+            "description": "Invalid method, only 'POST' is allowed."
+          }
+        }
+      }
+    },
+    "/api/utils/reset_imported_tenants": {
+      "get": {
+        "tags": [
+          "Utils"
+        ],
+        "summary": "Get tenants imported via user import job that would be reset.",
+        "description": "Get tenants imported via user import job that would be reset.",
+        "operationId": "getResetImportedTenants",
+        "responses": {
+          "200": {
+            "description": "{count} tenants would be deleted"
+          },
+          "400": {
+            "description": "Invalid limit parameter, must be an integer."
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Utils"
+        ],
+        "summary": "Reset tenants imported via user import job.",
+        "description": "Reset tenants imported via user import job.",
+        "operationId": "resetImportedTenants",
+        "responses": {
+          "200": {
+            "description": "Tenants deleting in worker."
+          },
+          "405": {
+            "description": "Invalid method"
+          }
+        }
+      }
+    },
+    "/api/tenant/unmodified": {
+      "get": {
+        "tags": [
+          "Tenant"
+        ],
+        "summary": "Get a list of unmodified tenants",
+        "description": "List of unmodified tenants in ConsoleDot RBAC",
+        "operationId": "listUnmodifiedTenants",
+        "parameters": [
+          {
+            "name": "ready",
+            "in": "query",
+            "required": false,
+            "description": "Parameter representing whether tenant is ready for migration or not.",
+            "schema": {
+              "default": true,
+              "type": "boolean"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/QueryLimit"
+          },
+          {
+            "$ref": "#/components/parameters/QueryOffset"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of unmodified tenants",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data"
+                  ],
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "properties": {
+                          "unmodified_tenants": {
+                            "type": "array",
+                            "example": [
+                              {
+                                "id": 1,
+                                "tenant_name": "tenant1",
+                                "account_id": "abc123",
+                                "org_id": "org1",
+                                "ready": true
+                              },
+                              {
+                                "id": 2,
+                                "tenant_name": "tenant2",
+                                "account_id": "abc1234",
+                                "org_id": "org2",
+                                "ready": true
+                              }
+                            ]
+                          },
+                          "unmodified_tenants_count": {
+                            "type": "integer",
+                            "example": 538
+                          },
+                          "total_tenants_count": {
+                            "type": "integer",
+                            "example": 1487
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Input"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           },
           "500": {
             "description": "Unexpected Error",
@@ -954,6 +1209,702 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/api/tenant/": {
+      "get": {
+        "tags": [
+          "Tenant"
+        ],
+        "summary": "Get a list of tenant details",
+        "description": "List of tenant details in ConsoleDot RBAC",
+        "operationId": "listDetailTenants",
+        "parameters": [
+          {
+            "name": "ready",
+            "in": "query",
+            "required": false,
+            "description": "Parameter representing whether tenant is ready for migration or not.",
+            "schema": {
+              "default": true,
+              "type": "boolean"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/QueryLimit"
+          },
+          {
+            "$ref": "#/components/parameters/QueryOffset"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of unmodified tenants",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data"
+                  ],
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "properties": {
+                          "ready_tenants": {
+                            "type": "array",
+                            "example": [
+                              {
+                                "id": 1,
+                                "tenant_name": "tenant1",
+                                "account_id": "abc123",
+                                "org_id": "org1",
+                                "ready": true
+                              },
+                              {
+                                "id": 2,
+                                "tenant_name": "tenant2",
+                                "account_id": "abc1234",
+                                "org_id": "org2",
+                                "ready": true
+                              }
+                            ]
+                          },
+                          "ready_tenants_count": {
+                            "type": "integer",
+                            "example": 538
+                          },
+                          "not_ready_tenants": {
+                            "type": "array",
+                            "example": [
+                              {
+                                "id": 1,
+                                "tenant_name": "tenant1",
+                                "account_id": "abc123",
+                                "org_id": "org1",
+                                "ready": false
+                              },
+                              {
+                                "id": 2,
+                                "tenant_name": "tenant2",
+                                "account_id": "abc1234",
+                                "org_id": "org2",
+                                "ready": false
+                              }
+                            ]
+                          },
+                          "not_ready_tenants_count": {
+                            "type": "integer",
+                            "example": 538
+                          },
+                          "tenants_without_account_id": {
+                            "type": "array",
+                            "example": [
+                              {
+                                "id": 1,
+                                "tenant_name": "tenant1",
+                                "account_id": "abc123",
+                                "org_id": "org1",
+                                "ready": false
+                              },
+                              {
+                                "id": 2,
+                                "tenant_name": "tenant2",
+                                "account_id": "abc1234",
+                                "org_id": "org2",
+                                "ready": false
+                              }
+                            ]
+                          },
+                          "tenants_without_account_id_count": {
+                            "type": "integer",
+                            "example": 538
+                          },
+                          "total_tenants_count": {
+                            "type": "integer",
+                            "example": 538
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tenant/{org_id}/": {
+      "delete": {
+        "tags": [
+          "Tenant"
+        ],
+        "summary": "Delete a tenant",
+        "description": "Delete a tenant in ConsoleDot RBAC",
+        "operationId": "deleteTenants",
+        "parameters": [
+          {
+            "name": "ready",
+            "in": "query",
+            "required": false,
+            "description": "Parameter representing whether tenant is ready for migration or not.",
+            "schema": {
+              "default": true,
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "org_id",
+            "in": "path",
+            "required": true,
+            "description": "Organisation ID to delete tenant",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/QueryLimit"
+          },
+          {
+            "$ref": "#/components/parameters/QueryOffset"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of unmodified tenants",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data"
+                  ],
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "properties": {
+                          "role": {
+                            "type": "array",
+                            "example": [
+                              {
+                                "id": 1,
+                                "tenant_name": "tenant1",
+                                "account_id": "abc123",
+                                "org_id": "org1",
+                                "ready": true
+                              },
+                              {
+                                "id": 2,
+                                "tenant_name": "tenant2",
+                                "account_id": "abc1234",
+                                "org_id": "org2",
+                                "ready": true
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "204": {
+            "description": ""
+          },
+          "400": {
+            "description": "Tenant cannot be deleted."
+          },
+          "405": {
+            "description": "Invalid method, only 'DELETE' is allowed."
+          }
+        }
+      }
+    },
+    "/api/roles/{uuid}": {
+      "get": {
+        "tags": [
+          "Role"
+        ],
+        "summary": "Get a role",
+        "description": "Get a role in ConsoleDot RBAC",
+        "operationId": "getRole",
+        "parameters": [
+          {
+            "name": "uuid",
+            "in": "path",
+            "required": true,
+            "description": "UUID of the role object to retrieve",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/QueryLimit"
+          },
+          {
+            "$ref": "#/components/parameters/QueryOffset"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Get a role",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string",
+                      "example": "Role retrieved successfully"
+                    },
+                    "role": {
+                      "type": "object",
+                      "example": {
+                        "uuid": 1,
+                        "name": "role1",
+                        "system": true,
+                        "admin_default": false,
+                        "platform_default": true
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Input"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Role"
+        ],
+        "summary": "Update a role",
+        "description": "Update a role in ConsoleDot RBAC",
+        "operationId": "updateRole",
+        "parameters": [
+          {
+            "name": "uuid",
+            "in": "path",
+            "required": true,
+            "description": "UUID of the role object to update",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/QueryLimit"
+          },
+          {
+            "$ref": "#/components/parameters/QueryOffset"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Update a role",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string",
+                      "example": "Role updated successfully"
+                    },
+                    "role": {
+                      "type": "object",
+                      "example": {
+                        "uuid": 1,
+                        "name": "role1",
+                        "system": true,
+                        "admin_default": false,
+                        "platform_default": true
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Input"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/migrations/run/": {
+      "post": {
+        "tags": [
+          "Migration"
+        ],
+        "summary": "Check migrations are running.",
+        "description": "View method for running migrations",
+        "operationId": "runMigration",
+        "responses": {
+          "202": {
+            "description": "Migrations are running in a background worker."
+          },
+          "405": {
+            "description": "Invalid method, only 'POST' is allowed."
+          }
+        }
+      }
+    },
+    "/api/migrations/progress/{migration_name}": {
+      "get": {
+        "tags": [
+          "Migration"
+        ],
+        "summary": "Check progress on a specific migration",
+        "description": "View method for checking migration progress.",
+        "operationId": "progressMigration",
+        "parameters": [
+          {
+            "name": "migration_name",
+            "in": "path",
+            "required": true,
+            "description": "name of the migration to check progress of",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/QueryLimit"
+          },
+          {
+            "$ref": "#/components/parameters/QueryOffset"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Migration progress",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "migration_name": {
+                      "type": "string",
+                      "example": "migration_1"
+                    },
+                    "app_name": {
+                      "type": "string",
+                      "example": "app_1"
+                    },
+                    "tenants_completed_count": {
+                      "type": "integer",
+                      "example": 543
+                    },
+                    "total_tenants_count": {
+                      "type": "integer",
+                      "example": 1342
+                    },
+                    "incompleted_tenants": {
+                      "type": "array",
+                      "items": {
+                        "type": "integer"
+                      },
+                      "example": [
+                        23414,
+                        23145,
+                        12452
+                      ]
+                    },
+                    "percent_completed": {
+                      "type": "integer",
+                      "example": 55
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Please specify a migration name in the `?migration_name=` param."
+          },
+          "405": {
+            "description": "Invalid method, only GET is allowed."
+          }
+        }
+      }
+    },
+    "/api/seeds/run/{seed_types}": {
+      "post": {
+        "tags": [
+          "Seeds"
+        ],
+        "summary": "View method for running seeds",
+        "description": "View method for running seeds",
+        "operationId": "runSeeds",
+        "parameters": [
+          {
+            "name": "seed_types",
+            "in": "path",
+            "required": true,
+            "description": "Type of seeds to run valid options are: permissions, roles or groups",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Seeds are running in a background worker."
+          },
+          "400": {
+            "description": "Valid options for 'seed_types': permissions, roles, groups."
+          },
+          "405": {
+            "description": "Invalid method, only 'POST' is allowed."
+          }
+        }
+      }
+    },
+    "/api/cars/expire": {
+      "post": {
+        "tags": [
+          "Cross account"
+        ],
+        "summary": "Cross-account request expiration check.",
+        "description": "Cross-account request expiration check.",
+        "operationId": "carsExpire",
+        "responses": {
+          "202": {
+            "description": "Expiry checks are running in a background worker."
+          },
+          "405": {
+            "description": "Invalid method, only POST is allowed."
+          }
+        }
+      }
+    },
+    "/api/sentry_debug": {
+      "post": {
+        "tags": [
+          "Sentry"
+        ],
+        "summary": "Sentry health check",
+        "description": "Trigger an error to confirm Sentry is working.",
+        "operationId": "sentryHealth",
+        "responses": {
+          "400": {
+            "description": "Sentry health check"
+          }
+        }
+      }
+    },
+    "/api/utils/sync_schemas": {
+      "post": {
+        "tags": [
+          "Utils"
+        ],
+        "summary": "Sync public and tenant schemas",
+        "description": "View method for syncing public and tenant schemas",
+        "operationId": "syncSchemas",
+        "responses": {
+          "202": {
+            "description": "Running schema sync in background worker."
+          },
+          "405": {
+            "description": "Invalid method, only 'POST' is allowed."
+          }
+        }
+      }
+    },
+    "/api/utils/populate_tenant_account_id": {
+      "post": {
+        "tags": [
+          "Utils"
+        ],
+        "summary": "Populate tenant account_id values",
+        "description": "View method for syncing public and tenant schemas",
+        "operationId": "populateAcccountId",
+        "responses": {
+          "202": {
+            "description": "Tenant objects account_id values being updated in background worker."
+          },
+          "405": {
+            "description": "Invalid method, only 'POST' is allowed."
+          }
+        }
+      }
+    },
+    "/api/utils/invalid_default_admin_groups": {
+      "get": {
+        "tags": [
+          "Utils"
+        ],
+        "summary": "Get invalid default admin groups",
+        "description": "View method for querying/removing invalid default admin groups.",
+        "operationId": "invalidAdminGroup",
+        "responses": {
+          "200": {
+            "description": "Invalid default admin groups",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "invalid_default_admin_groups": {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      },
+                      "example": [
+                        {
+                          "name": "group1",
+                          "admin_default": true,
+                          "system": false,
+                          "platform_default": true,
+                          "tenant": "tenantA"
+                        },
+                        {
+                          "name": "group2",
+                          "admin_default": true,
+                          "system": false,
+                          "platform_default": true,
+                          "tenant": "tenantB"
+                        }
+                      ]
+                    },
+                    "invalid_default_admin_groups_count": {
+                      "type": "integer",
+                      "example": 2
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Invalid method, only 'Delete' and 'Get' are allowed."
+          }
+        }
+      }
+    },
+    "/api/utils/invalid_default_admin_groups ": {
+      "delete": {
+        "tags": [
+          "Utils"
+        ],
+        "summary": "Remove invalid default admin groups",
+        "description": "View method for querying/removing invalid default admin groups.",
+        "operationId": "invalidAdminGroup",
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "405": {
+            "description": "Invalid method, only 'Delete' and 'Get' are allowed."
+          }
+        }
+      }
+    },
+    "/api/utils/ocm_performance": {
+      "post": {
+        "tags": [
+          "Utils"
+        ],
+        "summary": "Run OCM performance tests",
+        "description": "View method for running OCM performance tests.",
+        "operationId": "ocmPerformance",
+        "responses": {
+          "202": {
+            "description": "OCM performance tests are running in a background worker."
+          },
+          "405": {
+            "description": "Invalid method, only 'POST' is allowed."
+          }
+        }
+      }
+    },
+    "/api/utils/reset_imported_tenants": {
+      "get": {
+        "tags": [
+          "Utils"
+        ],
+        "summary": "Get tenants imported via user import job that would be reset.",
+        "description": "Get tenants imported via user import job that would be reset.",
+        "operationId": "getResetImportedTenants",
+        "responses": {
+          "200": {
+            "description": "{count} tenants would be deleted"
+          },
+          "400": {
+            "description": "Invalid limit parameter, must be an integer."
+          }
+        }
+      }
+    },
+    "/api/utils/reset_imported_tenants ": {
+      "delete": {
+        "tags": [
+          "Utils"
+        ],
+        "summary": "Reset tenants imported via user import job.",
+        "description": "Reset tenants imported via user import job.",
+        "operationId": "resetImportedTenants",
+        "responses": {
+          "200": {
+            "description": "Tenants deleting in worker."
+          },
+          "405": {
+            "description": "Invalid method"
           }
         }
       }
@@ -1008,30 +1959,16 @@
             }
           },
           "400": {
-            "description": "Bad Input"
+            "description": "Invalid request, must supply the 'type' query parameter; Valid values: 'account_id', 'org_id'"
           },
           "401": {
             "description": "Unauthorized"
           },
-          "404": {
-            "description": "Not Found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
+          "405": {
+            "description": "Invalid method, only 'GET' is allowed."
           },
           "500": {
-            "description": "Unexpected Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
+            "description": "Unable to connect for URL {url} with error: {error}"
           }
         }
       }
@@ -1057,30 +1994,16 @@
         ],
         "responses": {
           "204": {
-            "description": "Role deleted"
+            "description": "Role {name} deleted"
           },
           "400": {
-            "description": "Bad Input"
+            "description": "Role cannot be deleted"
           },
           "404": {
-            "description": "Not Found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
+            "description": "Not Found"
           },
-          "500": {
-            "description": "Unexpected Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
+          "405": {
+            "description": "Invalid method, only 'DELETE' is allowed."
           }
         }
       }
@@ -1093,43 +2016,15 @@
         "summary": "Delete permission",
         "description": "Specify a permission to delete a permission.",
         "operationId": "DeletePermission",
-        "parameters": [
-          {
-            "name": "name",
-            "in": "query",
-            "required": true,
-            "description": "Name of the permission to delete.",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
         "responses": {
           "204": {
             "description": "Permission deleted"
           },
           "400": {
-            "description": "Bad Input"
+            "description": "Permission cannot be deleted."
           },
-          "404": {
-            "description": "Not Found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Unexpected Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
+          "405": {
+            "description": "Invalid method, only 'DELETE' is allowed."
           }
         }
       }
@@ -1212,7 +2107,9 @@
                     "description": "A list of organization IDs to bootstrap."
                   }
                 },
-                "required": ["org_ids"]
+                "required": [
+                  "org_ids"
+                ]
               }
             }
           }
@@ -1470,27 +2367,7 @@
         "operationId": "ViewTenantReadyFalse",
         "responses": {
           "200": {
-            "description": "Total of tenants not set to be ready."
-          },
-          "405": {
-            "description": "Invalid method.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Unexpected Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
+            "description": "Total of {tenant_count} tenants not set to be ready."
           }
         }
       },
@@ -1514,10 +2391,10 @@
         ],
         "responses": {
           "200": {
-            "description": "0 tenant with ready flag equal to false."
+            "description": "Total of 16 tenants has been updated. 10 tenant with ready flag equal to false. "
           },
           "400": {
-            "description": "Invalid request, must supply the 'max_expected' query parameter.",
+            "description": "Destructive operations disallowed.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1527,17 +2404,7 @@
             }
           },
           "405": {
-            "description": "Invalid method.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Unexpected Error",
+            "description": "Invalid method, only 'POST' is allowed.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1760,10 +2627,10 @@
         "operationId": "ListUsername",
         "responses": {
           "200": {
-            "description": "List of uppercase username."
+            "description": "Usernames to be updated 'test1' to 'new_test_name'"
           },
-          "405": {
-            "description": "Invalid method.",
+          "400": {
+            "description": "Destructive operations disallowed.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1772,8 +2639,8 @@
               }
             }
           },
-          "500": {
-            "description": "Unexpected Error",
+          "405": {
+            "description": "Invalid request method, only POST/GET are allowed.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1795,7 +2662,7 @@
           "200": {
             "description": "All uppercase username updated to lowercase."
           },
-          "400":{
+          "400": {
             "description": "Invalid request.",
             "content": {
               "application/json": {
