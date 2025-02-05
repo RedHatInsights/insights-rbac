@@ -132,7 +132,9 @@ ssl_context.verify_mode = ssl.CERT_NONE
 if os.path.isfile(CERT_LOC):
     ssl_context.load_cert_chain(CERT_LOC, keyfile=KEY_LOC)
 
-CONFIG = StompConfig(f"ssl://{settings.UMB_HOST}:{settings.UMB_PORT}", sslContext=ssl_context)
+CONFIG = StompConfig(
+    f"ssl://{settings.UMB_HOST}:{settings.UMB_PORT}", sslContext=ssl_context, version=StompSpec.VERSION_1_2
+)
 QUEUE = f"/queue/Consumer.{settings.SA_NAME}.users-subscription.VirtualTopic.canonical.user"
 UMB_CLIENT = Stomp(CONFIG)
 
@@ -206,7 +208,8 @@ def process_umb_event(frame, umb_client: Stomp, bootstrap_service: TenantBootstr
             return False
 
         try:
-            data_dict = xmltodict.parse(frame.body)
+            body = frame.body.decode("utf-8", errors="ignore")
+            data_dict = xmltodict.parse(body)
             canonical_message = data_dict.get("CanonicalMessage")
 
             user = retrieve_user_info(canonical_message)
@@ -220,6 +223,13 @@ def process_umb_event(frame, umb_client: Stomp, bootstrap_service: TenantBootstr
         except Exception as e:
             logger.error("process_umb_event: Error processing umb message : %s", str(e))
             capture_exception(e)
+            # Nack sends back to the broker that we failed to process this message.
+            # The broker may redeliver the message up to a certain number of retries.
+            # Eventually, the message is discarded, usually logged and sent to a DLQ.
+            # In other words, nacking is appropriate for messages which *may* be processable
+            # if retried.
+            # Either way, this lets us eventually proceed further in the queue,
+            # and should mark the message so it can be debugged later if needed.
             umb_client.nack(frame)
             stomp_messages_nack_total.inc()
 
@@ -231,8 +241,10 @@ def process_principal_events_from_umb(bootstrap_service: Optional[TenantBootstra
     logger.info("process_tenant_principal_events: Start processing principal events from umb.")
     bootstrap_service = bootstrap_service or get_tenant_bootstrap_service(OutboxReplicator())
     try:
-        UMB_CLIENT.connect()
-        UMB_CLIENT.subscribe(QUEUE, {StompSpec.ACK_HEADER: StompSpec.ACK_CLIENT_INDIVIDUAL})
+        # 1.1 or greater is required to support NACK, used when messages fail.
+        UMB_CLIENT.connect(versions=[StompSpec.VERSION_1_1, StompSpec.VERSION_1_2])
+        # We only have one subscription for this connection, so using a static ID header.
+        UMB_CLIENT.subscribe(QUEUE, {StompSpec.ACK_HEADER: StompSpec.ACK_CLIENT_INDIVIDUAL, StompSpec.ID_HEADER: "0"})
     except StompConnectionError as e:
         # Skip if already connected/subscribed
         if not str(e).startswith(("Already connected", "Already subscribed")):
