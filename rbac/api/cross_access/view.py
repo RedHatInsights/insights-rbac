@@ -241,7 +241,7 @@ class CrossAccountRequestViewSet(
             self._with_dual_write_handler(
                 car,
                 ReplicationEventType.APPROVE_CROSS_ACCOUNT_REQUEST,
-                lambda dual_write_handler, cross_account_roles: dual_write_handler.generate_relations_to_add_roles(
+                lambda dual_write_handler, cross_account_roles: dual_write_handler.generate_relations_reset_roles(
                     cross_account_roles
                 ),
             )

@@ -119,6 +119,8 @@ class BindingMappingTests(IdentityRequest):
             id="v2rolebinding", role=self.v2role, resource=self.resource, groups=frozenset(), users=frozenset()
         )
         self.binding_mapping = BindingMapping.for_role_binding(self.v2rolebinding, self.role)
+        self.user_id_1 = "user1"
+        self.user_id_2 = "user2"
         self.cars = CrossAccountRequest.objects.bulk_create(
             [
                 CrossAccountRequest(
@@ -126,14 +128,14 @@ class BindingMappingTests(IdentityRequest):
                     start_date=datetime.now(),
                     end_date=datetime.now() + timedelta(days=1),
                     status="approved",
-                    user_id="user1",
+                    user_id=self.user_id_1,
                 ),
                 CrossAccountRequest(
                     target_org=self.tenant.org_id,
                     start_date=datetime.now(),
                     end_date=datetime.now() + timedelta(days=1),
                     status="approved",
-                    user_id="user2",
+                    user_id=self.user_id_2,
                 ),
             ]
         )
@@ -146,7 +148,7 @@ class BindingMappingTests(IdentityRequest):
         self.assertFalse(self.binding_mapping.is_unassigned())
 
         self.binding_mapping.pop_group_from_bindings("group1")
-        self.binding_mapping.push_user_to_bindings(self.cars[0])
+        self.binding_mapping.assign_user_to_bindings(self.user_id_1, self.cars[0])
         self.assertFalse(self.binding_mapping.is_unassigned())
 
     def test_add_group_to_bindings(self):
@@ -158,8 +160,8 @@ class BindingMappingTests(IdentityRequest):
 
     def test_add_user_to_bindings(self):
         """Test that adding users adds to the users array in the mapping with user ids."""
-        self.binding_mapping.push_user_to_bindings(self.cars[0])
-        self.binding_mapping.push_user_to_bindings(self.cars[1])
+        self.binding_mapping.assign_user_to_bindings(self.user_id_1, self.cars[0])
+        self.binding_mapping.assign_user_to_bindings(self.user_id_2, self.cars[1])
         self.assertIn("user1", self.binding_mapping.mappings["users"].values())
         self.assertIn("user2", self.binding_mapping.mappings["users"].values())
 
@@ -173,9 +175,9 @@ class BindingMappingTests(IdentityRequest):
 
     def test_remove_user_from_bindings(self):
         """Test that after removing users, they aren't in the mapping except for ones which were removed."""
-        self.binding_mapping.push_user_to_bindings(self.cars[0])
-        self.binding_mapping.push_user_to_bindings(self.cars[1])
-        self.binding_mapping.pop_user_from_bindings(self.cars[0])
+        self.binding_mapping.assign_user_to_bindings(self.user_id_1, self.cars[0])
+        self.binding_mapping.assign_user_to_bindings(self.user_id_2, self.cars[1])
+        self.binding_mapping.unassign_user_from_bindings(self.user_id_1, self.cars[0])
         self.assertNotIn("user1", self.binding_mapping.mappings["users"].values())
         self.assertIn("user2", self.binding_mapping.mappings["users"].values())
 
@@ -196,7 +198,7 @@ class BindingMappingTests(IdentityRequest):
 
     def test_add_user_to_bindings_returns_tuple(self):
         """Test that add_user_to_bindings method returns the expected tuple."""
-        relationship = self.binding_mapping.push_user_to_bindings(self.cars[0])
+        relationship = self.binding_mapping.assign_user_to_bindings(self.user_id_1, self.cars[0])
         self.assertEqual(
             relationship,
             create_relationship(
@@ -226,8 +228,8 @@ class BindingMappingTests(IdentityRequest):
 
     def test_remove_user_from_bindings_returns_tuple(self):
         """Test that remove_user_from_bindings method returns the expected tuple."""
-        self.binding_mapping.push_user_to_bindings(self.cars[0])
-        relationship = self.binding_mapping.pop_user_from_bindings(self.cars[0])
+        self.binding_mapping.assign_user_to_bindings(self.user_id_1, self.cars[0])
+        relationship = self.binding_mapping.unassign_user_from_bindings(self.user_id_1, self.cars[0])
         self.assertEqual(
             relationship,
             create_relationship(
@@ -242,7 +244,7 @@ class BindingMappingTests(IdentityRequest):
     def test_as_tuples_includes_group_and_user_tuples(self):
         """Test that when converted to tuples it includes both group and user tuples."""
         self.binding_mapping.push_group_to_bindings("group1")
-        self.binding_mapping.push_user_to_bindings(self.cars[0])
+        self.binding_mapping.assign_user_to_bindings(self.user_id_1, self.cars[0])
         tuples = self.binding_mapping.as_tuples()
         self.assertIn(
             create_relationship(
@@ -276,30 +278,30 @@ class BindingMappingTests(IdentityRequest):
 
     def test_remove_all_users_unassigned(self):
         """Test that removing all users means the mapping is now unassigned."""
-        self.binding_mapping.push_user_to_bindings(self.cars[0])
-        self.binding_mapping.push_user_to_bindings(self.cars[1])
-        self.binding_mapping.pop_user_from_bindings(self.cars[0])
-        self.binding_mapping.pop_user_from_bindings(self.cars[1])
+        self.binding_mapping.assign_user_to_bindings(self.user_id_1, self.cars[0])
+        self.binding_mapping.assign_user_to_bindings(self.user_id_2, self.cars[1])
+        self.binding_mapping.unassign_user_from_bindings(self.user_id_1, self.cars[0])
+        self.binding_mapping.unassign_user_from_bindings(self.user_id_2, self.cars[1])
         self.assertTrue(self.binding_mapping.is_unassigned())
 
     def test_get_role_binding_includes_groups_and_users(self):
         """Test that get_role_binding includes both groups and users."""
         self.binding_mapping.push_group_to_bindings("group1")
         self.binding_mapping.push_group_to_bindings("group1")
-        self.binding_mapping.push_user_to_bindings(self.cars[0])
-        self.binding_mapping.push_user_to_bindings(self.cars[0])
+        self.binding_mapping.assign_user_to_bindings(self.user_id_1, self.cars[0])
+        self.binding_mapping.assign_user_to_bindings(self.user_id_1, self.cars[0])
         role_binding = self.binding_mapping.get_role_binding()
         self.assertIn("group1", role_binding.groups)
-        self.assertIn("user1", role_binding.users)
+        self.assertIn("user1", role_binding.users.values())
         self.assertEqual(len(role_binding.groups), 2)
         self.assertEqual(len(role_binding.users), 1)
 
     def test_get_role_binding_includes_duplicate_users(self):
         """Test that get_role_binding includes duplicate users."""
-        self.binding_mapping.push_user_to_bindings(self.cars[0])
-        self.binding_mapping.push_user_to_bindings(self.cars[0])
+        self.binding_mapping.assign_user_to_bindings(self.user_id_1, self.cars[0])
+        self.binding_mapping.assign_user_to_bindings(self.user_id_1, self.cars[0])
         role_binding = self.binding_mapping.get_role_binding()
-        self.assertIn("user1", role_binding.users)
+        self.assertIn("user1", role_binding.users.values())
         self.assertEqual(len(role_binding.users), 1)
 
     def test_get_role_binding_includes_duplicate_groups(self):

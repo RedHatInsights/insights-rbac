@@ -1107,11 +1107,12 @@ class DualWriteCrossAccountReqeustTestCase(DualWriteTestCase):
         self.assertEquals(len(tuples), 1)
 
     def test_multiple_cars_for_same_user_and_reset_multiple_times(self):
-        user_id = "user_id"
+        user_id_1 = "user_id_1"
+        user_id_2 = "user_id_2"
         system_role = self.given_v1_system_role("rtest", permissions=["app1:hosts:read", "inventory:hosts:write"])
-        car_1 = self.given_car(user_id, [system_role], old_format=True)
-        car_2 = self.given_car(user_id, [system_role])
-        self.given_car(user_id, [system_role])
+        car_1 = self.given_car(user_id_1, [system_role], old_format=True)
+        car_2 = self.given_car(user_id_2, [system_role])
+        car_3 = self.given_car(user_id_1, [system_role])
 
         # See the user bound multiple times
         mappings = BindingMapping.objects.filter(role=system_role).first().mappings
@@ -1120,7 +1121,15 @@ class DualWriteCrossAccountReqeustTestCase(DualWriteTestCase):
             all_of(
                 resource("rbac", "role_binding", mappings["id"]),
                 relation("subject"),
-                subject("rbac", "principal", f"localhost/{user_id}", ""),
+                subject("rbac", "principal", f"localhost/{user_id_1}", ""),
+            )
+        )
+        self.assertEquals(len(tuples), 1)
+        tuples = self.tuples.find_tuples(
+            all_of(
+                resource("rbac", "role_binding", mappings["id"]),
+                relation("subject"),
+                subject("rbac", "principal", f"localhost/{user_id_2}", ""),
             )
         )
         self.assertEquals(len(tuples), 1)
@@ -1131,30 +1140,39 @@ class DualWriteCrossAccountReqeustTestCase(DualWriteTestCase):
             ReplicationEventType.MIGRATE_CROSS_ACCOUNT_REQUEST,
             replicator=InMemoryRelationReplicator(self.tuples),
         )
-        dual_write_handler.generate_relations_to_reset_roles(car_1.roles.all())
+        dual_write_handler.generate_relations_reset_roles(car_1.roles.all())
         dual_write_handler.replicate()
 
         mapping = BindingMapping.objects.filter(role=system_role).first()
-        self.assertEquals(mapping.mappings["users"], {str(SourceKey(car_1)): user_id})
+        self.assertEquals(mapping.mappings["users"], {str(SourceKey(car_1)): user_id_1})
         tuples = self.tuples.find_tuples(
             all_of(
                 resource("rbac", "role_binding", mapping.mappings["id"]),
                 relation("subject"),
-                subject("rbac", "principal", f"localhost/{user_id}", ""),
+                subject("rbac", "principal", f"localhost/{user_id_1}", ""),
             )
         )
         self.assertEquals(len(tuples), 1)
-
-        # Call reset again for car_1, should be the same
-        dual_write_handler.generate_relations_to_reset_roles(car_1.roles.all())
-        dual_write_handler.replicate()
-        mapping.refresh_from_db()
-        self.assertEquals(mapping.mappings["users"], {str(SourceKey(car_1)): user_id})
+        # user_id_2 is gone because we wipe the old format out
         tuples = self.tuples.find_tuples(
             all_of(
                 resource("rbac", "role_binding", mapping.mappings["id"]),
                 relation("subject"),
-                subject("rbac", "principal", f"localhost/{user_id}", ""),
+                subject("rbac", "principal", f"localhost/{user_id_2}", ""),
+            )
+        )
+        self.assertEquals(len(tuples), 0)
+
+        # Call reset again for car_1, should be the same
+        dual_write_handler.generate_relations_reset_roles(car_1.roles.all())
+        dual_write_handler.replicate()
+        mapping.refresh_from_db()
+        self.assertEquals(mapping.mappings["users"], {str(SourceKey(car_1)): user_id_1})
+        tuples = self.tuples.find_tuples(
+            all_of(
+                resource("rbac", "role_binding", mapping.mappings["id"]),
+                relation("subject"),
+                subject("rbac", "principal", f"localhost/{user_id_1}", ""),
             )
         )
         self.assertEquals(len(tuples), 1)
@@ -1165,15 +1183,42 @@ class DualWriteCrossAccountReqeustTestCase(DualWriteTestCase):
             ReplicationEventType.MIGRATE_CROSS_ACCOUNT_REQUEST,
             replicator=InMemoryRelationReplicator(self.tuples),
         )
-        dual_write_handler.generate_relations_to_reset_roles(car_2.roles.all())
+        dual_write_handler.generate_relations_reset_roles(car_2.roles.all())
         dual_write_handler.replicate()
         mapping.refresh_from_db()
-        self.assertEquals(mapping.mappings["users"], {str(SourceKey(car_1)): user_id, str(SourceKey(car_2)): user_id})
+        self.assertEquals(mapping.mappings["users"], {str(SourceKey(car_1)): user_id_1, str(SourceKey(car_2)): user_id_2})
         tuples = self.tuples.find_tuples(
             all_of(
                 resource("rbac", "role_binding", mapping.mappings["id"]),
                 relation("subject"),
-                subject("rbac", "principal", f"localhost/{user_id}", ""),
+                subject("rbac", "principal", f"localhost/{user_id_2}", ""),
+            )
+        )
+        self.assertEquals(len(tuples), 1)
+
+        # Call reset for car_3, it will appear in the mapping, but relation tuple
+        # remains 1 cuase it is still creating relationship for user_id_1
+        dual_write_handler = RelationApiDualWriteCrossAccessHandler(
+            car_3,
+            ReplicationEventType.MIGRATE_CROSS_ACCOUNT_REQUEST,
+            replicator=InMemoryRelationReplicator(self.tuples),
+        )
+        dual_write_handler.generate_relations_reset_roles(car_3.roles.all())
+        dual_write_handler.replicate()
+        mapping.refresh_from_db()
+        self.assertEquals(
+            mapping.mappings["users"],
+            {
+                str(SourceKey(car_1)): user_id_1,
+                str(SourceKey(car_2)): user_id_2,
+                str(SourceKey(car_3)): user_id_1
+            }
+        )
+        tuples = self.tuples.find_tuples(
+            all_of(
+                resource("rbac", "role_binding", mapping.mappings["id"]),
+                relation("subject"),
+                subject("rbac", "principal", f"localhost/{user_id_1}", ""),
             )
         )
         self.assertEquals(len(tuples), 1)

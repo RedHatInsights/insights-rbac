@@ -28,7 +28,7 @@ from management.relation_replicator.relation_replicator import (
     ReplicationEvent,
     ReplicationEventType,
 )
-from management.role.model import BindingMapping, Role
+from management.role.model import BindingMapping, Role, SourceKey
 
 from api.models import CrossAccountRequest
 
@@ -83,33 +83,42 @@ class RelationApiDualWriteCrossAccessHandler(RelationApiDualWriteSubjectHandler)
             return
 
         def add_principal_to_binding(mapping: BindingMapping):
-            self.relations_to_add.append(mapping.push_user_to_bindings(self.cross_account_request))
+            self.relations_to_add.append(mapping.assign_user_to_bindings(str(self.cross_account_request.user_id)))
 
         for role in roles:
             self._update_mapping_for_system_role(
                 role,
                 update_mapping=add_principal_to_binding,
                 create_default_mapping_for_system_role=lambda: self._create_default_mapping_for_system_role(
-                    role, users=frozenset([str(self.cross_account_request.user_id)])
+                    role, users=[str(self.cross_account_request.user_id)]
                 ),
             )
 
-    def generate_relations_to_reset_roles(self, roles: Iterable[Role]):
+    def generate_relations_reset_roles(self, roles: Iterable[Role]):
         """Generate relations to add roles."""
         if not self.replication_enabled():
             return
 
         def add_principal_to_binding(mapping: BindingMapping):
             if isinstance(mapping.mappings["users"], list):
+                existing_user_ids = list(mapping.mappings["users"])
+                for user_id in existing_user_ids:
+                    relations_to_remove = mapping.unassign_user_from_bindings(user_id)
+                    if relations_to_remove is not None:
+                        self.relations_to_remove.append(relations_to_remove)
                 mapping.mappings["users"] = {}
-            self.relations_to_add.append(mapping.push_user_to_bindings(self.cross_account_request))
+            source_key = SourceKey(self.cross_account_request)
+            user_id = str(self.cross_account_request.user_id)
+            self.relations_to_add.append(mapping.assign_user_to_bindings(user_id, source_key))
 
         for role in roles:
+            source_key = SourceKey(self.cross_account_request)
+            user_id = str(self.cross_account_request.user_id)
             self._update_mapping_for_system_role(
                 role,
                 update_mapping=add_principal_to_binding,
                 create_default_mapping_for_system_role=lambda: self._create_default_mapping_for_system_role(
-                    role, users=frozenset([str(self.cross_account_request.user_id)])
+                    role, users={str(source_key): user_id}
                 ),
             )
 
@@ -126,7 +135,9 @@ class RelationApiDualWriteCrossAccessHandler(RelationApiDualWriteSubjectHandler)
             return
 
         def remove_principal_from_binding(mapping: BindingMapping):
-            removal = mapping.pop_user_from_bindings(self.cross_account_request)
+            source_key = SourceKey(self.cross_account_request)
+            user_id = str(self.cross_account_request.user_id)
+            removal = mapping.unassign_user_from_bindings(user_id, source=source_key)
             if removal is not None:
                 self.relations_to_remove.append(removal)
 
