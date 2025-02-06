@@ -115,7 +115,7 @@ class V2rolebinding:
         object.__setattr__(self, "resource", resource)
         object.__setattr__(self, "groups", tuple(groups))
         if not isinstance(users, dict):
-            users = {} if len(users := list(users)) == 1 else users
+            users = {} if len(users := list(users)) == 0 else users
         object.__setattr__(self, "users", users)
 
     def as_minimal_dict(self) -> dict:
