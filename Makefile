@@ -37,7 +37,6 @@ Please use `make <target>` where <target> is one of:
   collect-static           collect static files to host
   make-migrations          make migrations for the database
   reinitdb                 drop and recreate the database
-  requirements             generate Pipfile.lock and requirements
   run-migrations           run migrations against database
   serve                    run the Django server locally
   serve-with-oc            run Django server locally against an Openshift DB
@@ -138,10 +137,6 @@ create-test-db-file: run-migrations
 
 collect-static:
 	$(PYTHON) $(PYDIR)/manage.py collectstatic --no-input
-
-requirements:
-	pipenv lock
-	pipenv requirements > requirements.txt
 
 serve:
 	DJANGO_READ_DOT_ENV_FILE=True $(PYTHON) $(PYDIR)/manage.py runserver $(PORT)
