@@ -168,8 +168,9 @@ class DualWriteTestCase(TestCase):
         if old_format:
             for role in car.roles.all():
                 mapping = role.binding_mappings.first()
-                if "user" in mapping.mappings and isinstance(mapping.mappings["user"], dict):
-                    mapping.mappings["user"] = list(mapping.mappings["user"].values())
+                if "users" in mapping.mappings and isinstance(mapping.mappings["users"], dict):
+                    mapping.mappings["users"] = list(mapping.mappings["users"].values())
+                    mapping.save()
         return car
 
     def given_additional_group_members(

@@ -83,14 +83,16 @@ class RelationApiDualWriteCrossAccessHandler(RelationApiDualWriteSubjectHandler)
             return
 
         def add_principal_to_binding(mapping: BindingMapping):
-            self.relations_to_add.append(mapping.assign_user_to_bindings(str(self.cross_account_request.user_id)))
+            self.relations_to_add.append(mapping.assign_user_to_bindings(user_id, source_key))
 
         for role in roles:
+            source_key = SourceKey(self.cross_account_request, self.cross_account_request.source_pk())
+            user_id = str(self.cross_account_request.user_id)
             self._update_mapping_for_system_role(
                 role,
                 update_mapping=add_principal_to_binding,
                 create_default_mapping_for_system_role=lambda: self._create_default_mapping_for_system_role(
-                    role, users=[str(self.cross_account_request.user_id)]
+                    role, users={str(source_key): user_id}
                 ),
             )
 
@@ -102,13 +104,11 @@ class RelationApiDualWriteCrossAccessHandler(RelationApiDualWriteSubjectHandler)
         def add_principal_to_binding(mapping: BindingMapping):
             if isinstance(mapping.mappings["users"], list):
                 existing_user_ids = list(mapping.mappings["users"])
-                for user_id in existing_user_ids:
-                    relations_to_remove = mapping.unassign_user_from_bindings(user_id)
+                for existing_user_id in existing_user_ids:
+                    relations_to_remove = mapping.unassign_user_from_bindings(existing_user_id)
                     if relations_to_remove is not None:
                         self.relations_to_remove.append(relations_to_remove)
                 mapping.mappings["users"] = {}
-            source_key = SourceKey(self.cross_account_request, self.cross_account_request.source_pk())
-            user_id = str(self.cross_account_request.user_id)
             self.relations_to_add.append(mapping.assign_user_to_bindings(user_id, source_key))
 
         for role in roles:
