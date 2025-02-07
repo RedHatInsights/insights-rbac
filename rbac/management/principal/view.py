@@ -183,18 +183,26 @@ class PrincipalView(APIView):
                 count = len(data)
             else:
                 count = None
+
+            last_link_offset = int(count) - int(limit) if (int(count) - int(limit)) >= 0 else 0
+            next_offset = offset + limit
             response_data["meta"] = {"count": count, "limit": limit, "offset": offset}
             response_data["links"] = {
                 "first": f"{path}?limit={limit}&offset=0{usernames_filter}",
-                "next": f"{path}?limit={limit}&offset={offset + limit}{usernames_filter}",
-                "previous": f"{path}?limit={limit}&offset={previous_offset}{usernames_filter}",
-                "last": None,
+                "next": (
+                    f"{path}?limit={limit}&offset={next_offset}{usernames_filter}"
+                    if int(next_offset) < int(count)
+                    else None
+                ),
+                "previous": (
+                    f"{path}?limit={limit}&offset={previous_offset}{usernames_filter}" if offset - limit >= 0 else None
+                ),
+                "last": f"{path}?limit={limit}&offset={last_link_offset}{usernames_filter}",
             }
             response_data["data"] = data
         else:
             response_data = resp
             del response_data["status_code"]
-
         return Response(status=status_code, data=response_data)
 
     def users_from_proxy(self, user, query_params, options, limit, offset):
