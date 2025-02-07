@@ -948,166 +948,6 @@
         }
       }
     },
-    "/api/utils/sync_schemas": {
-      "post": {
-        "tags": [
-          "Utils"
-        ],
-        "summary": "Sync public and tenant schemas",
-        "description": "View method for syncing public and tenant schemas",
-        "operationId": "syncSchemas",
-        "responses": {
-          "202": {
-            "description": "Running schema sync in background worker."
-          },
-          "405": {
-            "description": "Invalid method, only 'POST' is allowed."
-          }
-        }
-      }
-    },
-    "/api/utils/populate_tenant_account_id": {
-      "post": {
-        "tags": [
-          "Utils"
-        ],
-        "summary": "Populate tenant account_id values",
-        "description": "View method for syncing public and tenant schemas",
-        "operationId": "populateAcccountId",
-        "responses": {
-          "200": {
-            "description": "Tenant objects account_id values being updated in background worker."
-          },
-          "405": {
-            "description": "Invalid method, only 'POST' is allowed."
-          }
-        }
-      }
-    },
-    "/api/utils/invalid_default_admin_groups": {
-      "get": {
-        "tags": [
-          "Utils"
-        ],
-        "summary": "Get invalid default admin groups",
-        "description": "View method for querying/removing invalid default admin groups.",
-        "operationId": "invalidAdminGroup",
-        "responses": {
-          "200": {
-            "description": "Invalid default admin groups",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "invalid_default_admin_groups": {
-                      "type": "array",
-                      "items": {
-                        "type": "object"
-                      },
-                      "example": [
-                        {
-                          "name": "group1",
-                          "admin_default": true,
-                          "system": false,
-                          "platform_default": true,
-                          "tenant": "tenantA"
-                        },
-                        {
-                          "name": "group2",
-                          "admin_default": true,
-                          "system": false,
-                          "platform_default": true,
-                          "tenant": "tenantB"
-                        }
-                      ]
-                    },
-                    "invalid_default_admin_groups_count": {
-                      "type": "integer",
-                      "example": 2
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "405": {
-            "description": "Invalid method, only 'Delete' and 'Get' are allowed."
-          }
-        }
-      },
-      "delete": {
-        "tags": [
-          "Utils"
-        ],
-        "summary": "Remove invalid default admin groups",
-        "description": "View method for querying/removing invalid default admin groups.",
-        "operationId": "invalidAdminGroupDel",
-        "responses": {
-          "204": {
-            "description": ""
-          },
-          "400": {
-            "description": "Destructive operations disallowed."
-          },
-          "405": {
-            "description": "Invalid method, only 'Delete' and 'Get' are allowed."
-          }
-        }
-      }
-    },
-    "/api/utils/ocm_performance": {
-      "post": {
-        "tags": [
-          "Utils"
-        ],
-        "summary": "Run OCM performance tests",
-        "description": "View method for running OCM performance tests.",
-        "operationId": "ocmPerformance",
-        "responses": {
-          "202": {
-            "description": "OCM performance tests are running in a background worker."
-          },
-          "405": {
-            "description": "Invalid method, only 'POST' is allowed."
-          }
-        }
-      }
-    },
-    "/api/utils/reset_imported_tenants": {
-      "get": {
-        "tags": [
-          "Utils"
-        ],
-        "summary": "Get tenants imported via user import job that would be reset.",
-        "description": "Get tenants imported via user import job that would be reset.",
-        "operationId": "getResetImportedTenants",
-        "responses": {
-          "200": {
-            "description": "{count} tenants would be deleted"
-          },
-          "400": {
-            "description": "Invalid limit parameter, must be an integer."
-          }
-        }
-      },
-      "delete": {
-        "tags": [
-          "Utils"
-        ],
-        "summary": "Reset tenants imported via user import job.",
-        "description": "Reset tenants imported via user import job.",
-        "operationId": "resetImportedTenants",
-        "responses": {
-          "200": {
-            "description": "Tenants deleting in worker."
-          },
-          "405": {
-            "description": "Invalid method"
-          }
-        }
-      }
-    },
     "/api/tenant/unmodified": {
       "get": {
         "tags": [
@@ -1185,10 +1025,24 @@
             }
           },
           "400": {
-            "description": "Bad Input"
+            "description": "Bad Input",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           },
           "401": {
-            "description": "Unauthorized"
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           },
           "404": {
             "description": "Not Found",
@@ -1348,16 +1202,6 @@
         "operationId": "deleteTenants",
         "parameters": [
           {
-            "name": "ready",
-            "in": "query",
-            "required": false,
-            "description": "Parameter representing whether tenant is ready for migration or not.",
-            "schema": {
-              "default": true,
-              "type": "boolean"
-            }
-          },
-          {
             "name": "org_id",
             "in": "path",
             "required": true,
@@ -1419,10 +1263,24 @@
             "description": ""
           },
           "400": {
-            "description": "Tenant cannot be deleted."
+            "description": "Tenant cannot be deleted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           },
           "405": {
-            "description": "Invalid method, only 'DELETE' is allowed."
+            "description": "Invalid method, only 'DELETE' is allowed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       }
@@ -1480,13 +1338,39 @@
             }
           },
           "400": {
-            "description": "Bad Input"
+            "description": "Invalid attributes",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string",
+                      "example": "Invalid attributes"
+                    }
+                  }
+                }
+              }
+            }
           },
-          "401": {
-            "description": "Unauthorized"
+          "405": {
+            "description": "Invalid request method",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string",
+                      "example": "Invalid request method"
+                    }
+                  }
+                }
+              }
+            }
           },
           "404": {
-            "description": "Not Found",
+            "description": "Unexpected Error",
             "content": {
               "application/json": {
                 "schema": {
@@ -1561,15 +1445,18 @@
           "400": {
             "description": "Bad Input"
           },
-          "401": {
-            "description": "Unauthorized"
-          },
-          "404": {
-            "description": "Not Found",
+          "405": {
+            "description": "Invalid request method",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string",
+                      "example": "Invalid request method"
+                    }
+                  }
                 }
               }
             }
@@ -1688,7 +1575,7 @@
         "tags": [
           "Seeds"
         ],
-        "summary": "View method for running seeds",
+        "summary": "Method for running seeds",
         "description": "View method for running seeds",
         "operationId": "runSeeds",
         "parameters": [
@@ -1844,7 +1731,7 @@
         ],
         "summary": "Remove invalid default admin groups",
         "description": "View method for querying/removing invalid default admin groups.",
-        "operationId": "invalidAdminGroup",
+        "operationId": "invalidAdminGroupDelete",
         "responses": {
           "204": {
             "description": ""
@@ -2539,7 +2426,7 @@
           "Principal"
         ],
         "summary": "Delete principals without user_id and inactive.",
-        "description": "Delete principals without principals and inactive..",
+        "description": "Delete principals without principals and inactive.",
         "operationId": "DeletePrincipal",
         "parameters": [
           {
@@ -2567,10 +2454,24 @@
         ],
         "responses": {
           "204": {
-            "description": "Principals deleted"
+            "description": "Principals deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           },
           "400": {
-            "description": "Bad Input"
+            "description": "Bad Input",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           },
           "404": {
             "description": "Not Found",
