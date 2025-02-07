@@ -22,7 +22,6 @@ from management.authorization.token_validator import ITSSOTokenValidator
 from management.utils import validate_and_get_key
 from rest_framework import status
 from rest_framework.response import Response
-from rest_framework.settings import api_settings
 from rest_framework.views import APIView
 
 from api.common.pagination import StandardResultsSetPagination
@@ -94,7 +93,6 @@ class PrincipalView(APIView):
     """
 
     permission_classes = (PrincipalAccessPermission,)
-    pagination_class = api_settings.DEFAULT_PAGINATION_CLASS
 
     def get(self, request):
         """List principals for account."""
@@ -125,8 +123,7 @@ class PrincipalView(APIView):
         previous_offset = 0
         if offset - limit > 0:
             previous_offset = offset - limit
-        else:
-            None
+
         # Attempt validating and obtaining the "principal type" query
         # parameter.
         principal_type = validate_and_get_key(
