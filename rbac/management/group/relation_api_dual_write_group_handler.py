@@ -168,13 +168,13 @@ class RelationApiDualWriteGroupHandler(RelationApiDualWriteSubjectHandler):
         """
         if not self.replication_enabled():
             return
-
         def reset_mapping(mapping: BindingMapping):
             to_remove = mapping.unassign_group(str(self.group.uuid))
             if to_remove:
                 self.relations_to_remove.append(to_remove)
             to_add = mapping.assign_group_to_bindings(str(self.group.uuid))
-            self.relations_to_add.append(to_add)
+            if to_add:
+                self.relations_to_add.append(to_add)
 
         # Go through current roles
         # For each binding

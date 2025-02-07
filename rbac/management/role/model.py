@@ -214,7 +214,7 @@ class BindingMapping(models.Model):
             return None
         return role_binding_group_subject_tuple(self.mappings["id"], group_uuid)
 
-    def assign_group_to_bindings(self, group_uuid: str) -> Relationship:
+    def assign_group_to_bindings(self, group_uuid: str) -> Optional[Relationship]:
         """
         Assign group to mappings.
 
