@@ -168,6 +168,7 @@ class RelationApiDualWriteGroupHandler(RelationApiDualWriteSubjectHandler):
         """
         if not self.replication_enabled():
             return
+
         def reset_mapping(mapping: BindingMapping):
             to_remove = mapping.unassign_group(str(self.group.uuid))
             if to_remove:
