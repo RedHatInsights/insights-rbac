@@ -250,6 +250,16 @@ class BindingMapping(models.Model):
             return None
         return role_binding_user_subject_tuple(self.mappings["id"], user_id)
 
+    def update_data_format_for_user(self, all_relations_to_remove):
+        """Update data format for users in mappings."""
+        if isinstance(self.mappings["users"], list):
+            existing_user_ids = list(self.mappings["users"])
+            for existing_user_id in existing_user_ids:
+                relations_to_remove = self.unassign_user_from_bindings(existing_user_id)
+                if relations_to_remove is not None:
+                    all_relations_to_remove.append(relations_to_remove)
+            self.mappings["users"] = {}
+
     def assign_user_to_bindings(self, user_id: str, source: Optional[SourceKey] = None) -> Relationship:
         """Assign user to mappings."""
         self._add_value_to_mappings("users", user_id, source)
