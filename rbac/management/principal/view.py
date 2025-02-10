@@ -116,9 +116,6 @@ class PrincipalView(APIView):
             errors = {"errors": [error]}
             return Response(status=status.HTTP_400_BAD_REQUEST, data=errors)
 
-        previous_offset = 0
-        if offset - limit > 0:
-            previous_offset = offset - limit
         options = {
             "limit": limit,
             "offset": offset,
@@ -186,6 +183,7 @@ class PrincipalView(APIView):
             else:
                 count = None
 
+            previous_offset = offset - limit if offset - limit > 0 else 0
             last_link_offset = int(count) - int(limit) if (int(count) - int(limit)) >= 0 else 0
             next_offset = offset + limit
             response_data["meta"] = {"count": count, "limit": limit, "offset": offset}
