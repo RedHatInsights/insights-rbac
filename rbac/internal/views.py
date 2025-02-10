@@ -702,7 +702,7 @@ def clean_binding_mapping(request, binding_id):
                 ):
                     raise Exception(f"User(s) {users} are still in the approved list for role {mapping.role.name}")
                 for user in users:
-                    removal = mapping.remove_user_from_bindings(user)
+                    removal = mapping.unassign_user_from_bindings(user)
                     if removal is not None:
                         relations_to_remove.append(removal)
                 # After the migration, if it is still using old format
@@ -730,7 +730,7 @@ def clean_binding_mapping(request, binding_id):
                 if Group.objects.filter(uuid__in=groups).exists():
                     raise Exception(f"Group(s) {groups} still exist.")
                 for group in groups:
-                    removal = mapping.remove_group_from_bindings(group)
+                    removal = mapping.unassign_group(group)
                     if removal is not None:
                         relations_to_remove.append(removal)
                 if relations_to_remove:
