@@ -1332,21 +1332,16 @@
         "operationId": "CleanBinding",
         "parameters": [
           {
-            "name": "users",
+            "name": "field",
             "in": "query",
             "required": false,
-            "description": "User ids to be removed from binding.",
+            "description": "To clean the field users or groups.",
             "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "groups",
-            "in": "query",
-            "required": false,
-            "description": "Group uuids to be removed from binding.",
-            "schema": {
-              "type": "string"
+              "type": "string",
+              "enum": [
+                "users",
+                "groups"
+              ]
             }
           }
         ],
@@ -1355,7 +1350,7 @@
             "description": "Mappings of the binding."
           },
           "400": {
-            "description": "Invalid request, must supply the 'users' or 'groups' query parameter.",
+            "description": "Invalid request, must supply the 'users' or 'groups' in field.",
             "content": {
               "application/json": {
                 "schema": {

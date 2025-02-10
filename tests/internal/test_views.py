@@ -694,7 +694,8 @@ class InternalViewsetTests(IdentityRequest):
         replicator = InMemoryRelationReplicator(self._tuples)
         replicate.side_effect = replicator.replicate
         workspace_id = "123456"
-        group_id_to_remove = str(uuid4())
+        group_to_remove = Group.objects.create(name="test", tenant=self.tenant)
+        group_id_to_remove = str(group_to_remove.uuid)
         # Create binding mappings
         binding_attrs = {
             "resource_id": workspace_id,
@@ -747,14 +748,14 @@ class InternalViewsetTests(IdentityRequest):
         self._tuples.write(relations, [])
         # Deleting user still related is not allowed
         response = self.client.post(
-            f"/_private/api/utils/binding/{binding_mapping_id}/clean/?users={car.user_id}",
+            f"/_private/api/utils/binding/{binding_mapping_id}/clean/?field=users",
             **self.request.META,
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         car.status = "expired"
         car.save()
         response = self.client.post(
-            f"/_private/api/utils/binding/{binding_mapping_id}/clean/?users={car.user_id},not_exist_user",
+            f"/_private/api/utils/binding/{binding_mapping_id}/clean/?field=users",
             **self.request.META,
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -769,14 +770,15 @@ class InternalViewsetTests(IdentityRequest):
             ),
         )
 
-        # Deleting existing group is not allowed
+        # All group still exist
         response = self.client.post(
-            f"/_private/api/utils/binding/{binding_mapping_id}/clean/?groups={self.group.uuid}",
+            f"/_private/api/utils/binding/{binding_mapping_id}/clean/?field=groups",
             **self.request.META,
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        group_to_remove.delete()
         response = self.client.post(
-            f"/_private/api/utils/binding/{binding_mapping_id}/clean/?groups={group_id_to_remove}",
+            f"/_private/api/utils/binding/{binding_mapping_id}/clean/?field=groups",
             **self.request.META,
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
