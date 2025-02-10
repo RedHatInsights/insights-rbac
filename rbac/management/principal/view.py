@@ -101,16 +101,12 @@ class PrincipalView(APIView):
         query_params = request.query_params
         default_limit = StandardResultsSetPagination.default_limit
         usernames_filter = ""
-        options = {}
+
         try:
             limit = int(query_params.get("limit", default_limit))
             offset = int(query_params.get("offset", 0))
             if limit < 0 or offset < 0:
                 raise ValueError
-            options["limit"] = limit
-            options["offset"] = offset
-            options["sort_order"] = validate_and_get_key(query_params, SORTORDER_KEY, VALID_SORTORDER_VALUE, "asc")
-            options["status"] = validate_and_get_key(query_params, STATUS_KEY, VALID_STATUS_VALUE, "enabled")
         except ValueError:
             error = {
                 "detail": "Values for limit and offset must be positive numbers.",
@@ -120,9 +116,12 @@ class PrincipalView(APIView):
             errors = {"errors": [error]}
             return Response(status=status.HTTP_400_BAD_REQUEST, data=errors)
 
-        previous_offset = 0
-        if offset - limit > 0:
-            previous_offset = offset - limit
+        options = {
+            "limit": limit,
+            "offset": offset,
+            "sort_order": validate_and_get_key(query_params, SORTORDER_KEY, VALID_SORTORDER_VALUE, "asc"),
+            "status": validate_and_get_key(query_params, STATUS_KEY, VALID_STATUS_VALUE, "enabled"),
+        }
 
         # Attempt validating and obtaining the "principal type" query
         # parameter.
@@ -184,6 +183,7 @@ class PrincipalView(APIView):
             else:
                 count = None
 
+            previous_offset = offset - limit if offset - limit > 0 else 0
             last_link_offset = int(count) - int(limit) if (int(count) - int(limit)) >= 0 else 0
             next_offset = offset + limit
             response_data["meta"] = {"count": count, "limit": limit, "offset": offset}
