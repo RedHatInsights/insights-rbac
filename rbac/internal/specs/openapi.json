@@ -1322,6 +1322,71 @@
         }
       }
     },
+    "/api/utils/binding/{binding_id}/clean/": {
+      "post": {
+        "tags": [
+          "Clean binding"
+        ],
+        "summary": "Clean binding for a given id",
+        "description": "Clean binding for a given id",
+        "operationId": "CleanBinding",
+        "parameters": [
+          {
+            "name": "users",
+            "in": "query",
+            "required": false,
+            "description": "User ids to be removed from binding.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "groups",
+            "in": "query",
+            "required": false,
+            "description": "Group uuids to be removed from binding.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Mappings of the binding."
+          },
+          "400": {
+            "description": "Invalid request, must supply the 'users' or 'groups' query parameter.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Invalid method, only 'POST' is allowed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/utils/migration_resources/": {
       "delete": {
         "tags": [
