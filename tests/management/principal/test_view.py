@@ -19,10 +19,8 @@
 from unittest.mock import patch, ANY
 
 from django.urls import reverse
-from django.conf import settings
 from django.test.utils import override_settings
 from rest_framework import status
-from rest_framework.response import Response
 from rest_framework.test import APIClient
 
 from api.models import Tenant, User
