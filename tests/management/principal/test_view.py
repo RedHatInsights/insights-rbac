@@ -99,7 +99,7 @@ class PrincipalViewNonAdminTests(IdentityRequest):
                 "status": "enabled",
                 "admin_only": "false",
                 "username_only": "false",
-                "principal_type": None,
+                "principal_type": "user",
             },
             org_id=self.customer["org_id"],
         )
@@ -163,7 +163,7 @@ class PrincipalViewsetTests(IdentityRequest):
                 "status": "enabled",
                 "admin_only": "false",
                 "username_only": "false",
-                "principal_type": None,
+                "principal_type": "user",
             },
             org_id=self.customer_data["org_id"],
         )
@@ -258,7 +258,7 @@ class PrincipalViewsetTests(IdentityRequest):
                 "status": "enabled",
                 "admin_only": "false",
                 "username_only": "false",
-                "principal_type": None,
+                "principal_type": "user",
             },
             org_id=self.customer_data["org_id"],
         )
@@ -301,7 +301,7 @@ class PrincipalViewsetTests(IdentityRequest):
                 "sort_order": "asc",
                 "status": "enabled",
                 "username_only": "false",
-                "principal_type": None,
+                "principal_type": "user",
             },
         )
         # Cross account user won't be returned.
@@ -339,7 +339,7 @@ class PrincipalViewsetTests(IdentityRequest):
                 "sort_order": "asc",
                 "status": "enabled",
                 "username_only": "false",
-                "principal_type": None,
+                "principal_type": "user",
             },
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -373,7 +373,7 @@ class PrincipalViewsetTests(IdentityRequest):
                 "sort_order": "asc",
                 "status": "enabled",
                 "username_only": "false",
-                "principal_type": None,
+                "principal_type": "user",
             },
             org_id=self.customer_data["org_id"],
         )
@@ -408,7 +408,7 @@ class PrincipalViewsetTests(IdentityRequest):
                 "sort_order": "asc",
                 "status": "enabled",
                 "username_only": "false",
-                "principal_type": None,
+                "principal_type": "user",
             },
             org_id=self.customer_data["org_id"],
         )
@@ -478,7 +478,7 @@ class PrincipalViewsetTests(IdentityRequest):
                 "sort_order": "desc",
                 "status": "enabled",
                 "username_only": "false",
-                "principal_type": None,
+                "principal_type": "user",
             },
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -571,7 +571,7 @@ class PrincipalViewsetTests(IdentityRequest):
                 "sort_order": "asc",
                 "status": "enabled",
                 "username_only": "false",
-                "principal_type": None,
+                "principal_type": "user",
             },
             org_id=self.customer_data["org_id"],
         )
@@ -606,7 +606,7 @@ class PrincipalViewsetTests(IdentityRequest):
                 "status": "disabled",
                 "admin_only": "false",
                 "username_only": "false",
-                "principal_type": None,
+                "principal_type": "user",
             },
             org_id=self.customer_data["org_id"],
         )
@@ -639,7 +639,7 @@ class PrincipalViewsetTests(IdentityRequest):
                 "admin_only": "false",
                 "status": "enabled",
                 "username_only": "false",
-                "principal_type": None,
+                "principal_type": "user",
             },
             org_id=self.customer_data["org_id"],
         )
@@ -672,7 +672,7 @@ class PrincipalViewsetTests(IdentityRequest):
                 "status": "enabled",
                 "admin_only": "true",
                 "username_only": "false",
-                "principal_type": None,
+                "principal_type": "user",
             },
             org_id=self.customer_data["org_id"],
         )
@@ -731,7 +731,7 @@ class PrincipalViewsetTests(IdentityRequest):
                 "sort_order": "asc",
                 "status": "enabled",
                 "username_only": "false",
-                "principal_type": None,
+                "principal_type": "user",
             },
             org_id=self.customer_data["org_id"],
         )
@@ -780,7 +780,7 @@ class PrincipalViewsetTests(IdentityRequest):
                 "status": "enabled",
                 "admin_only": "false",
                 "username_only": "false",
-                "principal_type": None,
+                "principal_type": "user",
             },
             org_id=self.customer_data["org_id"],
         )

@@ -42,7 +42,9 @@ ADMIN_ONLY_KEY = "admin_only"
 VALID_BOOLEAN_VALUE = ["true", "false"]
 USERNAME_ONLY_KEY = "username_only"
 PRINCIPAL_TYPE_KEY = "type"
-VALID_PRINCIPAL_TYPE_VALUE = ["service-account", "user"]
+USER_KEY = "user"
+SA_KEY = "service-account"
+VALID_PRINCIPAL_TYPE_VALUE = [SA_KEY, USER_KEY]
 
 
 class PrincipalView(APIView):
@@ -126,12 +128,12 @@ class PrincipalView(APIView):
         # Attempt validating and obtaining the "principal type" query
         # parameter.
         principal_type = validate_and_get_key(
-            query_params, PRINCIPAL_TYPE_KEY, VALID_PRINCIPAL_TYPE_VALUE, required=False
+            query_params, PRINCIPAL_TYPE_KEY, VALID_PRINCIPAL_TYPE_VALUE, default_value=USER_KEY, required=False
         )
         options["principal_type"] = principal_type
 
         # Get either service accounts or user principals, depending on what the user specified.
-        if principal_type == "service-account":
+        if principal_type == SA_KEY:
             options["email"] = query_params.get(EMAIL_KEY)
             options["match_criteria"] = validate_and_get_key(
                 query_params, MATCH_CRITERIA_KEY, VALID_MATCH_VALUE, required=False
@@ -173,7 +175,7 @@ class PrincipalView(APIView):
         response_data = {}
         if status_code == status.HTTP_200_OK:
             data = resp.get("data", [])
-            if principal_type == "service-account":
+            if principal_type == SA_KEY:
                 count = sa_count
             elif isinstance(data, dict):
                 count = data.get("userCount")
