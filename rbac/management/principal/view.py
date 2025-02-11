@@ -233,16 +233,16 @@ class PrincipalView(APIView):
             it_service = ITService()
             service_accounts, sa_count = it_service.get_service_accounts(user=user, options=options)
         except (requests.exceptions.ConnectionError, UnexpectedStatusCodeFromITError):
-            return Response(
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                data={
-                    "errors": [
-                        {
-                            "detail": "Unexpected internal error.",
-                            "source": "principals",
-                            "status": str(status.HTTP_500_INTERNAL_SERVER_ERROR),
-                        }
-                    ]
-                },
-            )
+            unexpected_error = {
+                "status_code": status.HTTP_500_INTERNAL_SERVER_ERROR,
+                "errors": [
+                    {
+                        "detail": "Unexpected internal error.",
+                        "source": "service_accounts",
+                        "status": str(status.HTTP_500_INTERNAL_SERVER_ERROR),
+                    }
+                ],
+            }
+            return unexpected_error
+
         return {"status_code": status.HTTP_200_OK, "saCount": sa_count, "data": service_accounts}
