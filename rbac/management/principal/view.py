@@ -127,6 +127,7 @@ class PrincipalView(APIView):
 
         elif principal_type == SA_KEY:
             resp, usernames_filter = self.service_accounts_from_it_service(request, user, query_params, options)
+
         status_code = resp.get("status_code")
         response_data = {}
         if status_code == status.HTTP_200_OK:
@@ -166,7 +167,7 @@ class PrincipalView(APIView):
     def users_from_proxy(self, user, query_params, options, limit, offset):
         """Format principal request for proxy and return prepped result."""
         proxy = PrincipalProxy()
-        usernames = query_params.get(USERNAMES_KEY)
+        usernames = query_params.get(USERNAMES_KEY, "").replace(" ", "")
         email = query_params.get(EMAIL_KEY)
         match_criteria = validate_and_get_key(query_params, MATCH_CRITERIA_KEY, VALID_MATCH_VALUE, "exact")
         options["username_only"] = validate_and_get_key(query_params, USERNAME_ONLY_KEY, VALID_BOOLEAN_VALUE, "false")
@@ -210,7 +211,7 @@ class PrincipalView(APIView):
         options["username_only"] = validate_and_get_key(
             query_params, USERNAME_ONLY_KEY, VALID_BOOLEAN_VALUE, required=False
         )
-        options["usernames"] = query_params.get(USERNAMES_KEY)
+        options["usernames"] = query_params.get(USERNAMES_KEY, "").replace(" ", "")
 
         # Fetch the service accounts from IT.
         token_validator = ITSSOTokenValidator()
