@@ -134,40 +134,7 @@ class PrincipalView(APIView):
 
         # Get either service accounts or user principals, depending on what the user specified.
         if principal_type == SA_KEY:
-            options["email"] = query_params.get(EMAIL_KEY)
-            options["match_criteria"] = validate_and_get_key(
-                query_params, MATCH_CRITERIA_KEY, VALID_MATCH_VALUE, required=False
-            )
-            options["username_only"] = validate_and_get_key(
-                query_params, USERNAME_ONLY_KEY, VALID_BOOLEAN_VALUE, required=False
-            )
-            options["usernames"] = query_params.get(USERNAMES_KEY)
-
-            # Fetch the service accounts from IT.
-            token_validator = ITSSOTokenValidator()
-            user.bearer_token = token_validator.validate_token(
-                request=request, additional_scopes_to_validate=set[ScopeClaims]([ScopeClaims.SERVICE_ACCOUNTS_CLAIM])
-            )
-
-            try:
-                it_service = ITService()
-                service_accounts, sa_count = it_service.get_service_accounts(user=user, options=options)
-            except (requests.exceptions.ConnectionError, UnexpectedStatusCodeFromITError):
-                return Response(
-                    status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    data={
-                        "errors": [
-                            {
-                                "detail": "Unexpected internal error.",
-                                "source": "principals",
-                                "status": str(status.HTTP_500_INTERNAL_SERVER_ERROR),
-                            }
-                        ]
-                    },
-                )
-
-            # Adapt the response object to reuse the code below.
-            resp = {"status_code": status.HTTP_200_OK, "data": service_accounts}
+            resp = self.service_accounts_from_it_service(request, user, query_params, options)
         else:
             resp, usernames_filter = self.users_from_proxy(user, query_params, options, limit, offset)
 
@@ -176,7 +143,7 @@ class PrincipalView(APIView):
         if status_code == status.HTTP_200_OK:
             data = resp.get("data", [])
             if principal_type == SA_KEY:
-                count = sa_count
+                count = resp.get("saCount")
             elif isinstance(data, dict):
                 count = data.get("userCount")
                 data = data.get("users")
@@ -243,3 +210,39 @@ class PrincipalView(APIView):
             org_id=user.org_id, input=proxyInput, limit=limit, offset=offset, options=options
         )
         return resp, ""
+
+    @staticmethod
+    def service_accounts_from_it_service(request, user, query_params, options):
+        """Format Service Account request for IT Service and return prepped result."""
+        options["email"] = query_params.get(EMAIL_KEY)
+        options["match_criteria"] = validate_and_get_key(
+            query_params, MATCH_CRITERIA_KEY, VALID_MATCH_VALUE, required=False
+        )
+        options["username_only"] = validate_and_get_key(
+            query_params, USERNAME_ONLY_KEY, VALID_BOOLEAN_VALUE, required=False
+        )
+        options["usernames"] = query_params.get(USERNAMES_KEY)
+
+        # Fetch the service accounts from IT.
+        token_validator = ITSSOTokenValidator()
+        user.bearer_token = token_validator.validate_token(
+            request=request, additional_scopes_to_validate=set[ScopeClaims]([ScopeClaims.SERVICE_ACCOUNTS_CLAIM])
+        )
+
+        try:
+            it_service = ITService()
+            service_accounts, sa_count = it_service.get_service_accounts(user=user, options=options)
+        except (requests.exceptions.ConnectionError, UnexpectedStatusCodeFromITError):
+            unexpected_error = {
+                "status_code": status.HTTP_500_INTERNAL_SERVER_ERROR,
+                "errors": [
+                    {
+                        "detail": "Unexpected internal error.",
+                        "source": "service_accounts",
+                        "status": str(status.HTTP_500_INTERNAL_SERVER_ERROR),
+                    }
+                ],
+            }
+            return unexpected_error
+
+        return {"status_code": status.HTTP_200_OK, "saCount": sa_count, "data": service_accounts}
