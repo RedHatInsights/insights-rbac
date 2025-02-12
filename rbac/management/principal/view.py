@@ -102,7 +102,6 @@ class PrincipalView(APIView):
         path = request.path
         query_params = request.query_params
         default_limit = StandardResultsSetPagination.default_limit
-        usernames_filter = ""
 
         try:
             limit = int(query_params.get("limit", default_limit))
@@ -133,11 +132,11 @@ class PrincipalView(APIView):
         options["principal_type"] = principal_type
 
         # Get either service accounts or user principals, depending on what the user specified.
-        if principal_type == SA_KEY:
-            resp = self.service_accounts_from_it_service(request, user, query_params, options)
-        else:
+        if principal_type == USER_KEY:
             resp, usernames_filter = self.users_from_proxy(user, query_params, options, limit, offset)
 
+        elif principal_type == SA_KEY:
+            resp, usernames_filter = self.service_accounts_from_it_service(request, user, query_params, options)
         status_code = resp.get("status_code")
         response_data = {}
         if status_code == status.HTTP_200_OK:
@@ -243,6 +242,9 @@ class PrincipalView(APIView):
                     }
                 ],
             }
-            return unexpected_error
+            return unexpected_error, ""
 
-        return {"status_code": status.HTTP_200_OK, "saCount": sa_count, "data": service_accounts}
+        usernames_filter = ""
+        if options["usernames"]:
+            usernames_filter = f"&usernames={options['usernames']}"
+        return {"status_code": status.HTTP_200_OK, "saCount": sa_count, "data": service_accounts}, usernames_filter
