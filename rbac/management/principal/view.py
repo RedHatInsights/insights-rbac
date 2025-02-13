@@ -44,7 +44,8 @@ USERNAME_ONLY_KEY = "username_only"
 PRINCIPAL_TYPE_KEY = "type"
 USER_KEY = "user"
 SA_KEY = "service-account"
-VALID_PRINCIPAL_TYPE_VALUE = [SA_KEY, USER_KEY]
+ALL_KEY = "all"
+VALID_PRINCIPAL_TYPE_VALUE = [SA_KEY, USER_KEY, ALL_KEY]
 
 
 class PrincipalView(APIView):
@@ -121,12 +122,17 @@ class PrincipalView(APIView):
         )
         options["principal_type"] = principal_type
 
-        # Get either service accounts or user principals, depending on what the user specified.
+        # Get either service accounts or user principals or all, depending on what the user specified.
         if principal_type == USER_KEY:
             resp, usernames_filter = self.users_from_proxy(user, query_params, options, limit, offset)
 
         elif principal_type == SA_KEY:
             resp, usernames_filter = self.service_accounts_from_it_service(request, user, query_params, options)
+
+        elif principal_type == ALL_KEY:
+            resp, usernames_filter = self.get_users_and_service_accounts(
+                request, user, query_params, options, limit, offset
+            )
 
         status_code = resp.get("status_code")
         response_data = {}
@@ -134,11 +140,15 @@ class PrincipalView(APIView):
             data = resp.get("data", [])
             if principal_type == SA_KEY:
                 count = resp.get("saCount")
-            elif isinstance(data, dict):
-                count = data.get("userCount")
-                data = data.get("users")
-            elif isinstance(data, list):
-                count = len(data)
+            elif principal_type == USER_KEY:
+                if isinstance(data, dict):
+                    count = data.get("userCount")
+                    data = data.get("users")
+                elif isinstance(data, list):
+                    count = len(data)
+            elif principal_type == ALL_KEY:
+                count = resp.get("userCount")
+
             else:
                 count = None
 
@@ -239,3 +249,65 @@ class PrincipalView(APIView):
         if options["usernames"]:
             usernames_filter = f"&usernames={options['usernames']}"
         return {"status_code": status.HTTP_200_OK, "saCount": sa_count, "data": service_accounts}, usernames_filter
+
+    def get_users_and_service_accounts(self, request, user, query_params, options, limit, offset):
+        """
+        Get user based and service account based principals and return prepped response.
+
+        First we try to get service account based principals and then user based principals.
+        For the second query we need to calculate new limit and offset.
+        for example:
+        in db 3 SA + 4 U, limit = 2, offset = 0
+        pagination:
+        page 1 -> 2 SA
+        page 2 -> 1 SA + 1 U
+        page 3 -> 2 U
+        page 4 -> 1 U
+        (SA = service account based principal, U = user based principal)
+        """
+        # Get Service Accounts
+        sa_resp, usernames_filter = self.service_accounts_from_it_service(request, user, query_params, options)
+        if sa_resp.get("status_code") != status.HTTP_200_OK:
+            return sa_resp, ""
+
+        # Calculate new limit and offset for the user base principals query
+        sa_count_total = sa_resp.get("saCount")
+        sa_count = len(sa_resp.get("data", []))
+        remaining_limit = limit - sa_count
+        if remaining_limit == 0:
+            new_limit = 1
+            new_offset = 0
+        elif remaining_limit > 0:
+            if offset >= sa_count_total:
+                new_limit = limit
+                new_offset = offset - sa_count_total
+            else:
+                new_limit = remaining_limit
+                new_offset = 0
+
+        # Get user based principals
+        user_resp, usernames_filter = self.users_from_proxy(user, query_params, options, new_limit, new_offset)
+        if user_resp.get("status_code") != status.HTTP_200_OK:
+            return user_resp, ""
+
+        # Calculate the both types principals count
+        userCount = 0
+        if usernames_filter and user_resp["data"]:
+            userCount += len(user_resp["data"])
+        elif user_resp["data"]:
+            userCount += user_resp.get("data").get("userCount")
+        userCount += sa_resp.get("saCount")
+
+        # Put together the response
+        resp = {"status_code": status.HTTP_200_OK, "data": {}, "userCount": userCount}
+
+        if sa_resp.get("data"):
+            resp["data"]["serviceAccounts"] = sa_resp.get("data")
+
+        if user_resp["data"] and remaining_limit:
+            if isinstance(user_resp["data"], dict):
+                resp["data"]["users"] = user_resp.get("data").get("users")
+            elif isinstance(user_resp["data"], list):
+                resp["data"]["users"] = user_resp.get("data")
+
+        return resp, usernames_filter
