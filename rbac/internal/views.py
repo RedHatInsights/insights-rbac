@@ -30,7 +30,7 @@ from django.shortcuts import get_object_or_404
 from django.utils.html import escape
 from internal.utils import delete_bindings
 from management.cache import TenantCache
-from management.models import Group, Permission, Principal, ResourceDefinition, Role
+from management.models import BindingMapping, Group, Permission, Principal, ResourceDefinition, Role
 from management.principal.proxy import (
     API_TOKEN_HEADER,
     CLIENT_ID_HEADER,
@@ -42,6 +42,7 @@ from management.principal.proxy import (
     bop_request_time_tracking,
 )
 from management.relation_replicator.outbox_replicator import OutboxReplicator
+from management.relation_replicator.relation_replicator import PartitionKey, ReplicationEvent, ReplicationEventType
 from management.role.serializer import BindingMappingSerializer
 from management.tasks import (
     migrate_data_in_worker,
@@ -54,7 +55,7 @@ from management.tenant_service.v2 import V2TenantBootstrapService
 from rest_framework import status
 
 from api.common.pagination import StandardResultsSetPagination, WSGIRequestResultsSetPagination
-from api.cross_access.model import RequestsRoles
+from api.cross_access.model import CrossAccountRequest, RequestsRoles
 from api.models import Tenant, User
 from api.tasks import (
     cross_account_cleanup,
@@ -657,6 +658,100 @@ def list_or_delete_bindings_for_role(request, role_uuid):
     else:
         info = delete_bindings(bindings)
         return HttpResponse(json.dumps(info), status=200)
+
+
+def clean_binding_mapping(request, binding_id):
+    """Clean bindingmapping for a role, delete not associated role anymore.
+
+    POST /_private/api/utils/bindings/<binding_id>/clean
+    Params:
+        field=users or groups
+    """
+    if not destructive_ok("api"):
+        return HttpResponse("Destructive operations disallowed.", status=400)
+    if request.method != "POST":
+        return HttpResponse('Invalid method, only "POST" is allowed.', status=405)
+    field = request.GET.get("field")
+    if not field or field not in ("users", "groups"):
+        return HttpResponse(
+            'Invalid request, must supply the "users" or "groups" in field.',
+            status=400,
+        )
+
+    replicator = OutboxReplicator()
+    try:
+        with transaction.atomic():
+            mapping = (
+                BindingMapping.objects.select_for_update()
+                .filter(
+                    id=binding_id,
+                )
+                .get()
+            )
+            if field == "users":
+                relations_to_remove = []
+                # Check if the user should be removed
+                if (
+                    CrossAccountRequest.objects.filter(user_id__in=mapping.mappings["users"])
+                    .filter(roles__id=mapping.role.id)
+                    .filter(status="approved")
+                    .exists()
+                ):
+                    raise Exception(
+                        f"User(s) {mapping.mappings['users']} are still related to approved cross account reqeusts."
+                    )
+                # After migration, if it is still old format with duplication, means
+                # it only binds with expired cars, which we can remove
+                mapping.update_data_format_for_user(relations_to_remove)
+                if relations_to_remove:
+                    replicator.replicate(
+                        ReplicationEvent(
+                            event_type=ReplicationEventType.EXPIRE_CROSS_ACCOUNT_REQUEST,
+                            info={
+                                "users": mapping.mappings["users"],
+                            },
+                            partition_key=PartitionKey.byEnvironment(),
+                            remove=relations_to_remove,
+                            add=[],
+                        ),
+                    )
+            else:
+                relations_to_remove = []
+                if not mapping.role.system:
+                    raise Exception("Groups can only be cleaned for system roles")
+                # Get the list of group UUIDs from the mapping
+                group_uuids = mapping.mappings.get("groups", [])
+
+                # Get existing groups from the database
+                existing_groups = {
+                    str(group_uuid)
+                    for group_uuid in Group.objects.filter(uuid__in=group_uuids).values_list("uuid", flat=True)
+                }
+
+                # Find missing groups
+                missing_groups = set(group_uuids) - existing_groups
+                if not missing_groups:
+                    raise Exception("No groups to clean")
+                for group in missing_groups:
+                    removal = mapping.unassign_group(group)
+                    if removal is not None:
+                        relations_to_remove.append(removal)
+                if relations_to_remove:
+                    replicator.replicate(
+                        ReplicationEvent(
+                            event_type=ReplicationEventType.MIGRATE_TENANT_GROUPS,
+                            info={
+                                "groups": missing_groups,
+                            },
+                            partition_key=PartitionKey.byEnvironment(),
+                            remove=relations_to_remove,
+                            add=[],
+                        ),
+                    )
+            mapping.save()
+        return HttpResponse(f"Binding mapping {json.dumps(mapping.mappings)} cleaned.", status=200)
+    except Exception as e:
+        return handle_error(str(e), 400)
 
 
 def migration_resources(request):

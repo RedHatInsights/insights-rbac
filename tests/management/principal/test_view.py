@@ -19,14 +19,13 @@
 from unittest.mock import patch, ANY
 
 from django.urls import reverse
-from django.conf import settings
 from django.test.utils import override_settings
 from rest_framework import status
-from rest_framework.response import Response
 from rest_framework.test import APIClient
 
 from api.models import Tenant, User
 from management.models import *
+from management.principal.unexpected_status_code_from_it import UnexpectedStatusCodeFromITError
 from tests.identity_request import IdentityRequest
 from management.principal.proxy import PrincipalProxy
 
@@ -99,7 +98,7 @@ class PrincipalViewNonAdminTests(IdentityRequest):
                 "status": "enabled",
                 "admin_only": "false",
                 "username_only": "false",
-                "principal_type": None,
+                "principal_type": "user",
             },
             org_id=self.customer["org_id"],
         )
@@ -163,7 +162,7 @@ class PrincipalViewsetTests(IdentityRequest):
                 "status": "enabled",
                 "admin_only": "false",
                 "username_only": "false",
-                "principal_type": None,
+                "principal_type": "user",
             },
             org_id=self.customer_data["org_id"],
         )
@@ -258,7 +257,7 @@ class PrincipalViewsetTests(IdentityRequest):
                 "status": "enabled",
                 "admin_only": "false",
                 "username_only": "false",
-                "principal_type": None,
+                "principal_type": "user",
             },
             org_id=self.customer_data["org_id"],
         )
@@ -301,7 +300,7 @@ class PrincipalViewsetTests(IdentityRequest):
                 "sort_order": "asc",
                 "status": "enabled",
                 "username_only": "false",
-                "principal_type": None,
+                "principal_type": "user",
             },
         )
         # Cross account user won't be returned.
@@ -339,7 +338,7 @@ class PrincipalViewsetTests(IdentityRequest):
                 "sort_order": "asc",
                 "status": "enabled",
                 "username_only": "false",
-                "principal_type": None,
+                "principal_type": "user",
             },
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -373,7 +372,7 @@ class PrincipalViewsetTests(IdentityRequest):
                 "sort_order": "asc",
                 "status": "enabled",
                 "username_only": "false",
-                "principal_type": None,
+                "principal_type": "user",
             },
             org_id=self.customer_data["org_id"],
         )
@@ -408,7 +407,7 @@ class PrincipalViewsetTests(IdentityRequest):
                 "sort_order": "asc",
                 "status": "enabled",
                 "username_only": "false",
-                "principal_type": None,
+                "principal_type": "user",
             },
             org_id=self.customer_data["org_id"],
         )
@@ -478,7 +477,7 @@ class PrincipalViewsetTests(IdentityRequest):
                 "sort_order": "desc",
                 "status": "enabled",
                 "username_only": "false",
-                "principal_type": None,
+                "principal_type": "user",
             },
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -571,7 +570,7 @@ class PrincipalViewsetTests(IdentityRequest):
                 "sort_order": "asc",
                 "status": "enabled",
                 "username_only": "false",
-                "principal_type": None,
+                "principal_type": "user",
             },
             org_id=self.customer_data["org_id"],
         )
@@ -606,7 +605,7 @@ class PrincipalViewsetTests(IdentityRequest):
                 "status": "disabled",
                 "admin_only": "false",
                 "username_only": "false",
-                "principal_type": None,
+                "principal_type": "user",
             },
             org_id=self.customer_data["org_id"],
         )
@@ -639,7 +638,7 @@ class PrincipalViewsetTests(IdentityRequest):
                 "admin_only": "false",
                 "status": "enabled",
                 "username_only": "false",
-                "principal_type": None,
+                "principal_type": "user",
             },
             org_id=self.customer_data["org_id"],
         )
@@ -672,7 +671,7 @@ class PrincipalViewsetTests(IdentityRequest):
                 "status": "enabled",
                 "admin_only": "true",
                 "username_only": "false",
-                "principal_type": None,
+                "principal_type": "user",
             },
             org_id=self.customer_data["org_id"],
         )
@@ -731,7 +730,7 @@ class PrincipalViewsetTests(IdentityRequest):
                 "sort_order": "asc",
                 "status": "enabled",
                 "username_only": "false",
-                "principal_type": None,
+                "principal_type": "user",
             },
             org_id=self.customer_data["org_id"],
         )
@@ -780,7 +779,7 @@ class PrincipalViewsetTests(IdentityRequest):
                 "status": "enabled",
                 "admin_only": "false",
                 "username_only": "false",
-                "principal_type": None,
+                "principal_type": "user",
             },
             org_id=self.customer_data["org_id"],
         )
@@ -947,3 +946,21 @@ class PrincipalViewsetTests(IdentityRequest):
             err = response.json()["errors"][0]
             self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
             self.assertEqual(err["detail"], expected_message)
+
+    @override_settings(IT_BYPASS_TOKEN_VALIDATION=True)
+    @patch(
+        "management.principal.it_service.ITService.get_service_accounts",
+        side_effect=UnexpectedStatusCodeFromITError("Mocked error"),
+    )
+    def test_read_principal_service_account_unexpected_internal_error(self, mock_request):
+        """
+        Test the expected error message is returned in case of unexpected internal error that is returned from
+        method ITService.get_service_accounts().
+        """
+        expected_message = "Unexpected internal error."
+        url = f"{reverse('v1_management:principals')}?type=service-account"
+        client = APIClient()
+        response = client.get(url, **self.headers)
+        err = response.json()["errors"][0]
+        self.assertEqual(response.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
+        self.assertEqual(err["detail"], expected_message)

@@ -6264,7 +6264,6 @@ class GroupReplicationTests(IdentityRequest):
 
         # Collect all the bound roles by iterating over the bindings and getting the subjects of the role relation
         subjects = {t.subject_id for _, tuples in sr1_bindings.items() for t in tuples if t.relation == "subject"}
-
         self.assertCountEqual(subjects, [str(test_group.uuid)])
 
     @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")

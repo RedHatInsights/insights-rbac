@@ -16,6 +16,7 @@
 #
 """Test the internal viewset."""
 import logging
+from uuid import uuid4
 
 from rest_framework import status
 from rest_framework.test import APIClient
@@ -42,9 +43,15 @@ from management.tenant_mapping.model import TenantMapping
 from management.tenant_service.v1 import V1TenantBootstrapService
 from management.tenant_service.v2 import V2TenantBootstrapService
 from management.workspace.model import Workspace
-from migration_tool.in_memory_tuples import InMemoryRelationReplicator, InMemoryTuples
+from migration_tool.in_memory_tuples import (
+    all_of,
+    InMemoryRelationReplicator,
+    InMemoryTuples,
+    relation,
+    resource,
+    subject,
+)
 from migration_tool.utils import create_relationship
-from rbac.settings import REPLICATION_TO_RELATION_ENABLED
 from tests.identity_request import IdentityRequest
 from tests.management.role.test_dual_write import RbacFixture
 
@@ -671,6 +678,123 @@ class InternalViewsetTests(IdentityRequest):
             binding_mappings[0].refresh_from_db()
         binding_mappings[1].refresh_from_db()
         self.assertEqual(self._tuples.find_tuples(), [])
+
+    @override_settings(INTERNAL_DESTRUCTIVE_API_OK_UNTIL=valid_destructive_time())
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
+    def test_clean_bindings(self, replicate):
+        """Test that we can clean bindingmapping."""
+        car = CrossAccountRequest.objects.create(
+            target_org="123456",
+            user_id="1111111",
+            start_date=datetime.now(),
+            end_date=datetime.now() + timedelta(10),
+            status="approved",
+        )
+        car.roles.add(self.role)
+        replicator = InMemoryRelationReplicator(self._tuples)
+        replicate.side_effect = replicator.replicate
+        workspace_id = "123456"
+        group_to_remove = Group.objects.create(name="test", tenant=self.tenant)
+        group_id_to_remove = str(group_to_remove.uuid)
+        # Create binding mappings
+        binding_attrs = {
+            "resource_id": workspace_id,
+            "resource_type_namespace": "rbac",
+            "resource_type_name": "workspace",
+            "mappings": {
+                "role": {"is_system": True, "id": str(self.role.uuid), "permissions": []},
+                "groups": [group_id_to_remove, str(self.group.uuid)],
+                "users": [car.user_id, "not_exist_user"],
+            },
+        }
+        binding_mapping = BindingMapping.objects.create(
+            role=self.role,
+            **binding_attrs,
+        )
+        binding_mapping_id = str(binding_mapping.id)
+        binding_mapping.mappings["id"] = binding_mapping_id
+        binding_mapping.save()
+        relations = [
+            create_relationship(
+                ("rbac", "role_binding"),
+                binding_mapping_id,
+                ("rbac", "role"),
+                str(self.role.uuid),
+                "role",
+            ),
+            create_relationship(
+                ("rbac", "workspace"),
+                workspace_id,
+                ("rbac", "role_binding"),
+                binding_mapping_id,
+                "binding",
+            ),
+            create_relationship(
+                ("rbac", "role_binding"),
+                binding_mapping_id,
+                ("rbac", "principal"),
+                f"redhat/{car.user_id}",
+                "subject",
+            ),
+            create_relationship(
+                ("rbac", "role_binding"),
+                binding_mapping_id,
+                ("rbac", "group"),
+                group_id_to_remove,
+                "subject",
+                "member",
+            ),
+        ]
+        self._tuples.write(relations, [])
+        # Deleting user still related is not allowed
+        response = self.client.post(
+            f"/_private/api/utils/binding/{binding_mapping_id}/clean/?field=users",
+            **self.request.META,
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        car.status = "expired"
+        car.save()
+        response = self.client.post(
+            f"/_private/api/utils/binding/{binding_mapping_id}/clean/?field=users",
+            **self.request.META,
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            0,
+            self._tuples.count_tuples(
+                all_of(
+                    resource("rbac", "role_binding", binding_mapping_id),
+                    relation("subject"),
+                    subject("rbac", "principal", f"redhat/{car.user_id}"),
+                )
+            ),
+        )
+
+        # All group still exist
+        response = self.client.post(
+            f"/_private/api/utils/binding/{binding_mapping_id}/clean/?field=groups",
+            **self.request.META,
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        group_to_remove.delete()
+        response = self.client.post(
+            f"/_private/api/utils/binding/{binding_mapping_id}/clean/?field=groups",
+            **self.request.META,
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            0,
+            self._tuples.count_tuples(
+                all_of(
+                    resource("rbac", "role_binding", binding_mapping_id),
+                    relation("subject"),
+                    subject("rbac", "group", f"redhat/{group_id_to_remove}", "member"),
+                )
+            ),
+        )
+        binding_mapping.refresh_from_db()
+        self.assertEqual(binding_mapping.mappings["users"], {})
+        self.assertEqual(binding_mapping.mappings["groups"], [str(self.group.uuid)])
 
     @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
     def test_bootstrapping_tenant(self, replicate):

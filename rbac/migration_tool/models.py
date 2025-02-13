@@ -16,7 +16,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 
 from dataclasses import dataclass
-from typing import Iterable, Tuple
+from typing import Iterable, Tuple, Union
 
 from kessel.relations.v1beta1.common_pb2 import Relationship
 from management.principal.model import Principal
@@ -92,7 +92,7 @@ class V2rolebinding:
     role: V2role
     resource: V2boundresource
     groups: tuple[str]
-    users: tuple[str]
+    users: Union[list, dict]
 
     def __init__(
         self,
@@ -100,7 +100,7 @@ class V2rolebinding:
         role: V2role,
         resource: V2boundresource,
         groups: Iterable[str] = [],
-        users: Iterable[str] = [],
+        users: Iterable[str] = {},
     ):
         """
         Initialize a V2 role binding.
@@ -114,7 +114,9 @@ class V2rolebinding:
         object.__setattr__(self, "role", role)
         object.__setattr__(self, "resource", resource)
         object.__setattr__(self, "groups", tuple(groups))
-        object.__setattr__(self, "users", tuple(users))
+        if not isinstance(users, dict):
+            users = {} if len(users := list(users)) == 0 else users
+        object.__setattr__(self, "users", users)
 
     def as_minimal_dict(self) -> dict:
         """Convert the V2 role binding to a dictionary, excluding resource and original role."""
@@ -122,7 +124,7 @@ class V2rolebinding:
             "id": self.id,
             "role": self.role.as_dict(),
             "groups": [g for g in self.groups],
-            "users": [u for u in self.users],
+            "users": self.users,
         }
 
     def as_tuples(self):
@@ -138,8 +140,12 @@ class V2rolebinding:
             # These might be duplicate but it is OK, spiceDB will handle duplication through touch
             tuples.append(role_binding_group_subject_tuple(self.id, group))
 
-        for user in set(self.users):
-            tuples.append(role_binding_user_subject_tuple(self.id, user))
+        if isinstance(self.users, dict):
+            for user in self.users.values():
+                tuples.append(role_binding_user_subject_tuple(self.id, user))
+        else:
+            for user in set(self.users):
+                tuples.append(role_binding_user_subject_tuple(self.id, user))
 
         tuples.append(
             create_relationship(
