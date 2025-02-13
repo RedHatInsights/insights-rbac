@@ -25,6 +25,14 @@ from management.rbac_fields import AutoDateTimeField
 from api.models import TenantAwareModel
 
 
+class BuiltInWorkspaceQuerySet(models.QuerySet):
+    """A custom queryset for built-in workspaces."""
+
+    def built_ins(self, tenant):
+        """Return a queryset of built-in workspaces for a tenant."""
+        return self.filter(tenant=tenant, type__in=[Workspace.Types.ROOT, Workspace.Types.DEFAULT])
+
+
 class Workspace(TenantAwareModel):
     """A workspace."""
 
@@ -41,6 +49,8 @@ class Workspace(TenantAwareModel):
     type = models.CharField(choices=Types.choices, default=Types.STANDARD, null=False)
     created = models.DateTimeField(default=timezone.now)
     modified = AutoDateTimeField(default=timezone.now)
+
+    objects = BuiltInWorkspaceQuerySet.as_manager()
 
     class Meta:
         constraints = [

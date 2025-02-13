@@ -209,3 +209,19 @@ class Types(IdentityRequest):
             {"parent_id": ["This field cannot be blank for non-root type workspaces."]},
             assertion.exception.message_dict,
         )
+
+    def test_built_in_types_queryset(self):
+        """Test the BuiltInWorkspaceQuerySet on the Workspace model."""
+        self.assertCountEqual(
+            list(Workspace.objects.all()),
+            [
+                self.tenant_1_root_workspace,
+                self.tenant_1_default_workspace,
+                self.tenant_1_standard_workspace,
+                self.tenant_1_ungrouped_workspace,
+            ],
+        )
+        self.assertCountEqual(
+            list(Workspace.objects.built_ins(self.tenant)),
+            [self.tenant_1_root_workspace, self.tenant_1_default_workspace],
+        )
