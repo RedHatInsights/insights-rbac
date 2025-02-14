@@ -295,7 +295,7 @@ class PrincipalView(APIView):
         if usernames_filter and user_resp["data"]:
             userCount += len(user_resp["data"])
         elif user_resp["data"]:
-            userCount += user_resp.get("data").get("userCount")
+            userCount += int(user_resp.get("data").get("userCount"))
         userCount += sa_resp.get("saCount")
 
         # Put together the response
