@@ -127,7 +127,7 @@ def clone_default_group_in_public_schema(group, tenant) -> Optional[Group]:
 
     if bootstrapped_tenant:
         dual_write_handler = RelationApiDualWriteGroupHandler(group, ReplicationEventType.CUSTOMIZE_DEFAULT_GROUP)
-        dual_write_handler.generate_relations_to_add_roles(
+        dual_write_handler.generate_relations_reset_roles(
             public_default_roles, remove_default_access_from=bootstrapped_tenant.mapping
         )
         dual_write_handler.replicate()
@@ -182,9 +182,11 @@ def add_roles(group, roles_or_role_ids, tenant, user=None):
         group_role_change_notification_handler(user, group, role, "added")
         added_roles.append(role)
 
+    if not added_roles:
+        return
     if tenant.tenant_name != "public":
         dual_write_handler = RelationApiDualWriteGroupHandler(group, ReplicationEventType.ASSIGN_ROLE)
-        dual_write_handler.generate_relations_to_add_roles(added_roles)
+        dual_write_handler.generate_relations_reset_roles(added_roles)
         dual_write_handler.replicate()
 
 

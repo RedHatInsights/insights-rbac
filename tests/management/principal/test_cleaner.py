@@ -229,7 +229,7 @@ FRAME_BODY_CREATION = (
     b'<Reference system="EBS" entity-name="Account" qualifier="number">11111111</Reference>\n                '
     b'</Identifiers>\n                <Status primary="true">\n                    <State>Active</State>\n                '
     b"</Status>\n                <Person>\n                    <FirstName>Test</FirstName>\n                    "
-    b"<LastName>Principal</LastName>\n                    <Salutation>Mr.</Salutation>\n                    <Title>QE</Title>\n                    "
+    b"<LastName>Principal \xed\xa0\xbd\xed\xb8\x8e</LastName>\n                    <Salutation>Mr.</Salutation>\n                    <Title>QE</Title>\n                    "
     b"<Credentials>\n                        <Login>principal-test</Login>\n                    </Credentials>\n                "
     b"</Person>\n                <Company>\n                    <Name>Shakespeare Birthplace Trust</Name>\n                "
     b"</Company>\n                <Address>\n                    <Identifiers>\n                        <AuthoringOperatingUnit>\n"

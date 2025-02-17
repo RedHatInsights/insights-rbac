@@ -176,15 +176,15 @@ class RoleViewsetTests(IdentityRequest):
         self.groupTwo.policies.add(self.policyTwo)
         self.groupTwo.save()
 
-        self.adminRole = Role(**admin_def_role_config, tenant=self.tenant)
-        self.adminRole.save()
-
-        self.platformAdminRole = Role(**platform_admin_def_role_config, tenant=self.tenant)
-        self.platformAdminRole.save()
-
         self.public_tenant = Tenant.objects.get(tenant_name="public")
         self.sysPubRole = Role(**sys_pub_role_config, tenant=self.public_tenant)
         self.sysPubRole.save()
+
+        self.adminRole = Role(**admin_def_role_config, tenant=self.public_tenant)
+        self.adminRole.save()
+
+        self.platformAdminRole = Role(**platform_admin_def_role_config, tenant=self.public_tenant)
+        self.platformAdminRole.save()
 
         self.sysRole = Role(**sys_role_config, tenant=self.public_tenant)
         self.sysRole.save()
@@ -252,7 +252,7 @@ class RoleViewsetTests(IdentityRequest):
             },
             {"permission": "app:*:read", "resourceDefinitions": []},
         ]
-        if in_access_data:
+        if in_access_data is not None:
             access_data = in_access_data
         test_data = {"name": role_name, "display_name": role_display, "access": access_data}
 
@@ -1601,7 +1601,10 @@ class RoleViewsetTests(IdentityRequest):
             al_response = al_client.get(al_url, **self.headers)
             retrieve_data = al_response.data.get("data")
             al_list = retrieve_data
-            al_dict = al_list[1]
+            for al_record in al_list:
+                if al_record["action"] == "delete":
+                    al_dict = al_record
+                    break
 
             al_dict_principal_username = al_dict["principal_username"]
             al_dict_description = al_dict["description"]
@@ -1665,6 +1668,22 @@ class RoleViewsetTests(IdentityRequest):
         response = client.get(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
+    @patch("management.role.relation_api_dual_write_handler.OutboxReplicator.replicate")
+    def test_delete_custom_role_without_bindingmappins(self, replicate_mock):
+        role_name = "role_without_bindingmapping"
+        access_data = []
+        response = self.create_role(role_name, in_access_data=access_data)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+        replicate_mock.reset_mock()
+        role_uuid = response.data.get("uuid")
+        url = reverse("v1_management:role-detail", kwargs={"uuid": role_uuid})
+        client = APIClient()
+        response = client.delete(url, **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+
+        replicate_mock.assert_not_called()
+
     def test_update_admin_default_role(self):
         """Test that admin default roles are protected from deletion"""
 
@@ -1684,6 +1703,7 @@ class RoleViewsetTests(IdentityRequest):
         test_data = {"name": "role_name", "display_name": "role_display", "access": access_data}
         response = client.put(url, test_data, format="json", **self.headers)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data["errors"][0]["detail"], "System roles may not be updated.")
 
     def test_delete_default_role(self):
         """Test that default roles are protected from deletion"""

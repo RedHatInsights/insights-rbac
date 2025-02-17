@@ -28,8 +28,9 @@ from management.principal.it_service import ITService
 from management.principal.proxy import PrincipalProxy
 from rest_framework import serializers
 from rest_framework.request import Request
+from rest_framework.serializers import ValidationError
 
-from api.models import CrossAccountRequest, Tenant
+from api.models import Tenant
 
 USERNAME_KEY = "username"
 APPLICATION_KEY = "application"
@@ -282,14 +283,12 @@ def roles_for_cross_account_principal(principal):
     """Return roles for cross account principals."""
     _, user_id = principal.username.split("-")
     target_org = principal.tenant.org_id
-    role_names = (
-        CrossAccountRequest.objects.filter(target_org=target_org, user_id=user_id, status="approved")
-        .values_list("roles__name", flat=True)
-        .distinct()
-    )
-
-    role_names_list = list(role_names)
-    return Role.objects.filter(name__in=role_names_list)
+    return Role.objects.filter(
+        crossaccountrequest__target_org=target_org,
+        crossaccountrequest__user_id=user_id,
+        crossaccountrequest__status="approved",
+        system=True,
+    ).distinct()
 
 
 def clear_pk(entry):
@@ -353,3 +352,9 @@ def v2response_error_from_errors(errors, exc=None, context=None):
         response["instance"] = context.get("request").path
 
     return response
+
+
+def raise_validation_error(source, message):
+    """Construct a validation error and raise the error."""
+    error = {source: [message]}
+    raise ValidationError(error)

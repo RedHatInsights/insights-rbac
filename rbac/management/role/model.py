@@ -128,6 +128,24 @@ class ExtRoleRelation(models.Model):
         ]
 
 
+class SourceKey:
+    """Key for a source."""
+
+    key: str
+
+    def __init__(self, source, source_id: str):
+        """Init method."""
+        self.key = f"{source.__class__.__name__}/{source_id}"
+
+    def __hash__(self):
+        """Hash value for the SourceKey instance."""
+        return hash(self.key)
+
+    def __str__(self):
+        """Return the string representation of the SourceKey instance."""
+        return f"{self.key}"
+
+
 class BindingMapping(models.Model):
     """V2 binding Mapping definition."""
 
@@ -166,28 +184,85 @@ class BindingMapping(models.Model):
         """Return true if mapping is not assigned to any groups or users."""
         return len(self.mappings.get("groups", [])) == 0 and len(self.mappings.get("users", [])) == 0
 
-    def remove_group_from_bindings(self, group_uuid: str) -> Optional[Relationship]:
-        """Remove group from mappings."""
-        self.mappings["groups"].remove(group_uuid)
+    def unassign_group(self, group_uuid) -> Optional[Relationship]:
+        """
+        Completely unassign this group from the mapping, even if it is assigned more than once.
+
+        Returns the Relationship for this Group.
+        """
+        relationship = None
+        while True:
+            relationship = self.pop_group_from_bindings(group_uuid)
+            if relationship is not None:
+                break
+        return relationship
+
+    def pop_group_from_bindings(self, group_uuid: str) -> Optional[Relationship]:
+        """
+        Pop the group from mappings.
+
+        The group may still be bound to the role in other ways, so the group may still be included in the binding
+        more than once after this method returns.
+
+        If the group is no longer assigned at all, the Relationship is returned to be removed.
+
+        If you wish to remove the group entirely (and know it is safe to do so!), use [unassign_group].
+        """
+        if group_uuid in self.mappings["groups"]:
+            self.mappings["groups"].remove(group_uuid)
         if group_uuid in self.mappings["groups"]:
             return None
         return role_binding_group_subject_tuple(self.mappings["id"], group_uuid)
 
-    def add_group_to_bindings(self, group_uuid: str) -> Relationship:
-        """Add group to mappings."""
+    def assign_group_to_bindings(self, group_uuid: str) -> Optional[Relationship]:
+        """
+        Assign group to mappings.
+
+        If the group entry already exists, skip it.
+        """
+        if group_uuid in self.mappings["groups"]:
+            return None
         self.mappings["groups"].append(group_uuid)
         return role_binding_group_subject_tuple(self.mappings["id"], group_uuid)
 
-    def remove_user_from_bindings(self, user_id: str) -> Optional[Relationship]:
-        """Remove user from mappings."""
-        self.mappings["users"].remove(user_id)
-        if user_id in self.mappings["users"]:
+    # TODO: This can be deleted after the migration
+    def add_group_to_bindings(self, group_uuid: str) -> Relationship:
+        """
+        Add group to mappings.
+
+        This adds an additional entry for the group, even if the group is already assigned, to account for multiple
+        possible sources that may have assigned the group for the same role and resource.
+        """
+        self.mappings["groups"].append(group_uuid)
+        return role_binding_group_subject_tuple(self.mappings["id"], group_uuid)
+
+    def unassign_user_from_bindings(self, user_id: str, source: Optional[SourceKey] = None) -> Optional[Relationship]:
+        """Unassign user from mappings."""
+        self._remove_value_from_mappings("users", user_id, source)
+        users_list = (
+            self.mappings["users"] if isinstance(self.mappings["users"], list) else self.mappings["users"].values()
+        )
+        if user_id in users_list:
+            logging.info(
+                f"[Dual Write] user {user_id} still in mappings of bindingmapping {self.pk}, "
+                "therefore, no relation to remove. "
+            )
             return None
         return role_binding_user_subject_tuple(self.mappings["id"], user_id)
 
-    def add_user_to_bindings(self, user_id: str) -> Relationship:
-        """Add user to mappings."""
-        self.mappings["users"].append(user_id)
+    def update_data_format_for_user(self, all_relations_to_remove):
+        """Update data format for users in mappings."""
+        if isinstance(self.mappings["users"], list):
+            existing_user_ids = list(self.mappings["users"])
+            for existing_user_id in existing_user_ids:
+                relations_to_remove = self.unassign_user_from_bindings(existing_user_id)
+                if relations_to_remove is not None:
+                    all_relations_to_remove.append(relations_to_remove)
+            self.mappings["users"] = {}
+
+    def assign_user_to_bindings(self, user_id: str, source: Optional[SourceKey] = None) -> Relationship:
+        """Assign user to mappings."""
+        self._add_value_to_mappings("users", user_id, source)
         return role_binding_user_subject_tuple(self.mappings["id"], user_id)
 
     def update_mappings_from_role_binding(self, role_binding: V2rolebinding):
@@ -219,6 +294,20 @@ class BindingMapping(models.Model):
             permissions=frozenset(args["role"]["permissions"]),
         )
         return V2rolebinding(**args)
+
+    def _remove_value_from_mappings(self, field, value, source):
+        """Update mappings by removing value."""
+        if isinstance(self.mappings[field], dict):
+            self.mappings[field].pop(str(source), None)
+        else:
+            self.mappings[field].remove(value)
+
+    def _add_value_to_mappings(self, field, value, source):
+        """Update mappings by adding value."""
+        if isinstance(self.mappings[field], dict):
+            self.mappings[field].update({str(source): value})
+        else:
+            self.mappings[field].append(value)
 
 
 def role_related_obj_change_cache_handler(sender=None, instance=None, using=None, **kwargs):

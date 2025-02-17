@@ -44,6 +44,7 @@ class RelationApiDualWriteGroupHandler(RelationApiDualWriteSubjectHandler):
     """Class to handle Dual Write for group bindings and membership."""
 
     group: Group
+    _expected_empty_relation_reason = None
 
     def __init__(
         self,
@@ -109,6 +110,9 @@ class RelationApiDualWriteGroupHandler(RelationApiDualWriteSubjectHandler):
     def _replicate(self):
         if not self.replication_enabled():
             return
+        if self._expected_empty_relation_reason:
+            logger.info(f"[Dual Write] Skipping empty replication event. {self._expected_empty_relation_reason}")
+            return
         try:
             self._replicator.replicate(
                 ReplicationEvent(
@@ -122,10 +126,16 @@ class RelationApiDualWriteGroupHandler(RelationApiDualWriteSubjectHandler):
         except Exception as e:
             raise DualWriteException(e)
 
+    # TODO: this can be removed after the migrator
     def generate_relations_to_add_roles(
         self, roles: Iterable[Role], remove_default_access_from: Optional[TenantMapping] = None
     ):
-        """Generate relations to add roles."""
+        """
+        Generate relations to add roles.
+
+        This method is **NOT** idempotent. Adding the same role multiple times adds the group multiple times to the
+        BindingMapping for the [roles].
+        """
         if not self.replication_enabled():
             return
 
@@ -136,6 +146,47 @@ class RelationApiDualWriteGroupHandler(RelationApiDualWriteSubjectHandler):
             self._update_mapping_for_role(
                 role,
                 update_mapping=add_group_to_binding,
+                create_default_mapping_for_system_role=lambda: self._create_default_mapping_for_system_role(
+                    role, groups=frozenset([str(self.group.uuid)])
+                ),
+            )
+
+        if remove_default_access_from is not None:
+            default_binding = self._default_binding(mapping=remove_default_access_from)
+            self.relations_to_remove.append(default_binding)
+
+    def generate_relations_reset_roles(
+        self, roles: Iterable[Role], remove_default_access_from: Optional[TenantMapping] = None
+    ):
+        """
+        Reset the mapping and relationships for the group, assuming this group should only be assigned once.
+
+        This is safe if you are SURE this group should only be assigned once,
+        OR you will be re-adding the other sources of assignments.
+
+        This method **IS** idempotent. It will reset the group to the same state every time.
+        """
+        if not self.replication_enabled():
+            return
+
+        def reset_mapping(mapping: BindingMapping):
+            to_remove = mapping.unassign_group(str(self.group.uuid))
+            if to_remove:
+                self.relations_to_remove.append(to_remove)
+            to_add = mapping.assign_group_to_bindings(str(self.group.uuid))
+            if to_add:
+                self.relations_to_add.append(to_add)
+
+        # Go through current roles
+        # For each binding
+        # Remove all of this subject
+        # Replicate this removal
+        # Add back subject
+        # Replicate this addition
+        for role in roles:
+            self._update_mapping_for_role(
+                role,
+                update_mapping=reset_mapping,
                 create_default_mapping_for_system_role=lambda: self._create_default_mapping_for_system_role(
                     role, groups=frozenset([str(self.group.uuid)])
                 ),
@@ -162,7 +213,7 @@ class RelationApiDualWriteGroupHandler(RelationApiDualWriteSubjectHandler):
 
     def _update_mapping_for_role_removal(self, role: Role):
         def remove_group_from_binding(mapping: BindingMapping):
-            removal = mapping.remove_group_from_bindings(str(self.group.uuid))
+            removal = mapping.pop_group_from_bindings(str(self.group.uuid))
             if removal is not None:
                 self.relations_to_remove.append(removal)
 
@@ -170,11 +221,10 @@ class RelationApiDualWriteGroupHandler(RelationApiDualWriteSubjectHandler):
             role, update_mapping=remove_group_from_binding, create_default_mapping_for_system_role=None
         )
 
-    def prepare_to_delete_group(self):
+    def prepare_to_delete_group(self, roles):
         """Generate relations to delete."""
         if not self.replication_enabled():
             return
-        roles = Role.objects.filter(policies__group=self.group)
 
         system_roles = roles.public_tenant_only()
 
@@ -211,3 +261,7 @@ class RelationApiDualWriteGroupHandler(RelationApiDualWriteSubjectHandler):
             str(mapping.default_role_binding_uuid),
             "binding",
         )
+
+    def set_expected_empty_relation_reason(self, reason):
+        """Set expected empty relation reason."""
+        self._expected_empty_relation_reason = reason
