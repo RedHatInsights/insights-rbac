@@ -16,18 +16,21 @@
 #
 
 """View for internal tenant management."""
+
 import json
 import logging
 
 import requests
 from core.utils import destructive_ok
-from django.db import transaction
+from django.conf import settings
+from django.db import connection, transaction
 from django.db.migrations.recorder import MigrationRecorder
-from django.http import HttpResponse
+from django.http import HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404
 from django.utils.html import escape
+from internal.utils import delete_bindings
 from management.cache import TenantCache
-from management.models import Group, Permission, Role
+from management.models import BindingMapping, Group, Permission, Principal, ResourceDefinition, Role
 from management.principal.proxy import (
     API_TOKEN_HEADER,
     CLIENT_ID_HEADER,
@@ -38,6 +41,9 @@ from management.principal.proxy import (
     bop_request_status_count,
     bop_request_time_tracking,
 )
+from management.relation_replicator.outbox_replicator import OutboxReplicator
+from management.relation_replicator.relation_replicator import PartitionKey, ReplicationEvent, ReplicationEventType
+from management.role.serializer import BindingMappingSerializer
 from management.tasks import (
     migrate_data_in_worker,
     run_migrations_in_worker,
@@ -45,14 +51,24 @@ from management.tasks import (
     run_seeds_in_worker,
     run_sync_schemas_in_worker,
 )
+from management.tenant_service.v2 import V2TenantBootstrapService
 from rest_framework import status
 
-from api.common.pagination import StandardResultsSetPagination
-from api.models import Tenant
-from api.tasks import cross_account_cleanup, populate_tenant_account_id_in_worker
+from api.common.pagination import StandardResultsSetPagination, WSGIRequestResultsSetPagination
+from api.cross_access.model import CrossAccountRequest, RequestsRoles
+from api.models import Tenant, User
+from api.tasks import (
+    cross_account_cleanup,
+    populate_tenant_account_id_in_worker,
+    run_migration_resource_deletion,
+    run_reset_imported_tenants,
+)
+from api.utils import RESOURCE_MODEL_MAPPING, get_resources
+
 
 logger = logging.getLogger(__name__)
 TENANTS = TenantCache()
+PROXY = PrincipalProxy()
 
 
 def tenant_is_modified(tenant_name=None, org_id=None):
@@ -83,9 +99,11 @@ def list_unmodified_tenants(request):
     offset = int(request.GET.get("offset", 0))
 
     if limit:
-        tenant_qs = Tenant.objects.exclude(tenant_name="public")[offset : (limit + offset)]  # noqa: E203
+        tenant_qs = Tenant.objects.filter(ready=True).exclude(tenant_name="public")[
+            offset : (limit + offset)  # noqa: E203
+        ]
     else:
-        tenant_qs = Tenant.objects.exclude(tenant_name="public")
+        tenant_qs = Tenant.objects.filter(ready=True).exclude(tenant_name="public")
     to_return = []
     for tenant_obj in tenant_qs:
         if tenant_is_unmodified(tenant_name=tenant_obj.tenant_name, org_id=tenant_obj.org_id):
@@ -234,7 +252,6 @@ def get_org_admin(request, org_or_account):
 
     GET /_private/api/utils/get_org_admin/{org_or_account}/?type=account_id,org_id
     """
-    PROXY = PrincipalProxy()
     default_limit = StandardResultsSetPagination.default_limit
     request_path = request.path
     try:
@@ -354,6 +371,69 @@ def car_expiry(request):
     return HttpResponse('Invalid method, only "POST" is allowed.', status=405)
 
 
+def cars_clean(request):
+    """View or update cross-account request associated with custom roles.
+
+    GET or POST /_private/api/cars/clean/
+    """
+    if request.method not in ("GET", "POST"):
+        return HttpResponse('Invalid method, only "GET" and "POST" are allowed.', status=405)
+    if request.method == "POST" and not destructive_ok("api"):
+        return HttpResponse("Destructive operations disallowed.", status=400)
+
+    with transaction.atomic():
+        request_roles = RequestsRoles.objects.filter(role__system=False).prefetch_related(
+            "role", "cross_account_request"
+        )
+        if request.method == "GET":
+            result = {
+                str(request_role.cross_account_request.request_id): (
+                    request_role.role.id,
+                    request_role.role.display_name,
+                )
+                for request_role in request_roles
+            }
+            return HttpResponse(json.dumps(result), status=200)
+        else:
+            logger.info("Cleaning up cars.")
+            request_roles.delete()
+            return HttpResponse("Cars cleaned up.", status=200)
+
+
+def set_tenant_ready(request):
+    """View/set Tenant with ready flag true.
+
+    GET /_private/api/utils/set_tenant_ready/
+    POST /_private/api/utils/set_tenant_ready/?max_expected=1234
+    """
+    tenant_qs = Tenant.objects.exclude(tenant_name="public").filter(ready=False)
+    if request.method == "GET":
+        tenant_count = tenant_qs.count()
+        return HttpResponse(f"Total of {tenant_count} tenants not set to be ready.", status=200)
+
+    if request.method == "POST":
+        if not destructive_ok("api"):
+            return HttpResponse("Destructive operations disallowed.", status=400)
+        logger.info("Setting flag ready to true for tenants.")
+        max_expected = request.GET.get("max_expected")
+        if not max_expected:
+            return HttpResponse("Please specify a max_expected value.", status=400)
+        with transaction.atomic():
+            prev_count = tenant_qs.count()
+            if prev_count > int(max_expected):
+                return HttpResponse(
+                    f"Total of {prev_count} tenants exceeds max_expected of {max_expected}.",
+                    status=400,
+                )
+            tenant_qs.update(ready=True)
+            return HttpResponse(
+                f"Total of {prev_count} tenants has been updated. "
+                f"{tenant_qs.count()} tenant with ready flag equal to false.",
+                status=200,
+            )
+    return HttpResponse('Invalid method, only "POST" is allowed.', status=405)
+
+
 def populate_tenant_account_id(request):
     """View method for populating Tenant#account_id values.
 
@@ -469,30 +549,77 @@ def ocm_performance(request):
     return HttpResponse('Invalid method, only "POST" is allowed.', status=405)
 
 
-def get_param_list(request, param_name):
+def get_param_list(request, param_name, default: list = []):
     """Get a list of params from a request."""
     params = request.GET.get(param_name, [])
     if params:
-        params = params.split(",")
-    return params
+        return params.split(",")
+    else:
+        return default
 
 
 def data_migration(request):
     """View method for running migrations from V1 to V2 spiceDB schema.
 
-    POST /_private/api/utils/data_migration/?exclude_apps=cost_management,rbac&orgs=id_1,id_2&write_db=True
+    POST /_private/api/utils/data_migration/
+    query params:
+        exclude_apps: e.g., cost_management,rbac
+        orgs: e.g., id_1,id_2
+        write_relationships: True, False, outbox
+        skip_roles: True or False
     """
     if request.method != "POST":
         return HttpResponse('Invalid method, only "POST" is allowed.', status=405)
     logger.info("Running V1 data migration.")
 
     args = {
-        "exclude_apps": get_param_list(request, "exclude_apps"),
+        "exclude_apps": get_param_list(request, "exclude_apps", default=settings.V2_MIGRATION_APP_EXCLUDE_LIST),
         "orgs": get_param_list(request, "orgs"),
-        "write_db": request.GET.get("write_db", "False") == "True",
+        "write_relationships": request.GET.get("write_relationships", "False"),
+        "skip_roles": request.GET.get("skip_roles", "False").lower() == "true",
     }
     migrate_data_in_worker.delay(args)
     return HttpResponse("Data migration from V1 to V2 are running in a background worker.", status=202)
+
+
+def bootstrap_tenant(request):
+    """View method for bootstrapping a tenant.
+
+    POST /_private/api/utils/bootstrap_tenant/?org_id=12345&force=false
+
+    org_id:
+        (required) The org_id of the Tenant to bootstrap.
+
+    force:
+        Whether or not to force replication to happen, even if the Tenant is already bootstrapped.
+        Cannot be 'true' if replication is on, due to inconsistency risk.
+    """
+    if request.method != "POST":
+        return HttpResponse('Invalid method, only "POST" is allowed.', status=405)
+    logger.info("Running bootstrap tenant.")
+
+    if not request.body:
+        return HttpResponse('Invalid request, must supply the "org_ids" in body.', status=400)
+
+    org_ids_data = json.loads(request.body.decode("utf-8").replace("'", '"'))
+    force = request.GET.get("force", "false").lower() == "true"
+    if "org_ids" not in org_ids_data or len(org_ids_data["org_ids"]) == 0:
+        return HttpResponse(
+            'Invalid request: the "org_ids" array in the body must contain at least one org_id', status=400
+        )
+    org_ids = org_ids_data["org_ids"]
+    if force and settings.REPLICATION_TO_RELATION_ENABLED:
+        return HttpResponse(
+            "Forcing replication is not allowed when replication is on, "
+            "due to race condition with default group customization.",
+            status=400,
+        )
+    with transaction.atomic():
+        bootstrap_service = V2TenantBootstrapService(OutboxReplicator())
+        for org_id in org_ids:
+            tenant = get_object_or_404(Tenant, org_id=org_id)
+            bootstrap_service.bootstrap_tenant(tenant, force=force)
+    return HttpResponse(f"Bootstrapping tenants with org_ids {org_ids} were finished.", status=200)
 
 
 class SentryDiagnosticError(Exception):
@@ -501,6 +628,462 @@ class SentryDiagnosticError(Exception):
     pass
 
 
+def list_or_delete_bindings_for_role(request, role_uuid):
+    """View method for listing bindings for a role.
+
+    GET or DELETE /_private/api/utils/bindings/?role__is_system=True
+    """
+    if request.method not in ["GET", "DELETE"]:
+        return HttpResponse('Invalid method, only "GET" or "DELETE" is allowed.', status=405)
+    if not role_uuid:
+        return HttpResponse(
+            'Invalid request, must supply the "role_uuid" query parameter.',
+            status=400,
+        )
+    role = get_object_or_404(Role, uuid=role_uuid)
+    bindings = role.binding_mappings.all()
+    if request.GET:
+        filter_args = {}
+        for key, value in request.GET.items():
+            if value.lower() == "true":
+                value = True
+            elif value.lower() == "false":
+                value = False
+            filter_args.update({key: value})
+        bindings = bindings.filter(**filter_args)
+    if request.method == "GET":
+        serializer = BindingMappingSerializer(bindings, many=True)
+        result = serializer.data or []
+        return HttpResponse(json.dumps(result), content_type="application/json", status=200)
+    else:
+        info = delete_bindings(bindings)
+        return HttpResponse(json.dumps(info), status=200)
+
+
+def clean_binding_mapping(request, binding_id):
+    """Clean bindingmapping for a role, delete not associated role anymore.
+
+    POST /_private/api/utils/bindings/<binding_id>/clean
+    Params:
+        field=users or groups
+    """
+    if not destructive_ok("api"):
+        return HttpResponse("Destructive operations disallowed.", status=400)
+    if request.method != "POST":
+        return HttpResponse('Invalid method, only "POST" is allowed.', status=405)
+    field = request.GET.get("field")
+    if not field or field not in ("users", "groups"):
+        return HttpResponse(
+            'Invalid request, must supply the "users" or "groups" in field.',
+            status=400,
+        )
+
+    replicator = OutboxReplicator()
+    try:
+        with transaction.atomic():
+            mapping = (
+                BindingMapping.objects.select_for_update()
+                .filter(
+                    id=binding_id,
+                )
+                .get()
+            )
+            if field == "users":
+                relations_to_remove = []
+                # Check if the user should be removed
+                if (
+                    CrossAccountRequest.objects.filter(user_id__in=mapping.mappings["users"])
+                    .filter(roles__id=mapping.role.id)
+                    .filter(status="approved")
+                    .exists()
+                ):
+                    raise Exception(
+                        f"User(s) {mapping.mappings['users']} are still related to approved cross account reqeusts."
+                    )
+                # After migration, if it is still old format with duplication, means
+                # it only binds with expired cars, which we can remove
+                mapping.update_data_format_for_user(relations_to_remove)
+                if relations_to_remove:
+                    replicator.replicate(
+                        ReplicationEvent(
+                            event_type=ReplicationEventType.EXPIRE_CROSS_ACCOUNT_REQUEST,
+                            info={
+                                "users": mapping.mappings["users"],
+                            },
+                            partition_key=PartitionKey.byEnvironment(),
+                            remove=relations_to_remove,
+                            add=[],
+                        ),
+                    )
+            else:
+                relations_to_remove = []
+                if not mapping.role.system:
+                    raise Exception("Groups can only be cleaned for system roles")
+                # Get the list of group UUIDs from the mapping
+                group_uuids = mapping.mappings.get("groups", [])
+
+                # Get existing groups from the database
+                existing_groups = {
+                    str(group_uuid)
+                    for group_uuid in Group.objects.filter(uuid__in=group_uuids).values_list("uuid", flat=True)
+                }
+
+                # Find missing groups
+                missing_groups = set(group_uuids) - existing_groups
+                if not missing_groups:
+                    raise Exception("No groups to clean")
+                for group in missing_groups:
+                    removal = mapping.unassign_group(group)
+                    if removal is not None:
+                        relations_to_remove.append(removal)
+                if relations_to_remove:
+                    replicator.replicate(
+                        ReplicationEvent(
+                            event_type=ReplicationEventType.MIGRATE_TENANT_GROUPS,
+                            info={
+                                "groups": missing_groups,
+                            },
+                            partition_key=PartitionKey.byEnvironment(),
+                            remove=relations_to_remove,
+                            add=[],
+                        ),
+                    )
+            mapping.save()
+        return HttpResponse(f"Binding mapping {json.dumps(mapping.mappings)} cleaned.", status=200)
+    except Exception as e:
+        return handle_error(str(e), 400)
+
+
+def migration_resources(request):
+    """View or delete specific resources related to migration.
+
+    DELETE /_private/api/utils/migration_resources/?resource=xxx&org_id=xxx
+    GET /_private/api/utils/migration_resources/?resource=xxx&org_id=xxx&limit=1000
+    options of resource: workspace, mapping(tenantmapping), binding(bindingmapping)
+    org_id does not work for bindingmapping
+    """
+    resource = request.GET.get("resource")
+    if not resource:
+        return HttpResponse(
+            'Invalid request, must supply the "resource" query parameter.',
+            status=400,
+        )
+    resource = resource.lower()
+    if resource not in RESOURCE_MODEL_MAPPING:
+        return HttpResponse(
+            f"Invalid request, resource should be in '{RESOURCE_MODEL_MAPPING.keys()}'.",
+            status=400,
+        )
+
+    org_id = request.GET.get("org_id")
+
+    if request.method == "DELETE":
+        if not destructive_ok("api"):
+            return HttpResponse("Destructive operations disallowed.", status=400)
+        run_migration_resource_deletion.delay({"resource": resource, "org_id": org_id})
+        logger.info(f"Deleting resources of type {resource}. Requested by '{request.user.username}'")
+        return HttpResponse("Resource deletion is running in a background worker.", status=202)
+    elif request.method == "GET":
+        resource_objs = get_resources(resource, org_id)
+        pg = WSGIRequestResultsSetPagination()
+        page = pg.paginate_queryset(resource_objs, request)
+        page = [str(record.id) for record in page]
+        return HttpResponse(json.dumps(page), content_type="application/json", status=200)
+    return HttpResponse(f"Invalid method, {request.method}", status=405)
+
+
+def reset_imported_tenants(request: HttpRequest) -> HttpResponse:
+    """Reset tenants imported via user import job.
+
+    GET /_private/api/utils/reset_imported_tenants/?exclude_id=1&exclude_id=2
+    DELETE /_private/api/utils/reset_imported_tenants/?exclude_id=1&exclude_id=2
+    """
+    # If GET: return a count of how many tenants would be deleted
+    # If DELETE: delete the tenants
+    # Request should accept a query parameter to exclude certain tenants so we can exclude the ~129
+    excluded = request.GET.getlist("exclude_id", [])
+
+    # The default query created with "ready=false" flag otherwise is used query that checks that tenant
+    # does not have records in all tables.
+    only_ready_false_flag = request.GET.get("only_ready_false_flag", "true").strip().lower() == "true"
+
+    query = "FROM api_tenant WHERE tenant_name <> 'public' "
+
+    if excluded:
+        query += "AND id NOT IN %s "
+
+    if only_ready_false_flag:
+        query += "AND NOT ready"
+    else:
+        query += (
+            "AND NOT EXISTS (SELECT 1 FROM management_principal WHERE management_principal.tenant_id = api_tenant.id) "
+        )
+        query += """AND NOT (
+                  EXISTS    (SELECT 1
+                             FROM   management_tenantmapping
+                             WHERE  management_tenantmapping.tenant_id = api_tenant.id)
+                  OR EXISTS (SELECT 1
+                             FROM   management_access
+                             WHERE  management_access.tenant_id = api_tenant.id)
+                  OR EXISTS (SELECT 1
+                             FROM   management_group
+                             WHERE  management_group.tenant_id = api_tenant.id)
+                  OR EXISTS (SELECT 1
+                             FROM   management_permission
+                             WHERE  management_permission.tenant_id = api_tenant.id)
+                  OR EXISTS (SELECT 1
+                             FROM   management_policy
+                             WHERE  management_policy.tenant_id = api_tenant.id)
+                  OR EXISTS (SELECT 1
+                             FROM   management_resourcedefinition
+                             WHERE  management_resourcedefinition.tenant_id =
+                            api_tenant.id)
+                  OR EXISTS (SELECT 1
+                             FROM   management_role
+                             WHERE  management_role.tenant_id = api_tenant.id)
+                  OR EXISTS (SELECT 1
+                             FROM   management_auditlog
+                             WHERE  management_auditlog.tenant_id = api_tenant.id)
+                  OR EXISTS (SELECT 1
+                             FROM   management_workspace
+                             WHERE  management_workspace.tenant_id = api_tenant.id)
+                  )"""
+
+    try:
+        limit = int(request.GET.get("limit", "-1"))
+    except ValueError:
+        return HttpResponse("Invalid limit parameter, must be an integer.", status=400)
+
+    if limit > 0:
+        query += f" LIMIT {limit}"
+    elif limit == 0:
+        return HttpResponse("Limit is 0, nothing to do", status=200)
+
+    if request.method == "GET":
+        with connection.cursor() as cursor:
+            if limit > 0:
+                cursor.execute("SELECT COUNT(*) FROM (SELECT 1 " + query + ") subquery", (tuple(excluded),))
+            else:
+                cursor.execute(
+                    "SELECT COUNT(*) " + query,
+                    (tuple(excluded),),
+                )
+            count = cursor.fetchone()[0]
+
+        return HttpResponse(f"{count} tenants would be deleted", status=200)
+
+    if request.method == "DELETE":
+        if not destructive_ok("api"):
+            return HttpResponse("Destructive operations disallowed.", status=400)
+
+        run_reset_imported_tenants.delay({"query": query, "limit": limit, "excluded": excluded})
+
+        return HttpResponse("Tenants deleting in worker.", status=200)
+
+    return HttpResponse("Invalid method", status=405)
+
+
+ALLOWED_ROLE_UPDATE_ATTRIBUTES = {"system", "platform_default", "admin_default"}
+
+
+def str_to_bool(value: str) -> bool:
+    """Convert string to bool."""
+    return value.strip().lower() == "true"
+
+
+def handle_error(message: str, status_response: int) -> HttpResponse:
+    """Return HttpResponse object."""
+    return HttpResponse(json.dumps({"error": message}), content_type="application/json", status=status_response)
+
+
+def get_role_response(role: Role) -> HttpResponse:
+    """Return role response in HttpResponse object."""
+    response_data = {
+        "message": "Role retrieved successfully",
+        "role": {
+            "uuid": str(role.uuid),
+            "name": role.name,
+            "system": role.system,
+            "admin_default": role.admin_default,
+            "platform_default": role.platform_default,
+        },
+    }
+    return HttpResponse(json.dumps(response_data), content_type="application/json", status=200)
+
+
+def roles(request, uuid: str) -> HttpResponse:
+    """Update or get role.
+
+    GET /_private/api/role/uuid-uuid-uuid-uuid/
+    PUT /_private/api/role/uuid-uuid-uuid-uuid/
+    {
+        "system": "true"
+    }
+    """
+    try:
+        role = get_object_or_404(Role, uuid=uuid)
+
+        if request.method == "PUT":
+            body = json.loads(request.body)
+
+            invalid_keys = set(body.keys()) - ALLOWED_ROLE_UPDATE_ATTRIBUTES
+            if invalid_keys:
+                return handle_error(f"Invalid attributes: {', '.join(invalid_keys)}", 400)
+
+            if "system" in body:
+                role.system = str_to_bool(body["system"])
+
+            if "platform_default" in body:
+                role.platform_default = str_to_bool(body["platform_default"])
+
+            if "admin_default" in body:
+                role.admin_default = str_to_bool(body["admin_default"])
+
+            role.save()
+            return get_role_response(role)
+
+        elif request.method == "GET":
+            return get_role_response(role)
+
+        return handle_error("Invalid request method", 405)
+
+    except Exception as e:
+        return handle_error(str(e), 500)
+
+
 def trigger_error(request):
     """Trigger an error to confirm Sentry is working."""
     raise SentryDiagnosticError
+
+
+def correct_resource_definitions(request):
+    """Get/Fix resourceDefinitions with incorrect attributeFilters.
+
+    Attribute filters with lists must use 'in' operation. Those with a single string must use 'equal'
+
+    GET /_private/api/utils/resource_definitions
+    PATCH /_private/api/utils/resource_definitions
+    """
+    list_query = """ FROM management_resourcedefinition
+                WHERE "attributeFilter"->>'operation' = 'equal'
+                AND jsonb_typeof("attributeFilter"->'value') = 'array';"""
+
+    string_query = """ from management_resourcedefinition WHERE "attributeFilter"->>'operation' = 'in'
+                AND jsonb_typeof("attributeFilter"->'value') = 'string';"""
+
+    if request.method == "GET":
+        with connection.cursor() as cursor:
+
+            cursor.execute("SELECT COUNT(*)" + list_query)
+            count = cursor.fetchone()[0]
+
+            cursor.execute("SELECT COUNT(*)" + string_query)
+            count += cursor.fetchone()[0]
+
+        return HttpResponse(f"{count} resource definitions would be corrected", status=200)
+    elif request.method == "PATCH":
+        count = 0
+        with connection.cursor() as cursor:
+
+            cursor.execute("SELECT id " + list_query)
+            result = cursor.fetchall()
+            for id in result:
+                resource_definition = ResourceDefinition.objects.get(id=id[0])
+                resource_definition.attributeFilter["operation"] = "in"
+                resource_definition.save()
+                count += 1
+
+            cursor.execute("SELECT id " + string_query)
+            result = cursor.fetchall()
+            for id in result:
+                resource_definition = ResourceDefinition.objects.get(id=id[0])
+                resource_definition.attributeFilter["operation"] = "equal"
+                resource_definition.save()
+                count += 1
+
+        return HttpResponse(f"Updated {count} bad resource definitions", status=200)
+
+    return HttpResponse('Invalid method, only "GET" or "PATCH" are allowed.', status=405)
+
+
+def username_lower(request):
+    """Update the username for the principal to be lowercase."""
+    if request.method not in ["POST", "GET"]:
+        return HttpResponse("Invalid request method, only POST/GET are allowed.", status=405)
+    if request.method == "POST" and not destructive_ok("api"):
+        return HttpResponse("Destructive operations disallowed.", status=400)
+
+    pre_names = []
+    updated_names = []
+    with transaction.atomic():
+        principals = Principal.objects.filter(type="user").filter(username__regex=r"[A-Z]").order_by("username")
+        for principal in principals:
+            pre_names.append(principal.username)
+            principal.username = principal.username.lower()
+            updated_names.append(principal.username)
+            pre_names.sort()
+            updated_names.sort()
+        if request.method == "GET":
+            return HttpResponse(
+                f"Usernames to be updated: {pre_names} to {updated_names}",
+                status=200,
+            )
+        Principal.objects.bulk_update(principals, ["username"])
+        return HttpResponse(f"Updated {len(principals)} usernames", status=200)
+
+
+def principal_removal(request):
+    """Get/Delete not active principals.
+
+    GET or DELETE /_private/api/utils/principal/?usernames=a,b,c&user_type=service-account
+    """
+    logger.info(f"Principal edit or removal: {request.method} {request.user.username}")
+    if request.method not in ["DELETE", "GET"]:
+        return HttpResponse('Invalid method, only "DELETE" or "GET" is allowed.', status=405)
+
+    if not request.GET.get("usernames"):
+        return HttpResponse("Please provided a list of usernames with comma separated.", status=400)
+    if not request.GET.get("user_type"):
+        return HttpResponse("Please provided a type of principal.", status=400)
+    usernames = request.GET.get("usernames").split(",")
+    user_type = request.GET.get("user_type")
+
+    principals = Principal.objects.filter(username__in=usernames).filter(type=user_type).prefetch_related("tenant")
+    active_users = {}
+    if request.GET.get("user_type") == "user":
+        resp = PROXY.request_filtered_principals(usernames, org_id=None, options={"return_id": True})
+
+        if isinstance(resp, dict) and "errors" in resp:
+            return HttpResponse(resp.get("errors"), status=400)
+
+        active_users = {(principal_data["username"], principal_data["org_id"]) for principal_data in resp["data"]}
+
+    principals_delete = [
+        principal for principal in principals if (principal.username, principal.tenant.org_id) not in active_users
+    ]
+
+    principal_usernames = [principal.username for principal in principals_delete]
+
+    if request.method == "GET":
+        return HttpResponse(
+            f"Principals to be deleted: {principal_usernames}",
+            status=200,
+        )
+    if not destructive_ok("api"):
+        return HttpResponse("Destructive operations disallowed.", status=400)
+
+    with transaction.atomic():
+        bootstrap_service = V2TenantBootstrapService(OutboxReplicator())
+        for principal in principals_delete:
+            if not principal.user_id:
+                principal.delete()
+            else:
+                user = User()
+                user.username = principal.username
+                user.org_id = principal.tenant.org_id
+                user.is_active = False
+                user.user_id = principal.user_id
+
+                bootstrap_service.update_user(user)
+
+        return HttpResponse(f"Users deleted: {principal_usernames}", status=204)

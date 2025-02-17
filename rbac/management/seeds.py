@@ -15,7 +15,6 @@
 #    along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Seeds module."""
-import concurrent.futures
 import logging
 
 from django.db import connections
@@ -24,18 +23,9 @@ from management.cache import AccessCache
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 
-def on_complete(progress, tenant):
-    """Explicitly close the connection for the thread."""
-    logger.info(f"Purging policy cache for tenant {tenant.org_id} [{progress}].")
-    cache = AccessCache(tenant.org_id)
-    cache.delete_all_policies_for_tenant()
-    connections.close_all()
-    logger.info(f"Finished purging policy cache for tenant {tenant.org_id} [{progress}].")
-
-
-def role_seeding():
+def role_seeding(force_create_relationships=False):
     """Execute role seeding."""
-    run_seeds("role")
+    run_seeds("role", force_create_relationships)
 
 
 def group_seeding():
@@ -48,7 +38,7 @@ def permission_seeding():
     run_seeds("permission")
 
 
-def run_seeds(seed_type):
+def run_seeds(seed_type, force_create_relationships=False):
     """Update platform objects at startup."""
     # noqa: E402 pylint: disable=C0413
     from management.group.definer import seed_group
@@ -58,20 +48,19 @@ def run_seeds(seed_type):
 
     try:
         logger.info(f"Seeding {seed_type} changes.")
-        seed_functions[seed_type]()
+        if force_create_relationships:
+            seed_functions[seed_type](force_create_relationships)
+        else:
+            seed_functions[seed_type]()
         logger.info(f"Finished seeding {seed_type}.")
     except Exception as exc:
         logger.error(f"Error encountered during {seed_type} seeding {exc}.")
 
 
-def purge_cache():
+def purge_cache_for_all_tenants():
     """Explicitly purge the cache."""
-    from api.models import Tenant
-    from rbac.settings import MAX_SEED_THREADS
-
-    with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_SEED_THREADS) as executor:
-        tenants = Tenant.objects.all()
-        tenant_count = tenants.count()
-        for idx, tenant in enumerate(list(tenants)):
-            progress = f"[{idx + 1} of {tenant_count}]."
-            executor.submit(on_complete, progress, tenant)
+    logger.info("Purging policy cache for all tenants.")
+    cache = AccessCache("*")
+    cache.delete_all_policies_for_tenant()
+    connections.close_all()
+    logger.info("Finished purging policy cache for all tenants.")

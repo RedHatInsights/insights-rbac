@@ -34,7 +34,6 @@ from .unexpected_status_code_from_it import UnexpectedStatusCodeFromITError
 # Constants or global variables.
 LOGGER = logging.getLogger(__name__)
 SERVICE_ACCOUNT_CLIENT_IDS_KEY = "service_account_client_ids"
-TYPE_SERVICE_ACCOUNT = "service-account"
 KEY_SERVICE_ACCOUNT = "service-account-"
 
 # IT path to fetch the service accounts.
@@ -134,7 +133,7 @@ class ITService:
 
                 # Save the metrics for the successful call. Successful does not mean that we received an OK response,
                 # but that we were able to reach IT's SSO instead and get a response from them.
-                it_request_status_count.labels(method=requests.get.__name__.upper(), status=response.status_code)
+                it_request_status_count.labels(method="GET", status=response.status_code).inc()
 
                 if not status.is_success(response.status_code):
                     LOGGER.error(
@@ -236,7 +235,7 @@ class ITService:
 
         # Get the service accounts from the database. The weird filter is to fetch the service accounts depending on
         # the account number or the organization ID the user gave.
-        service_account_principals = Principal.objects.filter(type=TYPE_SERVICE_ACCOUNT).filter(
+        service_account_principals = Principal.objects.filter(type=Principal.Types.SERVICE_ACCOUNT).filter(
             (Q(tenant__isnull=False) & Q(tenant__account_id=user.account))
             | (Q(tenant__isnull=False) & Q(tenant__org_id=user.org_id))
         )
@@ -251,9 +250,10 @@ class ITService:
         if specified_usernames:
             usernames = specified_usernames.split(",")
 
-        # If "match_criteria" is specified, only the first username is taken into account.
+        # If "match_criteria" is specified and the usernames list is not empty,
+        # only the first username is taken into account
         match_criteria = options.get("match_criteria")
-        if match_criteria:
+        if match_criteria and usernames:
             username = usernames[0]
 
             if match_criteria == "partial":
@@ -321,7 +321,7 @@ class ITService:
             it_service_accounts = self.request_service_accounts(bearer_token=user.bearer_token)
 
         # Fetch the service accounts from the group.
-        group_service_account_principals = group.principals.filter(type=TYPE_SERVICE_ACCOUNT)
+        group_service_account_principals = group.principals.filter(type=Principal.Types.SERVICE_ACCOUNT)
 
         # Apply the specified query parameters for the collection. Begin with the sort order.
         sort_order = options.get("sort_order")
@@ -436,7 +436,7 @@ class ITService:
         # Fetch the service accounts from the group.
         group_service_account_principals = (
             group.principals.values_list("service_account_id", flat=True)
-            .filter(type=TYPE_SERVICE_ACCOUNT)
+            .filter(type=Principal.Types.SERVICE_ACCOUNT)
             .filter(service_account_id__in=client_ids)
         )
 
@@ -456,6 +456,7 @@ class ITService:
         description = service_account_from_it_service.get("description")
         created_by = service_account_from_it_service.get("createdBy")
         created_at = service_account_from_it_service.get("createdAt")
+        user_id = service_account_from_it_service.get("userId")
 
         if client_id:
             service_account["clientId"] = client_id
@@ -471,6 +472,9 @@ class ITService:
 
         if created_at:
             service_account["time_created"] = created_at
+
+        if user_id:
+            service_account["userId"] = user_id
 
         # Hard code the type for every service account.
         service_account["type"] = "service-account"

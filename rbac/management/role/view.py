@@ -17,12 +17,14 @@
 
 """View for role management."""
 import json
+import logging
 import os
 import re
+import traceback
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.db.models import Q
 from django.db.models.aggregates import Count
 from django.http import Http404
@@ -32,13 +34,20 @@ from management.filters import CommonFilters
 from management.models import AuditLog, Permission
 from management.notifications.notification_handlers import role_obj_change_notification_handler
 from management.permissions import RoleAccessPermission
-from management.querysets import get_role_queryset
+from management.querysets import get_role_queryset, user_has_perm
+from management.relation_replicator.relation_replicator import DualWriteException, ReplicationEventType
+from management.role.relation_api_dual_write_handler import (
+    RelationApiDualWriteHandler,
+)
 from management.role.serializer import AccessSerializer, RoleDynamicSerializer, RolePatchSerializer
 from management.utils import validate_uuid
 from rest_framework import mixins, serializers, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.filters import OrderingFilter
+from rest_framework.response import Response
 
+from api.models import Tenant
+from rbac.env import ENVIRONMENT
 from .model import Role
 from .serializer import RoleSerializer
 
@@ -62,9 +71,12 @@ LIST_ROLE_FIELDS = [
     "external_tenant",
 ]
 VALID_PATCH_FIELDS = ["name", "display_name", "description"]
+DUPLICATE_KEY_ERROR_MSG = "duplicate key value violates unique constraint"
 
 if TESTING_APP:
     settings.ROLE_CREATE_ALLOW_LIST.append(TESTING_APP)
+
+logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 
 class RoleFilter(CommonFilters):
@@ -131,8 +143,55 @@ class RoleViewSet(
     ordering = ("name",)
 
     def get_queryset(self):
-        """Obtain queryset for requesting user based on access."""
-        return get_role_queryset(self.request)
+        """Obtain queryset for requesting user based on access and action."""
+        # NOTE: partial_update intentionally omitted because it does not update access or policy.
+        if self.action not in ["update", "destroy"]:
+            return get_role_queryset(self.request)
+        else:
+            # Update queryset differs from normal role queryset in a few ways:
+            # - Remove counts; those are not returned in updates
+            #   and they prevent us from being able to lock the result
+            #   (postgres does not allow select for update with 'group by')
+            # - No scope checks since these are not relevant to updates
+            # - We also lock the role
+            # - We don't bother including system roles because they are not updated this way
+
+            # This lock is necessary to ensure the mapping is always based on the current role
+            # state which requires we prevent concurrent modifications to
+            # policy, access, and the mappings themselves.
+            # Because this does not lock binding_mapping, policy, and access,
+            # the role must always be locked for those edits also.
+
+            # It is important that the lock is here.
+            # Because we reuse this Role object when reading and
+            # determining current relations to remove,
+            # this lock prevents any accidental and non-obvious race conditions from occuring.
+            # (such as if this was innocently changed to select related access or policy rows)
+
+            # NOTE: If we want to try REPEATABLE READ isolation instead of READ COMMITTED,
+            # this should work with that as well.
+            # You would be able to remove `select_for_update` here,
+            # and instead rely on REPEATABLE READ's lost update detection to abort the tx.
+            # Nothing else should need to change.
+            public_tenant = Tenant.objects.get(tenant_name="public")
+            base_query = Role.objects.filter(tenant__in=[self.request.tenant, public_tenant]).select_for_update()
+
+            # TODO: May be redundant with RolePermissions check but copied from querysets.py for safety
+            if ENVIRONMENT.get_value("ALLOW_ANY", default=False, cast=bool):
+                return base_query
+
+            if self.request.user.admin:
+                return base_query
+
+            access = user_has_perm(self.request, "role")
+
+            if access == "All":
+                return base_query
+
+            if access == "None":
+                return Role.objects.none()
+
+            return base_query.filter(uuid__in=access)
 
     def get_serializer_class(self):
         """Get serializer class based on route."""
@@ -209,14 +268,17 @@ class RoleViewSet(
             }
         """
         self.validate_role(request)
-
-        create_role = super().create(request=request, args=args, kwargs=kwargs)
-
-        if status.is_success(create_role.status_code):
-            auditlog = AuditLog()
-            auditlog.log_create(request, AuditLog.ROLE)
-
-        return create_role
+        try:
+            with transaction.atomic():
+                return super().create(request=request, args=args, kwargs=kwargs)
+        except IntegrityError as e:
+            if DUPLICATE_KEY_ERROR_MSG in e.args[0]:
+                raise serializers.ValidationError(
+                    {"role": f"Role '{request.data.get('name')}' already exists for a tenant."}
+                )
+            raise serializers.ValidationError({"role": "An unexpected database error occurred."}) from e
+        except DualWriteException as e:
+            return self.dual_write_exception_response(e)
 
     def list(self, request, *args, **kwargs):
         """Obtain the list of roles for the tenant.
@@ -321,21 +383,12 @@ class RoleViewSet(
             HTTP/1.1 204 NO CONTENT
         """
         validate_uuid(kwargs.get("uuid"), "role uuid validation")
-        role = self.get_object()
-        if role.system or role.platform_default:
-            key = "role"
-            message = "System roles cannot be deleted."
-            error = {key: [_(message)]}
-            raise serializers.ValidationError(error)
-        with transaction.atomic():
-            self.delete_policies_if_no_role_attached(role)
-            response = super().destroy(request=request, args=args, kwargs=kwargs)
-        if response.status_code == status.HTTP_204_NO_CONTENT:
-            role_obj_change_notification_handler(role, "deleted", request.user)
 
-            auditlog = AuditLog()
-            auditlog.log_delete(request, AuditLog.ROLE, role)
-        return response
+        try:
+            with transaction.atomic():
+                return super().destroy(request=request, args=args, kwargs=kwargs)
+        except DualWriteException as e:
+            return self.dual_write_exception_response(e)
 
     def partial_update(self, request, *args, **kwargs):
         """Patch a role."""
@@ -348,14 +401,7 @@ class RoleViewSet(
                 error = {key: [_(message)]}
                 raise serializers.ValidationError(error)
 
-        role = self.get_object()
-        partial_update_role = super().update(request=request, args=args, kwargs=kwargs)
-
-        if status.is_success(partial_update_role.status_code):
-            auditlog = AuditLog()
-            auditlog.log_edit(request, AuditLog.ROLE, role)
-
-        return partial_update_role
+        return super().update(request=request, args=args, kwargs=kwargs)
 
     def update(self, request, *args, **kwargs):
         """Update a role.
@@ -418,14 +464,106 @@ class RoleViewSet(
         validate_uuid(kwargs.get("uuid"), "role uuid validation")
         self.validate_role(request)
 
-        role = self.get_object()
-        update_role = super().update(request=request, args=args, kwargs=kwargs)
+        try:
+            with transaction.atomic():
+                return super().update(request=request, args=args, kwargs=kwargs)
+        except DualWriteException as e:
+            return self.dual_write_exception_response(e)
 
-        if status.is_success(update_role.status_code):
-            auditlog = AuditLog()
-            auditlog.log_edit(request, AuditLog.ROLE, role)
+    def perform_create(self, serializer):
+        """
+        Create the role and publish outbox, notification, and audit events.
 
-        return update_role
+        Assumes concurrent updates are prevented (e.g. with atomic block and locks).
+        """
+        role = serializer.save()
+
+        dual_write_handler = RelationApiDualWriteHandler(role, ReplicationEventType.CREATE_CUSTOM_ROLE)
+        # No need to replicate if creating role with empty access, which won't have any relationships
+        if not role.access.all():
+            expected_empty_relation_reason = (
+                f"No access found for role({role.uuid}): '{role.name}'. "
+                "Assuming no relations to create. "
+                f"event_type='{ReplicationEventType.CREATE_CUSTOM_ROLE}'"
+            )
+            dual_write_handler.set_expected_empty_relation_reason_to_replicator(expected_empty_relation_reason)
+        dual_write_handler.replicate_new_or_updated_role(role)
+
+        role_obj_change_notification_handler(role, "created", self.request.user)
+
+        auditlog = AuditLog()
+        auditlog.log_create(self.request, AuditLog.ROLE)
+
+    def perform_update(self, serializer):
+        """
+        Update the role and publish outbox, notification, and audit events.
+
+        Assumes concurrent updates are prevented (e.g. with atomic block and locks).
+        """
+        if self.action != "partial_update":
+            dual_write_handler = RelationApiDualWriteHandler(
+                serializer.instance, ReplicationEventType.UPDATE_CUSTOM_ROLE
+            )
+            dual_write_handler.prepare_for_update()
+
+        role = serializer.save()
+
+        if self.action != "partial_update":
+            dual_write_handler.replicate_new_or_updated_role(role)
+            role_obj_change_notification_handler(role, "updated", self.request.user)
+
+        auditlog = AuditLog()
+        auditlog.log_edit(self.request, AuditLog.ROLE, role)
+
+    def perform_destroy(self, instance: Role):
+        """
+        Delete the role and publish outbox, notification, and audit events.
+
+        Assumes concurrent updates are prevented (e.g. with atomic block and locks).
+        """
+        if instance.tenant_id == Tenant.objects.get(tenant_name="public").id:
+            key = "role"
+            message = "System roles cannot be deleted."
+            error = {key: [_(message)]}
+            raise serializers.ValidationError(error)
+
+        dual_write_handler = RelationApiDualWriteHandler(instance, ReplicationEventType.DELETE_CUSTOM_ROLE)
+        # Check emptiness
+        if not instance.access.all():
+            expected_empty_relation_reason = (
+                f"No access found for role({instance.uuid}): '{instance.name}'. "
+                "Assuming no relations to create. "
+                f"event_type='{ReplicationEventType.DELETE_CUSTOM_ROLE}'"
+            )
+            dual_write_handler.set_expected_empty_relation_reason_to_replicator(expected_empty_relation_reason)
+        else:
+            dual_write_handler.prepare_for_update()
+
+        self.delete_policies_if_no_role_attached(instance)
+        instance.delete()
+
+        dual_write_handler.replicate_deleted_role()
+        role_obj_change_notification_handler(instance, "deleted", self.request.user)
+
+        # Audit in perform_destroy because it needs access to deleted instance
+        auditlog = AuditLog()
+        auditlog.log_delete(self.request, AuditLog.ROLE, instance)
+
+    def dual_write_exception_response(self, e):
+        """Dual write exception response."""
+        logging.error(traceback.format_exc())
+        return Response(
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            data={
+                "errors": [
+                    {
+                        "detail": "Dual Write Exception:" + str(e),
+                        "source": "role",
+                        "status": str(status.HTTP_500_INTERNAL_SERVER_ERROR),
+                    }
+                ]
+            },
+        )
 
     @action(detail=True, methods=["get"])
     def access(self, request, uuid=None):

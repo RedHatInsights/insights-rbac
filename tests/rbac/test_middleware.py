@@ -16,23 +16,40 @@
 #
 """Test the project middleware."""
 import collections
+from functools import partial
 import json
 import os
 from unittest import mock
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 from django.conf import settings
 from django.http import QueryDict
+from django.test.utils import override_settings
+from importlib import reload
 
-from django.test import TestCase
+from django.test import TestCase, RequestFactory
 from django.urls import reverse
 
 from rest_framework import status
 from rest_framework.test import APIClient
+from django.urls import clear_url_caches, get_resolver
 
 from api.models import Tenant, User
 from api.serializers import create_tenant_name
+from management.cache import TenantCache
+from management.group.definer import seed_group
+from management.tenant_mapping.model import TenantMapping
+from management.workspace.model import Workspace
+from migration_tool.in_memory_tuples import (
+    InMemoryRelationReplicator,
+    InMemoryTuples,
+    all_of,
+    relation,
+    resource,
+    subject,
+)
 from tests.identity_request import IdentityRequest
-from rbac.middleware import HttpResponseUnauthorizedRequest, IdentityHeaderMiddleware
+from rbac import urls
+from rbac.middleware import HttpResponseUnauthorizedRequest, IdentityHeaderMiddleware, ReadOnlyApiMiddleware
 from management.models import Access, Group, Permission, Principal, Policy, ResourceDefinition, Role
 
 
@@ -105,6 +122,7 @@ class RbacTenantMiddlewareTest(IdentityRequest):
         user.username = self.user_data["username"]
         user.account = self.customer_data["account_id"]
         user.org_id = self.customer_data["org_id"]
+        user.user_id = self.user_data["user_id"]
         self.request.user = user
 
     def test_get_tenant_with_user(self):
@@ -200,7 +218,7 @@ class IdentityHeaderMiddlewareTest(IdentityRequest):
 
     def test_process_response(self):
         """Test that the process response functions correctly."""
-        mock_request = Mock(path="/api/v1/status/")
+        mock_request = Mock(path="/api/rbac/v1/status/")
         mock_response = Mock(status_code=200)
         middleware = IdentityHeaderMiddleware(get_response=IdentityHeaderMiddleware.process_response)
         response = middleware.process_response(mock_request, mock_response)
@@ -215,6 +233,39 @@ class IdentityHeaderMiddlewareTest(IdentityRequest):
         self.assertEqual(mock_request.user.username, self.user_data["username"])
         tenant = Tenant.objects.get(org_id=self.org_id)
         self.assertIsNotNone(tenant)
+        self.assertTrue(tenant.ready)
+
+    def test_process_existing_tenant_unchanged(self):
+        mock_request = self.request
+        middleware = IdentityHeaderMiddleware(get_response=IdentityHeaderMiddleware.process_request)
+        middleware.process_request(mock_request)
+        self.assertTrue(hasattr(mock_request, "user"))
+        self.assertEqual(mock_request.user.username, self.user_data["username"])
+        tenant = Tenant.objects.get(org_id=self.org_id)
+        self.assertIsNotNone(tenant)
+        self.assertTrue(tenant.ready)
+
+        # Process a second request
+        middleware = IdentityHeaderMiddleware(get_response=IdentityHeaderMiddleware.process_request)
+        middleware.process_request(mock_request)
+
+        tenant = Tenant.objects.get(org_id=self.org_id)
+        self.assertTrue(tenant.ready)
+
+    def test_process_readies_tenant(self):
+        """If a tenant exists but is not ready, it is readied by the middleware."""
+        tenant = Tenant.objects.create(
+            tenant_name="test_user", org_id=self.org_id, account_id=self.customer["account_id"]
+        )
+        tenant.ready = False
+        tenant.save()
+
+        mock_request = self.request
+        middleware = IdentityHeaderMiddleware(get_response=IdentityHeaderMiddleware.process_request)
+        middleware.process_request(mock_request)
+
+        tenant = Tenant.objects.get(org_id=self.org_id)
+        self.assertTrue(tenant.ready)
 
     def test_process_no_customer(self):
         """Test that the customer, tenant and user are not created."""
@@ -351,7 +402,7 @@ class ServiceToService(IdentityRequest):
         }
 
     def test_no_identity_or_service_headers_returns_401(self):
-        url = reverse("group-list")
+        url = reverse("v1_management:group-list")
         client = APIClient()
         self.service_headers = {}
         response = client.get(url, {})
@@ -363,7 +414,7 @@ class ServiceToService(IdentityRequest):
         t.ready = True
         t.save()
 
-        url = reverse("group-list")
+        url = reverse("v1_management:group-list")
         client = APIClient()
         self.service_headers["HTTP_X_RH_RBAC_PSK"] = "xyz"
         response = client.get(url, **self.service_headers)
@@ -374,7 +425,7 @@ class ServiceToService(IdentityRequest):
         t = Tenant.objects.create(tenant_name=f"acct{self.account_id}", account_id=self.account_id, org_id=self.org_id)
         t.ready = True
         t.save()
-        url = reverse("group-list")
+        url = reverse("v1_management:group-list")
         client = APIClient()
         self.service_headers["HTTP_X_RH_RBAC_ORG_ID"] = "1212"
         response = client.get(url, **self.service_headers)
@@ -385,7 +436,7 @@ class ServiceToService(IdentityRequest):
         t = Tenant.objects.create(tenant_name=f"acct{self.account_id}", account_id=self.account_id, org_id=self.org_id)
         t.ready = True
         t.save()
-        url = reverse("group-list")
+        url = reverse("v1_management:group-list")
         client = APIClient()
         self.service_headers["HTTP_X_RH_RBAC_CLIENT_ID"] = "bad-service"
         response = client.get(url, **self.service_headers)
@@ -396,7 +447,7 @@ class ServiceToService(IdentityRequest):
         t = Tenant.objects.create(tenant_name=f"acct{self.account_id}", account_id=self.account_id, org_id=self.org_id)
         t.ready = True
         t.save()
-        url = reverse("group-list")
+        url = reverse("v1_management:group-list")
         client = APIClient()
         response = client.get(url, **self.service_headers)
 
@@ -574,3 +625,255 @@ class AccessHandlingTest(TestCase):
             "permission": {"read": ["*"], "write": ["*"]},
         }
         self.assertEqual(expected, access)
+
+
+class RBACReadOnlyApiMiddleware(IdentityRequest):
+    """Tests against the read-only API middleware."""
+
+    def setUp(self):
+        """Set up middleware tests."""
+        super().setUp()
+        self.factory = RequestFactory()
+        self.request = self.factory.get("/api/rbac/v1/roles/")
+        self.write_methods = ["POST", "PUT", "PATCH", "DELETE"]
+
+    def assertReadOnlyFailure(self, resp):
+        resp_body_str = resp.content.decode("utf-8")
+        self.assertEqual(
+            json.loads(resp_body_str)["error"], "This API is currently in read-only mode. Please try again later."
+        )
+        self.assertEqual(resp.status_code, 405)
+
+    @override_settings(READ_ONLY_API_MODE=True)
+    def test_get_read_only_true(self):
+        """Test GET and READ_ONLY_API_MODE=True."""
+        self.request.method = "GET"
+        middleware = ReadOnlyApiMiddleware(get_response=Mock())
+        resp = middleware.process_request(self.request)
+        self.assertEqual(resp, None)
+
+    @override_settings(READ_ONLY_API_MODE=True)
+    def test_write_methods_read_only_true(self):
+        """Test write methods and READ_ONLY_API_MODE=True."""
+        for method in self.write_methods:
+            self.request.method = method
+            middleware = ReadOnlyApiMiddleware(get_response=Mock())
+            resp = middleware.process_request(self.request)
+            self.assertReadOnlyFailure(resp)
+
+    def test_get_read_only_false(self):
+        """Test GET and READ_ONLY_API_MODE=False."""
+        self.request.method = "GET"
+        middleware = ReadOnlyApiMiddleware(get_response=Mock())
+        resp = middleware.process_request(self.request)
+        self.assertEqual(resp, None)
+
+    def test_write_methods_read_only_false(self):
+        """Test write methods and READ_ONLY_API_MODE=False."""
+        for method in self.write_methods:
+            self.request.method = method
+            middleware = ReadOnlyApiMiddleware(get_response=Mock())
+            resp = middleware.process_request(self.request)
+            self.assertEqual(resp, None)
+
+
+@override_settings(V2_BOOTSTRAP_TENANT=True)
+class V2RbacTenantMiddlewareTest(RbacTenantMiddlewareTest):
+    """Run all the same tests with v2 tenant bootstrap enabled."""
+
+    _tuples: InMemoryTuples
+
+    def setUp(self):
+        """Set up middleware tests."""
+        super().setUp()
+        self._tuples = InMemoryTuples()
+        seed_group()
+
+    def test_bootstraps_tenants_if_not_existing(self):
+        with patch("rbac.middleware.OutboxReplicator", new=partial(InMemoryRelationReplicator, self._tuples)):
+            # Change the user's org so we create a new tenant
+            self.request.user.org_id = "12345"
+            self.org_id = "12345"
+            mock_request = self.request
+            tenant_cache = TenantCache()
+            tenant_cache.delete_tenant(self.org_id)
+            middleware = IdentityHeaderMiddleware(get_response=IdentityHeaderMiddleware.get_tenant)
+            result = middleware.get_tenant(Tenant, "localhost", mock_request)
+            self.assertEqual(result.org_id, mock_request.user.org_id)
+            tenant = Tenant.objects.get(org_id=self.org_id)
+            self.assertIsNotNone(tenant)
+            mapping = TenantMapping.objects.get(tenant=tenant)
+            self.assertIsNotNone(mapping)
+            workspaces = list(Workspace.objects.filter(tenant=tenant))
+            self.assertEqual(len(workspaces), 2)
+            default = Workspace.objects.get(type=Workspace.Types.DEFAULT, tenant=tenant)
+            self.assertIsNotNone(default)
+            root = Workspace.objects.get(type=Workspace.Types.ROOT, tenant=tenant)
+            self.assertIsNotNone(root)
+
+            platform_default_policy = Policy.objects.get(group=Group.objects.get(platform_default=True))
+            admin_default_policy = Policy.objects.get(group=Group.objects.get(admin_default=True))
+
+            self.assertEqual(
+                1,
+                self._tuples.count_tuples(
+                    all_of(
+                        resource("rbac", "workspace", default.id),
+                        relation("binding"),
+                        subject("rbac", "role_binding", mapping.default_role_binding_uuid),
+                    )
+                ),
+            )
+            self.assertEqual(
+                1,
+                self._tuples.count_tuples(
+                    all_of(
+                        resource("rbac", "role_binding", mapping.default_role_binding_uuid),
+                        relation("subject"),
+                        subject("rbac", "group", mapping.default_group_uuid, "member"),
+                    )
+                ),
+            )
+            self.assertEqual(
+                1,
+                self._tuples.count_tuples(
+                    all_of(
+                        resource("rbac", "role_binding", mapping.default_role_binding_uuid),
+                        relation("role"),
+                        subject("rbac", "role", platform_default_policy.uuid),
+                    )
+                ),
+            )
+
+            self.assertEqual(
+                1,
+                self._tuples.count_tuples(
+                    all_of(
+                        resource("rbac", "workspace", default.id),
+                        relation("binding"),
+                        subject("rbac", "role_binding", mapping.default_admin_role_binding_uuid),
+                    )
+                ),
+            )
+            self.assertEqual(
+                1,
+                self._tuples.count_tuples(
+                    all_of(
+                        resource("rbac", "role_binding", mapping.default_admin_role_binding_uuid),
+                        relation("subject"),
+                        subject("rbac", "group", mapping.default_admin_group_uuid, "member"),
+                    )
+                ),
+            )
+            self.assertEqual(
+                1,
+                self._tuples.count_tuples(
+                    all_of(
+                        resource("rbac", "role_binding", mapping.default_admin_role_binding_uuid),
+                        relation("role"),
+                        subject("rbac", "role", admin_default_policy.uuid),
+                    )
+                ),
+            )
+
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={
+            "status_code": 200,
+            "data": [
+                {
+                    "username": "user_1",
+                    "email": "test_user@email.com",
+                    "first_name": "user",
+                    "last_name": "test",
+                    "user_id": "u1",
+                    "org_id": "12345",
+                }
+            ],
+        },
+    )
+    def test_bootstraps_tenants_if_user_id_is_missing(self, _):
+        with patch("rbac.middleware.OutboxReplicator", new=partial(InMemoryRelationReplicator, self._tuples)):
+            # Change the user's org so we create a new tenant
+            self.request.user.org_id = "12345"
+            self.org_id = "12345"
+            self.request.user.user_id = None
+            mock_request = self.request
+            tenant_cache = TenantCache()
+            tenant_cache.delete_tenant(self.org_id)
+            middleware = IdentityHeaderMiddleware(get_response=IdentityHeaderMiddleware.get_tenant)
+            result = middleware.get_tenant(Tenant, "localhost", mock_request)
+            self.assertEqual(result.org_id, mock_request.user.org_id)
+            tenant = Tenant.objects.get(org_id=self.org_id)
+            self.assertIsNotNone(tenant)
+            princial = Principal.objects.get(username=self.request.user.username, tenant=tenant)
+            self.assertEqual(princial.user_id, "u1")
+            mapping = TenantMapping.objects.get(tenant=tenant)
+            self.assertIsNotNone(mapping)
+            workspaces = list(Workspace.objects.filter(tenant=tenant))
+            self.assertEqual(len(workspaces), 2)
+            default = Workspace.objects.get(type=Workspace.Types.DEFAULT, tenant=tenant)
+            self.assertIsNotNone(default)
+            root = Workspace.objects.get(type=Workspace.Types.ROOT, tenant=tenant)
+            self.assertIsNotNone(root)
+
+
+@override_settings(V2_BOOTSTRAP_TENANT=True)
+class V2IdentityHeaderMiddlewareTest(IdentityHeaderMiddlewareTest):
+    """Run all the same tests with v2 tenant bootstrap enabled plus additional."""
+
+    pass
+
+
+@override_settings(V2_APIS_ENABLED=True)
+class RBACReadOnlyApiMiddlewareV2(RBACReadOnlyApiMiddleware):
+    """Tests against the read-only API middleware for v2."""
+
+    def setUp(self):
+        """Set up middleware tests."""
+        reload(urls)
+        clear_url_caches()
+        super().setUp()
+        self.request = self.factory.get("/api/rbac/v2/workspaces/")
+
+    @override_settings(V2_READ_ONLY_API_MODE=True)
+    def test_get_read_only_v2_true(self):
+        """Test GET and V2_READ_ONLY_API_MODE=True."""
+        self.request.method = "GET"
+        middleware = ReadOnlyApiMiddleware(get_response=Mock())
+        resp = middleware.process_request(self.request)
+        self.assertEqual(resp, None)
+
+    @override_settings(V2_READ_ONLY_API_MODE=True)
+    def test_write_methods_read_only_v2_true(self):
+        """Test write methods and V2_READ_ONLY_API_MODE=True."""
+        for method in self.write_methods:
+            self.request.method = method
+            middleware = ReadOnlyApiMiddleware(get_response=Mock())
+            resp = middleware.process_request(self.request)
+            self.assertReadOnlyFailure(resp)
+
+    def test_get_read_only_v2_false(self):
+        """Test GET and V2_READ_ONLY_API_MODE=False."""
+        self.request.method = "GET"
+        middleware = ReadOnlyApiMiddleware(get_response=Mock())
+        resp = middleware.process_request(self.request)
+        self.assertEqual(resp, None)
+
+    def test_write_methods_read_only_v2_false(self):
+        """Test write methods and V2_READ_ONLY_API_MODE=False."""
+        for method in self.write_methods:
+            self.request.method = method
+            middleware = ReadOnlyApiMiddleware(get_response=Mock())
+            resp = middleware.process_request(self.request)
+            self.assertEqual(resp, None)
+
+    @override_settings(V2_READ_ONLY_API_MODE=True)
+    def test_write_methods_read_only_v2_true_v1_path(self):
+        """Test write methods and V2_READ_ONLY_API_MODE=False with a v1 API path succeeds."""
+        for method in self.write_methods:
+            self.request.method = method
+            self.request.path = "/api/rbac/v1/roles/"
+            middleware = ReadOnlyApiMiddleware(get_response=Mock())
+            resp = middleware.process_request(self.request)
+            self.assertEqual(resp, None)

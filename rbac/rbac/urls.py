@@ -21,6 +21,7 @@ The `urlpatterns` list routes URLs to views. For more information please see:
 """
 import os
 
+from django.conf import settings
 from django.conf.urls import include
 from django.contrib.staticfiles.urls import staticfiles_urlpatterns
 from django.urls import path, re_path
@@ -35,11 +36,18 @@ if API_PATH_PREFIX != "":
 
 # pylint: disable=invalid-name
 urlpatterns = [
-    re_path(r"^{}v1/".format(API_PATH_PREFIX), include("api.urls")),
-    re_path(r"^{}v1/".format(API_PATH_PREFIX), include("management.urls")),
-    re_path(r"^{}v2/".format(API_PATH_PREFIX), include("management.v2_urls")),
-    re_path(r"^_private/", include("internal.urls")),
+    re_path(r"^{}v1/".format(API_PATH_PREFIX), include(("api.urls", "v1_api"))),
+    re_path(r"^{}v1/".format(API_PATH_PREFIX), include(("management.urls", "v1_management"))),
+    re_path(r"^_private/", include(("internal.urls", "internal"))),
     path("", include("django_prometheus.urls")),
 ]
+
+if settings.V2_APIS_ENABLED:
+    urlpatterns.append(
+        re_path(
+            r"^{}v2/".format(API_PATH_PREFIX),
+            include(("management.v2_urls", "v2_management")),
+        )
+    )
 
 urlpatterns += staticfiles_urlpatterns()

@@ -26,10 +26,11 @@ from management.models import Access, Group, Policy, Principal, Role
 from management.permissions.principal_access import PrincipalAccessPermission
 from management.principal.it_service import ITService
 from management.principal.proxy import PrincipalProxy
-from rest_framework import serializers, status
+from rest_framework import serializers
 from rest_framework.request import Request
+from rest_framework.serializers import ValidationError
 
-from api.models import CrossAccountRequest, Tenant
+from api.models import Tenant
 
 USERNAME_KEY = "username"
 APPLICATION_KEY = "application"
@@ -114,9 +115,7 @@ def get_principal(
             )
         else:
             # Avoid possible race condition if the user was created while checking BOP
-            principal, _ = Principal.objects.get_or_create(
-                username=username, tenant=tenant
-            )  # pylint: disable=unused-variable
+            principal, _ = Principal.objects.get_or_create(username=username, tenant=tenant)
 
     return principal
 
@@ -166,17 +165,16 @@ def groups_for_principal(principal: Principal, tenant, **kwargs):
     if principal.cross_account:
         return set()
     assigned_group_set = principal.group.all()
-    public_tenant = Tenant.objects.get(tenant_name="public")
 
     # Only user principals should be able to get permissions from the default groups. For service accounts, customers
     # need to explicitly add the service accounts to a group.
     if principal.type == "user":
-        admin_default_group_set = Group.admin_default_set().filter(tenant=tenant) or Group.admin_default_set().filter(
-            tenant=public_tenant
+        admin_default_group_set = (
+            Group.admin_default_set().filter(tenant=tenant) or Group.admin_default_set().public_tenant_only()
         )
-        platform_default_group_set = Group.platform_default_set().filter(
-            tenant=tenant
-        ) or Group.platform_default_set().filter(tenant=public_tenant)
+        platform_default_group_set = (
+            Group.platform_default_set().filter(tenant=tenant) or Group.platform_default_set().public_tenant_only()
+        )
     else:
         admin_default_group_set = Group.objects.none()
         platform_default_group_set = Group.objects.none()
@@ -281,29 +279,16 @@ def validate_group_name(name):
         raise serializers.ValidationError({key: _(message)})
 
 
-def validate_limit_and_offset(query_params):
-    """Limit and offset should not be negative number."""
-    if (int(query_params.get("limit", 10)) < 0) | (int(query_params.get("offset", 0)) < 0):
-        error = {
-            "detail": "Values for limit and offset must be positive numbers.",
-            "source": "CrossAccountRequest",
-            "status": str(status.HTTP_400_BAD_REQUEST),
-        }
-        return {"errors": [error]}
-
-
 def roles_for_cross_account_principal(principal):
     """Return roles for cross account principals."""
     _, user_id = principal.username.split("-")
     target_org = principal.tenant.org_id
-    role_names = (
-        CrossAccountRequest.objects.filter(target_org=target_org, user_id=user_id, status="approved")
-        .values_list("roles__name", flat=True)
-        .distinct()
-    )
-
-    role_names_list = list(role_names)
-    return Role.objects.filter(name__in=role_names_list)
+    return Role.objects.filter(
+        crossaccountrequest__target_org=target_org,
+        crossaccountrequest__user_id=user_id,
+        crossaccountrequest__status="approved",
+        system=True,
+    ).distinct()
 
 
 def clear_pk(entry):
@@ -367,3 +352,9 @@ def v2response_error_from_errors(errors, exc=None, context=None):
         response["instance"] = context.get("request").path
 
     return response
+
+
+def raise_validation_error(source, message):
+    """Construct a validation error and raise the error."""
+    error = {source: [message]}
+    raise ValidationError(error)

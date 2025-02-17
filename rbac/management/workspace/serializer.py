@@ -24,12 +24,13 @@ from .model import Workspace
 class WorkspaceSerializer(serializers.ModelSerializer):
     """Serializer for the Workspace model."""
 
+    id = serializers.UUIDField(read_only=True, required=False)
     name = serializers.CharField(required=False, max_length=255)
-    uuid = serializers.UUIDField(read_only=True, required=False)
     description = serializers.CharField(allow_null=True, required=False, max_length=255)
     parent_id = serializers.UUIDField(allow_null=True, required=False)
     created = serializers.DateTimeField(read_only=True)
     modified = serializers.DateTimeField(read_only=True)
+    type = serializers.CharField(read_only=True)
 
     class Meta:
         """Metadata for the serializer."""
@@ -37,11 +38,12 @@ class WorkspaceSerializer(serializers.ModelSerializer):
         model = Workspace
         fields = (
             "name",
-            "uuid",
+            "id",
             "parent_id",
             "description",
             "created",
             "modified",
+            "type",
         )
 
     def create(self, validated_data):
@@ -50,3 +52,34 @@ class WorkspaceSerializer(serializers.ModelSerializer):
 
         workspace = Workspace.objects.create(**validated_data)
         return workspace
+
+
+class WorkspaceAncestrySerializer(serializers.ModelSerializer):
+    """Serializer for the Workspace ancestry."""
+
+    id = serializers.UUIDField(read_only=True, required=False)
+    name = serializers.CharField(required=False, max_length=255)
+    parent_id = serializers.UUIDField(allow_null=True, required=False)
+
+    class Meta:
+        """Metadata for the serializer."""
+
+        model = Workspace
+        fields = ("name", "id", "parent_id")
+
+
+class WorkspaceWithAncestrySerializer(WorkspaceSerializer):
+    """Serializer for the Workspace model with ancestry."""
+
+    ancestry = serializers.SerializerMethodField()
+
+    class Meta:
+        """Metadata for the serializer."""
+
+        model = Workspace
+        fields = WorkspaceSerializer.Meta.fields + ("ancestry",)
+
+    def get_ancestry(self, obj):
+        """Serialize the workspace's ancestors."""
+        ancestors = obj.ancestors().only("name", "id", "parent_id")
+        return WorkspaceAncestrySerializer(ancestors, many=True).data

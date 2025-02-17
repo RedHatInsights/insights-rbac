@@ -18,8 +18,11 @@ from django.test import TestCase
 from unittest.mock import Mock
 from api.models import Tenant
 from management.models import Workspace
-from management.workspace.serializer import WorkspaceSerializer
-import uuid
+from management.workspace.serializer import (
+    WorkspaceAncestrySerializer,
+    WorkspaceSerializer,
+    WorkspaceWithAncestrySerializer,
+)
 
 
 class WorkspaceSerializerTest(TestCase):
@@ -29,10 +32,13 @@ class WorkspaceSerializerTest(TestCase):
         """Set up workspace serializer tests."""
         tenant = Tenant.objects.get(tenant_name="public")
         self.parent = Workspace.objects.create(
-            name="Parent", description="Parent desc", tenant=tenant, uuid=uuid.uuid4()
+            name="Parent",
+            description="Parent desc",
+            tenant=tenant,
+            type=Workspace.Types.ROOT,
         )
         self.child = Workspace.objects.create(
-            name="Child", description="Child desc", tenant=tenant, parent=self.parent, uuid=uuid.uuid4()
+            name="Child", description="Child desc", tenant=tenant, parent=self.parent
         )
 
     def tearDown(self):
@@ -44,29 +50,56 @@ class WorkspaceSerializerTest(TestCase):
         return timestamp.isoformat(timespec="microseconds").replace("+00:00", "Z")
 
     def test_get_workspace_detail_child(self):
-        """Return GET /workspace/<uuid>/ serializer response for child"""
+        """Return GET /workspace/<id>/ serializer response for child"""
         serializer = WorkspaceSerializer(self.child)
         expected_data = {
-            "uuid": str(self.child.uuid),
+            "id": str(self.child.id),
             "name": self.child.name,
             "description": self.child.description,
-            "parent_id": str(self.parent.uuid),
+            "parent_id": str(self.parent.id),
             "created": self._format_timestamps(self.child.created),
             "modified": self._format_timestamps(self.child.modified),
+            "type": self.child.type,
         }
 
         self.assertDictEqual(serializer.data, expected_data)
 
     def test_get_workspace_detail_parent(self):
-        """Return GET /workspace/<uuid>/ serializer response for parent"""
+        """Return GET /workspace/<id>/ serializer response for parent"""
         serializer = WorkspaceSerializer(self.parent)
         expected_data = {
-            "uuid": str(self.parent.uuid),
+            "id": str(self.parent.id),
             "name": self.parent.name,
             "description": self.parent.description,
             "parent_id": None,
             "created": self._format_timestamps(self.parent.created),
             "modified": self._format_timestamps(self.parent.modified),
+            "type": self.parent.type,
         }
+
+        self.assertDictEqual(serializer.data, expected_data)
+
+    def test_get_workspace_detail_with_ancestry(self):
+        """Test workspace serializer with ancestry"""
+        serializer = WorkspaceWithAncestrySerializer(self.child)
+        expected_data = {
+            "id": str(self.child.id),
+            "name": self.child.name,
+            "description": self.child.description,
+            "parent_id": str(self.parent.id),
+            "created": self._format_timestamps(self.child.created),
+            "modified": self._format_timestamps(self.child.modified),
+            "ancestry": [{"name": self.parent.name, "id": str(self.parent.id), "parent_id": None}],
+            "created": self._format_timestamps(self.child.created),
+            "modified": self._format_timestamps(self.child.modified),
+            "type": self.child.type,
+        }
+
+        self.assertDictEqual(serializer.data, expected_data)
+
+    def test_workspace_ancestry(self):
+        """Test workspace ancestry serializer"""
+        serializer = WorkspaceAncestrySerializer(self.child)
+        expected_data = {"name": self.child.name, "parent_id": str(self.parent.id), "id": str(self.child.id)}
 
         self.assertDictEqual(serializer.data, expected_data)

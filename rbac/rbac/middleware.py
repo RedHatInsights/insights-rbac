@@ -23,12 +23,16 @@ from json.decoder import JSONDecodeError
 
 from django.conf import settings
 from django.core.handlers.wsgi import WSGIRequest
-from django.db import IntegrityError
+from django.db import IntegrityError, transaction
 from django.http import Http404, HttpResponse, QueryDict
 from django.urls import resolve
 from django.utils.deprecation import MiddlewareMixin
 from management.cache import TenantCache
 from management.models import Principal
+from management.principal.proxy import PrincipalProxy
+from management.relation_replicator.outbox_replicator import OutboxReplicator
+from management.tenant_service import get_tenant_bootstrap_service
+from management.tenant_service.tenant_service import TenantBootstrapService
 from management.utils import APPLICATION_KEY, access_for_principal, validate_psk
 from prometheus_client import Counter
 from rest_framework import status
@@ -42,7 +46,7 @@ from api.common import (
     RH_RBAC_PSK,
 )
 from api.models import Tenant, User
-from api.serializers import create_tenant_name, extract_header
+from api.serializers import extract_header
 
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
@@ -87,6 +91,24 @@ class HttpResponseUnauthorizedRequest(HttpResponse):
     status_code = 401
 
 
+PROXY = PrincipalProxy()
+
+
+def get_user_id(user: User):
+    """Return the user ID for the given user."""
+    user_id = user.user_id
+    if not user_id:
+        resp = PROXY.request_filtered_principals([user.username], org_id=user.org_id, options={"return_id": True})
+        if isinstance(resp, dict) and "errors" in resp:
+            logging.warning(resp.get("errors"))
+            return
+        if not resp.get("data"):
+            logging.warning(f"No user found of user name {user.username}.")
+            raise Http404()
+        return resp["data"][0]["user_id"]
+    return user.user_id
+
+
 class IdentityHeaderMiddleware(MiddlewareMixin):
     """A subclass of RemoteUserMiddleware.
 
@@ -94,22 +116,43 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
     """
 
     header = RH_IDENTITY_HEADER
+    bootstrap_service: TenantBootstrapService
+
+    def __init__(self, get_response):
+        """Initialize the middleware."""
+        super().__init__(get_response)
+        # TODO: Lazy bootstrapping of tenants should use a synchronous replicator
+        # In this case the replicator needs to include a precondition
+        # which does not add the tuples if any others already exist for the tenant
+        # (the tx will be rolled back in that case)
+        self.bootstrap_service = get_tenant_bootstrap_service(OutboxReplicator(), get_user_id)
 
     def get_tenant(self, model, hostname, request):
         """Override the tenant selection logic."""
-        tenant_name = create_tenant_name(request.user.account)
         tenant = TENANTS.get_tenant(request.user.org_id)
         if tenant is None:
-            if request.user.system:
-                try:
-                    tenant = Tenant.objects.get(org_id=request.user.org_id)
-                except Tenant.DoesNotExist:
+            try:
+                # If the tenant already exists, we assume it must be bootstrapped if dual writes are enabled.
+                tenant = Tenant.objects.get(org_id=request.user.org_id)
+                if not tenant.ready:
+                    tenant.ready = True
+                    tenant.save(update_fields=["ready"])
+            except Tenant.DoesNotExist:
+                if request.user.system:
                     raise Http404()
-            else:
-                tenant, _ = Tenant.objects.get_or_create(
-                    org_id=request.user.org_id,
-                    defaults={"ready": True, "account_id": request.user.account, "tenant_name": tenant_name},
-                )
+                # Tenants are normally bootstrapped via principal job,
+                # but there is a race condition where the user can use the service before the message is processed.
+                try:
+                    with transaction.atomic():
+                        bootstrap = self.bootstrap_service.update_user(request.user, upsert=True, ready_tenant=True)
+                    if bootstrap is None:
+                        # User is inactive. Should never happen but just in case...
+                        raise Http404()
+                    tenant = bootstrap.tenant
+                except IntegrityError:
+                    # This would happen if between the time we first check for a tenant,
+                    # and when we went to create one, another request or the listener job created one.
+                    tenant = Tenant.objects.get(org_id=request.user.org_id)
             TENANTS.save_tenant(tenant)
         return tenant
 
@@ -296,6 +339,7 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
         is_system = False
         org_id = None
         username = None
+        user_id = None
         req_id = getattr(request, "req_id", None)
         if request.META.get("QUERY_STRING"):
             query_string = "?{}".format(request.META.get("QUERY_STRING"))
@@ -307,6 +351,7 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
                 is_admin = request.user.admin
                 org_id = request.user.org_id
                 is_system = request.user.system
+                user_id = request.user.user_id
             else:
                 # django.contrib.auth.models.AnonymousUser does not
                 is_admin = is_system = False
@@ -346,6 +391,7 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
             "request_id": req_id,
             "org_id": org_id,
             "username": username,
+            "user_id": user_id,
             "is_admin": is_admin,
             "is_system": is_system,
             "is_internal": is_internal,
@@ -359,18 +405,15 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
             request (object): The request object
             response (object): The response object
         """
-        is_internal = False
-        if any([request.path.startswith(prefix) for prefix in settings.INTERNAL_API_PATH_PREFIXES]):
-            # This request is for a private API endpoint
-            is_internal = True
-            IdentityHeaderMiddleware.log_request(request, response, is_internal)
-            return response
-
-        behalf = "principal"
+        is_internal = any([request.path.startswith(prefix) for prefix in settings.INTERNAL_API_PATH_PREFIXES])
         is_system = False
 
-        if is_system:
-            behalf = "system"
+        if hasattr(request, "user") and request.user:
+            username = request.user.username
+            if username:
+                is_system = request.user.system
+
+        behalf = "system" if is_system else "principal"
 
         req_sys_counter.labels(
             behalf=behalf,
@@ -417,3 +460,37 @@ class DisableCSRF(MiddlewareMixin):  # pylint: disable=too-few-public-methods
 
         """
         setattr(request, "_dont_enforce_csrf_checks", True)
+
+
+class ReadOnlyApiMiddleware(MiddlewareMixin):  # pylint: disable=too-few-public-methods
+    """Middleware to enable read-only on APIs when configured."""
+
+    def _is_write_request(self, request):
+        """Determine whether or not the request is a write request."""
+        write_methods = ["POST", "PUT", "PATCH", "DELETE"]
+        return request.method in write_methods
+
+    def _should_deny_all_writes(self, request):
+        """Determine whether or not to deny all API writes."""
+        resolver = resolve(request.path)
+        api_namespace = resolver.app_name if resolver else ""
+        return settings.READ_ONLY_API_MODE and self._is_write_request(request) and api_namespace != "internal"
+
+    def _should_deny_v2_writes(self, request):
+        """Determine whether or not to deny v2 writes."""
+        resolver = resolve(request.path)
+        api_namespace = resolver.app_name if resolver else ""
+        return settings.V2_READ_ONLY_API_MODE and self._is_write_request(request) and api_namespace == "v2_management"
+
+    def _read_only_response(self):
+        """Return a read-only API error response."""
+        return HttpResponse(
+            json.dumps({"error": "This API is currently in read-only mode. Please try again later."}),
+            content_type="application/json",
+            status=405,
+        )
+
+    def process_request(self, request):  # pylint: disable=no-self-use
+        """Process request ReadOnlyApiMiddleware."""
+        if self._should_deny_all_writes(request) or self._should_deny_v2_writes(request):
+            return self._read_only_response()

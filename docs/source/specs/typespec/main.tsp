@@ -96,28 +96,55 @@ namespace Workspaces {
         description?: string = "Description of Workspace A";
     }
 
+    enum WorkspaceTypes {
+        "root",
+        "default",
+        "standard"
+    }
+
+    enum WorkspaceTypesQueryParam {
+        "all",
+        ...WorkspaceTypes
+    }
+
     model Workspace {
-        @key uuid: UUID;
+        @key id: UUID;
         parent_id?: UUID;
+        type: WorkspaceTypes;
         ...BasicWorkspace;
         ...Timestamps;
     }
 
-    alias CreateWorkspaceRequest = BasicWorkspace;
+    model WorkspaceAncestor {
+        @key id: UUID;
+        parent_id?: UUID;
+        name: string;
+    }
 
-    model CreateWorkspaceResponse extends BasicWorkspace{
+    model CreateWorkspaceRequest extends BasicWorkspace{
+        @doc("Parent ID of Workspace A")
+        parent_id: UUID = "Parent ID of Workspace A";
+    }
+
+    model CreateWorkspaceResponse extends Workspace{
         @statusCode _: 201;
     }
 
-    model ReadWorkspaceResponse extends BasicWorkspace{
+    model ReadWorkspaceResponse extends Workspace {
         @statusCode _: 200;
+    }
+
+    model ReadWorkspaceWithAncestryResponse extends ReadWorkspaceResponse {
+        ancestry: WorkspaceAncestor[];
     }
 
     model UpdateWorkspaceRequest {
         @doc("Workspace A")
         name: string = "Workspace A";
         @doc("Description of Workspace A")
-        description?: string = "Description of Workspace A";
+        description: string = "Description of Workspace A";
+        @doc("Description of Workspace A")
+        parent_id: UUID = "Parent ID of Workspace A";
     }
 
     model PatchWorkspaceRequest {
@@ -127,11 +154,11 @@ namespace Workspaces {
         description?: string = "Description of Workspace A";
     }
 
-    model UpdateWorkspaceResponse extends BasicWorkspace{
+    model UpdateWorkspaceResponse extends Workspace{
         @statusCode _: 200;
     }
 
-    model PatchWorkspaceResponse extends BasicWorkspace{
+    model PatchWorkspaceResponse extends Workspace{
         @statusCode _: 200;
     }
 
@@ -193,7 +220,13 @@ namespace Workspaces {
 
     @doc("List workspaces in a tenant")
     @summary("List workspaces in a tenant")
-    @get op list(): WorkspaceListResponse | Problems.CommonProblems;
+    @get op list(
+        @query limit?: int64 = 10;
+        @query offset?: int64 = 0;
+
+        @doc("Defaults to all when param is not supplied.")
+        @query type?: WorkspaceTypesQueryParam = WorkspaceTypesQueryParam.all;
+    ): WorkspaceListResponse | Problems.CommonProblems;
 
     @doc("Create workspace in tenant")
     @summary("Create workspace in tenant")
@@ -201,33 +234,36 @@ namespace Workspaces {
 
     @doc("Get a workspace in tenant")
     @summary("Get a workspace in tenant")
-    @route("{uuid}/")
+    @route("{id}/")
     @get op read(
         @doc("Unique identification")
-        @path uuid: UUID;
-    ): ReadWorkspaceResponse | Problems.CommonProblems | Problems.Problem404;
+        @path id: UUID;
+
+        @doc("When true, the response will include the ancestry of the workspace.")
+        @query include_ancestry?: boolean;
+    ): ReadWorkspaceResponse | ReadWorkspaceWithAncestryResponse | Problems.CommonProblems | Problems.Problem404;
 
     @doc("Edit a workspace")
     @summary("Edit the workspace name or description")
-    @route("{uuid}/")
+    @route("{id}/")
     @put op update(
         @doc("Unique identification")
-        @path uuid: UUID;
+        @path id: UUID;
         @body body: UpdateWorkspaceRequest
     ): UpdateWorkspaceResponse | Problems.CommonProblems | Problems.Problem400AlreadyExists ;
 
-    @route("{uuid}/")
+    @route("{id}/")
     @patch op patch(
         @doc("Unique identification")
-        @path uuid: UUID;
+        @path id: UUID;
         @body body: PatchWorkspaceRequest
     ): PatchWorkspaceResponse | Problems.CommonProblems | Problems.Problem400AlreadyExists ;
 
     @doc("Delete a workspace")
     @summary("Delete the workspace")
-    @route("{uuid}/")
+    @route("{id}/")
     @delete op delete(
         @doc("Unique identification")
-        @path uuid: UUID;
+        @path id: UUID;
     ): DeleteWorkspaceResponse | Problems.CommonProblems | Problems.Workspace.Problem400WorkspaceNotEmpty;
 }

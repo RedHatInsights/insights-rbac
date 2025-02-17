@@ -17,11 +17,20 @@
 """Celery setup."""
 from __future__ import absolute_import, unicode_literals
 
+import logging
 import os
+import sys
 
+import sentry_sdk
+from app_common_python import LoadedConfig
 from celery import Celery
 from celery.schedules import crontab
+from celery.signals import worker_ready
 from django.conf import settings
+from prometheus_client import CollectorRegistry, multiprocess, start_http_server
+
+
+logger = logging.getLogger("__name__")
 
 # set the default Django settings module for the 'celery' program.
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "rbac.settings")
@@ -48,11 +57,12 @@ app.conf.beat_schedule = {
 }
 
 if settings.PRINCIPAL_CLEANUP_DELETION_ENABLED_UMB:
-    app.conf.beat_schedule["principal-cleanup-every-minute"] = {
-        "task": "management.tasks.principal_cleanup_via_umb",
-        "schedule": 60,  # Every 60 second
-        "args": [],
-    }
+    if settings.UMB_JOB_ENABLED:  # TODO: This is temp flag, remove it after populating user_id
+        app.conf.beat_schedule["principal-cleanup-every-minute"] = {
+            "task": "management.tasks.principal_cleanup_via_umb",
+            "schedule": 60,  # Every 60 second
+            "args": [],
+        }
 else:
     app.conf.beat_schedule["principal-cleanup-every-sevenish-days"] = {
         "task": "management.tasks.principal_cleanup",
@@ -62,3 +72,20 @@ else:
 
 # Load task modules from all registered Django app configs.
 app.autodiscover_tasks()
+
+
+@worker_ready.connect
+def start_metrics_server(sender=None, **kwargs):
+    """Start the metrics server."""
+    registry = CollectorRegistry()
+    multiprocess.MultiProcessCollector(registry)
+    metrics_port = LoadedConfig.metricsPort or 9000
+
+    try:
+        start_http_server(metrics_port, addr="0.0.0.0", registry=registry)
+        logger.info(f"Server started and exposing to port {metrics_port}.")
+    except Exception as e:
+        sentry_sdk.capture_exception(e)
+        logger.error(f"Failed to start metrics server: {e}")
+        # Exit the entire process, we don't want to spin up the worker without metrics
+        sys.exit(1)
