@@ -150,3 +150,16 @@ class AuditLog(TenantAwareModel):
         self.action = AuditLog.ADD
         self.tenant_id = self.get_tenant_id(request)
         super(AuditLog, self).save()
+
+    def log_group_remove(self, request, resource_type, resource, values_for_description, assigned_resource_type):
+        """Audit Log when a role, user/principal, or service account is removed from a group."""
+        self.principal_username = request.user.username
+        self.resource_type = resource_type
+        self.resource_id = resource.id
+        resource_name = "group: " + resource.name
+
+        self.description = f"{assigned_resource_type} {values_for_description} removed from {resource_name}"
+
+        self.action = AuditLog.REMOVE
+        self.tenant_id = self.get_tenant_id(request)
+        super(AuditLog, self).save()
