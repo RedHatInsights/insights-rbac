@@ -14,6 +14,7 @@ export IQE_MARKER_EXPRESSION=""  # This is the value passed to pytest -m
 export IQE_FILTER_EXPRESSION=""  # This is the value passed to pytest -k
 export IQE_TEST_IMPORTANCE="critical" # This is the value passed to iqe --testImportance
 export IQE_CJI_TIMEOUT="30m"  # This is the time to wait for smoke test to complete or fail
+export IQE_PARALLEL_ENABLED="false"
 
 
 # Install bonfire repo/initialize
