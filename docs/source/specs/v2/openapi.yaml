@@ -855,6 +855,7 @@ components:
         - root
         - default
         - standard
+        - ungrouped
     Workspaces.WorkspaceTypesQueryParam:
       type: string
       enum:
@@ -862,6 +863,7 @@ components:
         - root
         - default
         - standard
+        - ungrouped
 servers:
   - url: https://console.redhat.com/{basePath}
     description: Production Server

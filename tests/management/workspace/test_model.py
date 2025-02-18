@@ -74,6 +74,12 @@ class Types(IdentityRequest):
             type=Workspace.Types.DEFAULT,
             parent=self.tenant_1_root_workspace,
         )
+        self.tenant_1_ungrouped_workspace = Workspace.objects.create(
+            name="T1 Ungrouped Workspace",
+            tenant=self.tenant,
+            type=Workspace.Types.UNGROUPED,
+            parent=self.tenant_1_root_workspace,
+        )
         self.tenant_1_standard_workspace = Workspace.objects.create(
             name="T1 Standard Workspace",
             tenant=self.tenant,
@@ -111,14 +117,33 @@ class Types(IdentityRequest):
         self.assertEqual(len(error_messages), 1)
         self.assertIn("unique_default_root_workspace_per_tenant", error_messages[0])
 
-    def test_multiple_root_and_default_multiple_tenants(self):
-        """Test that multiple tenants can have more than one root and default workspace"""
+    def test_single_ungrouped_per_tenant(self):
+        """Test tenant can only have one ungrouped workspace"""
+        with self.assertRaises(ValidationError) as assertion:
+            Workspace.objects.create(
+                name="T1 Ungrouped Workspace Number 2",
+                type=Workspace.Types.UNGROUPED,
+                tenant=self.tenant,
+                parent=self.tenant_1_root_workspace,
+            )
+        error_messages = assertion.exception.messages
+        self.assertEqual(len(error_messages), 1)
+        self.assertIn("unique_default_root_workspace_per_tenant", error_messages[0])
+
+    def test_multiple_specific_ws_multiple_tenants(self):
+        """Test that multiple tenants can have more than one root/default/ungrouped workspace"""
         try:
             tenant_2 = Tenant.objects.create(tenant_name="Tenant 2")
             root = Workspace.objects.create(name="Root Workspace Number 2", type=Workspace.Types.ROOT, tenant=tenant_2)
             default = Workspace.objects.create(
                 name="Default Workspace Number 2",
                 type=Workspace.Types.DEFAULT,
+                tenant=tenant_2,
+                parent=root,
+            )
+            ungrouped = Workspace.objects.create(
+                name="Ungrouped Workspace Number 2",
+                type=Workspace.Types.UNGROUPED,
                 tenant=tenant_2,
                 parent=root,
             )
@@ -170,6 +195,16 @@ class Types(IdentityRequest):
         tenant = Tenant.objects.create(tenant_name="Default no parent")
         with self.assertRaises(ValidationError) as assertion:
             Workspace.objects.create(name="Default", type=Workspace.Types.DEFAULT, tenant=tenant)
+        self.assertEqual(
+            {"parent_id": ["This field cannot be blank for non-root type workspaces."]},
+            assertion.exception.message_dict,
+        )
+
+    def test_ungrouped_no_parent(self):
+        """Test ungrouped workspace creation with no parent"""
+        tenant = Tenant.objects.create(tenant_name="Ungrouped no parent")
+        with self.assertRaises(ValidationError) as assertion:
+            Workspace.objects.create(name="Ungrouped", type=Workspace.Types.UNGROUPED, tenant=tenant)
         self.assertEqual(
             {"parent_id": ["This field cannot be blank for non-root type workspaces."]},
             assertion.exception.message_dict,

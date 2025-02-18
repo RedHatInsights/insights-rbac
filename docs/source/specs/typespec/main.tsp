@@ -99,7 +99,8 @@ namespace Workspaces {
     enum WorkspaceTypes {
         "root",
         "default",
-        "standard"
+        "standard",
+        "ungrouped"
     }
 
     enum WorkspaceTypesQueryParam {
