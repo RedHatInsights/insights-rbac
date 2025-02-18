@@ -32,6 +32,7 @@ class Workspace(TenantAwareModel):
         STANDARD = "standard"
         DEFAULT = "default"
         ROOT = "root"
+        UNGROUPED = "ungrouped"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid7, editable=False, unique=True, null=False)
     name = models.CharField(max_length=255)
@@ -46,7 +47,7 @@ class Workspace(TenantAwareModel):
             UniqueConstraint(
                 fields=["tenant_id", "type"],
                 name="unique_default_root_workspace_per_tenant",
-                condition=Q(type__in=["root", "default"]),
+                condition=Q(type__in=["root", "default", "ungrouped"]),
             )
         ]
 
