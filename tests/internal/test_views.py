@@ -20,7 +20,6 @@ from uuid import uuid4
 
 from rest_framework import status
 from rest_framework.test import APIClient
-from django.conf import settings
 from django.test import override_settings
 from django.urls import reverse
 from datetime import datetime, timedelta
@@ -37,7 +36,6 @@ from management.cache import TenantCache
 from management.models import BindingMapping, Group, Permission, Policy, Role, Workspace
 from management.principal.model import Principal
 from management.relation_replicator.noop_replicator import NoopReplicator
-from management.relation_replicator.relation_replicator import PartitionKey, ReplicationEvent, ReplicationEventType
 from management.role.model import Access, ResourceDefinition
 from management.tenant_mapping.model import TenantMapping
 from management.tenant_service.v1 import V1TenantBootstrapService
@@ -677,7 +675,7 @@ class InternalViewsetTests(IdentityRequest):
         with self.assertRaises(BindingMapping.DoesNotExist):
             binding_mappings[0].refresh_from_db()
         binding_mappings[1].refresh_from_db()
-        self.assertEqual(self._tuples.find_tuples(), [])
+        self.assertEqual(self._tuples.count_tuples(), 0)
 
     @override_settings(INTERNAL_DESTRUCTIVE_API_OK_UNTIL=valid_destructive_time())
     @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
