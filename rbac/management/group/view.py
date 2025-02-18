@@ -435,7 +435,7 @@ class GroupViewSet(
 
             dual_write_handler = RelationApiDualWriteGroupHandler(group, ReplicationEventType.DELETE_GROUP)
             roles = Role.objects.filter(policies__group=group)
-            if not group.platform_default and group.principals.exists() and not roles.exists():
+            if not group.platform_default and not group.principals.exists() and not roles.exists():
                 expected_empty_relation_reason = (
                     f"No principal or role found for group({group.uuid}): '{group.name}'. "
                     "Assuming no current relations exist. "
